@@ -1,6 +1,7 @@
+import type { CloudTheme } from "@k2b/cloud/shared";
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, NoticeCard, toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MessageRemoteContent, RemoteContentRule } from "../../service/remote-content";
 import { readApiError } from "./api-response";
@@ -8,6 +9,7 @@ import { buildMessageDocument, estimateInitialMessageBodyHeight, normalizeMessag
 import { mailMessageMessages } from "./mail-message-messages";
 import {
   type MessageBodyFormat,
+  type MessageColors,
   markCidImageSources,
   normalizeContentId,
   referencedContentIds,
@@ -47,6 +49,8 @@ export default function MailMessageBody(props: {
   mailboxId: string;
   messageId: string;
   format: MessageBodyFormat;
+  theme: CloudTheme | null;
+  colors: MessageColors;
   html: string | null;
   plainText: string | null;
   attachments: Array<{ id: string; contentId: string | null; contentType: string; sizeBytes: number }>;
@@ -84,6 +88,7 @@ export default function MailMessageBody(props: {
   const remoteImagesRemaining = createMemo(() => remoteImageIds().filter((id) => !loadedRemoteIds().has(id)).length);
   // The frame document never depends on loaded images: replacing srcdoc
   // reloads the whole message. Images reach the running frame as messages.
+  const appearanceMode = () => (props.colors === "original" ? "light" : (props.theme ?? "auto"));
   const documentSource = createMemo(() => {
     const localized = localization();
     return buildMessageDocument(
@@ -92,6 +97,7 @@ export default function MailMessageBody(props: {
       props.linksDisabled,
       localized.locale,
       { show: localized.t.showQuotedText, hide: localized.t.hideQuotedText },
+      untrack(appearanceMode),
     );
   });
   let plainBody: HTMLDivElement | undefined;
@@ -207,11 +213,42 @@ export default function MailMessageBody(props: {
     frame?.contentWindow?.postMessage({ source: "cloud-mail-host", channel, type: "measure" }, "*");
   };
 
+  const sendFrameAppearance = () => {
+    const mode = appearanceMode();
+    if (mode === "auto" || !frame?.parentElement) return;
+    const text = getComputedStyle(frame.parentElement).color;
+    let background: string | null = null;
+    for (let ancestor: HTMLElement | null = frame.parentElement; ancestor; ancestor = ancestor.parentElement) {
+      const color = getComputedStyle(ancestor).backgroundColor;
+      if (color !== "transparent" && !color.startsWith("rgba(") && !color.includes("/")) {
+        background = color;
+        break;
+      }
+    }
+    frame.contentWindow?.postMessage({ source: "cloud-mail-host", channel, type: "appearance", value: { mode, text, background } }, "*");
+  };
+  createEffect(sendFrameAppearance);
+
+  // The sandboxed document cannot inherit the person's motion choice from the host.
+  const sendFrameMotion = () => {
+    frame?.contentWindow?.postMessage(
+      {
+        source: "cloud-mail-host",
+        channel,
+        type: "motion",
+        value: { reduced: document.documentElement.getAttribute("data-k2b-motion") === "reduced" },
+      },
+      "*",
+    );
+  };
+
   const handleFrameLoad = () => {
+    sendFrameAppearance();
     if (openQuotes.size > 0) {
       frame?.contentWindow?.postMessage({ source: "cloud-mail-host", channel, type: "quotes", value: [...openQuotes] }, "*");
     }
     sendFrameImages(frameImages);
+    sendFrameMotion();
     requestFrameMeasurement();
   };
 
@@ -274,13 +311,17 @@ export default function MailMessageBody(props: {
 
   onMount(() => {
     window.addEventListener("message", receiveMessage);
+    sendFrameMotion();
+    const motionObserver = new MutationObserver(sendFrameMotion);
+    motionObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-k2b-motion"] });
     requestAnimationFrame(requestFrameMeasurement);
-    if (props.format === "plain" && props.plainText) document.addEventListener("selectionchange", reportPlainSelection);
+    if (props.format === "plain" && props.plainText?.trim()) document.addEventListener("selectionchange", reportPlainSelection);
     onCleanup(() => {
       disposed = true;
       allowRemoteContent.abort();
       remoteController?.abort();
       frameImages.length = 0;
+      motionObserver.disconnect();
       window.removeEventListener("message", receiveMessage);
       document.removeEventListener("selectionchange", reportPlainSelection);
       props.onSelectionChange("");
@@ -291,7 +332,7 @@ export default function MailMessageBody(props: {
     <Show
       when={props.format === "html" ? props.html : null}
       fallback={
-        <Show when={props.plainText}>
+        <Show when={props.plainText?.trim()}>
           <div ref={plainBody} class="flex max-w-[72ch] flex-col gap-2">
             <For each={plainSegments()}>
               {(segment) =>
@@ -362,7 +403,7 @@ export default function MailMessageBody(props: {
         <iframe
           ref={frame}
           title={messages().messageContent}
-          class="block w-full overflow-hidden rounded-[var(--ui-radius-surface)] border-0 bg-white"
+          class={`block w-full overflow-hidden rounded-[var(--ui-radius-surface)] border-0 ${appearanceMode() === "auto" ? "bg-white dark:bg-transparent" : appearanceMode() === "dark" ? "bg-transparent" : "bg-white"}`}
           style={{ height: `${height()}px` }}
           sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
           referrerpolicy="no-referrer"

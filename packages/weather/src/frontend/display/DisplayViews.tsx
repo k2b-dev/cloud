@@ -83,7 +83,7 @@ export function SimpleDisplayView(props: DisplayProps) {
       <div class="flex max-w-full flex-col items-center text-center">
         <div class="mb-4">
           <h1 class={`${sizes.location} font-medium`}>{props.location}</h1>
-          {props.state && <p class="text-sm text-zinc-400 dark:text-zinc-500">{props.state}</p>}
+          {props.state && <p class="text-sm text-dimmed">{props.state}</p>}
         </div>
 
         <div class="mb-6 flex items-center gap-4">
@@ -102,25 +102,25 @@ export function SimpleDisplayView(props: DisplayProps) {
           </span>
         </div>
 
-        <dl class={`mb-8 flex flex-wrap justify-center gap-6 text-zinc-500 dark:text-zinc-400 ${sizes.stats}`}>
+        <dl class={`mb-8 flex flex-wrap justify-center gap-6 text-dimmed ${sizes.stats}`}>
           <div class="flex items-center gap-2">
             <dt class="sr-only">{t().humidity}</dt>
-            <i class="ti ti-droplet text-zinc-400 dark:text-zinc-600" aria-hidden="true" />
+            <i class="ti ti-droplet text-dimmed" aria-hidden="true" />
             <dd>{current.humidity == null ? "-" : percent(current.humidity)}</dd>
           </div>
           <div class="flex items-center gap-2">
             <dt class="sr-only">{t().wind}</dt>
-            <i class="ti ti-wind text-zinc-400 dark:text-zinc-600" aria-hidden="true" />
+            <i class="ti ti-wind text-dimmed" aria-hidden="true" />
             <dd>{number(current.windSpeed)} km/h</dd>
           </div>
           <div class="flex items-center gap-2">
             <dt class="sr-only">{t().cloudCover}</dt>
-            <i class="ti ti-cloud text-zinc-400 dark:text-zinc-600" aria-hidden="true" />
+            <i class="ti ti-cloud text-dimmed" aria-hidden="true" />
             <dd>{percent(current.cloudCover)}</dd>
           </div>
           <div class="flex items-center gap-2">
             <dt class="sr-only">{t().precipitation}</dt>
-            <i class="ti ti-umbrella text-zinc-400 dark:text-zinc-600" aria-hidden="true" />
+            <i class="ti ti-umbrella text-dimmed" aria-hidden="true" />
             <dd>{number(current.precipitation, 1)} mm</dd>
           </div>
         </dl>
@@ -129,7 +129,7 @@ export function SimpleDisplayView(props: DisplayProps) {
           <div class={`flex max-w-full justify-center ${sizes.hourGap}`} role="list" aria-label={t().upcomingWeather}>
             {hourly.slice(0, 7).map((hour) => (
               <div class="flex min-w-0 flex-col items-center gap-1" role="listitem">
-                <span class={`${sizes.hour} text-zinc-400 dark:text-zinc-600`}>{formatHour(hour.timestamp, locale())}</span>
+                <span class={`${sizes.hour} text-dimmed`}>{formatHour(hour.timestamp, locale())}</span>
                 <div class="flex items-center gap-1">
                   <i
                     class={`ti ti-${weatherUiService.getTablerIcon(hour.icon)} ${sizes.hourIcon} ${weatherUiService.getTempColorClass(
@@ -142,7 +142,7 @@ export function SimpleDisplayView(props: DisplayProps) {
                   </span>
                 </div>
                 {hour.precipitationProbability != null && hour.precipitationProbability > 0 ? (
-                  <span class={`${sizes.hour} text-blue-400`}>
+                  <span class={`${sizes.hour} text-blue-600 dark:text-blue-400`}>
                     <i class="ti ti-droplet" aria-hidden="true" /> {percent(hour.precipitationProbability)}
                   </span>
                 ) : (
@@ -156,7 +156,7 @@ export function SimpleDisplayView(props: DisplayProps) {
         )}
       </div>
 
-      <time class="absolute right-4 top-4 text-xs text-zinc-400 dark:text-zinc-600" dateTime={props.now}>
+      <time class="absolute right-4 top-4 text-xs text-dimmed" dateTime={props.now}>
         {formatTime(props.now, locale())}
       </time>
     </main>
@@ -231,7 +231,7 @@ export function DetailDisplayView(props: DisplayProps) {
           <section class="flex flex-col items-center py-4 text-center" aria-label={t().currentWeather}>
             <div class="mb-4">
               <h1 class={`${sizes.location} font-medium`}>{props.location}</h1>
-              <p class={`${sizes.time} text-zinc-400 dark:text-zinc-500`}>
+              <p class={`${sizes.time} text-dimmed`}>
                 {props.state ? `${props.state} · ` : ""}
                 <time dateTime={props.now}>{formatTime(props.now, locale())}</time>
               </p>
@@ -251,25 +251,25 @@ export function DetailDisplayView(props: DisplayProps) {
                 {number(current.temperature, 1)}°
               </span>
             </div>
-            <dl class={`flex ${sizes.statsGap} ${sizes.stats} text-zinc-500 dark:text-zinc-400`}>
+            <dl class={`flex ${sizes.statsGap} ${sizes.stats} text-dimmed`}>
               <div class="flex items-center gap-2">
                 <dt class="sr-only">{t().humidity}</dt>
-                <i class="ti ti-droplet text-zinc-400 dark:text-zinc-600" aria-hidden="true" />
+                <i class="ti ti-droplet text-dimmed" aria-hidden="true" />
                 <dd>{current.humidity == null ? "-" : percent(current.humidity)}</dd>
               </div>
               <div class="flex items-center gap-2">
                 <dt class="sr-only">{t().wind}</dt>
-                <i class="ti ti-wind text-zinc-400 dark:text-zinc-600" aria-hidden="true" />
+                <i class="ti ti-wind text-dimmed" aria-hidden="true" />
                 <dd>{number(current.windSpeed)} km/h</dd>
               </div>
               <div class="flex items-center gap-2">
                 <dt class="sr-only">{t().cloudCover}</dt>
-                <i class="ti ti-cloud text-zinc-400 dark:text-zinc-600" aria-hidden="true" />
+                <i class="ti ti-cloud text-dimmed" aria-hidden="true" />
                 <dd>{percent(current.cloudCover)}</dd>
               </div>
               <div class="flex items-center gap-2">
                 <dt class="sr-only">{t().precipitation}</dt>
-                <i class="ti ti-umbrella text-zinc-400 dark:text-zinc-600" aria-hidden="true" />
+                <i class="ti ti-umbrella text-dimmed" aria-hidden="true" />
                 <dd>{number(current.precipitation, 1)} mm</dd>
               </div>
             </dl>
@@ -277,14 +277,14 @@ export function DetailDisplayView(props: DisplayProps) {
 
           {hourly.length > 0 && (
             <section class={displayCard(sizes.cardPadding)} aria-label={t().hourlyForecast}>
-              <h2 class={`${sizes.header} mb-3 font-medium uppercase text-zinc-500 dark:text-zinc-400`}>{t().hourly}</h2>
+              <h2 class={`${sizes.header} mb-3 font-medium uppercase text-dimmed`}>{t().hourly}</h2>
               <HourlyForecast hourly={hourly} limit={8} size={sizes.hourly} showNow />
             </section>
           )}
 
           {daily.length > 0 && (
             <section class={`${displayCard(sizes.cardPadding)} flex flex-1 flex-col`} aria-label={t().sevenDayForecast}>
-              <h2 class={`${sizes.header} mb-3 font-medium uppercase text-zinc-500 dark:text-zinc-400`}>{t().sevenDayForecast}</h2>
+              <h2 class={`${sizes.header} mb-3 font-medium uppercase text-dimmed`}>{t().sevenDayForecast}</h2>
               <div class="flex-1">
                 <DailyForecast daily={daily} size={sizes.daily} referenceTime={props.now} />
               </div>
@@ -294,38 +294,32 @@ export function DetailDisplayView(props: DisplayProps) {
 
         <div class={`flex min-h-0 flex-col ${sizes.gap}`}>
           <section class={`${displayCard(sizes.cardPadding)} flex min-h-0 flex-1 flex-col`} aria-label={t().rainRadar}>
-            <h2 class={`${sizes.header} mb-3 font-medium uppercase text-zinc-500 dark:text-zinc-400`}>{t().rainRadar}</h2>
+            <h2 class={`${sizes.header} mb-3 font-medium uppercase text-dimmed`}>{t().rainRadar}</h2>
             <div class="min-h-0 flex-1 overflow-hidden">
               <RadarCard size={sizes.radar} showLegend maxHeight="max-h-[52vh]" />
             </div>
           </section>
 
           <section class={displayCard(sizes.cardPadding)} aria-label={t().currentConditions}>
-            <h2 class={`${sizes.header} mb-3 font-medium uppercase text-zinc-500 dark:text-zinc-400`}>{t().currentConditions}</h2>
+            <h2 class={`${sizes.header} mb-3 font-medium uppercase text-dimmed`}>{t().currentConditions}</h2>
             <dl class={`grid grid-cols-4 gap-4 ${sizes.conditions}`}>
               <div>
                 <dt class="text-dimmed">{t().pressure}</dt>
-                <dd class="font-medium text-zinc-700 dark:text-zinc-300">
-                  {current.pressure != null ? `${number(current.pressure)} hPa` : "-"}
-                </dd>
+                <dd class="font-medium text-secondary">{current.pressure != null ? `${number(current.pressure)} hPa` : "-"}</dd>
               </div>
               <div>
                 <dt class="text-dimmed">{t().dewPoint}</dt>
-                <dd class="font-medium text-zinc-700 dark:text-zinc-300">
-                  {current.dewPoint != null ? `${number(current.dewPoint, 1)}°` : "-"}
-                </dd>
+                <dd class="font-medium text-secondary">{current.dewPoint != null ? `${number(current.dewPoint, 1)}°` : "-"}</dd>
               </div>
               <div>
                 <dt class="text-dimmed">{t().visibility}</dt>
-                <dd class="font-medium text-zinc-700 dark:text-zinc-300">
+                <dd class="font-medium text-secondary">
                   {current.visibility != null ? `${number(current.visibility / 1000, 1)} km` : "-"}
                 </dd>
               </div>
               <div>
                 <dt class="text-dimmed">{t().sunshine}</dt>
-                <dd class="font-medium text-zinc-700 dark:text-zinc-300">
-                  {current.sunshine != null ? `${number(current.sunshine)} min` : "-"}
-                </dd>
+                <dd class="font-medium text-secondary">{current.sunshine != null ? `${number(current.sunshine)} min` : "-"}</dd>
               </div>
             </dl>
           </section>
@@ -344,10 +338,10 @@ export function DisplayUnavailable(props: { message: string; refreshSeconds: num
       {...refreshAttributes(props)}
     >
       <div class="max-w-md text-center" role="status">
-        <i class="ti ti-cloud-off mb-3 block text-4xl text-zinc-300 dark:text-zinc-700" aria-hidden="true" />
+        <i class="ti ti-cloud-off mb-3 block text-4xl text-dimmed" aria-hidden="true" />
         <h1 class="text-lg font-semibold">{t().weatherUnavailable}</h1>
-        <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{props.message}</p>
-        {props.retrying && <p class="mt-3 text-xs text-zinc-400 dark:text-zinc-600">{t().updatesResume}</p>}
+        <p class="mt-2 text-sm text-dimmed">{props.message}</p>
+        {props.retrying && <p class="mt-3 text-xs text-dimmed">{t().updatesResume}</p>}
       </div>
     </main>
   );

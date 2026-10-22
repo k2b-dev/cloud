@@ -1,13 +1,22 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { prompts, toast } from "@k2b/ui";
+import { prompts, toast, useLocale } from "@k2b/ui";
 import { type Accessor, onCleanup, type Setter } from "solid-js";
 import type { PulseBase } from "../../contracts";
+import type { BaseRetention } from "../../store/admin-contracts";
 import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
 import { type BaseSettingsSaveResult, openPulseBaseSettingsDialog } from "./base-settings-dialog";
+import { baseStoreMessages } from "./base-store-messages";
+import { createPulseSettingsNavigation } from "./navigation";
+import { baseUpdateError, confirmShorterRetention, RetentionConfirmationError } from "./retention-confirmation";
+import type { PulseSettingsTab } from "./routes";
 
 type BaseControllerDeps = {
   bases: Accessor<PulseBase[]>;
+  canAdmin?: Accessor<boolean>;
+  maxRawRetentionDays?: number;
+  admins?: string[];
+  initialTab?: PulseSettingsTab;
   selectedBase: Accessor<PulseBase | null>;
   loading: Accessor<boolean>;
   settingsDialogOpen: Accessor<boolean>;
@@ -21,22 +30,35 @@ type BaseControllerDeps = {
 
 export const createBaseController = (deps: BaseControllerDeps) => {
   const t = usePulseMessages();
+  const locale = useLocale();
   let disposed = false;
+  let settingsAbort: AbortController | undefined;
   type SettingsIntent = {
     baseId: string;
     name: string;
+    icon: string;
+    color: string;
+    timezone: string;
     description: string | null;
     rawRetentionDays: number;
     rollupRetentionDays: number;
     sensitiveRetentionHours: number;
+    /** Set only after the person confirmed the date and amount a shorter retention removes. */
+    confirmShorterRetention?: true;
+    expectedRetention?: BaseRetention;
   };
   const updateMutation = mutation.create<PulseBase, SettingsIntent>({
     mutation: ({ baseId, ...body }, { abortSignal }) =>
-      jsonFetch<PulseBase>(`/api/pulse/bases/${baseId}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-        signal: abortSignal,
-      }),
+      jsonFetch<PulseBase>(
+        `/api/pulse/bases/${baseId}`,
+        { method: "PATCH", body: JSON.stringify(body), signal: abortSignal },
+        "Request failed",
+        baseUpdateError,
+      ),
+  });
+  const retryMutation = mutation.create<PulseBase, string>({
+    mutation: (baseId, { abortSignal }) =>
+      jsonFetch<PulseBase>(`/api/pulse/bases/${baseId}/retry`, { method: "POST", signal: abortSignal }),
   });
   const clearMutation = mutation.create<void, string>({
     mutation: (baseId, { abortSignal }) =>
@@ -47,7 +69,9 @@ export const createBaseController = (deps: BaseControllerDeps) => {
   });
   onCleanup(() => {
     disposed = true;
+    settingsAbort?.abort();
     updateMutation.abort();
+    retryMutation.abort();
     clearMutation.abort();
     deleteMutation.abort();
   });
@@ -70,6 +94,9 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     base: PulseBase,
     input: {
       name: string;
+      icon: string;
+      color: string;
+      timezone: string;
       description: string;
       rawRetentionDays: number;
       rollupRetentionDays: number;
@@ -96,15 +123,26 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     }
     deps.setLoading(true);
     try {
-      await updateMutation.mutate({
+      const intent: SettingsIntent = {
         baseId: base.id,
         name,
+        icon: input.icon,
+        color: input.color,
+        timezone: input.timezone,
         description: input.description.trim() || null,
         rawRetentionDays: input.rawRetentionDays,
         rollupRetentionDays: input.rollupRetentionDays,
         sensitiveRetentionHours: input.sensitiveRetentionHours,
-      });
+      };
+      await updateMutation.mutate(intent);
       if (disposed) return "failed";
+      const refused = updateMutation.error();
+      if (refused instanceof RetentionConfirmationError) {
+        // A shorter retention deletes data: save only after the person saw from when and how much.
+        if (!(await confirmShorterRetention(refused.preview, locale())) || disposed) return "failed";
+        await updateMutation.mutate({ ...intent, confirmShorterRetention: true, expectedRetention: refused.previewedFrom });
+        if (disposed) return "failed";
+      }
       if (updateMutation.error()) throw updateMutation.error();
       if (
         !(await reconcile(
@@ -174,22 +212,79 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     }
   };
 
+  const retryStore = async (base: PulseBase): Promise<PulseBase | null> => {
+    deps.setLoading(true);
+    try {
+      await retryMutation.mutate(base.id);
+      if (disposed) return null;
+      if (retryMutation.error()) throw retryMutation.error();
+      const next = retryMutation.data() ?? null;
+      await reconcile(deps.refreshBases, t().settingsSavedRefreshFailed);
+      if (!disposed) toast.success(baseStoreMessages.resolve([locale()]).t.retryStarted);
+      return next;
+    } catch {
+      if (!disposed) toast.error(baseStoreMessages.resolve([locale()]).t.retryFailed);
+      return null;
+    } finally {
+      deps.setLoading(false);
+    }
+  };
+
   const openSettings = async () => {
     if (deps.settingsDialogOpen()) return;
     const base = deps.selectedBase();
     if (!base) return;
     try {
       deps.setSettingsDialogOpen(true);
-      await openPulseBaseSettingsDialog({
-        base,
-        loading: deps.loading,
-        writeBlocked: deps.writeBlocked,
-        updateBaseSettings: updateSettings,
-        clearBaseData: () => clearData(base),
-        deleteBase: () => deleteBase(base),
+      const navigation = createPulseSettingsNavigation({
+        baseId: base.id,
+        currentState: () => window.history.state,
+        currentHref: () => window.location.href,
+        push: (href, state) => window.history.pushState(state ?? window.history.state, "", href),
+        replace: (href, state) => window.history.replaceState(state ?? window.history.state, "", href),
+        back: () => window.history.back(),
+        subscribe: (changed) => {
+          window.addEventListener("popstate", changed);
+          return () => window.removeEventListener("popstate", changed);
+        },
       });
+      const abort = new AbortController();
+      settingsAbort = abort;
+      navigation.open(deps.initialTab);
+      let requestClose: (() => Promise<boolean>) | undefined;
+      const unsubscribe = navigation.subscribe((tab) => {
+        if (!tab) {
+          navigation.restore();
+          void requestClose?.();
+        }
+      });
+      try {
+        await openPulseBaseSettingsDialog({
+          signal: abort.signal,
+          onCloseRequestReady: (request) => {
+            requestClose = request;
+          },
+          onTabChange: (tab) => navigation.open(tab),
+          base,
+          canAdmin: deps.canAdmin?.() ?? false,
+          maxRawRetentionDays: deps.maxRawRetentionDays ?? 3650,
+          admins: deps.admins ?? [],
+          initialTab: navigation.tab(),
+          loading: deps.loading,
+          writeBlocked: deps.writeBlocked,
+          updateBaseSettings: updateSettings,
+          currentStore: () => deps.selectedBase()?.store ?? null,
+          retryStore: () => retryStore(base),
+          clearBaseData: () => clearData(base),
+          deleteBase: () => deleteBase(base),
+        });
+      } finally {
+        unsubscribe();
+        if (settingsAbort === abort) settingsAbort = undefined;
+        if (!disposed) navigation.close();
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t().openSettingsFailed);
+      if (!disposed) toast.error(error instanceof Error ? error.message : t().openSettingsFailed);
     } finally {
       deps.setLoading(false);
       deps.setSettingsDialogOpen(false);

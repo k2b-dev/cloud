@@ -30,11 +30,12 @@ import { MailDraftCalendarInputSchema, mailCommandMessages } from "../../command
 import {
   type ComposePreview,
   type ComposeSafetyApproval,
-  type ComposeSafetyReview,
+  DRAFT_LEASE_ERROR_CODES,
   type DraftEditableContent,
   type DraftEditableContentInput,
   type DraftIntent,
   type DraftRecoveryCopy,
+  type DraftSendReview,
   MAX_DRAFT_ATTACHMENT_BYTES,
   type MailCommand,
   type MailDraft,
@@ -42,7 +43,7 @@ import {
   type MailPriority,
   type SenderIdentity,
 } from "../../contracts";
-import { readApiError } from "./api-response";
+import { readApiError, readApiFailure } from "./api-response";
 import MailComposerAttachments from "./MailComposerAttachments";
 import { openMailComposerCalendarDialog } from "./MailComposerCalendarDialog";
 import MailComposerEditor from "./MailComposerEditor";
@@ -81,6 +82,7 @@ const intentIcon = (intent: DraftIntent): string =>
 
 export default function MailComposer(props: {
   mailboxId: string;
+  mailboxRecipientSuggestions?: boolean;
   currentActor: { kind: "user" | "service_account"; id: string };
   identities: SenderIdentity[];
   signatures: MailComposerSignatures;
@@ -205,6 +207,7 @@ export default function MailComposer(props: {
   };
   const draftSession = createMailDraftSession({
     mailboxId: props.mailboxId,
+    currentActor: props.currentActor,
     initialDraft: props.initialDraft,
     initialSeed: props.initialSeed,
     hasVerifiedIdentity: () => verifiedIdentities().length > 0,
@@ -230,6 +233,7 @@ export default function MailComposer(props: {
     draft,
     setDraft,
     lease,
+    materializedLeasePending,
     leaseConflict,
     lifecycleTransition,
     status,
@@ -334,7 +338,11 @@ export default function MailComposer(props: {
   });
   createEffect(on(previewQuery.data, () => setPreviewError(undefined), { defer: true }));
   const canEditDraft = createMemo(
-    () => verifiedIdentities().length > 0 && status() !== "preparing" && status() !== "readonly" && (Boolean(lease()) || !draft()),
+    () =>
+      verifiedIdentities().length > 0 &&
+      status() !== "preparing" &&
+      status() !== "readonly" &&
+      (Boolean(lease()) || !draft() || materializedLeasePending()),
   );
   const editable = createMemo(() => canEditDraft() && composerTransition.active() === null);
   const focusFreshEditorAtStart = (element: HTMLTextAreaElement) => {
@@ -365,7 +373,24 @@ export default function MailComposer(props: {
   const uploadsInProgress = () => uploads().some((upload) => upload.file !== null);
   /** From this device or from a Cloud app; either way the files take the same upload path, limits, and progress. */
   const chooseAttachments = async () => {
-    const files = await chooseFiles({ multiple: true, maxBytes: MAX_DRAFT_ATTACHMENT_BYTES });
+    const current = content();
+    const recipients = [...current.to, ...current.cc, ...current.bcc].map((recipient) => ({ ...recipient }));
+    const files = await chooseFiles({
+      multiple: true,
+      maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
+      context: async (signal) => {
+        try {
+          const module = await importOnDemand(() => import("./mail-attachment-context"));
+          signal.throwIfAborted();
+          if (!module) throw new Error(t().attachmentContextFailed);
+          return await module.resolveAttachmentContext({ directory: contactDirectory.resolve, recipients, signal });
+        } catch {
+          signal.throwIfAborted();
+          throw new Error(t().attachmentContextFailed);
+        }
+      },
+      ...(recipients.length > 0 ? { noMatchingFiles: t().noMatchingAttachments } : {}),
+    });
     if (files.length > 0 && editable() && !disposed) void attachments.addFiles(files);
   };
   const [surface, setSurface] = createSignal<HTMLDivElement>();
@@ -507,19 +532,30 @@ export default function MailComposer(props: {
       if (!selected) return void (await prompts.error(t().recoveryCopyUnavailable));
       const currentLease = lease();
       if (!canEditDraft() || !currentLease) return void (await prompts.error(t().draftNotEditable));
-      const restoreResponse = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["recovery-copies"][
-        ":recoveryCopyId"
-      ].restore.$post(
-        {
-          param: {
-            mailboxId: props.mailboxId,
-            draftId: currentDraft.id,
-            recoveryCopyId: selected.id,
+      const restore = (leaseToken: string) =>
+        apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["recovery-copies"][":recoveryCopyId"].restore.$post(
+          {
+            param: {
+              mailboxId: props.mailboxId,
+              draftId: currentDraft.id,
+              recoveryCopyId: selected.id,
+            },
+            json: { expectedRevision: currentDraft.revision, leaseToken },
           },
-          json: { expectedRevision: currentDraft.revision, leaseToken: currentLease.token },
-        },
-        { init: { signal: controller.signal } },
-      );
+          { init: { signal: controller.signal } },
+        );
+      let restoreResponse = await restore(currentLease.token);
+      if (restoreResponse.status === 409) {
+        const body: unknown = await restoreResponse
+          .clone()
+          .json()
+          .catch(() => null);
+        if (typeof body === "object" && body !== null && "code" in body && body.code === DRAFT_LEASE_ERROR_CODES.NOT_OWNED) {
+          const acquired = await acquireLease(currentDraft);
+          if (!acquired) return;
+          restoreResponse = await restore(acquired.token);
+        }
+      }
       if (!restoreResponse.ok) throw new Error(await readApiError(restoreResponse, t().restoreFailed));
       const restored = await restoreResponse.json();
       if (disposed || recoveryController !== controller) return;
@@ -583,7 +619,7 @@ export default function MailComposer(props: {
     saved: MailDraft,
     scheduled: boolean,
     abortSignal: AbortSignal,
-  ): Promise<ComposeSafetyApproval | undefined> => {
+  ): Promise<{ expectedContentHash: string; safetyApproval?: ComposeSafetyApproval }> => {
     const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["safety-review"].$post(
       {
         param: { mailboxId: props.mailboxId, draftId: saved.id },
@@ -592,8 +628,8 @@ export default function MailComposer(props: {
       { init: { signal: abortSignal } },
     );
     if (!response.ok) throw new Error(await readApiError(response, t().safetyReviewFailed));
-    const review: ComposeSafetyReview = await response.json();
-    if (review.warnings.length === 0) return undefined;
+    const review: DraftSendReview = await response.json();
+    if (review.warnings.length === 0) return { expectedContentHash: review.contentHash };
     const choice = await prompts.dialog<"approve" | "attachment">(
       (close) => (
         <div class="flex flex-col gap-3">
@@ -631,9 +667,12 @@ export default function MailComposer(props: {
     if (choice === "attachment") throw new ComposeSafetyAttachmentRequested();
     if (choice !== "approve") throw new ComposeSafetyCancelled();
     return {
-      revision: review.revision,
-      fingerprint: review.fingerprint,
-      warningIds: review.warnings.map((warning) => warning.id),
+      expectedContentHash: review.contentHash,
+      safetyApproval: {
+        revision: review.revision,
+        fingerprint: review.fingerprint,
+        warningIds: review.warnings.map((warning) => warning.id),
+      },
     };
   };
 
@@ -645,6 +684,7 @@ export default function MailComposer(props: {
       kind: "send";
       draftId: string;
       expectedDraftRevision: number;
+      expectedContentHash: string;
       senderIdentityId: string;
       scheduledAt?: string;
       undoSeconds: number;
@@ -670,7 +710,11 @@ export default function MailComposer(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, t().queueFailed));
+      if (!response.ok) {
+        const failure = await readApiFailure(response, t().queueFailed);
+        if (failure.code === "SEND_CONTENT_CHANGED") lastDeliveryAttempt = null;
+        throw failure;
+      }
       const command = await response.json();
       return { command, attempt };
     },
@@ -707,7 +751,7 @@ export default function MailComposer(props: {
     validateDelivery();
     const saved = await persist();
     if (!saved) throw new Error(statusMessage());
-    const safetyApproval = await reviewSafety(saved, Boolean(delivery.scheduledAt), abortSignal);
+    const reviewed = await reviewSafety(saved, Boolean(delivery.scheduledAt), abortSignal);
     const senderIdentityId = identityId();
     if (!senderIdentityId) throw new Error(t().chooseSenderBeforeSend);
     return {
@@ -721,7 +765,7 @@ export default function MailComposer(props: {
         senderIdentityId,
         scheduledAt: delivery.scheduledAt,
         undoSeconds: delivery.scheduledAt ? 0 : preferences.undoSeconds,
-        safetyApproval,
+        ...reviewed,
         idempotencyKey: crypto.randomUUID(),
       },
     };
@@ -1300,7 +1344,13 @@ export default function MailComposer(props: {
             <span class="text-dimmed">{t().to}</span>
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                <MailRecipientInput placeholder={t().recipients} value={to} onChange={setTo} disabled={!editable()} />
+                <MailRecipientInput
+                  mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                  placeholder={t().recipients}
+                  value={to}
+                  onChange={setTo}
+                  disabled={!editable()}
+                />
               </div>
               <Show when={!showCc()}>
                 <Button variant="ghost" size="sm" type="button" disabled={!editable()} onClick={() => setShowCc(true)}>
@@ -1312,11 +1362,23 @@ export default function MailComposer(props: {
           <Show when={showCc()}>
             <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
               <span class="text-dimmed">Cc</span>
-              <MailRecipientInput placeholder={t().ccRecipients} value={cc} onChange={setCc} disabled={!editable()} />
+              <MailRecipientInput
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().ccRecipients}
+                value={cc}
+                onChange={setCc}
+                disabled={!editable()}
+              />
             </div>
             <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
               <span class="text-dimmed">Bcc</span>
-              <MailRecipientInput placeholder={t().bccRecipients} value={bcc} onChange={setBcc} disabled={!editable()} />
+              <MailRecipientInput
+                mailboxId={props.mailboxRecipientSuggestions ? props.mailboxId : undefined}
+                placeholder={t().bccRecipients}
+                value={bcc}
+                onChange={setBcc}
+                disabled={!editable()}
+              />
             </div>
           </Show>
           <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2 lg:col-span-2">
@@ -1366,7 +1428,8 @@ export default function MailComposer(props: {
         />
       </div>
 
-      <footer class="flex shrink-0 items-center gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2">
+      {/* Phones set the tools closer, so the labelled send action and every tool keep one row in each language. */}
+      <footer class="flex shrink-0 items-center gap-1 sm:gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2">
         <SplitButton
           class="mail-compose-action"
           size="sm"

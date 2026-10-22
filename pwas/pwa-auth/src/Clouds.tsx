@@ -2,23 +2,48 @@ import { dates } from "@k2b/stdlib";
 import {
   BottomSheet,
   Button,
-  bottomSheetOptions,
+  bottomSheetAdaptiveOptions,
   Checkbox,
   IconButton,
   LocaleProvider,
+  NoticeCard,
   PanelDialog,
   Paper,
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
 import { ActionSheet } from "./ActionSheet";
-import type { ActionView, Authenticator, Login } from "./authenticator";
+import type { ActionView, Authenticator, DeviceChange, Login } from "./authenticator";
+import { ChangeSheet } from "./ChangeSheet";
 import { openDetails } from "./Details";
 import { openDialog } from "./dialog";
-import { authMessages } from "./i18n";
+import { authMessages, scopeLabel } from "./i18n";
 import type { Preferences } from "./preferences";
 import type { Binding } from "./storage";
+
+type LoginContext = NonNullable<Login["context"]>;
+const BROWSERS = {
+  firefox: { name: "Firefox", icon: "ti ti-brand-firefox" },
+  chrome: { name: "Chrome", icon: "ti ti-brand-chrome" },
+  safari: { name: "Safari", icon: "ti ti-brand-safari" },
+  edge: { name: "Edge", icon: "ti ti-brand-edge" },
+  samsung: { name: "Samsung Internet", icon: "ti ti-world" },
+  opera: { name: "Opera", icon: "ti ti-brand-opera" },
+  other: { name: undefined, icon: "ti ti-world" },
+} as const satisfies Record<LoginContext["browser"], { name: string | undefined; icon: string }>;
+const SYSTEMS = {
+  windows: "Windows",
+  macos: "macOS",
+  "mac-or-ipad": undefined,
+  ios: "iOS",
+  android: "Android",
+  linux: "Linux",
+  chromeos: "ChromeOS",
+  other: undefined,
+} as const satisfies Record<LoginContext["os"], string | undefined>;
+// A browser sign-in's row shows its icon and keeps the label for screen readers.
+type Row = { label: string; icon?: string; values: string[]; time?: string };
 
 function Decision(props: {
   auth: Authenticator;
@@ -26,53 +51,300 @@ function Decision(props: {
   request: Login;
   position: number;
   total: number;
+  dialog: HTMLDialogElement;
   dismiss: () => void | Promise<void>;
   close: () => void;
 }) {
   const locale = useLocale();
   const t = createMemo(() => authMessages.resolve([locale()]).t);
-  const [busy, setBusy] = createSignal(false);
+  // The request as the dialog opened with it; later polls never add or remove a line. A terminal sign-in
+  // never carries context, and its sheet stays as it is even if a Cloud sent some.
+  const context = props.request.terminal ? undefined : props.request.context;
+  const level = context?.level;
+  const [busy, setBusy] = createSignal<"approve" | "deny">();
   const [error, setError] = createSignal(false);
+  const [denied, setDenied] = createSignal(false);
   const expired = () => props.auth.now() >= Date.parse(props.request.expiresAt);
   const decide = async (decision: "approve" | "deny") => {
-    if (busy() || error() || expired()) return;
-    setBusy(true);
+    if (busy() || error() || denied() || expired()) return;
+    setBusy(decision);
     try {
       await props.auth.decide(props.binding, props.request, decision);
-      props.close();
+      // After a warning, the denial stays in place so the person sees that nobody was signed in.
+      if (decision === "deny" && level === "warn") setDenied(true);
+      else props.close();
     } catch {
       setError(true);
     } finally {
-      setBusy(false);
+      setBusy(undefined);
     }
   };
   createEffect(() => {
-    const pending = props.auth.states()[props.binding.id]?.requests.some((r) => r.requestId === props.request.requestId);
-    if (!busy() && !error() && (!pending || expired())) props.close();
+    // Going offline or hidden clears the list without an answer, and the sheet then keeps the request with its
+    // offline note. It closes once a poll answers without the request, when the Cloud refuses this phone (polling
+    // stops for it), or when the binding is gone, for example after the vault locked.
+    const state = props.auth.states()[props.binding.id];
+    const gone =
+      !props.auth.bindings().some((binding) => binding.id === props.binding.id) ||
+      state?.error === "forbidden" ||
+      (state && !state.error && !state.requests.some((r) => r.requestId === props.request.requestId));
+    // An expired request stays open with its ending, so the code never vanishes without a word.
+    if (!busy() && !error() && !denied() && !expired() && gone) props.close();
   });
+  // A memo, so effects run when the ending changes, not on every clock tick.
+  const ending = createMemo((): "uncertain" | "denied" | "expired" | undefined =>
+    error() ? "uncertain" : denied() ? "denied" : expired() ? "expired" : undefined,
+  );
+  const terminal = () => props.request.terminal;
+  const endings = {
+    uncertain: {
+      icon: "ti ti-alert-triangle",
+      title: () => t().actionUncertainTitle,
+      text: () => (terminal() ? t().terminalUncertain : t().loginUncertain),
+    },
+    expired: {
+      icon: "ti ti-clock",
+      title: () => t().actionExpiredTitle,
+      text: () => (terminal() ? t().terminalExpired : t().requestExpired),
+    },
+    denied: { icon: "ti ti-hand-stop", title: () => t().actionDenied, text: () => t().loginDenied },
+  } as const;
+  // The endings this request can reach; the place for them is as high as the longest.
+  const reachable: (keyof typeof endings)[] = level === "warn" ? ["uncertain", "expired", "denied"] : ["uncertain", "expired"];
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // The device's own clock face: the person compares it with when they started the sign-in.
+  const started = () => dates.formatTime(props.request.createdAt, { locale: locale(), timeZone });
+  const day = (value: string) => dates.formatDate(value, { locale: locale(), timeZone, style: "numeric" });
+  const country = (code: string) => {
+    try {
+      return new Intl.DisplayNames([locale()], { type: "region" }).of(code) ?? code;
+    } catch {
+      return code;
+    }
+  };
+  // Cloud Login's own words for what the Cloud reported, as label and value rows. A browser sign-in's rows
+  // stand above the code and carry an icon instead of a label; a terminal's stand below it.
+  const details = createMemo((): Row[] => {
+    const login = terminal();
+    if (login)
+      return [
+        { label: t().terminalCloud, values: [new URL(props.binding.issuer).host] },
+        {
+          label: t().terminalLifetime,
+          values: [dates.formatDuration(new Date(0), new Date(login.lifetimeSeconds * 1000), { locale: locale() })],
+        },
+        // The longest row goes last, so a small screen shows the short rows before it scrolls.
+        { label: t().terminalScopes, values: login.scopes.map((scope) => scopeLabel(scope, t())) },
+      ];
+    if (!context) return [];
+    const browser = BROWSERS[context.browser];
+    const name = browser.name ?? t().contextUnknownBrowser;
+    const os = context.os === "mac-or-ipad" ? t().contextMacOrIpad : SYSTEMS[context.os];
+    const rows: Row[] = [
+      { label: t().contextLabelBrowser, icon: browser.icon, values: [os ? t().contextBrowser({ browser: name, os }) : name] },
+    ];
+    // Without a location database the Cloud knows neither place nor network, and both lines stay away.
+    if (context.country !== null || context.city !== null || context.network !== null) {
+      const place = [context.city, context.country && country(context.country)].filter(Boolean).join(", ");
+      rows.push(
+        { label: t().contextLabelPlace, icon: "ti ti-map-pin", values: [place ? t().contextPlace({ place }) : t().contextPlaceUnknown] },
+        {
+          label: t().contextLabelNetwork,
+          icon: "ti ti-network",
+          values: [context.network ? t().contextNetwork({ network: context.network }) : t().contextNetworkUnknown],
+        },
+      );
+    }
+    if (context.sameNetwork) rows.push({ label: t().contextLabelAddress, icon: "ti ti-device-mobile", values: [t().contextSameNetwork] });
+    rows.push({
+      label: t().contextLabelStarted,
+      icon: "ti ti-clock",
+      values: [t().loginStarted({ time: started() })],
+      time: props.request.createdAt,
+    });
+    const since = context.history?.knownSince;
+    if (since) rows.push({ label: t().contextLabelHistory, icon: "ti ti-history", values: [t().contextKnown({ date: day(since) })] });
+    return rows;
+  });
+  // Only Core's level decides whether a note shows; the history only chooses its words.
+  const note = createMemo(() => {
+    const history = context?.history;
+    const countriesSince = history?.countriesSince;
+    if (level === "warn")
+      return {
+        tone: "warning" as const,
+        title: t().contextWarnTitle,
+        text: countriesSince ? t().contextWarnSince({ date: day(countriesSince) }) : t().contextWarn,
+      };
+    if (level !== "hint") return undefined;
+    if (!history?.knownSince) return { tone: "info" as const, text: t().contextNewBrowser };
+    return {
+      tone: "info" as const,
+      text: countriesSince ? t().contextNewCountrySince({ date: day(countriesSince) }) : t().contextNewCountry,
+    };
+  });
+  const noteId = createUniqueId();
+  // A screen reader reads the note with the dialog's name while the request is shown.
+  createEffect(() => {
+    if (note() && !ending()) props.dialog.setAttribute("aria-describedby", noteId);
+    else props.dialog.removeAttribute("aria-describedby");
+  });
+  onCleanup(() => props.dialog.removeAttribute("aria-describedby"));
+  let done: HTMLButtonElement | undefined;
+  // An ending replaces both choices with Done; focus moves there instead of staying on a disabled button.
+  createEffect(() => {
+    if (ending()) queueMicrotask(() => done?.focus());
+  });
+  const groups = () => props.request.comparison.match(/.{1,3}/g) ?? [props.request.comparison];
+  const offline = () => !props.auth.online();
+  const off = () => !!busy() || error() || denied() || expired() || offline();
+  const Ending = (ending: { kind: keyof typeof endings }) => (
+    <>
+      <span class="auth-action-result__icon">
+        <i class={endings[ending.kind].icon} aria-hidden="true" />
+      </span>
+      <h3>{endings[ending.kind].title()}</h3>
+      <p>{endings[ending.kind].text()}</p>
+    </>
+  );
+  const Rows = () => (
+    <dl class="auth-action-details auth-decision__details" data-context={terminal() ? undefined : ""}>
+      <For each={details()}>
+        {(row) => (
+          <>
+            <dt>
+              <Show when={row.icon} fallback={row.label}>
+                {(icon) => (
+                  <>
+                    <i class={icon()} aria-hidden="true" />
+                    <span class="k2b-sr-only">{row.label}</span>
+                  </>
+                )}
+              </Show>
+            </dt>
+            <dd>
+              <Show
+                when={row.values.length > 1}
+                fallback={
+                  <Show when={row.time} fallback={row.values[0]}>
+                    {(time) => <time dateTime={time()}>{row.values[0]}</time>}
+                  </Show>
+                }
+              >
+                <ul>
+                  <For each={row.values}>{(value) => <li>{value}</li>}</For>
+                </ul>
+              </Show>
+            </dd>
+          </>
+        )}
+      </For>
+    </dl>
+  );
   return (
     <BottomSheet onDismiss={props.dismiss}>
-      <PanelDialog.Header title={props.binding.label} subtitle={props.total > 1 ? `${props.position} / ${props.total}` : undefined} />
+      <Show
+        when={terminal()}
+        fallback={
+          <PanelDialog.Header title={props.binding.label} subtitle={props.total > 1 ? `${props.position} / ${props.total}` : undefined} />
+        }
+      >
+        {(login) => (
+          <PanelDialog.Header
+            title={t().terminalTitle({ client: login().client.name })}
+            subtitle={props.total > 1 ? `${props.binding.label} · ${props.position} / ${props.total}` : props.binding.label}
+          />
+        )}
+      </Show>
       <PanelDialog.Body>
-        <div class="auth-flow">
-          <p>{t().loginComparison}</p>
-          <output class="auth-comparison">{props.request.comparison}</output>
-          <Show when={expired()}>
-            <p role="status">{t().requestExpired}</p>
-          </Show>
-          <Show when={error()}>
-            <p role="alert">{t().uncertain}</p>
-          </Show>
+        {/* The request and its ending share one grid cell, sized from the first frame by the longest ending, so the
+            dialog keeps its height when the ending replaces the request. */}
+        <div class="auth-decision" data-ended={ending() ? "" : undefined}>
+          <div class="auth-decision__request" aria-hidden={ending() ? true : undefined}>
+            <Show
+              when={context}
+              fallback={
+                <p class="auth-decision__started">
+                  <i class="ti ti-clock" aria-hidden="true" />
+                  <time dateTime={props.request.createdAt}>{t().loginStarted({ time: started() })}</time>
+                </p>
+              }
+            >
+              <Rows />
+            </Show>
+            <Show when={note()}>
+              {(note) => (
+                <Show
+                  when={note().title}
+                  fallback={
+                    <NoticeCard id={noteId} tone={note().tone}>
+                      {note().text}
+                    </NoticeCard>
+                  }
+                >
+                  {(title) => <NoticeCard id={noteId} tone={note().tone} title={title()} detail={note().text} />}
+                </Show>
+              )}
+            </Show>
+            <Show when={!terminal()} fallback={<p>{t().terminalComparison}</p>}>
+              {/* Offline, the reason takes the hint's place in the same cell; the code below does not move. */}
+              <div class="auth-decision__hint" data-offline={offline() ? "" : undefined}>
+                <p aria-hidden={offline() ? true : undefined}>{t().loginComparison}</p>
+                <NoticeCard role="status" aria-hidden={offline() ? undefined : true}>
+                  {t().loginOffline}
+                </NoticeCard>
+              </div>
+            </Show>
+            <output class="auth-comparison" aria-label={groups().join(" ")}>
+              <For each={groups()}>{(group) => <span>{group}</span>}</For>
+            </output>
+            <Show when={terminal()}>
+              <Rows />
+            </Show>
+          </div>
+          <div class="auth-decision__sizer" aria-hidden="true">
+            <For each={reachable}>
+              {(kind) => (
+                <div class="auth-action-result">
+                  <Ending kind={kind} />
+                </div>
+              )}
+            </For>
+          </div>
+          <div class="auth-action-result" data-outcome={ending()} role={error() ? "alert" : "status"}>
+            <Show when={ending()}>{(kind) => <Ending kind={kind()} />}</Show>
+          </div>
         </div>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <div class="auth-dialog-actions">
-          <Button variant="secondary" disabled={busy() || error() || expired() || !props.auth.online()} onClick={() => void decide("deny")}>
-            {t().deny}
-          </Button>
-          <Button disabled={busy() || error() || expired() || !props.auth.online()} onClick={() => void decide("approve")}>
-            {t().approve}
-          </Button>
+        {/* The choices and Done share one place too, so the footer keeps its height. After a warning, Deny becomes
+            the main action and Approve its quieter alternative, each in its own place. */}
+        <div class="auth-decision-actions" data-ended={ending() ? "" : undefined}>
+          <div class="auth-decision-actions__choices" inert={ending() ? true : undefined}>
+            <Button
+              size="lg"
+              variant={level === "warn" ? "primary" : "secondary"}
+              disabled={off()}
+              loading={busy() === "deny"}
+              onClick={() => void decide("deny")}
+            >
+              {t().deny}
+            </Button>
+            <Button
+              size="lg"
+              variant={level === "warn" ? "secondary" : "primary"}
+              disabled={off()}
+              loading={busy() === "approve"}
+              onClick={() => void decide("approve")}
+            >
+              {level === "warn" ? t().approveAnyway : t().approve}
+            </Button>
+          </div>
+          <div class="auth-decision-actions__done" inert={ending() ? undefined : true}>
+            <Button size="lg" ref={done} onClick={() => props.close()}>
+              {t().done}
+            </Button>
+          </div>
         </div>
       </PanelDialog.Footer>
     </BottomSheet>
@@ -179,12 +451,42 @@ export function Clouds(props: {
               request={request}
               position={queue.findIndex((item) => item.key === key) + 1}
               total={queue.length}
+              dialog={context.dialog}
               dismiss={context.requestDismiss}
               close={() => close()}
             />
           </LocaleProvider>
         );
-      }, bottomSheetOptions);
+      }, bottomSheetAdaptiveOptions);
+    } finally {
+      if (!disposed) setSheetOpen(false);
+    }
+  };
+  const changes = () =>
+    props.auth
+      .bindings()
+      .flatMap((binding) =>
+        (props.auth.states()[binding.id]?.changes ?? [])
+          .filter((change) => Date.parse(change.expiresAt) > props.auth.now())
+          .map((change) => ({ binding, change, key: `${binding.id}:${change.changeId}` })),
+      )
+      .sort((a, b) => a.change.createdAt.localeCompare(b.change.createdAt) || a.key.localeCompare(b.key));
+  const openChange = async (binding: Binding, change: DeviceChange) => {
+    if (disposed || sheetOpen() || document.visibilityState !== "visible" || document.querySelector("dialog[open]")) return;
+    seen.add(`${binding.id}:${change.changeId}`);
+    setSheetOpen(true);
+    try {
+      await openDialog((close, context) => {
+        if (disposed || document.visibilityState !== "visible") {
+          queueMicrotask(() => close());
+          return null;
+        }
+        return (
+          <LocaleProvider locale={props.preferences.locale()}>
+            <ChangeSheet auth={props.auth} binding={binding} change={change} dismiss={context.requestDismiss} close={() => close()} />
+          </LocaleProvider>
+        );
+      }, bottomSheetAdaptiveOptions);
     } finally {
       if (!disposed) setSheetOpen(false);
     }
@@ -216,7 +518,7 @@ export function Clouds(props: {
             <ActionSheet auth={props.auth} binding={binding} view={view} dismiss={context.requestDismiss} close={() => close()} />
           </LocaleProvider>
         ),
-        bottomSheetOptions,
+        bottomSheetAdaptiveOptions,
       );
     } finally {
       if (!disposed) setSheetOpen(false);
@@ -224,7 +526,8 @@ export function Clouds(props: {
   };
   createEffect(() => {
     const queue = pending();
-    const keys = new Set(queue.map((item) => item.key));
+    const changeQueue = changes();
+    const keys = new Set([...queue, ...changeQueue].map((item) => item.key));
     for (const key of seen) if (!keys.has(key)) seen.delete(key);
     if (sheetOpen() || !props.auth.online()) return;
     // A tapped Action loads directly, also when the inbox omitted it; the account that listed it goes first.
@@ -245,9 +548,21 @@ export function Clouds(props: {
     // A tapped notification reopens its request even after the sheet was dismissed.
     const focus = props.focus?.();
     const focused = focus ? queue.find((item) => item.request.requestId === focus) : undefined;
-    if (focused) props.focused?.();
+    // Device changes wake the phone like a sign-in does, with the change's id as the request.
+    const focusedChange = focus && !focused ? changeQueue.find((item) => item.change.changeId === focus) : undefined;
+    if (focused || focusedChange) props.focused?.();
+    if (focusedChange) {
+      void openChange(focusedChange.binding, focusedChange.change);
+      return;
+    }
     const next = focused ?? queue.find((item) => !seen.has(item.key));
-    if (next) void open(next.binding, next.request);
+    if (next) {
+      void open(next.binding, next.request);
+      return;
+    }
+    // Sign-ins wait in the browser and go first; a change request opens once none is left.
+    const nextChange = changeQueue.find((item) => !seen.has(item.key));
+    if (nextChange) void openChange(nextChange.binding, nextChange.change);
   });
   return (
     <div class="auth-clouds">
@@ -258,6 +573,7 @@ export function Clouds(props: {
           const state = () => props.auth.states()[binding.id];
           const requests = () => (state()?.requests ?? []).filter((r) => Date.parse(r.expiresAt) > props.auth.now());
           const actions = () => (state()?.actions ?? []).filter((action) => Date.parse(action.expiresAt) > props.auth.now());
+          const deviceChanges = () => (state()?.changes ?? []).filter((change) => Date.parse(change.expiresAt) > props.auth.now());
           return (
             <Paper as="section" class="auth-cloud">
               <header>
@@ -296,7 +612,16 @@ export function Clouds(props: {
                 </IconButton>
               </header>
               <Show when={state()?.error}>{(error) => <p role="status">{t()[error()]}</p>}</Show>
-              <Show when={state() && !state()?.error && requests().length === 0 && actions().length === 0 && !state()?.moreActions}>
+              <Show
+                when={
+                  state() &&
+                  !state()?.error &&
+                  requests().length === 0 &&
+                  deviceChanges().length === 0 &&
+                  actions().length === 0 &&
+                  !state()?.moreActions
+                }
+              >
                 <p class="auth-quiet">{t().noRequests}</p>
               </Show>
               <Show when={!state()}>
@@ -312,6 +637,24 @@ export function Clouds(props: {
                       void open(binding, request);
                     }}
                   />
+                )}
+              </For>
+              <For each={deviceChanges()}>
+                {(change) => (
+                  <div class="auth-action-row">
+                    <div class="auth-action-row__copy">
+                      <p class="auth-action-row__title">
+                        <strong>{change.kind === "pair" ? t().changePairRow : t().changeRevokeRow}</strong> ·{" "}
+                        {change.device.name || t().changeUnnamed}
+                      </p>
+                      <p class="auth-action-row__origin">
+                        <time dateTime={change.createdAt}>{dates.formatDateTimeRelative(change.createdAt, { locale: locale() })}</time>
+                      </p>
+                    </div>
+                    <Button variant="secondary" onClick={() => void openChange(binding, change)}>
+                      {t().actionReview}
+                    </Button>
+                  </div>
                 )}
               </For>
               <For each={actions()}>
@@ -482,7 +825,7 @@ function RequestRow(props: { auth: Authenticator; binding: Binding; request: Log
   const t = createMemo(() => authMessages.resolve([locale()]).t);
   return (
     <div class="auth-request auth-request-row">
-      <span>{t().loginRequest}</span>
+      <span>{props.request.terminal ? t().terminalTitle({ client: props.request.terminal.client.name }) : t().loginRequest}</span>
       <div class="auth-request-actions">
         <Button variant="secondary" onClick={props.open}>
           {t().signIn}

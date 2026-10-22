@@ -50,6 +50,46 @@ const envelopeOnly: MessageDetail = {
   attachments: [],
 };
 
+const supportIdentity: SenderIdentity = {
+  id: "Send01",
+  mailboxId: "Box001",
+  label: "Support",
+  displayName: "Support",
+  fromAddress: "support@example.com",
+  replyTo: null,
+  defaultCc: [],
+  defaultBcc: [],
+  defaultFormat: "markdown",
+  defaultPriority: "normal",
+  defaultDeliveryReceipt: false,
+  defaultReadReceipt: false,
+  vcard: null,
+  envelopeSender: null,
+  defaultSignatureTemplateId: null,
+  transport: {
+    mode: "mailbox",
+    host: null,
+    port: null,
+    tlsMode: null,
+    username: null,
+    secret: { kind: null, isSet: false },
+    revision: 0,
+    status: "active",
+    capabilities: { dsn: false, size: false, maxMessageBytes: null },
+    lastVerifiedAt: null,
+    lastError: null,
+  },
+  authenticationPolicy: { automation: "mailbox" },
+  sentFolderId: null,
+  draftsFolderId: null,
+  isDefault: true,
+  status: "unverified",
+  statusReason: "sent_folder_missing",
+  pendingVerificationCommandId: null,
+  createdAt: now,
+  updatedAt: now,
+};
+
 const waitFor = async (condition: () => boolean) => {
   for (let attempt = 0; attempt < 100; attempt++) {
     if (condition()) return;
@@ -106,6 +146,53 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   onReconcileAfterWrite: async () => undefined,
   onClose: () => undefined,
 };
+
+test.skipIf(isServer)("jumping to newest reads the person's motion choice at click time", async () => {
+  const dom = createDomTestHarness();
+  const originalCss = Object.getOwnPropertyDescriptor(globalThis, "CSS");
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
+  const { MailConversationReader } = modules!;
+  const [messages, setMessages] = createSignal<MessageDetail[]>([envelopeOnly]);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  const scroller = dom.root.querySelector<HTMLElement>('[data-scroll-preserve="mail-reader-Conv01"]')!;
+  const scrollTo = spyOn(scroller, "scrollTo").mockImplementation(() => {});
+  try {
+    expect(dom.window.matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    for (const [index, behavior] of ["auto", "smooth"].entries()) {
+      scroller.scrollTop = 200;
+      scroller.dispatchEvent(new Event("scroll"));
+      setMessages((current) => [...current, { ...envelopeOnly, id: `Msg00${index + 2}`, internalDate: "2026-08-16T13:00:00.000Z" }]);
+      const jump = () =>
+        [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("1 new message"));
+      await waitFor(() => jump() !== undefined);
+      // Change the choice after render so the click must read the current attribute.
+      if (behavior === "auto") document.documentElement.setAttribute("data-k2b-motion", "reduced");
+      else document.documentElement.removeAttribute("data-k2b-motion");
+      scrollTo.mockClear();
+      jump()!.click();
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      expect(scrollTo).toHaveBeenCalledTimes(1);
+      expect(scrollTo.mock.calls[0]?.[0]).toMatchObject({ behavior });
+    }
+  } finally {
+    document.documentElement.removeAttribute("data-k2b-motion");
+    scrollTo.mockRestore();
+    dispose();
+    if (originalCss) Object.defineProperty(globalThis, "CSS", originalCss);
+    else Reflect.deleteProperty(globalThis, "CSS");
+    dom.cleanup();
+  }
+});
 
 test.skipIf(isServer)(
   "the open reader replaces the pending body once hydration completes and offers a local refresh meanwhile",
@@ -388,45 +475,7 @@ test.skipIf(isServer)("a reply without a verified sender names the reason and le
   const error = spyOn(prompts, "error").mockResolvedValue(undefined);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = Object.assign(async () => Response.json([]), { preconnect: originalFetch.preconnect });
-  const identity: SenderIdentity = {
-    id: "Send01",
-    mailboxId: "Box001",
-    label: "Support",
-    displayName: "Support",
-    fromAddress: "support@example.com",
-    replyTo: null,
-    defaultCc: [],
-    defaultBcc: [],
-    defaultFormat: "markdown",
-    defaultPriority: "normal",
-    defaultDeliveryReceipt: false,
-    defaultReadReceipt: false,
-    vcard: null,
-    envelopeSender: null,
-    defaultSignatureTemplateId: null,
-    transport: {
-      mode: "mailbox",
-      host: null,
-      port: null,
-      tlsMode: null,
-      username: null,
-      secret: { kind: null, isSet: false },
-      revision: 0,
-      status: "active",
-      capabilities: { dsn: false, size: false, maxMessageBytes: null },
-      lastVerifiedAt: null,
-      lastError: null,
-    },
-    authenticationPolicy: { automation: "mailbox" },
-    sentFolderId: null,
-    draftsFolderId: null,
-    isDefault: true,
-    status: "unverified",
-    statusReason: "sent_folder_missing",
-    pendingVerificationCommandId: null,
-    createdAt: now,
-    updatedAt: now,
-  };
+  const identity = supportIdentity;
   const { MailConversationReader } = modules!;
   let opened = 0;
   const [canAdmin, setCanAdmin] = createSignal(true);
@@ -608,7 +657,7 @@ test.skipIf(isServer)("changing the conversation during the seed-store import dr
   }
 });
 
-test.skipIf(isServer)("under Automatic both bodies render until the theme is known, and the shown one stays mounted", async () => {
+test.skipIf(isServer)("under Automatic the HTML frame stays mounted while the theme changes light to dark and back", async () => {
   const dom = createDomTestHarness();
   const { MailConversationReader } = modules!;
   const both: MessageDetail = {
@@ -633,21 +682,18 @@ test.skipIf(isServer)("under Automatic both bodies render until the theme is kno
   try {
     const variant = (format: "html" | "plain") =>
       dom.root.querySelector<HTMLElement>(`[data-mail-message-id="Msg001"] [data-mail-body-format="${format}"]`);
-    await waitFor(() => variant("plain") !== null);
-    // The <html> class picks one before the first paint: light shows HTML, dark shows plain text.
-    expect(variant("html")?.className).toBe("contents dark:hidden");
-    expect(variant("plain")?.className).toBe("hidden dark:contents");
-
-    const plain = variant("plain");
-    setTheme("dark");
-    await waitFor(() => variant("html") === null);
-    expect(variant("plain")).toBe(plain);
-    expect(variant("plain")?.className).toBe("contents");
-
-    // A later live switch swaps the format as before.
-    setTheme("light");
-    await waitFor(() => variant("plain") === null);
-    expect(variant("html")?.className).toBe("contents");
+    await waitFor(() => variant("html") !== null);
+    const html = variant("html");
+    const frame = html?.querySelector("iframe");
+    expect(frame).not.toBeNull();
+    for (const next of ["light", "dark", "light"] as const) {
+      setTheme(next);
+      await Bun.sleep(5);
+      expect(variant("html")).toBe(html);
+      expect(variant("html")?.querySelector("iframe")).toBe(frame);
+      expect(variant("html")?.className).toBe("contents");
+      expect(variant("plain")).toBeNull();
+    }
   } finally {
     dispose();
     dom.cleanup();
@@ -678,6 +724,292 @@ test.skipIf(isServer)("queued actions keep triage available while structure cont
     expect(menuItem("Move to Trash")?.disabled).toBe(false);
     expect(menuItem("Keep")?.disabled).toBe(true);
     expect(menuItem("Tags")?.disabled).toBe(true);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("message display actions toggle colors on the same frame and keep the format override", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const [theme, setTheme] = createSignal<"light" | "dark">("dark");
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        messages: [{ ...envelopeOnly, hydrationStatus: "complete", plainText: "Plain message", sanitizedHtml: "<p>HTML message</p>" }],
+        get theme() {
+          return theme();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    const card = () => dom.root.querySelector('[data-mail-message-id="Msg001"]')!;
+    const action = (label: string) =>
+      [...card().querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === label);
+    const frame = card().querySelector("iframe")!;
+    const source = frame.getAttribute("srcdoc");
+    await waitFor(() => action("Show original colors") !== undefined);
+    action("Show original colors")!.click();
+    await waitFor(() => action("Adapt colors to dark mode") !== undefined);
+    expect(card().querySelector("iframe")).toBe(frame);
+    expect(frame.classList.contains("bg-white")).toBe(true);
+    expect(frame.getAttribute("srcdoc")).toBe(source);
+    action("Adapt colors to dark mode")!.click();
+    await waitFor(() => action("Show original colors") !== undefined);
+    expect(card().querySelector("iframe")).toBe(frame);
+    expect(frame.classList.contains("bg-transparent")).toBe(true);
+    expect(frame.getAttribute("srcdoc")).toBe(source);
+    action("View as plain text")!.click();
+    await waitFor(() => card().querySelector('[data-mail-body-format="plain"]') !== null);
+    expect(card().querySelector("iframe")).toBeNull();
+    expect(action("Show original colors")).toBeUndefined();
+    setTheme("light");
+    await Bun.sleep(5);
+    expect(card().querySelector('[data-mail-body-format="plain"]')).not.toBeNull();
+    action("View as HTML")!.click();
+    await waitFor(() => card().querySelector("iframe") !== null);
+    expect(card().querySelectorAll("[data-mail-body-format]")).toHaveLength(1);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("printing marks the complete conversation as a region and restores dark mode afterward", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const print = spyOn(window, "print").mockImplementation(() => {
+    expect(dom.root.querySelector("[data-mail-print-root]")?.hasAttribute("data-print-region")).toBe(true);
+    expect(dom.root.querySelectorAll("iframe")).toHaveLength(2);
+  });
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        theme: "dark",
+        readingFormat: "automatic",
+        messages: [
+          { ...envelopeOnly, hydrationStatus: "complete", plainText: "", sanitizedHtml: "<p>HTML message</p>" },
+          { ...envelopeOnly, id: "Msg002", hydrationStatus: "complete", plainText: "", sanitizedHtml: "<p>Another message</p>" },
+        ],
+      }),
+    dom.root,
+  );
+  try {
+    const reader = dom.root.querySelector("[data-mail-print-root]")!;
+    expect(reader.hasAttribute("data-print-region")).toBe(false);
+    expect(dom.root.querySelectorAll("iframe")).toHaveLength(1);
+    const frame = dom.root.querySelector("iframe")!;
+    expect(frame.classList.contains("bg-transparent")).toBe(true);
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="More conversation actions"]')!.click();
+    const printAction = () =>
+      [...dom.document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+        (item) => item.textContent?.trim() === "Print conversation",
+      );
+    await waitFor(() => printAction() !== undefined);
+    printAction()!.click();
+    await waitFor(() => print.mock.calls.length === 1);
+    expect(frame.classList.contains("bg-white")).toBe(true);
+    expect(frame.classList.contains("bg-transparent")).toBe(false);
+    window.dispatchEvent(new Event("afterprint"));
+    await waitFor(() => frame.classList.contains("bg-transparent"));
+    expect(frame.classList.contains("bg-white")).toBe(false);
+    expect(dom.root.querySelector("iframe")).toBe(frame);
+    expect(dom.root.querySelectorAll("iframe")).toHaveLength(1);
+    expect(reader.hasAttribute("data-print-region")).toBe(false);
+  } finally {
+    dispose();
+    print.mockRestore();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)(
+  "printing a long conversation shows every message for the print and folds the older ones again afterward",
+  async () => {
+    const dom = createDomTestHarness();
+    const { MailConversationReader } = modules!;
+    const older = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-older-messages]");
+    const print = spyOn(window, "print").mockImplementation(() => {
+      expect(older()).toBeNull();
+      expect(dom.root.querySelectorAll("[data-mail-message-id]")).toHaveLength(5);
+    });
+    const messages = Array.from({ length: 5 }, (_, index): MessageDetail => {
+      const date = new Date(Date.parse(now) - (5 - index) * 60_000).toISOString();
+      return { ...envelopeOnly, id: `Msg00${index + 1}`, internalDate: date, sentAt: date };
+    });
+    const dispose = render(() => createComponent(MailConversationReader, { ...readerProps, messages }), dom.root);
+    try {
+      await waitFor(() => older() !== null);
+      expect(older()!.textContent).toBe("2 older messages");
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="More conversation actions"]')!.click();
+      const printAction = () =>
+        [...dom.document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+          (item) => item.textContent?.trim() === "Print conversation",
+        );
+      await waitFor(() => printAction() !== undefined);
+      printAction()!.click();
+      await waitFor(() => print.mock.calls.length === 1);
+      window.dispatchEvent(new Event("afterprint"));
+      await waitFor(() => older() !== null);
+      expect(older()!.textContent).toBe("2 older messages");
+      expect(dom.root.querySelectorAll("[data-mail-message-id]")).toHaveLength(3);
+    } finally {
+      dispose();
+      print.mockRestore();
+      dom.cleanup();
+    }
+  },
+);
+
+test.skipIf(isServer)("a new message never folds away a shown message, including the one that holds focus", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const message = (index: number): MessageDetail => {
+    const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+    return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+  };
+  const [messages, setMessages] = createSignal<MessageDetail[]>([1, 2, 3, 4, 5, 6].map(message));
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  const older = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-older-messages]");
+  try {
+    await waitFor(() => older() !== null);
+    expect(older()!.textContent).toBe("3 older messages");
+    // The third visible message is the oldest one above the fold. New messages keep it mounted, also an
+    // unfocused card whose dialog may be open, and the same older messages stay folded.
+    const card = dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg004"]')!;
+    setMessages((current) => [...current, message(7)]);
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg007"]') !== null);
+    expect(card.isConnected).toBe(true);
+    expect(older()!.textContent).toBe("3 older messages");
+    const header = card.querySelector<HTMLElement>("[data-mail-message-header]")!;
+    header.focus();
+    expect(dom.document.activeElement).toBe(header);
+    setMessages((current) => [...current, message(8)]);
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg008"]') !== null);
+    expect(header.isConnected).toBe(true);
+    expect(dom.document.activeElement).toBe(header);
+    expect(older()!.textContent).toBe("3 older messages");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a conversation keeps the messages a live arrival showed when the person comes back to it", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const message = (index: number): MessageDetail => {
+    const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+    return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+  };
+  const first = { selectionKey: "Conv01", messages: [1, 2, 3, 4, 5, 6].map(message) };
+  const [selected, setSelected] = createSignal(first);
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get selectionKey() {
+          return selected().selectionKey;
+        },
+        get selectedConversationId() {
+          return selected().selectionKey;
+        },
+        get messages() {
+          return selected().messages;
+        },
+      }),
+    dom.root,
+  );
+  const shown = () => [...dom.root.querySelectorAll("[data-mail-message-id]")].map((card) => card.getAttribute("data-mail-message-id"));
+  try {
+    await waitFor(() => shown().length === 3);
+    setSelected({ ...first, messages: [...first.messages, message(7)] });
+    await waitFor(() => shown().includes("Msg007"));
+    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+    setSelected({ selectionKey: "Conv02", messages: [{ ...message(8), id: "Msg099" }] });
+    await waitFor(() => shown().includes("Msg099"));
+    setSelected({ ...first, messages: [...first.messages, message(7)] });
+    await waitFor(() => shown().includes("Msg007"));
+    expect(shown()).toEqual(["Msg007", "Msg006", "Msg005", "Msg004"]);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("the fifth message folds none of the four shown messages away", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const message = (index: number): MessageDetail => {
+    const date = new Date(Date.parse(now) + index * 60_000).toISOString();
+    return { ...envelopeOnly, id: `Msg00${index}`, internalDate: date, sentAt: date };
+  };
+  const [messages, setMessages] = createSignal<MessageDetail[]>([1, 2, 3, 4].map(message));
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        get messages() {
+          return messages();
+        },
+      }),
+    dom.root,
+  );
+  try {
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg001"]') !== null);
+    const header = dom.root.querySelector<HTMLElement>('[data-mail-message-id="Msg001"] [data-mail-message-header]')!;
+    header.focus();
+    setMessages((current) => [...current, message(5)]);
+    await waitFor(() => dom.root.querySelector('[data-mail-message-id="Msg005"]') !== null);
+    expect(header.isConnected).toBe(true);
+    expect(dom.document.activeElement).toBe(header);
+    expect(dom.root.querySelector("[data-mail-older-messages]")).toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("the reply box names whom Reply writes to, also when this mailbox sent the newest message", async () => {
+  const dom = createDomTestHarness();
+  const { MailConversationReader } = modules!;
+  const later = new Date(Date.parse(now) + 60_000).toISOString();
+  const dispose = render(
+    () =>
+      createComponent(MailConversationReader, {
+        ...readerProps,
+        identities: [supportIdentity],
+        messages: [
+          envelopeOnly,
+          {
+            ...envelopeOnly,
+            id: "Msg002",
+            internalDate: later,
+            sentAt: later,
+            from: [{ name: "Support", address: "support@example.com" }],
+            to: [{ name: "Grace Hopper", address: "grace@example.com" }],
+          },
+        ],
+      }),
+    dom.root,
+  );
+  try {
+    const box = () => dom.root.querySelector<HTMLButtonElement>("[data-mail-reply-box]");
+    await waitFor(() => box() !== null);
+    expect(box()!.textContent?.trim()).toBe("Reply to Grace Hopper…");
   } finally {
     dispose();
     dom.cleanup();

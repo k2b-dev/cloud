@@ -5,7 +5,7 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-10-12
+updated: 2026-10-19
 ---
 
 # Assistant
@@ -211,11 +211,14 @@ available when the work continues later.
 - Start a chat from a suggested task or write your own request. Before the first
   message, optionally choose a Project below the composer to use its shared
   context.
-- Attach source files or Cloud resources when the answer must use material
-  beyond the message. **Attach files** takes files from this device or, when
-  Cloud apps offer files, a copy from one of them, such as Files; **Choose
-  resource** links the resource itself. Files and screenshots can also be
-  dropped or pasted directly into the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
+- Choose **+** to open the same list as `/`, with a search field on top.
+  **Attach file** takes files from this device or, when Cloud apps offer files,
+  a copy from one of them, such as Files. **Insert from Cloud** inserts a
+  reference at the text caret; the model receives the same resource as an
+  attachment. **Search this chat** searches messages in the open chat.
+  Escape, **+** again, Back on a phone, or an outside press closes the list.
+  An outside press only closes it and does not activate the control underneath.
+  Files and screenshots can also be dropped or pasted directly into the composer. A long plain-text paste becomes a durable **Pasted text** attachment;
   **Show in text field** moves a bounded text attachment back into the draft.
   You can attach up to 16 items.
 - Ask Assistant to read supported PDF, Office, OpenDocument, RTF, EPUB, or CSV
@@ -376,11 +379,19 @@ personalization, and guidance for better requests. Developers can read
 Assistant adopts.
 
 Open **Assistant settings → Approvals** to review Actions previously accepted with
-**Always approve**. Revoking an entry makes Assistant ask again on the next
+**Always approve**. The browser no longer offers that choice; earlier choices
+still apply until the next major release. Revoking an entry makes Assistant ask again on the next
 matching call. Sending email, deleting data, open-world effects, and other
 Actions with the default approval policy continue to require confirmation every
 time. Code Mode source and execution tools run without confirmation within the
 user's existing permissions; they do not implicitly grant sharing or app deletion.
+
+Approval questions show a sentence with chips, Cloud's reason, a preview, and
+two answers naming the deed and target. Where allowed, **Yes, and don't ask
+again in this chat** remembers the reviewed scope for that chat. The card keeps
+its review after reload. If an outcome is unknown, **Check again** runs only
+the app's outcome check, never the Action; it is available after a pending or
+failed check. Without a check, no repeat button is offered.
 
 ## Use Assistant from the terminal
 
@@ -699,6 +710,11 @@ code and names the startup step that stalled, such as launching Chromium.
 The Assistant administration page lists all saved Apps, their shared
 file and key/value counts, and whether they have a database. Administrators can
 manage access, delete resources, and configure or test the rsql connection.
+The rsql endpoint allows public targets and the shipped `rsql` host by default;
+the operator can replace this list with `ASSISTANT_RSQL_ALLOWED_TARGETS` in the
+Assistant container to allow another internal host. A blocked target reports
+`DB_TARGET_BLOCKED` without changing stored configuration.
+
 The stored API token is never returned. Removing or changing the server is
 blocked while databases or queued database cleanup still depend on it.
 
@@ -837,13 +853,14 @@ for the same user and chat or app before using the CLI.
 
 Assistant computes with scripts and shows the result as an HTML app: key
 figures, tables and charts from `cloud.chart`, which draws in Cloud colors and
-redraws at the real width, so axes fit phones. Filters, tabs and forms are
-ordinary HTML controls. The `assistant-data-analysis` Skill guides source
-inspection, metric definitions, reconciliation, chart choice, and delivery. The
-API is available without loading the Skill. An app states when its data was
-retrieved and whether it is a snapshot, partial, or a fixture. A live loader is
-explicit; publishing source does not create a frozen data snapshot or a
-continuously refreshing dashboard.
+redraws at the real width, so axes fit phones. Hover, focus or tap a chart value
+to see it. When you print an app or download its PDF, each chart is followed by
+a table of its values. Filters, tabs and forms are ordinary HTML controls. The
+`assistant-data-analysis` Skill guides source inspection, metric definitions,
+reconciliation, chart choice, and delivery. The API is available without
+loading the Skill. An app states when its data was retrieved and whether it is
+a snapshot, partial, or a fixture. A live loader is explicit; publishing source
+does not create a frozen data snapshot or a continuously refreshing dashboard.
 
 Shared access and published source versions use the normal Studio lifecycle.
 Personal secrets remain personal. External loads still follow HTTP approval and

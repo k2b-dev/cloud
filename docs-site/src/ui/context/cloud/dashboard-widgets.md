@@ -8,6 +8,13 @@ Register an endpoint when users need a compact cross-application summary or a di
 
 Use the portable widget components directly when the host already owns its data and layout and does not need Cloud endpoint discovery.
 
+The widget's header icon sits in a soft chip of its source app's color,
+from that app's declared `appearance.accent`, in loading, error, locked, empty,
+and loaded states. A widget whose app declares no accent uses the
+dashboard's color. In a small dashboard tile, a failure message with
+Try again shows no status icon, so the message and the button fit the tile
+on a 320px phone.
+
 ## Import
 
 ```ts
@@ -31,7 +38,9 @@ Every stat needs a label and context. Widget and row links need destination-spec
 
 ## Runtime
 
-The dashboard is one board of widgets in three fixed sizes, `small`, `medium`, and `large`, on four columns or two on phones. The page renders every widget's `@k2b/ui` frame at its final size with a loading state. The browser then reads all widgets from Core in one stream (`GET /api/widgets/v1`), each in the size the board shows it in; each fills its frame as soon as its app answers, within its own 8-second budget. A slow widget says so after three seconds; a widget that fails or times out shows a calm inline state with **Try again**, which asks only that widget again. A locked or empty widget keeps its frame. Endpoint responses are JSON; applications never return Solid elements through this contract. A handler reads the requested size with `getWidgetRequest(c)` and returns content that fits it.
+The dashboard is one board of widgets in three fixed sizes, `small`, `medium`, and `large`, on four columns or two on phones. The page renders every widget's `@k2b/ui` frame at its final size with a loading state. The browser then reads all widgets from Core in one stream (`POST /api/widgets/v1`), with entry ids, sizes, and settings; each fills its frame as soon as its app answers, within its own 8-second budget. A slow widget says so after three seconds; a widget that fails or times out shows a calm inline state with **Try again**, which asks only that widget again. A locked or empty widget keeps its frame. Endpoint responses are JSON; applications never return Solid elements through this contract. A handler reads the requested size and settings with `getWidgetRequest(c)` and returns content that fits them.
+
+Edit mode offers **Move forward** and **Move back** alongside dragging and keyboard movement. **Customize** opens declared settings in a dialog, or a bottom sheet on phones, and reloads that entry quietly after **Apply**. **Done** saves settings; **Cancel** restores them. Widgets with settings can appear several times with independent entry ids and values. Widgets without settings appear once. Framework validation runs on every call; handlers authorize each chosen resource.
 
 ## Example
 

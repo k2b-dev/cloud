@@ -621,14 +621,16 @@ describe("Venue feedback evaluation", () => {
         feedback: { count: 1, averageRating: 5, commentCount: 0, buckets: [{ date: "2026-09-28", count: 1, averageRating: 5 }] },
       },
     });
+    // Each mark carries a native <title> with its day for inspection; only the axis text counts here.
+    const axisText = (svg: string) => text(svg.replace(/<title>[\s\S]*?<\/title>/g, ""));
     const average = html.match(/data-chart-kind="(?:line|scatter)"[\s\S]*?<\/svg>/)?.[0] ?? "";
     expect(average).toMatch(/class="stdlib-chart-point/);
-    expect(text(average).match(/Sep 28/g)).toHaveLength(1);
+    expect(axisText(average).match(/Sep 28/g)).toHaveLength(1);
 
     const twoDays = render("admin", [], { view: "feedback", dashboard: { feedback } });
     const line = twoDays.match(/data-chart-kind="line"[\s\S]*?<\/svg>/)?.[0] ?? "";
-    expect(text(line).match(/Sep 26/g)).toHaveLength(1);
-    expect(text(line).match(/Sep 27/g)).toHaveLength(1);
+    expect(axisText(line).match(/Sep 26/g)).toHaveLength(1);
+    expect(axisText(line).match(/Sep 27/g)).toHaveLength(1);
   });
 
   test("shows each rating as stars and as a value, with glyphs the icon font has", () => {
@@ -640,7 +642,7 @@ describe("Venue feedback evaluation", () => {
 
     expect(cell).not.toBe("");
     expect(cell.match(/ti ti-star text-sm text-amber-500/g)).toHaveLength(4);
-    expect(cell.match(/ti ti-star text-sm text-zinc-300/g)).toHaveLength(1);
+    expect(cell.match(/ti ti-star text-sm text-dimmed/g)).toHaveLength(1);
     expect(text(cell)).toContain("4/5");
     // A class the font lacks renders nothing: `ti-star-filled` left the rating cells empty.
     const shipped = readFileSync(fileURLToPath(import.meta.resolve("@k2b/ui/icons/tabler.css")), "utf8");
@@ -720,11 +722,11 @@ describe("Venue shift detail and schedule", () => {
   };
   const detailOf = (html: string) => html.match(/<aside[^>]*k2b-app-workspace__detail[\s\S]*?<\/aside>/)?.[0] ?? "";
 
-  test("renders the selected shift's detail on the server, beside the calendar from 1024 px on", () => {
+  test("renders the selected shift's detail on the server, beside the calendar from a 64 rem app host on", () => {
     const html = render("admin", [], { calendarDate: day, shift: `Temp01:${day}`, dashboard: board });
     const detail = detailOf(html);
 
-    expect(detail).toContain("max-lg:hidden!");
+    expect(detail).toContain("venue-shift-detail");
     expect(detail).not.toMatch(/<aside[^>]*\shidden/);
     expect(text(detail)).toContain("Theke");
     expect(text(detail)).toContain("Tue, Jan 8 · 11:00–14:00");

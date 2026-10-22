@@ -1,7 +1,7 @@
 # Select inputs
 
-`Select`, `MultiSelectInput`, and `SelectChip` cover three different selection
-tasks. The parent owns every selected value.
+`Select`, `MultiSelectInput`, `SelectChip`, and `RichSelect` cover different
+selection tasks. The parent owns every selected value.
 
 ## Use select inputs
 
@@ -9,6 +9,7 @@ Choose from the state transition, not from the desired visual shape:
 
 | Task                                        | Component            | Value contract                 |
 | ------------------------------------------- | -------------------- | ------------------------------ |
+| Choose with explanations and optional preview | [`RichSelect`](rich-select) | one controlled value or `null` |
 | Choose one value in a form                  | `Select`             | one controlled value or `null` |
 | Type, validate, and keep one remote value   | `AutocompleteSelect` | one controlled ID or `null`    |
 | Choose several values                       | `MultiSelectInput`   | one controlled ID array        |
@@ -22,6 +23,27 @@ listbox, or radio semantics and makes alignment and keyboard behavior the
 consumer's responsibility. `Dropdown` therefore accepts only declarative
 actions and choices. See [Dropdown and ContextMenu](../actions/menus) for
 action menus.
+
+## Which dropdown when
+
+Start with the task. Add a preview only when an option has several consequences
+that change the choice and those consequences differ per option. When one line
+says the difference, there is no preview.
+
+| Component | Use it for | Preview |
+| --- | --- | --- |
+| `Select` | One form value, with static options or remote loading | No |
+| `AutocompleteSelect` | Type and validate one remote ID, keeping the chosen value | No |
+| `MultiSelectInput` | Several controlled values | No |
+| `SelectChip` | One compact toolbar value | No |
+| `FilterChip` | Filtering an existing result set | No |
+| `Combobox` | Find an item, run an action, then clear the query | No |
+| `Dropdown` | Secondary actions and links | No |
+| `RichSelect` | Mail sender: signature, visibility, copies, and replies differ | Yes |
+| `RichSelect` | Sharing level: one short line per level says the difference | No |
+
+Use [RichSelect](rich-select) for explained choices and unavailable reasons;
+do not build select rows inside an action menu.
 
 ## Import
 
@@ -241,6 +263,15 @@ as model or environment selectors. The menu sizes to its options, at least
 `10rem`, and long options wrap at the viewport; `menuWidth` sets an exact width
 instead.
 
+Set `loading` while a selection saves. The trigger stays the same size, is
+`disabled` and marked `aria-busy="true"`, and shows a spinner in place of its
+chevron. The icon-only form uses the button's centered busy overlay. With
+reduced motion, the spinner stands still. Report the result or an error where
+the page reports results; the busy state does not announce the outcome.
+A disabled button loses keyboard focus. When a chip that had focus is
+disabled, by `disabled` or `loading`, focus returns to it once it is enabled
+again, unless focus moved somewhere else in the meantime.
+
 Selection popovers dismiss synchronously. Do not add a generic host-level
 `[popover]` display or overlay transition around them; `@k2b/ui` explicitly
 keeps interactive choice surfaces immediate.
@@ -365,11 +396,16 @@ type SelectChipOption<T extends string | number = string> = {
 
 type SelectChipProps<T extends string | number = string> = ValueFieldProps<T> & {
   value: MaybeAccessor<T>; options: SelectChipOption<T>[]; icon?: string; iconOnly?: boolean;
-  size?: ButtonSize; placeholder?: string; position?: DropdownPosition; menuWidth?: string; name?: string;
+  size?: ButtonSize; placeholder?: string; position?: DropdownPosition; menuWidth?: string; name?: string; loading?: boolean;
+  open?: boolean; onOpenChange?: (open: boolean) => void;
 };
 ```
 
 `fetchData` takes precedence over `loadOptions`; either remote source takes precedence over `options`. Debounce is `fetchDebounceMs ?? debounceMs ?? 200` milliseconds. Static `Select` search defaults off; static `MultiSelectInput` search defaults on. Remote search is always enabled. Render callbacks belong to `MultiSelectInput`, not `Select`. They receive normalized `ChoiceOption<string>` objects and return Solid content. `appearance` defaults to `"field"`; `DatePicker`, `DateTimePicker`, `DateRangePicker`, and `NumberInput` accept the same `ChoiceAppearance`.
+
+Use `open` with `onOpenChange` to control the SelectChip menu, including opening
+it from another control and reacting to Escape or outside close. Leave `open`
+undefined for the existing uncontrolled menu behavior.
 
 `SelectChip.size` uses [ButtonSize](/en/ui/actions/buttons); `position` uses [DropdownPosition](/en/ui/actions/menus#api-reference). `menuWidth` is an optional exact CSS length; without it the menu sizes to its options, at least `10rem`. `SelectChip` does not accept `null`; represent an explicit empty choice with an option of your value type.
 
@@ -398,7 +434,7 @@ selected while the value is empty, so arrow keys reach it.
 
 ## Runtime
 
-Triggers and selected values render in server HTML. Dropdown positioning, keyboard navigation, remote loading, selection, and clearing require hydrated Solid client code. `MultiSelectInput` measures its pills in the browser, so server HTML shows every pill until hydration collapses those that do not fit.
+Triggers and selected values render in server HTML. Dropdown positioning, keyboard navigation, remote loading, selection, and clearing require browser code. `MultiSelectInput` measures its pills in the browser, so server HTML shows every pill until browser measurements collapse those that do not fit.
 
 ## Example
 

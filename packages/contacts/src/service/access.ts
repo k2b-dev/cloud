@@ -4,6 +4,7 @@ import {
   type AccessSubject,
   createAccess,
   deleteAccess,
+  ensureManagerRemains,
   getEffectivePermission,
   getEffectivePermissions,
   hasPermission,
@@ -13,14 +14,9 @@ import {
   type RequestActor,
   resolveDisplayNames,
 } from "@k2b/cloud/server";
-import {
-  isStandaloneServiceAccountKind,
-  type ServiceAccountCredential,
-  serviceAccountCredentials,
-  serviceAccounts,
-} from "@k2b/cloud/services";
+import { isStandaloneServiceAccountKind, type ServiceAccountCredential, serviceAccountCredentials } from "@k2b/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
-import { sql } from "bun";
+import { type SQL, sql } from "bun";
 import { publishContactChange } from "./live";
 import { conflictError, contactsMessages, notFoundError } from "./messages";
 import { isUuid } from "./shared";
@@ -42,16 +38,26 @@ export type ContactBookApiKey = ServiceAccountCredential & {
   permission: PermissionLevel;
 };
 
-/**
- * Reads across contact books. A resource-bound service account must pass its
- * bound book; a standalone or agent account is limited only by its own grants.
- * The kind is read from the account row, so a caller that omits a binding
- * fails closed.
- */
-export const mayReadAcrossBooks = async (subject: AccessSubject, boundBookId: string | null | undefined): Promise<boolean> => {
-  if (subject.type !== "service_account" || isUuid(boundBookId ?? "")) return true;
-  const account = await serviceAccounts.get({ id: subject.serviceAccountId });
-  return Boolean(account && isStandaloneServiceAccountKind(account.kind));
+/** How far one caller reads across books. */
+export const readableBookScope = (caller: {
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+}): Result<{ boundBookId: string | null }> => {
+  if (caller.accessSubject.type !== "service_account") return ok({ boundBookId: null });
+  if (caller.actor.kind !== "service_account") return fail(err.forbidden("Access denied"));
+  const { serviceAccount: account, scopes } = caller.actor;
+  if (isStandaloneServiceAccountKind(account.kind)) {
+    return account.id === caller.accessSubject.serviceAccountId && hasPermission(permissionFromScopes(scopes), "read")
+      ? ok({ boundBookId: null })
+      : fail(err.forbidden("Access denied"));
+  }
+  return account.kind === "resource_bound" &&
+    account.appId === CONTACTS_APP_ID &&
+    account.resourceType === CONTACT_BOOK_RESOURCE_TYPE &&
+    isUuid(account.resourceId ?? "") &&
+    hasPermission(permissionFromScopes(scopes), "read")
+    ? ok({ boundBookId: account.resourceId })
+    : fail(err.forbidden("Access denied"));
 };
 
 /**
@@ -234,48 +240,68 @@ export const grantBookAccess = async (config: {
   return ok(createdEntry);
 };
 
+/** Reads manager candidates in the transaction holding the book lock. */
+const readBookManagerEntries = async (bookId: string, db: SQL) => {
+  const rows = await db<(Omit<DbBookAccess, "created_at"> & { service_account_kind: AccessEntry["serviceAccountKind"] | null })[]>`
+    SELECT a.id AS access_id, a.user_id, a.group_id, a.service_account_id,
+      a.authenticated_only, a.permission, sa.kind AS service_account_kind
+    FROM contacts.book_access ba
+    JOIN auth.access a ON a.id = ba.access_id
+    LEFT JOIN auth.service_accounts sa ON sa.id = a.service_account_id
+    WHERE ba.book_id = ${bookId}::uuid
+  `;
+  return rows.map((row) => ({
+    id: row.access_id,
+    principal: row.user_id
+      ? { type: "user" as const, userId: row.user_id }
+      : row.group_id
+        ? { type: "group" as const, groupId: row.group_id }
+        : row.service_account_id
+          ? { type: "service_account" as const, serviceAccountId: row.service_account_id }
+          : row.authenticated_only
+            ? { type: "authenticated" as const }
+            : { type: "public" as const },
+    permission: row.permission,
+    serviceAccountKind: row.service_account_kind ?? undefined,
+  }));
+};
+
 /**
- * Removes one access entry from a contact book after relation validation.
+ * Locks the book first so authorization and manager checks see preceding grant changes.
  */
-export const removeBookAccess = async (bookId: string, accessId: string): Promise<Result<void>> => {
+export const removeBookAccess = async (config: {
+  bookId: string;
+  accessId: string;
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+  authority: "grant" | "administration";
+  locale?: string;
+}): Promise<Result<void>> => {
+  const { bookId, accessId, actor, accessSubject, locale } = config;
   if (!isUuid(bookId) || !isUuid(accessId)) {
     return fail(err.notFound("Book or access entry"));
   }
 
-  return sql.begin(async (tx) => {
-    const [guard] = await tx<
-      {
-        total: number;
-        other_admins: number;
-        current_permission: PermissionLevel | null;
-      }[]
-    >`
-      WITH locked AS (
-        SELECT a.id, a.permission
-        FROM contacts.book_access ba
-        JOIN auth.access a ON ba.access_id = a.id
-        WHERE ba.book_id = ${bookId}::uuid
-        FOR UPDATE OF ba, a
-      )
-      SELECT
-        COUNT(*)::int AS total,
-        COUNT(*) FILTER (
-          WHERE permission = 'admin'::auth.permission_level
-            AND id <> ${accessId}::uuid
-        )::int AS other_admins,
-        MAX(CASE WHEN id = ${accessId}::uuid THEN permission END) AS current_permission
-      FROM locked
-    `;
-
-    if (!guard?.current_permission) {
+  return sql.begin(async (tx): Promise<Result<void>> => {
+    const [book] = await tx`SELECT id FROM contacts.books WHERE id = ${bookId}::uuid FOR UPDATE`;
+    if (!book) return fail(err.notFound("Book"));
+    const before = await readBookManagerEntries(bookId, tx);
+    if (
+      config.authority === "administration"
+        ? !isContactsAdministrator(actor)
+        : (await getActorBookPermission({ bookId, actor, accessSubject }, tx)) !== "admin"
+    ) {
+      return fail(err.forbidden("Access denied"));
+    }
+    if (!before.some((entry) => entry.id === accessId)) {
       return fail(err.notFound("Access entry for this book"));
     }
-    if (guard.total <= 1) {
+    if (before.length <= 1) {
       return fail(err.badInput("Cannot remove the last access entry"));
     }
-    if (guard.current_permission === "admin" && guard.other_admins <= 0) {
-      return fail(err.badInput("Cannot remove the last admin"));
-    }
+    const after = before.filter((entry) => entry.id !== accessId);
+    const guarded = ensureManagerRemains({ before, after, locale });
+    if (!guarded.ok) return guarded;
 
     const result = await tx`
       DELETE FROM auth.access
@@ -291,57 +317,50 @@ export const removeBookAccess = async (bookId: string, accessId: string): Promis
 };
 
 /**
- * Updates one access entry permission while holding the book ACL rows locked.
+ * Locks the book first so authorization and manager checks see preceding grant changes.
  */
 export const updateBookAccessPermission = async (config: {
   bookId: string;
   accessId: string;
   permission: PermissionLevel;
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+  authority: "grant" | "administration";
+  locale?: string;
 }): Promise<Result<void>> => {
-  if (!isUuid(config.bookId) || !isUuid(config.accessId)) {
+  const { bookId, accessId, permission, actor, accessSubject, locale } = config;
+  if (!isUuid(bookId) || !isUuid(accessId)) {
     return fail(err.notFound("Book or access entry"));
   }
 
-  return sql.begin(async (tx) => {
-    const [guard] = await tx<
-      {
-        other_admins: number;
-        current_permission: PermissionLevel | null;
-      }[]
-    >`
-      WITH locked AS (
-        SELECT a.id, a.permission
-        FROM contacts.book_access ba
-        JOIN auth.access a ON ba.access_id = a.id
-        WHERE ba.book_id = ${config.bookId}::uuid
-        FOR UPDATE OF ba, a
-      )
-      SELECT
-        COUNT(*) FILTER (
-          WHERE permission = 'admin'::auth.permission_level
-            AND id <> ${config.accessId}::uuid
-        )::int AS other_admins,
-        MAX(CASE WHEN id = ${config.accessId}::uuid THEN permission END) AS current_permission
-      FROM locked
-    `;
-
-    if (!guard?.current_permission) {
+  return sql.begin(async (tx): Promise<Result<void>> => {
+    const [book] = await tx`SELECT id FROM contacts.books WHERE id = ${bookId}::uuid FOR UPDATE`;
+    if (!book) return fail(err.notFound("Book"));
+    const before = await readBookManagerEntries(bookId, tx);
+    if (
+      config.authority === "administration"
+        ? !isContactsAdministrator(actor)
+        : (await getActorBookPermission({ bookId, actor, accessSubject }, tx)) !== "admin"
+    ) {
+      return fail(err.forbidden("Access denied"));
+    }
+    if (!before.some((entry) => entry.id === accessId)) {
       return fail(err.notFound("Access entry for this book"));
     }
-    if (guard.current_permission === "admin" && config.permission !== "admin" && guard.other_admins <= 0) {
-      return fail(err.badInput("Cannot remove the last admin"));
-    }
+    const after = before.map((entry) => (entry.id === accessId ? { ...entry, permission } : entry));
+    const guarded = ensureManagerRemains({ before, after, locale });
+    if (!guarded.ok) return guarded;
 
     const result = await tx`
       UPDATE auth.access
-      SET permission = ${config.permission}::auth.permission_level
-      WHERE id = ${config.accessId}::uuid
+      SET permission = ${permission}::auth.permission_level
+      WHERE id = ${accessId}::uuid
     `;
     if (result.count === 0) {
       return fail(err.notFound("Access entry for this book"));
     }
 
-    await publishContactChange(tx, { type: "access.changed", bookId: config.bookId });
+    await publishContactChange(tx, { type: "access.changed", bookId });
     return ok();
   });
 };
@@ -362,53 +381,12 @@ export const countBookAccess = async (bookId: string): Promise<number> => {
 };
 
 /**
- * Returns guard values for safe ACL update/removal operations.
- */
-export const getBookAccessGuard = async (config: {
-  bookId: string;
-  accessId: string;
-}): Promise<{
-  total: number;
-  otherAdmins: number;
-  currentPermission: PermissionLevel | null;
-}> => {
-  if (!isUuid(config.bookId) || !isUuid(config.accessId)) {
-    return { total: 0, otherAdmins: 0, currentPermission: null };
-  }
-
-  const [row] = await sql<
-    {
-      total: number;
-      other_admins: number;
-      current_permission: PermissionLevel | null;
-    }[]
-  >`
-    SELECT
-      COUNT(*)::int AS total,
-      COUNT(*) FILTER (
-        WHERE a.permission = 'admin'::auth.permission_level
-          AND a.id <> ${config.accessId}::uuid
-      )::int AS other_admins,
-      MAX(CASE WHEN a.id = ${config.accessId}::uuid THEN a.permission END) AS current_permission
-    FROM contacts.book_access ba
-    JOIN auth.access a ON ba.access_id = a.id
-    WHERE ba.book_id = ${config.bookId}::uuid
-  `;
-
-  return {
-    total: row?.total ?? 0,
-    otherAdmins: row?.other_admins ?? 0,
-    currentPermission: row?.current_permission ?? null,
-  };
-};
-
-/**
  * Resolves the effective permission of a user for one manual book.
  */
-export const getBookPermission = async (config: { bookId: string; subject: AccessSubject }): Promise<PermissionLevel> => {
+const getBookPermission = async (config: { bookId: string; subject: AccessSubject }, db: SQL = sql): Promise<PermissionLevel> => {
   if (!isUuid(config.bookId)) return "none";
 
-  const accessRows = await sql<{ access_id: string }[]>`
+  const accessRows = await db<{ access_id: string }[]>`
     SELECT access_id
     FROM contacts.book_access
     WHERE book_id = ${config.bookId}::uuid
@@ -417,10 +395,7 @@ export const getBookPermission = async (config: { bookId: string; subject: Acces
   const accessIds = accessRows.map((row) => row.access_id);
   if (accessIds.length === 0) return "none";
 
-  return getEffectivePermission({
-    accessIds,
-    subject: config.subject,
-  });
+  return getEffectivePermission({ accessIds, subject: config.subject }, db);
 };
 
 const PERMISSION_RANK: Record<PermissionLevel, number> = { none: 0, read: 1, write: 2, admin: 3 };
@@ -436,13 +411,10 @@ export const minPermission = (a: PermissionLevel, b: PermissionLevel): Permissio
   PERMISSION_RANK[a] <= PERMISSION_RANK[b] ? a : b;
 
 /**
- * What an actor's role or binding decides on a book without its grants:
- * administrators hold every book, and a resource-bound key holds nothing
- * outside its own book. `null` leaves the decision to the grants.
+ * A resource-bound key holds nothing outside its exact Contacts book binding.
+ * `null` leaves the decision to the grants.
  */
 const fixedBookPermission = (actor: RequestActor, bookId: string): PermissionLevel | null => {
-  const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
-  if (user && hasRole(user, "admin")) return "admin";
   const account = actor.kind === "service_account" ? actor.serviceAccount : null;
   if (
     account?.kind === "resource_bound" &&
@@ -453,30 +425,40 @@ const fixedBookPermission = (actor: RequestActor, bookId: string): PermissionLev
   return null;
 };
 
+/** The administration authority used only by the /admin group. */
+export const isContactsAdministrator = (actor: RequestActor): boolean => {
+  const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
+  return Boolean(user && hasRole(user, "admin"));
+};
+
 /** Only a user-delegated credential acts as its user; every other service account is capped by its scopes. */
-const capByCredential = (actor: RequestActor, permission: PermissionLevel): PermissionLevel =>
+export const capByCredential = (actor: RequestActor, permission: PermissionLevel): PermissionLevel =>
   actor.kind === "service_account" && actor.serviceAccount.kind !== "user_delegated"
     ? minPermission(permission, permissionFromScopes(actor.scopes))
     : permission;
 
+export const credentialPermission = (actor: RequestActor): PermissionLevel => capByCredential(actor, "admin");
+
 /**
- * The permission of a request's actor on one existing book: administrators
- * hold every book, a resource-bound key only its own, and every service account
- * that does not act as its user is capped by its credential scopes. The API and
- * the live channels decide with these rules.
+ * Resolves one existing book through the actor's exact resource binding and
+ * accessSubject grants, capped by credential scopes for every service account
+ * that is not user-delegated. API, capabilities, SSR, and live channels share this decision.
  */
-export const getActorBookPermission = async (config: {
-  bookId: string;
-  actor: RequestActor;
-  subject: AccessSubject;
-}): Promise<PermissionLevel> =>
+export const getActorBookPermission = async (
+  config: {
+    bookId: string;
+    actor: RequestActor;
+    accessSubject: AccessSubject;
+  },
+  db: SQL = sql,
+): Promise<PermissionLevel> =>
   fixedBookPermission(config.actor, config.bookId) ??
-  capByCredential(config.actor, await getBookPermission({ bookId: config.bookId, subject: config.subject }));
+  capByCredential(config.actor, await getBookPermission({ bookId: config.bookId, subject: config.accessSubject }, db));
 
 /** `getActorBookPermission` for many actors on one existing book, with one query for all their grants. */
 export const getActorsBookPermissions = async (
   bookId: string,
-  readers: readonly { actor: RequestActor; subject: AccessSubject }[],
+  readers: readonly { actor: RequestActor; accessSubject: AccessSubject }[],
 ): Promise<PermissionLevel[]> => {
   const fixed = readers.map((reader) => fixedBookPermission(reader.actor, bookId));
   const open = readers.filter((_, position) => fixed[position] === null);
@@ -486,26 +468,10 @@ export const getActorsBookPermissions = async (
   `;
   const granted = await getEffectivePermissions({
     accessIds: accessRows.map((row) => row.access_id),
-    subjects: open.map((reader) => reader.subject),
+    subjects: open.map((reader) => reader.accessSubject),
   });
   let next = 0;
   return readers.map((reader, position) => fixed[position] ?? capByCredential(reader.actor, granted[next++] ?? "none"));
-};
-
-/**
- * Checks whether the user satisfies the required permission for one manual book.
- */
-export const canAccessBook = async (config: {
-  bookId: string;
-  subject: AccessSubject;
-  requiredLevel?: PermissionLevel;
-}): Promise<boolean> => {
-  const permission = await getBookPermission({
-    bookId: config.bookId,
-    subject: config.subject,
-  });
-
-  return hasPermission(permission, config.requiredLevel ?? "read");
 };
 
 export const listContactBookApiKeys = async (bookId: string): Promise<ContactBookApiKey[]> => {

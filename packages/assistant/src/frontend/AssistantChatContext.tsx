@@ -38,7 +38,7 @@ import {
   openAssistantKnowledgeSearch,
   openAssistantMarkdown,
 } from "./AssistantContextContent";
-import { AssistantTasksView, assistantTaskTitle, formatAssistantTaskSchedule } from "./AssistantTasksDialog";
+import { AssistantTasksView } from "./AssistantTasksDialog";
 import {
   assistantChatContextFor,
   assistantReferenceTitle,
@@ -55,6 +55,7 @@ import {
 } from "./assistant-live";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { formatDictationTimestamp } from "./dictation-files";
+import { assistantTaskTitle, formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { assistantBrowserCopy, useAssistantCopy, useAssistantText } from "./ui-copy";
 
 export { splitAssistantConversationSources } from "./assistant-context";
@@ -709,7 +710,7 @@ function AssistantChatContextView(
                         <AssistantContextViewAll
                           onClick={() =>
                             props.onOpenView
-                              ? overview("tasks", text("Scheduled tasks"))
+                              ? overview("tasks", text("Routines"))
                               : void prompts.dialog<void>(
                                   () => (
                                     <AssistantLiveProvider value={live}>
@@ -721,7 +722,7 @@ function AssistantChatContextView(
                                     </AssistantLiveProvider>
                                   ),
                                   {
-                                    title: text("Scheduled tasks"),
+                                    title: text("Routines"),
                                     icon: "ti ti-calendar-time",
                                     size: "large",
                                   },

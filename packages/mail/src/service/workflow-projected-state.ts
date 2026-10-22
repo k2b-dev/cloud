@@ -155,7 +155,7 @@ export const mailConversationTransitionChanges = (
 ): boolean => applyMailConversationTransition(structuredClone(conversation), action, value);
 
 const restoredConfig = async (ctx: WorkflowExecuteActionContext, step: WorkflowActionStep): Promise<Record<string, WorkflowJsonValue>> => {
-  const value = await ctx.evaluate(step.config as WorkflowJsonValue, ["config"]);
+  const value = await ctx.evaluate(step.config as WorkflowJsonValue, [...step.sourcePath, step.action]);
   return isMailWorkflowProjectedObject(value) ? value : {};
 };
 
@@ -203,8 +203,9 @@ export const restoreMailWorkflowProjectedState = async (
     return;
   }
 
+  // A status step that found its value already set still reports the live revision it saw.
   if (
-    output.applied === true &&
+    (output.applied === true || (output.action === "setConversationStatus" && output.value !== undefined)) &&
     (output.action === "assignConversation" || output.action === "setConversationStatus" || output.action === "setConversationSummary")
   ) {
     const conversation = await restoredObject(ctx, step, config, "conversation");

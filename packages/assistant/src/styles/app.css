@@ -81,7 +81,8 @@
   inset-block: 0;
   inset-inline-end: 0;
   width: min(20rem, 100%);
-  box-shadow: var(--k2b-shadow-float);
+  box-shadow: var(--k2b-shadow-side);
+  clip-path: inset(0 0 0 -4rem);
 }
 
 @media (max-width: 47.999rem) {
@@ -111,20 +112,20 @@
   }
 }
 
-/* The surface of a workspace detail region: muted, inset, one edge. */
+/* One surface, shared with the chat; sections are separated by space. */
 .k2b-ui .assistant-context-sidebar {
   --k2b-detail-panel-scroll-inset: 0.75rem;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
   padding: 0.75rem 0.75rem 0;
-  border-inline-start: 1px solid var(--k2b-border);
-  background: var(--k2b-surface-muted);
+  border-inline-start: 0;
+  background: var(--k2b-surface);
 }
 .k2b-ui .assistant-context-sidebar__header {
   display: flex;
   min-width: 0;
-  min-height: 2.25rem;
+  height: 2.5rem;
   flex: none;
   align-items: center;
   gap: 0.5rem;
@@ -154,7 +155,7 @@
   min-height: 0;
   flex-direction: column;
   padding: 0.75rem 0.75rem 0;
-  background: var(--k2b-surface-muted);
+  background: var(--k2b-surface);
 }
 
 .k2b-ui .assistant-sidebar-meta { display: inline-flex; align-items: center; gap: 0.25rem; }
@@ -233,12 +234,11 @@
 .k2b-ui .assistant-sidebar-group__chevron,
 .k2b-ui .assistant-sidebar-group__icon { flex: none; color: var(--k2b-text-muted); font-size: 0.875rem; }
 .k2b-ui .assistant-sidebar-group__copy { display: flex; min-width: 0; flex-direction: column; }
-.k2b-ui .assistant-sidebar-group__title { overflow: hidden; font-size: 0.8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .assistant-sidebar-group__title { overflow: hidden; font-size: 0.8125rem; white-space: nowrap; }
 .k2b-ui .assistant-sidebar-group__description {
   overflow: hidden;
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .k2b-ui .assistant-sidebar-group__body { display: flex; min-width: 0; flex-direction: column; padding-inline-start: 1rem; }
@@ -543,6 +543,40 @@
 .k2b-ui .assistant-chat-marker[data-tone="attention"] { color: var(--k2b-warning-text); }
 .k2b-ui .assistant-chat-marker[data-tone="danger"] { color: var(--k2b-danger-text); }
 .k2b-ui .assistant-chat-marker[data-tone="accent"] { color: var(--k2b-action); }
+/* A chat that waits for the person carries the AI accent dot of "Waiting for you", also in the phone navigation, whose
+   tones have no AI color. It takes the slot of an icon, so the row keeps its size. */
+.k2b-ui .assistant-chat-waiting { display: inline-block; flex: none; inline-size: .5rem; block-size: .5rem; border-radius: 50%; background: var(--k2b-ai-accent); }
+
+/* "Waiting for you" above the composer: one row of fixed height that scrolls sideways, so a question opening or
+   closing elsewhere never moves the composer. Hidden, it keeps its place. Its end fades, so a cut entry reads as more
+   to scroll to; the list's end padding keeps a row that fits out of the fade. */
+.k2b-ui .assistant-waiting {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  block-size: 2.5rem;
+  min-inline-size: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 2rem), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 2rem), transparent);
+}
+.k2b-ui .assistant-waiting::-webkit-scrollbar { display: none; }
+.k2b-ui .assistant-waiting[data-quiet] { visibility: hidden; }
+.k2b-ui .assistant-waiting__label { display: inline-flex; flex: none; align-items: center; gap: .4375rem; padding-inline: .25rem .375rem; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.25rem; white-space: nowrap; }
+.k2b-ui .assistant-waiting__label::before { content: ""; flex: none; inline-size: .4375rem; block-size: .4375rem; border-radius: 50%; background: var(--k2b-ai-accent); }
+.k2b-ui .assistant-waiting__list { display: flex; flex: none; align-items: center; gap: .25rem; margin: 0; padding: 0 2rem 0 0; list-style: none; }
+.k2b-ui .assistant-waiting__entry { color: var(--k2b-text); font-weight: 500; }
+.k2b-ui .assistant-waiting__icon { flex: none; color: var(--assistant-waiting-accent, var(--k2b-text-muted)); font-size: .9375rem; }
+/* Long words fade at a bound, as navigation labels do; the row scrolls sideways for the rest. */
+.k2b-ui .assistant-waiting__short { max-inline-size: 20rem; }
+.k2b-ui .assistant-waiting__chat { max-inline-size: 12rem; color: var(--k2b-text-muted); font-size: .75rem; font-weight: 400; }
+/* On touch screens the row is as tall as the 44 px hit areas of its buttons, which it would otherwise clip. */
+@media (any-pointer: coarse) {
+  .k2b-ui .assistant-waiting { block-size: 2.75rem; }
+}
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .assistant-chat-sidebar-item--leaving { transition: none; }
 }

@@ -37,6 +37,18 @@ and approve the code:
 cld login --server https://cloud.example.com --device
 ```
 
+To approve the sign-in on your phone instead, use `--user <username-or-email>`.
+cld shows a code; compare it in Cloud Login and confirm:
+
+```bash
+cld login portal --server https://cloud.example.com --user alice --ttl 8h
+```
+
+`--ttl` ends any login after a duration such as `30m`, `8h`, or `2d` (a number
+without a unit means seconds). Cloud may shorten it; cld prints the actual end,
+and `cld auth status` shows it later. Without `--ttl`, a `--user` login lasts
+the Cloud's session length, and browser and `--device` logins last 90 days.
+
 In an SSH session or with `--no-open`, the normal `cld login` suggests
 `--device`. Run `cld login --help` for all options.
 
@@ -61,10 +73,14 @@ cld notebooks reference
 ```
 
 Package plugins install for every profile from a path, a `.tgz`, or
-`npm:<package>`. Served plugins live content-addressed in
-`~/.config/cloud/cld/plugins/store/<digest>/`, package plugins in
-`~/.config/cloud/cld/plugins/<id>/`. Both run unsandboxed with your Cloud
-credentials. See
+`npm:<package>`. Authors build them with
+`bun run node_modules/@k2b/cloud/scripts/cli-pack.ts`. Both sources use the same
+verified bundle with skill references and live in
+`~/.config/cloud/cld/plugins/store/<digest>/`. Global package records are in
+`plugins/packages.json`; old-format packages are refused.
+`cld <module> reference [file]` works for every installed module. Package modules
+appear with profile `*` in the skill table, which syncs after install and
+removal. Both run unsandboxed with your Cloud credentials. See
 [Application CLI modules](../../docs-site/docs/en/platform/cli-modules.md) for
 the manifest and the security model.
 

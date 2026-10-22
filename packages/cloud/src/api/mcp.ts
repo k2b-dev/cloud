@@ -15,8 +15,17 @@ import {
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { HELP_SEARCH_MAX_LIMIT, helpResourceUri, parseHelpResourceUri, readHelpArticle } from "../_internal/help-catalog";
+import { capabilitySentenceText } from "../_internal/capability-sentences";
+import { withCapabilityRequestTimeout } from "../_internal/capability-timeout";
+import {
+  HELP_SEARCH_MAX_LIMIT,
+  helpAgentMarkdown,
+  helpResourceUri,
+  parseHelpResourceUri,
+  readHelpArticle,
+} from "../_internal/help-catalog";
 import { getCapability, listApps } from "../_internal/registry";
+import { addCloudResourceHrefs } from "../ai/resource-refs";
 import { capabilityValueMeta, recordCapabilityExecution } from "../capabilities/executions";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -24,20 +33,26 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   CAPABILITY_PROTOCOL_VERSION,
   type CapabilityActionManifest,
+  CapabilityActionReceiptSchema,
   type CapabilityQueryManifest,
   CapabilitySemanticLinkSchema,
-  CloudResourceRefSchema,
+  type CloudResourceRef,
   capabilityResultJsonSchema,
+  capabilityResultSchema,
   cloudResourceRefAppId,
+  LinkedCloudResourceReferenceSchema,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestAuthority, rateLimit, rejectReservedWorkloadCredential, resolveLocale } from "../server";
+import { preferredLocale } from "../server/locale";
+import { noTransform } from "../server/middleware/no-transform";
 import { createHelpReader, type HelpArticle, type HelpMetadata, type HelpReader, type HelpReaderFactory } from "../services/help";
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { logger } from "../services/logging";
 import { get } from "../services/settings";
 import { cloudMcpResourceUri, publicCloudOrigin } from "../shared/app-url";
+import { normalizeTimeZone } from "../shared/time";
 import { type CapabilityDispatchDependencies, dispatchCapability } from "./capabilities";
 
 const MCP_TOOL_PAGE_SIZE = 100;
@@ -57,6 +72,7 @@ type McpRouteDependencies = CapabilityDispatchDependencies & {
   listApps?: () => Promise<AppRegistryEntry[]>;
   help?: HelpReaderFactory;
   getOperatorLocale?: () => Promise<string | undefined>;
+  getOperatorTimeZone?: () => Promise<string | undefined>;
   getAppUrl?: () => Promise<string>;
   authenticate?: MiddlewareHandler<AuthContext>;
   limit?: MiddlewareHandler<AuthContext>;
@@ -121,7 +137,7 @@ const platformTools: Tool[] = [
     title: "Read Cloud resource",
     description:
       "Read one Cloud resource through its current canonical reader. Pass a typed ref returned by search, list, lookup, or another capability unchanged; never guess a reader name or substitute an id from another resource type.",
-    inputSchema: structuredClone(z.toJSONSchema(CloudResourceRefSchema)) as Tool["inputSchema"],
+    inputSchema: structuredClone(z.toJSONSchema(LinkedCloudResourceReferenceSchema)) as Tool["inputSchema"],
     annotations: { title: "Read Cloud resource", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     _meta: { "cloud/kind": "resource-read" },
   },
@@ -206,7 +222,7 @@ const projectTool = (
       title: `${app.appName}: ${operation.title}`,
       description: operation.description,
       inputSchema: action ? actionInputSchema(action) : cloneObjectSchema(operation.inputSchema),
-      outputSchema: cloneObjectSchema(capabilityResultJsonSchema(operation.dataSchema)),
+      outputSchema: cloneObjectSchema(capabilityResultJsonSchema(operation.dataSchema, { consumer: true })),
       annotations: {
         title: operation.title,
         readOnlyHint: !isAction,
@@ -300,7 +316,7 @@ const findCapabilityTool = async (
 };
 
 const findResourceReaderTool = async (
-  ref: z.infer<typeof CloudResourceRefSchema>,
+  ref: CloudResourceRef,
   lookup: (appId: string) => Promise<CapabilityRegistryEntry | null>,
   registry: () => Promise<AppRegistryEntry[]>,
 ): Promise<CapabilityTool | null> => {
@@ -333,15 +349,20 @@ const responseTooLargeToolResult = (): CallToolResult => {
   return { isError: true, structuredContent: error, content: [{ type: "text", text: JSON.stringify(error) }] };
 };
 
+const toolResult = (body: Record<string, unknown>, isError: boolean): CallToolResult => ({
+  ...(isError ? { isError: true } : {}),
+  structuredContent: body,
+  content: [{ type: "text", text: JSON.stringify(body) }],
+});
+
+const fitsToolResult = (result: CallToolResult): boolean =>
+  new TextEncoder().encode(JSON.stringify(result)).byteLength <= CAPABILITY_MAX_RESULT_BYTES;
+
 const ensureBoundedToolResult = (result: CallToolResult): CallToolResult =>
-  new TextEncoder().encode(JSON.stringify(result)).byteLength > CAPABILITY_MAX_RESULT_BYTES ? responseTooLargeToolResult() : result;
+  fitsToolResult(result) ? result : responseTooLargeToolResult();
 
 const boundedToolResult = (body: Record<string, unknown>, isError: boolean): CallToolResult =>
-  ensureBoundedToolResult({
-    ...(isError ? { isError: true } : {}),
-    structuredContent: body,
-    content: [{ type: "text", text: JSON.stringify(body) }],
-  });
+  ensureBoundedToolResult(toolResult(body, isError));
 
 const semanticResourceLinks = (body: Record<string, unknown>, origin: string): CallToolResult["content"] => {
   const found = new Map<string, z.infer<typeof CapabilitySemanticLinkSchema>>();
@@ -532,7 +553,7 @@ const createMcpServer = (
         {
           uri: message.params.uri,
           mimeType: "text/markdown",
-          text: document.markdown,
+          text: helpAgentMarkdown(document),
           _meta: { "cloud/manifestHash": document.manifestHash, "cloud/locale": document.locale },
         },
       ],
@@ -573,14 +594,14 @@ const createMcpServer = (
     let args: Record<string, unknown>;
     try {
       if (message.params.name === RESOURCE_READ_TOOL) {
-        const parsed = CloudResourceRefSchema.safeParse(message.params.arguments);
+        const parsed = LinkedCloudResourceReferenceSchema.safeParse(message.params.arguments);
         if (!parsed.success) {
           const issues = parsed.error.issues.map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`).join("; ");
           return validationToolError(
             `cloud__resource__read requires one exact typed ref returned by a current Cloud capability (${issues})`,
           );
         }
-        selected = await findResourceReaderTool(parsed.data, capabilityLookup, registry);
+        selected = await findResourceReaderTool({ type: parsed.data.type, id: parsed.data.id }, capabilityLookup, registry);
         args = { id: parsed.data.id };
         if (!selected) {
           return boundedToolResult(
@@ -646,12 +667,54 @@ const createMcpServer = (
       authority,
       dependencies,
     });
-    const body = await parseResponse(response);
-    const result = boundedToolResult(body, !response.ok);
-    if (response.ok) {
-      result.content.push(...semanticResourceLinks(body, publicCloudOrigin(await (dependencies.getAppUrl ?? defaultAppUrl)())));
+    const providerBody = await parseResponse(response);
+    let body = providerBody;
+    const origin = response.ok ? publicCloudOrigin(await (dependencies.getAppUrl ?? defaultAppUrl)()) : undefined;
+    if (origin) {
+      const parsed = capabilityResultSchema(z.unknown()).safeParse(body);
+      const appIds = new Set(parsed.success ? parsed.data.refs?.map(cloudResourceRefAppId) : []);
+      const apps = appIds.size ? await registry().catch(() => []) : [];
+      const capabilities = await Promise.all(
+        apps
+          .filter((app) => appIds.has(app.id) && app.capabilities?.protocolVersion === CAPABILITY_PROTOCOL_VERSION)
+          .map(async (app) => {
+            const entry = await capabilityLookup(app.id).catch(() => null);
+            return entry?.appId === app.id && entry.manifest.manifestHash === app.capabilities?.manifestHash ? entry : null;
+          }),
+      );
+      body = addCloudResourceHrefs(
+        body,
+        capabilities.filter((entry) => entry !== null),
+        origin,
+      );
     }
-    return ensureBoundedToolResult(result);
+    const receipt = response.ok && selected.kind === "actions" ? CapabilityActionReceiptSchema.safeParse(body.receipt) : null;
+    let receiptText: string | undefined;
+    if (receipt?.success) {
+      // The receipt line is extra presentation: if Cloud cannot word it, the completed Action's result still goes out.
+      try {
+        const locale = preferredLocale(request.headers) ?? (await resolveHelpLocale());
+        const timeZone = normalizeTimeZone(
+          await (dependencies.getOperatorTimeZone ?? (() => get<string>("app.timezone")))().catch(() => "UTC"),
+        );
+        receiptText = capabilitySentenceText(receipt.data.text, receipt.data.slots ?? {}, { locale, timeZone });
+      } catch (error) {
+        log.warn("MCP receipt text unavailable", { error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    const resultFor = (value: Record<string, unknown>, withReceipt = true): CallToolResult => {
+      const result = toolResult(value, !response.ok);
+      if (origin) result.content.push(...semanticResourceLinks(value, origin));
+      if (withReceipt && receiptText) result.content.unshift({ type: "text", text: receiptText });
+      return result;
+    };
+    // Both enrichments are optional: neither turns a result that fits into RESPONSE_TOO_LARGE.
+    const result = resultFor(body);
+    if (fitsToolResult(result)) return result;
+    const plain = resultFor(body, false);
+    if (fitsToolResult(plain)) return plain;
+    const original = resultFor(providerBody);
+    return ensureBoundedToolResult(fitsToolResult(original) ? original : resultFor(providerBody, false));
   });
 
   return server;
@@ -713,46 +776,53 @@ export const createMcpProtectedResourceRoutes = (dependencies: Pick<McpRouteDepe
 /** One authenticated, stateless MCP endpoint projected from live capabilities. */
 export const createMcpRoutes = (dependencies: McpRouteDependencies = {}) =>
   new Hono<AuthContext>()
+    .use("/mcp/v1", noTransform())
+    .use("/mcp/v1/*", noTransform())
     .use("/mcp/v1", validateMcpOrigin(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", dependencies.authenticate ?? mcpAuthentication(dependencies.getAppUrl ?? defaultAppUrl))
     .use("/mcp/v1", rejectReservedWorkloadCredential)
     .use("/mcp/v1", dependencies.limit ?? rateLimit())
-    .all("/mcp/v1", async (c) => {
-      if (c.req.method !== "POST") {
-        return new Response(null, { status: 405, headers: { Allow: "POST" } });
-      }
-      let request = c.req.raw;
-      const parsed = await readBoundedJson(request, CAPABILITY_MAX_REQUEST_BYTES);
-      if (!parsed.ok) {
-        return c.json(
-          {
-            jsonrpc: "2.0",
-            id: null,
-            error: {
-              code: parsed.reason === "too_large" ? -32600 : -32700,
-              message: parsed.reason === "too_large" ? "MCP request is too large" : "MCP request body must be JSON",
+    .all("/mcp/v1", async (c) =>
+      withCapabilityRequestTimeout(c, "query", async () => {
+        if (c.req.method !== "POST") {
+          return new Response(null, { status: 405, headers: { Allow: "POST" } });
+        }
+        let request = c.req.raw;
+        const parsed = await readBoundedJson(request, CAPABILITY_MAX_REQUEST_BYTES);
+        if (!parsed.ok) {
+          return c.json(
+            {
+              jsonrpc: "2.0",
+              id: null,
+              error: {
+                code: parsed.reason === "too_large" ? -32600 : -32700,
+                message: parsed.reason === "too_large" ? "MCP request is too large" : "MCP request body must be JSON",
+              },
             },
-          },
-          parsed.reason === "too_large" ? 413 : 400,
-        );
-      }
-      const headers = new Headers(request.headers);
-      headers.delete("content-length");
-      request = new Request(request.url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(parsed.data),
-        signal: request.signal,
-      });
-      const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-      const server = createMcpServer(request, dependencies, c.get("oauthScopes") ?? null, auth.getAuthority(c));
-      await server.connect(transport);
-      try {
-        return await transport.handleRequest(request);
-      } finally {
-        await transport.close();
-        await server.close();
-      }
-    });
+            parsed.reason === "too_large" ? 413 : 400,
+          );
+        }
+        const headers = new Headers(request.headers);
+        headers.delete("content-length");
+        request = new Request(request.url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(parsed.data),
+          signal: request.signal,
+        });
+        const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+        const server = createMcpServer(request, dependencies, c.get("oauthScopes") ?? null, auth.getAuthority(c));
+        try {
+          await server.connect(transport);
+          return await transport.handleRequest(request);
+        } finally {
+          try {
+            await transport.close();
+          } finally {
+            await server.close();
+          }
+        }
+      }),
+    );
 
 export type McpApiType = ReturnType<typeof createMcpRoutes>;

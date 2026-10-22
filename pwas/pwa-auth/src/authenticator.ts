@@ -1,4 +1,5 @@
 import { AppApprovalClientError, appApproval } from "@k2b/cloud/browser/app-approval";
+import { type AppDeviceChange, AppDeviceInboxWithChangesSchema } from "@k2b/cloud/contracts/app-approval";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { type Binding, type CloudDetails, storage } from "./storage";
 
@@ -6,7 +7,15 @@ export type Client = Awaited<ReturnType<typeof appApproval.connect>>;
 export type Login = Awaited<ReturnType<Client["pending"]>>["requests"][number];
 export type ActionSummary = Awaited<ReturnType<Client["inbox"]>>["actions"][number];
 export type ActionView = Awaited<ReturnType<Client["action"]>>;
-export type InboxState = { requests: Login[]; actions: ActionSummary[]; moreActions: number; error?: Failure };
+export type DeviceChange = AppDeviceChange;
+export type InboxState = {
+  changes: DeviceChange[];
+  moreChanges: number;
+  requests: Login[];
+  actions: ActionSummary[];
+  moreActions: number;
+  error?: Failure;
+};
 export type PairingPayload = ReturnType<typeof appApproval.parsePairingLink>;
 export type Failure = "unavailable" | "forbidden" | "stale" | "storage" | "uncertain";
 export function failure(error: unknown): Failure {
@@ -71,11 +80,23 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       if (!(await storage.reserve(pollId, Date.now() + appApproval.limits.pollSeconds * 1000))) return;
       abort.signal.throwIfAborted();
       const api = await client(binding.issuer, abort.signal);
-      const result = api.actions ? await api.inbox(binding, abort.signal) : await api.pending(binding, abort.signal);
+      // The sheets show a terminal's client, rights and lifetime, a browser sign-in's context and the device changes.
+      // The SDK sends each opt-in only to Clouds that announce it.
+      const result =
+        api.actions || api.deviceChanges
+          ? await api.inbox(binding, abort.signal, { accept: ["terminal-logins", "login-context", "device-changes"] })
+          : await api.pending(binding, abort.signal, { accept: ["login-context"] });
+      const changes = "logins" in result && api.deviceChanges ? AppDeviceInboxWithChangesSchema.parse(result) : undefined;
       const state: InboxState =
         "logins" in result
-          ? { requests: result.logins, actions: result.actions, moreActions: result.moreActions }
-          : { requests: result.requests, actions: [], moreActions: 0 };
+          ? {
+              requests: result.logins,
+              actions: result.actions,
+              moreActions: result.moreActions,
+              changes: changes?.changes ?? [],
+              moreChanges: changes?.moreChanges ?? 0,
+            }
+          : { requests: result.requests, actions: [], moreActions: 0, changes: [], moreChanges: 0 };
       abort.signal.throwIfAborted();
       vault.session().check();
       setStates((s) => ({ ...s, [binding.id]: state }));
@@ -86,7 +107,10 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       if (!abort.signal.aborted) {
         const delay = Math.min(appApproval.limits.proofSeconds, (backoff.get(binding.id) ?? appApproval.limits.pollSeconds) * 2);
         backoff.set(binding.id, delay);
-        setStates((s) => ({ ...s, [binding.id]: { requests: [], actions: [], moreActions: 0, error: failure(error) } }));
+        setStates((s) => ({
+          ...s,
+          [binding.id]: { requests: [], actions: [], changes: [], moreChanges: 0, moreActions: 0, error: failure(error) },
+        }));
         await storage.defer(pollId, Date.now() + delay * 1000).catch(() => setStorageError(true));
       } else {
         await storage.defer(pollId, Date.now() + appApproval.limits.pollSeconds * 1000).catch(() => {});
@@ -125,7 +149,13 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       if (vault.status() === "open" && event.data?.type === "pending" && bindings().some((b) => b.id === event.data.id)) {
         setStates((s) => ({
           ...s,
-          [event.data.id]: { requests: event.data.requests, actions: event.data.actions, moreActions: event.data.moreActions },
+          [event.data.id]: {
+            requests: event.data.requests,
+            actions: event.data.actions,
+            changes: event.data.changes ?? [],
+            moreChanges: event.data.moreChanges ?? 0,
+            moreActions: event.data.moreActions,
+          },
         }));
       } else {
         void reload();
@@ -201,6 +231,8 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       ...s,
       [binding.id]: {
         actions: [],
+        changes: [],
+        moreChanges: 0,
         moreActions: 0,
         ...s[binding.id],
         requests: (s[binding.id]?.requests ?? []).filter((r) => r.requestId !== request.requestId),
@@ -221,6 +253,8 @@ export function createAuthenticator(vault: import("./vault").Vault) {
       ...s,
       [binding.id]: {
         requests: [],
+        changes: [],
+        moreChanges: 0,
         moreActions: 0,
         ...s[binding.id],
         actions: (s[binding.id]?.actions ?? []).filter((item) => item.actionId !== actionId),
@@ -255,6 +289,47 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     }
     dropAction(binding, view.actionId);
     if (decision === "approve") await remember(binding, { approvedAt: new Date().toISOString() });
+  };
+  const dropChange = (binding: Binding, changeId: string) => {
+    setStates((s) => ({
+      ...s,
+      [binding.id]: {
+        requests: [],
+        actions: [],
+        moreActions: 0,
+        moreChanges: 0,
+        ...s[binding.id],
+        changes: (s[binding.id]?.changes ?? []).filter((item) => item.changeId !== changeId),
+      },
+    }));
+    channel.postMessage({ type: "pending", id: binding.id, ...states()[binding.id] });
+  };
+  const decideChange = async (binding: Binding, change: DeviceChange, decision: "approve" | "deny") => {
+    const abort = new AbortController();
+    mutations.add(abort);
+    try {
+      if (!navigator.onLine || document.visibilityState !== "visible" || Date.parse(change.expiresAt) <= Date.now())
+        throw new Error("stale");
+      const owner = vault.session();
+      const api = await client(binding.issuer, abort.signal);
+      owner.check();
+      if (!(await storage.reserve(`change:${binding.id}:${change.changeId}`, Date.parse(change.expiresAt)))) throw new Error("uncertain");
+      if (!navigator.onLine || document.visibilityState !== "visible" || Date.parse(change.expiresAt) <= Date.now())
+        throw new Error("stale");
+      abort.signal.throwIfAborted();
+      owner.check();
+      await api.decideChange(binding, change, decision, abort.signal);
+      owner.check();
+    } catch (error) {
+      if ((error instanceof AppApprovalClientError && error.status === 409) || (error instanceof Error && error.message === "stale")) {
+        dropChange(binding, change.changeId);
+        throw new Error("stale");
+      }
+      throw new Error("uncertain");
+    } finally {
+      mutations.delete(abort);
+    }
+    dropChange(binding, change.changeId);
   };
   // One attempt per Cloud and token per app session; older Clouds reject the command.
   const pushAttempts = new Set<string>();
@@ -320,6 +395,7 @@ export function createAuthenticator(vault: import("./vault").Vault) {
     decide,
     action,
     act,
+    decideChange,
     revoke,
     syncPush,
     rename: async (binding: Binding, label: string) => {

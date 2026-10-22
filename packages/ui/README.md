@@ -59,10 +59,10 @@ See the [TextInput guide](https://cloud.k2b.dev/en/ui/input/text) for details.
 | --- | --- |
 | Actions | Buttons, menus, tabs, toolbars |
 | Inputs | Text fields, selectors, date pickers, file inputs |
-| Layout | Panels, settings, split panes, floating windows, TableOfContents |
+| Layout | Panels, settings, split panes, floating windows, TableOfContents, watchAppHostWidth |
 | Surfaces | Cards, avatars, badges, empty states |
 | Feedback | Dialogs, prompts, tooltips, toasts, screen-reader announcements |
-| Content | Tables, charts, calendars, Markdown, file previews, Kbd, LabelChip, Steps |
+| Content | Tables, charts, calendars, Markdown, file previews, MapView, Kbd, LabelChip, Steps, message rows, ReactionBar |
 | Chat | Timeline, messages, composer, context usage |
 | Widgets | Dashboard summaries, lists, statistics |
 | Formatting | Numbers, currencies, dates, durations |

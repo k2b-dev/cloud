@@ -7,10 +7,19 @@ import {
   APP_ACTION_LIMITS,
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
+  APP_APPROVAL_PENDING_ACCEPT,
   APP_APPROVAL_PROTOCOL,
   type AppActionView,
   AppActionViewSchema,
+  type AppApprovalAccept,
+  type AppApprovalPendingAccept,
+  type AppDeviceChange,
+  AppDeviceChangeSchema,
   AppDeviceCommandSchema,
+  type AppDeviceInbox,
+  AppDeviceInboxSchema,
+  type AppDeviceInboxWithChanges,
+  AppDeviceInboxWithChangesSchema,
   AppDeviceProofSchema,
   type AppDevicePublicKey,
   AppDevicePublicKeySchema,
@@ -196,7 +205,8 @@ const connect = async (options: {
       );
     },
     pairingResult: (payload: AppPairingPayload, key: AppApprovalKey, signal?: AbortSignal) => {
-      const p = pairing(payload);
+      const p = AppPairingPayloadSchema.parse(payload);
+      if (p.issuer !== issuer) throw new AppApprovalClientError("INVALID_INPUT");
       return request(
         "/pairings/result",
         AppPairingResultSchema,
@@ -204,8 +214,10 @@ const connect = async (options: {
         signal,
       );
     },
-    pending: async (device: AppApprovalDevice, signal?: AbortSignal) => {
-      const result = await command(device, { operation: "pending" }, signal);
+    pending: async (device: AppApprovalDevice, signal?: AbortSignal, options?: { accept?: AppApprovalPendingAccept[] }) => {
+      // Untyped callers may reuse their inbox list; drop what pending does not serve instead of failing every poll.
+      const accept = options?.accept?.filter((entry) => APP_APPROVAL_PENDING_ACCEPT.includes(entry) && info.features?.includes(entry));
+      const result = await command(device, { operation: "pending", ...(accept?.length ? { accept } : {}) }, signal);
       if (!("requests" in result)) throw new AppApprovalClientError("INVALID_RESPONSE");
       return result;
     },
@@ -223,10 +235,48 @@ const connect = async (options: {
     },
     /** Whether this Cloud serves `inbox`, `action` and `act`. Older Clouds answer those commands with HTTP 400. */
     actions: info.features?.includes("actions") === true,
+    /** Whether this Cloud can include terminal consent in an explicitly opted-in inbox. */
+    terminalLogins: info.features?.includes("terminal-logins") === true,
+    /** Whether this Cloud serves sign-in context through a signed opt-in. */
+    loginContext: info.features?.includes("login-context") === true,
+    /** Whether this Cloud lists requests to pair or remove a device in an inbox that accepts `device-changes`. */
+    deviceChanges: info.features?.includes("device-changes") === true,
     /** Pending sign-ins and the newest open Action approvals in one call; use it instead of `pending` where `actions` is true. */
-    inbox: async (device: AppApprovalDevice, signal?: AbortSignal) => {
-      const result = await command(device, { operation: "inbox" }, signal);
-      if (!("actions" in result)) throw new AppApprovalClientError("INVALID_RESPONSE");
+    inbox: async (
+      device: AppApprovalDevice,
+      signal?: AbortSignal,
+      options?: { accept?: AppApprovalAccept[] },
+    ): Promise<AppDeviceInbox | AppDeviceInboxWithChanges> => {
+      // SDK upgrades alone must not expose consent the app cannot show. Old Clouds never see the new key.
+      const accept = options?.accept?.filter((entry) => info.features?.includes(entry));
+      const result = await command(device, { operation: "inbox", ...(accept?.length ? { accept } : {}) }, signal);
+      if (!("actions" in result) || (accept?.includes("device-changes") && (!("changes" in result) || !("moreChanges" in result))))
+        throw new AppApprovalClientError("INVALID_RESPONSE");
+      return "changes" in result ? AppDeviceInboxWithChangesSchema.parse(result) : AppDeviceInboxSchema.parse(result);
+    },
+    /**
+     * Signs a decision on one entry of `changes`, a request to pair or remove a device of this account. Only call it on an
+     * explicit choice of the person. The device being removed can approve its own removal; its `deny` throws
+     * `AppApprovalClientError` with code `HTTP` and status 409.
+     */
+    decideChange: async (device: AppApprovalDevice, change: AppDeviceChange, decision: "approve" | "deny", signal?: AbortSignal) => {
+      const parsed = AppDeviceChangeSchema.safeParse(change);
+      if (!parsed.success || Date.parse(parsed.data.expiresAt) <= Date.now()) throw new AppApprovalClientError("INVALID_INPUT");
+      change = parsed.data;
+      const result = await command(
+        device,
+        {
+          operation: "change",
+          changeId: change.changeId,
+          kind: change.kind,
+          targetId: change.device.id,
+          endSessions: change.endSessions,
+          decision,
+        },
+        signal,
+      );
+      if (!("state" in result) || result.state !== (decision === "approve" ? "approved" : "denied"))
+        throw new AppApprovalClientError("INVALID_RESPONSE");
       return result;
     },
     /** One open Action approval. The digest is recomputed here, so a view that does not match it is never returned. */
@@ -258,6 +308,10 @@ const connect = async (options: {
       if (!("state" in result) || result.state !== "updated") throw new AppApprovalClientError("INVALID_RESPONSE");
       return result;
     },
+    /**
+     * Removes this device itself at once, without approval from a paired device. Sign-ins it approved stay signed in.
+     * Removing a device from Cloud in the browser waits for a paired device to approve instead.
+     */
     revoke: async (device: AppApprovalDevice, signal?: AbortSignal) => {
       const result = await command(device, { operation: "revoke" }, signal);
       if (!("state" in result) || result.state !== "revoked") throw new AppApprovalClientError("INVALID_RESPONSE");

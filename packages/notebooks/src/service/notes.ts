@@ -1,17 +1,16 @@
 import { lazySync } from "@k2b/cloud";
 import type { MutationResult, PaginationParams, PermissionLevel } from "@k2b/cloud/contracts";
 import { logger, get as settingsGet, toPgTextArray, toPgUuidArray, trace } from "@k2b/cloud/services";
+import { SHARED_TEXT_NAME, type SharedTextEditResult } from "@k2b/cloud/shared-text";
 import { type DateContext, dates, err, fail, fromBase64Strict, ok, type Result } from "@k2b/stdlib";
 import { RetentionGapError } from "@k2b/sync";
 import { sql, type TransactionSQL } from "bun";
 import * as Y from "yjs";
-import { minimalTextDiff } from "../lib/minimal-text-diff";
 import { mayDeleteOrLockNotes, NOTE_DELETE_ADMIN_ONLY, NOTE_DELETE_PERMISSIONS, NOTE_LOCK_ADMIN_ONLY } from "../lib/note-delete-permission";
 import {
   applyNoteEdits,
   NoteEditError,
   type NoteEditOperation,
-  type NoteEditPreconditions,
   type NoteEditResult,
   noteContentHash,
   summarizeNoteEditBlocks,
@@ -31,10 +30,9 @@ import {
   createYjsTopic,
   isSharedCursor,
   legacyYjsTopicInfo,
-  MalformedSyncEventError,
-  NODE_ID,
+  type MalformedSyncEventError,
+  notebooksTextLog,
   parseStreamCursor,
-  replayYjsTopicToCursor,
   toBase64,
 } from "./yjs-sync";
 
@@ -347,8 +345,6 @@ const placeInLevel = async (
   note.position = index + 1;
 };
 
-const NOTE_TEXT_NAME = "codemirror";
-
 const createDocFromState = (state: Uint8Array | null, fallbackContent: string | null | undefined): Y.Doc => {
   const doc = new Y.Doc({ gc: true });
   if (state) {
@@ -356,7 +352,7 @@ const createDocFromState = (state: Uint8Array | null, fallbackContent: string | 
     return doc;
   }
   const content = fallbackContent ?? "";
-  if (content.length > 0) doc.getText(NOTE_TEXT_NAME).insert(0, content);
+  if (content.length > 0) doc.getText(SHARED_TEXT_NAME).insert(0, content);
   return doc;
 };
 
@@ -736,35 +732,15 @@ export const getWithContent = async (params: { id: string }): Promise<NoteWithCo
  * must act on current content rather than the latest persisted snapshot.
  */
 export const getCurrentWithContent = async (params: { id: string }): Promise<NoteWithContent | null> => {
-  let row = await getWithContentRow(params.id);
+  const row = await getWithContentRow(params.id);
   if (!row) return null;
-  if (!isSharedCursor(row.yjs_stream_cursor)) {
-    await getAnchoredYjsState({ noteId: params.id });
-    row = await getWithContentRow(params.id);
-    if (!row) return null;
-  }
-
-  const streamCursor = row.yjs_stream_cursor ?? null;
-  const noteTopic = createYjsTopic();
-  const targetCursor = await noteTopic.latestCursor({ tenantId: params.id });
-  if (!targetCursor || (streamCursor && compareStreamCursor(targetCursor, streamCursor) <= 0)) return mapToNoteWithContent(row);
-
-  const doc = createDocFromState(row.yjs_snapshot ? new Uint8Array(row.yjs_snapshot) : null, row.content_md);
-  try {
-    await replayYjsTopicToCursor({
-      noteId: params.id,
-      after: streamCursor,
-      targetCursor,
-      doc,
-    });
-    return {
-      ...mapToNote(row),
-      contentMd: doc.getText(NOTE_TEXT_NAME).toString(),
-      yjsSnapshot: toBase64(Y.encodeStateAsUpdate(doc)),
-    };
-  } finally {
-    doc.destroy();
-  }
+  const current = await noteDocuments.read(params.id);
+  if (!current) return null;
+  return {
+    ...mapToNote(row),
+    contentMd: current.text,
+    yjsSnapshot: current.state ? toBase64(current.state) : null,
+  };
 };
 
 /**
@@ -1372,118 +1348,23 @@ export const save = async (params: SaveNoteParams): Promise<MutationResult<{ ver
   return { ok: true, data: { versionId } };
 };
 
-type LiveNoteDocument = {
-  doc: Y.Doc;
-  initialState: YjsState;
-  requestedAt: number;
-  contributors: NoteVersionContributorInput[];
+type NoteTextSaved = MutationResult<{ versionId: string | null }>;
+
+const noteTextFailure = (
+  result: Exclude<SharedTextEditResult<NoteTextSaved>, { status: "edited" | "unchanged" }>,
+): MutationResult<never> => {
+  if (result.status === "notFound") return { ok: false, error: "Note not found", status: 404 };
+  const message = result.error instanceof Error ? result.error.message : String(result.error);
+  return result.status === "syncFailed"
+    ? { ok: false, error: `Failed to synchronize note stream before editing: ${message}`, status: 409 }
+    : { ok: false, error: `Failed to persist note edit: ${message}`, status: 500 };
 };
 
-const openLiveNoteDocument = async (existing: NoteWithContent): Promise<MutationResult<LiveNoteDocument>> => {
-  const requestedAt = Date.now();
-  const initialState = await getAnchoredYjsState({ noteId: existing.id });
-  if (!initialState) return { ok: false, error: "Note not found", status: 404 };
-
-  const noteTopic = createYjsTopic();
-  const targetCursor = await noteTopic.latestCursor({ tenantId: existing.id });
-
-  const doc = createDocFromState(initialState.yjsState, existing.contentMd);
-  let contributors: NoteVersionContributorInput[] = [];
-  try {
-    if (targetCursor)
-      contributors = await replayYjsTopicToCursor({
-        noteId: existing.id,
-        after: initialState.streamCursor,
-        targetCursor,
-        doc,
-      });
-  } catch (error) {
-    doc.destroy();
-    return {
-      ok: false,
-      error: `Failed to synchronize note stream before editing: ${error instanceof Error ? error.message : String(error)}`,
-      status: 409,
-    };
+class NoteTextAbort extends Error {
+  constructor(readonly result: Extract<MutationResult<never>, { ok: false }>) {
+    super(result.error);
   }
-
-  return { ok: true, data: { doc, initialState, requestedAt, contributors } };
-};
-
-const applyLiveNoteContent = async (params: {
-  existing: NoteWithContent;
-  live: LiveNoteDocument;
-  contentMd: string;
-  createdBy: string | null;
-  actor?: { kind: "user" | "service_account"; id: string };
-  restoredBy?: activity.NotebookActivityIdentity;
-}): Promise<MutationResult<{ note: Note; contentMd: string; versionId: string | null }>> => {
-  const {
-    existing,
-    live: { doc, initialState, requestedAt },
-  } = params;
-  let versionId: string | null = null;
-  const noteTopic = createYjsTopic();
-  const ytext = doc.getText(NOTE_TEXT_NAME);
-  const diff = minimalTextDiff(ytext.toString(), params.contentMd);
-  const beforeEditState = Y.encodeStateVector(doc);
-  doc.transact(() => {
-    if (diff.deleteCount > 0) ytext.delete(diff.index, diff.deleteCount);
-    if (diff.insert.length > 0) ytext.insert(diff.index, diff.insert);
-  }, "cli-edit");
-  const editUpdate = Y.encodeStateAsUpdate(doc, beforeEditState);
-  const published = await noteTopic.publish({
-    tenantId: existing.id,
-    data: {
-      kind: "sync",
-      payload: toBase64(editUpdate),
-      originNodeId: NODE_ID,
-      originPeerId: null,
-      ...(params.actor ? { actor: params.actor } : params.createdBy ? { actor: { kind: "user" as const, id: params.createdBy } } : {}),
-    },
-  });
-
-  const persistedDoc = createDocFromState(initialState.yjsState, existing.contentMd);
-  let persistedContent = params.contentMd;
-  try {
-    await replayYjsTopicToCursor({
-      noteId: existing.id,
-      after: initialState.streamCursor,
-      targetCursor: published.cursor,
-      doc: persistedDoc,
-    });
-    persistedContent = persistedDoc.getText(NOTE_TEXT_NAME).toString();
-    const contributors = new Map<string, NoteVersionContributorInput>(
-      (params.restoredBy ? [] : params.live.contributors).map((contributor) => [`${contributor.kind}:${contributor.id}`, contributor]),
-    );
-    const actor = params.actor ?? (params.createdBy ? { kind: "user" as const, id: params.createdBy } : null);
-    if (actor) contributors.set(`${actor.kind}:${actor.id}`, { ...actor, lastContributedAt: new Date(requestedAt) });
-    const saveResult = await save({
-      noteId: existing.id,
-      yjsState: Y.encodeStateAsUpdate(persistedDoc),
-      contentMd: persistedContent,
-      createdBy: params.createdBy,
-      createVersion: true,
-      streamCursor: published.cursor,
-      restoreRevision: initialState.restoreRevision,
-      requestedAt,
-      contributors: [...contributors.values()],
-      restoredBy: params.restoredBy,
-    });
-    if (!saveResult.ok) return saveResult;
-    versionId = saveResult.data.versionId;
-  } catch (error) {
-    return {
-      ok: false,
-      error: `Failed to persist note edit: ${error instanceof Error ? error.message : String(error)}`,
-      status: 500,
-    };
-  } finally {
-    persistedDoc.destroy();
-  }
-
-  const note = await get({ id: existing.id });
-  return note ? { ok: true, data: { note, contentMd: persistedContent, versionId } } : { ok: false, error: "Note not found", status: 404 };
-};
+}
 
 export const editContent = async (params: {
   noteId: string;
@@ -1498,40 +1379,47 @@ export const editContent = async (params: {
     return { ok: false, error: `Note updatedAt mismatch. Expected ${params.data.ifUpdatedAt}, got ${existing.updatedAt}.`, status: 409 };
   }
 
-  const opened = await openLiveNoteDocument(existing);
-  if (!opened.ok) return opened;
-  const live = opened.data;
+  let editResult!: NoteEditResult;
+  let result: SharedTextEditResult<NoteTextSaved>;
   try {
-    let editResult: NoteEditResult;
-    try {
-      const preconditions: NoteEditPreconditions = {
-        ifContentHash: params.data.ifContentHash,
-        ifBlockHash: params.data.ifBlockHash,
-      };
-      editResult = applyNoteEdits(live.doc.getText(NOTE_TEXT_NAME).toString(), params.data.operations, preconditions);
-    } catch (error) {
-      if (error instanceof NoteEditError) return { ok: false, error: error.message, status: error.status };
-      throw error;
-    }
-    if (!editResult.changed) {
-      const note = await get({ id: params.noteId });
-      return note ? { ok: true, data: { ...editResult, note } } : { ok: false, error: "Note not found", status: 404 };
-    }
-    const applied = await applyLiveNoteContent({ ...params, existing, live, contentMd: editResult.content });
-    if (!applied.ok) return applied;
-    return {
-      ok: true,
-      data: {
-        ...editResult,
-        content: applied.data.contentMd,
-        afterHash: noteContentHash(applied.data.contentMd),
-        blocks: summarizeNoteEditBlocks(applied.data.contentMd),
-        note: applied.data.note,
+    result = await noteDocuments.edit(
+      params.noteId,
+      {
+        actor: params.actor ?? (params.createdBy ? { kind: "user", id: params.createdBy } : null),
+        context: { createdBy: params.createdBy },
       },
-    };
-  } finally {
-    live.doc.destroy();
+      (current) => {
+        try {
+          editResult = applyNoteEdits(current.text, params.data.operations, {
+            ifContentHash: params.data.ifContentHash,
+            ifBlockHash: params.data.ifBlockHash,
+          });
+        } catch (error) {
+          if (error instanceof NoteEditError) throw new NoteTextAbort({ ok: false, error: error.message, status: error.status });
+          throw error;
+        }
+        return editResult.changed ? editResult.content : current.text;
+      },
+    );
+  } catch (error) {
+    if (error instanceof NoteTextAbort) return error.result;
+    throw error;
   }
+  if (result.status !== "edited" && result.status !== "unchanged") return noteTextFailure(result);
+  if (result.status === "edited" && !result.saved.ok) return result.saved;
+  const note = await get({ id: params.noteId });
+  if (!note) return { ok: false, error: "Note not found", status: 404 };
+  if (result.status === "unchanged") return { ok: true, data: { ...editResult, note } };
+  return {
+    ok: true,
+    data: {
+      ...editResult,
+      content: result.text,
+      afterHash: noteContentHash(result.text),
+      blocks: summarizeNoteEditBlocks(result.text),
+      note,
+    },
+  };
 };
 
 /**
@@ -1580,8 +1468,32 @@ export const getAnchoredYjsState = async (params: { noteId: string; signal?: Abo
   const { noteId } = params;
   for (let attempt = 0; attempt < 5; attempt++) {
     const stored = await getYjsStateWithCursor({ noteId });
-    if (!stored || isSharedCursor(stored.streamCursor)) return stored;
+    if (!stored) return null;
     params.signal?.throwIfAborted();
+    if (!stored.yjsState) {
+      // Persist one common base before a live editor can publish against it.
+      // Client 0 matches the platform's fallback reconstruction, including
+      // updates already published by server-side writers for a text-only row.
+      const doc = new Y.Doc({ gc: true });
+      let state: Uint8Array;
+      try {
+        doc.clientID = 0;
+        if (stored.contentMd) doc.getText(SHARED_TEXT_NAME).insert(0, stored.contentMd);
+        state = Y.encodeStateAsUpdate(doc);
+      } finally {
+        doc.destroy();
+      }
+      await sql`
+        UPDATE notebooks.notes SET yjs_snapshot = ${Buffer.from(state)}
+        WHERE id = ${noteId}::uuid AND yjs_snapshot IS NULL
+          AND yjs_restore_revision = ${stored.restoreRevision}::bigint
+          AND yjs_stream_cursor IS NOT DISTINCT FROM ${stored.streamCursor}
+          AND content_md IS NOT DISTINCT FROM ${stored.contentMd}
+      `;
+      // Re-read after a concurrent initialization, save, or restore.
+      continue;
+    }
+    if (isSharedCursor(stored.streamCursor)) return stored;
     const topic = createYjsTopic();
     const head = await topic.head();
     const latest = await topic.latestCursor({ tenantId: noteId });
@@ -1599,7 +1511,7 @@ export const getAnchoredYjsState = async (params: { noteId: string; signal?: Abo
           applyYjsTopicEvent(doc, event, noteId);
         }
         yjsState = Y.encodeStateAsUpdate(doc);
-        contentMd = doc.getText(NOTE_TEXT_NAME).toString();
+        contentMd = doc.getText(SHARED_TEXT_NAME).toString();
       } finally {
         doc.destroy();
       }
@@ -1624,6 +1536,34 @@ export const getAnchoredYjsState = async (params: { noteId: string; signal?: Abo
   }
   throw new Error(`Could not anchor note ${noteId} on the shared Yjs log`);
 };
+
+type NoteTextContext = { createdBy: string | null; restoredBy?: activity.NotebookActivityIdentity };
+
+const noteDocuments = notebooksTextLog.withStore<NoteTextSaved, NoteTextContext>({
+  load: async (noteId, { signal }) => {
+    const stored = await getAnchoredYjsState({ noteId, signal });
+    return stored
+      ? { state: stored.yjsState, text: stored.contentMd, cursor: stored.streamCursor, restoreRevision: stored.restoreRevision }
+      : null;
+  },
+  save: (noteId, input, context) =>
+    save({
+      noteId,
+      yjsState: input.state,
+      contentMd: input.text,
+      createdBy: context?.createdBy ?? null,
+      createVersion: true,
+      streamCursor: input.cursor,
+      restoreRevision: input.restoreRevision,
+      requestedAt: input.requestedAt,
+      contributors: context?.restoredBy
+        ? input.actor
+          ? [{ ...input.actor, lastContributedAt: new Date(input.requestedAt) }]
+          : []
+        : input.contributors,
+      restoredBy: context?.restoredBy,
+    }),
+});
 
 /**
  * Advance an idle note's cursor to the shared log's head while the note has
@@ -1672,31 +1612,13 @@ export const adoptSnapshotAtHead = async (params: {
   let malformedUpdates = 0;
   let historyGaps = 0;
   try {
-    let after = stored.streamCursor ?? topic.cursorAt(0);
-    while (compareStreamCursor(after, head) < 0) {
-      params.signal?.throwIfAborted();
-      try {
-        for await (const event of topic.replay({ tenantId: noteId, after, until: head, signal: params.signal })) {
-          try {
-            applyYjsTopicEvent(doc, event, noteId);
-            recoveredUpdates++;
-          } catch (error) {
-            if (!(error instanceof MalformedSyncEventError)) throw error;
-            malformedUpdates++;
-          }
-          after = event.cursor;
-        }
-        // The replay covered every note event up to the captured head.
-        after = head;
-      } catch (error) {
-        if (!(error instanceof RetentionGapError) || !error.resumeAfter || compareStreamCursor(error.resumeAfter, after) <= 0) throw error;
-        historyGaps++;
-        // Skip only unavailable sequences; include the first retained event.
-        // Strict forward progress and a fixed head bound this loop even if
-        // retention advances concurrently. Never advance past the captured head.
-        after = compareStreamCursor(error.resumeAfter, head) > 0 ? head : error.resumeAfter;
-      }
-    }
+    ({ recoveredUpdates, malformedUpdates, historyGaps } = await notebooksTextLog.recover({
+      docId: noteId,
+      after: stored.streamCursor,
+      until: head,
+      doc,
+      signal: params.signal,
+    }));
     params.signal?.throwIfAborted();
     // Keep the exact pre-recovery binary accessible in version history, even
     // when ordinary versions are later compacted. Reuse an unchanged original.
@@ -1715,7 +1637,7 @@ export const adoptSnapshotAtHead = async (params: {
     result = await save({
       noteId,
       yjsState: Y.encodeStateAsUpdate(doc),
-      contentMd: doc.getText(NOTE_TEXT_NAME).toString(),
+      contentMd: doc.getText(SHARED_TEXT_NAME).toString(),
       createdBy: null,
       streamCursor: head,
       restoreRevision: stored.restoreRevision,
@@ -1911,7 +1833,7 @@ export const restoreFromSnapshot = async (params: {
   try {
     snapshotBuffer = Buffer.from(fromBase64Strict(yjsSnapshot));
     Y.applyUpdate(restoredDoc, new Uint8Array(snapshotBuffer));
-    restoredContentMd = restoredDoc.getText(NOTE_TEXT_NAME).toString();
+    restoredContentMd = restoredDoc.getText(SHARED_TEXT_NAME).toString();
   } catch {
     return { ok: false, error: "Invalid Yjs snapshot", status: 400 };
   } finally {
@@ -2015,7 +1937,7 @@ const versionMarkdown = (version: { contentMd: string | null; yjsSnapshot: Uint8
   if (version.contentMd !== null) return version.contentMd;
   const doc = createDocFromState(version.yjsSnapshot, null);
   try {
-    return doc.getText(NOTE_TEXT_NAME).toString();
+    return doc.getText(SHARED_TEXT_NAME).toString();
   } finally {
     doc.destroy();
   }
@@ -2033,67 +1955,78 @@ const restoreInPlaceLocked = async (params: {
   const version = await getVersionWithContent(params);
   if (!version) return { ok: false, error: "Version not found", status: 404 };
   const contentMd = versionMarkdown(version);
-  const opened = await openLiveNoteDocument(existing);
-  if (!opened.ok) return opened;
-  const live = opened.data;
+  let previousVersionId: string | null = null;
+  let result: SharedTextEditResult<NoteTextSaved>;
   try {
-    const liveText = live.doc.getText(NOTE_TEXT_NAME).toString();
-    if (liveText === contentMd) {
-      const note = await get({ id: params.noteId });
-      return note
-        ? { ok: true, data: { note, changed: false, previousVersionId: null, versionId: null } }
-        : { ok: false, error: "Note not found", status: 404 };
-    }
-    const previousVersion = await sql.begin(async (tx) => {
-      await tx`SELECT id FROM notebooks.notes WHERE id = ${params.noteId}::uuid FOR UPDATE`;
-      const [latest] = await tx<{ id: string; content_md: string | null }[]>`
+    result = await noteDocuments.edit(
+      params.noteId,
+      {
+        actor: params.actor ?? (params.createdBy ? { kind: "user", id: params.createdBy } : null),
+        context: {
+          createdBy: params.createdBy,
+          restoredBy: params.actor ?? (params.createdBy ? { kind: "user", id: params.createdBy } : { kind: "system", id: null }),
+        },
+      },
+      async (current) => {
+        const liveText = current.text;
+        if (liveText === contentMd) return liveText;
+        const previousVersion = await sql.begin(async (tx) => {
+          await tx`SELECT id FROM notebooks.notes WHERE id = ${params.noteId}::uuid FOR UPDATE`;
+          const [latest] = await tx<{ id: string; content_md: string | null }[]>`
         SELECT id, content_md FROM notebooks.note_versions
         WHERE note_id = ${params.noteId}::uuid
         ORDER BY created_at DESC, id DESC LIMIT 1
       `;
-      if (latest?.content_md === liveText) return { id: latest.id, inserted: false };
-      const id = await insertNoteVersion(tx, {
-        noteId: params.noteId,
-        yjsState: Y.encodeStateAsUpdate(live.doc),
-        contentMd: liveText,
-        createdBy: null,
-        contributors: live.contributors,
-        force: true,
-      });
-      return { id, inserted: id !== null };
-    });
-    const previousVersionId = previousVersion.id;
-    if (!previousVersionId) {
-      if (!(await get({ id: params.noteId }))) return { ok: false, error: "Note not found", status: 404 };
-      return { ok: false, error: "Note version changed during restore; retry from its current state", status: 409 };
-    }
-    if (previousVersion.inserted) {
-      for (const contributor of live.contributors) {
-        const bucketStartedAt = new Date(contributor.lastContributedAt);
-        bucketStartedAt.setUTCMinutes(0, 0, 0);
-        await activity.record({
-          notebookId: existing.notebookId,
-          noteId: params.noteId,
-          noteVersionId: previousVersionId,
-          actor: { kind: contributor.kind, id: contributor.id },
-          action: "note.edited",
-          bucketStartedAt,
-          occurredAt: contributor.lastContributedAt,
+          if (latest?.content_md === liveText) return { id: latest.id, inserted: false };
+          const id = await insertNoteVersion(tx, {
+            noteId: params.noteId,
+            yjsState: current.state(),
+            contentMd: liveText,
+            createdBy: null,
+            contributors: current.contributors,
+            force: true,
+          });
+          return { id, inserted: id !== null };
         });
-      }
-    }
-    const applied = await applyLiveNoteContent({
-      ...params,
-      existing,
-      live,
-      contentMd,
-      restoredBy: params.actor ?? (params.createdBy ? { kind: "user", id: params.createdBy } : { kind: "system", id: null }),
-    });
-    if (!applied.ok) return applied;
-    return { ok: true, data: { note: applied.data.note, changed: true, previousVersionId, versionId: applied.data.versionId } };
-  } finally {
-    live.doc.destroy();
+        previousVersionId = previousVersion.id;
+        if (!previousVersionId) {
+          if (!(await get({ id: params.noteId }))) throw new NoteTextAbort({ ok: false, error: "Note not found", status: 404 });
+          throw new NoteTextAbort({ ok: false, error: "Note version changed during restore; retry from its current state", status: 409 });
+        }
+        if (previousVersion.inserted) {
+          for (const contributor of current.contributors) {
+            const bucketStartedAt = new Date(contributor.lastContributedAt);
+            bucketStartedAt.setUTCMinutes(0, 0, 0);
+            await activity.record({
+              notebookId: existing.notebookId,
+              noteId: params.noteId,
+              noteVersionId: previousVersionId,
+              actor: { kind: contributor.kind, id: contributor.id },
+              action: "note.edited",
+              bucketStartedAt,
+              occurredAt: contributor.lastContributedAt,
+            });
+          }
+        }
+        return contentMd;
+      },
+    );
+  } catch (error) {
+    if (error instanceof NoteTextAbort) return error.result;
+    throw error;
   }
+  if (result.status !== "edited" && result.status !== "unchanged") return noteTextFailure(result);
+  if (result.status === "unchanged") {
+    const note = await get({ id: params.noteId });
+    return note
+      ? { ok: true, data: { note, changed: false, previousVersionId: null, versionId: null } }
+      : { ok: false, error: "Note not found", status: 404 };
+  }
+  if (!result.saved.ok) return result.saved;
+  const note = await get({ id: params.noteId });
+  return note
+    ? { ok: true, data: { note, changed: true, previousVersionId, versionId: result.saved.data.versionId } }
+    : { ok: false, error: "Note not found", status: 404 };
 };
 
 /**
@@ -2154,7 +2087,7 @@ export const copyToNotebook = async (params: {
   try {
     if (contentMd === null && source.yjsSnapshot) {
       const doc = createDocFromState(fromBase64Strict(source.yjsSnapshot), null);
-      contentMd = doc.getText(NOTE_TEXT_NAME).toString();
+      contentMd = doc.getText(SHARED_TEXT_NAME).toString();
       doc.destroy();
     }
   } catch (error) {

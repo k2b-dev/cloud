@@ -137,12 +137,12 @@ const methodClass = (method: string) => {
   if (method === "GET") return "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300";
   if (method === "POST") return "bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300";
   if (method === "DELETE") return "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300";
-  return "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200";
+  return "bg-[var(--ui-surface-muted)] text-secondary";
 };
 
 const statusClass = (status: number | null, error: string | null) => {
   if (error) return "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300";
-  if (!status) return "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300";
+  if (!status) return "bg-[var(--ui-surface-muted)] text-secondary";
   if (status >= 200 && status < 300) return "bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300";
   if (status >= 400) return "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300";
   return "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300";
@@ -175,7 +175,7 @@ function RequestSearchInput(props: { value: string; onSearch: (value: string) =>
           debounce.debouncedFn(next);
         }}
         clearable
-        suffix={pending() ? <i class="ti ti-loader-2 animate-spin text-zinc-400" /> : undefined}
+        suffix={pending() ? <i class="ti ti-loader-2 animate-spin text-dimmed" /> : undefined}
       />
     </div>
   );
@@ -490,7 +490,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
   return (
     <div class="flex min-h-0 min-w-0 flex-1">
       <AppWorkspace class="min-h-0 flex-1">
-        <div class="flex flex-col gap-2 p-3 lg:hidden">
+        <div class="flex flex-col gap-2 p-3 @min-[64rem]/k2b-app-area:hidden">
           <Select
             label={t().sidebarRequests}
             options={[

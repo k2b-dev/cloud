@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1090
 description: Build and host the standalone authenticator for multiple Cloud installations.
 tags: [authentication, pwa, deployment]
-updated: 2026-10-11
+updated: 2026-10-19
 ---
 
 # Run Cloud Login
@@ -176,7 +176,8 @@ phone with its own screen lock.
 
 Device credentials are encrypted in browser storage, but the key is stored
 alongside them. Copied browser data is a full credential. After suspected
-compromise, revoke the devices in each Cloud and pair again; removing a PIN
+compromise, revoke the devices in each Cloud and pair again. Without a usable
+paired device, an administrator revokes them. Removing a PIN
 or resetting the app does not secure copies an attacker already obtained.
 
 An existing install that still has a PIN starts with **Remove app PIN**.
@@ -188,8 +189,9 @@ with the existing retry delay of one to thirty seconds, including after reload.
 If you forgot the PIN, or the stored protection method is unsupported, use
 **Reset Cloud Login**. After confirmation, this removes local pairings and
 protection. It does not revoke devices or sessions in your Clouds. Sign in
-there another way, revoke the old devices and pair again. Nothing is deleted
-automatically.
+there another way, revoke the old devices and pair again. Their removal needs
+approval on another paired device; without one, ask an administrator to revoke
+them. Nothing is deleted automatically.
 
 ## Connect a Cloud
 
@@ -249,7 +251,35 @@ does not deny a request; open it again from its Cloud card. Compare its code
 with the waiting browser, and explicitly approve or deny it.
 A failing Cloud does not block the others. After an uncertain response, check
 the original browser and start a new sign-in if needed; Cloud Login does not
-silently resend the decision.
+silently resend the decision. If the account is signed out everywhere before
+browser completion, its earlier approval cannot create a session; start a new
+sign-in.
+
+Cloud Login opts in to `login-context` on both `inbox` and `pending` reads
+only when the Cloud announces it in `/info.features`; the public SDK filters
+the signed opt-in, so Core and Cloud Login can be upgraded in either order.
+No new configuration is required. Once both support it, browser requests show
+[sign-in context](/en/docs/accounts/app-sign-in#read-the-request-details).
+Context stays optional: requests started before the Core upgrade or trimmed
+for the 8 KiB response budget can omit it. Those requests and older Clouds
+keep the earlier dialog with the start time. Terminal sign-ins are unchanged.
+
+Cloud Login opts in to `terminal-logins` only when the Cloud announces it in
+`/info.features`. Older Clouds keep browser sign-ins only. A terminal sign-in
+starts with `cld login --user <name>`, where `<name>` is the username or email.
+For terminal sign-ins, the sheet shows the client name from the Cloud's
+registry in the title, the Cloud host, the comparison code, the login lifetime
+and every scope in plain words; unknown scope codes appear verbatim. The
+lifetime is `user.session.expiry_hours`, at most 90 days; `cld login --ttl`
+can only shorten it.
+One tap approves exactly these scopes for that lifetime, with no scope
+downgrade in the sheet; people who want fewer rights sign in with
+`cld login --scope`.
+Uncertain and expired endings direct the user to the terminal to check the
+result or start again. If the account is signed out everywhere before the
+terminal finishes, its earlier approval no longer counts; run `cld login`
+again. Upgrade **Core, then OAuth, then Cloud Login**; see
+[Approve a terminal sign-in](./app-approval.md#approve-a-terminal-sign-in).
 
 Actions appear below the sign-ins in each Cloud card, with the app's name,
 its sentence, the chat title when available, and the request time. They stay

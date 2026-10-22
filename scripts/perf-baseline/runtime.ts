@@ -1,3 +1,4 @@
+import { createHash, X509Certificate } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -37,7 +38,8 @@ export function browserServer(version: string, port: number) {
   return {
     image: `mcr.microsoft.com/playwright:v${version}-noble`,
     args: ["--init", "--ipc=host", "--user", "pwuser", "--workdir", "/home/pwuser"],
-    tail: ["npx", "-y", `playwright@${version}`, "run-server", "--port", String(port), "--host", "0.0.0.0"],
+    // Playwright 1.64 filters client launch args unless this controlled, loopback-published server opts in.
+    tail: ["npx", "-y", `playwright@${version}`, "run-server", "--unsafe", "--port", String(port), "--host", "0.0.0.0"],
     endpoint: `ws://127.0.0.1:${port}/`,
   };
 }
@@ -128,10 +130,25 @@ export async function waitFor(label: string, probe: () => Promise<boolean>, sign
   throw new Error(`Readiness timeout (${timeoutMs} ms): ${label}`);
 }
 
+export type PublishedService = "postgres" | "valkey";
+export type StartOptions = { postgresArgs?: string[]; publish?: PublishedService[] };
+
+/** Empty options preserve the page harness's Docker arguments exactly. */
+export function serviceOptions(service: PublishedService, options: StartOptions, port?: number) {
+  let args: string[] = [];
+  if (options.publish?.includes(service)) {
+    if (port === undefined) throw new Error(`Missing published ${service} port`);
+    measurementOrigin(port); // Apply the same validation, including the port-3000 exclusion.
+    args = ["--publish", `127.0.0.1:${port}:${{ postgres: 5432, valkey: 6379 }[service]}`];
+  }
+  return { args, tail: service === "postgres" && options.postgresArgs?.length ? ["postgres", ...options.postgresArgs] : [] };
+}
+
 export class Runtime {
   readonly prefix = `cloud-perf-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
   readonly directory = join(repository, ".local/perf-baseline", this.prefix);
   readonly containers: string[] = [];
+  readonly published: Partial<Record<PublishedService, number>> = {};
   readonly volumes: string[] = [];
   readonly networks: string[] = [];
   private browserPort: number | null = null;
@@ -165,7 +182,8 @@ export class Runtime {
       HOME: Bun.env.HOME,
       NODE_ENV: "production",
       CLOUD_VERSION: "0.0.0-perf",
-      CLOUD_RELEASE: "perf",
+      // One release per build: a shared stylesheet URL names one build, so two measured builds must not share it.
+      CLOUD_RELEASE: `perf-${this.prefix}`,
       BUN_OPTIONS: "--no-env-file",
       TMPDIR: join(this.directory, "tmp"),
     };
@@ -269,7 +287,14 @@ export class Runtime {
     if (!(await this.owns("container", name))) throw new Error(`Could not establish container ownership: ${name}`);
   }
 
-  async start(apps: string[]) {
+  async start(apps: string[], options: StartOptions = {}) {
+    for (const service of new Set(options.publish ?? [])) {
+      let port = await freeLoopbackPort();
+      while (port === this.port || Object.values(this.published).includes(port)) port = await freeLoopbackPort();
+      this.published[service] = port;
+    }
+    const postgres = serviceOptions("postgres", options, this.published.postgres);
+    const valkey = serviceOptions("valkey", options, this.published.valkey);
     await mkdir(join(this.directory, "tmp"), { recursive: true });
     this.networks.push(this.prefix);
     await command(["docker", "network", "create", "--label", `cloud.perf.run=${this.prefix}`, this.prefix], { signal: this.signal });
@@ -277,8 +302,8 @@ export class Runtime {
     await this.container(
       "postgres",
       "postgres:17-alpine",
-      ["--volume", `${await this.volume("postgres-data")}:/var/lib/postgresql/data`],
-      [],
+      ["--volume", `${await this.volume("postgres-data")}:/var/lib/postgresql/data`, ...postgres.args],
+      postgres.tail,
       { POSTGRES_USER: "ipa", POSTGRES_PASSWORD: "ipa", POSTGRES_DB: "cloud_perf_test" },
     );
     await this.container(
@@ -287,7 +312,7 @@ export class Runtime {
       ["--volume", `${join(repository, ".github/nats-ci.conf")}:/etc/nats.conf:ro`, "--volume", `${await this.volume("nats-data")}:/data`],
       ["--config", "/etc/nats.conf"],
     );
-    await this.container("valkey", "valkey/valkey:8-alpine", [], ["valkey-server", "--save", "", "--appendonly", "no"]);
+    await this.container("valkey", "valkey/valkey:8-alpine", valkey.args, ["valkey-server", "--save", "", "--appendonly", "no"]);
     await waitFor(
       "PostgreSQL",
       async () => {
@@ -373,6 +398,41 @@ export class Runtime {
       this.signal,
     );
     console.log(`Production gateway through Caddy TLS + HTTP/2: ${this.origin} (${this.prefix})`);
+  }
+
+  /** Read only the public leaf certificate from the verified, run-owned Caddy container. */
+  async browserSpki(): Promise<string> {
+    const name = this.name("caddy");
+    if (!this.containers.includes(name)) throw new Error("Caddy certificate source was not started by this run");
+    const source = z
+      .object({
+        Id: z.string().regex(/^[a-f0-9]{64}$/),
+        Config: z.object({ Image: z.literal(caddyImage), Labels: z.record(z.string(), z.string()) }),
+      })
+      .parse(
+        JSON.parse(
+          await command(["docker", "container", "inspect", "--format", "{{json .}}", name], {
+            timeoutMs: 5000,
+            signal: this.signal,
+          }),
+        ),
+      );
+    if (source.Config.Labels["cloud.perf.run"] !== this.prefix) throw new Error("Caddy certificate source belongs to another run");
+    // Use the inspected immutable ID, so replacing a container with the same name cannot change the source.
+    // Caddy's XDG_DATA_HOME=/data stores the tls-internal localhost leaf at this fixed path; never read its key.
+    const pem = await command(["docker", "exec", source.Id, "cat", "/data/caddy/certificates/local/localhost/localhost.crt"], {
+      timeoutMs: 5000,
+      signal: this.signal,
+    });
+    const cert = new X509Certificate(pem);
+    if (cert.ca || cert.checkHost("localhost", { subject: "never" }) !== "localhost")
+      throw new Error("Caddy certificate must be a localhost leaf");
+    const now = Date.now();
+    if (now < Date.parse(cert.validFrom) || now >= Date.parse(cert.validTo))
+      throw new Error("Caddy certificate is outside its validity period");
+    return createHash("sha256")
+      .update(cert.publicKey.export({ type: "spki", format: "der" }))
+      .digest("base64");
   }
 
   async startBrowsers(version: string) {

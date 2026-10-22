@@ -6,7 +6,7 @@ description: Automatische Antworten, Verarbeitung eingehender E-Mails und sicher
 order: 60
 ---
 
-Öffne **Postfachwerkzeuge → Automatisierungen**. Die seitenbreite Übersicht zeigt, was aktiv ist, und öffnet genau die Einrichtung, die du wählst. **Automatische Antworten** und **Eingehende E-Mails** decken häufige Aufgaben ab. Mit Zugriff **Verwalten** siehst du unter Erweitert außerdem **Aktivität** und **Workflows**.
+Öffne **… → Automatisierungen**. Die seitenbreite Übersicht zeigt, was aktiv ist, und öffnet genau die Einrichtung, die du wählst. **Automatische Antworten** und **Eingehende E-Mails** decken häufige Aufgaben ab. Mit Zugriff **Verwalten** siehst du unter Erweitert außerdem **Aktivität** und **Workflows**.
 
 ## Das passende Automatisierungswerkzeug wählen {icon="route"}
 
@@ -45,6 +45,24 @@ KI-Ergebnisse bleiben normale Workflow-Ausgaben. **Ausgabe verwenden** und **Bed
 
 Der Editor schaltet Ergänzungen ab oder lässt sie weg, wenn sie die Grenzen für Ablauf, Zweige, Verschachtelung oder KI-Aufrufe überschreiten würden. Einen Schritt, der eine Ausgabe erzeugt, kannst du nicht entfernen, solange ein späterer Schritt diese Ausgabe nutzt. Benennst du eine Auswahl einer KI-Klassifizierung um, passt Mail die Bedingungen an, die sie nutzen. Bevor du eine genutzte Auswahl löschst, entferne oder ändere diese Bedingungen.
 
+### Unwichtiges aus Handlungsbedarf heraushalten
+
+Nutze für Newsletter, Anmeldecodes oder Versandmeldungen eine einzige Automatisierung für eingehende E-Mails:
+
+:::steps
+1. Ergänze eine Bedingung für den Absender oder die Domain.
+2. Ergänze **E-Mail-Aktion → Als gelesen markieren**.
+3. Ergänze **E-Mail-Aktion → Status festlegen → Erledigt**.
+4. Ergänze **E-Mail-Aktion → In Ordner verschieben** und wähle das Ziel.
+:::
+
+Lass die Markierung vor dem Verschieben in derselben Automatisierung; siehe **Mehrere passende Automatisierungen** unten. Der Statusschritt ändert nur den Status in Cloud.
+Ergänze für wichtige E-Mails keinen Statusschritt: Eingehende E-Mails setzen bereits **Handlungsbedarf**.
+**Mit KI klassifizieren** beginnt mit **Wichtig**, **Routine** und einem Wenn-Zweig.
+Für **Wichtig** nutzt er **Status festlegen → Handlungsbedarf**, sonst **Status festlegen → Erledigt**.
+Ergänze **In Ordner verschieben** im Zweig für **Routine**, um diese E-Mails auch abzulegen.
+Setzt eine Automatisierung **Erledigt** oder **Wartet auf Antwort**, gilt das nur für die Nachricht, die sie gestartet hat, auch wenn Mail diese Nachricht später lädt. Andere eingehende E-Mails setzen wieder **Handlungsbedarf**.
+
 ### Den Vertrag der geführten Definition kennen
 
 Der geführte Editor und die CLI nutzen dieselbe strikte Definition. Mail lehnt unbekannte Felder ab. Eine Definition hat `name`, `enabled`, `scope` und `steps`. Der Name umfasst 1–120 Zeichen. Eine neue Definition setzt `enabled` standardmäßig auf `false`.
@@ -69,7 +87,7 @@ Der geführte Editor und die CLI nutzen dieselbe strikte Definition. Mail lehnt 
 
 Mail erzeugt aus dem Ablauf kanonisches Workflow-YAML und zeigt es im Editor schreibgeschützt. Die Schritte laufen von oben nach unten in der gemeinsamen Workflow-Laufzeit.
 
-- **Mehrere passende Automatisierungen:** Die älteste Automatisierung entscheidet, wohin die Nachricht kommt. Eine spätere Automatisierung überspringt ihren Schritt zum Verschieben, Löschen oder Verschieben in Spam, statt zu scheitern. Ihre übrigen Schritte laufen weiter. Ändern zwei Automatisierungen dieselbe Nachricht beim Anbieter, etwa indem eine sie als gelesen markiert und die andere sie verschiebt, kann eine davon trotzdem scheitern. Fasse diese Änderungen in einer Automatisierung zusammen.
+- **Mehrere passende Automatisierungen:** Die älteste Automatisierung entscheidet, wohin die Nachricht kommt. Eine spätere Automatisierung überspringt ihren Schritt zum Verschieben, Löschen oder Verschieben in Spam. Jede passende Automatisierung überspringt außerdem „Als gelesen markieren“ oder einen Schlüsselwort-Schritt, wenn die Nachricht ihren Ordner verlassen hat oder gerade verschoben wird. Keine der beiden scheitert an der anderen. Nur Automatisierungen für eingehende E-Mails geben auf diese Weise nach; der Schritt eines selbst geschriebenen Workflows scheitert stattdessen. Das Markieren als gelesen lässt den Verschiebe-Schritt der anderen nicht scheitern. Wenn du sicherstellen willst, dass eine Nachricht gelesen und verschoben wird, fasse beide Schritte in einer Automatisierung zusammen.
 - **Fehlgeschlagener Schritt:** Schlägt ein späterer Schritt fehl, bleiben die Effekte früherer abgeschlossener Schritte.
 - **Versionen:** Eine Änderung am Ablauf veröffentlicht eine neue unveränderliche Workflow-Version. Änderst du nur den Namen oder den Aktivstatus, entsteht keine doppelte identische Quelle.
 - **Geschützte Ziele:** Zerstörende Aktionen dürfen keine Absenderidentität des Postfachs, keine eingerichtete interne Domain, keine ihrer Subdomains und keine unsichere übergeordnete Domain treffen.
@@ -96,7 +114,7 @@ Eine erzeugte Textausgabe wirkt erst, wenn ein späterer Schritt sie nutzt. Die 
 
 Spaces-Schritte laufen mit einer Delegation der Person, die die Automatisierung eingerichtet hat, und diese Person kann sie widerrufen. Mail speichert das Token verschlüsselt. Es widerruft das Token, wenn jemand den letzten Spaces-Schritt entfernt oder die Automatisierung löscht. Jeder Lauf prüft trotzdem den aktuellen Zugriff in Mail und in Spaces. Verknüpfen aktualisiert eine vorhandene Verknüpfung oder legt eine an, und das Erstellen von Terminen nutzt einen dauerhaften Idempotenzschlüssel, damit Wiederholungen keine doppelten Termine anlegen. Widerruft jemand den delegierten API-Schlüssel oder entfernt den Zugriff auf den Space, schlagen künftige Läufe fehl, statt ohne diesen Zugriff zu handeln.
 
-Nutze `set_status: done`, um eine Unterhaltung abzuschließen. Erledigt ist ein lokaler Zustand und markiert E-Mails nicht als gelesen. Ungelesen-Zahlen folgen der Gelesen-Markierung beim Anbieter. Ergänze deshalb **Als gelesen markieren**, wenn die E-Mail auch nicht mehr als ungelesen zählen soll. Nutze `needs_action` oder `waiting`, um sie ausdrücklich wieder zu öffnen. Eine bestätigte neue eingehende Nachricht setzt eine abgeschlossene Unterhaltung schon zurück auf Handlungsbedarf. Ein eigener Schritt, der Erledigt bei eingehender E-Mail aufhebt, ist deshalb normalerweise nicht nötig.
+Ungelesen-Zahlen folgen der Gelesen-Markierung beim Anbieter. Erledigt markiert E-Mails nicht als gelesen. Die Anleitung in **Unwichtiges aus Handlungsbedarf heraushalten** ergänzt deshalb **Als gelesen markieren**. Nutze `needs_action` oder `waiting`, um eine Unterhaltung ausdrücklich wieder zu öffnen.
 
 Für Automatisierung über `cld` nutzt du `mail automation catalog`, um gültige IDs zu finden. `mail automation create` und `mail automation update` akzeptieren die vollständige geführte Definition als JSON oder YAML über `--definition-file` oder `--definition-stdin`, einschließlich `scope` und des geordneten `steps`-Baums. CLI und Oberfläche verhalten sich dadurch gleich, auch bei Ausgabeverweisen und verschachtelten Bedingungen. Bei einer ungültigen Definition nennt Mail jedes betroffene Feld mit seinem Pfad, etwa `scope.conditions.items`, und den Grund.
 
@@ -118,7 +136,7 @@ Nachrichten in Gesendet, Entwürfe, Papierkorb und Spam bleiben, wo sie sind, un
 ## Eine automatische Antwort einrichten {icon="send"}
 
 :::steps
-1. Bitte jemanden mit Zugriff **Verwalten**, eine Absenderidentität zu prüfen und dafür **Automatische Antworten** einzuschalten. Das geht unter **Einstellungen → Konten und Identitäten → Absenderidentitäten**.
+1. Bitte jemanden mit Zugriff **Verwalten**, eine Absenderidentität zu prüfen und dafür **Automatische Antworten** einzuschalten. Das geht unter **… → Einstellungen → Konten und Identitäten → Absenderidentitäten**.
 2. Öffne **Automatisierungen → Automatische Antworten**.
 3. Wähle **Automatische Antwort hinzufügen**.
 4. Wähle **Abwesenheitsnotiz**, **Empfangsbestätigung zu Bürozeiten**, **Empfangsbestätigung mit Referenznummer** oder **Eigene automatische Antwort**.
@@ -131,7 +149,7 @@ Die **Vorschau** listet die Formatierung auf, die in der E-Mail weggelassen wird
 
 Betreff und Nachrichten sind Liquid-Vorlagen. Nutze die Variablen, die du im Editor kopieren kannst, zum Beispiel `{{ inputs.message.subject }}`. Nachdem eine Referenz vergeben wurde, steht auch `{{ reference.value }}` zur Verfügung. Mail lehnt ungültige Syntax und nicht verfügbare Variablen ab, bevor es die Antwort speichert.
 
-In einem Postfach kann nur eine automatische Antwort gleichzeitig eingeschaltet sein. Schalte die aktive Einrichtung aus, bevor du eine andere einschaltest. Standardmäßig können nur Personen mit Zugriff **Verwalten** automatische Antworten ändern. Sie können das unter **Einstellungen → Zugriff → Verwaltungszugriff für automatische Antworten** auch Personen mit Zugriff **Bearbeiten** erlauben.
+In einem Postfach kann nur eine automatische Antwort gleichzeitig eingeschaltet sein. Schalte die aktive Einrichtung aus, bevor du eine andere einschaltest. Standardmäßig können nur Personen mit Zugriff **Verwalten** automatische Antworten ändern. Sie können das unter **… → Einstellungen → Zugriff → Verwaltungszugriff für automatische Antworten** auch Personen mit Zugriff **Bearbeiten** erlauben.
 
 Mail antwortet nicht auf Nachrichten, die für automatische Antworten unsicher sind. Dazu gehören E-Mails von Mailinglisten, Massen-E-Mails, Zustellberichte, Nachrichten aus dem Postfach selbst und Nachrichten, die automatische Antworten ausdrücklich unterdrücken. Eine unterdrückte Antwort bleibt Teil der Aktivität und des Laufverlaufs. Mail macht daraus nicht still einen normalen Entwurf.
 

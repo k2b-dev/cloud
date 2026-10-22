@@ -183,7 +183,10 @@ test("focus lists a cross-mailbox queue without resolving one mailbox", async ()
   const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "focus", "--view", "mine", "--limit", "25"]);
 
   expect(result.exitCode, result.stderr).toBe(0);
-  expect(JSON.parse(result.stdout)).toEqual(page);
+  expect(JSON.parse(result.stdout)).toEqual({
+    ...page,
+    items: page.items.map((item) => ({ ...item, permalink: `http://127.0.0.1:${server.port}/open/mail.conversation/~${item.id}` })),
+  });
   expect(requests).toEqual(["GET /api/mail/overview/conversations?view=mine&limit=25"]);
 });
 
@@ -376,6 +379,7 @@ test("conversation context commands expose Contacts and deterministic related ma
   expect(JSON.parse(results[1]!.stdout)).toEqual([
     {
       id: "rel123",
+      permalink: `${origin}/open/mail.conversation/~rel123`,
       subject: "Re: Release update",
       participantSummary: "Ada",
       latestMessageAt: "2026-08-18T12:00:00.000Z",
@@ -387,6 +391,38 @@ test("conversation context commands expose Contacts and deterministic related ma
   expect(results[3]!.stdout).toContain("participant ada@example.test");
   expect(requestedPaths).toContain(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/related?limit=3`);
 }, 20_000);
+
+test("conversation context distinguishes an absent contact directory from an unavailable one", async () => {
+  const server = withMailbox((request) => {
+    if (
+      request.method === "GET" &&
+      new URL(request.url).pathname === `/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/context`
+    ) {
+      return api({
+        conversationId: CONVERSATION_ID,
+        participants: [{ email: "sender@example.test", displayName: "Sender" }],
+        contacts: { status: "absent", items: [], matchedEmails: [], nextCursor: null },
+        spaces: { status: "ready", items: [], truncated: false },
+      });
+    }
+    return api({ message: "unexpected" }, { status: 500 });
+  });
+  servers.push(server);
+
+  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "conversation",
+    "context",
+    CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+  ]);
+
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(result.stderr).toBe("");
+  expect(result.stdout).toContain("Contacts: no contact directory installed");
+  expect(result.stdout).not.toContain("Contacts: unavailable");
+});
 
 test("conversation drafts lists resumable work for one conversation", async () => {
   const drafts = [
@@ -409,8 +445,9 @@ test("conversation drafts lists resumable work for one conversation", async () =
     return api({ message: "unexpected" }, { status: 500 });
   });
   servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
 
-  const result = await runCli(`http://127.0.0.1:${server.port}`, [
+  const result = await runCli(origin, [
     "--json",
     "mail",
     "conversation",
@@ -425,7 +462,7 @@ test("conversation drafts lists resumable work for one conversation", async () =
   expect(result.exitCode, result.stderr).toBe(0);
   expect(result.stderr).toBe("");
   expect(requestedPath).toBe(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/drafts?limit=12`);
-  expect(JSON.parse(result.stdout)).toEqual(drafts);
+  expect(JSON.parse(result.stdout)).toEqual(drafts.map((draft) => ({ ...draft, permalink: `${origin}/open/mail.draft/~${draft.id}` })));
 });
 
 test("mailbox configure maps automatic reply access to the mailbox policy", async () => {
@@ -1409,7 +1446,7 @@ test("conversation update replaces repeated and comma-separated assignees and un
   ]);
 });
 
-test("reference config set preserves unspecified settings", async () => {
+test("reference-number config set preserves unspecified settings", async () => {
   let requestBody: unknown;
   const current = {
     mailboxId: MAILBOX_ID,
@@ -1438,7 +1475,7 @@ test("reference config set preserves unspecified settings", async () => {
   const result = await runCli(`http://127.0.0.1:${server.port}`, [
     "--json",
     "mail",
-    "reference",
+    "reference-number",
     "config",
     "set",
     "--mailbox",
@@ -1479,10 +1516,17 @@ test("reference list and ensure expose the permanent value without a row id", as
   });
   servers.push(server);
 
-  const listed = await runCli(`http://127.0.0.1:${server.port}`, ["mail", "reference", "list", CONVERSATION_ID, "--mailbox", MAILBOX_ID]);
+  const listed = await runCli(`http://127.0.0.1:${server.port}`, [
+    "mail",
+    "reference-number",
+    "list",
+    CONVERSATION_ID,
+    "--mailbox",
+    MAILBOX_ID,
+  ]);
   const ensured = await runCli(`http://127.0.0.1:${server.port}`, [
     "mail",
-    "reference",
+    "reference-number",
     "ensure",
     CONVERSATION_ID,
     "--mailbox",
@@ -2109,7 +2153,9 @@ test("ls lists mailboxes, or a folder's conversations with a built-in view", asy
 
   const mailboxes = await cli();
   expect(mailboxes.exitCode, mailboxes.stderr).toBe(0);
-  expect(JSON.parse(mailboxes.stdout)).toEqual([{ ...mailbox, permission: "admin" }]);
+  expect(JSON.parse(mailboxes.stdout)).toEqual([
+    { ...mailbox, permission: "admin", permalink: `http://127.0.0.1:${server.port}/open/mail.mailbox/~${mailbox.id}` },
+  ]);
 
   const folder = await cli("Support:INBOX", "--view", "mine");
   expect(folder.exitCode, folder.stderr).toBe(0);
@@ -2180,11 +2226,13 @@ test("show includes shared context and the latest message window in English and 
   });
   servers.push(server);
 
-  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "show", CONVERSATION_ID, "--mailbox", MAILBOX_ID]);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const result = await runCli(origin, ["--json", "mail", "show", CONVERSATION_ID, "--mailbox", MAILBOX_ID]);
 
   expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({
     conversationId: CONVERSATION_ID,
+    permalink: `${origin}/open/mail.conversation/~${CONVERSATION_ID}`,
     summary: summary.summary,
     summaryRevision: summary.summaryRevision,
     collaboration: {
@@ -2194,7 +2242,7 @@ test("show includes shared context and the latest message window in English and 
       revision: collaboration.revision,
     },
     tags: [{ id: TAG_ID, name: "Launch", color: "blue", revision: 2 }],
-    messages: [message],
+    messages: [{ ...message, permalink: `${origin}/open/mail.message/~${MESSAGE_ID}` }],
     messagesTruncated: true,
   });
   expect(requested).toContain(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/${CONVERSATION_ID}/messages?limit=50&latest=true`);
@@ -2460,6 +2508,23 @@ test("admin operations reads the redacted platform operator endpoint", async () 
 
   expect(result.exitCode, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toMatchObject({ mailboxes: [{ mailboxId: MAILBOX_ID, coverage: { search: { covered: 1 } } }] });
+});
+
+test("admin mailbox get omits a permalink that requires mailbox membership", async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch: (request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/mail/admin/operations") return api({ mailboxes: [platformMailboxSummary], nextCursor: null });
+      if (path === `/api/mail/admin/mailboxes/${MAILBOX_ID}/operations`) return api(platformMailboxSummary);
+      return api({ message: "unexpected" }, { status: 500 });
+    },
+  });
+  servers.push(server);
+  const result = await runCli(`http://127.0.0.1:${server.port}`, ["--json", "mail", "admin", "mailbox", "get", MAILBOX_ID]);
+  expect(result.exitCode, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual(platformMailboxSummary);
+  expect(JSON.parse(result.stdout)).not.toHaveProperty("permalink");
 });
 
 test("admin mailbox list preserves server pagination and recovery counts", async () => {
@@ -2905,7 +2970,13 @@ const composeServer = (bodies: Array<{ path: string; body: unknown }>, draftOver
         draftOverrides.subject === "Attachment"
           ? [{ id: "missing_attachment", title: "Attachment may be missing", description: "No attachment is included." }]
           : [];
-      return api({ draftId: DRAFT_ID, revision: draftOverrides.revision ?? 1, fingerprint: "b".repeat(64), warnings });
+      return api({
+        draftId: DRAFT_ID,
+        revision: draftOverrides.revision ?? 1,
+        fingerprint: "b".repeat(64),
+        contentHash: "c".repeat(64),
+        warnings,
+      });
     }
     if (request.method === "POST" && url.pathname === `${root}/commands`) {
       bodies.push({ path: url.pathname, body: await request.json() });
@@ -2959,6 +3030,7 @@ test("reply drafts from the latest message with the default identity, and send s
     kind: "send",
     draftId: DRAFT_ID,
     expectedDraftRevision: 1,
+    expectedContentHash: "c".repeat(64),
     senderIdentityId: IDENTITY_ID,
     undoSeconds: 0,
   });
@@ -3018,6 +3090,7 @@ test("send requires explicit approval for the exact safety review", async () => 
   expect(approved.exitCode, approved.stderr).toBe(0);
   expect(bodies[0]!.body).toMatchObject({
     expectedDraftRevision: 3,
+    expectedContentHash: "c".repeat(64),
     safetyApproval: { revision: 3, fingerprint: "b".repeat(64), warningIds: ["missing_attachment"] },
   });
 });
@@ -3381,7 +3454,7 @@ test("message inspect and source expose metadata and exact RFC bytes", async () 
   const inspected = await runCli(origin, ["--json", "mail", "message", "inspect", MESSAGE_ID, "--mailbox", MAILBOX_ID]);
   expect(inspected.exitCode).toBe(0);
   expect(inspected.stderr).toBe("");
-  expect(JSON.parse(inspected.stdout)).toEqual(inspector);
+  expect(JSON.parse(inspected.stdout)).toEqual({ ...inspector, permalink: `${origin}/open/mail.message/~${MESSAGE_ID}` });
 
   const downloaded = await runCli(origin, ["--json", "mail", "message", "source", MESSAGE_ID, "--mailbox", MAILBOX_ID, "--out", output]);
   expect(downloaded.exitCode).toBe(0);
@@ -5804,4 +5877,101 @@ test("command list sends state and cursor filters, shows errors and a text-only 
   const partial = await runCli(address, ["mail", "command", "list", "--mailbox", MAILBOX_ID, "--limit", "2", "--state", "needs_attention"]);
   expect(partial.exitCode, partial.stderr).toBe(0);
   expect(partial.stdout).not.toContain("Next page:");
+});
+
+for (const name of ["done", "reopen"] as const) {
+  test(`${name} sends one revision-free batch, preserves structured results and fails on missing items`, async () => {
+    const bodies: unknown[] = [];
+    const completion = name === "done" ? "done" : "open";
+    const resultFor = (conversationIds: string[]) => ({
+      completion,
+      results: conversationIds.map((conversationId) =>
+        conversationId === SOURCE_CONVERSATION_ID
+          ? { conversationId, status: "not_found" }
+          : { conversationId, status: "ok", workStatus: name === "done" ? "done" : "needs_action", revision: 7 },
+      ),
+    });
+    const server = withMailbox(async (request) => {
+      expect(request.method).toBe("POST");
+      expect(new URL(request.url).pathname).toBe(`/api/mail/mailboxes/${MAILBOX_ID}/conversations/completion`);
+      const body = await request.json();
+      bodies.push(body);
+      return api(resultFor(body.conversationIds));
+    });
+    servers.push(server);
+    const run = (ids: string[], flags: string[] = []) =>
+      runCli(`http://127.0.0.1:${server.port}`, [...flags, "mail", name, ...ids, "--mailbox", MAILBOX_ID]);
+    const success = await run([CONVERSATION_ID, REMINDER_ID]);
+    expect(success.exitCode, success.stderr).toBe(0);
+    expect(success.stdout.trim()).toBe(name === "done" ? "Marked 2 conversation(s) Done." : "Reopened 2 conversation(s).");
+    const partial = await run([CONVERSATION_ID, SOURCE_CONVERSATION_ID]);
+    expect(partial.exitCode).toBe(1);
+    expect(partial.stderr).toContain(`${SOURCE_CONVERSATION_ID}: not found in this mailbox`);
+    expect(partial.stdout).toContain("1 conversation(s)");
+    for (const output of ["--json", "--jsonl"]) {
+      const structured = await run([CONVERSATION_ID, SOURCE_CONVERSATION_ID], [output]);
+      expect(structured.exitCode).toBe(1);
+      expect(JSON.parse(structured.stdout)).toEqual(resultFor([CONVERSATION_ID, SOURCE_CONVERSATION_ID]));
+    }
+    expect(bodies).toEqual([
+      { conversationIds: [CONVERSATION_ID, REMINDER_ID], completion },
+      ...Array.from({ length: 3 }, () => ({ conversationIds: [CONVERSATION_ID, SOURCE_CONVERSATION_ID], completion })),
+    ]);
+    const oversized = await run(Array.from({ length: 51 }, (_, i) => `Cv${String(i).padStart(4, "0")}`));
+    expect(oversized.exitCode).toBe(1);
+    expect(oversized.stderr).toContain("Pass at most 50 conversations at once.");
+    expect(bodies).toHaveLength(4);
+  });
+}
+
+test("compose logo get/set/remove support structured output and require confirmation", async () => {
+  const bytes = Buffer.from("logo bytes");
+  const logo = {
+    contentType: "image/png",
+    pixelWidth: 1,
+    pixelHeight: 1,
+    displayWidth: 250,
+    altText: "Team",
+    byteLength: bytes.length,
+    sha256: "a".repeat(64),
+    dataUrl: `data:image/png;base64,${bytes.toString("base64")}`,
+    createdAt: "2026-01-02T03:04:05.000Z",
+  };
+  const requests: Array<{ method: string; body: unknown }> = [];
+  const server = withMailbox(async (request) => {
+    if (!new URL(request.url).pathname.endsWith("/compose-logo")) return api({ message: "unexpected" }, { status: 500 });
+    requests.push({ method: request.method, body: request.method === "PUT" ? await request.json() : null });
+    return api({ logo: request.method === "DELETE" ? null : logo });
+  });
+  servers.push(server);
+  const origin = `http://127.0.0.1:${server.port}`;
+  const file = join(cliHome, "logo.png");
+  await writeFile(file, bytes);
+  const run = (...args: string[]) => runCli(origin, ["--json", "mail", "compose", "logo", ...args, "--mailbox", MAILBOX_ID]);
+  const get = await run("get");
+  expect(get.exitCode).toBe(0);
+  expect(JSON.parse(get.stdout)).toEqual({ logo });
+  const set = await run("set", "--file", file, "--width", "250", "--alt", "Team");
+  expect(set.exitCode).toBe(0);
+  expect(JSON.parse(set.stdout)).toEqual({ logo });
+  const refused = await run("remove");
+  expect(refused.exitCode).not.toBe(0);
+  expect(refused.stderr + refused.stdout).toContain("--yes");
+  expect(requests).toHaveLength(2);
+  const removed = await run("remove", "--yes");
+  expect(removed.exitCode).toBe(0);
+  expect(JSON.parse(removed.stdout)).toEqual({ logo: null });
+  expect(requests).toEqual([
+    { method: "GET", body: null },
+    { method: "PUT", body: { content: bytes.toString("base64"), displayWidth: 250, altText: "Team" } },
+    { method: "DELETE", body: null },
+  ]);
+  await writeFile(file, Buffer.alloc(102401));
+  const tooLarge = await run("set", "--file", file);
+  expect(tooLarge.exitCode).not.toBe(0);
+  expect(tooLarge.stderr + tooLarge.stdout).toContain("100 KiB");
+  expect(requests).toHaveLength(3);
+  const summary = await runCli(origin, ["mail", "compose", "logo", "get", "--mailbox", MAILBOX_ID]);
+  expect(summary.exitCode).toBe(0);
+  for (const text of ["image/png", "1x1", "250", "Team", "aaaaaaaaaaaa"]) expect(summary.stdout).toContain(text);
 });

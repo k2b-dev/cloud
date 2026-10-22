@@ -30,6 +30,12 @@ const stylesPath = resolve(packageRoot, "dist/styles.css");
 if (!existsSync(stylesPath)) throw new Error("dist/styles.css is missing — run `bun run build` before this test");
 const styles = readFileSync(stylesPath, "utf8");
 
+// Hosts use this utility without any package component emitting it.
+test("ships the keyboard hint utility with a reserved box", () => {
+  expect(styles).toMatch(/\.k2b-kbd-hint\s*\{[^}]*visibility:\s*hidden/);
+  expect(styles).toMatch(/:where\(html\[data-k2b-kbd=["']?on["']?\]\)\s+\.k2b-ui\s+\.k2b-kbd-hint\s*\{[^}]*visibility:\s*visible/);
+});
+
 const walk = (dir: string): string[] =>
   readdirSync(dir).flatMap((entry) => {
     const path = join(dir, entry);
@@ -43,10 +49,16 @@ const sources = walk(resolve(packageRoot, "src"));
  * Class families the package renders but does not own the names of.
  * `ti`/`ti-*` come from the optional Tabler preset; `cd-*` are emitted by the
  * package's own code highlighter; `md-*` and `stdlib-chart-*` are emitted by
- * `@k2b/stdlib` and cannot be renamed without forking it.
+ * `@k2b/stdlib` and cannot be renamed without forking it. `maplibregl-*` is the DOM
+ * MapLibre builds inside MapView, styled by the package instead of MapLibre's stylesheet.
  */
 const isForeignContract = (token: string) =>
-  token === "ti" || token.startsWith("ti-") || token.startsWith("cd-") || token.startsWith("md-") || token.startsWith("stdlib-");
+  token === "ti" ||
+  token.startsWith("ti-") ||
+  token.startsWith("cd-") ||
+  token.startsWith("md-") ||
+  token.startsWith("stdlib-") ||
+  token.startsWith("maplibregl-");
 
 /** Marker classes: CopyButton uses its base styles; Navigation styles its lists and rows. */
 const HOOK_CLASSES = new Set(["k2b-copy-button", "k2b-navigation"]);

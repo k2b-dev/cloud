@@ -187,6 +187,15 @@ const catalogWithAuthoringResources = (): CustomAppCatalog => {
 };
 
 describe("CustomAppBuilder", () => {
+  for (const editMode of [true, false]) {
+    test(`only the editable builder offers shared inspector reopening (${editMode})`, () => {
+      const html = renderToString(() => createComponent(CustomAppBuilder, { app: app(), baseId: "BASE01", catalog: catalog(), editMode }));
+      const toggle = html.match(/<button[^>]*data-app-workspace-detail-toggle[^>]*>/)?.[0];
+      if (editMode) expect(toggle).toContain('data-workspace-detail-reopen="true"');
+      else expect(toggle ?? "").not.toContain('data-workspace-detail-reopen="true"');
+    });
+  }
+
   test("renders the extracted chart controls with existing labels and formatting values", () => {
     const html = renderToString(() =>
       createComponent(CustomAppChartEditor, {
@@ -888,6 +897,8 @@ describe("CustomAppBuilder", () => {
     expect(css).toMatch(/\.custom-app-block:hover\s*>\s*\.custom-app-block-control\s*\{[^}]*opacity:\s*1/);
     expect(css).toMatch(/@media \(hover: none\)[\s\S]*?\.custom-app-block\s*>\s*\.custom-app-block-control\s*\{[^}]*opacity:\s*1/);
     expect(css).not.toContain('.custom-app-block[data-selected="true"] > .custom-app-block-control');
+    // The block handle fades in where it rests; hover never slides it into place.
+    expect(css).not.toMatch(/\.custom-app-(?:editor|block)-control\s*\{[^}]*transform/);
     expect(css).toMatch(/\.custom-app-block\[data-selected="true"\]\s*\{[^}]*outline:\s*1px solid var\(--grids-edit-accent\)/);
     expect(css).toMatch(
       /\.custom-app-editor-control:focus-visible\s*>\s*\.custom-app-drag-preview\s*\{[^}]*outline:\s*2px solid var\(--grids-edit-accent\)/,

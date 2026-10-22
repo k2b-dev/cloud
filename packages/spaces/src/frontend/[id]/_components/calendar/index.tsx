@@ -32,6 +32,7 @@ import {
   type SpaceColumn,
   type SpaceItem,
 } from "@/contracts";
+import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
@@ -39,6 +40,7 @@ import { resolveCompletionClaim } from "../shared/claim/claim";
 import { confirmCompletion, setItemCompleted } from "../shared/completion";
 import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
+import { allDayEnd, allDayStart, instantFromLocalDateTime } from "../shared/item-form/date";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesDetailNavigation, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
@@ -57,8 +59,14 @@ import TaskTray from "./TaskTray";
 import { taskTrayFiltered, taskTrayFilters, taskTrayListHref } from "./tray";
 import type { CalendarProps, CalendarView } from "./types";
 
-const eventStart = (item: CalendarItem) => item.startsAt ?? item.deadline ?? calendar.today().toISOString();
-const eventEnd = (item: CalendarItem) => item.endsAt ?? item.deadline ?? eventStart(item);
+const eventStart = (item: CalendarItem, dateConfig?: DateContext) =>
+  item.startsAt ??
+  (item.deadline && isDateOnlyDeadline(item.deadline) ? allDayStart(item.deadline, dateConfig) : item.deadline) ??
+  calendar.today(dateConfig).toISOString();
+const eventEnd = (item: CalendarItem, dateConfig?: DateContext) =>
+  item.endsAt ??
+  (item.deadline && isDateOnlyDeadline(item.deadline) ? allDayEnd(item.deadline, dateConfig) : item.deadline) ??
+  eventStart(item, dateConfig);
 
 const buildCalendarHref = (
   baseUrl: string,
@@ -88,6 +96,11 @@ const buildCalendarHref = (
 /** Spaces never shows the compact mobile month, so its links name the month view. */
 const asView = (view: CoreCalendarView): CalendarView => (view === "mobile-month" ? "month" : view);
 
+const isAllDayCalendarItem = (item: CalendarItem, view: CalendarView) =>
+  item.allDay ||
+  (!item.startsAt &&
+    (item.deadlineAllDay || (item.deadline !== null && isDateOnlyDeadline(item.deadline)) || !isScrollingCalendarView(view)));
+
 const toCalendarEvent = (
   item: CalendarItem,
   columns: SpaceColumn[],
@@ -100,16 +113,15 @@ const toCalendarEvent = (
   const { t } = spaceMessages.resolve(dateConfig?.locale ? [dateConfig.locale] : []);
   const isDeadline = isCalendarTask(item);
   // A deadline is a point in time where the day and week views have hours; the month and year list it on its day.
-  const timedDeadline = isDeadline && isScrollingCalendarView(view);
   const detailItemId = item.isRecurringInstance ? (item.recurringEventId ?? item.id) : item.id;
   const occurrenceId = item.recurrenceId ?? undefined;
   return {
     id: item.id,
     title: item.title,
     description: item.descriptionPreview ?? undefined,
-    start: eventStart(item),
-    end: eventEnd(item),
-    allDay: item.allDay || (!item.startsAt && !timedDeadline),
+    start: eventStart(item, dateConfig),
+    end: eventEnd(item, dateConfig),
+    allDay: isAllDayCalendarItem(item, view),
     colorHex: calendarItemColors(item, filter.colorBy, columns).color,
     display: isDeadline ? "marker" : undefined,
     checked: calendarCheckable(item) ? false : undefined,
@@ -205,7 +217,7 @@ const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>):
                   <span class="block text-sm font-medium text-primary">{label}</span>
                   <span class="block text-xs text-dimmed">{description}</span>
                 </span>
-                <i class="ti ti-chevron-right shrink-0 text-sm text-dimmed opacity-50 transition-[opacity,transform] group-hover:translate-x-0.5 group-hover:opacity-100 group-focus-visible:opacity-100" />
+                <i class="ti ti-chevron-right shrink-0 text-sm text-dimmed opacity-50 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
               </button>
             ))}
           </div>
@@ -341,9 +353,9 @@ export default function Calendar(props: CalendarProps) {
       const item = items.find((candidate) => candidate.id === eventId);
       return (
         !item ||
-        (new Date(eventStart(item)).getTime() === optimistic.start.getTime() &&
-          new Date(eventEnd(item)).getTime() === optimistic.end.getTime() &&
-          Boolean(item.allDay) === Boolean(optimistic.allDay))
+        (new Date(eventStart(item, props.dateConfig)).getTime() === optimistic.start.getTime() &&
+          new Date(eventEnd(item, props.dateConfig)).getTime() === optimistic.end.getTime() &&
+          Boolean(isAllDayCalendarItem(item, props.view)) === Boolean(optimistic.allDay))
       );
     });
     if (settled.length === 0) return;
@@ -530,6 +542,16 @@ export default function Calendar(props: CalendarProps) {
     await updateRecurringSeries(event, parent, next);
     return true;
   };
+  /**
+   * Where a moved deadline lands: an hour of the day or week view gives it that time; the all-day row makes it a
+   * date. A month day keeps a date a date and a timed deadline its time of day on the new date.
+   */
+  const movedDeadline = (deadline: string, next: CalendarEventTimeChange): string => {
+    if (!next.allDay) return next.start.toISOString();
+    const day = calendar.formatDateKey(next.start, props.dateConfig);
+    if (isDateOnlyDeadline(deadline) || isScrollingCalendarView(props.view)) return day;
+    return instantFromLocalDateTime(day, calendar.formatTime(deadline, props.dateConfig), props.dateConfig);
+  };
   const updateEventTime = mutations.create<
     boolean,
     {
@@ -542,8 +564,12 @@ export default function Calendar(props: CalendarProps) {
     { eventId: string }
   >({
     onBefore: ({ event, sourceItem, next }) => {
-      // A deadline moved in the hours of the day or week view keeps its time; the month moves it to a day.
-      const optimistic = sourceItem?.deadline && !sourceItem.startsAt ? { ...next, end: next.start, allDay: next.allDay ?? true } : next;
+      const deadline = sourceItem?.deadline && !sourceItem.startsAt ? movedDeadline(sourceItem.deadline, next) : null;
+      const optimistic = deadline
+        ? isDateOnlyDeadline(deadline)
+          ? { start: new Date(allDayStart(deadline, props.dateConfig)), end: new Date(allDayEnd(deadline, props.dateConfig)), allDay: true }
+          : { start: new Date(deadline), end: new Date(deadline), allDay: next.allDay ?? false }
+        : next;
       setOptimisticTimes({ ...optimisticTimes(), [event.id]: optimistic });
       return { eventId: event.id };
     },
@@ -552,7 +578,7 @@ export default function Calendar(props: CalendarProps) {
         const itemId = event.dataSpaceItemId ?? event.id;
         const res = await apiClient[":id"].items[":itemId"].$patch({
           param: { id: props.spaceId, itemId },
-          json: { deadline: next.start.toISOString(), startsAt: null, endsAt: null, allDay: next.allDay ?? true },
+          json: { deadline: movedDeadline(sourceItem.deadline, next), startsAt: null, endsAt: null, allDay: false },
         });
         if (!res.ok) throw new Error(await readResponseError(res, t.deadlineUpdateFailed));
         return true;

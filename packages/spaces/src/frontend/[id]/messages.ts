@@ -5,6 +5,25 @@ export const spaceMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      headReset: "Reset",
+      headViews: "Views",
+      headShowViews: "Show",
+      headViewsHint: "List, Table, Kanban, and Calendar are now tabs at the top of the page.",
+      sidebarHintSwitch: "All your Spaces are now here in the sidebar. One click opens another Space.",
+      sidebarHintOverview: "Your Spaces are now in one sidebar, here and in every Space. “New space” is at the end of the list.",
+      headSpaceMenu: "Space menu",
+      headPeople: "People with access",
+      headSpacePeople: ({ names }: { names: string }) => `People with access to this Space: ${names}`,
+      headOpenMenu: "Open menu",
+      headMenuHint: ({ ical, shortcuts }: { ical: boolean; shortcuts: boolean }): string =>
+        ical && shortcuts
+          ? "Space settings, the iCal URL, and keyboard shortcuts are now under “…”."
+          : ical
+            ? "Space settings and the iCal URL are now under “…”."
+            : shortcuts
+              ? "Space settings and keyboard shortcuts are now under “…”."
+              : "Space settings are now under “…”.",
+      headCopyFailed: "Could not copy the iCal URL. Open the menu and try again.",
       cancel: "Cancel",
       all: "All",
       none: "None",
@@ -139,10 +158,13 @@ export const spaceMessages = i18n.define({
       takeOverAndReopenAction: "Take over and reopen",
       takeOverAndMove: ({ name }: { name: string }) => `Claimed by ${name} – take over and move?`,
       takeOverAndMoveAction: "Take over and move",
-      claimNotAssigned: "not assigned",
+      removeWorkingAssignee: ({ name }: { name: string }) => `${name} is working on this – remove them and end their claim?`,
+      removeWorkingAssigneeAction: "Remove and end claim",
+      removeWorkingAssigneeTitle: "Remove assignee",
       nobodyOnIt: "Nobody is on it yet.",
       takeOverTitle: "Take over task",
-      takeOverHelp: ({ name }: { name: string }) => `Take over releases the claim of ${name} and marks you as working on it.`,
+      takeOverHelp: ({ name }: { name: string }) =>
+        `Take over moves the task from ${name} to you: you become responsible and are marked as working on it.`,
       releaseNoteTitle: "Release claim",
       releaseNoteLabel: "Handoff note (optional)",
       releaseNotePlaceholder: "What is done, what comes next",
@@ -267,8 +289,6 @@ export const spaceMessages = i18n.define({
       calendar: "Calendar",
       allSpaces: "All spaces",
       newSpace: "New space",
-      switchSpace: "Switch space",
-      failedLoadSpaces: "Failed to load Spaces.",
       copied: "Copied!",
       icalUrl: "iCal URL",
       copiedIcalUrl: "Copied iCal URL",
@@ -443,6 +463,11 @@ export const spaceMessages = i18n.define({
       details: "Details",
       itemMetadata: "Item metadata",
       commentRefreshAfterSaveFailed: "Comment saved, but comments could not be refreshed.",
+      reactionSaveFailed: "The reaction could not be saved.",
+      reactionRetry: "Try again",
+      reactionLimitReached: ({ count }: { count: number }) =>
+        `An item can have up to ${count} different reactions. React with one that is already there.`,
+      moreReactionsInItem: ({ count }: { count: number }) => `${count} more ${count === 1 ? "reaction" : "reactions"}, shown in the item`,
       addCommentFailed: "Failed to add comment",
       deleteCommentFailed: "Failed to delete comment",
       updateCommentFailed: "Failed to update comment",
@@ -751,7 +776,7 @@ export const spaceMessages = i18n.define({
       offsetDaysDescription: "0 proposes today.",
       dueTime: "Due time",
       startTime: "Start time",
-      timeDescriptionTask: "17:00 when empty.",
+      timeDescriptionTask: "All day when empty.",
       timeDescriptionEvent: "09:00 when empty.",
       durationMinutes: "Duration",
       durationDescription: "60 minutes when empty.",
@@ -764,6 +789,25 @@ export const spaceMessages = i18n.define({
       deleteTemplateFailed: "The template could not be deleted",
     },
     de: {
+      headReset: "Zurücksetzen",
+      headViews: "Ansichten",
+      headShowViews: "Zeigen",
+      headViewsHint: "Liste, Tabelle, Kanban und Kalender sind jetzt Tabs oben auf der Seite.",
+      sidebarHintSwitch: "Alle Spaces stehen jetzt hier in der Leiste. Ein Klick öffnet einen anderen Space.",
+      sidebarHintOverview: "Deine Spaces stehen jetzt in einer Leiste, hier und in jedem Space. „Neuer Space“ steht am Ende der Liste.",
+      headSpaceMenu: "Space-Menü",
+      headPeople: "Personen mit Zugriff",
+      headSpacePeople: ({ names }: { names: string }) => `Personen mit Zugriff auf diesen Space: ${names}`,
+      headOpenMenu: "Menü öffnen",
+      headMenuHint: ({ ical, shortcuts }: { ical: boolean; shortcuts: boolean }): string =>
+        ical && shortcuts
+          ? "Space-Einstellungen, iCal-Adresse und Tastenkürzel findest du jetzt unter „…“."
+          : ical
+            ? "Space-Einstellungen und iCal-Adresse findest du jetzt unter „…“."
+            : shortcuts
+              ? "Space-Einstellungen und Tastenkürzel findest du jetzt unter „…“."
+              : "Die Space-Einstellungen findest du jetzt unter „…“.",
+      headCopyFailed: "Die iCal-Adresse konnte nicht kopiert werden. Öffne das Menü und versuche es erneut.",
       cancel: "Abbrechen",
       all: "Alle",
       none: "Keine",
@@ -897,10 +941,12 @@ export const spaceMessages = i18n.define({
       takeOverAndReopenAction: "Übernehmen und wieder öffnen",
       takeOverAndMove: ({ name }) => `Von ${name} übernommen – übernehmen und verschieben?`,
       takeOverAndMoveAction: "Übernehmen und verschieben",
-      claimNotAssigned: "nicht zugewiesen",
+      removeWorkingAssignee: ({ name }) => `${name} arbeitet daran – entfernen und die Übernahme beenden?`,
+      removeWorkingAssigneeAction: "Entfernen und Übernahme beenden",
+      removeWorkingAssigneeTitle: "Zuweisung entfernen",
       nobodyOnIt: "Noch niemand arbeitet daran.",
       takeOverTitle: "Aufgabe übernehmen",
-      takeOverHelp: ({ name }) => `Übernehmen gibt die Übernahme von ${name} frei und trägt dich als Bearbeiter ein.`,
+      takeOverHelp: ({ name }) => `Übernehmen gibt die Aufgabe von ${name} an dich: Du bist dann zuständig und arbeitest daran.`,
       releaseNoteTitle: "Übernahme freigeben",
       releaseNoteLabel: "Übergabenotiz (optional)",
       releaseNotePlaceholder: "Was erledigt ist und was als Nächstes kommt",
@@ -1026,12 +1072,10 @@ export const spaceMessages = i18n.define({
       calendar: "Kalender",
       allSpaces: "Alle Spaces",
       newSpace: "Neuer Space",
-      switchSpace: "Space wechseln",
-      failedLoadSpaces: "Die Spaces konnten nicht geladen werden.",
       copied: "Kopiert",
       icalUrl: "iCal-URL",
       copiedIcalUrl: "iCal-URL kopiert",
-      copyIcalUrl: "iCal-URL kopieren",
+      copyIcalUrl: "iCal-Adresse kopieren",
       createItemFailed: "Der Eintrag konnte nicht erstellt werden",
       taskCreated: "Aufgabe erstellt",
       workspaceRefreshAfterCreateFailed: "Der Eintrag wurde erstellt, aber der Arbeitsbereich konnte nicht aktualisiert werden.",
@@ -1202,6 +1246,11 @@ export const spaceMessages = i18n.define({
       details: "Details",
       itemMetadata: "Eintragsmetadaten",
       commentRefreshAfterSaveFailed: "Der Kommentar wurde gespeichert, aber die Kommentare konnten nicht aktualisiert werden.",
+      reactionSaveFailed: "Reaktion konnte nicht gespeichert werden.",
+      reactionRetry: "Erneut versuchen",
+      reactionLimitReached: ({ count }) =>
+        `Ein Eintrag kann bis zu ${count} verschiedene Reaktionen haben. Reagiere mit einer, die schon da ist.`,
+      moreReactionsInItem: ({ count }) => `${count} ${count === 1 ? "weitere Reaktion" : "weitere Reaktionen"}, im Eintrag sichtbar`,
       addCommentFailed: "Der Kommentar konnte nicht hinzugefügt werden",
       deleteCommentFailed: "Der Kommentar konnte nicht gelöscht werden",
       updateCommentFailed: "Der Kommentar konnte nicht aktualisiert werden",
@@ -1512,7 +1561,7 @@ export const spaceMessages = i18n.define({
       offsetDaysDescription: "0 schlägt heute vor.",
       dueTime: "Fällig um",
       startTime: "Beginn",
-      timeDescriptionTask: "Ohne Angabe 17:00.",
+      timeDescriptionTask: "Ohne Angabe ganztägig.",
       timeDescriptionEvent: "Ohne Angabe 09:00.",
       durationMinutes: "Dauer",
       durationDescription: "Ohne Angabe 60 Minuten.",

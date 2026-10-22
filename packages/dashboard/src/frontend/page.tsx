@@ -78,6 +78,7 @@ export default ssr<AuthContext>(async (c) => {
       : []),
   ];
   const appHrefById = new Map(availableApps.map((entry) => [entry.id, entry.href]));
+  const appAccentById = new Map(apps.map((entry) => [entry.id, entry.appearance?.accent]));
   const declared = widgets.map((widget) => ({ ...widget, key: widgetKey(widget.appId, widget.widgetId) }));
   // `requiresRoles` only decides what the gallery and the default board offer; each handler still authorizes.
   const catalog: DashboardCatalogWidget[] = declared
@@ -88,11 +89,13 @@ export default ssr<AuthContext>(async (c) => {
       appName: widget.appName,
       appIcon: widget.appIcon,
       appHref: appHrefById.get(widget.appId),
+      appAccent: appAccentById.get(widget.appId),
       title: widget.title,
       description: widget.description,
       sizes: widget.sizes,
       defaultSize: widget.defaultSize,
       suggest: widget.suggest,
+      ...(widget.settings ? { settings: widget.settings } : {}),
     }));
   const visible = new Set(catalog.map((widget) => widget.key));
 

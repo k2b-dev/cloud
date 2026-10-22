@@ -1,3 +1,4 @@
+import type { NoteAuthors } from "../lib/activity-actions";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../lib/named-blocks";
 import { extractTaskProgress, extractTocFromMarkdown, type TaskProgress, type TocItem } from "../lib/note-insights";
 import { type PresentationMode, resolvePresentationMode } from "../lib/presentation-mode";
@@ -23,6 +24,7 @@ export type SelectedNoteRouteState = {
     updatedAt: string;
     createdBy: string | null;
   };
+  noteAuthors: NoteAuthors;
   readonlyMode: boolean;
   tocItems: TocItem[];
   taskProgress: TaskProgress;
@@ -45,6 +47,7 @@ export type EditableNoteRouteData = {
     parentId: string | null;
   };
   detail: {
+    noteAuthors: NoteAuthors;
     noteId: string;
     noteTitle: string;
     contentMd: string | null;
@@ -99,7 +102,7 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
   const namedBlocks = extractNamedBlockSummaries(note.contentMd);
 
   const attachmentShortIds = notebooksService.attachment.extractIds(note.contentMd);
-  const [referencedAttachments, backlinks] = await Promise.all([
+  const [referencedAttachments, backlinks, noteAuthors] = await Promise.all([
     attachmentShortIds.length > 0
       ? notebooksService.attachment.listByShortIds({ shortIds: attachmentShortIds, notebookId: params.notebookId })
       : Promise.resolve([]),
@@ -108,11 +111,13 @@ export const loadSelectedNoteRouteState = async (params: LoadSelectedNoteParams)
       userId: params.userId,
       bypassAccess: params.bypassAccess,
     }),
+    notebooksService.activity.noteAuthors({ noteId: note.id }),
   ]);
 
   return {
     note: await toSelectedNote(note),
     readonlyMode,
+    noteAuthors,
     tocItems,
     taskProgress,
     namedBlocks,
@@ -201,6 +206,7 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
         parentId: state.note.parentId,
       },
       detail: {
+        noteAuthors: state.noteAuthors,
         noteId: state.note.id,
         noteTitle: state.note.title,
         contentMd: state.note.contentMd,

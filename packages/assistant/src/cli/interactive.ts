@@ -20,10 +20,12 @@ import {
   CloudAiSurveyInputSchema,
   CloudAiTextEditorInputSchema,
 } from "@k2b/cloud/ai/browser";
+import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { arg, type CloudCliContext, command, flag } from "@k2b/cloud/cli";
 import type { AiChatQuotaSnapshot } from "@k2b/cloud/shared";
 import { httpApprovalNotice } from "../artifacts/code-approval-message";
 import type { CapabilityDecision, CodeApproval } from "../artifacts/runtime/capabilities";
+import { pendingActionQuestion, printPendingActionContent, printReviewContent } from "./action-question";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
 import { closeCliCodeHost } from "./code-host";
 import { createLineReader, type LineReader } from "./line-reader";
@@ -314,8 +316,10 @@ const resolveAttention = async (input: {
     if (!action) return null;
 
     if (action.type === "approval_request") {
-      input.ctx.print(terminalSafeText(`Approval required: ${action.message ?? action.name}`));
-      input.ctx.print(approvalInputPreview(action.args));
+      const question = pendingActionQuestion(input.ctx, action);
+      for (const line of question.lines) input.ctx.print(line);
+      if (question.showInput) input.ctx.print(approvalInputPreview(action.args));
+      await printPendingActionContent(input.ctx, action, input.signal);
       const decision = await collectActionApproval(input.ctx, input.reader, action);
       if (decision === null) return null;
       await submitAction(input.ctx, action, { type: "approval_response", ...decision });
@@ -374,8 +378,15 @@ export async function collectCapabilityApproval(
     ctx.print(terminalSafeText(`App: ${request.resource.title}`));
     ctx.print("Returned Cloud data may be stored in this app and read by others with access. Personal remembered approvals do not apply.");
   }
-  ctx.print(terminalSafeText(request.review?.message ?? request.title));
+  ctx.print(
+    terminalSafeText(
+      (request.review
+        ? capabilityReviewView(request.review, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).message
+        : undefined) ?? request.title,
+    ),
+  );
   ctx.print(approvalInputPreview(request.input));
+  await printReviewContent(ctx, request.review);
   const decision = await collectActionApproval(ctx, reader, request);
   return decision?.remember === "always" ? { approved: true, remember: "always" } : { approved: decision?.approved === true };
 }

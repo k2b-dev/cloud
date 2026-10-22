@@ -2,9 +2,9 @@ import { env } from "@k2b/cloud/config";
 import { z } from "zod";
 
 export type OAuthUserGrantReference =
-  | { kind: "authorization_code"; code: string; nonce: string }
+  | { kind: "authorization_code"; code: string; nonce: string; familyId?: string }
   | { kind: "refresh_token"; tokenId: string; nonce: string }
-  | { kind: "device_code"; deviceAuthorizationId: string; nonce: string };
+  | { kind: "device_code"; deviceAuthorizationId: string; nonce: string; familyId?: string };
 
 export type OAuthClientCredentialsGrantReference = { kind: "client_credentials"; grantId: string; nonce: string };
 
@@ -98,4 +98,41 @@ export const issueOAuthTokenBatch = async (
     throw new Error("Core OAuth issuance returned an invalid token batch");
   }
   return parsed.data.tokens;
+};
+
+export class OAuthDeviceApprovalUnavailableError extends Error {
+  constructor(readonly status: number) {
+    super(`Core OAuth device approval failed with status ${status}`);
+  }
+}
+
+/** Hand one terminal sign-in to Core. An uncertain request is never retried. */
+export const startOAuthDeviceApproval = async (
+  request: { deviceAuthorizationId: string; identifier: string; clientId: string; scopes: string[]; lifetimeSeconds: number },
+  options: { fetch?: AuthorityFetch; brokerSecret?: string; origin?: string } = {},
+): Promise<{ comparison: string; expiresAt: string }> => {
+  const brokerSecret = options.brokerSecret ?? env.CLOUD_OAUTH_BROKER_SECRET;
+  if (!brokerSecret || !/^[a-fA-F0-9]{64}$/.test(brokerSecret)) {
+    throw new Error("CLOUD_OAUTH_BROKER_SECRET must contain exactly 64 hexadecimal characters for Core OAuth issuance");
+  }
+  const response = await (options.fetch ?? globalThis.fetch)(
+    new URL("/api/_internal/identity/v1/oauth/device-approval", options.origin ?? coreOrigin()),
+    {
+      method: "POST",
+      redirect: "error",
+      headers: { authorization: `Bearer ${brokerSecret}`, "content-type": "application/json" },
+      body: JSON.stringify(request),
+      signal: AbortSignal.timeout(5_000),
+    },
+  );
+  if (response.status !== 200) throw new OAuthDeviceApprovalUnavailableError(response.status);
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new OAuthDeviceApprovalUnavailableError(response.status);
+  }
+  const parsed = z.object({ comparison: z.string().regex(/^\d{6}$/), expiresAt: z.string() }).safeParse(body);
+  if (!parsed.success) throw new OAuthDeviceApprovalUnavailableError(response.status);
+  return parsed.data;
 };

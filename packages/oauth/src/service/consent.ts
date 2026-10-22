@@ -6,7 +6,7 @@ export type OAuthConsentRequest = {
   clientId: string;
   redirectUri: string;
   scopes: OAuthScope[];
-  resource: string;
+  resource: string | null;
   state?: string;
   nonce?: string;
   codeChallenge: string;

@@ -1,14 +1,15 @@
-import { aiConversations, hasRememberedAiToolApproval, rememberAiToolApproval } from "@k2b/cloud/ai";
+import { aiConversations, authorizeBackgroundAction, hasRememberedAiToolApproval, rememberAiToolApproval } from "@k2b/cloud/ai";
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import {
   type CapabilityCaller,
+  capabilityReviewRememberScope,
   getCapabilityActionWording,
   getCapabilityCatalogApp,
   invokeCapability,
   reviewCapabilityAction,
   transferCapabilityStream,
 } from "@k2b/cloud/capabilities/server";
-import { CapabilityActionReviewSchema, CapabilityStreamSchema } from "@k2b/cloud/contracts";
+import { CapabilityActionReviewDataSchema, CapabilityStreamSchema, capabilityActionPolicy } from "@k2b/cloud/contracts";
 import {
   APPROVAL_MAX_WAIT_MS,
   approvalAssurance,
@@ -45,7 +46,7 @@ const Prepared = z.object({
   approval: z.enum(["none", "rememberable"]).nullable(),
   resource: z.object({ id: CodeResourceId, title: z.string() }).optional(),
   title: z.string(),
-  review: CapabilityActionReviewSchema.nullable(),
+  review: z.preprocess((value) => decoded(value), CapabilityActionReviewDataSchema.nullable()),
   allowAlways: z.boolean(),
   scope: z.string().nullable(),
   /** Locale the person reviewed in; revalidation reviews in it again so a language switch is not a changed consequence. */
@@ -102,6 +103,7 @@ async function operation(name: string, locale?: string | null) {
     localId,
     operation: (query ?? action)!,
     action,
+    policy: capabilityActionPolicy(catalog.data.manifest, localId),
     kind: query ? ("query" as const) : ("action" as const),
   };
 }
@@ -151,22 +153,44 @@ export const runtimeCapabilities = {
     if (stream.size > LIMITS.inputFileBytes) throw new ArtifactError("INVALID_INPUT");
     return transferCapabilityStream(stream, verb, caller, verb === "write" ? (body ?? undefined) : undefined);
   },
-  async prepare(input: unknown, identity: ArtifactIdentity, caller: CapabilityCaller, taskScoped = false) {
+  async prepare(
+    input: unknown,
+    identity: ArtifactIdentity,
+    caller: CapabilityCaller,
+    task?: { turnId: string; mandate: { id: string; revision: number } },
+  ) {
     const request = RuntimeCapabilityRequest.parse(input),
       actor = user(identity);
     const { resource, conversationId } = await authorizeWithChat(request, identity);
     const untrusted = resource && resource.permission !== "admin";
     const target = await operation(request.name, caller.locale);
-    let review: z.infer<typeof CapabilityActionReviewSchema> | null = null;
-    if (target.action?.review) {
+    const getReview = async () => {
       const response = await reviewCapabilityAction(
         { appId: target.appId, capabilityId: target.localId, input: request.input, signal: caller.signal },
         caller,
       );
       if (!response.ok) throw new Error(response.error.message);
-      review = response.data;
-    }
-    const scope = target.action?.approval === "rememberable" ? (review?.approvalScope ?? null) : null;
+      return response.data;
+    };
+    const review =
+      task && target.action
+        ? await authorizeBackgroundAction({
+            ...task,
+            appId: target.appId,
+            capabilityId: target.localId,
+            kind: target.kind,
+            args: request.input,
+            approval: target.action.approval,
+            policy: target.policy,
+            hasReview: target.action.review === true,
+            action: target.operation.title,
+            review: getReview,
+            signal: caller.signal,
+          })
+        : target.action?.review
+          ? await getReview()
+          : null;
+    const scope = review ? (capabilityReviewRememberScope(review, target.action?.approval) ?? null) : null;
     const prepared = Prepared.parse({
       appId: target.appId,
       localId: target.localId,
@@ -181,12 +205,12 @@ export const runtimeCapabilities = {
       ...(untrusted ? { resource: { id: resource.id, title: resource.title } } : {}),
     });
     const remembered =
-      !taskScoped &&
+      !task &&
       !untrusted &&
       scope !== null &&
       (await hasRememberedAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: scope, conversationId }));
-    // Only the managed host sets taskScoped; Core checks its persisted mandate on every dispatch.
-    const automatic = taskScoped || (!untrusted && (!target.action || target.action.approval === "none" || remembered));
+    // Only the managed host supplies task context; Core also checks the mandate on every dispatch.
+    const automatic = Boolean(task) || (!untrusted && (!target.action || target.action.approval === "none" || remembered));
     const wording =
       !automatic && target.action ? await getCapabilityActionWording(target.appId, target.localId, caller.locale ?? undefined) : null;
     const response = {
@@ -197,6 +221,11 @@ export const runtimeCapabilities = {
       appName: target.appName,
       appIcon: target.appIcon,
       ...prepared,
+      // Only enrich the browser copy. The stored snapshot and approval digest keep the app's original review.
+      review:
+        review && "sentence" in review && !review.ask && target.policy && "ask" in target.policy
+          ? { ...review, ask: target.policy.ask }
+          : review,
       ...(wording?.sentences ? { sentences: wording.sentences } : {}),
       ...(wording?.fields?.length ? { fields: [...wording.fields] } : {}),
     };
@@ -214,7 +243,7 @@ export const runtimeCapabilities = {
       >`SELECT count(*)::int AS count FROM assistant.capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
       if (pending!.count >= LIMITS.pendingRequests) throw new ArtifactError("TOO_MANY_REQUESTS");
       await db`INSERT INTO assistant.capability_calls(id,user_id,artifact_id,conversation_id,request,prepared)
-        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId ?? null}),${request.conversationId ?? null},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify(prepared)}::text)::jsonb)`;
+        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId ?? null}),${conversationId},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify({ ...prepared, review: JSON.stringify(prepared.review) })}::text)::jsonb)`;
       if (!automatic) {
         const approval = await requestApprovalRecord(request, prepared, actor.id, db, {
           sentence: codeApprovalMessage(response, caller.locale ?? "en"),
@@ -230,7 +259,7 @@ export const runtimeCapabilities = {
       await db`DELETE FROM assistant.capability_calls WHERE id IN (SELECT id FROM assistant.capability_calls
         WHERE user_id=${actor.id}::uuid AND status IN ('completed','denied','abandoned') ORDER BY created_at DESC OFFSET ${LIMITS.logs})`;
     });
-    if (automatic) return resolveCapability(request.id, { approved: true }, identity, caller, true);
+    if (automatic) return resolveCapability(request.id, { approved: true }, identity, caller, true, Boolean(task));
     return response;
   },
   async resolve(id: string, decision: { approved: boolean; remember?: "always" }, identity: ArtifactIdentity, caller: CapabilityCaller) {
@@ -244,6 +273,7 @@ async function resolveCapability(
   identity: ArtifactIdentity,
   caller: CapabilityCaller,
   automatic = false,
+  background = false,
 ) {
   z.uuid().parse(id);
   const actor = user(identity);
@@ -270,14 +300,15 @@ async function resolveCapability(
   )
     throw new ArtifactError("CONFLICT");
   // Approval applies to the reviewed consequence, not a changed action.
-  let currentReview: z.infer<typeof CapabilityActionReviewSchema> | null = null;
-  if (target.action?.review) {
+  // The routine gate already reviewed this call. Interactive approvals still revalidate their reviewed consequence.
+  let currentReview: z.infer<typeof CapabilityActionReviewDataSchema> | null = background ? prepared.review : null;
+  if (!background && target.action?.review) {
     const response = await reviewCapabilityAction(
       { appId: target.appId, capabilityId: target.localId, input: request.input, signal: caller.signal },
       { ...caller, locale: prepared.locale ?? caller.locale },
     );
     if (!response.ok) throw new Error(response.error.message);
-    currentReview = CapabilityActionReviewSchema.parse(response.data);
+    currentReview = CapabilityActionReviewDataSchema.parse(response.data);
   }
   if (approvalReviewDigest(currentReview) !== approvalReviewDigest(prepared.review)) throw new ArtifactError("CONFLICT");
   if (decision.remember && (!prepared.allowAlways || (resource && resource.permission !== "admin")))
@@ -285,8 +316,12 @@ async function resolveCapability(
   const updated = await claimExecution(row, decision, identity, currentReview, automatic);
   if (!updated) throw new ArtifactError("CONFLICT");
   if (!decision.approved) return { status: "denied" as const };
+  // The capability call ID is the request ID of the execution that follows, so both audit trails join.
   if (decision.remember && prepared.scope)
-    await rememberAiToolApproval({ actorUserId: actor.id }, { toolName: request.name, approvalScope: prepared.scope });
+    await rememberAiToolApproval(
+      { actorUserId: actor.id, actor: identity.actor, requestId: id },
+      { toolName: request.name, approvalScope: prepared.scope },
+    );
   const result = await invokeCapability(
     {
       appId: prepared.appId,
@@ -351,7 +386,7 @@ async function claimExecution(
   row: Row,
   decision: { approved: boolean },
   identity: ArtifactIdentity,
-  review: z.infer<typeof CapabilityActionReviewSchema> | null,
+  review: z.infer<typeof CapabilityActionReviewDataSchema> | null,
   automatic: boolean,
 ): Promise<boolean> {
   const actor = user(identity);

@@ -73,6 +73,7 @@ const base = {
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   priority: null,
   recurrence: null,
   recurringEventId: null,
@@ -179,6 +180,7 @@ const viewRequests: string[] = [];
 const blockRequests: URL[] = [];
 let blockGate: (() => Promise<void>) | null = null;
 const created: Record<string, unknown>[] = [];
+const patched: { itemId: string; body: Record<string, unknown> }[] = [];
 
 beforeAll(async () => {
   const built = await Promise.all(styleEntries.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
@@ -216,6 +218,12 @@ beforeAll(async () => {
         const body = (await request.json()) as Record<string, unknown>;
         created.push(body);
         return Response.json({ ...base, id: `New${String(created.length).padStart(3, "0")}`, ...body });
+      }
+      const patch = url.pathname.match(/^\/api\/spaces\/Space1\/items\/([^/]+)$/);
+      if (patch && request.method === "PATCH") {
+        const body = (await request.json()) as Record<string, unknown>;
+        patched.push({ itemId: patch[1]!, body });
+        return Response.json({ ...base, id: patch[1], ...body });
       }
       if (url.pathname !== "/app/spaces/Space1") return new Response("Not found", { status: 404 });
       return new Response(pageHtml(data.locale, `${url.pathname}${url.search}`, data.items), {
@@ -351,15 +359,31 @@ const dayOverflow = (page: Page, key: string) =>
       label: more?.getAttribute("aria-label") ?? null,
     };
   }, key);
-/** The heights of the week rows and the widths of the first row's days: the grid itself, without its content. */
+/** The week heights, day widths, misplaced week keys, and the continuous track's height against its declared weeks. */
 const gridShape = (page: Page) =>
-  page.evaluate(() => ({
-    rows: Array.from(document.querySelectorAll(".k2b-calendar-month__week"), (row) => Math.round(row.getBoundingClientRect().height)),
-    // The weekday row comes first, so the first week row is the first element with its class, not a :first-of-type.
-    columns: Array.from(document.querySelector(".k2b-calendar-month__week")!.querySelectorAll("[role='gridcell']"), (cell) =>
-      Math.round(cell.getBoundingClientRect().width),
-    ),
-  }));
+  page.evaluate(() => {
+    const grid = document.querySelector(".k2b-calendar-month")!;
+    const weeks = Array.from(grid.querySelectorAll(".k2b-calendar-month__week"));
+    const track = grid.matches("[data-continuous]")
+      ? (grid.querySelector(".k2b-calendar-month__track")?.getBoundingClientRect() ?? null)
+      : null;
+    const rowHeight = Math.round(weeks[0]!.getBoundingClientRect().height);
+    return {
+      rows: weeks.map((row) => Math.round(row.getBoundingClientRect().height)),
+      // The weekday row comes first, so the first week row is the first element with its class, not a :first-of-type.
+      columns: Array.from(weeks[0]!.querySelectorAll("[role='gridcell']"), (cell) => Math.round(cell.getBoundingClientRect().width)),
+      // Without a continuous track no row has its place, so a missing track fails instead of passing empty.
+      misplaced: weeks
+        .filter(
+          (row) =>
+            !track ||
+            Math.round(row.getBoundingClientRect().top - track.top) !== (Number(row.getAttribute("aria-rowindex")) - 2) * rowHeight,
+        )
+        .map((row) => row.getAttribute("data-week-key")),
+      trackHeight: track ? Math.round(track.height) : null,
+      weeksHeight: (Number(grid.getAttribute("aria-rowcount")) - 1) * rowHeight,
+    };
+  });
 const waitFor = async (check: () => boolean, what: string) => {
   for (let tries = 0; tries < 200; tries++) {
     if (check()) return;
@@ -810,6 +834,42 @@ describe(`Spaces month view in ${browserName}`, () => {
     }
   }, 60_000);
 
+  test("desktop: dragging a deadline to another day keeps an all-day deadline a date and a timed one its time", async () => {
+    const items = [
+      ...sample,
+      { ...base, id: "Label1", title: "Print the labels", deadline: "2026-10-21", deadlineAllDay: true, columnId: "Col001" },
+    ];
+    // Each move starts on a page of its own: the refresh after a move redraws the chips, and a drag that starts
+    // during that redraw grabs a chip that is being replaced.
+    const drag = async (itemId: string, to: string) => {
+      const page = await open(desktop, { items });
+      try {
+        patched.length = 0;
+        await page.locator(`[data-space-item-id="${itemId}"]`).first().waitFor();
+        const chip = await box(page, `[data-space-item-id="${itemId}"]`);
+        // Within the same week row, away from the edges where the month scrolls while dragging.
+        const end = await emptyPoint(page, to);
+        await page.mouse.move(chip.x + chip.width / 2, chip.y + chip.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(chip.x + chip.width / 2 + 12, chip.y + chip.height / 2, { steps: 2 });
+        await page.mouse.move(end.x, end.y, { steps: 6 });
+        await page.mouse.up();
+        await waitFor(() => patched.length === 1, `the move of ${itemId}`);
+        return patched[0];
+      } finally {
+        await page.context().close();
+      }
+    };
+    expect(await drag("Label1", "2026-10-22")).toEqual({
+      itemId: "Label1",
+      body: { deadline: "2026-10-22", startsAt: null, endsAt: null, allDay: false },
+    });
+    expect(await drag("Recap1", "2026-10-24")).toEqual({
+      itemId: "Recap1",
+      body: { deadline: at(10, 24, "17:00"), startsAt: null, endsAt: null, allDay: false },
+    });
+  }, 60_000);
+
   test("desktop: a right-click opens the day's menu; it keeps a selection it lands in, creates through the quick create, and opens the day", async () => {
     const page = await open(desktop);
     try {
@@ -851,7 +911,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       await menu.getByRole("menuitem", { name: "New task with deadline" }).click();
       await page.locator(openPopover).waitFor();
       expect(await page.locator(`${openPopover} [role='radio'][aria-checked='true']`).innerText()).toBe("Task");
-      expect(await quickCreateWhen(page)).toBe("due Wed, Oct 14, 17:00");
+      expect(await quickCreateWhen(page)).toBe("due Wed, Oct 14");
       // The save answers only after the person moved on to another day: its late close leaves the focus there.
       const held = Promise.withResolvers<void>();
       let saving = false;
@@ -868,7 +928,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.locator(day("2026-10-27")).focus();
       held.resolve();
       await waitFor(() => created.length === 1, "the create request");
-      expect(created[0]).toMatchObject({ title: "Print the price list", deadline: at(10, 14, "17:00") });
+      expect(created[0]).toMatchObject({ title: "Print the price list", deadline: "2026-10-14" });
       expect(created[0]!.startsAt).toBeUndefined();
       await page.waitForFunction(() => !document.querySelector(".k2b-calendar-popover:popover-open"));
       expect(await focusedDay(page)).toBe("2026-10-27");
@@ -1004,6 +1064,8 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(await dayOverflow(page, "2026-10-12")).toEqual({ drawn: 2, more: 0, label: null });
       const shape = await gridShape(page);
       expect(new Set(shape.rows).size).toBe(1);
+      expect(shape.misplaced).toEqual([]);
+      expect(shape.trackHeight).toBe(shape.weeksHeight);
       expect(shape.columns).toHaveLength(7);
 
       await page.setViewportSize({ width: 1440, height: 640 });
@@ -1016,6 +1078,8 @@ describe(`Spaces month view in ${browserName}`, () => {
       expect(small.drawn + small.more).toBe(6);
       const smallShape = await gridShape(page);
       expect(new Set(smallShape.rows).size).toBe(1);
+      expect(smallShape.misplaced).toEqual([]);
+      expect(smallShape.trackHeight).toBe(smallShape.weeksHeight);
       expect(smallShape.columns).toEqual(shape.columns);
 
       await page.setViewportSize({ width: 1440, height: 1300 });

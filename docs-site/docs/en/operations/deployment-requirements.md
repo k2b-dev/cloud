@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-11
+updated: 2026-10-20
 ---
 
 # Deployment requirements
@@ -27,16 +27,103 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Size Mail for large messages
+
+Each Mail process loads message bodies and extracts attachment text within one
+processing budget of **256 MiB**. Mail estimates the memory of each message or
+attachment from its size before it starts. Work waits in arrival order until it
+fits. A message or attachment larger than the budget runs alone. Mail never
+skips a message because of the budget. Large messages can take longer to
+appear, and the server answers pages and API requests while they wait. A body
+that a workflow or a person opens waits in the same order as background work,
+so it can take longer to load while large messages are processed.
+
+The budget comes on top of the process's own memory. A running Mail process
+uses about 350–450 MiB. One large message can need more than the budget on
+its own: about six times its size plus forty times the size of its HTML part.
+A 40 MiB message with 6 MiB of HTML needs about 500 MiB.
+
+Give Mail a container memory limit of at least **1.5 GiB**. With 1 GiB, a
+burst of large messages can still exceed the limit, and the container is
+killed and restarted.
+
+While the only Mail replica restarts, Mail pages and API requests return
+**Bad Gateway** until it is ready again. Where availability matters, run at
+least **two Mail replicas** from the release that contains the registry fix
+for [#1561](https://github.com/k2b-dev/cloud/issues/1561) and the Mail memory
+bound from [#1571](https://github.com/k2b-dev/cloud/pull/1571), each with the
+memory limit above. The number of replicas is your decision; see
+[Scaling and shutdown](/en/docs/operations/scaling-and-shutdown#what-scales-horizontally-what-must-stay-single-and-why).
+
+## Prepare for browser confirmation of new access
+
+Deploy updated Core and OAuth together: start Core first, then OAuth, as in
+[Start the new release and verify it](#start-the-new-release-and-verify-it).
+OAuth adds the database columns that Core reads for the confirmation, so new
+OAuth sign-ins fail until updated OAuth has started. New OAuth refresh families
+require confirmation from a browser sign-in in the last ten minutes, or a terminal
+Cloud Login approval bound to the exact grant. Existing refresh rotation keeps
+working without another browser sign-in. The browser flow of `cld login` always
+shows consent.
+Ensure the normal browser sign-in methods remain available for confirmation.
+
+People must create personal API keys and passkeys in the browser. Automation
+that created personal API keys using OAuth tokens or API keys now receives
+`403 BROWSER_SIGN_IN_REQUIRED`; create those keys in `/me/developer` instead.
+An older browser sign-in receives `403 REAUTHENTICATE` and requires signing in
+again. Resource and standalone service-account keys are unchanged.
+
+New browser-confirmed OAuth access sends a **New access** notice with email and
+browser delivery recommended. Keep the installation timezone and outgoing mail
+configured. Failed notice preparation is retried by Core maintenance in batches
+of at most 100 families; a notice failure does not fail a completed sign-in.
+See [the migration steps](/en/docs/reference/deprecations-and-migrations#confirm-new-personal-access-in-a-browser).
+
+## Upgrade Core and Action callers before applications use typed Action reviews
+
+Applications built with this release may declare Action policies and return
+per-call reviews or receipts. Upgrade Core and every application that calls
+Actions, at least Assistant and Capabilities, to this release or newer first.
+Older versions still discover the Actions through derived approval metadata,
+but reject the new response shapes. Existing apps need no migration in this
+release. See [Action contract migration](/en/docs/platform/capabilities#migrate-an-application).
+
+## Enable addresses and places
+
+Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
+`api-eu.geoapify.com`. Store the Geoapify key as the secret `geo.api_key` in
+**Administration → Settings → Places and addresses**. There is no endpoint
+setting or new environment variable.
+Choose `geo.plan`, then review the monthly and per-person daily credit limits.
+Core creates its durable geo ledger during startup migrations.
+
+Search text, addresses, coordinates, categories, and route corridor geometry
+leave the installation for Geoapify when a cache miss is admitted. In the
+Assistant, the AI provider also sees the person's question and tool results.
+The key travels only in the outbound `x-api-key` header. Caller cookies and
+credentials are not forwarded to Geoapify.
+
+The operator must establish a legal basis and assess the required processor
+agreement with KEPTAGO LTD. A signed agreement is available on request.
+Geoapify permits the Free plan in production only “with some limitations”;
+check the applicable terms and clarify those limits with the provider.
+Keep the required attribution with saved results and near displayed lists.
+
+Without a key, paid Queries return `GEO_NOT_CONFIGURED`. Without healthy
+Valkey admission, paid calls are refused with `GEO_BUSY`; there is no
+unlimited fallback. Availability checks remain free. Cache failures alone do
+not fail a request that admission accepts.
+
 ## Prepare the common infrastructure
 
 | Requirement | Used for | Operator responsibility |
 | --- | --- | --- |
 | Bun application images | One independently running service per app | Pull the `vX.Y.Z` release images or pin the digests from the release's `release.json`; `sha-*` tags are main-branch builds for staging. Every image reports its `CLOUD_VERSION` through `/_cloud/ready` and the app registry; see [Build and deploy](/en/docs/operations/build-and-deploy#choose-an-image-tag). |
-| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks and runtime work through NATS leases. The pull request gate tests on 17 and the nightly run on 15. Once optional BM25 ranking is enabled, every server that runs the database, including replicas, restore targets and upgraded clusters, must keep `pg_textsearch` preloaded; see [Keep the library loaded](#keep-the-library-loaded-while-bm25-indexes-exist). |
+| PostgreSQL 15 to 17 (17 recommended) | Identity, encrypted settings, app records, files, audit and workflow state | Supply `DATABASE_URL`, persistent storage, backups, and permissions for the release's migrations. Built-in apps share the database; Core and OAuth require this explicitly. Transaction pooling (PgBouncer `pool_mode=transaction`) is supported: Cloud holds no session-level advisory locks; migrations coordinate through transaction-scoped locks, setup runs on one replica of an application at a time through a NATS lease, and runtime work uses NATS leases. The pull request gate tests on 17 and the nightly run on 15. Once optional BM25 ranking is enabled, every server that runs the database, including replicas, restore targets and upgraded clusters, must keep `pg_textsearch` preloaded; see [Keep the library loaded](#keep-the-library-loaded-while-bm25-indexes-exist). |
 | NATS JetStream 2.14.3+ | Registry, coordination, durable jobs, schedules and live events | Supply `NATS_SERVERS` and one `SYNC_NAMESPACE` shared by the deployment. Use persistent storage on three nodes (default `SYNC_REPLICAS=3`) and `max_payload: 16MB` for notebook updates. The JetStream account must fit every stream's configured byte limit times its replicas; see [Reserve JetStream storage](#reserve-jetstream-storage) for the budget per application. Production can use mounted credentials and TLS through `NATS_CREDS_FILE` and `NATS_TLS_CA_FILE`; both are optional in `compose.prod.yml`. The supplied Compose wires one shared credentials path into every application service; per-application NATS credentials or a separate system credential need per-service overrides of that shared environment. |
 | Valkey / Redis-compatible service | Rate limits, caches and short-lived authentication flows | Supply `REDIS_URL`. JWT browser sessions do not use Redis session storage. |
 | Private service network | Gateway-to-app traffic, public-key retrieval and Core broker calls | Make each advertised app address reachable. Do not publish individual app, database or coordination ports. Protect cross-host traffic with authenticated TLS or an equivalent protected transport. |
-| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
+| Public gateway and HTTPS origin | Browser/API entry, callbacks, secure cookies and WebSockets | Configure DNS, ingress/TLS and `app.url` (`APP_URL` can bootstrap it). Preserve streaming, WebSocket upgrades and the `Origin` header: application live sockets signed in with a session accept only the origin of `app.url`. Only the gateway receives public application traffic. The gateway streams HTML and JSON with Brotli or gzip according to `Accept-Encoding`; ingress compression of these responses is not needed. Pass `Content-Encoding` through and do not compress or buffer SSE or NDJSON streams. Proxies and ingress must pass responses with `Cache-Control: no-transform` through without compression or any other transformation. Pass the `Sec-Fetch-Site` and `Sec-Fetch-Dest` request headers through unchanged; the gateway keeps cross-site requests and subresource loads uncompressed. Browsers that send no Fetch Metadata headers, such as Safari before 16.4, receive uncompressed answers. The gateway waits up to 4 minutes for an app's response headers and then answers 502; a reverse proxy in front of the gateway must wait at least 5 minutes for response headers. |
 | Clock synchronization | JWT expiry and short-lived invocations | Synchronize all hosts; invocation clock-skew tolerance is two seconds. |
 | Browser for diagrams | Mermaid diagrams in Notebooks and rendered Markdown | Users on Safari need Safari 17.4 or later (iOS and iPadOS 17.4 or later). Mermaid 12 targets ES2024 and is not transpiled for older browsers. |
 
@@ -115,8 +202,26 @@ Per replica, the built-in applications reserve:
 | Contacts | 0 | `cloud:live:contacts` 65 MiB, previous contact events 1 GiB until a later release removes them | 1.1 GiB |
 | Notebooks | 2 | snapshot job 1 GiB, [document log](/en/docs/operations/notebooks-document-log) 1 GiB, workspace events 512 MiB, awareness 128 MiB | 2.8 GiB |
 | Spaces | 0 | `cloud:live:spaces` 65 MiB, previous item events 1 GiB until a later release removes them | 1.1 GiB |
-| Pulse | 5 | none | 330 MiB |
+| Pulse | 6 | none | 396 MiB |
 | IPA Hosts | 1 | none | 66 MiB |
+
+Pulse's six default jobs are `pulse:metrics:scrape`, `pulse:rollup:hourly`,
+`pulse:retention`, `pulse:base-lifecycle`, `pulse:base-usage`, and
+`pulse:base-checkpoint`. Its scheduler `pulse` checks due scrapes every minute,
+submits hourly calculation at minute 23, and runs retention at 03:17 UTC.
+It also checks due SQL alerts and source freshness and resolves notification
+recipients every minute. Those scans are bounded and resume from PostgreSQL
+state on later ticks; they do not add per-base Sync resources. Alert events
+store `app.locale` as delivery metadata, including for retries after a language
+change. Its six schedules share four local handler slots. Scrape, rollup, and
+retention dispatch may briefly wait when all slots are occupied; each schedule
+remains serial across replicas, and the existing three global SQL slots still apply.
+Shutdown stops new scans and cancels in-flight alert SQL before draining workers.
+An intentional cancellation releases its owned claim for a later tick without
+recording an alert failure or sending a notification.
+Scheduler `pulse:stores` sweeps unfinished lifecycle work every minute,
+measures usage every five minutes, and writes checkpoints on the hour.
+Scheduler definitions are separate from the six jobs in the reservation table.
 
 Together, that is about 16 GiB per replica for every built-in application.
 Size `max_file_store` for the applications you deploy with headroom for
@@ -208,6 +313,14 @@ header through unchanged. Traefik replaces it by default; do not enable
 `forwardedHeaders.trustedIPs`. To verify, sign in from two networks: rate
 limits and audit entries must show different addresses, not the proxy's.
 
+A public proxy or CDN in front of the gateway that is absent from
+`GATEWAY_TRUSTED_PROXIES`, such as Cloudflare, makes Core see the proxy's
+address. Sign-in places and network names will then describe the proxy instead
+of the person when those details are used; see
+[Sign-in locations](/en/docs/operations/sign-in-locations). Private-network
+proxy addresses are ignored by the place lookup, but those proxies still need
+to be trusted for rate limits.
+
 ## Assign configuration to the correct service
 
 Inject secrets at runtime, never into image build arguments, browser bundles,
@@ -234,7 +347,7 @@ signing-key rotation, KEK recovery and revocation. Keep these secrets independen
 `APP_SECRET` is not a signing key or an OAuth broker credential.
 
 Managed Assistant code hosts serve every Assistant turn that runs code,
-including API clients, `cld assistant --detach`, and scheduled tasks. They
+including API clients, `cld assistant --detach`, and routines (scheduled tasks). They
 validate `CLOUD_CORE_INTERNAL_ORIGIN` when a host is created, before launching
 Chromium. It must be an HTTP(S) origin reachable
 from the Assistant service. Each host also uses an authenticated ephemeral
@@ -257,7 +370,9 @@ axes in the viewer's wall-clock time, and stdlib-only options outside the chart
 contract, such as `padding`, being ignored. Renderer errors, such as a fixed
 domain that does not contain every value, now throw `invalid` instead of a plain
 error, and x strings must be ISO dates as documented. Chart groups and the
-additional chart kinds need no configuration or data migration. See
+additional chart kinds need no configuration or data migration. Studio and
+one-off HTML app charts show tooltips on hover, keyboard focus and tap without
+additional configuration. See
 [Code Mode charts](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it).
 
 ### Assistant Chromium isolation
@@ -279,8 +394,10 @@ and ephemeral host credential. This is process isolation within one
 capability-free application container, not a separate VM per user; the
 residual risk of an unsandboxed renderer inside that container is accepted and
 tracked in [#47](https://github.com/k2b-dev/cloud/issues/47), which moves
-Chromium into a dedicated sidecar. Keep one Assistant replica for now; lost
-hosts are not replayed. Studio previews continue running in the user's browser.
+Chromium into a dedicated sidecar. Keep one Assistant replica for now: Code
+Mode hosts and their approval waits live in the Assistant process, so a poll or
+an approval that reaches another replica marks the call lost. Lost hosts are not
+replayed. Studio previews continue running in the user's browser.
 
 ## Select applications and feature dependencies
 
@@ -298,16 +415,16 @@ or mutate real data without approval.
 
 | Service / app ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
-| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes; ingress must preserve WebSockets and streaming and must not buffer or compress streamed responses, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
+| Gateway (`gateway`) | Postgres, NATS JetStream and private reachability to advertised app addresses | Upstream apps provide the routes. The gateway compresses HTML and JSON itself with Brotli or gzip according to `Accept-Encoding`, while preserving streaming. Ingress compression of these responses is not needed. Proxies and ingress must pass `Cache-Control: no-transform` responses through without compression or any other transformation. Ingress must pass `Content-Encoding` through, preserve WebSockets, and must not buffer or compress SSE or NDJSON streams, such as the `application/x-ndjson` lines of [universal search](/en/docs/platform/search#stream-results-as-applications-answer). Optional `GATEWAY_INSTANCE_ID` identifies a replica. `GATEWAY_TRUSTED_PROXIES` names the reverse proxies allowed to set the client address; see [Pass client addresses through the reverse proxy](#pass-client-addresses-through-the-reverse-proxy). No independent signing secret. | Read `/health`, inspect registered routes, then request an actual app route through the public origin. |
 | [Core](/en/apps/core) (`core`) | Postgres, Valkey, NATS JetStream, `APP_SECRET`, Core identity KEK; runs shared schema setup and starts identity maintenance | Runs AI workers and shared notifications. Optional SMTP, IMAP bounce polling, FreeIPA, AI providers, web push, Gotenberg and weather services are described below. `app.home_path` defaults to `/app/dashboard`: deploy Dashboard or choose an installed home route. | Sign in using the intended account provider; load the profile; verify session and invocation public-key endpoints. |
 | [Gateway operations](/en/apps/gateway-ops) (`gateway-ops`) | Baseline; runs its operations lifecycle | Gateway snapshots and registered apps supply health/telemetry; outgoing health webhooks need reachable configured destinations. Optional metrics scraping uses `/metrics`. Settings include `gateway.health_check_schedule` and telemetry retention. | Open `/admin/gateway/apps` and `/admin/observability`; verify current app state and an observed request. |
 | [Accounts](/en/apps/accounts) (`accounts`) | Baseline | Local accounts do not require FreeIPA. IPA users/groups require configured FreeIPA access; account emails use notifications as app `core` and require a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). | Read a local account and group; if IPA is enabled, verify directory connectivity and the intended group scope. |
-| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device`. Discovery alone is insufficient. |
+| [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and matching broker secret. Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired phone. Discovery alone is insufficient. |
 | [Proxy Auth](/en/apps/proxy-auth) (`proxy-auth`) | Baseline | Configure a proxy-auth client and the external reverse proxy's forward-auth/callback integration. This is not an OAuth-client requirement. | Check denied and permitted access to one test upstream through that reverse proxy. |
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
 | [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
 | [Dashboard](/en/apps/dashboard) (`dashboard`) | Baseline | Selected widget-provider apps and Core's widget proxy; no fixed requirement to install every provider. | Open `/app/dashboard`; verify a selected provider's widget and its unavailable state when that provider is absent. |
-| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose | Ingestion requires configured sources, source-bound credentials and producers. Its dashboards are separate from gateway observability. The release workflow publishes the Pulse image. | Ingest a disposable signal through its source credential and query it from the intended base. |
+| [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; boots ready before ClickHouse setup | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) is required to use Pulse. A Cloud admin connects it under Administration → Pulse. Each base owns a database and read user. Ingestion requires configured sources, source-bound credentials and producers. The release workflow publishes the Pulse image. | Ingest a disposable batch through its source credential and inspect source health. |
 
 ### Work applications
 
@@ -318,7 +435,7 @@ or mutate real data without approval.
 | [Files](/en/apps/filesv2) (`filesv2`) | Baseline; application-owned storage assignments | Filegate 7.0 (tested) or Filegate 6.1, which does not report stable file IDs (`stableIds`), with independent roots, backend token, a browser-reachable public origin outside Cloud cookie scope, and exact CORS origins. Cloud storage requires local Linux identities; FreeIPA requires valid POSIX identities and root `execution: true` with the explicitly configured Unix-execution daemon privileges. Set `managed: true` only for exclusive Filegate writers; keep it false with external writers. File references survive rename and move only on Filegate 7 roots with `index: true` and `managed: true`. Optional: Collabora Online 26.04 or later with its own browser-reachable address and TLS; Collabora must reach Cloud's public address (or the configured WOPI origin) and Cloud must reach Collabora. Several Collabora instances need sticky routing on `WOPISrc`. | Inspect existing storage in `/admin/filesv2`, browse an authorized directory and download through a lease. Verify external filesystem additions and denied access. With Collabora configured, open one `odt` from two sessions, save, and inspect history according to the root cooldown. Verify conflicts on managed roots; unmanaged roots provide only best-effort conflict checks. Test the real mount and export before production acceptance. |
 | [Grids](/en/apps/grids) (`grids`) | Baseline | Files are stored in Postgres (`grids.max_file_size_mb` controls upload size). Document PDF rendering requires Gotenberg. Workflow email uses notifications as app `core` and requires a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). Other workflow integrations require their selected providers. | Create a test base/table/record; upload a small file. If documents are enabled, render a test PDF. |
 | [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. Recipient suggestions and participant contacts need the contact-directory app, Contacts by default (**Administration → Mail → Contact directory** or `cld mail admin contact-directory`). | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |
-| [Notebooks](/en/apps/notebooks) (`notebooks`) | Baseline | Live collaboration requires WebSockets. Notes and attachments use Postgres. PDF export requires Gotenberg. S3 snapshots need per-notebook endpoint, region, bucket and credentials; they are optional. `notebooks.reindex_cron` and `notebooks.snapshot_cron` schedule maintenance. BM25 ranking is optional; see [Optional BM25 search ranking](#optional-bm25-search-ranking). | Edit a test note from two sessions; reload it and download an attachment. If snapshots are enabled, run and inspect one snapshot. |
+| [Notebooks](/en/apps/notebooks) (`notebooks`) | Baseline | Live collaboration requires WebSockets. Notes and attachments use Postgres. PDF export requires Gotenberg. External images additionally require outbound HTTPS from the Notebooks container to a public image address without redirects. An export reveals the server's egress address and the export time to the image host. S3 snapshots need per-notebook endpoint, region, bucket and credentials; they are optional. `notebooks.reindex_cron` and `notebooks.snapshot_cron` schedule maintenance. BM25 ranking is optional; see [Optional BM25 search ranking](#optional-bm25-search-ranking). | Edit a test note from two sessions; reload it and download an attachment. If snapshots are enabled, run and inspect one snapshot. |
 | [Spaces](/en/apps/spaces) (`spaces`) | Baseline | Live updates require WebSockets. Attachments use Postgres. Mail-backed invitations require Mail and an authorized sender/mailbox. Calendar weather uses the shared weather service; the Weather app UI is not required for that in-process feature. | Create a disposable item/event, verify live updates and reload; test invitations only if configured. |
 | [Venues](/en/apps/venue) (`venue`) | Baseline | No additional external service for venue records, hours, shifts and feedback. | Create a test venue and verify its public status page and intended staff-only access. |
 
@@ -346,11 +463,74 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts; [keep Gotenberg offline](#keep-gotenberg-offline) | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). `GOTENBERG_URL` can bootstrap `gotenberg.url`; Dev Compose sets it to `http://gotenberg:3000`. A saved setting wins. Without a URL, Grids tells users that an administrator must configure PDF rendering. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
-| City search | `weather.geo_url` pointing to the supported Geo API | Dev supplies a Geo container (`http://geo:4000` internally), but an administrator must still set the Geo API URL in Weather settings. An empty URL returns `WEATHER_CITY_SEARCH_NOT_CONFIGURED` (500); Geo service failures return `WEATHER_CITY_SEARCH_UNAVAILABLE` (500). Capability errors point to `weather.forecast.current` / `weather.forecast.get` with `source.kind = "coordinates"`; forecast access is a separate dependency. |
+| City search | `weather.geo_url` pointing to the supported Geo API | `GEO_ALLOWED_TARGETS` defaults to `geo`; an explicit allowlist replaces that default. Dev supplies a Geo container (`http://geo:4000` internally), but an administrator must still set the Geo API URL in Weather settings. An empty URL returns `WEATHER_CITY_SEARCH_NOT_CONFIGURED` (500); Geo service failures return `WEATHER_CITY_SEARCH_UNAVAILABLE` (500). Capability errors point to `weather.forecast.current` / `weather.forecast.get` with `source.kind = "coordinates"`; forecast access is a separate dependency. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
-configuration, not invented global S3 environment keys. Files (`filesv2`) uses
+configuration, not invented global S3 credential environment keys. Snapshots upload
+to public storage by default; internal S3-compatible storage requires an operator
+allowlist as described below. Files (`filesv2`) uses
 the Filegate root and lease API of Filegate 6.1 or 7.0; see [Files](/en/apps/filesv2).
+
+Cloud refuses person- and administrator-chosen outbound requests from the Webhook Tester,
+workflow HTTP steps, assistant file downloads, web push, Mail endpoints, Pulse metrics sources, Notebook S3 snapshots, Notebook PDF external images, health webhooks, Geo city search, Assistant rsql, and outgoing mail SMTP and bounce IMAP connections to
+loopback, private, link-local, shared, and other reserved addresses, including
+names that resolve there. A failed DNS lookup also refuses the request. An
+address in the well-known NAT64 prefix `64:ff9b::/96` is judged by the IPv4
+address it embeds, so IPv6-only servers with DNS64 still reach public IPv4
+hosts. To test an internal service, use an address that is public from the
+server.
+
+Operators can allow internal administrator-configured endpoints with
+`GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` in `app-gateway-ops` (default empty,
+public targets only), `GEO_ALLOWED_TARGETS` in `app-weather` (default `geo`),
+`ASSISTANT_RSQL_ALLOWED_TARGETS` in `app-assistant` (default `rsql`), and
+`OUTGOING_MAIL_ALLOWED_TARGETS` in `app-core` (default empty, covering both SMTP
+and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs.
+`host:port` and `[ipv6]:port` restrict a host or IP to one port (1–65535, no
+leading zeros); bare hosts, IPs and CIDRs still cover every port. CIDRs cannot
+include a port. An explicit value replaces the default. Empty Compose passthrough values use the
+default. Invalid entries, including `/0`, stop the owning process at startup.
+The HTTP transports for these endpoints never follow redirects; health
+webhooks previously followed them. They request identity encoding and reject
+compressed responses. IMAP tries every validated address. SMTP connects to one
+validated address per delivery attempt; retries move to the next address, and a
+test send checks each address in turn on connection failure before sending once.
+The test send opens a separate connection to verify the selected address and
+authentication first. Both SMTP and IMAP preserve the original host name for TLS
+certificate verification.
+
+**After this update:** Existing installations whose health webhooks, outgoing
+mail SMTP/IMAP profiles, Geo URL, or rsql URL point at internal hosts other than
+the defaults fail with a clear reason until the operator sets the corresponding
+variable. Stored configuration stays. Geo reports city search as unavailable
+and logs `GEO_ALLOWED_TARGETS`; mail delivery policy refusals remain retryable
+until the message deadline. Use narrow entries and retain `geo` or `rsql` in an
+explicit list if the shipped containers must stay reachable.
+
+Cloud admins release internal metrics targets per Pulse base under
+**Administration → Pulse → Internal targets**, or with `cld pulse admin targets`.
+Use an exact host/IP, a host with one port (`web-01:9100`, `[fd00::5]:9100`), or
+the smallest required CIDR range. A bare host or range covers all ports. `/0`
+is refused. Exact host entries trust all validated addresses for that name;
+reserved names need an exact host entry. Pulse checks at save time, every
+scrape and every redirect (at most three) and pins each connection. Revocation
+takes effect on the next scrape. Responses must be uncompressed.
+
+Notebooks operators can allow internal S3-compatible storage with
+`NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` in the Notebooks container environment.
+Use the narrowest entry: an exact host name, one IP address, or the smallest
+required CIDR range. Host entries trust all validated addresses for that exact
+name; reserved names need a host entry. Bare entries cover every port and path; use `host:port` for one port. `/0` and other invalid entries stop Notebooks at startup.
+Failed and empty lookups still refuse an upload, even for listed names.
+
+After this update, existing snapshot configurations that point at internal
+storage fail with the reason "This S3 endpoint is on an internal network..."
+and code `NOTEBOOK_SNAPSHOT_TARGET_BLOCKED` until the operator allows the
+target. Settings and credentials stay stored. Snapshots now upload with
+presigned PUT requests; object identities and paths stay the same. Redirects
+are refused.
+Transient storage failures (5xx, 429, 408, or connection loss) are retried up to
+three times per object.
 
 ### Keep Gotenberg offline
 
@@ -405,7 +585,103 @@ image, to confirm that assets still load.
    Confirm health, authorization, durable writes, and any required background
    operation separately.
 
+## Provide ClickHouse for Pulse
+
+Provide ClickHouse 26.9 or newer as one node on the internal network, with its
+own persistent volume. Keep the instance dedicated to Pulse: ClickHouse user
+management is instance-wide, so the service user can alter any user, including
+ClickHouse admins. Whoever operates ClickHouse as admin can read all Pulse data.
+
+Budget memory for the selected read profile and expected parallel work:
+**small** allows 1 GB per read, **normal** 2 GB, and **large** 4 GB. The
+maintenance profile allows 1 GB. Pulse admits three concurrent reads per
+Cloud, one per base, with 20 waiting and a five-second wait deadline. Budget
+**3 × the largest selected read profile + 1 GB maintenance + reserve**. With
+normal profiles, provide at least **10 GB RAM**: 6 GB for queries, 1 GB for
+maintenance, and at least 3 GB reserve. Large profiles need a larger memory
+budget. Leave reserve for ClickHouse itself and storage merges.
+Each read profile has fixed execution, scan, and result limits that readers
+cannot override. A Cloud admin selects the profile and base limits under
+**Administration → Pulse → Bases**.
+
+A Cloud admin opens **Administration → Pulse → Data store** (`/admin/pulse`),
+chooses the service password and requests the setup script. Run that script as
+the ClickHouse admin once, with `clickhouse-client --multiquery` or equivalent.
+It contains a salted password hash only and can be re-run to restore profiles
+or update the service password. Then enter the address, service user and
+password on that page, or use:
+
+```sh
+cld pulse admin store setup-sql --password-file /private/pulse.password
+# Run the resulting script as the ClickHouse admin before saving the connection.
+cld pulse admin store set --url http://clickhouse:8123 --password-file /private/pulse.password
+cld pulse admin store check
+```
+
+The save checks reachability, sign-in, version, scoped rights and profile
+constraints before replacing the stored settings. Failed checks leave the
+saved connection unchanged and identify the failed check with a repair hint.
+Store passwords only through the page, a private file or stdin; never put them
+in a CLI flag value or URL.
+
+The Cloud admin owns this internal target. Pulse allows exactly the host in
+the saved or submitted ClickHouse address, without environment configuration.
+Requests connect directly to checked addresses and never follow redirects.
+Remote response bodies are never echoed in errors. The answer time can still
+tell a closed port from an open one, so the Cloud admin role carries reach into
+the internal network that Cloud can connect to.
+
+Pulse shares per-base value and byte quotas through Cloud Valkey across all
+replicas and write paths. Buckets hold one minute’s allowance and refill
+continuously. Throttled ingest returns `429 PULSE_BASE_THROTTLED` with
+`Retry-After`; unavailable Valkey returns `503 PULSE_QUOTA_UNAVAILABLE` with
+`Retry-After: 30`. Scrapes record the refusal and wait for the next tick.
+
+SQL admission and hourly question quotas also use Valkey across replicas.
+Slot leases expire after the maximum profile time plus HTTP and release
+margin, so a dead replica cannot keep a slot indefinitely. The default quota
+is 600 admitted questions/SQL per base per clock hour. Input errors and queue
+refusals do not count. Exhaustion returns `429 QUOTA` with `Retry-After` and
+the next hour’s reset time. Busy admission returns `503 BUSY` or `QUEUE_FULL`.
+The quota is adjustable per base through the bases limits API and
+`cld pulse admin bases limits`.
+
+Every five minutes, Pulse measures storage and disk. A base at its storage
+threshold refuses new values with `409 PULSE_BASE_STORAGE_FULL`; a base admin
+can shorten retention or a Cloud admin can raise the threshold. Below 10% free
+instance disk, all bases refuse new values with `503 PULSE_STORE_DISK_LOW` and
+`Retry-After: 300`. Existing data stays readable. Pulse queues one notification
+per crossing to direct user base admins (storage) or effective Cloud admins
+(disk). Group base grants are not expanded. Delivery follows user preferences.
+
+An unreachable store returns `503 PULSE_STORE_UNAVAILABLE` and
+`Retry-After: 30`. The first failed write or disk measurement opens one outage
+and queues a notification for each Cloud admin. A successful disk measurement
+closes it and records recovery. Notification outbox rows commit with each
+transition and are dispatched afterwards; background notifications use the
+operator’s `app.locale` setting, and request-triggered outages retain the
+request locale.
+
+Back up all `pulse_*` databases with ClickHouse `BACKUP`, together with Cloud
+Postgres and its encryption keys. Restore them as a consistent set.
+
+Without a saved connection, Cloud and Pulse still report ready; Pulse data APIs
+answer `503 PULSE_STORE_NOT_CONFIGURED`, and the Pulse page shows **Pulse is not
+set up yet**. Administration remains available for setup. Production Compose does not provision ClickHouse; the operator supplies it.
+
+After a restore, Pulse compares each database’s checkpoint with Postgres and
+blocks measurement writes if they differ or the database is missing. A Cloud
+admin can recheck a corrected restore or recreate an empty database. Recreating
+removes measurements while preserving sources, source credentials, settings, and access.
+
 ## Verify readiness and upgrades
+
+During the rollout to this release, and during a rollback to the previous
+version, replicas of the previous version write no liveness key. While they
+run, a replica that stops can still delete the shared registry entry once, and
+surviving replicas restore it within 60 seconds. During a rollback, replicas of
+this release also replace the previous version's entry with their own on their
+next refresh until they stop. No configuration or rollout order is required.
 
 Check `/_cloud/ready` on each service's **private** origin, then check gateway
 registration and request an owned route through the public origin. The gateway's
@@ -426,6 +702,50 @@ sets and preflight, [Scaling and shutdown](/en/docs/operations/scaling-and-shutd
 for lifecycle behavior, and [Troubleshooting](/en/docs/operations/troubleshooting)
 for failed routes or dependencies. Plan rollback against both schema and key
 compatibility; replacing an image does not restore migrated data.
+
+### Start replicas of one application together
+
+Replicas of one application can now boot together without setup races causing
+restarts. A starting replica waits while another runs setup, so its boot time
+grows by the other replica's setup time. A replica that crashes or is stopped
+during setup delays the others by at most about 60 seconds while its NATS lease
+expires.
+
+During the rollout to this release, a replica of the previous version takes no
+setup lock. Restart old and new replicas of one app one at a time until all
+run this release. Keep Core first: it creates the shared schemas other
+applications need.
+
+### Prepare Pulse's new data store
+
+This update deletes all existing Pulse data without confirmation: bases,
+members, sources, source tokens, measurements, dashboards, and saved queries.
+Read [Pulse requires ClickHouse and starts empty](/en/docs/reference/deprecations-and-migrations#pulse-requires-clickhouse-and-starts-empty)
+for the preparation steps, removed commands, and lack of an old-measurement
+export path. Stop old Pulse replicas before starting the new image.
+
+Provide and [connect ClickHouse](#provide-clickhouse-for-pulse) before resuming
+collection. A fresh or reset installation creates no Postgres extension.
+Measurements live in each base's ClickHouse database; Postgres keeps control
+data and write reservations. Later starts preserve the new data.
+
+### Upgrade Spaces task deadlines
+
+Spaces adds the nullable `spaces.items.deadline_date` DATE column and the `items_deadline_one_kind` check on startup. The check permits at most one of `deadline` and `deadline_date`. Existing timestamp deadlines remain timed; there is no backfill. API and capability consumers, such as scripts, agents and integrations, must accept `deadline` as either `YYYY-MM-DD` or an ISO instant and can use `deadlineAllDay` to distinguish them. Deploy the updated Spaces server and its matching browser and CLI assets together. Verify a date-only deadline, a timed deadline, and switching between them after the upgrade.
+
+### Upgrade Spaces user claims and assignments
+
+Spaces now assigns a person when they claim a task. On each start, an
+idempotent backfill adds missing assignee rows for active user claims. It skips
+claims whose user was deleted and service-account claims. No configuration is
+required. The backfill logs only when it adds rows.
+
+Assignee replacements that remove an active user claim holder now return
+`409` unless the caller supplies that holder's `claimId`, with `force` when
+acting for someone else. CLI and capability callers must release first.
+Releasing your own claim keeps your assignment; forcibly releasing another
+person's claim removes their assignment. See
+[Implementation tasks and agent handoffs](/en/apps/spaces#implementation-tasks-and-agent-handoffs).
 
 ### Upgrade Mail to several assignees
 
@@ -468,6 +788,24 @@ saved goes out without its signature. Rolling Mail back keeps the column and
 has the same effect for drafts saved after the update. After the rollout, open
 a new message in a mailbox with a default signature and check that the preview
 shows the signature below the text.
+
+### Mail mailbox logos
+
+On its next start, Mail adds `mail.mailbox_logo_versions`,
+`mail.mailboxes.logo_version_id`, and
+`mail.outbox_submissions.inline_logo_version_id`. No configuration change is
+needed. Roll all Mail replicas together: an older replica ignores the frozen
+logo in a queued message and sends HTML whose `cid:` image has no inline part.
+A rollback has the same limitation for messages queued with logos.
+
+Logos count toward the Mail database share, at most 100 KiB per immutable
+version. Unused versions are removed hourly; current logos and versions still
+needed by queued messages or Sent-copy retries are retained. Local sent copies
+retain their inline images in the deduplicated Mail blob store, independently
+of logo versions. After upgrading,
+upload a test logo, preview a signature containing `{{ mailbox.logo }}`, and
+schedule it. Check that the local copy shows the logo before provider sync,
+then send it and check that it arrives as an inline image without a remote image link.
 
 ### Mail storage for kept conversations
 
@@ -516,6 +854,15 @@ waiting verifications. After the next update, a verification that waited
 longer than 10 minutes fails with `SENDER_VERIFICATION_TIMEOUT`, and the person
 verifies the identity again.
 
+### Index Mail's per-message command lookups
+
+After its first start with this update, Mail builds `commands_message_target_idx`
+on `mail.commands` in the background with `CREATE INDEX CONCURRENTLY`, so
+command writes and Mail's start continue. No configuration change is needed.
+Until the index is valid, the lookups use the previous plan. One Mail process
+builds an index at a time, including the optional BM25 search index. An
+interrupted build is replaced on the next start.
+
 ### Update Assistant approvals for chats and websites
 
 This release lets people remember an approval for one chat and allow a website
@@ -534,7 +881,7 @@ Two behaviors change for people. More built-in Actions can be remembered, and
 chat did not supply, which means an address that is not in the person's
 message, a search result, or a link of a page read earlier. Search results and
 pages read before the update are not recorded, so reading one of their links
-in an existing chat asks once. A scheduled task cannot ask, so a task that
+in an existing chat asks once. A routine cannot ask, so a routine that
 reads such an address now fails with a message to run it in the normal chat;
 give it the address in its prompt instead.
 
@@ -576,6 +923,32 @@ earlier and answers with the files it saved so far.
 After rollout, ask Assistant to build a small app with `index.html` and `app.js`.
 The turn should show one `code_write` per file, no approval, and each result
 should list line counts that match the files.
+
+### Store complete Action review content
+
+Update Core and capability callers before providers return complete review
+content. Cloud now accepts up to 16 MiB of serialized JSON content per review,
+in addition to the 32 KiB compact card. Ordinary capability results remain
+limited to 256 KiB. Old readers cannot present this contract safely.
+
+The existing `approvals.requests.details`, `ai.pending_actions.review`, and
+chat or task message review snapshots hold the content. Assistant script calls
+also keep their review in the existing `assistant.capability_calls.prepared`
+snapshot. There is no additional
+cache, table or retention setting. Budget database and backup capacity for
+these copies; a fork also copies its historical snapshots. Full-content text
+uses reversible JSON encoding inside JSONB, so control characters survive.
+Single readers load one bounded snapshot; list and stream projections omit it.
+
+Existing lifecycles still apply: open approvals wait at most 24 hours, approval
+requests are pruned 90 days after expiry, and conversation deletion removes
+its owned snapshots. Background turns and task transcripts follow the existing
+90-day run-history lifecycle, including after task deletion. Deleting an approval
+does not delete its historical chat copy. Roll back providers and callers together if reverting Core; an older
+reader does not understand complete-content references.
+
+Mail's coordinated caller migration is described under
+[required send fingerprints](/en/docs/reference/deprecations-and-migrations#mail-send-requires-a-content-fingerprint).
 
 ### Record approvals as platform requests
 
@@ -663,6 +1036,32 @@ for the signed protocol and push rules.
 Rolling back leaves the widened constraint and new columns in place. Older
 Core ignores the columns and keeps the widened constraint. Existing sign-in
 commands and pairing keys remain valid.
+
+### End approvals when a device is revoked or the person signs out everywhere
+
+Deploy the updated platform package, Core, and Assistant together. On start,
+Core adds the nullable columns `decided_device_id` and `approver_auth_epoch`
+to `approvals.requests`. When it adds the epoch column, it fills it once for
+pending requests with the person's current epoch. Approved requests that are
+not yet used at the upgrade, and Cloud Login approvals without a recorded
+device, are treated as ended when used, so the chat asks again. The migration
+is idempotent. No configuration change is required.
+
+Rolling back keeps the columns; the older release ignores them and does not
+check revocation when an approval is used. Requests the older release writes
+keep no epoch, and the updated release treats them as ended. Pending requests
+leave lists, and decisions on them answer as expired. Unused approvals are
+cancelled when used, so the person is asked again.
+
+After the rollout, approve an Action on a paired phone, then check that the
+request records the phone and the epoch:
+
+```sql
+SELECT status, decided_via, decided_device_id IS NOT NULL AS device, approver_auth_epoch IS NOT NULL AS epoch
+FROM approvals.requests ORDER BY created_at DESC LIMIT 1;
+```
+
+The request shows `consumed`, `cloud_login`, and `true` for both checks.
 
 ### Reuse Agent Skills folders
 
@@ -810,6 +1209,184 @@ browser delivery held back by do not disturb and no fallback email. Resume,
 send again, and confirm that the push arrives. An older release ignores the
 table, so a rollback turns quiet time off and keeps the saved settings.
 
+### Enable resource permalinks
+
+Deploy Core and the owning applications together to enable resource permalinks.
+Core serves `/open/<type>/~<encoded-id>` and registers `/open` with the gateway;
+owners provide permission-aware top-level `open` destinations in their readers.
+The `~` prefix is required; links without it return 404.
+Deploy Core before clients start exposing these links, because older Core images
+return 404. Updating Core alone does not update Mail's draft destination or
+other owning-app readers. No configuration or database migration is needed.
+
+During a rolling update, Core accepts an older reader's validated `edit` link
+when it has no `open`. This preserves existing writer links, but cannot repair
+a destination that requires more access than the reader. Update Mail with Core
+so readable drafts open the read view for readers and the composer for writers.
+MCP advertises its consumer `refs[].href` field in the output schema; owning-app
+responses retain the strict provider ref schema.
+
+Verify permalinks while signed out, as a writer, as a reader and without access.
+Sign-in must preserve the return URL, and the destination page must recheck
+current permissions, including revocation after resolution. Missing access,
+offline apps and missing destinations show Core's 404 page. Existing readers
+without links keep working through capability calls. See
+[Resource links](/en/docs/platform/capabilities#resource-links).
+
+### Bound and expire workflow events
+
+This release limits workflow events and stops `workflows.event` from growing
+without bound. It needs no configuration change. Both limits are fixed:
+
+- An emit whose `data` or `context` is larger than 16 MiB fails with
+  `WORKFLOW_EVENT_TOO_LARGE`. Grids answers such a start with a bad-input
+  error. Mail emits every message without its body, and the run reads the
+  body from Mail when a step needs it.
+- 30 days after dispatch or dead-lettering, Core deletes the event's
+  deliveries and empties its data, context, and authorization snapshot, once no
+  queued, running, waiting, or needs-attention run references it. The row and
+  its dedupe key stay, so deduplication keeps working. Run details show the
+  event payload as expired.
+
+The first Core start adds the column `workflows.event.payload_expired_at`.
+Core then builds two indexes for the retention sweep in the background with
+`CREATE INDEX CONCURRENTLY`, so event and run writes continue during the
+build. The first sweep starts when both indexes are valid and empties old
+payloads in batches of 1,000 every 6 hours. PostgreSQL reuses the freed space
+for new rows; the table files shrink only after `VACUUM FULL` or a similar
+rewrite. See
+[Size and retention](/en/docs/automation/emit-events-and-start-runs#size-and-retention).
+
+### Expire routine runs after 90 days
+
+This release expires finished routine runs after 90 days. It needs no
+configuration change. The first Core start adds the indexes
+`idx_ai_chat_task_occurrences_finished`, `idx_ai_chat_task_occurrences_turn`,
+and `idx_ai_turns_background_finished`.
+The latter uses a plain `CREATE INDEX` on `ai.turns`, briefly blocking writes
+to `ai.turns` while it builds; allow for a longer build on large installations.
+The routine recovery tick then
+deletes completed, failed and stopped runs older than 90 days, their background turns
+with tool calls, and their run transcripts (`ai.task_messages`) in batches of
+100 per minute. Queued and running runs, finished runs whose turns are still
+active, and chat result messages stay.
+The run row holding a one-off task's scheduled time stays, even after
+completion, until the task gets a new time or is deleted, so that time never
+runs twice; its turn and transcript expire on the same clock.
+The same start relaxes `ai_memory_learning_runs_evidence_check` so a workflow
+memory learning run keeps its evidence key when its source turn is deleted.
+Background turns and transcripts of runs whose task was deleted expire on the
+same 90-day clock, measured from when the turn finished.
+
+An installation with a large backlog drains it over time. PostgreSQL reuses
+the freed disk space; table files shrink only after `VACUUM FULL` or a rewrite.
+See [Routine run history](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days).
+
+### Assistant approval choices
+
+**Always approve** is no longer offered on Assistant questions; choices made
+earlier still apply until the next major release.
+
+### Record why routines stop
+
+This release gives every paused routine and every routine that needs its owner
+a reason. It needs no configuration change. The first Core start adds the
+columns `reason_code`, `reason_at`, `title`, and `locale` to `ai.chat_tasks`,
+fills the reason and locale of existing routines once, and adds the constraint
+`ai_chat_tasks_reason_state_check`. Adding the constraint locks
+`ai.chat_tasks` while it checks the existing rows.
+
+Earlier Core and Assistant processes write such states without a reason, which
+the constraint rejects. Stop them before the new Core starts instead of
+running both versions side by side. Before rolling Core back to an earlier
+release, run the following in the Cloud database:
+
+```sql
+ALTER TABLE ai.chat_tasks DROP CONSTRAINT IF EXISTS ai_chat_tasks_reason_state_check;
+```
+
+See [Routine names and stop reasons](/en/docs/ai/structured-and-background-ai#routine-names-and-stop-reasons).
+
+### Check the app's review before a routine changes anything
+
+Routines whose calls the app would ask about now stop with **Braucht dich** /
+**Needs you** instead of running. Before each Action with
+`approval: "rememberable"`, a routine asks the app's review. When the review
+gives no approval scope, fails, or is missing, the Action does not run, and
+the routine shows which Action needs the person. It needs no configuration
+change.
+
+The first Core start adds the column `reason_action` to `ai.chat_tasks` and the
+constraint `ai_chat_tasks_reason_action_length_check`, which only limits the
+action name to 200 characters. The change is backward-compatible: an earlier
+Core can run beside the new one and can be rolled back to without SQL. An
+earlier Core or Assistant still runs such Actions without the review, so
+finish the rollout of both before you rely on the stop. See
+[Routine Action reviews](/en/docs/ai/structured-and-background-ai#routine-action-reviews).
+
+### Approve OAuth sign-ins in Cloud Login
+
+Update **Core before OAuth** to enable the
+[`login_hint` device flow](/en/docs/identity/oauth#approve-in-cloud-login).
+An older Core cannot accept these requests; OAuth returns HTTP 503
+`temporarily_unavailable`. Nothing changes for clients that do not send
+`login_hint`.
+
+`cld login --user` needs all three parts: Core, then OAuth with the
+`login_hint` handoff, then Cloud Login with terminal sign-ins. Only Cloud Login
+on a paired phone shows the request. Without `--ttl`, such a login lasts
+`user.session.expiry_hours`; browser and `--device` logins without `--ttl` stay
+at 90 days. `--ttl` only shortens a login, the Cloud caps it at
+`user.session.expiry_hours`, and `cld` shows the actual end. Cloud Login shows
+the requested rights in plain words and approves with a single tap; people who
+want fewer rights sign in with `cld login --scope`. When discovery lacks
+`cloud_login_hint_supported`, `cld` refuses `--user` and prints the matching
+`--device` command. When it lacks `cloud_login_ttl_supported`, `cld` refuses
+`--ttl` and asks to sign in without it. See
+[Upgrade the three components](/en/docs/operations/app-approval#upgrade-the-three-components).
+
+### End OAuth sign-ins sooner
+
+OAuth logins can request a shorter absolute lifetime with `ttl`, capped at
+`user.session.expiry_hours` and the 90-day default; see
+[Login lifetime](/en/docs/identity/oauth#login-lifetime). It needs no
+configuration change. Without `ttl` or `login_hint`, logins keep their 90-day
+refresh family.
+
+Deploy Core with or before OAuth. OAuth now asks Core for access and ID tokens
+shorter than one hour when a login ends within the hour. An older Core
+rejects any lifetime other than 3600 seconds with HTTP 400. Such a sign-in or
+refresh fails with `server_error` (HTTP 500). OAuth maps only Core's HTTP 403
+to `invalid_grant`. Core also caps every refreshed token at its refresh
+family's end. OAuth's first start adds the nullable column
+`oauth.device_authorizations.login_lifetime_seconds`. A rollback ignores it
+and issues 90-day logins again.
+
+### Upgrade Contacts from before short IDs
+
+If Contacts never finished assigning short IDs, start it once on Cloud v0.45.0
+and wait until `/_cloud/ready` answers ready before upgrading further.
+An installation that started Contacts on any release from v0.7.0 through
+v0.45.0 needs no action. See the
+[Contacts short-ID upgrade path](/en/docs/reference/deprecations-and-migrations#contacts-requires-finished-short-ids).
+
+### Discover Commands from navigation apps
+
+The global palette now hides Commands from apps outside a person's navigation.
+No configuration change is needed. The slash menu offers the same Commands in
+**Open in apps**, except those of its own app. Both surfaces require Commands
+that accept an empty input. The target page still checks access.
+
+### Index the messages people sent for Recent
+
+The slash menu's **Recent** section reads the newest messages a person sent.
+The first Core start builds the partial index `idx_ai_messages_sent_by_person`
+on `ai.messages`, covering only people's own chat messages. It needs no
+configuration change. Like the other `ai.messages` indexes, Core builds it
+during its migration: writes to `ai.messages` wait until it is done, so on an
+installation with a large chat history the first start takes longer. A
+rollback keeps the index; an earlier Core ignores it.
+
 ## Coordinate an existing installation's identity upgrade
 
 Use one maintenance window for the gateway, Core, OAuth, applications, and
@@ -857,22 +1434,25 @@ Notebook, or application-schema upgrade checks.
    checks Core's authority before its migrations. Check every service's private
    readiness and its registered public route; gateway health alone is not enough.
    The supplied Compose orders OAuth after Core, but does not impose that order
-   on every other application. Core signs device-authorization grants, so an
-   OAuth release with device sign-in needs Core from the same release; with an
-   older Core, device sign-in fails with `server_error` while other flows keep
-   working.
+   on every other application. Core and OAuth must run the same new release;
+   OAuth sign-ins and refreshes fail until both are updated. Update every
+   application built on `@k2b/cloud` to enforce the live account-epoch check.
 3. Sign in again with the installation's normal account method. Check logout
    and re-login, an authorized app page, global search, a dashboard widget, and
    a Notebook edit that survives reconnect and reload. If OAuth is used, test an
    existing client's authorization and refresh flow through the real HTTPS
    ingress. Old browser sessions and old OAuth access/ID tokens are rejected;
-   client registrations, client secrets, and refresh grants are retained.
+   client registrations and client secrets are retained. Existing OAuth sign-ins
+   of people end once, including their refresh grants and unredeemed codes.
+   Run `cld login` again and reconnect MCP clients and other apps. See
+   [OAuth sign-ins end once on upgrade](/en/docs/reference/deprecations-and-migrations#oauth-sign-ins-end-once-on-upgrade)
+   for rolling-update behavior.
 4. Check startup logs and the
    [JSON metadata repairs](/en/docs/operations/repair-jsonb-containers). Those
    repairs run on startup; no blanket manual repair or database reset is needed.
    Apply each app's separate schema requirements before enabling it. Provision
    Mail's workload credential only if its background integrations are used;
-   scheduled AI tasks without a mandate require owner recreation. Neither is
+   routines without a mandate require owner recreation. Neither is
    an OAuth startup prerequisite.
 5. For the supplied platform Compose, run the read-only
    [fleet check](/en/docs/operations/build-and-deploy#deploy-the-service) against
@@ -940,6 +1520,13 @@ Help publication and native full-text search require the Core-managed Postgres
 schema. Every supported PostgreSQL version (15 to 17) provides this baseline.
 Apps renew their Help collection through the existing app heartbeat; Core owns
 bounded cleanup of expired collections. See [In-product Help](/en/docs/platform/help).
+
+On upgrade, Core adds four columns to `help.documents` during setup: `kind`,
+`needs`, `next_id`, and `related`. Update Core before applications that publish
+Help. Until Core adds the columns, an updated application that publishes Help
+fails its first registration and does not start. Every application republishes
+its Help once after its update because the manifest revision changed. Old
+collections expire as usual after six minutes without renewal.
 
 Help, Notebooks, Mail, Assistant conversations, AI memories, and AI Skills
 search with native PostgreSQL full-text search. BM25 ranking with

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
 import { toPgUuidArray } from "@k2b/cloud/services/postgres";
 import { sql } from "bun";
+import type { FetchMessageObject } from "imapflow";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { type ConnectorVerification, unavailableProviderLimitSnapshot } from "../contracts";
 import { newShortId } from "../lib/short-id";
@@ -9,6 +10,7 @@ import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { sha256Json } from "./canonical";
 import { type ConnectorEnvelope, imapSmtpConnector } from "./connectors";
+import { downloadSelectedSources } from "./connectors/imap-smtp";
 import { createMailbox } from "./mailboxes";
 import { getOperatorActionEligibility } from "./operator-actions";
 import { createProviderConnection } from "./provider-connections";
@@ -25,6 +27,7 @@ import {
 const suite = suiteFor("database", "nats", "valkey");
 
 const noHeartbeat = async (): Promise<void> => undefined;
+const messageMetadata = (uid: number): FetchMessageObject => ({ uid, seq: 1 });
 
 const fixtureVerification = (account: string): ConnectorVerification => ({
   authenticatedPrincipal: account,
@@ -84,10 +87,14 @@ suite("mail body hydration scheduling", () => {
   const labels = new Map<string, string>();
   // Messages the provider expunged after their envelope was imported: FETCH returns no source.
   const expunged = new Set<string>();
+  // Messages the provider lists and answers with metadata, but never delivers a source for.
+  const phantoms = new Set<string>();
   // Messages whose source stream breaks off mid-transfer.
   const broken = new Set<string>();
   // Accounts whose next source download fails before the first message.
   const unreachable = new Set<string>();
+  // Accounts whose provider throttles every source FETCH but still lists the messages.
+  const throttled = new Set<string>();
   // Accounts whose source downloads do not answer until the test releases them.
   const hanging = new Map<string, Promise<void>>();
   const downloads: string[] = [];
@@ -269,16 +276,48 @@ suite("mail body hydration scheduling", () => {
           .slice(0, request.limit);
         return { messages, nextHighUid: null };
       }),
-      spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(async (config, _folderPath, requests, consume) => {
+      spyOn(imapSmtpConnector, "downloadSourceBatch").mockImplementation(async (config, folderPath, requests, consume) => {
         downloads.push(labels.get(config.username) ?? config.username);
         await downloadGate;
         await hanging.get(config.username);
+        if (throttled.has(config.username)) {
+          // ImapFlow answers a download whose FETCH stayed throttled with {}, while SEARCH still lists the message.
+          const throttledClient = {
+            usable: true,
+            mailbox: { uidValidity: BigInt(requests[0]?.uidValidity ?? "10") } as never,
+            download: async () => ({}),
+            search: async () => requests.map((request) => request.uid),
+            fetchOne: async (): Promise<false> => false,
+          };
+          return downloadSelectedSources(throttledClient, requests, consume);
+        }
         if (unreachable.delete(config.username)) {
           throw Object.assign(new Error("Connection not available"), { code: "NoConnection" });
         }
         for (const request of requests) {
           fetched.push(request.key);
           if (expunged.has(request.key)) continue;
+          if (phantoms.has(request.key)) {
+            await downloadSelectedSources(
+              {
+                usable: true,
+                mailbox: {
+                  path: folderPath,
+                  delimiter: "/",
+                  flags: new Set<string>(),
+                  uidValidity: BigInt(request.uidValidity),
+                  uidNext: request.uid + 1,
+                  exists: 1,
+                },
+                download: async () => ({}),
+                search: async () => [request.uid],
+                fetchOne: async () => messageMetadata(request.uid),
+              },
+              [request],
+              consume,
+            );
+            continue;
+          }
           const source = sourceFor(request.key);
           const stream = broken.has(request.key)
             ? new Readable({
@@ -386,6 +425,27 @@ suite("mail body hydration scheduling", () => {
       { hydration_status: "complete", hydration_attempt: 1 },
       { hydration_status: "complete", hydration_attempt: 1 },
     ]);
+  });
+
+  test("a throttled source download uses no hydration attempt and succeeds after the provider recovers", async () => {
+    const fixture = await createSyncedMailbox("throttled-source");
+    const sentinel = await createSyncedMailbox("sentinel-throttled-source");
+    throttled.add(fixture.account);
+    try {
+      await deliver(fixture, 1);
+      const messageId = await newestMessageId(fixture);
+      await waitFor(async () => downloads.includes(fixture.label));
+      // A sentinel round lets the rejected batch finish before checking its durable state.
+      await deliver(sentinel, 1);
+      await waitFor(async () => (await unhydrated([sentinel])) === 0);
+      expect(await hydrationState(messageId)).toEqual({ hydration_status: "envelope", hydration_attempt: 0, hydration_error_code: null });
+      throttled.delete(fixture.account);
+      await enqueueMessageHydration(messageId);
+      await waitFor(async () => (await hydrationState(messageId))?.hydration_status === "complete");
+      expect(await hydrationState(messageId)).toEqual({ hydration_status: "complete", hydration_attempt: 1, hydration_error_code: null });
+    } finally {
+      throttled.delete(fixture.account);
+    }
   });
 
   test("a body that fails neither holds back the mailbox's next new mail nor is retried back to back", async () => {
@@ -528,7 +588,7 @@ suite("mail body hydration scheduling", () => {
       // The provider keeps listing the new message but answers its FETCH without a source, and no
       // folder reconciliation runs here that could retire it.
       phantom = await newestMessageId(fixture);
-      expunged.add(phantom);
+      phantoms.add(phantom);
     });
     await waitFor(async () => (await hydrationState(archived!.id))?.hydration_status === "complete");
     expect(await hydrationState(phantom)).toEqual({

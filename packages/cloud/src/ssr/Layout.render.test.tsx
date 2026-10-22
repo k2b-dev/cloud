@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
+import { appAccentStyle } from "./app-appearance";
+import type { RuntimeContext } from "./runtime";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-layout-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -37,6 +39,8 @@ const withoutIslands = (html: string) => html.replace(/<solid-island\b[\s\S]*?<\
 type MinimalLayoutContextArg = Parameters<typeof MinimalLayout>[0]["c"];
 const legalApp = {
   id: "legal-probe",
+  routes: ["/minimal"],
+  appearance: { accent: "#0f766e" },
   legalLinks: [{ label: "Imprint", href: "/legal/imprint" }],
   presentation: { baseLocale: "en", translations: { de: { legalLinks: { "/legal/imprint": "Impressum" } } } },
 };
@@ -107,6 +111,7 @@ const server = new Hono()
           fullPage: mode === "fullPage",
           fullWidth: mode === "fullWidth",
           title: "Public tools",
+          help: c.req.queries("help"),
           children: "Anonymous content",
         });
     }),
@@ -123,6 +128,8 @@ const server = new Hono()
         createComponent(Layout, {
           c: c as unknown as LayoutContextArg,
           title: [{ title: "Badges", href: "/app/badges" }, { title: c.req.query("title") ?? "Badges" }],
+          focusMode: c.req.query("focusMode") === "true",
+          printHint: c.req.query("printHint"),
           children: "Signed-in content",
         }),
     ),
@@ -146,7 +153,87 @@ const server = new Hono()
     }),
   );
 
+const accentServer = new Hono<{ Variables: { runtime: RuntimeContext } }>()
+  .use("*", async (c, next) => {
+    const accent = c.req.query("accent");
+    // Deliberately malformed registry accents exercise the shell's runtime validation.
+    // @ts-expect-error The fixture includes values forbidden by AppAppearance's hex type.
+    c.set("runtime", {
+      apps: [
+        {
+          id: "accent-probe",
+          name: "Accent probe",
+          icon: "ti ti-palette",
+          description: "App color scope",
+          routes: ["/accent", "/admin/accent"],
+          ...(accent === undefined ? {} : { appearance: { accent } }),
+        },
+        { id: "core", name: "Core", icon: "ti ti-cloud", description: "Help host", routes: ["/help"], appearance: { accent: "#2563eb" } },
+      ],
+    });
+    await next();
+  })
+  .get(
+    "/accent",
+    ...app.ssr(
+      (c) => () =>
+        createComponent(Layout, { c, title: "App colors", focusMode: c.req.query("focusMode") === "true", children: "App content" }),
+    ),
+  )
+  .get("/help/apps/accent-probe", ...app.ssr((c) => () => createComponent(Layout, { c, title: "App Help", children: "Help content" })))
+  .get("/admin/accent", ...app.ssr((c) => () => createComponent(AdminLayout, { c, title: "App admin", children: "Admin content" })));
+
 describe("Cloud layouts SSR", () => {
+  test("the page shell gives portalled dialogs the current app's accent without its canvas background", async () => {
+    const style = appAccentStyle("#0f766e");
+    expect(style).toBeDefined();
+    expect(style).not.toContain("--app-canvas-");
+    for (const path of ["/accent", "/accent?focusMode=true", "/help/apps/accent-probe", "/admin/accent"]) {
+      const response = await accentServer.request(`${path}${path.includes("?") ? "&" : "?"}accent=%230f766e`);
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html.match(/<body\b[^>]*>/)?.[0]).toBe(
+        `<body class="k2b-ui app-accent-scope" style="${style}" data-k2b-app-workspace-controller="global">`,
+      );
+    }
+  });
+
+  test("invalid or absent app accents and minimal pages keep the plain page shell", async () => {
+    for (const accent of [undefined, "red", "#fff", "#12345g", "#0f766e;color:red", '#0f766e" onload="x']) {
+      const response = await accentServer.request(`/accent${accent === undefined ? "" : `?accent=${encodeURIComponent(accent)}`}`);
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html.match(/<body\b[^>]*>/)?.[0]).toBe('<body class="k2b-ui" data-k2b-app-workspace-controller="global">');
+    }
+    const minimal = await (await server.request("/minimal/default")).text();
+    expect(minimal.match(/<body\b[^>]*>/)?.[0]).toBe('<body class="k2b-ui" data-k2b-app-workspace-controller="global">');
+  });
+
+  test("server-renders shell focus only on signed-in pages outside focusMode", async () => {
+    const spies = [
+      spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+      spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    ];
+    try {
+      for (const [path, cookie, hidden, controls] of [
+        ["/signed-in", "cloud_shell_focus=1", true, true],
+        ["/signed-in", "", false, true],
+        ["/layout", "cloud_shell_focus=1", false, false],
+        ["/signed-in?focusMode=true", "cloud_shell_focus=1", false, false],
+      ] as const) {
+        const response = await server.request(path, { headers: { Cookie: cookie } });
+        expect(response.status).toBe(200);
+        const html = await response.text();
+        expect(html.includes('data-shell-focus="true"'), path + " focus").toBe(hidden);
+        expect(html.includes('data-cloud-shell-focus-toggle="hide"'), path + " hide").toBe(controls);
+        expect(html.includes('data-cloud-shell-focus-toggle="show"'), path + " show").toBe(controls);
+        expect(html.includes('class="cloud-shell-show"')).toBe(controls);
+        expect(html.includes("data-cloud-shell-reveal")).toBe(controls);
+      }
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
   test("full-page workspaces contain outer viewport overscroll", async () => {
     const html = await (await server.request("/layout")).text();
     expect(html).toContain('data-layout-full-page="true"');
@@ -169,14 +256,16 @@ describe("Cloud layouts SSR", () => {
       expect(main).toContain("flex flex-col");
       expect(main).not.toContain("scrollbar-gutter");
     }
-    // Below md the document scrolls every page except fullPage surfaces, which the canvas marks.
+    // Below md only anonymous regular pages use the document scroller.
     expect(page.canvas).not.toContain("data-layout-full-page");
     expect(fullWidth.canvas).not.toContain("data-layout-full-page");
     expect(fullPage.canvas).toContain('data-layout-full-page="true"');
     const css = await Bun.file(new URL("../styles/global.css", import.meta.url)).text();
-    const mobileStart = css.indexOf("@media (max-width: 767px) {");
+    const mobileStart = css.indexOf("@media not all and (min-width: 768px) {");
     const mobileShell = css.slice(mobileStart, css.indexOf("\n}", mobileStart));
-    expect(mobileShell).toMatch(/html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\]\)\) \{ scrollbar-gutter: stable; \}/);
+    expect(mobileShell).toMatch(
+      /html:has\(\.cloud-app-canvas:not\(\[data-layout-full-page\], \[data-layout-authenticated\]\)\) \{ scrollbar-gutter: stable; \}/,
+    );
   });
   test("admin children inherit the request locale during SSR", async () => {
     for (const locale of ["de", "en", "de-CH"]) {
@@ -248,6 +337,7 @@ describe("Cloud layouts SSR", () => {
     const chrome = withoutIslands(html).match(/<header[\s\S]*?<\/header>/)?.[0] ?? "";
     expect(chrome).toContain('href="/"');
     expect(chrome).toContain('href="/auth/login"');
+    expect(html).not.toContain('class="cloud-tab-bar"');
   });
 
   test("signed-in pages trade the header for the rail from md and publish the page trail", async () => {
@@ -266,11 +356,18 @@ describe("Cloud layouts SSR", () => {
     expect(html.match(/<header[^>]*class="(layout-header[^"]*)"/)?.[1]).toContain("md:hidden");
     expect(html).not.toContain("hidden min-w-0 items-center lg:flex");
     expect(html.split('class="layout-profile-preferences"').length - 1).toBe(1);
-    expect(html).toContain('class="layout-rail hidden w-10 shrink-0 flex-col md:flex"');
-    // The rail's Home link and the phone header's Home link stay server markup.
+    expect(html).toContain('class="layout-rail hidden w-14 shrink-0 flex-col md:flex"');
+    // Home stays in the rail; phones get Home and the person's apps in the bar, as server markup outside the shell's
+    // islands, so focus on it survives their mount.
     const chrome = withoutIslands(html);
     expect(chrome).toMatch(/<aside class="layout-rail[^"]*"><div class="layout-rail-logo[^"]*"><a href="\/" aria-label="Home">/);
-    expect(chrome.match(/<header[\s\S]*?<\/header>/)?.[0]).toContain('href="/"');
+    expect(chrome.match(/<header[\s\S]*?<\/header>/)?.[0]).not.toContain('href="/"');
+    const bar = chrome.slice(chrome.indexOf('class="cloud-tab-bar"'));
+    expect(bar).toContain('href="/"');
+    expect(bar).toContain('data-tab="home"');
+    const start = bar.match(/<a href="\/"[^>]*>([\s\S]*?)<\/a>/)?.[1];
+    expect(start).toContain('<span class="k2b-truncate-fade">Home</span>');
+    for (const app of badgeApps) expect(bar).toContain(`href="${app.nav.href}"`);
     // The page trail travels as JSON that cannot end its script element or carry markup.
     const source = html.match(/<script type="application\/json" data-k2b-page-trail>([^<]*)<\/script>/)?.[1] ?? "";
     expect(source).toContain("\\u003cnotes>");
@@ -350,4 +447,248 @@ describe("Cloud layouts SSR", () => {
     expect(html).not.toContain("minimal-layout");
     expect(html).not.toContain("<footer");
   });
+});
+
+for (const focusMode of [false, true]) {
+  test(`renders the app print hint last in the canvas (focus=${focusMode})`, async () => {
+    const spy = spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences());
+    const announcements = spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined);
+    try {
+      const html = await (await server.request(`/signed-in?focusMode=${focusMode}&printHint=Download%20the%20PDF`)).text();
+      expect(html).toMatch(/data-print-fallback(?:="")?>/);
+      expect(html).toContain("This view does not print well.");
+      expect(html).toContain("Download the PDF");
+      expect(html).toMatch(/Download the PDF<\/p><\/div><\/div>/);
+    } finally {
+      spy.mockRestore();
+      announcements.mockRestore();
+    }
+  });
+}
+
+describe("Layout page Help payload", () => {
+  for (const failed of [false, true]) {
+    test(`shell data ${failed ? "reports a Help metadata failure" : "omits helpFailed without a Help metadata failure"}`, async () => {
+      const spies = [spyOn(help, "getLayoutHelp").mockReturnValue(null), spyOn(help, "layoutHelpFailed").mockReturnValue(failed)];
+      try {
+        const html = await (await server.request("/layout")).text();
+        const data = JSON.parse(html.match(/<script id="cloud-shell-data" type="application\/json">([^<]*)<\/script>/)?.[1] ?? "null");
+        expect(data).not.toBeNull();
+        if (failed) expect(data.helpFailed).toBe(true);
+        else expect(data).not.toHaveProperty("helpFailed");
+      } finally {
+        for (const spy of spies) spy.mockRestore();
+      }
+    });
+  }
+
+  const documents = ["first", "second", "third", "fourth"].map((id) => ({
+    id,
+    title: id,
+    order: 100,
+    searchUrl: "/search",
+    url: `/documents/${id}`,
+  }));
+  for (const [name, manifest, requested, expected] of [
+    [
+      "keeps declared order, deduplicates and caps at three",
+      true,
+      ["unknown", "third", "third", "first", "fourth", "second"],
+      ["third", "first", "fourth"],
+    ],
+    ["drops ids outside the reader's manifest", true, ["private", "other-app", "second"], ["second"]],
+    ["omits Help when every id is unknown", true, ["private"], undefined],
+    ["omits Help without an authorized manifest", false, ["first"], undefined],
+    ["omits Help without page ids", true, [], undefined],
+  ] as const) {
+    test(name, async () => {
+      const spy = spyOn(help, "getLayoutHelp").mockReturnValue(
+        manifest
+          ? {
+              documents,
+              pageBase: "/help/apps/probe",
+              baseLocale: "en",
+              locale: "en",
+              manifestHash: "test",
+            }
+          : null,
+      );
+      try {
+        const query = new URLSearchParams();
+        for (const id of requested) query.append("help", id);
+        const html = await (await server.request(`/layout?${query}`)).text();
+        const data = JSON.parse(html.match(/<script id="cloud-shell-data" type="application\/json">([^<]*)<\/script>/)?.[1] ?? "null");
+        expect(data).not.toBeNull();
+        if (expected) expect(data.help).toEqual([...expected]);
+        else expect(data).not.toHaveProperty("help");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  }
+
+  for (const [userAgent, platform] of [
+    ["Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)", "apple"],
+    ["Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "other"],
+    ["", "other"],
+  ]) {
+    test(`resolves keyboard platform ${platform} from ${userAgent || "an absent User-Agent"}`, async () => {
+      const html = await (await server.request("/layout", { headers: { "User-Agent": userAgent! } })).text();
+      const data = JSON.parse(html.match(/<script id="cloud-shell-data" type="application\/json">([^<]*)<\/script>/)?.[1] ?? "null");
+      expect(data?.platform).toBe(platform);
+    });
+  }
+});
+
+const swapApp = defineApp({
+  id: "swap",
+  name: "Swap",
+  icon: "ti ti-box",
+  description: "Page swap render fixture",
+  baseUrl: "http://swap:3000",
+  routes: ["/app/swap"],
+  pageSwap: true,
+});
+const swapServer = new Hono<{ Variables: { runtime: RuntimeContext; user: import("../contracts/shared").User | undefined } }>()
+  .use(async (c, next) => {
+    c.set("runtime", {
+      apps: [
+        {
+          id: "swap",
+          name: "Swap",
+          icon: "ti ti-box",
+          description: "Swap",
+          routes: ["/app/swap"],
+          nav: { href: "/app/swap", section: "primary" },
+          panel: { href: "/app/swap/panel", label: "Panel", icon: "ti ti-box" },
+        },
+      ],
+    });
+    if (c.req.query("anonymous") !== "true") c.set("user", person);
+    await next();
+  })
+  .get(
+    "/app/swap",
+    ...swapApp.ssr(
+      (c) => () =>
+        createComponent(Layout, {
+          c,
+          title: "Swap page",
+          fullPage: c.req.query("fullPage") === "true",
+          fullWidth: c.req.query("fullWidth") === "true",
+          focusMode: c.req.query("focusMode") === "true",
+          children: "Swappable content",
+        }),
+    ),
+  );
+
+test("page swap replaces only the content column and its page data", async () => {
+  const { createDomTestHarness } = await import("../../../ui/test/dom");
+  const spies = [
+    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
+  ];
+  const dom = createDomTestHarness();
+  const window = dom.window;
+  try {
+    let signature: string | null = null;
+    let canvasClass: string | null = null;
+    for (const query of ["", "?fullPage=true", "?fullWidth=true"]) {
+      window.document.body.innerHTML = await (await swapServer.request(`/app/swap${query}`)).text();
+      const canvas = window.document.querySelector(".cloud-app-canvas")!;
+      const column = canvas.querySelector(".layout-shell-content")!;
+      expect(canvas.getAttribute("data-nav-shell")).toMatch(/^[a-f0-9]{32}$/);
+      expect(canvas.getAttribute("data-nav-scope")).toBe("/app/swap");
+      expect(canvas.getAttribute("data-nav-attributes")).toBe("data-layout-full-page data-workspace-sidebar-collapsed");
+      signature ??= canvas.getAttribute("data-nav-shell");
+      canvasClass ??= canvas.getAttribute("class");
+      expect(canvas.getAttribute("data-nav-shell")).toBe(signature);
+      expect(canvas.getAttribute("class")).toBe(canvasClass);
+      expect(canvasClass).toBe("cloud-app-canvas relative flex w-full min-h-dvh md:h-dvh md:overflow-hidden");
+      expect(canvas.querySelectorAll("[data-nav-root]")).toHaveLength(1);
+      expect(column.hasAttribute("data-nav-root")).toBe(true);
+      expect(column.firstElementChild?.id).toBe("cloud-shell-data");
+      expect(column.lastElementChild?.hasAttribute("data-print-fallback")).toBe(true);
+      expect(window.document.querySelectorAll("#cloud-shell-data")).toHaveLength(1);
+      // Not a keyed region: nav keeps keyed regions across pushes, and a new page starts at the top as after a load.
+      expect(column.querySelector("main")?.getAttribute("data-scroll-preserve")).toBe("cloud-main");
+      expect(column.querySelector("main")?.getAttribute("data-scroll-page")).toBe("");
+      for (const selector of ["#cloud-panel", ".layout-rail", ".cloud-tab-bar", ".cloud-shell-reveal"]) {
+        expect(canvas.querySelector(selector)).not.toBeNull();
+        expect(column.querySelector(selector)).toBeNull();
+      }
+      expect(column.querySelectorAll("solid-island,solid-client")).toHaveLength(1);
+      expect(canvas.querySelectorAll("solid-island,solid-client").length).toBeLessThanOrEqual(4);
+      expect(canvas.firstElementChild?.tagName).toBe("SOLID-ISLAND"); // ShellRuntime stays in the document.
+    }
+    window.document.body.innerHTML = await (await swapServer.request("/app/swap?focusMode=true")).text();
+    expect(window.document.querySelector("[data-nav-shell],[data-nav-root],[data-nav-scope]")).toBeNull();
+    window.document.body.innerHTML = await (await swapServer.request("/app/swap?anonymous=true")).text();
+    expect(window.document.querySelector("[data-nav-root] #cloud-shell-data")).not.toBeNull();
+    expect(window.document.querySelector("[data-nav-shell]")?.getAttribute("data-nav-shell")).not.toBe(signature);
+  } finally {
+    dom.cleanup();
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+// The launcher consumes precisely this shell catalog, including Core's virtual Admin destination.
+test("launcher catalog follows live app navigation, roles and request locale in SSR", async () => {
+  const probes = [
+    {
+      ...badgeApps[0]!,
+      id: "public-launcher",
+      name: "Tools",
+      nav: { href: "/tools", section: "more" as const },
+      presentation: { baseLocale: "en", translations: { de: { name: "Werkzeuge" } } },
+      searchLinks: [{ label: "Tools", href: "/tools", keywords: ["utilities"] }],
+    },
+    { ...badgeApps[1]!, id: "private-launcher", nav: { href: "/private", section: "more" as const, requiresAuth: true } },
+    {
+      ...badgeApps[1]!,
+      id: "restricted-launcher",
+      nav: { href: "/restricted", section: "more" as const, requiresRoles: ["admin" as const] },
+    },
+    { ...badgeApps[1]!, id: "hidden-launcher", nav: { href: "/hidden", section: "hidden" as const } },
+    { ...badgeApps[1]!, id: "internal-launcher", nav: undefined },
+  ];
+  const launcherServer = new Hono().get(
+    "/launcher",
+    async (c, next) => {
+      c.set("runtime" as never, { apps: probes } as never);
+      const role = c.req.query("role");
+      if (role) c.set("user" as never, { ...person, roles: role === "admin" ? [...person.roles, "admin"] : person.roles } as never);
+      await next();
+    },
+    ...app.ssr((c) => () => createComponent(Layout, { c: c as unknown as LayoutContextArg, panel: false, children: "Launcher probe" })),
+  );
+  const spies = [
+    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+  ];
+  try {
+    for (const locale of ["en", "de"]) {
+      for (const role of ["", "user", "admin"]) {
+        const response = await launcherServer.request(`/launcher?role=${role}`, { headers: { "Accept-Language": locale } });
+        expect(response.status).toBe(200);
+        const html = await response.text();
+        const shell = JSON.parse(html.match(/<script id="cloud-shell-data" type="application\/json">(.*?)<\/script>/)![1]!);
+        expect(shell.apps.map((entry: { id: string }) => entry.id).sort()).toEqual(
+          ["public-launcher", ...(role ? ["private-launcher"] : []), ...(role === "admin" ? ["admin", "restricted-launcher"] : [])].sort(),
+        );
+        expect(shell.apps.find((entry: { id: string }) => entry.id === "public-launcher").label).toBe(
+          locale === "de" ? "Werkzeuge" : "Tools",
+        );
+        expect(shell.apps.find((entry: { id: string }) => entry.id === "admin")?.label).toBe(
+          role === "admin" ? (locale === "de" ? "Administration" : "Admin") : undefined,
+        );
+        expect(Object.keys(shell.searchLinks)).toEqual(["public-launcher"]);
+        for (const absent of ["hidden-launcher", "internal-launcher", ...(role === "admin" ? [] : ["restricted-launcher"])])
+          expect(html).not.toContain(absent);
+      }
+    }
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
 });

@@ -14,7 +14,18 @@ import {
 import { groupDisplayName } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
-import { ButtonLink, CodeDisplay, DataTable, type DataTableColumn, Disclosure, Paper, Placeholder, StatusBadge, Tag } from "@k2b/ui";
+import {
+  ButtonLink,
+  CodeDisplay,
+  DataTable,
+  type DataTableColumn,
+  Disclosure,
+  FilterToggle,
+  Paper,
+  Placeholder,
+  StatusBadge,
+  Tag,
+} from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { z } from "zod";
 import type { BaseGroup } from "@/contracts";
@@ -437,16 +448,13 @@ export default ssr<AuthContext>(async (c) => {
                 </p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
-                <ButtonLink
+                <FilterToggle
                   href={toggleUrl}
-                  size="sm"
-                  variant={recursive ? "primary" : "subtle"}
-                  aria-current={recursive ? "true" : undefined}
+                  icon="ti ti-git-branch"
+                  active={recursive}
                   title={recursive ? t.showDirectOnly : t.showAllMemberships}
-                >
-                  <i class="ti ti-git-branch" />
-                  {recursive ? t.allGroups : t.directOnly}
-                </ButtonLink>
+                  label={recursive ? t.allGroups : t.directOnly}
+                />
                 <AddToGroup id={user.id} userProvider={user.provider} excludeGroups={allGroups.map((group) => group.id)} />
               </div>
             </div>

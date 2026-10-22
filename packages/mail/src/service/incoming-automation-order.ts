@@ -3,7 +3,7 @@ import { incomingAutomationActions } from "./incoming-automation-definition";
 import type { SqlClient } from "./workflow-data";
 
 /**
- * Whether this run may still decide where a message sits.
+ * Whether an incoming automation may still decide where a message sits.
  *
  * Every matching incoming automation is dispatched as its own kernel run from
  * the same ingest transaction, so without a turn order two automations freeze
@@ -11,6 +11,8 @@ import type { SqlClient } from "./workflow-data";
  * message has already left. The order is the mailbox's automation order —
  * oldest first — and only one automation moves one message: an automation an
  * older one has already overtaken skips its placement step instead of failing.
+ * Only incoming automations yield; other workflows reach the action's target
+ * lookup and fail if the message has left its folder.
  */
 export type IncomingAutomationPlacementTurn = { state: "ready" } | { state: "skip"; reason: "message_moved" | "earlier_automation" };
 
@@ -20,15 +22,19 @@ const parseSteps = (value: MailAutomationStep[] | string): MailAutomationStep[] 
 const changesPlacement = (steps: MailAutomationStep[]): boolean =>
   incomingAutomationActions(steps).some((action) => action.kind === "junk" || action.kind === "trash" || action.kind === "move_to_folder");
 
-export const resolveIncomingAutomationPlacementTurn = async (params: {
+type IncomingAutomationMessageTurnParams = {
   db: SqlClient;
   runId: string;
   mailboxId: string;
   messageId: string;
   folderId: string;
-}): Promise<IncomingAutomationPlacementTurn> => {
-  const [placement] = await params.db<{ id: string }[]>`
-    SELECT remote_ref.id
+};
+
+type MessagePlacementParams = Pick<IncomingAutomationMessageTurnParams, "db" | "messageId" | "folderId">;
+
+const loadIncomingAutomationMessagePlacement = async (params: MessagePlacementParams) => {
+  const [placement] = await params.db<{ id: string; first_seen_at: string }[]>`
+    SELECT remote_ref.id, remote_ref.first_seen_at::text
     FROM mail.remote_message_refs remote_ref
     JOIN mail.message_placements placement
       ON placement.remote_message_ref_id = remote_ref.id
@@ -38,36 +44,88 @@ export const resolveIncomingAutomationPlacementTurn = async (params: {
       AND remote_ref.stale_at IS NULL
     LIMIT 1
   `;
-  if (!placement) return { state: "skip", reason: "message_moved" };
+  return placement;
+};
 
-  // A move another run already ordered has not reached the provider yet, so
-  // the placement above still looks untouched.
-  const [claimed] = await params.db<{ id: string }[]>`
+const incomingAutomationOfRun = async (db: SqlClient, runId: string): Promise<string | null> => {
+  const [self] = await db<{ id: string }[]>`
+    SELECT automation.id
+    FROM workflows.run run
+    JOIN mail.incoming_automations automation ON automation.workflow_id = run.workflow_id
+    WHERE run.id = ${runId}::uuid
+  `;
+  return self?.id ?? null;
+};
+
+/** Exported so tests can inspect its plan. */
+export const pendingMoveClaimQuery = (db: SqlClient, params: { mailboxId: string; refId: string; firstSeenAt: string; runId: string }) =>
+  db<{ id: string }[]>`
     SELECT id
     FROM mail.commands
     WHERE mailbox_id = ${params.mailboxId}::uuid
+      AND created_at >= ${params.firstSeenAt}::timestamptz
       AND kind = 'move'
-      AND target ->> 'remoteMessageRefId' = ${placement.id}
+      -- The predicate lets Postgres use commands_message_target_idx.
+      AND target ? 'remoteMessageRefId'
+      AND target ->> 'remoteMessageRefId' = ${params.refId}
       AND state NOT IN ('failed', 'cancelled')
       AND correlation_id IS DISTINCT FROM ${params.runId}
     LIMIT 1
   `;
-  if (claimed) return { state: "skip", reason: "earlier_automation" };
 
-  // A workflow that is not an incoming automation has no place in that order.
-  const [self] = await params.db<{ id: string }[]>`
-    SELECT automation.id
-    FROM workflows.run run
-    JOIN mail.incoming_automations automation ON automation.workflow_id = run.workflow_id
-    WHERE run.id = ${params.runId}::uuid
-  `;
+/** Incoming automation message checks: it still sits in the frozen folder, and no other run is moving it. */
+const resolveMessageTurn = async (params: IncomingAutomationMessageTurnParams): Promise<IncomingAutomationPlacementTurn> => {
+  const placement = await loadIncomingAutomationMessagePlacement(params);
+  if (!placement) return { state: "skip", reason: "message_moved" };
+
+  // A move another run already ordered has not reached the provider yet, so
+  // the placement above still looks untouched.
+  const [claimed] = await pendingMoveClaimQuery(params.db, {
+    mailboxId: params.mailboxId,
+    refId: placement.id,
+    firstSeenAt: placement.first_seen_at,
+    runId: params.runId,
+  });
+  return claimed ? { state: "skip", reason: "earlier_automation" } : { state: "ready" };
+};
+
+/**
+ * Whether an incoming automation's flag or keyword step still changes the message.
+ *
+ * Once the message left the frozen folder, or another run is moving it, the
+ * step skips instead of failing. It does not wait for older automations: a
+ * flag change may go before an older automation's move. Other workflows keep
+ * failing loudly, so a hand-written workflow never continues without a change
+ * it asked for.
+ */
+export const resolveIncomingAutomationMessageStateTurn = async (
+  params: IncomingAutomationMessageTurnParams,
+): Promise<IncomingAutomationPlacementTurn> =>
+  (await incomingAutomationOfRun(params.db, params.runId)) ? resolveMessageTurn(params) : { state: "ready" };
+
+/** Whether an incoming automation's message has left the frozen folder, for example moved by another automation. */
+export const incomingAutomationMessageLeft = async (params: Omit<IncomingAutomationMessageTurnParams, "mailboxId">): Promise<boolean> =>
+  Boolean(await incomingAutomationOfRun(params.db, params.runId)) && !(await loadIncomingAutomationMessagePlacement(params));
+
+/**
+ * Only incoming automations yield to a moved message, a pending move, or an
+ * older automation. Other workflows reach the target lookup in actions.ts
+ * and fail there if the message has left its frozen folder.
+ */
+export const resolveIncomingAutomationPlacementTurn = async (
+  params: IncomingAutomationMessageTurnParams,
+): Promise<IncomingAutomationPlacementTurn> => {
+  const self = await incomingAutomationOfRun(params.db, params.runId);
   if (!self) return { state: "ready" };
+
+  const turn = await resolveMessageTurn(params);
+  if (turn.state === "skip") return turn;
 
   const older = await params.db<{ steps: MailAutomationStep[] | string }[]>`
     SELECT older.steps
     FROM workflows.run run
     JOIN mail.incoming_automations older ON older.workflow_id = run.workflow_id
-    JOIN mail.incoming_automations self ON self.id = ${self.id}::uuid
+    JOIN mail.incoming_automations self ON self.id = ${self}::uuid
     WHERE run.app_id = 'mail'
       AND run.scope_id = ${params.mailboxId}
       AND run.mode = 'execute'

@@ -24,6 +24,7 @@ do not copy files into an application or take ownership of its data model.
 
 | Need | Application contributes | Cloud provides |
 | --- | --- | --- |
+| [Addresses and places](/en/docs/platform/places-and-maps) | Query input and caller identity | Fixed EU provider, shared credit budgets, caching, provenance, and attribution |
 | Runtime configuration | Typed setting declarations and defaults | Validation, encrypted persistence, caching, and request snapshots |
 | [Outgoing mail](/en/docs/platform/outgoing-mail) | A `mail:send` or `mail:read` declaration | Sender profiles, a searchable send log, and operator-controlled application access |
 | Operational events | A source, message, and structured metadata | Console output, redaction, persistence, retention, and operations views |
@@ -33,6 +34,7 @@ do not copy files into an application or take ownership of its data model.
 | Cross-app and agent operations | Curated Types, Queries, and Actions | Live schemas, generic dispatch, CLI, and MCP tools |
 | Files for other apps | A list Query, a read stream, and optionally a save Action | The shared file-provider contract, its checks, and discovery in the capability catalog |
 | Global discovery | One permission-aware Query projected into Universal Search | Provider discovery, query fan-out, and shared search UI |
+| [Panels](/en/docs/platform/panels) | One authorized page rendered with `PanelLayout` | A shared slot, provider tabs, sizing, and keyboard controls |
 | Dashboard summaries | Authenticated JSON endpoints | Widget discovery, layout, and rendering |
 | Product guidance | Markdown help documents | Search, rendering, and the shared Help surface |
 | [Assistant Skills](/en/docs/platform/assistant-skills) | `SKILL.md` files with optional references | Validation, installation, content-hash updates, app-based access, and administrator overrides |

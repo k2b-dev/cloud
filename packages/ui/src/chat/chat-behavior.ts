@@ -1,3 +1,4 @@
+import type { ChatCommand } from "./ChatComposer";
 import type { ChatAction } from "./types";
 
 export const nextChatCommandIndex = (index: number, length: number, direction: 1 | -1): number =>
@@ -82,3 +83,8 @@ export const conversationEnterAction = (
   if (key.shiftKey || key.altKey || context.touchOnly || context.inCodeBlock || context.sendKey === "mod-enter") return "newline";
   return "send";
 };
+
+/** Case- and accent-insensitive text for command discovery. */
+export const foldChatSearchText = (text: string): string => text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/ß/g, "ss");
+
+export const chatCommandKey = (command: ChatCommand): string => command.id ?? command.name;

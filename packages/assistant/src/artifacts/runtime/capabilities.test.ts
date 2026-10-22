@@ -39,3 +39,29 @@ for (const [response, code, message] of [
       prepare.mockRestore();
     }
   });
+
+test("a background host approval refusal reaches sandbox code with its exact message", async () => {
+  const message =
+    "NEEDS_APPROVAL: Create task needs the user's approval every time, and routines never ask. Stop and say in one sentence what was missing.";
+  const prepare = spyOn(artifactClient, "capabilityPrepare").mockRejectedValue(
+    Object.assign(new Error(message), { code: "NEEDS_APPROVAL" }),
+  );
+  const resolve = spyOn(artifactClient, "capabilityResolve");
+  try {
+    await expect(
+      runCapability(
+        "demo.write",
+        {},
+        {},
+        async () => {
+          throw new Error("Unexpected approval");
+        },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ code: "NEEDS_APPROVAL", message });
+    expect(resolve).not.toHaveBeenCalled();
+  } finally {
+    prepare.mockRestore();
+    resolve.mockRestore();
+  }
+});

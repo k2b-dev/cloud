@@ -1,9 +1,9 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
-import { requestContactDirectory } from "../../../../contact-directory-settings";
 import type { MailRequestContext } from "../../../../service";
 import { loadMailAutomationActivity } from "../../../../service/automation-workspace";
+import { requestContactDirectory } from "../../../../service/contact-directory";
 import MailAutomationActivityPage from "../../../MailAutomationActivityPage.island";
 import { mailPageMessages } from "../../../pages-messages";
 import { projectAutomationWorkspace, resolveSsrMailboxId } from "../../../ssr-public-boundary";
@@ -26,9 +26,11 @@ export default ssr<AuthContext>(async (c) => {
   const result = await loadMailAutomationActivity(context, mailboxId, locale);
   if (!result.ok) return ssr.error(c, result.error.status);
   const data = await projectAutomationWorkspace(result.data);
+  const directory = await requestContactDirectory(c);
   return () => (
     <Layout
       c={c}
+      printHint={t.printHint}
       fullPage
       workspaceSidebarCollapsible={false}
       title={[
@@ -39,7 +41,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.breadcrumbActivity },
       ]}
     >
-      <MailAutomationActivityPage data={data} currentUserEmail={user.mail} contactDirectory={requestContactDirectory(c)} />
+      <MailAutomationActivityPage data={data} currentUserEmail={user.mail} contactDirectory={directory} />
     </Layout>
   );
 });

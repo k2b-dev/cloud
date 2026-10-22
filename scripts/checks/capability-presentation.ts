@@ -15,7 +15,7 @@ const complete = (copy: Copy): boolean => Boolean(copy?.title && copy.descriptio
  * The capability declaration an app passes to `app.start()`, read from `capabilities: <name>` in
  * `src/index.ts` and the module that name is imported from.
  */
-const declarationOf = (srcDir: string): { file: string; exportName: string } | null | Error => {
+export const declarationOf = (srcDir: string): { file: string; exportName: string } | null | Error => {
   const index = join(srcDir, "index.ts");
   if (!existsSync(index)) return null;
   const source = readFileSync(index, "utf8");

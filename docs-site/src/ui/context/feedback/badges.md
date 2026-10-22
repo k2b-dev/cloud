@@ -34,7 +34,7 @@ Do not use a status badge as a button or link. Put the interactive element aroun
 
 ## Runtime
 
-Status badges render complete server HTML and need no hydration.
+Status badges render complete server HTML and need no browser code.
 
 ## Example
 

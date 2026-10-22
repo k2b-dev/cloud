@@ -328,6 +328,14 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(rule(sheet)).toMatch(/padding-bottom:\s*env\(safe-area-inset-bottom, 0px\);/);
     expect(rule(".k2b-ui .k2b-dialog.k2b-bottom-sheet-frame")).toMatch(/bottom:\s*0;/);
     expect(rule(".k2b-ui .k2b-dialog.k2b-bottom-sheet-frame")).toMatch(/border-bottom:\s*0;/);
+    const adaptive =
+      indexCss.match(/@media \(min-width: 48rem\) \{\s*(\.k2b-ui \.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive[\s\S]*?)\n\}/)?.[1] ??
+      "";
+    expect(adaptive).toMatch(/\.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive \{[^}]*top:\s*50%;/);
+    expect(adaptive).toMatch(/\.k2b-bottom-sheet-frame\.is-adaptive \.k2b-bottom-sheet__handle \{\s*display:\s*none;/);
+    expect(indexCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{\s*\.k2b-ui \.k2b-dialog\.k2b-bottom-sheet-frame,\s*\.k2b-ui \.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive \{\s*animation:\s*none;/,
+    );
   });
 
   test("scrolls panel dialog bodies instead of shrinking their content", () => {

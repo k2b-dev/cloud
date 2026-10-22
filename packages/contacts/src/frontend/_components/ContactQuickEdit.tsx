@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts, TextInput, toast, useLocale } from "@k2b/ui";
+import { announce, Button, InlineGuidance, prompts, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactRef } from "../../service";
@@ -8,7 +8,8 @@ import { readErrorMessage } from "./api";
 import { openBookSettingsDialog } from "./BookSettingsDialog";
 import ContactSearchPicker from "./ContactSearchPicker";
 import ContactTagsPicker from "./ContactTagsPicker";
-import { buildContactPayload, contactToUpsertDraft } from "./ContactUpsertForm.model";
+import { applyQuickEditFields, buildContactPayload, contactToUpsertDraft } from "./ContactUpsertForm.model";
+import { contactFormMessages, contactRowLabels } from "./contact-form-messages";
 import { detailMessages } from "./detail-messages";
 
 type Props = {
@@ -31,7 +32,8 @@ const toContactRef = (contact: Contact): ContactRef => ({
 export default function ContactQuickEdit(props: Props) {
   const locale = useLocale();
   const t = () => detailMessages.resolve([locale()]).t;
-  const initial = contactToUpsertDraft(props.contact);
+  const rowLabels = () => contactRowLabels(contactFormMessages.resolve([locale()]).t);
+  const initial = contactToUpsertDraft(props.contact, rowLabels());
   const [label, setLabel] = createSignal(initial.label);
   const [firstName, setFirstName] = createSignal(initial.firstName);
   const [lastName, setLastName] = createSignal(initial.lastName);
@@ -41,6 +43,8 @@ export default function ContactQuickEdit(props: Props) {
   const [phone, setPhone] = createSignal(initial.phones[0]?.phone ?? "");
   const [parentRef, setParentRef] = createSignal<ContactRef | null>(initial.parentRef);
   const [tagIds, setTagIds] = createSignal(initial.tagIds);
+
+  const [saveError, setSaveError] = createSignal<string | null>(null);
 
   const saveMutation = mutations.create<Contact, { bookId: string; contactId: string; payload: ReturnType<typeof buildContactPayload> }>({
     mutation: async ({ bookId, contactId, payload }, { abortSignal }) => {
@@ -55,41 +59,42 @@ export default function ContactQuickEdit(props: Props) {
       return await response.json();
     },
     onSuccess: (contact) => {
-      toast.success(t().contactUpdated);
       props.onSaved(contact);
+      announce(t().contactUpdated);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => setSaveError(error.message),
   });
 
   onCleanup(() => saveMutation.abort());
 
   const save = () => {
+    if (saveMutation.loading()) return;
+    setSaveError(null);
     try {
-      const draft = contactToUpsertDraft(props.contact);
-      const emails = [...draft.emails];
-      const phones = [...draft.phones];
-      emails[0] = { label: emails[0]?.label ?? "Email", email: email() };
-      phones[0] = { label: phones[0]?.label ?? "Telephone", phone: phone() };
-
-      const payload = buildContactPayload({
-        ...draft,
-        label: label(),
-        firstName: firstName(),
-        lastName: lastName(),
-        companyName: companyName(),
-        jobTitle: jobTitle(),
-        emails,
-        phones,
-        parentRef: parentRef(),
-        tagIds: tagIds(),
-      });
+      const payload = buildContactPayload(
+        applyQuickEditFields(
+          props.contact,
+          {
+            label: label(),
+            firstName: firstName(),
+            lastName: lastName(),
+            companyName: companyName(),
+            jobTitle: jobTitle(),
+            email: email(),
+            phone: phone(),
+            parentRef: parentRef(),
+            tagIds: tagIds(),
+          },
+          rowLabels(),
+        ),
+      );
       void saveMutation.mutate({
         bookId: props.contact.bookId,
         contactId: props.contact.id,
         payload: { ...payload, tagIds: [...(payload.tagIds ?? [])] },
       });
     } catch (error) {
-      void prompts.error(error instanceof Error ? error.message : t().prepareContactUpdateFailed);
+      setSaveError(error instanceof Error ? error.message : t().prepareContactUpdateFailed);
     }
   };
 
@@ -164,6 +169,15 @@ export default function ContactQuickEdit(props: Props) {
         </div>
       </div>
 
+      <div class="h-16 shrink-0 overflow-y-auto" tabindex={saveError() ? 0 : undefined}>
+        <Show when={saveError()}>
+          {(error) => (
+            <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+              {error()}
+            </InlineGuidance>
+          )}
+        </Show>
+      </div>
       <div class="flex flex-wrap items-center justify-between gap-2">
         <Button variant="ghost" size="sm" class="text-dimmed" onClick={props.onEditAll}>
           {t().editAllFields} <i class="ti ti-arrow-up-right" />

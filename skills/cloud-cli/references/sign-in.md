@@ -4,7 +4,9 @@ After a successful sign-in, `cld` offers to install the plugins the Cloud serves
 
 ## Sign in
 
-`cld login` signs in with the user's Cloud account and stores a refreshable OAuth login in a profile. It always uses Cloud's first-party `cloud-cli` client.
+`cld login` signs in with the user's Cloud account and stores a refreshable OAuth login in a profile. It always uses Cloud's first-party `cloud-cli` client. The user confirms the request on Cloud's consent page in the browser; if their browser sign-in is older than ten minutes, Cloud asks them to sign in again first. Refreshing an existing login needs no new confirmation.
+
+A password reset by link or an administrator signing the account out everywhere ends the `cld` sign-in too; run `cld login` again.
 
 ```bash
 cld login --server https://cloud.example
@@ -22,17 +24,68 @@ cld login --server https://cloud.example --device
 ```
 
 ```text
+Confirm this sign-in in the browser. If your browser sign-in is older than 10 minutes, Cloud asks you to sign in again first.
 Open https://cloud.example/oauth/device and enter the code: WDJB-MJHT
 (or open https://cloud.example/oauth/device?user_code=WDJB-MJHT)
 Waiting for approval…
 ✓ Signed in as Valentin Kolb (profile "default")
 ```
 
-The user opens the URL on a laptop or phone, signs in, checks that the code matches, and approves. The page then says the device is connected and the tab can be closed. `cld` polls until then and stores the login exactly like a browser login, including `--fd0` and the refresh token. The code expires after ten minutes; a denied or expired code exits with status 1 and stores nothing.
+The user opens the URL in a browser on a laptop or phone, signs in, checks that the code matches, and approves. A browser sign-in older than ten minutes needs confirmation first; the mobile app's session cannot approve it. The page then says the device is connected and the tab can be closed. `cld` polls until then and stores the login exactly like a browser login, including `--fd0` and the refresh token. The code expires after ten minutes; a denied or expired code exits with status 1 and stores nothing.
 
 As an agent on a headless box, run the command, show the user the URL and code, and wait. Do not ask for a password, session cookie, or API key instead. The user should approve only a code they expect; the approval page says so.
 
 In an SSH session, or when `--no-open` is used, the normal `cld login` prints a hint to use `--device`.
+
+If the browser denies the request, `cld` says so and stores no login. If the
+code exchange is refused with `invalid_grant`, run `cld login` again and confirm
+in the browser. Do not retry the old code.
+
+## Sign in with Cloud Login
+
+When the user has paired Cloud Login on a phone, `--user` sends the sign-in to that phone. Nobody opens a URL or types a code:
+
+```bash
+cld login --server https://cloud.example --user alice
+```
+
+```text
+Compare this code in Cloud Login: 123 456
+Waiting for approval… (Ctrl+C cancels)
+✓ Signed in as Alice Example (profile "default")
+Login expires: 2026-10-19T08:00:00.000Z
+```
+
+Pass the user's username or email. The user compares the six digits with the code in Cloud Login, checks the listed rights and lifetime, and approves with a single tap. `cld` stores the login like any other. `--user` cannot be combined with `--device` or `--no-open`.
+
+The request expires after 5 minutes. Ctrl+C stops waiting and exits with status 130. `cld` cannot tell whether the account exists or has a paired phone. When nobody approves in time, it prints `No confirmation received` and the matching `--device` command; sign in with that command or in the browser. A denied request exits with status 1 and stores nothing. Cloud Login does not approve the `admin` scope; use the browser or `--device` for it.
+
+An older Cloud refuses `--user` with `This Cloud cannot send sign-ins to Cloud Login yet` and the matching `--device` command.
+
+## Limit a login with --ttl
+
+`--ttl` ends a login after a fixed time. It works with the browser, `--device`, and `--user`:
+
+```bash
+cld login --server https://cloud.example --user alice --ttl 8h
+cld login --server https://cloud.example --device --ttl 30m
+```
+
+Use `30m`, `8h`, `2d`, or a whole number of seconds. `--ttl` can only shorten a login: the Cloud caps it at its session length. `cld` prints the actual end as `Login expires: <time>`, and `cld auth status` shows `Login expires` or `Login expired`. Refreshes never extend the end. After it, commands that need the login fail before they send a request and print the exact `cld login` command to sign in again. An older Cloud refuses `--ttl`; sign in without it.
+
+Without `--ttl`, a `--user` login lasts the Cloud's session length. Browser and `--device` logins last 90 days.
+
+As an agent on a headless box, prefer `--user <the user's username or email>` when the user has paired Cloud Login, otherwise `--device`. Tell the user to approve only the code shown in your terminal. Pass a `--ttl` that fits the task, such as `--ttl 2h` for one session of work. Never ask for a password or token. To sign in with fewer rights, pass `--scope`.
+
+## Create personal API keys
+
+Create personal keys in the browser at `<server>/me/developer` after signing
+in within the last ten minutes. `cld account api-keys create` cannot create a
+personal key using its OAuth login or another API key: Cloud returns
+`BROWSER_SIGN_IN_REQUIRED`, and the command prints the browser URL. With
+`REAUTHENTICATE`, sign in again there before creating the key. Do not retry
+automatically. Resource and standalone service-account keys use their existing
+commands and rules.
 
 ## Profiles
 

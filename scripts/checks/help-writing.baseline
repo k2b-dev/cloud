@@ -1,6 +1,11 @@
-# Known help-writing findings, one per line: <file> | <step|term> | <detail>.
+# Known help-writing findings, one per line: <file> | <step|steps|term|frontmatter> | <detail>.
 # The Help rewrite removes lines until the file is empty; the rule never adds lines.
 # `bun scripts/check.ts help-writing --fix` removes lines whose finding is gone.
+packages/accounts/src/help/documents/en/accounts-admin.help.md | frontmatter | kind
+packages/accounts/src/help/documents/en/accounts-cli.help.md | frontmatter | kind
+packages/accounts/src/help/documents/en/accounts-lifecycle.help.md | frontmatter | kind
+packages/accounts/src/help/documents/en/accounts-start.help.md | frontmatter | kind
+packages/api-docs/src/help/documents/en/api-docs-start.help.md | frontmatter | kind
 packages/api-docs/src/help/documents/en/api-docs-start.help.md | term | grant
 packages/assistant/src/help/documents/de/assistant-guidance.help.md | step | Ergebnis benennen: Beschreibe, was du erhalten möchtest, etwa
 packages/assistant/src/help/documents/de/assistant-guidance.help.md | step | Ergänzende Details unter Zusatzinformationen ablegen: Füge dort Richtlinien,
@@ -29,6 +34,7 @@ packages/assistant/src/help/documents/de/assistant-workflow.help.md | term | Les
 packages/assistant/src/help/documents/de/assistant-workflow.help.md | term | Schreibzugriff
 packages/assistant/src/help/documents/de/assistant-workflow.help.md | term | klick*
 packages/assistant/src/help/documents/de/assistant-workflow.help.md | term | klick*
+packages/assistant/src/help/documents/en/assistant-guidance.help.md | frontmatter | kind
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | step | Ask for a check: For important work, ask
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | admins
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | grant
@@ -40,6 +46,7 @@ packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | per
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | permissions
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | rights
 packages/assistant/src/help/documents/en/assistant-guidance.help.md | term | rights
+packages/assistant/src/help/documents/en/assistant-overview.help.md | frontmatter | kind
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | application
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | application
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | application
@@ -47,6 +54,7 @@ packages/assistant/src/help/documents/en/assistant-overview.help.md | term | app
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | application
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | applications
 packages/assistant/src/help/documents/en/assistant-overview.help.md | term | grant
+packages/assistant/src/help/documents/en/assistant-workflow.help.md | frontmatter | kind
 packages/assistant/src/help/documents/en/assistant-workflow.help.md | term | admin
 packages/assistant/src/help/documents/en/assistant-workflow.help.md | term | click*
 packages/assistant/src/help/documents/en/assistant-workflow.help.md | term | click*
@@ -58,8 +66,27 @@ packages/assistant/src/help/documents/en/assistant-workflow.help.md | term | tap
 packages/assistant/src/help/documents/en/assistant-workflow.help.md | term | write access
 packages/chat/src/help/documents/de/chat-start.help.md | term | Administratoren
 packages/chat/src/help/documents/de/chat-start.help.md | term | Administratoren
+packages/chat/src/help/documents/en/chat-members.help.md | frontmatter | kind
+packages/chat/src/help/documents/en/chat-send.help.md | frontmatter | kind
+packages/chat/src/help/documents/en/chat-start.help.md | frontmatter | kind
+packages/chat/src/help/documents/en/chat-unread.help.md | frontmatter | kind
+packages/contacts/src/help/documents/en/contacts-books-sharing.help.md | frontmatter | kind
+packages/contacts/src/help/documents/en/contacts-hierarchy.help.md | frontmatter | kind
+packages/contacts/src/help/documents/en/contacts-start.help.md | frontmatter | kind
+packages/contacts/src/help/documents/en/contacts-work.help.md | frontmatter | kind
+packages/core/src/help/documents/de/core-admin.help.md | steps | Wähle unter App-Zugänge die Option Zugang erstellen.
+packages/core/src/help/documents/en/core-admin.help.md | frontmatter | kind
+packages/core/src/help/documents/en/core-admin.help.md | steps | In App credentials, choose Create credential.
+packages/core/src/help/documents/en/core-notifications.help.md | frontmatter | kind
+packages/core/src/help/documents/en/core-profile.help.md | frontmatter | kind
+packages/core/src/help/documents/en/core-security.help.md | frontmatter | kind
+packages/core/src/help/documents/en/core-start.help.md | frontmatter | kind
+packages/dashboard/src/help/documents/en/dashboard-start.help.md | frontmatter | kind
+packages/dashboard/src/help/documents/en/dashboard-troubleshooting.help.md | frontmatter | kind
 packages/faq/src/help/documents/de/faq-admin.help.md | term | Administratoren
 packages/faq/src/help/documents/de/faq-start.help.md | term | Administratorrecht*
+packages/faq/src/help/documents/en/faq-admin.help.md | frontmatter | kind
+packages/faq/src/help/documents/en/faq-start.help.md | frontmatter | kind
 packages/faq/src/help/documents/en/faq-start.help.md | term | admin
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Administrator
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Adminrecht*
@@ -84,6 +111,7 @@ packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | klick*
 packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | klick*
 packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | klick*
 packages/filesv2/src/help/documents/de/filesv2-start.help.md | term | klick*
+packages/filesv2/src/help/documents/en/filesv2-admin.help.md | frontmatter | kind
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | application
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | application
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | application
@@ -98,6 +126,7 @@ packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | permission
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | permissions
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | permissions
 packages/filesv2/src/help/documents/en/filesv2-admin.help.md | term | permissions
+packages/filesv2/src/help/documents/en/filesv2-start.help.md | frontmatter | kind
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | click*
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | click*
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | click*
@@ -108,18 +137,75 @@ packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | click*
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | grant
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | granting
 packages/filesv2/src/help/documents/en/filesv2-start.help.md | term | write access
+packages/gateway-ops/src/help/documents/en/gateway-ops-incident.help.md | frontmatter | kind
+packages/gateway-ops/src/help/documents/en/gateway-ops-operations.help.md | frontmatter | kind
+packages/gateway-ops/src/help/documents/en/gateway-ops-reference.help.md | frontmatter | kind
+packages/gateway-ops/src/help/documents/en/gateway-ops-start.help.md | frontmatter | kind
+packages/grids/src/help/documents/de/grids-build-business-app.help.md | steps | Lege Entscheidungen fest. Lege fest, wer handeln darf,
+packages/grids/src/help/documents/de/grids-combined-tables.help.md | steps | Erstelle die Tabelle: Wähle Neue Tabelle und dann
+packages/grids/src/help/documents/de/grids-evidence-exports.help.md | steps | Öffne Base-Einstellungen → Nachweispakete.
+packages/grids/src/help/documents/de/grids-workflows.help.md | steps | Öffne im Bearbeitungsmodus den Bereich Workflows und erstelle
+packages/grids/src/help/documents/en/grids-build-base.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-build-business-app.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-build-business-app.help.md | steps | Define decisions. Name the actors, the prerequisites, the
+packages/grids/src/help/documents/en/grids-build-custom-app.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-combined-tables.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-combined-tables.help.md | steps | Create the table: Choose New table and select
+packages/grids/src/help/documents/en/grids-core-model.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-custom-app-api.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-custom-app-pages-blocks.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-custom-app-yaml-cli.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-custom-apps.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-data-exchange.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-documents-pdfs.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-evidence-exports.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-evidence-exports.help.md | steps | Open base settings → Evidence exports.
+packages/grids/src/help/documents/en/grids-field-configuration.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-financial-formats.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-forms.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-formulas.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-gql.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-operations-troubleshooting.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-overview.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-permissions.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-publish-custom-app.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-retention-preservation.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-tables-fields.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-views-reports.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-workflows.help.md | frontmatter | kind
+packages/grids/src/help/documents/en/grids-workflows.help.md | steps | In Edit mode, open Workflows and create a
 packages/ipa-hosts/src/help/documents/de/ipa-hosts-start.help.md | term | Administratorrecht*
+packages/ipa-hosts/src/help/documents/en/ipa-hosts-start.help.md | frontmatter | kind
 packages/ipa-hosts/src/help/documents/en/ipa-hosts-start.help.md | term | admin
 packages/ipa-hosts/src/help/documents/en/ipa-hosts-start.help.md | term | admin
 packages/ipa-hosts/src/help/documents/en/ipa-hosts-start.help.md | term | admin
 packages/ipa-hosts/src/help/documents/en/ipa-hosts-start.help.md | term | admins
+packages/ipa-hosts/src/help/documents/en/ipa-hosts-troubleshooting.help.md | frontmatter | kind
+packages/mail/src/help/documents/de/mail-troubleshooting.help.md | steps | Leere die aktuelle Suche. Prüfe, ob die Unterhaltung
+packages/mail/src/help/documents/en/mail-troubleshooting.help.md | steps | Clear the current search. Check that the conversation
+packages/notebooks/src/help/documents/en/notebooks-core-model.help.md | frontmatter | kind
+packages/notebooks/src/help/documents/en/notebooks-settings-access.help.md | frontmatter | kind
+packages/notebooks/src/help/documents/en/notebooks-start.help.md | frontmatter | kind
+packages/notebooks/src/help/documents/en/notebooks-structured-blocks.help.md | frontmatter | kind
+packages/notebooks/src/help/documents/en/notebooks-table-formulas.help.md | frontmatter | kind
+packages/notebooks/src/help/documents/en/notebooks-troubleshooting.help.md | frontmatter | kind
+packages/notebooks/src/help/documents/en/notebooks-write-organize.help.md | frontmatter | kind
 packages/proxy-auth/src/help/documents/de/proxy-auth-start.help.md | term | Administratorrecht*
+packages/proxy-auth/src/help/documents/en/proxy-auth-setup.help.md | frontmatter | kind
+packages/proxy-auth/src/help/documents/en/proxy-auth-start.help.md | frontmatter | kind
 packages/proxy-auth/src/help/documents/en/proxy-auth-start.help.md | term | admin
 packages/proxy-auth/src/help/documents/en/proxy-auth-start.help.md | term | admins
 packages/proxy-auth/src/help/documents/en/proxy-auth-start.help.md | term | login
+packages/proxy-auth/src/help/documents/en/proxy-auth-troubleshooting.help.md | frontmatter | kind
 packages/proxy-auth/src/help/documents/en/proxy-auth-troubleshooting.help.md | term | login
 packages/proxy-auth/src/help/documents/en/proxy-auth-troubleshooting.help.md | term | login
 packages/proxy-auth/src/help/documents/en/proxy-auth-troubleshooting.help.md | term | login
+packages/tools/src/help/documents/en/tools-choose.help.md | frontmatter | kind
+packages/tools/src/help/documents/en/tools-document-markdown.help.md | frontmatter | kind
+packages/tools/src/help/documents/en/tools-image-converter.help.md | frontmatter | kind
+packages/tools/src/help/documents/en/tools-markdown-pdf.help.md | frontmatter | kind
+packages/tools/src/help/documents/en/tools-safety.help.md | frontmatter | kind
+packages/tools/src/help/documents/en/tools-start.help.md | frontmatter | kind
 packages/venue/src/help/documents/de/venue-start.help.md | term | Admin
 packages/venue/src/help/documents/de/venue-start.help.md | term | Admin
 packages/venue/src/help/documents/de/venue-start.help.md | term | Administratoren
@@ -154,12 +240,14 @@ packages/venue/src/help/documents/de/venue-work.help.md | term | Admins
 packages/venue/src/help/documents/de/venue-work.help.md | term | Berechtigung*
 packages/venue/src/help/documents/de/venue-work.help.md | term | klick*
 packages/venue/src/help/documents/de/venue-work.help.md | term | klick*
+packages/venue/src/help/documents/en/venue-start.help.md | frontmatter | kind
 packages/venue/src/help/documents/en/venue-start.help.md | term | admin
 packages/venue/src/help/documents/en/venue-start.help.md | term | admins
 packages/venue/src/help/documents/en/venue-start.help.md | term | admins
 packages/venue/src/help/documents/en/venue-start.help.md | term | admins
 packages/venue/src/help/documents/en/venue-start.help.md | term | admins
 packages/venue/src/help/documents/en/venue-start.help.md | term | admins
+packages/venue/src/help/documents/en/venue-troubleshooting.help.md | frontmatter | kind
 packages/venue/src/help/documents/en/venue-troubleshooting.help.md | term | admin
 packages/venue/src/help/documents/en/venue-troubleshooting.help.md | term | admin
 packages/venue/src/help/documents/en/venue-troubleshooting.help.md | term | admin
@@ -170,6 +258,7 @@ packages/venue/src/help/documents/en/venue-troubleshooting.help.md | term | admi
 packages/venue/src/help/documents/en/venue-troubleshooting.help.md | term | admins
 packages/venue/src/help/documents/en/venue-troubleshooting.help.md | term | grant
 packages/venue/src/help/documents/en/venue-troubleshooting.help.md | term | read access
+packages/venue/src/help/documents/en/venue-work.help.md | frontmatter | kind
 packages/venue/src/help/documents/en/venue-work.help.md | term | admin
 packages/venue/src/help/documents/en/venue-work.help.md | term | admin
 packages/venue/src/help/documents/en/venue-work.help.md | term | admin
@@ -196,3 +285,6 @@ packages/venue/src/help/documents/en/venue-work.help.md | term | permission
 packages/venue/src/help/documents/en/venue-work.help.md | term | read access
 packages/venue/src/help/documents/en/venue-work.help.md | term | tap
 packages/weather/src/help/documents/de/weather-start.help.md | term | Administratorrecht*
+packages/weather/src/help/documents/en/weather-read.help.md | frontmatter | kind
+packages/weather/src/help/documents/en/weather-start.help.md | frontmatter | kind
+packages/weather/src/help/documents/en/weather-troubleshooting.help.md | frontmatter | kind

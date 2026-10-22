@@ -38,9 +38,16 @@ Notizbücher sind Arbeitsbereiche für Wissen in Markdown. Dein Text bleibt zuer
 :::reference
 - **Notizen erfassen:** Öffne ein Notizbuch und erstelle oder wähle eine Notiz. Halte Entscheidungen, Besprechungen, Recherchen, Rezepte, Pläne und kleine Aufgabenlisten in Markdown fest.
 - **Notiz herunterladen:** Öffne die Notizdetails. Lade den aktuellen Inhalt als Markdown oder PDF herunter.
-- **Inhalt des PDFs:** Das PDF zeigt die Notiz wie die Buchansicht, mit Hinweisen, benannten Daten, Inhaltsverzeichnis und Abfrageergebnissen. Bilder erscheinen als ihre Beschreibung, Diagramme als Quelltext.
+- **Inhalt des PDFs:** Das PDF zeigt die Notiz wie die Buchansicht, mit Hinweisen, benannten Daten, Inhaltsverzeichnis und Abfrageergebnissen. Angehängte JPEG-, PNG-, WebP- und GIF-Bilder erscheinen in der Größe der Buchansicht, Diagramme als Quelltext. SVG-Anhänge werden noch nicht gedruckt. Externe Bilder erscheinen, wenn der Cloud-Server sie über eine öffentliche HTTPS-Adresse ohne Weiterleitung erreichen kann. Nach dem Download zeigt dir der Dialog, was das PDF nicht aufnehmen konnte. Das PDF markiert jede Stelle.
+- **Links im PDF:** Links zu anderen Notizen, deren Überschriften, Tags und Anhängen öffnen Cloud und benötigen weiterhin Anmeldung und Zugriff auf das Notizbuch. Links zur exportierten Notiz bleiben im PDF.
 - **Format des PDFs:** Der PDF-Export bietet drei A4-Vorlagen und **Eigenes CSS**. Notebooks verarbeitet das aktuelle Markdown, das CSS und das PDF im Arbeitsspeicher und speichert das PDF nicht.
 - **Wissen verbinden:** Nutze Notizlinks, Tags und Anhänge. So findet man verwandte Informationen, ohne alles in eine Datei zu verschieben.
 - **Kleine Daten pflegen:** Nutze Markdown-Tabellen und benannte Blöcke für kleine Datenbestände, die neben ihren Text gehören.
 - **Verzeichnis erstellen:** Frage Notizen nach Tags und eigenen benannten Daten ab. Ergebnisse aktualisieren sich nach gespeicherten Änderungen und führen keinen Code aus.
 :::
+
+## Eine offene Notiz drucken {icon="printer"}
+
+Mit **Cmd/Strg+P** druckst du die offene Notiz wie in der Buchansicht, ohne Editor und Seitenpanel. Diagramme erscheinen wie gezeichnet; Abfragen als ihre Definition.
+
+Für die Druckstile **Dokument**, **Bericht**, **Kompakt** und **Eigenes CSS** nutze **PDF herunterladen** in den Details der Notiz.

@@ -5,7 +5,7 @@ section: Reference
 order: 1230
 description: Look up supported setting kinds, defaults, validation, and environment behavior.
 tags: [settings, environment, validation]
-updated: 2026-09-10
+updated: 2026-10-16
 ---
 
 # Settings kinds and environment
@@ -74,9 +74,14 @@ Cloud resolves a setting in this order:
 
 The public setting entry reports `custom`, `env`, or `default` as its source.
 
-At startup, `envBootstrap` writes a custom value when no persisted row exists.
-It runs again after that row is removed. Use it only to import an existing
-deployment value into Cloud.
+At startup, `envBootstrap` writes a custom value only when no stored row exists.
+Unreadable and invalid rows stay unchanged. It runs again after the row is
+removed. Use it only to import an existing deployment value into Cloud.
+While a stored row is unreadable or invalid, reads use `envFallback` or the
+default, never `envBootstrap`. Declare both when the environment value should
+apply in that case, as `app.url` and `gotenberg.url` do.
+See [Keep the encryption key stable](/en/docs/data/secrets-and-persistent-state#keep-the-encryption-key-stable)
+before changing `APP_SECRET`.
 
 ## Read and write values
 

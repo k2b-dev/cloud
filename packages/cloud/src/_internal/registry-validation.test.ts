@@ -83,3 +83,25 @@ test("validates optional outgoing mail permission declarations", () => {
   for (const platformPermissions of ["mail:send", ["unknown"], [1]])
     expect(validateAppRegistryEntry({ ...valid, platformPermissions })).toContain("platformPermissions");
 });
+
+test("validates panel shape, owned href, presentation and role array", () => {
+  const entry = { ...valid, routes: ["/app/fixture"] };
+  const panel = { href: "/app/fixture/panel", label: "Fixture", icon: "ti ti-box", requiresRoles: ["user"] };
+  expect(validateAppRegistryEntry({ ...entry, panel })).toBeNull();
+  for (const href of ["/other", "//host/x", "https://host/x", "/app/fixture/../../other", 1]) {
+    expect(validateAppRegistryEntry({ ...entry, panel: { ...panel, href } })).toContain("panel.href");
+  }
+  for (const field of ["label", "icon"] as const) {
+    for (const value of ["", "  ", 1, null])
+      expect(validateAppRegistryEntry({ ...entry, panel: { ...panel, [field]: value } })).toContain(`panel.${field}`);
+  }
+  for (const requiresRoles of ["user", [1], null])
+    expect(validateAppRegistryEntry({ ...entry, panel: { ...panel, requiresRoles } })).toContain("panel.requiresRoles");
+  for (const value of [null, [], "fixture"]) expect(validateAppRegistryEntry({ ...entry, panel: value })).toContain("panel");
+  const presentation = { baseLocale: "en", translations: { de: { panelLabel: "Inventar" } } };
+  expect(validateAppRegistryEntry({ ...entry, panel, presentation })).toBeNull();
+  expect(validateAppRegistryEntry({ ...entry, presentation })).toContain("panelLabel");
+  expect(
+    validateAppRegistryEntry({ ...entry, panel, presentation: { ...presentation, translations: { de: { panelLabel: 1 } } } }),
+  ).toContain("panelLabel");
+});

@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-10-06
+updated: 2026-10-20
 ---
 
 # Resource authorization
@@ -426,19 +426,40 @@ account, and changing group membership. Some built-in applications still use
 their own older check; see
 [Resources keep at least one manager](/en/docs/reference/deprecations-and-migrations#resources-keep-at-least-one-manager).
 
+### Show names instead of IDs
+
 Call `resolveDisplayNames()` when adapter entries do not include names. It also
 accepts `{principal}` records for a proposed grant, preserves supplied fields,
-and adds `displayName`, optional `avatarHash`, and, for service-account
+and adds optional `displayName`, optional `avatarHash`, and, for service-account
 principals, `serviceAccountKind`. A person's `displayName` is their display
 name, or their login name when they have none, so every permission editor names
 people the same way. Authorize the resource operation
 before resolving names. A confirmation should show both name and principal ID;
 names are presentation, never identity or authorization.
 
+Missing principals have no `displayName`; audiences carry no stored name.
+Use `principalLabel(entry, locale)` from `@k2b/cloud/shared` or
+`@k2b/cloud/access/ui` whenever naming a principal for people. It localizes
+audiences and missing names, formats group names for the locale, and never
+falls back to an ID. Keep IDs beside the name in confirmations as described
+above. The permission editor uses this helper for names, avatars, and
+accessible labels. A missing person reads “Unknown person”, a missing group
+“Deleted group”, and a missing service account “Unknown service account”
+(or “Unknown agent” when its kind is known).
+
+Return resolved entries from grant responses too: call
+`resolveDisplayNames([entry])` after authorizing the grant. The editor keeps
+picker metadata when the response omits it; supplied server metadata wins.
+Do not resolve additional identities for viewers who cannot already see them.
+
+### List and pick principals
+
 `listUsersWithAccess()` expands direct user and nested group grants for bounded
 pickers. It supports search, included and excluded user IDs, a minimum
 permission, and a limit from `1` to `500`. It does not expand `public` or
 `authenticated` into every account.
+Search results list exact login-name matches first, then exact display-name
+matches, so a limit never hides them.
 
 Keep grant editing and credential creation separate. The permission editor
 must not display raw keys or own secret lifecycle.
@@ -446,14 +467,27 @@ must not display raw keys or own secret lifecycle.
 
 For assignment forms that need identity selection without permission levels,
 use `PrincipalPicker` from `@k2b/cloud/access/ui`. Its `onSelect` callback returns
-a `Principal` and display metadata: `displayName` and, for service accounts,
-`serviceAccountKind`. The consumer owns persistence and authorization.
+a `Principal` and display metadata: `displayName`, optional `avatarHash`, and,
+for service accounts, `serviceAccountKind`. The consumer owns persistence and authorization.
 Pass `existing` to exclude already selected principals. Users and groups are
 searched through Accounts after two characters; personal Linux groups are left
 out, so people are granted directly. All signed-in users are
 available by default; `allowAuthenticated={false}` removes that option.
 Public and service-account selection require `allowPublic` and
 `allowServiceAccounts` respectively. This picker grants no access itself.
+
+### Keep the editor mounted across refetches
+
+`PermissionEditor` mounts from `initialEntries` and keeps its own copy after
+successful changes. It keeps rows by entry id and merges a later changed
+`initialEntries` list once no change is saving. Rows the caller changed since
+its previous list replace the editor's rows; unchanged rows keep the editor's
+confirmed result, so a refetch that started before a save does not undo it.
+
+Keep the editor mounted during a refresh. Do not wrap it in a keyed `Show` or
+`Match`, or hide it while a query is refreshing: remounting drops keyboard
+focus and closes open group member lists. The `access-editor-mounts`
+repository check enforces these mounting rules.
 
 ### Restrict editor levels by principal
 
@@ -463,6 +497,11 @@ used for both new grants and existing rows. For example, return `["read"]` for
 public recipients and `["read", "admin"]` for users and groups. A single allowed
 level renders as a fixed badge. Enforce the same restriction in the resource's
 service; the editor does not authorize requests.
+
+A pick appears at once as a pending row. The picker keeps focus but accepts no
+new pick until the server answers, so `grantAccess`, `updateAccess`, and
+`revokeAccess` never run concurrently from one editor. A failed grant removes
+its row and shows the error, also when the dialog closed meanwhile.
 
 ### Offer a level on part of the resource
 
@@ -476,6 +515,11 @@ argument and to `updateAccess` as the third; a whole-resource level passes
 `undefined`. Return `scope` on the `AccessEntry` of a scoped grant. A scoped
 grant never counts as a manager. The application stores the scope and enforces
 it in its service.
+
+While a change saves, rows keep their permission pickers, disabled until it
+finishes; only the changed row shows progress and, for a level change, the
+chosen level. If the update fails, it returns to the stored level and shows
+an error.
 
 ### Show the last manager
 
@@ -525,6 +569,11 @@ the manager it hides and offer a change the service refuses.
 
 Rows for all signed-in users and for the public always show the editor's
 localized label, whatever `displayName` the entry carries.
+
+A member list of your own that loads its entries page by page cannot count the
+managers it shows. Let its service return the number of managers, counted the
+way its `ensureManagerRemains()` check counts them, and lock a row when
+`isManagerEntry(row)` from `@k2b/cloud/access/ui` is true and that number is 1.
 
 ### Show service-account kinds
 

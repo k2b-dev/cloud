@@ -4,8 +4,9 @@ import apiRoutes from "./api";
 import { pulseCapabilities } from "./capabilities";
 import { app, ssr } from "./config";
 import pageRoutes from "./frontend";
+import adminPages from "./frontend/admin/page";
 import { pulseHelp } from "./help";
-import { initializeSchema } from "./schema";
+import { migrate } from "./migrate";
 import { pulseService } from "./service";
 import { pulseRuntime } from "./service/runtime";
 
@@ -13,7 +14,8 @@ const router = new Hono<AuthContext>()
   .use("*", middleware.runtime())
   .use("*", middleware.settings())
   .route("/api/pulse", apiRoutes)
-  .route("/app/pulse", pageRoutes);
+  .route("/app/pulse", pageRoutes)
+  .route("/admin/pulse", adminPages);
 
 router.get("/app/pulse/*", auth.requireRole("*"), (c) => ssr.error(c, 404));
 
@@ -24,7 +26,7 @@ export default await app.start({
   openapi: apiRoutes,
   lifecycle: {
     setup: async () => {
-      await initializeSchema();
+      await migrate();
     },
     start: async () => {
       await pulseRuntime.start();

@@ -30,7 +30,9 @@ A notebook is a shared workspace. A note is a Markdown source document in it. Na
 - **Book:** Read the note as a web page with navigation and tag filters. Book has no editor and no discussion panel.
 :::
 
-**View** access always opens Book. With **Edit** or **Manage** access, you can switch views. People with **Manage** access choose the shared default view in the settings. A view in the URL comes before the default. Locked notes open in **Read-only** instead of **Write**.
+**View** access always opens Book. With **Edit** or **Manage** access, you can switch views. People with **Manage** access choose the shared default view in the settings. A view in the URL comes before the default. Locked notes open in **Read-only** instead of **Write**. In **Book**, **Write** at the top of the navigation opens the note for editing. People with **Edit** or **Manage** access see it.
+
+**Links** at the bottom of the navigation opens the graph in every view, also with **View** access.
 
 In **Write**, a colored cursor shows where another person is working. Their name sits as a small flag on top of the cursor. It shows while they type or move the cursor. After a few seconds without activity, only a dot stays at the top of the cursor. With a mouse or trackpad, point at the dot to see the name again.
 

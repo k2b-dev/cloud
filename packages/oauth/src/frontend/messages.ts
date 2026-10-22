@@ -141,6 +141,10 @@ export const oauthMessages = i18n.define({
       requestedAccess: "Requested access",
       deny: "Deny",
       allowAccess: "Allow access",
+      confirmIdentity: "Confirm identity",
+      confirmIdentityHint:
+        "Access that stays signed in needs a recent sign-in. Your last sign-in in this browser was more than 10 minutes ago, so sign in again first.",
+      firstPartyOwnRequest: "Only allow this if you just started the sign-in yourself, for example with cld login.",
       permissionLimit: "Cloud permissions still limit which application resources this client can use.",
       scopeConsentRead: "Read data and Help available to your account",
       scopeConsentWrite: "Perform changes available to your account",
@@ -176,6 +180,7 @@ export const oauthMessages = i18n.define({
       deviceExpiredBody: "This sign-in request expired or was already answered. Start the sign-in on your device again.",
       deviceSessionRequired: "Approving a device requires a browser sign-in. API keys and access tokens cannot approve devices.",
       webSessionRequired: "Granting access works only on the web. The mobile app cannot grant access to other applications.",
+      deviceSignInAgain: "Sign in again in the browser, then enter the code again.",
       deviceNoAccess: "Your account is not allowed to use this application.",
       deviceEnterAnother: "Enter another code",
     },
@@ -317,6 +322,10 @@ export const oauthMessages = i18n.define({
       requestedAccess: "Angeforderter Zugriff",
       deny: "Ablehnen",
       allowAccess: "Zugriff erlauben",
+      confirmIdentity: "Identität bestätigen",
+      confirmIdentityHint:
+        "Ein Zugang, der angemeldet bleibt, braucht eine frische Anmeldung. Deine letzte Anmeldung in diesem Browser ist mehr als 10 Minuten her, melde dich deshalb zuerst erneut an.",
+      firstPartyOwnRequest: "Erlaube das nur, wenn du die Anmeldung gerade selbst gestartet hast, zum Beispiel mit cld login.",
       permissionLimit: "Cloud-Berechtigungen begrenzen weiterhin, welche Ressourcen diese Anwendung verwenden darf.",
       scopeConsentRead: "Für dein Konto verfügbare Daten und Hilfe lesen",
       scopeConsentWrite: "Für dein Konto verfügbare Änderungen ausführen",
@@ -354,6 +363,7 @@ export const oauthMessages = i18n.define({
       deviceSessionRequired:
         "Zum Bestätigen eines Geräts ist eine Anmeldung im Browser erforderlich. API-Schlüssel und Access-Tokens können keine Geräte bestätigen.",
       webSessionRequired: "Zugriff freigeben geht nur im Web. Die Mobile App kann anderen Anwendungen keinen Zugriff geben.",
+      deviceSignInAgain: "Melde dich erneut im Browser an und gib den Code noch einmal ein.",
       deviceNoAccess: "Dein Konto darf diese Anwendung nicht verwenden.",
       deviceEnterAnother: "Anderen Code eingeben",
     },

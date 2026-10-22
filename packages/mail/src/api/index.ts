@@ -3,6 +3,7 @@ import { CloudResourceRefSchema, ErrorResponseSchema } from "@k2b/cloud/contract
 import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono, type Next } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -18,10 +19,10 @@ import {
   spacesMailDestinationsSchema,
 } from "../app-integration-contracts";
 import { attachmentPreviewKind, attachmentPreviewSignatureMatches, baseAttachmentContentType } from "../attachment-preview-policy";
-import { requestContactDirectory } from "../contact-directory-settings";
 import {
   type AttachmentLink,
   type AttachmentLinkPage,
+  acquiredDraftLeaseSchema,
   archiveComposeTemplateInputSchema,
   automaticReplyManagementPermissionSchema,
   cancelConversationReminderSchema,
@@ -53,6 +54,7 @@ import {
   deriveDraftFromMessageInputSchema,
   draftContentInputSchema,
   draftEditableContentInputSchema,
+  draftLeaseSchema,
   draftLeaseTokenSchema,
   draftSchema,
   folderDisplayChangeSchema,
@@ -60,6 +62,7 @@ import {
   MAX_MAILBOX_PREFERENCES,
   type MailCommand,
   type MailCommandInput,
+  mailboxComposeLogoSchema,
   mailboxGrantAccessSchema,
   mailboxSchema,
   mailboxUpdateAccessSchema,
@@ -75,6 +78,8 @@ import {
   mailFocusViewSchema,
   mailFolderSchema,
   mailingListDispositionInputSchema,
+  mailRecipientSuggestionsQuerySchema,
+  mailRecipientSuggestionsSchema,
   mailSyncRunPageSchema,
   mailSyncRunStateSchema,
   maintenanceCommandInputSchema,
@@ -100,11 +105,13 @@ import {
   updateConversationCollaborationSchema,
   updateConversationCommentSchema,
   updateConversationSummarySchema,
+  updateMailboxComposeLogoInputSchema,
   updateMailboxComposeStyleInputSchema,
   updateSavedConversationViewSchema,
   updateSenderIdentityInputSchema,
   updateSenderIdentityTransportInputSchema,
 } from "../contracts";
+import { MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../search-url";
 import {
   createMailProtectedIdentityInputSchema,
   createMailSecurityPolicyInputSchema,
@@ -146,6 +153,7 @@ import {
   presence,
   providerConnections,
   publicResources,
+  recipientSuggestions,
   reminders,
   savedViews,
   scheduledSends,
@@ -159,12 +167,13 @@ import {
   triage,
 } from "../service";
 import { resolveByteRange } from "../service/byte-range";
+import { requestContactDirectory } from "../service/contact-directory";
 import { localizeMailError } from "../service/error-messages";
 import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
 import type { AttachmentDownload } from "../service/messages";
 import { discoverMailConfigurations } from "../service/onboarding-discovery";
-import { loadMailboxConversationDetail, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
+import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData, resolveWorkspaceRequest } from "../service/workspace";
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
 import contactDirectoryRoutes from "./contact-directory";
@@ -254,7 +263,7 @@ const activityQuerySchema = cursorQuerySchema.extend({
   conversationId: ResourceShortIdSchema.optional(),
 });
 const workspaceRouteQuerySchema = z.object({
-  href: z.string().trim().min(1).max(4_000),
+  href: z.string().trim().min(1).max(MAX_MAIL_WORKSPACE_HREF_LENGTH),
   listMode: z.enum(["conversations", "messages"]).default("conversations"),
 });
 const attachmentQuerySchema = z.object({
@@ -355,7 +364,13 @@ const conversationKeepResponseSchema = z.object({
   }),
 });
 const conversationKeepReleaseResponseSchema = z.object({ conversationId: ResourceShortIdSchema, released: z.boolean() });
-const acquireDraftLeaseSchema = z.object({ takeover: z.boolean().default(false) }).strict();
+const acquireDraftLeaseSchema = z
+  .object({
+    takeover: z.boolean().default(false),
+    /** One editor instance; a repeated acquire with the same id returns that instance's own lease. */
+    editorId: z.string().uuid().optional(),
+  })
+  .strict();
 const notificationTargetParamSchema = z.object({
   mailboxId: ResourceShortIdSchema,
   kind: z.literal("reminder"),
@@ -870,6 +885,23 @@ const mailOperationsApi = new Hono<MailApiContext>()
     });
     return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
   })
+  .get("/mailboxes/:mailboxId/workspace-list", v("param", mailboxParamSchema), v("query", workspaceRouteQuerySchema), async (c) => {
+    const mailboxId = internalMailboxId(c);
+    const query = c.req.valid("query");
+    const publicUrl = parseWorkspaceRouteUrl(c.req.valid("param").mailboxId, query.href);
+    publicUrl?.searchParams.delete("conversation");
+    publicUrl?.searchParams.delete("message");
+    const request = publicUrl ? await resolveWorkspaceRequest(publicUrl, mailboxId) : null;
+    if (!request) return respondPublic(c, fail(err.badInput("Workspace route must target this mailbox")));
+    const data = await loadMailboxListView({
+      context: requestContext(c),
+      mailboxId,
+      ...request,
+      listMode: query.listMode,
+      locale: getLocale(c),
+    });
+    return respondAggregate(c, data.ok ? data : fail(err.notFound("Mailbox")));
+  })
   .get(
     "/mailboxes/:mailboxId/workspace-detail/:conversationId",
     v(
@@ -879,15 +911,46 @@ const mailOperationsApi = new Hono<MailApiContext>()
         conversationId: ResourceShortIdSchema,
       }),
     ),
+    v("query", z.object({ folder: ResourceShortIdSchema.optional() })),
     async (c) => {
       const params = internalParams(c, c.req.valid("param"));
+      const { folder } = c.req.valid("query");
+      const preferredFolderId = folder ? await publicResources.resolveMailboxPublicId("folders", internalMailboxId(c), folder) : undefined;
+      if (folder && !preferredFolderId) return respondPublic(c, fail(err.notFound("Folder")));
       const detail = await loadMailboxConversationDetail({
         context: requestContext(c),
         ...params,
+        preferredFolderId,
         locale: getLocale(c),
       });
       return respondAggregate(c, detail ? { ok: true, data: detail } : fail(err.notFound("Conversation")));
     },
+  )
+  .get(
+    "/mailboxes/:mailboxId/recipient-suggestions",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Suggest recipients this mailbox knows",
+      description: `Requires mailbox-wide read access for users and service accounts; assigned-only access is refused. Excludes the mailbox's own sender identities, Junk and deleted messages. Searches the newest ${recipientSuggestions.MAIL_RECIPIENT_SUGGESTION_WINDOW.toLocaleString("en-US")} messages. Addresses the mailbox wrote to come first, then recency and frequency decide.`,
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailRecipientSuggestionsSchema, "Recipient suggestions"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid request"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    v("query", mailRecipientSuggestionsQuerySchema),
+    async (c) =>
+      respond(
+        c,
+        recipientSuggestions.listRecipientSuggestions({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param")),
+          ...c.req.valid("query"),
+        }),
+      ),
   )
   .get(
     "/mailboxes/:mailboxId/conversations/:conversationId/context",
@@ -911,7 +974,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
         conversationContext.getConversationContext({
           context: requestContext(c),
           request: integrationRequest(c),
-          contactDirectory: requestContactDirectory(c),
+          contactDirectory: await requestContactDirectory(c),
           ...internalParams(c, c.req.valid("param") as { mailboxId: string; conversationId: string }),
           query: await internalInput(c, c.req.valid("query")),
         }),
@@ -1042,7 +1105,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       const result = await conversationContext.listRelatedMail({
         context: requestContext(c),
         request: integrationRequest(c),
-        contactDirectory: requestContactDirectory(c),
+        contactDirectory: await requestContactDirectory(c),
         ...internalParams(c, c.req.valid("param")),
         ...(await internalInput(c, c.req.valid("query"))),
       });
@@ -2449,6 +2512,65 @@ const mailOperationsApi = new Hono<MailApiContext>()
       );
     },
   )
+  .get(
+    "/mailboxes/:mailboxId/compose-logo",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Read the mailbox signature logo (write access)",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailboxComposeLogoSchema, "Mailbox signature logo"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid logo"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    async (c) => respondPublic(c, composeTemplates.getMailboxComposeLogo(requestContext(c), internalMailboxId(c))),
+  )
+  .put(
+    "/mailboxes/:mailboxId/compose-logo",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Upload an immutable mailbox signature logo (admin access)",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailboxComposeLogoSchema, "Mailbox signature logo"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid logo"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    bodyLimit({ maxSize: 136536 + 4096, onError: (c) => respond(c, fail(err.badInput("Logo upload exceeds 100 KiB plus JSON metadata"))) }),
+    v("param", mailboxParamSchema),
+    v("json", updateMailboxComposeLogoInputSchema),
+    async (c) =>
+      respondPublic(
+        c,
+        composeTemplates.updateMailboxComposeLogo({
+          context: requestContext(c),
+          mailboxId: internalMailboxId(c),
+          input: c.req.valid("json"),
+        }),
+      ),
+  )
+  .delete(
+    "/mailboxes/:mailboxId/compose-logo",
+    describeRoute({
+      tags: ["Mail:Compose"],
+      summary: "Remove the current mailbox signature logo (admin access)",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(mailboxComposeLogoSchema, "Mailbox signature logo"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid logo"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Mailbox not found"),
+      },
+    }),
+    v("param", mailboxParamSchema),
+    async (c) =>
+      respondPublic(c, composeTemplates.removeMailboxComposeLogo({ context: requestContext(c), mailboxId: internalMailboxId(c) })),
+  )
   .get("/mailboxes/:mailboxId/compose-style", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, composeTemplates.getMailboxComposeStyle(requestContext(c), internalMailboxId(c))),
   )
@@ -2680,17 +2802,44 @@ const mailOperationsApi = new Hono<MailApiContext>()
         }),
       ),
   )
-  .get("/mailboxes/:mailboxId/drafts/:draftId/lease", v("param", mailboxAndIdParamSchema("draftId")), async (c) =>
-    respondPublic(
-      c,
-      draftLeases.getDraftLease({
-        context: requestContext(c),
-        ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
-      }),
-    ),
+  .get(
+    "/mailboxes/:mailboxId/drafts/:draftId/lease",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Read the current draft editing lease",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(draftLeaseSchema.nullable(), "Read the current draft editing lease"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Editable draft not found"),
+        409: jsonResponse(ErrorResponseSchema, "DRAFT_LEASE_BUSY"),
+      },
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    async (c) =>
+      respondPublic(
+        c,
+        draftLeases.getDraftLease({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+        }),
+      ),
   )
   .post(
     "/mailboxes/:mailboxId/drafts/:draftId/lease",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Acquire the draft editing lease",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(acquiredDraftLeaseSchema, "Acquire the draft editing lease"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Editable draft not found"),
+        409: jsonResponse(ErrorResponseSchema, "DRAFT_LEASE_HELD or DRAFT_LEASE_BUSY"),
+      },
+    }),
     v("param", mailboxAndIdParamSchema("draftId")),
     v("json", acquireDraftLeaseSchema),
     async (c) =>
@@ -2699,12 +2848,24 @@ const mailOperationsApi = new Hono<MailApiContext>()
         draftLeases.acquireDraftLease({
           context: requestContext(c),
           ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
-          takeover: (await internalInput(c, c.req.valid("json"))).takeover,
+          ...(await internalInput(c, c.req.valid("json"))),
         }),
       ),
   )
   .put(
     "/mailboxes/:mailboxId/drafts/:draftId/lease",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Renew the draft editing lease",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(acquiredDraftLeaseSchema, "Renew the draft editing lease"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Editable draft not found"),
+        409: jsonResponse(ErrorResponseSchema, "DRAFT_LEASE_NOT_OWNED or DRAFT_LEASE_BUSY"),
+      },
+    }),
     v("param", mailboxAndIdParamSchema("draftId")),
     v("json", draftLeaseTokenSchema),
     async (c) =>
@@ -2719,6 +2880,18 @@ const mailOperationsApi = new Hono<MailApiContext>()
   )
   .delete(
     "/mailboxes/:mailboxId/drafts/:draftId/lease",
+    describeRoute({
+      tags: ["Mail:Drafts"],
+      summary: "Release the draft editing lease",
+      ...requiresAuth,
+      responses: {
+        200: { description: "Lease released" },
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Editable draft not found"),
+        409: jsonResponse(ErrorResponseSchema, "DRAFT_LEASE_NOT_OWNED or DRAFT_LEASE_BUSY"),
+      },
+    }),
     v("param", mailboxAndIdParamSchema("draftId")),
     v("json", draftLeaseTokenSchema),
     async (c) =>

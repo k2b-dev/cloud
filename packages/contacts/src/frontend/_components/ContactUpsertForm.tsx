@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, PanelDialog, prompts, TextInput, toast, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, InlineGuidance, PanelDialog, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { type Accessor, createSignal, onCleanup, type Setter, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactRef } from "../../service";
@@ -25,6 +25,7 @@ import {
   emptyBankAccountRow,
 } from "./ContactUpsertForm.model";
 import { type ContactFormText, contactFormErrorMessage, contactFormMessages, contactRowLabels } from "./contact-form-messages";
+import { contactOutcomeHref } from "./contact-outcome";
 
 type ContactUpsertMode = "create" | "edit";
 
@@ -46,8 +47,6 @@ type Props = {
   onSaved?: (contact: Contact) => void;
   onDeleted?: () => void;
 };
-
-const detailHref = (bookId: string, contactId: string) => `/app/contacts/${bookId}?contact=${contactId}&contactBook=${bookId}`;
 
 type IdentitySectionProps = {
   bookId: string;
@@ -357,23 +356,18 @@ const deleteContact = async (
   return intent.contact;
 };
 
-const afterSave = (
-  config: { mode: ContactUpsertMode; bookId: string; onSaved?: (contact: Contact) => void },
-  text: ContactFormText,
-  contact: Contact,
-) => {
-  toast.success(config.mode === "create" ? text.contactCreated : text.contactUpdated);
+const afterSave = (config: { mode: ContactUpsertMode; bookId: string; onSaved?: (contact: Contact) => void }, contact: Contact) => {
   if (config.onSaved) {
     config.onSaved(contact);
     return;
   }
-  navigateTo(detailHref(config.bookId, contact.id));
+  navigateTo(contactOutcomeHref(contact, config.mode === "create" ? "created" : "updated"));
 };
 
-const afterDelete = (config: { bookId: string; onDeleted?: () => void }, text: ContactFormText, contact: Contact) => {
-  toast.success(text.contactDeleted);
+const afterDelete = (config: { bookId: string; onDeleted?: () => void }, text: ContactFormText) => {
   if (config.onDeleted) {
     config.onDeleted();
+    toast.success(text.contactDeleted);
     return;
   }
   navigateTo(`/app/contacts/${config.bookId}`);
@@ -388,7 +382,7 @@ const createContactFormState = (
   initialValues: ContactUpsertInitialValues | undefined,
   rowLabels: ContactRowLabels,
 ) => {
-  const draft = initialContact ? contactToUpsertDraft(initialContact, rowLabels) : createContactUpsertDraft(initialValues, rowLabels);
+  const draft = initialContact ? contactToUpsertDraft(initialContact, rowLabels) : createContactUpsertDraft(initialValues ?? {}, rowLabels);
   const [label, setLabel] = createSignal(draft.label);
   const [firstName, setFirstName] = createSignal(draft.firstName);
   const [lastName, setLastName] = createSignal(draft.lastName);
@@ -503,6 +497,7 @@ export default function ContactUpsertForm(props: Props) {
   const [showAddresses, setShowAddresses] = createSignal((initialContact?.addresses.length ?? 0) > 0);
   const [showBankAccounts, setShowBankAccounts] = createSignal(bankAccounts().length > 0);
   const [confirmingDelete, setConfirmingDelete] = createSignal(false);
+  const [saveError, setSaveError] = createSignal<string | null>(null);
   let disposed = false;
 
   const draftPayload = () =>
@@ -529,14 +524,14 @@ export default function ContactUpsertForm(props: Props) {
 
   const upsertMutation = mutations.create<Contact, SaveContactConfig>({
     mutation: (intent, { abortSignal }) => saveContact(intent, t(), abortSignal),
-    onSuccess: (contact) => afterSave({ mode: props.mode, bookId: props.bookId, onSaved: props.onSaved }, t(), contact),
-    onError: (error) => prompts.error(error.message),
+    onSuccess: (contact) => afterSave({ mode: props.mode, bookId: props.bookId, onSaved: props.onSaved }, contact),
+    onError: (error) => setSaveError(error.message),
   });
 
   const removeMutation = mutations.create<Contact, { bookId: string; contact: Contact }>({
     mutation: (intent, { abortSignal }) => deleteContact(intent, t(), abortSignal),
-    onSuccess: (contact) => afterDelete({ bookId: props.bookId, onDeleted: props.onDeleted }, t(), contact),
-    onError: (error) => prompts.error(error.message),
+    onSuccess: () => afterDelete({ bookId: props.bookId, onDeleted: props.onDeleted }, t()),
+    onError: (error) => setSaveError(error.message),
   });
 
   onCleanup(() => {
@@ -547,6 +542,7 @@ export default function ContactUpsertForm(props: Props) {
 
   const handleDelete = async () => {
     if (!initialContact || confirmingDelete() || removeMutation.loading()) return;
+    setSaveError(null);
     const intent = { bookId: props.bookId, contact: initialContact };
     setConfirmingDelete(true);
     try {
@@ -559,13 +555,15 @@ export default function ContactUpsertForm(props: Props) {
       });
       if (confirmed && !disposed) void removeMutation.mutate(intent);
     } catch (error) {
-      if (!disposed) void prompts.error(error instanceof Error ? error.message : t().deleteConfirmFailed);
+      if (!disposed) setSaveError(error instanceof Error ? error.message : t().deleteConfirmFailed);
     } finally {
       if (!disposed) setConfirmingDelete(false);
     }
   };
 
   const handleSave = () => {
+    if (upsertMutation.loading() || removeMutation.loading() || confirmingDelete()) return;
+    setSaveError(null);
     try {
       const payload = draftPayload();
       void upsertMutation.mutate({
@@ -575,7 +573,7 @@ export default function ContactUpsertForm(props: Props) {
         payload: { ...payload, tagIds: [...(payload.tagIds ?? [])] },
       });
     } catch (error) {
-      void prompts.error(contactFormErrorMessage(error, t(), t().prepareFailed));
+      setSaveError(contactFormErrorMessage(error, t(), t().prepareFailed));
     }
   };
 
@@ -712,15 +710,26 @@ export default function ContactUpsertForm(props: Props) {
         </PanelDialog.Body>
 
         <PanelDialog.Footer>
-          <FooterContent
-            mode={props.mode}
-            backHref={props.backHref}
-            onCancel={props.onCancel}
-            saving={upsertMutation.loading()}
-            deleting={confirmingDelete() || removeMutation.loading()}
-            onDelete={handleDelete}
-            onSave={handleSave}
-          />
+          <div class="flex w-full flex-col gap-2">
+            <div class="h-16 shrink-0 overflow-y-auto" tabindex={saveError() ? 0 : undefined}>
+              <Show when={saveError()}>
+                {(error) => (
+                  <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+                    {error()}
+                  </InlineGuidance>
+                )}
+              </Show>
+            </div>
+            <FooterContent
+              mode={props.mode}
+              backHref={props.backHref}
+              onCancel={props.onCancel}
+              saving={upsertMutation.loading()}
+              deleting={confirmingDelete() || removeMutation.loading()}
+              onDelete={handleDelete}
+              onSave={handleSave}
+            />
+          </div>
         </PanelDialog.Footer>
       </div>
     </PanelDialog>

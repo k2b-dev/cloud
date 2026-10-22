@@ -1,6 +1,6 @@
 import type { RequestActor } from "@k2b/cloud/server";
 import { type accountIdentities, audit } from "@k2b/cloud/services";
-import { type DirectoryOptions, type Filegate, FilegateError, type Node, type RootClient, type TransferResult } from "@k2b/filegate";
+import { type DirectoryOptions, FilegateError, type Node, type TransferResult } from "@k2b/filegate";
 import { sql } from "bun";
 import type {
   AdminBrowseResult,
@@ -9,15 +9,17 @@ import type {
   ArchivePage,
   Area,
   BaseKind,
+  DirectoryMaintenanceResult,
   DirectoryTarget,
-  MaintenanceResult,
   OperationResult,
   RootSummary,
 } from "../contracts";
 import type { bindings, NewBinding } from "../data/bases";
 import { type Operation, operations, withRootLock } from "../data/operations";
+import { filegateException, pendingMigration, type UserFilesCall } from "./activity";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
+import type { FilesFilegate, FilesRoot } from "./filegate-facade";
 import { joinPath, relativePath } from "./paths";
 import { rootSummary as summary } from "./root-summary";
 
@@ -26,7 +28,7 @@ type Dependencies = {
   identities: typeof accountIdentities;
   bindings: typeof bindings;
   readConfiguration: typeof readConfiguration;
-  connect: (config: Config) => Filegate;
+  connect: (config: Config) => FilesFilegate;
 };
 const provider = (area: Area) => (area === "cloud" ? ("local" as const) : ("ipa" as const));
 const PAGE_SIZE = 50;
@@ -47,7 +49,7 @@ const result = (operation: Operation): OperationResult => ({
   state: operation.state === "pending" ? "pending" : "complete",
   path: operation.target ?? operation.source,
 });
-async function stat(root: RootClient, path: string): Promise<Node | null> {
+async function stat(root: FilesRoot, path: string): Promise<Node | null> {
   try {
     return await root.stat(path);
   } catch (error) {
@@ -63,26 +65,28 @@ const unchanged = (before: Node | null, now: Node) =>
   before.gid === now.gid &&
   before.mode === now.mode &&
   (before.id && now.id ? before.id === now.id : before.modified === now.modified && before.size === now.size);
-async function serviceUid(root: RootClient, parent: string): Promise<number> {
-  // The root directory owner may differ from the daemon. Only remove a probe
-  // whose creation succeeded; no existing directory is ever chowned here.
-  const probe = joinPath(parent, `.filesv2-owner-${crypto.randomUUID()}`);
-  let made = false;
-  try {
-    const node = await root.mkdir(probe, { ownership: { dirMode: "0700" } });
-    made = true;
-    return node.uid;
-  } finally {
-    if (made) await root.remove(probe);
-  }
+async function serviceUid(root: FilesRoot, parent: string): Promise<number> {
+  return filegateException("lifecycle.probe", async () => {
+    // The root directory owner may differ from the daemon. Only remove a probe
+    // whose creation succeeded; no existing directory is ever chowned here.
+    const probe = joinPath(parent, `.filesv2-owner-${crypto.randomUUID()}`);
+    let made = false;
+    try {
+      const node = await root.mkdir(probe, { ownership: { dirMode: "0700" } });
+      made = true;
+      return node.uid;
+    } finally {
+      if (made) await root.remove(probe);
+    }
+  });
 }
-const privateDirectory = async (root: RootClient, path: string) => {
+const privateDirectory = async (root: FilesRoot, path: string) => {
   const node = await root.stat(path);
   const owner = await serviceUid(root, path.split("/").slice(0, -1).join("/") || ".");
   if (!node.directory || node.uid !== owner || (Number.parseInt(node.mode, 8) & 0o077) !== 0)
     throw new FilesError("archive_not_private", 409);
 };
-async function ensureParents(root: RootClient, path: string, mode: string) {
+async function ensureParents(root: FilesRoot, path: string, mode: string) {
   const parts = path === "." ? [] : relativePath(path, false).split("/");
   for (let i = 1; i <= parts.length; i++) {
     const current = parts.slice(0, i).join("/");
@@ -121,7 +125,7 @@ const creationOptions = (base: NewBinding, daemonUid?: number): DirectoryOptions
     acl: { access: { entries }, default: { entries } },
   };
 };
-async function verifyCreation(root: RootClient, node: Node, base: NewBinding, daemonUid?: number) {
+async function verifyCreation(root: FilesRoot, node: Node, base: NewBinding, daemonUid?: number) {
   const expected = creationOptions(base, daemonUid);
   if (
     !node.directory ||
@@ -148,6 +152,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
     await deps.identities.inventory(actor, { kind: "groups", provider: "local" });
     const self = await deps.identities.self(actor);
     const config = await deps.readConfiguration();
+    if (config.unreadable) throw new FilesError("configuration_unreadable", 409);
     checkArea(config, area, self.availability);
     return { config, root: deps.connect(config).root(config[area].root), actorId: self.user.id, actorName: self.user.username };
   }
@@ -192,7 +197,11 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       throw new FilesError("configuration_changed", 409);
     if (op.action === "delete" && !within(op.source, active) && !op.archive_id) throw new FilesError("configuration_changed", 409);
   }
-  async function perform(config: Config, root: RootClient, operation: Operation, allowCreate = true): Promise<OperationResult> {
+  // Directory lifecycle writes join the history in a later step; until then they pass by their named key.
+  function perform(config: Config, root: FilesRoot, operation: Operation, allowCreate = true): Promise<OperationResult> {
+    return pendingMigration("lifecycle.operation", () => performOperation(config, root, operation, allowCreate));
+  }
+  async function performOperation(config: Config, root: FilesRoot, operation: Operation, allowCreate: boolean): Promise<OperationResult> {
     operationContained(config, operation);
     if (operation.archive_id) {
       const archived = await operations.get(operation.archive_id);
@@ -297,7 +306,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
   }
   async function newOperation(
     config: Config,
-    root: RootClient,
+    root: FilesRoot,
     input: Omit<Operation, "id" | "state" | "error_code" | "created_at" | "updated_at">,
   ): Promise<OperationResult> {
     const pending = await operations.pending(input.root, input.source);
@@ -449,7 +458,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
   }
   async function archiveBound(
     config: Config,
-    root: RootClient,
+    root: FilesRoot,
     input: DirectoryTarget & { archivePath?: string },
     baseId: string | null,
     actorId: string | null,
@@ -510,7 +519,8 @@ export function createDirectoryLifecycle(deps: Dependencies) {
   }
   return {
     provisionCandidate,
-    async provision(actor: RequestActor, input: { area: Area; kind: BaseKind; identityId: string }) {
+    async provision(call: UserFilesCall, input: { area: Area; kind: BaseKind; identityId: string }) {
+      const actor = call.actor;
       const state = await admin(actor, input.area);
       const page =
         input.kind === "users"
@@ -538,8 +548,9 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       };
       return provisionCandidate(state.config, base, state.actorId, state.actorName);
     },
-    archive: archiveDirectory,
-    async retire(actor: RequestActor, input: DirectoryTarget): Promise<OperationResult> {
+    archive: (call: UserFilesCall, input: DirectoryTarget & { archivePath?: string }) => archiveDirectory(call.actor, input),
+    async retire(call: UserFilesCall, input: DirectoryTarget): Promise<OperationResult> {
+      const actor = call.actor;
       const state = await admin(actor, input.area);
       return locked(state.root.name, async () => {
         const path = basePath(state.config, input);
@@ -556,7 +567,8 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         return { id: binding.id, path, state: "complete" };
       });
     },
-    async archives(actor: RequestActor, input: { area: Area; after?: string; q?: string }): Promise<ArchivePage> {
+    async archives(call: UserFilesCall, input: { area: Area; after?: string; q?: string }): Promise<ArchivePage> {
+      const actor = call.actor;
       const state = await admin(actor, input.area);
       const q = input.q?.trim() ?? "";
       const rows = await sql<
@@ -588,7 +600,8 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       }
       return { items, next: rows.length > PAGE_SIZE ? rows[PAGE_SIZE - 1]!.id : null };
     },
-    async restore(actor: RequestActor, id: string, input: { confirmPath: string }): Promise<OperationResult> {
+    async restore(call: UserFilesCall, id: string, input: { confirmPath: string }): Promise<OperationResult> {
+      const actor = call.actor;
       const state = await archiveById(actor, id);
       if (input.confirmPath !== state.op.source) throw new FilesError("confirmation_mismatch");
       return locked(state.root.name, async () => {
@@ -638,7 +651,8 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         });
       });
     },
-    async adminList(actor: RequestActor, input: AdminLocator & { after?: string }): Promise<AdminBrowseResult> {
+    async adminList(call: UserFilesCall, input: AdminLocator & { after?: string }): Promise<AdminBrowseResult> {
+      const actor = call.actor;
       const loc = await location(actor, input);
       const node = await loc.root.stat(loc.target);
       if (!node.directory) throw new FilesError("not_directory");
@@ -663,14 +677,16 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         next: page.next ?? null,
       };
     },
-    async adminDownload(actor: RequestActor, input: AdminLocator) {
+    async adminDownload(call: UserFilesCall, input: AdminLocator) {
+      const actor = call.actor;
       const loc = await location(actor, input);
       const node = await loc.root.stat(loc.target);
       if (node.directory) throw new FilesError("not_file");
       const lease = await loc.root.directDownload(loc.target, { expiresIn: 60 });
       return { url: lease.url, method: "GET" as const, expires: lease.expires };
     },
-    async adminVersions(actor: RequestActor, input: AdminLocator) {
+    async adminVersions(call: UserFilesCall, input: AdminLocator) {
+      const actor = call.actor;
       const loc = await location(actor, input);
       if ((await loc.root.stat(loc.target)).directory) throw new FilesError("not_file");
       if (!(await loc.root.info()).versioning.enabled) return [];
@@ -683,15 +699,17 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         author: typeof version.metadata?.author === "string" ? version.metadata.author : null,
       }));
     },
-    async adminDeleteVersion(actor: RequestActor, input: AdminLocator & { id: string; confirmPath: string }) {
+    async adminDeleteVersion(call: UserFilesCall, input: AdminLocator & { id: string; confirmPath: string }) {
+      const actor = call.actor;
       const loc = await location(actor, input);
       if (input.confirmPath !== loc.target) throw new FilesError("confirmation_mismatch");
       if ((await loc.root.stat(loc.target)).directory) throw new FilesError("not_file");
       if (!(await loc.root.info()).versioning.enabled) throw new FilesError("versioning_disabled");
-      await loc.root.deleteVersion(loc.target, input.id);
+      await pendingMigration("lifecycle.admin_delete_version", () => loc.root.deleteVersion(loc.target, input.id));
       return { deleted: true };
     },
-    async adminDelete(actor: RequestActor, input: AdminLocator & { confirmPath: string }): Promise<OperationResult> {
+    async adminDelete(call: UserFilesCall, input: AdminLocator & { confirmPath: string }): Promise<OperationResult> {
+      const actor = call.actor;
       const loc = await location(actor, input);
       if (input.confirmPath !== loc.target) throw new FilesError("confirmation_mismatch");
       return locked(loc.root.name, async () => {
@@ -727,14 +745,16 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         });
       });
     },
-    async deleteDirectory(actor: RequestActor, input: DirectoryTarget & { confirmPath: string }) {
-      return this.adminDelete(actor, { ...input, path: "", confirmPath: input.confirmPath });
+    async deleteDirectory(call: UserFilesCall, input: DirectoryTarget & { confirmPath: string }) {
+      return this.adminDelete(call, { ...input, path: "", confirmPath: input.confirmPath });
     },
-    async deleteArchive(actor: RequestActor, id: string, input: { confirmPath: string }) {
+    async deleteArchive(call: UserFilesCall, id: string, input: { confirmPath: string }) {
+      const actor = call.actor;
       const state = await archiveById(actor, id);
-      return this.adminDelete(actor, { area: state.op.area, archiveId: id, path: "", confirmPath: input.confirmPath });
+      return this.adminDelete(call, { area: state.op.area, archiveId: id, path: "", confirmPath: input.confirmPath });
     },
-    async retry(actor: RequestActor, id: string): Promise<OperationResult> {
+    async retry(call: UserFilesCall, id: string): Promise<OperationResult> {
+      const actor = call.actor;
       const operation = await operations.get(id);
       if (!operation) throw new FilesError("not_found", 404);
       const state = await admin(actor, operation.area);
@@ -777,7 +797,8 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         return completed;
       });
     },
-    async refreshRoot(actor: RequestActor, area: Area): Promise<RootSummary> {
+    async refreshRoot(call: UserFilesCall, area: Area): Promise<RootSummary> {
+      const actor = call.actor;
       const state = await admin(actor, area);
       await state.root.refreshStats(100_000, AbortSignal.timeout(10 * 60 * 1000));
       await audit.recordResultAfterSideEffect({
@@ -788,7 +809,8 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       });
       return summary(await state.root.info());
     },
-    async rebuildRoot(actor: RequestActor, area: Area): Promise<RootSummary> {
+    async rebuildRoot(call: UserFilesCall, area: Area): Promise<RootSummary> {
+      const actor = call.actor;
       const state = await admin(actor, area);
       if (!(await state.root.info()).index.enabled) throw new FilesError("index_disabled", 409);
       await state.root.rebuild(AbortSignal.timeout(10 * 60 * 1000));
@@ -800,9 +822,10 @@ export function createDirectoryLifecycle(deps: Dependencies) {
       });
       return summary(await state.root.info());
     },
-    async maintain(input: { signal?: AbortSignal; heartbeat?: () => Promise<void> } = {}): Promise<MaintenanceResult> {
-      const totals: MaintenanceResult = { processed: 0, archived: 0, pending: 0 };
+    async maintain(input: { signal?: AbortSignal; heartbeat?: () => Promise<void> } = {}): Promise<DirectoryMaintenanceResult> {
+      const totals: DirectoryMaintenanceResult = { processed: 0, archived: 0, pending: 0 };
       const config = await deps.readConfiguration();
+      if (config.unreadable) throw new FilesError("configuration_unreadable", 409);
       const pending = await sql<
         Operation[]
       >`SELECT * FROM filesv2.operations WHERE state='pending' ORDER BY updated_at,id LIMIT ${PAGE_SIZE}`;

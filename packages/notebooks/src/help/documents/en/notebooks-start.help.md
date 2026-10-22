@@ -38,9 +38,16 @@ Notebooks are Markdown workspaces for knowledge. Your text stays readable first.
 :::reference
 - **Capture notes:** Open a notebook, then create or select a note. Write decisions, meeting notes, research, recipes, plans, and small task lists in Markdown.
 - **Download a note:** Open the note details. Download the current content as Markdown or PDF.
-- **PDF content:** The PDF shows the note as Book shows it, with callouts, named data, contents, and query results. Images appear as their description, and diagrams as their source.
+- **PDF content:** The PDF shows the note as Book shows it, with callouts, named data, contents, and query results. Attached JPEG, PNG, WebP and GIF images appear at the size Book shows them; diagrams appear as their source. SVG attachments are not printed yet. External images print when the Cloud server can reach them at a public HTTPS address without a redirect. After the download, the dialog lists anything the PDF could not include. The PDF marks each item in place.
+- **Links in PDFs:** Links to other notes, their headings, tags, and attachments open in Cloud and still require sign-in and notebook access. Links to the exported note stay inside the PDF.
 - **PDF format:** The PDF export offers three A4 presets and **Custom**. Notebooks processes the current Markdown, the CSS, and the PDF in memory and does not store the PDF.
 - **Connect knowledge:** Use note links, tags, and attachments. People then find related information without moving everything into one file.
 - **Track small structured data:** Use Markdown tables and named blocks for small data sets that belong next to their text.
 - **Build an index:** Query notes by tags and by your own named data. Results refresh after saved changes and run no code.
 :::
+
+## Print an open note {icon="printer"}
+
+Press **Cmd/Ctrl+P** to print the open note like Book, without the editor and side panel. Diagrams print as drawn; queries print their definition.
+
+For the print styles **Document**, **Report**, **Compact**, and **Custom**, use **Download PDF** in the note's details.

@@ -95,7 +95,7 @@ try {
   `;
   created = true;
   const login = new Hono().post("/fixture", async (c) => {
-    token = await session.create(c, userId);
+    token = await session.create(c, userId, { method: "password", notify: async () => {} });
     return c.body(null, 204);
   });
   const issued = await login.request("/fixture", { method: "POST" });

@@ -1,17 +1,40 @@
-import { type AuthContext, auth, getLocale, rateLimit, respond, v } from "@k2b/cloud/server";
+import {
+  type AuthContext,
+  auth,
+  getLocale,
+  middleware,
+  REQUEST_IDLE_TIMEOUT_MAX_SECONDS,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  rateLimit,
+  respond,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
 import { FilegateError } from "@k2b/filegate";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { errorMessage } from "./api/messages";
+import { publicErrorMessage } from "./api/messages";
 import { EntryQuerySchema, PublicBrowseQuerySchema, PublicUploadInputSchema, UploadIdSchema } from "./contracts";
+import { publicUploadPath, publicUploadRateLimit } from "./public-upload-rate-limit";
 import { FilesError, filesService } from "./service";
 import { setShareAccessCookie, shareAccessCookie } from "./share-access-cookie";
 
 /** Public routes re-resolve the share and enforce its optional password on every call. */
 export const publicApi = new Hono<AuthContext>()
-  .use("*", rateLimit({ keyBy: "ip", limitPerSecond: 10, windowSecs: 60 }))
+  // A share's public note sits next to file names that writers of the shared folder choose without holding the link.
+  .use("*", middleware.noTransform())
+  .use(
+    "*",
+    rateLimit({
+      keyBy: "ip",
+      limitPerSecond: 10,
+      windowSecs: 60,
+      routes: [{ method: "POST", path: publicUploadPath, disabled: true }],
+    }),
+  )
+  .use("*", publicUploadRateLimit)
   .use("*", auth.requireRole("*"))
   .use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
@@ -29,7 +52,7 @@ export const publicApi = new Hono<AuthContext>()
           : "unavailable";
     return respond(c, {
       ok: false,
-      error: errorMessage(code, getLocale(c)),
+      error: publicErrorMessage(code, getLocale(c)),
       status: known ? error.status : code === "cursor_invalid" ? 409 : code === "not_found" ? 404 : 503,
       code,
     });
@@ -66,9 +89,17 @@ export const publicApi = new Hono<AuthContext>()
   .post("/inbox/:token/api/uploads/:id/lease", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) =>
     respond(c, ok(await filesService.publicInboxLease(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c)))),
   )
-  .post("/inbox/:token/api/uploads/:id/commit", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) =>
-    respond(c, ok(await filesService.publicInboxCommit(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c)))),
-  )
+  .post("/inbox/:token/api/uploads/:id/commit", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) => {
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_MAX_SECONDS);
+    try {
+      return respond(
+        c,
+        ok(await filesService.publicInboxCommit(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c))),
+      );
+    } finally {
+      setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+    }
+  })
   .post("/inbox/:token/api/uploads/:id/abort", v("param", UploadIdSchema.extend({ token: UploadIdSchema.shape.id })), async (c) => {
     await filesService.publicInboxAbort(c.req.param("token") ?? "", c.req.valid("param").id, shareAccessCookie(c));
     return respond(c, ok({ aborted: true }));

@@ -15,7 +15,8 @@ import { aiChatTaskRoutes } from "./ai-chat-task-routes";
 import { createAiNotificationService } from "./ai-notifications";
 import identityInvocationRoutes from "./api/identity-invocation";
 import identityMandateRoutes from "./api/identity-mandates";
-import identityOAuthIssuanceRoutes from "./api/identity-oauth-issuance";
+import identityOAuthDeviceApprovalRoutes, { terminalLogins } from "./api/identity-oauth-device-approval";
+import { createIdentityOAuthIssuanceRoutes } from "./api/identity-oauth-issuance";
 import { aiCapabilities } from "./capabilities";
 import { app } from "./config";
 import { coreHelp } from "./help";
@@ -29,7 +30,7 @@ export type CoreAppContext = AppContext<typeof app>;
 
 const notificationSender = createCoreNotificationSender(app.notifications);
 const aiNotifications = createAiNotificationService(app.notifications);
-const { api } = createCoreApiRouter({ notifications: notificationSender });
+const { api } = createCoreApiRouter({ notifications: notificationSender, terminalLogins });
 const pages = createPagesRouter();
 const mcpProtectedResource = createMcpProtectedResourceRoutes();
 const identityPublicRoutes = createIdentityPublicRoutes();
@@ -45,7 +46,8 @@ const router = new Hono<AuthContext>()
   .route("/api/ai/live", aiLive.routes(aiLiveChannels))
   .route("/api/_internal/identity/v1", identityInvocationRoutes)
   .route("/api/_internal/identity/v1", identityMandateRoutes)
-  .route("/api/_internal/identity/v1", identityOAuthIssuanceRoutes)
+  .route("/api/_internal/identity/v1", createIdentityOAuthIssuanceRoutes({ notifyNewAccess: notificationSender.sendOAuthNewAccess }))
+  .route("/api/_internal/identity/v1", identityOAuthDeviceApprovalRoutes)
   .route("/api", coreApi)
   // The mobile app's phone-side identity endpoints; only Core receives the device key.
   .route("/pwa/_auth", createPwaPhoneRoutes({ notify: notificationSender.sendAppDevicePaired }))

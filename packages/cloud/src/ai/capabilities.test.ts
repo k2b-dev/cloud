@@ -1,15 +1,21 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { nessi, type ProviderRequest, type StoreEntry } from "@k2b/nessi";
+import { defineTool, nessi, type ProviderRequest, type StoreEntry, toolToSpec } from "@k2b/nessi";
 import type { Provider } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
-import { type CapabilityActionReview, CapabilityActionReviewSchema, defineCapabilities } from "../contracts/capabilities";
+import {
+  type CapabilityActionReview,
+  type CapabilityActionReviewData,
+  CapabilityActionReviewSchema,
+  defineCapabilities,
+} from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { parseMandatePolicy } from "../services/mandates/policy";
 import { aiChatAccessSubject } from "./assistant-models";
+import { authorizeBackgroundAction } from "./background-review";
 import {
   aiCapabilityInputSchema,
   aiCapabilityToolName,
@@ -26,6 +32,7 @@ import {
   reduceAiCapabilityInputSchema,
   searchAiTools,
 } from "./capabilities";
+import { aiChatTasks } from "./chat-tasks";
 import * as credentials from "./credentials";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiModelAccess } from "./model-access";
@@ -162,7 +169,7 @@ const actor = {
 };
 
 describe("AI capability catalog", () => {
-  test("resolves a structured ref to its canonical reader and invokes it with only id", async () => {
+  test.each([false, true])("resolves a ref (enriched: %s) to its canonical reader with only id", async (enriched) => {
     const compiled = compileCapabilities(
       "contacts",
       defineCapabilities({
@@ -191,26 +198,57 @@ describe("AI capability catalog", () => {
     };
     const catalog = buildAiCapabilityCatalog([app]);
     let invocation: unknown;
+    const readerTool = createAiResourceReaderTool({
+      apps: [app],
+      catalog,
+      execute: async (entry, args) => {
+        invocation = { localId: entry.operation.localId, args };
+        return { data: { id: "contact-1" }, refs: [{ type: "contacts.contact", id: "contact-1", title: "Ada" }] };
+      },
+    });
     const prepared = prepareAiTools({
-      tools: [
-        createAiResourceReaderTool({
-          apps: [app],
-          catalog,
-          execute: async (entry, args) => {
-            invocation = { localId: entry.operation.localId, args };
-            return { data: { id: "contact-1" } };
-          },
-        }),
-      ],
+      tools: [readerTool],
       actor,
       conversationId: "conversation-1",
     });
     const tool = prepared.tools[0];
     if (!tool || tool.kind !== "server") throw new Error("resource reader missing");
-    await tool.execute(
-      { type: "contacts.contact", id: "contact-1" },
+    const result = await tool.execute(
+      readerTool.def.inputSchema.parse({
+        type: "contacts.contact",
+        id: "contact-1",
+        ...(enriched ? { title: "Ada", href: "https://cloud.test/open/contacts.contact/~contact-1" } : {}),
+      }),
       { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
     );
+    expect(result).toEqual({
+      data: { id: "contact-1" },
+      refs: [{ type: "contacts.contact", id: "contact-1", title: "Ada", href: "/open/contacts.contact/~contact-1" }],
+    });
+    const loaded = prepareAiTools({
+      tools: createLoadedAiCapabilityTools({
+        apps: [app],
+        catalog,
+        loadedNames: ["contacts.contact.read"],
+        actor,
+        execute: async () => ({ data: {}, refs: [{ type: "contacts.contact", id: "contact-2" }] }),
+      }),
+      actor,
+      conversationId: "conversation-1",
+    }).tools[0];
+    if (!loaded || loaded.kind !== "server") throw new Error("loaded reader missing");
+    expect(
+      await loaded.execute(
+        { id: "contact-2" },
+        {
+          signal: AbortSignal.timeout(1_000),
+          requestApproval: async () => true,
+          requestClientTool: async () => {
+            throw new Error("Unused");
+          },
+        },
+      ),
+    ).toEqual({ data: {}, refs: [{ type: "contacts.contact", id: "contact-2", href: "/open/contacts.contact/~contact-2" }] });
     expect(invocation).toEqual({ localId: "contact.read", args: { id: "contact-1" } });
   });
 
@@ -337,7 +375,7 @@ describe("AI capability catalog", () => {
           title: "Permissions",
           description: "Share contact books safely.",
           order: 20,
-          markdown: `# Permissions\n\n## Background\n\n${"Background details. ".repeat(700)}\n\n## Member permissions\n\nEditors can update contacts. Viewers can only read them.`,
+          markdown: `# Permissions\n\n## Background\n\n${"Background details. ".repeat(700)}\n\n## Member permissions\n\nEditors can update contacts. Viewers can only read them.\n\nPress :kbd[mod+k].\n\n**Hide**{icon="eye-off"}\n\n:::details Why?\nAll details stay available.\n:::\n\n[private](help:hidden/private)`,
         },
       ],
     };
@@ -373,6 +411,11 @@ describe("AI capability catalog", () => {
     });
     if (!article.document) throw new Error("Help article missing");
     expect(article.document.markdown).toContain("Editors can update contacts");
+    expect(article.document.markdown).toContain("Ctrl+K (⌘K on Mac)");
+    expect(article.document.markdown).toContain("**Hide**");
+    expect(article.document.markdown).not.toContain('{icon="');
+    expect(article.document.markdown).toContain("**Why?**\n\nAll details stay available.");
+    expect(article.document.markdown).not.toContain("help:hidden/private");
     expect(article.document.markdown.length).toBeLessThanOrEqual(7_000);
     expect(article.document.markdown).not.toContain("Background details");
   });
@@ -686,6 +729,395 @@ describe("AI capability catalog", () => {
     expect(z.toJSONSchema(schema)).toHaveProperty("properties.query.minLength", 2);
   });
 
+  test("reduces tuples to provider-safe arrays and round-trips through Nessi", () => {
+    const setContent = {
+      type: "object",
+      properties: { kind: { type: "string", const: "set-content" }, content: { type: "string" } },
+      required: ["kind", "content"],
+      additionalProperties: false,
+    };
+    const structural = {
+      type: "object",
+      properties: { kind: { type: "string", const: "append" }, content: { type: "string" } },
+      required: ["kind", "content"],
+      additionalProperties: false,
+    };
+    const string = { type: "string" };
+    const number = { type: "number" };
+    const tuple = { type: "array", prefixItems: [string, number], items: false };
+    const A = { type: "object", properties: { a: { type: "string", default: "A" } }, additionalProperties: false };
+    const B = { type: "object", properties: { b: { type: "string", default: "B" } }, additionalProperties: false };
+    const Node = {
+      type: "object",
+      properties: {
+        children: { type: "array", items: { $ref: "#/$defs/Node" } },
+        label: { type: "string", default: "x" },
+      },
+    };
+    const source = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: {
+        operations: {
+          anyOf: [
+            { type: "array", prefixItems: [setContent], items: false, minItems: 1, maxItems: 1, description: "Replace content." },
+            { type: "array", items: structural, minItems: 1, maxItems: 20 },
+          ],
+        },
+        mixed: { ...tuple, minItems: 1 },
+        defaultedTuple: {
+          type: "array",
+          prefixItems: [
+            {
+              type: "object",
+              properties: { a: { type: "string", default: "A" }, default: { type: "string", default: "kept property" } },
+              additionalProperties: false,
+            },
+            { type: "object", properties: { b: { type: "string", default: "B" } }, additionalProperties: false },
+          ],
+          items: false,
+        },
+        referencedTuple: { type: "array", prefixItems: [{ $ref: "#/$defs/A" }, { $ref: "#/$defs/B" }], items: false },
+        directA: { $ref: "#/$defs/A" },
+        singleReferenced: { type: "array", prefixItems: [{ $ref: "#/$defs/A" }], items: false },
+        recursiveTuple: { type: "array", prefixItems: [{ $ref: "#/$defs/Node" }, string], items: false },
+        repeated: { type: "array", prefixItems: [string, string], items: false },
+        closedMax: { type: "array", prefixItems: [string], items: false, maxItems: 5 },
+        value: { oneOf: [tuple, { ...tuple, prefixItems: [number, string] }] },
+        bothUnions: { anyOf: [string, number], oneOf: [string, { type: "boolean" }], allOf: [{ type: "string", maxLength: 3 }] },
+        rest: { type: "array", prefixItems: [string, string], items: setContent, minItems: 2 },
+        boundedRest: { type: "array", prefixItems: [string], items: setContent, maxItems: 10 },
+        sameRest: { type: "array", prefixItems: [string], items: string },
+        empty: { type: "array", prefixItems: [], items: false },
+        referenced: { $ref: "#/$defs/tuple" },
+        legacy: { type: "array", items: [string, number, string], additionalItems: false, minItems: 3, maxItems: 3 },
+        legacyRest: { type: "array", items: [string], additionalItems: number },
+        open: { type: "array", prefixItems: [string] },
+        openTrue: { type: "array", prefixItems: [string], items: true },
+        legacyOpen: { type: "array", items: [string], additionalItems: true },
+        closedItems: { type: "array", items: false },
+        openItems: { type: "array", items: true },
+        nested: { type: "array", items: { oneOf: [{ allOf: [tuple] }] } },
+        withDefault: { type: "object", default: { note: "kept" } },
+      },
+      required: ["operations"],
+      additionalProperties: false,
+      $defs: { tuple, A, B, Node },
+      definitions: { tuple },
+    };
+    const reduced = reduceAiCapabilityInputSchema(source);
+    const closedSetContent = { type: "array", items: setContent, minItems: 1, maxItems: 1, description: "Replace content." };
+    expect(reduced).toHaveProperty("properties.operations.anyOf.0", closedSetContent);
+    expect(reduced).toHaveProperty("properties.operations.anyOf.1", source.properties.operations.anyOf[1]);
+    expect(reduced).toHaveProperty("properties.mixed", { type: "array", items: { anyOf: [string, number] }, minItems: 1, maxItems: 2 });
+    expect(reduced).toHaveProperty("properties.repeated", { type: "array", items: string, maxItems: 2 });
+    expect(reduced).toHaveProperty("properties.closedMax", { type: "array", items: string, maxItems: 1 });
+    expect(reduced).toHaveProperty("properties.rest", { type: "array", items: { anyOf: [string, setContent] }, minItems: 2 });
+    expect(reduced).toHaveProperty("properties.boundedRest", { type: "array", items: { anyOf: [string, setContent] }, maxItems: 10 });
+    expect(reduced).toHaveProperty("properties.sameRest", { type: "array", items: string });
+    expect(reduced).toHaveProperty("properties.empty", { type: "array", items: {}, maxItems: 0 });
+    expect(reduced).toHaveProperty("properties.referenced", { $ref: "#/$defs/tuple" });
+    const mixedArray = { type: "array", items: { anyOf: [string, number] }, maxItems: 2 };
+    expect(reduced).toHaveProperty("properties.value.anyOf", [mixedArray, { ...mixedArray, items: { anyOf: [number, string] } }]);
+    expect(reduced).toHaveProperty("properties.bothUnions", {
+      allOf: [{ type: "string", maxLength: 3 }, { anyOf: [string, number] }, { anyOf: [string, { type: "boolean" }] }],
+    });
+    expect(reduced).toHaveProperty("$defs.tuple", mixedArray);
+    expect(reduced).toHaveProperty("definitions.tuple", mixedArray);
+    expect(reduced).toHaveProperty("properties.legacy", { ...mixedArray, minItems: 3, maxItems: 3 });
+    expect(reduced).toHaveProperty("properties.legacyRest", { type: "array", items: { anyOf: [string, number] } });
+    for (const field of ["open", "openTrue", "legacyOpen"]) {
+      expect(reduced).toHaveProperty(`properties.${field}`, { type: "array", items: {} });
+    }
+    expect(reduced).toHaveProperty("properties.closedItems", { type: "array", items: {}, maxItems: 0 });
+    expect(reduced).toHaveProperty("properties.openItems", { type: "array", items: {} });
+    expect(reduced).toHaveProperty("properties.nested.items.anyOf.0.allOf.0", mixedArray);
+    expect(reduced).toHaveProperty("properties.withDefault.default", { note: "kept" });
+    expect(JSON.stringify(reduced)).not.toContain("prefixItems");
+    expect(JSON.stringify(reduced)).not.toContain("additionalItems");
+    expect(JSON.stringify(reduced)).not.toContain("oneOf");
+
+    const schema = aiCapabilityInputSchema(source);
+    const operation = { kind: "set-content", content: "New content." };
+    expect(schema.parse({ operations: [operation], referencedTuple: [{}, {}], directA: {}, singleReferenced: [{}] })).toEqual({
+      operations: [operation],
+      referencedTuple: [{}, {}],
+      directA: { a: "A" },
+      singleReferenced: [{ a: "A" }],
+      withDefault: { note: "kept" },
+    });
+    expect(reduced).toHaveProperty("properties.referencedTuple.items.anyOf", [{ $ref: "#/$defs/A.ai" }, { $ref: "#/$defs/B.ai" }]);
+    expect(reduced).toHaveProperty("$defs.A", A);
+    expect(reduced).toHaveProperty("$defs.B", B);
+    expect(reduced).toHaveProperty("$defs.Node", Node);
+    expect(reduced).toHaveProperty(["$defs", "A.ai"], { ...A, properties: { a: string } });
+    expect(reduced).toHaveProperty(["$defs", "B.ai"], { ...B, properties: { b: string } });
+    expect(reduced).toHaveProperty("properties.directA", { $ref: "#/$defs/A" });
+    expect(reduced).toHaveProperty("properties.singleReferenced.items", { $ref: "#/$defs/A" });
+    expect(reduced).toHaveProperty("properties.recursiveTuple.items.anyOf.0", { $ref: "#/$defs/Node.ai" });
+    expect(reduced).toHaveProperty(["$defs", "Node.ai"], {
+      ...Node,
+      properties: { children: { type: "array", items: { $ref: "#/$defs/Node.ai" } }, label: string },
+    });
+    expect(schema.parse({ operations: [operation], defaultedTuple: [{}, {}] })).toHaveProperty("defaultedTuple", [{}, {}]);
+    expect(reduced).toHaveProperty("properties.defaultedTuple.items.anyOf", [
+      { type: "object", properties: { a: string, default: string }, additionalProperties: false },
+      { type: "object", properties: { b: string }, additionalProperties: false },
+    ]);
+    expect(schema.safeParse({ operations: [operation] }).success).toBe(true);
+    expect(schema.safeParse({ operations: [] }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation, operation] }).success).toBe(false);
+    expect(schema.safeParse({ operations: operation }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation], empty: ["extra"] }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation], closedMax: ["a"] }).success).toBe(true);
+    expect(schema.safeParse({ operations: [operation], closedMax: ["a", "b"] }).success).toBe(false);
+    expect(schema.safeParse({ operations: [operation], value: ["x", 1] }).success).toBe(true);
+    expect(
+      aiCapabilityInputSchema({ type: "object", properties: { value: source.properties.value } }).safeParse({ value: ["x", 1] }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ operations: [operation], bothUnions: "yes" }).success).toBe(true);
+    for (const bothUnions of [1, true, "long"]) {
+      expect(schema.safeParse({ operations: [operation], bothUnions }).success).toBe(false);
+    }
+    const tool = defineTool({ name: "note_edit", description: "Edit note.", inputSchema: schema }).server(async () => ({}));
+    const spec = toolToSpec(tool).inputSchema;
+    expect(spec).toHaveProperty("properties.operations.anyOf.0", closedSetContent);
+    const serialized = JSON.stringify(spec);
+    expect(serialized).not.toContain('"items":[');
+    expect(serialized).not.toContain("additionalItems");
+    expect(serialized).not.toContain("prefixItems");
+    expect(serialized).not.toContain("oneOf");
+    expect(serialized).not.toContain('"items":false');
+    expect(serialized).not.toContain('"items":true');
+  });
+
+  test.each(["oneOf", "anyOf"])("leaves defaults to the app when tuple widening overlaps surrounding %s branches", (keyword) => {
+    const branch = (types: string[], label: string) => ({
+      type: "object",
+      properties: {
+        pair: { type: "array", prefixItems: types.map((type) => ({ type })), items: false, minItems: 2 },
+        label: { type: "string", default: label },
+      },
+      required: ["pair"],
+      additionalProperties: false,
+    });
+    const source = {
+      type: "object",
+      properties: { value: { [keyword]: [branch(["string", "number"], "A"), branch(["number", "string"], "B")] } },
+    };
+    expect(aiCapabilityInputSchema(source).parse({ value: { pair: [1, "x"] } })).toEqual({ value: { pair: [1, "x"] } });
+  });
+
+  test.each(["oneOf", "anyOf"])("keeps defaults in tuple-free %s branches", (keyword) => {
+    const source = {
+      type: "object",
+      properties: {
+        value: {
+          [keyword]: ["A", "B"].map((kind) => ({
+            type: "object",
+            properties: { kind: { type: "string", const: kind }, label: { type: "string", default: kind } },
+            required: ["kind"],
+            additionalProperties: false,
+          })),
+        },
+      },
+    };
+    expect(aiCapabilityInputSchema(source).parse({ value: { kind: "B" } })).toEqual({ value: { kind: "B", label: "B" } });
+  });
+
+  test("visits each shared definition once when looking for tuples in union branches", () => {
+    // Every level references the next twice; following each edge again would take 2^40 steps.
+    const depth = 40;
+    const $defs = Object.fromEntries(
+      Array.from({ length: depth }, (_, level) => [
+        `D${level}`,
+        level === depth - 1
+          ? { type: "string", default: "leaf" }
+          : {
+              type: "object",
+              properties: { left: { $ref: `#/$defs/D${level + 1}` }, right: { $ref: `#/$defs/D${level + 1}` } },
+            },
+      ]),
+    );
+    const source = {
+      type: "object",
+      properties: { value: { anyOf: [{ $ref: "#/$defs/D0" }, { type: "number" }] } },
+      $defs,
+    };
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(reduced).toHaveProperty("properties.value.anyOf", [{ $ref: "#/$defs/D0" }, { type: "number" }]);
+    expect(reduced).toHaveProperty(`$defs.D${depth - 1}.default`, "leaf");
+  });
+
+  test("mirrors a root reference in merged tuple branches", () => {
+    type Node = { label?: string; pair?: [Node, { label?: string }] };
+    const Root: z.ZodType<Node> = z.lazy(() =>
+      z.object({ label: z.string().default("A"), pair: z.tuple([Root, z.object({ label: z.string().default("B") })]).optional() }),
+    );
+    const source = z.toJSONSchema(Root, { io: "input" }) as Record<string, unknown>;
+    expect(source).toHaveProperty("properties.pair.prefixItems.0", { $ref: "#" });
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(reduced).toHaveProperty("properties.label.default", "A");
+    expect(reduced).toHaveProperty("properties.pair.items.anyOf.0", { $ref: "#/$defs/root.ai" });
+    expect(reduced).toHaveProperty(["$defs", "root.ai", "properties", "label"], { type: "string" });
+    expect(aiCapabilityInputSchema(source).parse({ pair: [{}, {}] })).toEqual({ label: "A", pair: [{}, {}] });
+  });
+
+  test.each(["$defs", "definitions"])("detects tuples through transitive escaped %s references in union branches", (keyword) => {
+    const branch = (name: string) => ({
+      type: "object",
+      properties: { pair: { $ref: `#/${keyword}/${name}` }, label: { type: "string", default: name } },
+      required: ["pair"],
+      additionalProperties: false,
+    });
+    const source = {
+      type: "object",
+      properties: { value: { oneOf: [branch("Alias"), branch("B")] } },
+      [keyword]: {
+        Alias: { $ref: `#/${keyword}/A~1~01` },
+        "A/~1": { type: "array", prefixItems: [{ type: "string" }, { type: "number" }], items: false, minItems: 2 },
+        B: { type: "array", items: [{ type: "number" }, { type: "string" }], additionalItems: false, minItems: 2 },
+      },
+    };
+    const schema =
+      keyword === "$defs"
+        ? aiCapabilityInputSchema(source)
+        : z.fromJSONSchema(reduceAiCapabilityInputSchema(source), { defaultTarget: "draft-7" });
+    expect(schema.parse({ value: { pair: [1, "x"] } })).toEqual({ value: { pair: [1, "x"] } });
+  });
+
+  test("drops defaults from every union branch even when only one contains a single-position tuple", () => {
+    const source = {
+      type: "object",
+      properties: {
+        value: {
+          anyOf: [
+            { type: "object", properties: { label: { type: "string", default: "A" } } },
+            { type: "array", prefixItems: [{ type: "string" }], items: false },
+          ],
+        },
+      },
+    };
+    expect(aiCapabilityInputSchema(source).parse({ value: {} })).toEqual({ value: {} });
+  });
+
+  test("ignores tuple-like data and schema map names while checking cyclic union references", () => {
+    const tupleData = { prefixItems: [], items: [] };
+    const source = {
+      type: "object",
+      properties: { value: { anyOf: [{ $ref: "#/$defs/A" }, { type: "string", default: "kept" }] } },
+      $defs: {
+        A: {
+          $ref: "#/definitions/B",
+          properties: {
+            prefixItems: { type: "string" },
+            items: { type: "string" },
+            const: { type: "string" },
+            $defs: { type: "string" },
+          },
+          $defs: { prefixItems: {}, items: {} },
+          definitions: { prefixItems: {}, items: {} },
+          const: tupleData,
+          enum: [tupleData],
+          default: tupleData,
+          required: ["prefixItems"],
+          type: ["object", "null"],
+        },
+      },
+      definitions: { B: { $ref: "#/$defs/A" } },
+    };
+    expect(reduceAiCapabilityInputSchema(source)).toHaveProperty("properties.value.anyOf.1.default", "kept");
+    const nestedTuple = structuredClone(source);
+    Object.assign(nestedTuple.$defs.A.properties.const, { type: "array", prefixItems: [] });
+    expect(reduceAiCapabilityInputSchema(nestedTuple)).not.toHaveProperty("properties.value.anyOf.1.default");
+    const sharedCycle = {
+      ...nestedTuple,
+      properties: {
+        ...nestedTuple.properties,
+        other: { anyOf: [{ $ref: "#/definitions/B" }, { type: "string", default: "kept" }] },
+      },
+    };
+    expect(reduceAiCapabilityInputSchema(sharedCycle)).not.toHaveProperty("properties.other.anyOf.1.default");
+  });
+
+  test("keeps recursive defaults out of merged tuple branches", () => {
+    const recursiveDefinition = (name: string) => ({
+      type: "object",
+      properties: { child: { $ref: `#/$defs/${name}` }, label: { type: "string", default: name } },
+    });
+    const source = {
+      type: "array",
+      prefixItems: [{ $ref: "#/$defs/A" }, { $ref: "#/$defs/B" }],
+      items: false,
+      $defs: { A: recursiveDefinition("A"), B: recursiveDefinition("B") },
+    };
+    const input = [{ child: {} }, { child: {} }];
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(aiCapabilityInputSchema(source).parse(input)).toEqual(input);
+    expect(reduced).toHaveProperty("items.anyOf", [{ $ref: "#/$defs/A.ai" }, { $ref: "#/$defs/B.ai" }]);
+    for (const name of ["A", "B"] as const) {
+      expect(reduced).toHaveProperty(["$defs", name], source.$defs[name]);
+      expect(reduced).toHaveProperty(["$defs", `${name}.ai`], {
+        type: "object",
+        properties: { child: { $ref: `#/$defs/${name}.ai` }, label: { type: "string" } },
+      });
+    }
+    expect(reduceAiCapabilityInputSchema(source)).toEqual(reduced);
+    const schema = z.fromJSONSchema(reduced);
+    expect(schema.parse(input)).toEqual(input);
+    expect(z.fromJSONSchema(z.toJSONSchema(schema)).parse(input)).toEqual(input);
+    const tool = defineTool({ name: "recursive_tuple", description: "Parse recursive items.", inputSchema: schema }).server(
+      async () => ({}),
+    );
+    const serialized = JSON.stringify(toolToSpec(tool).inputSchema);
+    expect(serialized).not.toContain("prefixItems");
+    expect(serialized).not.toContain("additionalItems");
+    expect(serialized).not.toContain('"items":[');
+    expect(serialized).not.toContain("oneOf");
+  });
+
+  test.each(["$defs", "definitions"])("mirrors transitive escaped %s references only in merged tuple branches", (keyword) => {
+    const reference = `#/${keyword}/A~1~01`;
+    const definitions = {
+      Alias: { $ref: reference, description: "Alias definition." },
+      "Alias.ai": { type: "boolean" },
+      "Alias.ai1": { type: "null" },
+      "A/~1.ai": { type: "number" },
+      "A/~1": {
+        type: "object",
+        properties: {
+          label: { type: "string", default: "x" },
+          child: { $ref: `#/${keyword}/Alias` },
+          unknown: { $ref: `#/${keyword}/Missing` },
+          external: { $ref: "https://example.test/schema" },
+          otherLocal: { $ref: "#/properties/label" },
+        },
+      },
+    };
+    const source = {
+      type: "array",
+      prefixItems: [{ $ref: `#/${keyword}/Alias`, description: "Alias item." }, { type: "number" }],
+      items: false,
+      [keyword]: definitions,
+    };
+    const reduced = reduceAiCapabilityInputSchema(source);
+    expect(reduced).toHaveProperty("items.anyOf.0", { $ref: `#/${keyword}/Alias.ai2`, description: "Alias item." });
+    expect(reduced[keyword]).toEqual({
+      ...definitions,
+      "Alias.ai2": { $ref: `#/${keyword}/A~1~01.ai1`, description: "Alias definition." },
+      "A/~1.ai1": {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          child: { $ref: `#/${keyword}/Alias.ai2` },
+          unknown: { $ref: `#/${keyword}/Missing` },
+          external: { $ref: "https://example.test/schema" },
+          otherLocal: { $ref: "#/properties/label" },
+        },
+      },
+    });
+  });
+
   test("loads exact live names and exposes loaded app operations as ordinary tools", async () => {
     const catalog = buildAiCapabilityCatalog([capabilityApp("contacts", "Contacts")]);
     const updates: Array<{ names: string[]; maxLoadedTools?: number }> = [];
@@ -722,6 +1154,7 @@ describe("AI capability catalog", () => {
 
     let called = "";
     const loaded = createLoadedAiCapabilityTools({
+      apps: [],
       catalog,
       actor,
       loadedNames: ["contacts.list", "removed.list"],
@@ -747,10 +1180,11 @@ describe("AI capability catalog", () => {
     expect(called).toBe("contacts.list");
 
     const approvalMessages: string[] = [];
-    const actionReviews: Array<{ callId: string; review: CapabilityActionReview }> = [];
+    const actionReviews: Array<{ callId: string; review: CapabilityActionReviewData }> = [];
     let actionExecutions = 0;
     const actionPrepared = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
+        apps: [],
         catalog,
         actor,
         loadedNames: ["contacts.create"],
@@ -763,7 +1197,9 @@ describe("AI capability catalog", () => {
           ],
           links: [{ rel: "open", href: "/app/contacts" }],
         }),
-        onReview: (callId, review) => actionReviews.push({ callId, review }),
+        onReview: (callId, review) => {
+          actionReviews.push({ callId, review });
+        },
         execute: async () => {
           actionExecutions += 1;
           return { data: { id: "created" } };
@@ -827,6 +1263,7 @@ describe("AI capability catalog", () => {
     const calls: string[] = [];
     const prepared = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
+        apps: [],
         catalog,
         actor,
         loadedNames: ["contacts.create", "contacts.list"],
@@ -864,6 +1301,172 @@ describe("AI capability catalog", () => {
     expect(calls.filter((call) => call.startsWith("execute:"))).toHaveLength(2);
   });
 
+  for (const outcome of ["no scope", "scope", "review error", "mandate denied"] as const) {
+    test(`background loaded capability ${outcome} runs the shared review gate before execute`, async () => {
+      const app = capabilityApp("contacts");
+      app.manifest.actions[0]!.approval = "rememberable";
+      app.manifest.actions[0]!.review = true;
+      const review = mock(async (): Promise<CapabilityActionReview> => {
+        if (outcome === "review error") throw new Error("Review unavailable");
+        return { message: "Create item?", ...(outcome === "scope" ? { approvalScope: "contacts:own" } : {}) };
+      });
+      spyOn(aiChatTasks, "authorizeCapability").mockImplementation(async () => {
+        if (outcome === "mandate denied") throw new Error("Grant denied");
+      });
+      const markNeedsApproval = spyOn(aiChatTasks, "markNeedsApproval").mockImplementation(async () => {});
+      const execute = mock(async () => ({ data: {} }));
+      const prepared = prepareAiTools({
+        tools: createLoadedAiCapabilityTools({
+          apps: [],
+          catalog: buildAiCapabilityCatalog([app]),
+          actor,
+          loadedNames: ["contacts.create"],
+          authorizeBackground: async (entry, args, context) => {
+            await authorizeBackgroundAction({
+              turnId: "turn",
+              mandate: { id: "mandate", revision: 1 },
+              appId: entry.appId,
+              capabilityId: entry.operation.localId,
+              kind: entry.kind,
+              args,
+              approval: "approval" in entry.operation ? entry.operation.approval : undefined,
+              hasReview: "review" in entry.operation && entry.operation.review === true,
+              action: entry.display.title,
+              review,
+              signal: context.signal,
+            });
+          },
+          review: async () => {
+            throw new Error("Unexpected interactive review");
+          },
+          execute,
+        }),
+        actor,
+        conversationId: "conversation-1",
+      });
+      const tool = prepared.tools[0];
+      if (!tool || tool.kind !== "server") throw new Error("Missing server tool");
+      const call = tool.execute(
+        { title: "Example" },
+        {
+          signal: new AbortController().signal,
+          requestApproval: async () => {
+            throw new Error("Unexpected approval");
+          },
+          requestClientTool: async <T>(): Promise<T> => {
+            throw new Error("Unexpected client");
+          },
+        },
+      );
+      if (outcome === "scope") {
+        await call;
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(markNeedsApproval).not.toHaveBeenCalled();
+      } else {
+        await expect(call).rejects.toThrow(outcome === "mandate denied" ? "Grant denied" : "NEEDS_APPROVAL:");
+        expect(execute).not.toHaveBeenCalled();
+        if (outcome === "mandate denied") {
+          expect(review).not.toHaveBeenCalled();
+          expect(markNeedsApproval).not.toHaveBeenCalled();
+        } else expect(markNeedsApproval).toHaveBeenCalledTimes(1);
+      }
+      if (outcome !== "mandate denied") expect(review).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  test("a background refusal reaches the model as the exact NEEDS_APPROVAL tool error and allows its final sentence", async () => {
+    const catalog = buildAiCapabilityCatalog([capabilityApp("contacts")]);
+    const execute = mock(async () => ({ data: {} }));
+    spyOn(aiChatTasks, "authorizeCapability").mockImplementation(async () => {});
+    const markNeedsApproval = spyOn(aiChatTasks, "markNeedsApproval").mockImplementation(async () => {});
+    const prepared = prepareAiTools({
+      actor,
+      conversationId: "conversation-1",
+      tools: createLoadedAiCapabilityTools({
+        apps: [],
+        catalog,
+        loadedNames: ["contacts.create"],
+        actor,
+        authorizeBackground: async (entry, args, context) => {
+          await authorizeBackgroundAction({
+            turnId: "turn",
+            mandate: { id: "mandate", revision: 1 },
+            appId: entry.appId,
+            capabilityId: entry.operation.localId,
+            kind: entry.kind,
+            args,
+            approval: "approval" in entry.operation ? entry.operation.approval : undefined,
+            hasReview: "review" in entry.operation && entry.operation.review === true,
+            action: entry.display.title,
+            review: async () => ({ message: "Create item?" }),
+            signal: context.signal,
+          });
+        },
+        execute,
+      }),
+    });
+    const message =
+      "NEEDS_APPROVAL: Create item needs the user's approval every time, and routines never ask. Stop and say in one sentence what was missing.";
+    const entries: StoreEntry[] = [];
+    const requests: ProviderRequest[] = [];
+    const provider: Provider = {
+      name: "background-review",
+      family: "openai-compatible",
+      model: "fixture",
+      capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+      async complete() {
+        throw new Error("Unexpected completion");
+      },
+      async *stream(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          yield { type: "block_start", blockId: "call", index: 0, kind: "tool_call", callId: "call", name: "contacts__action__create" };
+          yield {
+            type: "block_end",
+            blockId: "call",
+            index: 0,
+            block: { type: "tool_call", id: "call", name: "contacts__action__create", args: { title: "Example" } },
+          };
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "tool_use" };
+        } else {
+          yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
+          yield {
+            type: "block_end",
+            blockId: "answer",
+            index: 0,
+            block: { type: "text", text: "I needed your approval to create the item." },
+          };
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+        }
+      },
+    };
+    for await (const _event of nessi({
+      provider,
+      systemPrompt: "test",
+      input: "Run",
+      tools: prepared.tools,
+      maxTurns: 3,
+      store: {
+        load: async () => entries,
+        append: async (message) => {
+          entries.push({ seq: entries.length + 1, kind: "message", message });
+        },
+      },
+    })) {
+      /* drain */
+    }
+    const result = requests[1]?.messages.find((message) => message.role === "tool_result");
+    expect(result).toMatchObject({ role: "tool_result", isError: true, result: message });
+    expect(entries.at(-1)?.message).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "I needed your approval to create the item." }],
+    });
+    expect(execute).not.toHaveBeenCalled();
+    expect(markNeedsApproval).toHaveBeenCalledTimes(1);
+    expect(requests[0]?.tools?.[0]?.description).toContain("Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL.");
+    expect(requests[0]?.tools?.[0]?.description).toContain("After ACTION_NOT_DONE, ask the person before trying again.");
+  });
+
   test("background discovery keeps loaded tool names isolated with the existing eviction contract", async () => {
     const seed = ["mail.list"];
     const store = createRunToolStore(seed);
@@ -886,6 +1489,7 @@ describe("AI capability catalog", () => {
     let calls = 0;
     const prepared = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
+        apps: [],
         catalog,
         actor,
         loadedNames: ["contacts.create"],

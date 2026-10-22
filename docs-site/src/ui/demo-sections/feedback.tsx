@@ -6,6 +6,7 @@ import {
   dialogCore,
   HoverPreview,
   InlineGuidance,
+  MovedHint,
   NoticeCard,
   prompts,
   StatusBadge,
@@ -231,6 +232,53 @@ announce("Connection lost", { politeness: "assertive" });`}
         </Button>
       </div>
       <p class="truncate text-sm text-dimmed">{last() ?? "Nothing announced yet"}</p>
+    </DemoCard>
+  );
+};
+
+const MovedHintDemo = () => {
+  const [open, setOpen] = createSignal(true);
+  const [filters, setFilters] = createSignal(false);
+  let tags: HTMLButtonElement | undefined;
+  return (
+    <DemoCard
+      id="moved-hint"
+      chip={{ kind: "component", name: "MovedHint", from: "@k2b/ui" }}
+      description="A one-time hint at the old place names the new place without moving the toolbar."
+      code={`<MovedHint open={open()} target={() => tags} onDismiss={() => setOpen(false)}
+  action={{ label: "Show filters", onClick: showFilters }}>
+  Tags moved to the filter chips in the head.
+</MovedHint>`}
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <Button variant="ghost">Files</Button>
+        <Button ref={tags} variant="ghost">
+          Tags
+        </Button>
+        <MovedHint
+          open={open()}
+          target={() => tags}
+          onDismiss={() => setOpen(false)}
+          action={{ label: "Show filters", onClick: () => setFilters(true) }}
+        >
+          Tags moved to the filter chips in the head.
+        </MovedHint>
+        <Button variant="ghost">More</Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            setOpen(true);
+            setFilters(false);
+          }}
+        >
+          Show again
+        </Button>
+      </div>
+      {/* The line keeps its height while empty, so using the action moves nothing. */}
+      <p role="status" class="min-h-5">
+        {filters() ? "Filter chips: Tags" : ""}
+      </p>
     </DemoCard>
   );
 };
@@ -519,14 +567,25 @@ await prompts.dialog((close) => <MySurface close={close} />, {
           variant="secondary"
           onClick={() =>
             void prompts.dialog(
-              (close) => (
-                <div class="ui-dialog-demo-body">
-                  <p>Custom Solid content uses the shared dialog surface.</p>
-                  <div class="ui-dialog-demo-actions">
-                    <Button onClick={() => close("done")}>Done</Button>
+              (close, context) => {
+                const [protectedState, setProtectedState] = createSignal(false);
+                context.setDismissHandler(() => {
+                  if (!protectedState()) close();
+                });
+                return (
+                  <div class="ui-dialog-demo-body">
+                    <p>Protect the dialog to block Escape, backdrop clicks and the header close button.</p>
+                    <div class="ui-dialog-demo-actions">
+                      <Button variant="secondary" onClick={() => setProtectedState((value) => !value)}>
+                        {protectedState() ? "Allow dismissal" : "Protect dialog"}
+                      </Button>
+                      <Button disabled={protectedState()} onClick={() => close("done")}>
+                        Done
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ),
+                );
+              },
               { title: "Custom dialog", icon: "ti ti-components" },
             )
           }
@@ -599,6 +658,7 @@ const demos: DemoSection = {
       <AnnounceDemo />
     </DemoGrid>
   ),
+  "moved-hint": () => <MovedHintDemo />,
   tooltip: () => (
     <DemoGrid columns="one">
       <TooltipDemo />

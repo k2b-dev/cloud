@@ -1,4 +1,6 @@
+import { DRAFT_LEASE_ERROR_CODES } from "../contracts";
 import { localizedComposeRenderMessage } from "./compose-render-errors";
+import { localizedMailboxLogoMessage } from "./mailbox-logo-errors";
 
 type HumanFacingError = { code: string; message: string; status: number };
 
@@ -25,6 +27,8 @@ export const safeErrorDetail = (text: string, secrets: readonly string[] = []): 
 };
 
 const genericGermanMessage = (error: HumanFacingError): string => {
+  if (error.code === "SEND_CONTENT_CHANGED")
+    return "Der Nachrichteninhalt hat sich geändert. Es wurde nichts eingereiht. Öffne den Entwurf, prüfe ihn erneut und gib einen neuen Sendeversuch frei.";
   if (error.code === "CONVERSATION_KEPT")
     return "Diese Unterhaltung wird aufbewahrt und kann nicht gelöscht oder in den Papierkorb, den Spam-Ordner oder die Entwürfe verschoben werden. Verschieben und Archivieren sind weiterhin möglich.";
   if (error.code === "FOLDER_HAS_KEPT_CONVERSATIONS")
@@ -38,6 +42,10 @@ const genericGermanMessage = (error: HumanFacingError): string => {
   if (error.code === "NOT_FOUND") return "Die angeforderte Mail-Ressource wurde nicht gefunden";
   if (error.code === "PROVIDER_BUSY") return "Die Synchronisierung läuft gerade. Versuche es in einem Moment erneut.";
   if (error.code === "CONFLICT") return "Der aktuelle Stand hat sich geändert. Lade die Daten neu und versuche es erneut.";
+  if (error.code === DRAFT_LEASE_ERROR_CODES.HELD) return "Dieser Entwurf ist gerade in einer anderen Sitzung geöffnet.";
+  if (error.code === DRAFT_LEASE_ERROR_CODES.NOT_OWNED)
+    return "Die Bearbeitung dieses Entwurfs ist abgelaufen. Lade den Entwurf neu und versuche es erneut.";
+  if (error.code === DRAFT_LEASE_ERROR_CODES.BUSY) return "Der Entwurf wird gerade aktualisiert. Versuche es gleich erneut.";
   if (error.code === "FORBIDDEN") return "Du hast nicht die erforderliche Berechtigung";
   if (error.status === 429) return "Zu viele Anfragen. Versuche es gleich erneut.";
   if (error.status === 503) return "Mail ist vorübergehend nicht verfügbar. Versuche es gleich erneut.";
@@ -46,6 +54,8 @@ const genericGermanMessage = (error: HumanFacingError): string => {
 
 /** Localizes a final API or capability error while preserving its stable code and status. */
 export const localizeMailError = <T extends HumanFacingError>(error: T, locale?: string | null): T => {
+  const logoMessage = localizedMailboxLogoMessage(error, locale ?? "en");
+  if (logoMessage) return { ...error, message: logoMessage };
   const renderMessage = localizedComposeRenderMessage(error, locale ?? "en");
   if (renderMessage) return { ...error, message: renderMessage };
   const normalizedLocale = locale?.toLowerCase();

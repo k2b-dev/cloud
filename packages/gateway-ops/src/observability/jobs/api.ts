@@ -1,3 +1,4 @@
+import { middleware } from "@k2b/cloud/server";
 import { syncOpsCredentials } from "../sync/service";
 
 /**
@@ -60,6 +61,7 @@ const parseRunKey = (value: string) => {
 };
 
 const app = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(rateLimit())
   .use(auth.requireRole("admin"))
 

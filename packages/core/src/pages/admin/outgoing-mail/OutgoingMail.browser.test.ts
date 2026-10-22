@@ -302,40 +302,46 @@ describe("outgoing mail page in a browser", () => {
     const selections = [[], ["files"], ["crm", "files"]];
     const frame = "width: min(calc(100vw - 2rem), 28rem); padding: 1rem";
     for (const view of [phone, desktop])
-      for (const locale of ["en", "de"]) {
-        const layouts = [];
-        for (const logApps of selections) {
-          const dialog = () =>
-            createComponent(LogAccessDialog, { app: { ...invoices, logApps }, apps, close: () => {}, onSaved: () => {} });
-          const tab = await open(view, false, locale, dialog, frame);
-          try {
-            layouts.push(
-              await tab.evaluate(() => {
-                const form = document.querySelector("form")!;
-                const top = form.getBoundingClientRect().top;
-                return {
-                  overflow: document.documentElement.scrollWidth - window.innerWidth,
-                  children: Array.from(form.children).map((child) => {
-                    const box = child.getBoundingClientRect();
-                    return [Math.round(box.top - top), Math.round(box.height)];
-                  }),
-                  checked: Array.from(form.querySelectorAll<HTMLInputElement>("input[type=checkbox]")).map((box) => box.checked),
-                };
-              }),
-            );
-          } finally {
-            await tab.close();
+      for (const dark of [false, true])
+        for (const locale of ["en", "de"]) {
+          const layouts = [];
+          for (const logApps of selections) {
+            const dialog = () =>
+              createComponent(LogAccessDialog, {
+                app: { ...invoices, logApps, logContentApps: logApps.length === 2 ? ["files"] : [] },
+                apps,
+                close: () => {},
+                onSaved: () => {},
+              });
+            const tab = await open(view, dark, locale, dialog, frame);
+            try {
+              layouts.push(
+                await tab.evaluate(() => {
+                  const form = document.querySelector("form")!;
+                  const top = form.getBoundingClientRect().top;
+                  return {
+                    overflow: document.documentElement.scrollWidth - window.innerWidth,
+                    children: Array.from(form.children).map((child) => {
+                      const box = child.getBoundingClientRect();
+                      return [Math.round(box.top - top), Math.round(box.height)];
+                    }),
+                    levels: Array.from(form.querySelectorAll("[role=combobox]")).map((box) => box.textContent?.trim()),
+                  };
+                }),
+              );
+            } finally {
+              await tab.close();
+            }
           }
+          // Core and the app itself are never offered: Customer relationships and Files remain.
+          expect(layouts.map((layout) => layout.levels)).toEqual([
+            [locale === "de" ? "Kein Zugriff" : "No access", locale === "de" ? "Kein Zugriff" : "No access"],
+            [locale === "de" ? "Kein Zugriff" : "No access", locale === "de" ? "Metadaten" : "Metadata"],
+            [locale === "de" ? "Metadaten" : "Metadata", locale === "de" ? "Inhalt" : "Content"],
+          ]);
+          for (const layout of layouts) expect(Math.max(0, layout.overflow)).toBe(0);
+          for (const layout of layouts.slice(1)) expect(layout.children).toEqual(layouts[0]!.children);
         }
-        // Core and the app itself are never offered: Customer relationships and Files remain.
-        expect(layouts.map((layout) => layout.checked)).toEqual([
-          [false, false],
-          [false, true],
-          [true, true],
-        ]);
-        for (const layout of layouts) expect(Math.max(0, layout.overflow)).toBe(0);
-        for (const layout of layouts.slice(1)) expect(layout.children).toEqual(layouts[0]!.children);
-      }
   }, 60_000);
 
   test("a send log entry fits a phone and a desktop without horizontal overflow", async () => {

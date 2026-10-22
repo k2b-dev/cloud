@@ -6,6 +6,7 @@ import {
   type CloudCliContext,
   type CloudCliText,
   cliAmbiguityText,
+  cloudResourceUrl,
   command,
   confirmFlag,
   createAccessCommands,
@@ -15,8 +16,10 @@ import {
   parseCliAddress,
   printRows,
   printStructured,
+  withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
+import { principalLabel } from "@k2b/cloud/shared";
 import { dates, type Paginated } from "@k2b/stdlib";
 import type {
   CalendarItem,
@@ -30,22 +33,33 @@ import type {
   SpaceItem,
   SpaceItemAttachment,
   SpaceItemLink,
+  SpaceItemReaction,
   SpaceItemResourceReference,
   SpaceItemTemplate,
   SpaceTaskChecklistEntry,
   SpaceTaskDependency,
   SpaceTaskDependent,
 } from "./contracts";
+import { DeadlineInputSchema } from "./contracts";
 import type { EventInvitationContext, EventInvitationDraft } from "./integration";
+import { hasEscapedLineBreak } from "./lib/escaped-line-break";
 import { describeTemplateDateRule, formatTemplateDate, localNow, proposeTemplateDates } from "./presentation/item-templates";
 import type { TaskWork } from "./work-contracts";
 
 const SHORT_ID = /^[0-9A-Za-z]{6}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-/** The time the web form's Today, Tomorrow, and End of week deadline presets use. */
-const DATE_ONLY_DEADLINE_TIME = "17:00";
 const JSON_HEADERS = { "Content-Type": "application/json" };
+
+const withDepsPermalinks = (ctx: CloudCliContext, deps: ItemDeps) => ({
+  ...deps,
+  item: withCloudResourcePermalink(ctx, "spaces.item", deps.item),
+  blockers: deps.blockers.map((entry) => ({ ...entry, blocker: withCloudResourcePermalink(ctx, "spaces.item", entry.blocker) })),
+  blocks: {
+    ...deps.blocks,
+    items: deps.blocks.items.map((entry) => ({ ...entry, dependent: withCloudResourcePermalink(ctx, "spaces.item", entry.dependent) })),
+  },
+});
 
 const api = (path = "") => `/api/spaces${path}`;
 const itemApi = (item: Pick<SpaceItem, "id" | "spaceId">, suffix = "") =>
@@ -80,7 +94,16 @@ function spacesCommands(locale?: string) {
   const readText = async (literal: string | undefined, from: string | undefined, field: string): Promise<string | undefined> => {
     if (literal !== undefined && from !== undefined)
       throw new Error(t({ en: `Pass only one of --${field} or --from.`, de: `Übergib nur --${field} oder --from.` }));
-    if (literal !== undefined) return literal;
+    if (literal !== undefined) {
+      if (hasEscapedLineBreak(literal))
+        throw new Error(
+          t({
+            en: `--${field} contains "\\n" as two characters, not a line break. Pass multi-line text with --from <file|-> (for example a heredoc).`,
+            de: `--${field} enthält „\\n“ als zwei Zeichen statt eines Zeilenumbruchs. Übergib mehrzeiligen Text mit --from <datei|-> (zum Beispiel per Heredoc).`,
+          }),
+        );
+      return literal;
+    }
     if (from === "-") return Bun.stdin.text();
     if (from !== undefined) return readFile(expandHome(from), "utf8");
     return undefined;
@@ -103,10 +126,8 @@ function spacesCommands(locale?: string) {
   };
 
   /**
-   * ISO datetimes pass through. A YYYY-MM-DD date is a day in the CLI user's
-   * timezone, stored like the web interface does: a deadline at the presets'
-   * 17:00, a start at the beginning of the day, and an end at the beginning of
-   * the next day, so the end date is included.
+   * A YYYY-MM-DD deadline stays a calendar date. Event bounds use local midnight;
+   * the end date includes its whole day. Date-times retain their existing interpretation.
    */
   const dateTime = (value: string | undefined, label: string, dateOnly: "start" | "end" | "deadline" = "start"): string | undefined => {
     if (!value) return undefined;
@@ -118,11 +139,13 @@ function spacesCommands(locale?: string) {
         }),
       );
     if (DATE_ONLY.test(value)) {
+      if (!DeadlineInputSchema.safeParse(value).success) throw invalid();
+      if (dateOnly === "deadline") return value;
       const day = new Date(`${value}T00:00:00Z`);
       // Rejects impossible dates such as 2026-02-30, and years before 100, which stdlib's wall-clock conversion reads as 19xx.
       if (Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== value || day.getUTCFullYear() < 100) throw invalid();
       if (dateOnly === "end") day.setUTCDate(day.getUTCDate() + 1);
-      const wallClock = `${day.toISOString().slice(0, 10)}T${dateOnly === "deadline" ? DATE_ONLY_DEADLINE_TIME : "00:00"}`;
+      const wallClock = `${day.toISOString().slice(0, 10)}T00:00`;
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       return dates.zonedDateTimeToInstant(wallClock, timeZone, { disambiguation: "compatible" });
     }
@@ -227,20 +250,31 @@ function spacesCommands(locale?: string) {
   const localTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
   const proposalText = (dates: string[]) => dates.map((date) => `${formatTemplateDate(date, locale)} (${date})`).join(", ") || "-";
 
-  /** A user: `me`, a user ID, or a username with access to the space. */
+  /** An assignee: `me`, a principal ID, a username, or a service account name with access. */
   const resolveUserId = async (ctx: CloudCliContext, spaceId: string, ref: string): Promise<string> => {
     if (ref === "me") return (await readApi<{ id: string }>(ctx, "/api/me")).id;
     if (UUID.test(ref)) return ref;
-    const users = await readApi<SpaceAssignableUser[]>(
-      ctx,
-      withQuery(api(`/${encodeURIComponent(spaceId)}/assignable-users`), { search: ref }),
-    );
-    const user = users.find((candidate) => candidate.uid === ref);
-    if (user) return user.id;
+    // People and service accounts are looked up apart, so many matching people never hide an account with that name.
+    const list = (kind: SpaceAssignableUser["kind"]) =>
+      readApi<SpaceAssignableUser[]>(ctx, withQuery(api(`/${encodeURIComponent(spaceId)}/assignable-users`), { search: ref, kind }));
+    const [people, services] = await Promise.all([list("user"), list("service_account")]);
+    const person = people.find((candidate) => candidate.uid === ref);
+    if (person) return person.id;
+    // Only standalone and agent names are unique, so a Space API key can share a name with an agent.
+    // The Space lists exact name matches first, so a shared name shows up here even when many accounts contain it.
+    const accounts = services.filter((candidate) => candidate.uid.toLowerCase() === ref.toLowerCase());
+    if (accounts.length > 1)
+      throw new Error(
+        t({
+          en: `Several service accounts are named "${ref}" in this space. Use the ID of the one you mean: ${accounts.map((account) => account.id).join(", ")}.`,
+          de: `Mehrere Dienstkonten in diesem Space heißen „${ref}“. Verwende die ID des gemeinten Kontos: ${accounts.map((account) => account.id).join(", ")}.`,
+        }),
+      );
+    if (accounts[0]) return accounts[0].id;
     throw new Error(
       t({
-        en: `No user named "${ref}" can be assigned in this space. Use me, a user ID, or a username with access.`,
-        de: `Niemand mit dem Benutzernamen „${ref}“ kann in diesem Space zugewiesen werden. Verwende me, eine Benutzer-ID oder einen Benutzernamen mit Zugriff.`,
+        en: `No person or service account named "${ref}" can be assigned in this space. Use me, an ID, a username, or a service account name with access.`,
+        de: `Keine Person und kein Dienstkonto mit dem Namen „${ref}“ kann in diesem Space zugewiesen werden. Verwende me, eine ID, einen Benutzernamen oder den Namen eines Dienstkontos mit Zugriff.`,
       }),
     );
   };
@@ -275,8 +309,9 @@ function spacesCommands(locale?: string) {
     { key: "blockers", label: t({ en: "BLOCKERS", de: "BLOCKER" }) },
   ];
 
-  const printItem = (ctx: CloudCliContext, verb: CloudCliText, item: SpaceItem) => {
-    if (!printStructured(ctx, item)) ctx.print(`${t(verb)} ${item.title} (${item.id})`);
+  const printItem = (ctx: CloudCliContext, verb: CloudCliText, item: SpaceItem, created = false) => {
+    if (!printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.item", item)))
+      ctx.print(`${t(verb)} ${item.title} (${item.id})${created ? ` ${cloudResourceUrl(ctx, { type: "spaces.item", id: item.id })}` : ""}`);
   };
 
   const loadDeps = async (ctx: CloudCliContext, item: SpaceItem, page = 1, perPage = 50): Promise<ItemDeps> => {
@@ -312,8 +347,8 @@ function spacesCommands(locale?: string) {
     from: fromFlag,
     deadline: flag.string({
       description: t({
-        en: "Deadline as ISO datetime, or YYYY-MM-DD for 17:00 local time",
-        de: "Frist als ISO-Zeitpunkt oder YYYY-MM-DD für 17:00 Ortszeit",
+        en: "Deadline: YYYY-MM-DD (all day), or ISO datetime with a time",
+        de: "Frist: YYYY-MM-DD (ganztägig) oder ISO-Zeitpunkt mit Uhrzeit",
       }),
     }),
     estimateMinutes: flag.int({
@@ -334,7 +369,10 @@ function spacesCommands(locale?: string) {
       description: t({ en: "Tag ID or exact name; repeatable", de: "Schlagwort-ID oder exakter Name; wiederholbar" }),
     }),
     assignee: flag.stringList({
-      description: t({ en: "me, user ID, or username; repeatable", de: "me, Benutzer-ID oder Benutzername; wiederholbar" }),
+      description: t({
+        en: "Assignee: me, user or service account ID, username, or service account name; repeatable",
+        de: "Zuständige: me, Benutzer- oder Dienstkonto-ID, Benutzername oder Dienstkontoname; wiederholbar",
+      }),
     }),
   };
 
@@ -388,6 +426,7 @@ function spacesCommands(locale?: string) {
     }),
     groupSummaries: {
       access: t({ en: "Manage direct access to spaces", de: "Direkten Zugriff auf Spaces verwalten" }),
+      reactions: t({ en: "React to an item", de: "Auf einen Eintrag reagieren" }),
       comments: t({ en: "Discuss an item", de: "Einen Eintrag diskutieren" }),
       attachments: t({
         en: "List, upload, download, and delete task images",
@@ -413,7 +452,10 @@ function spacesCommands(locale?: string) {
           mine: flag.boolean({ description: t({ en: "Only items assigned to me", de: "Nur mir zugewiesene Einträge" }) }),
           unassigned: flag.boolean({ description: t({ en: "Only unassigned items", de: "Nur Einträge ohne Zuweisung" }) }),
           assignee: flag.stringList({
-            description: t({ en: "Assignee user ID; repeatable", de: "Benutzer-ID der Zuweisung; wiederholbar" }),
+            description: t({
+              en: "Assignee user or service account ID; repeatable",
+              de: "Benutzer- oder Dienstkonto-ID der Zuweisung; wiederholbar",
+            }),
           }),
           ready: flag.boolean({ description: t({ en: "Open tasks without active blockers", de: "Offene Aufgaben ohne aktive Blocker" }) }),
           blocked: flag.boolean({ description: t({ en: "Open tasks with active blockers", de: "Offene Aufgaben mit aktiven Blockern" }) }),
@@ -441,11 +483,16 @@ function spacesCommands(locale?: string) {
             const spaces = (await readApi<Space[]>(ctx, api())).filter(
               (space) => !query || space.name.toLowerCase().includes(query) || space.description?.toLowerCase().includes(query),
             );
-            printRows(ctx, spaces, spaces, [
-              { key: "id", label: "ID" },
-              { key: "name", label: "NAME" },
-              { key: "updatedAt", label: t({ en: "UPDATED", de: "GEÄNDERT" }) },
-            ]);
+            printRows(
+              ctx,
+              spaces.map((space) => withCloudResourcePermalink(ctx, "spaces.space", space)),
+              spaces,
+              [
+                { key: "id", label: "ID" },
+                { key: "name", label: "NAME" },
+                { key: "updatedAt", label: t({ en: "UPDATED", de: "GEÄNDERT" }) },
+              ],
+            );
             return;
           }
           if ([flags.ready, flags.blocked].filter(Boolean).length > 1 || [flags.mine, flags.unassigned].filter(Boolean).length > 1)
@@ -478,7 +525,12 @@ function spacesCommands(locale?: string) {
             page: flags.page ?? 1,
             pageSize: flags.perPage ?? 50,
           });
-          printRows(ctx, result, itemRows(result.items, space), itemColumns);
+          printRows(
+            ctx,
+            { ...result, items: result.items.map((item) => withCloudResourcePermalink(ctx, "spaces.item", item)) },
+            itemRows(result.items, space),
+            itemColumns,
+          );
           if (ctx.options.output === "text" && result.page < result.totalPages)
             ctx.error(`${t({ en: "More items", de: "Weitere Einträge" })}: --page ${result.page + 1}`);
         },
@@ -512,7 +564,7 @@ function spacesCommands(locale?: string) {
           const address = parseCliAddress(args.target);
           if (address.kind === "path" && address.path === "") {
             const space = await loadSpace(ctx, (await resolveSpace(ctx, args.target)).id);
-            if (!printStructured(ctx, space)) {
+            if (!printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.space", space))) {
               ctx.print(`${space.name} (${space.id})`);
               if (space.description) ctx.print(space.description);
               ctx.print(`${t({ en: "columns", de: "Spalten" })}: ${space.columns.map((c) => `${c.name} (${c.id})`).join(", ") || "-"}`);
@@ -551,11 +603,23 @@ function spacesCommands(locale?: string) {
               links,
               comments,
             };
-            if (!printStructured(ctx, context)) ctx.print(JSON.stringify(context, null, 2));
+            const linkedDeps = deps ? withDepsPermalinks(ctx, deps) : null;
+            if (
+              !printStructured(ctx, {
+                ...withCloudResourcePermalink(ctx, "spaces.item", context),
+                blockers: linkedDeps?.blockers ?? [],
+                blocks: linkedDeps?.blocks ?? null,
+                comments: {
+                  ...comments,
+                  items: comments.items.map((comment) => withCloudResourcePermalink(ctx, "spaces.comment", comment)),
+                },
+              })
+            )
+              ctx.print(JSON.stringify(context, null, 2));
             return;
           }
           const detail = attachments ? { ...item, attachments } : item;
-          if (printStructured(ctx, detail)) return;
+          if (printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.item", detail))) return;
           ctx.print(`${item.title} (${item.id})`);
           if (item.description) ctx.print(item.description);
           ctx.print(`space: ${item.spaceId}`);
@@ -564,6 +628,10 @@ function spacesCommands(locale?: string) {
           if (item.startsAt) ctx.print(`${t({ en: "time", de: "Zeit" })}: ${item.startsAt} – ${item.endsAt ?? ""}`);
           if (item.assignees?.length)
             ctx.print(`${t({ en: "assignees", de: "zugewiesen" })}: ${item.assignees.map((a) => a.displayName).join(", ")}`);
+          if (item.reactions?.length)
+            ctx.print(
+              `${t({ en: "reactions", de: "Reaktionen" })}: ${item.reactions.map((r) => `${r.emoji} ${r.count}${r.own ? " *" : ""}`).join("  ")}`,
+            );
           if (item.activeBlockerCount > 0) ctx.print(`${t({ en: "blocked by", de: "blockiert von" })}: ${item.activeBlockerCount}`);
           if (attachments?.length)
             ctx.print(`${t({ en: "attachments", de: "Anhänge" })}: ${attachments.map((a) => a.filename).join(", ")}`);
@@ -584,7 +652,10 @@ function spacesCommands(locale?: string) {
             description: flags.description,
             color: flags.color ?? "#3b82f6",
           });
-          if (!printStructured(ctx, space)) ctx.print(`${t({ en: "Created", de: "Angelegt" })} ${space.name} (${space.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.space", space)))
+            ctx.print(
+              `${t({ en: "Created", de: "Angelegt" })} ${space.name} (${space.id}) ${cloudResourceUrl(ctx, { type: "spaces.space", id: space.id })}`,
+            );
         },
       }),
 
@@ -645,13 +716,14 @@ function spacesCommands(locale?: string) {
                 de: `„${args.target}“ benennt keinen neuen Eintrag. Verwende <space>:<titel>.`,
               }),
             );
+          const description = await readText(flags.description, flags.from, "description");
           const container = address.kind === "path" ? address.container : address.ref;
           const space = await loadSpace(ctx, (await resolveSpace(ctx, `${container}:`)).id);
           const columnId = flags.column ? resolveColumnId(space, flags.column) : space.columns[0]?.id;
           if (!columnId) throw new Error(t({ en: `${space.name} has no column.`, de: `${space.name} hat keine Spalte.` }));
           const explicit = {
             title: title || undefined,
-            description: await readText(flags.description, flags.from, "description"),
+            description,
             startsAt: dateTime(flags.startsAt, "--starts-at"),
             endsAt: dateTime(flags.endsAt, "--ends-at", "end"),
             allDay: allDayRange(flags.startsAt, flags.endsAt),
@@ -668,7 +740,7 @@ function spacesCommands(locale?: string) {
               assigneeIds: explicit.assigneeIds ?? [],
               tagIds: explicit.tagIds ?? [],
             });
-            printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item);
+            printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item, true);
             return;
           }
           if ([flags.date, flags.noDate || undefined, explicit.deadline, explicit.startsAt].filter(Boolean).length > 1)
@@ -692,7 +764,7 @@ function spacesCommands(locale?: string) {
           const draft = await readApi<ItemTemplateDraft>(
             ctx,
             withQuery(api(`/${space.id}/templates/${encodeURIComponent(template.id)}/draft`), {
-              date: flags.date ?? (at ? localNow(new Date(at), localTimeZone()).date : undefined),
+              date: flags.date ?? (at ? (DATE_ONLY.test(at) ? at : localNow(new Date(at), localTimeZone()).date) : undefined),
               noDate: flags.noDate ? "true" : undefined,
               timeZone: localTimeZone(),
             }),
@@ -715,7 +787,7 @@ function spacesCommands(locale?: string) {
               }),
             );
           const item = await send<SpaceItem>(ctx, "POST", api(`/${space.id}/items`), body);
-          printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item);
+          printItem(ctx, { en: "Added", de: "Hinzugefügt" }, item, true);
           const others = draft.proposals.filter((date) => date !== draft.date);
           if (ctx.options.output === "text" && others.length && !flags.date && !explicit.deadline && !explicit.startsAt)
             ctx.error(`${t({ en: "Other proposed dates", de: "Weitere vorgeschlagene Daten" })}: ${proposalText(others)}`);
@@ -799,7 +871,10 @@ function spacesCommands(locale?: string) {
         },
       }),
       command("set", {
-        summary: t({ en: "Change item fields", de: "Felder eines Eintrags ändern" }),
+        summary: t({
+          en: "Change item fields; release an active claim before removing its holder from assignees (409)",
+          de: "Eintragsfelder ändern; vor dem Entfernen der arbeitenden Person ihre aktive Übernahme freigeben (409)",
+        }),
         args: itemArg,
         flags: {
           title: flag.string({ description: t({ en: "Title", de: "Titel" }) }),
@@ -807,7 +882,10 @@ function spacesCommands(locale?: string) {
           clearEstimate: flag.boolean({ name: "clear-estimate", description: t({ en: "Remove the estimate", de: "Schätzung entfernen" }) }),
           clearAssignees: flag.boolean({
             name: "clear-assignees",
-            description: t({ en: "Remove all assignees", de: "Alle Zuweisungen entfernen" }),
+            description: t({
+              en: "Remove all assignees; release an active claim first (409)",
+              de: "Alle Zuweisungen entfernen; eine aktive Übernahme zuerst freigeben (409)",
+            }),
           }),
           clearTags: flag.boolean({ name: "clear-tags", description: t({ en: "Remove all tags", de: "Alle Schlagwörter entfernen" }) }),
         },
@@ -823,11 +901,12 @@ function spacesCommands(locale?: string) {
                 de: "Übergib entweder neue Werte oder das passende --clear-Flag, nicht beides.",
               }),
             );
+          const description = await readText(flags.description, flags.from, "description");
           const item = await resolveItem(ctx, args.item);
           const space = flags.tag.length ? await loadSpace(ctx, item.spaceId) : null;
           const body: Record<string, unknown> = {
             title: flags.title,
-            description: await readText(flags.description, flags.from, "description"),
+            description,
             startsAt: dateTime(flags.startsAt, "--starts-at"),
             endsAt: dateTime(flags.endsAt, "--ends-at", "end"),
             allDay: allDayRange(flags.startsAt, flags.endsAt),
@@ -896,10 +975,11 @@ function spacesCommands(locale?: string) {
               : {},
           async run({ ctx, args, flags }) {
             const done = flags as { result?: string; from?: string; commit?: string; claimId?: string; force?: boolean };
+            const result = await readText(done.result, done.from, "result");
             const item = await resolveItem(ctx, args.item);
             const updated = await send<SpaceItem>(ctx, "POST", itemApi(item, "/completed"), {
               completed: action === "done",
-              result: await readText(done.result, done.from, "result"),
+              result,
               commit: done.commit,
               claimId: done.claimId,
               ...(done.force ? { force: true } : {}),
@@ -909,12 +989,18 @@ function spacesCommands(locale?: string) {
         }),
       ),
       command("assign", {
-        summary: t({ en: "Assign an item to one person, or to nobody", de: "Einen Eintrag einer Person oder niemandem zuweisen" }),
+        summary: t({
+          en: "Assign to one person, service account, or nobody; release an active claim before removing its holder (409)",
+          de: "Einer Person, einem Dienstkonto oder niemandem zuweisen; vor dem Entfernen die aktive Übernahme freigeben (409)",
+        }),
         args: {
           ...itemArg,
           user: arg.required({
             valueLabel: "user|me|none",
-            description: t({ en: "me, none, a user ID, or a username", de: "me, none, eine Benutzer-ID oder ein Benutzername" }),
+            description: t({
+              en: "me, none, a user or service account ID, a username, or a service account name",
+              de: "me, none, eine Benutzer- oder Dienstkonto-ID, ein Benutzername oder Dienstkontoname",
+            }),
           }),
         },
         examples: ['cld spaces assign "Roadmap":"Publish release notes" me', "cld spaces assign Item01 none"],
@@ -931,8 +1017,8 @@ function spacesCommands(locale?: string) {
           date: arg.required({
             valueLabel: "date|none",
             description: t({
-              en: "ISO datetime, YYYY-MM-DD (17:00 local time), or none",
-              de: "ISO-Zeitpunkt, YYYY-MM-DD (17:00 Ortszeit) oder none",
+              en: "YYYY-MM-DD (all day), ISO datetime with a time, or none",
+              de: "YYYY-MM-DD (ganztägig), ISO-Zeitpunkt mit Uhrzeit oder none",
             }),
           }),
         },
@@ -969,7 +1055,7 @@ function spacesCommands(locale?: string) {
             await send<unknown>(ctx, "DELETE", itemApi(item, "/blockers"), { blockerItemId: blocker.id });
           }
           const deps = await loadDeps(ctx, item, flags.page, flags.perPage);
-          if (printStructured(ctx, deps)) return;
+          if (printStructured(ctx, withDepsPermalinks(ctx, deps))) return;
           const status = (entry: { completedAt: string | null }) => (entry.completedAt ? "completed" : "active");
           ctx.table(
             [
@@ -1011,10 +1097,10 @@ function spacesCommands(locale?: string) {
           );
           printRows(
             ctx,
-            page,
+            { ...page, items: page.items.map((comment) => withCloudResourcePermalink(ctx, "spaces.comment", comment)) },
             page.items.map((comment) => ({
               id: comment.id,
-              author: comment.userName ?? comment.userId ?? "",
+              author: principalLabel({ principal: { type: "user", userId: comment.userId ?? "" }, displayName: comment.userName }, locale),
               content: comment.content.replace(/\s+/g, " ").slice(0, 80),
               createdAt: comment.createdAt,
             })),
@@ -1029,6 +1115,34 @@ function spacesCommands(locale?: string) {
             ctx.error(`${t({ en: "More comments", de: "Weitere Kommentare" })}: --page ${page.page + 1}`);
         },
       }),
+      command("reactions add", {
+        summary: t({ en: "Add your reaction to an item", de: "Deine Reaktion zu einem Eintrag hinzufügen" }),
+        args: { ...itemArg, emoji: arg.required({ description: t({ en: "One emoji", de: "Ein Emoji" }) }) },
+        async run({ ctx, args }) {
+          const item = await resolveItem(ctx, args.item);
+          const result = await readApi<{ reactions: SpaceItemReaction[] }>(
+            ctx,
+            itemApi(item, `/reactions/${encodeURIComponent(args.emoji)}`),
+            { method: "PUT" },
+          );
+          if (!printStructured(ctx, result))
+            ctx.print(result.reactions.map((r) => `${r.emoji} ${r.count}${r.own ? " *" : ""}`).join("  ") || "-");
+        },
+      }),
+      command("reactions remove", {
+        summary: t({ en: "Remove your reaction from an item", de: "Deine Reaktion von einem Eintrag entfernen" }),
+        args: { ...itemArg, emoji: arg.required({ description: t({ en: "One emoji", de: "Ein Emoji" }) }) },
+        async run({ ctx, args }) {
+          const item = await resolveItem(ctx, args.item);
+          const result = await readApi<{ reactions: SpaceItemReaction[] }>(
+            ctx,
+            itemApi(item, `/reactions/${encodeURIComponent(args.emoji)}`),
+            { method: "DELETE" },
+          );
+          if (!printStructured(ctx, result))
+            ctx.print(result.reactions.map((r) => `${r.emoji} ${r.count}${r.own ? " *" : ""}`).join("  ") || "-");
+        },
+      }),
       command("comments add", {
         summary: t({ en: "Comment on an item", de: "Einen Eintrag kommentieren" }),
         args: itemArg,
@@ -1037,7 +1151,10 @@ function spacesCommands(locale?: string) {
           const content = await requireText(flags.content, flags.from, "content");
           const item = await resolveItem(ctx, args.item);
           const comment = await send<SpaceComment>(ctx, "POST", itemApi(item, "/comments"), { content });
-          if (!printStructured(ctx, comment)) ctx.print(`${t({ en: "Added comment", de: "Kommentar hinzugefügt" })} ${comment.id}`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.comment", comment)))
+            ctx.print(
+              `${t({ en: "Added comment", de: "Kommentar hinzugefügt" })} ${comment.id} ${cloudResourceUrl(ctx, { type: "spaces.comment", id: comment.id })}`,
+            );
         },
       }),
       command("comments update", {
@@ -1050,7 +1167,8 @@ function spacesCommands(locale?: string) {
           const comment = await send<SpaceComment>(ctx, "PATCH", itemApi(item, `/comments/${encodeURIComponent(args.comment)}`), {
             content,
           });
-          if (!printStructured(ctx, comment)) ctx.print(`${t({ en: "Updated comment", de: "Kommentar aktualisiert" })} ${comment.id}`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "spaces.comment", comment)))
+            ctx.print(`${t({ en: "Updated comment", de: "Kommentar aktualisiert" })} ${comment.id}`);
         },
       }),
       command("comments delete", {
@@ -1147,8 +1265,8 @@ function spacesCommands(locale?: string) {
       }),
       command("claim", {
         summary: t({
-          en: "Claim an open, unblocked task for a worker",
-          de: "Eine offene, unblockierte Aufgabe für einen Worker übernehmen",
+          en: "Claim an open, unblocked task; also assigns your person or service account, except personal automation keys",
+          de: "Eine offene, unblockierte Aufgabe übernehmen; weist dich als Person oder Dienstkonto zu, außer bei persönlichen Automatisierungsschlüsseln",
         }),
         args: itemArg,
         flags: {
@@ -1164,14 +1282,17 @@ function spacesCommands(locale?: string) {
         },
       }),
       command("release", {
-        summary: t({ en: "Release a task claim", de: "Eine Aufgabenübernahme freigeben" }),
+        summary: t({
+          en: "Release your task claim; you stay assigned",
+          de: "Deine Aufgabenübernahme freigeben; du bleibst zugewiesen",
+        }),
         args: itemArg,
         flags: {
           claimId: flag.string({ name: "claim-id", required: true, description: t({ en: "Claim ID", de: "Übernahme-ID" }) }),
           force: flag.boolean({
             description: t({
-              en: "Take over the exact observed claim of another worker",
-              de: "Die genau beobachtete Übernahme einer anderen Person übernehmen",
+              en: "Release another worker's exact claim; also remove their assignment if they are a person",
+              de: "Die genaue Übernahme eines anderen Kontos freigeben; bei einer Person auch ihre Zuweisung entfernen",
             }),
           }),
         },
@@ -1406,14 +1527,22 @@ function spacesCommands(locale?: string) {
           const items = (await readApi<CalendarItem[]>(ctx, withQuery(api("/calendar"), range))).filter(
             (item) => !space || item.spaceId === space.id,
           );
-          printRows(ctx, items, items, [
-            { key: "id", label: "ID" },
-            { key: "spaceName", label: "SPACE" },
-            { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
-            { key: "startsAt", label: t({ en: "START", de: "BEGINN" }) },
-            { key: "endsAt", label: t({ en: "END", de: "ENDE" }) },
-            { key: "deadline", label: t({ en: "DUE", de: "FÄLLIG" }) },
-          ]);
+          printRows(
+            ctx,
+            items.map((item) => ({
+              ...item,
+              permalink: cloudResourceUrl(ctx, { type: "spaces.item", id: item.id.split(":", 1)[0] ?? item.id }),
+            })),
+            items,
+            [
+              { key: "id", label: "ID" },
+              { key: "spaceName", label: "SPACE" },
+              { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
+              { key: "startsAt", label: t({ en: "START", de: "BEGINN" }) },
+              { key: "endsAt", label: t({ en: "END", de: "ENDE" }) },
+              { key: "deadline", label: t({ en: "DUE", de: "FÄLLIG" }) },
+            ],
+          );
         },
       }),
       command("overlap", {
@@ -1442,13 +1571,18 @@ function spacesCommands(locale?: string) {
           const items = (await readApi<OverlapItem[]>(ctx, withQuery(api("/calendar/overlap"), { ...range, excludeItemId }))).filter(
             (item) => !space || item.spaceId === space.id,
           );
-          printRows(ctx, items, items, [
-            { key: "itemId", label: "ID" },
-            { key: "spaceName", label: "SPACE" },
-            { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
-            { key: "startsAt", label: t({ en: "START", de: "BEGINN" }) },
-            { key: "endsAt", label: t({ en: "END", de: "ENDE" }) },
-          ]);
+          printRows(
+            ctx,
+            items.map((item) => ({ ...item, permalink: cloudResourceUrl(ctx, { type: "spaces.item", id: item.itemId }) })),
+            items,
+            [
+              { key: "itemId", label: "ID" },
+              { key: "spaceName", label: "SPACE" },
+              { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
+              { key: "startsAt", label: t({ en: "START", de: "BEGINN" }) },
+              { key: "endsAt", label: t({ en: "END", de: "ENDE" }) },
+            ],
+          );
         },
       }),
       command("invitation context", {
@@ -1456,7 +1590,13 @@ function spacesCommands(locale?: string) {
         args: itemArg,
         async run({ ctx, args }) {
           const value = await readApi<EventInvitationContext>(ctx, itemApi(await resolveItem(ctx, args.item), "/invitation-context"));
-          if (printStructured(ctx, value)) return;
+          if (
+            printStructured(ctx, {
+              ...value,
+              mailboxes: value.mailboxes.map((mailbox) => withCloudResourcePermalink(ctx, "mail.mailbox", mailbox)),
+            })
+          )
+            return;
           ctx.table(
             value.mailboxes.flatMap((mailbox) =>
               mailbox.identities.map((identity) => ({
@@ -1516,8 +1656,10 @@ function spacesCommands(locale?: string) {
             attendees: flags.to.map((address) => ({ name: null, address })),
             method: flags.cancel ? "cancel" : "request",
           });
-          if (!printStructured(ctx, value))
-            ctx.print(`${t({ en: "Created Mail draft", de: "Mail-Entwurf angelegt" })} ${value.draftId}: ${value.href}`);
+          if (!printStructured(ctx, { ...value, permalink: cloudResourceUrl(ctx, { type: "mail.draft", id: value.draftId }) }))
+            ctx.print(
+              `${t({ en: "Created Mail draft", de: "Mail-Entwurf angelegt" })} ${value.draftId}: ${cloudResourceUrl(ctx, { type: "mail.draft", id: value.draftId })}`,
+            );
         },
       }),
       ...spaceAccessCommands,

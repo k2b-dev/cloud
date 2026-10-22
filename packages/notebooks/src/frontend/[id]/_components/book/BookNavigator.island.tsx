@@ -2,7 +2,7 @@ import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { AppWorkspace, createNavigation, type NavigationItem, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { withPresentationMode } from "../../../../lib/presentation-url";
-import { buildNoteUrl, buildTagPageUrl } from "../../../params";
+import { buildGraphUrl, buildNoteUrl, buildTagPageUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import NavigationVisibilityControls from "../sidebar/NavigationVisibilityControls";
 import {
@@ -25,10 +25,16 @@ export type BookNavigatorProps = {
   tree: BookTreeNode[];
   tags: { tag: string; count: number }[];
   activeTag?: string;
+  /** The current Book address; Write keeps its query (sidebar filters) and only switches the mode. */
+  currentHref: string;
   canWrite?: boolean;
   locked?: boolean;
   /** The notebook navigation preference: a hidden contents list renders no page titles at all. */
   navigationHidden: boolean;
+  /** The Book page this navigation stands beside, when it is its footer item; the open note then is not the current page. */
+  current?: "graph";
+  /** While the graph shows: the page it opened from, which its Links item keeps. */
+  graphBack?: string;
 };
 
 /** The notes that contain the selected note, outermost first; `undefined` when it is not in the tree. */
@@ -59,12 +65,16 @@ export default function BookNavigator(props: BookNavigatorProps) {
     const update = (event: Event) => {
       const next = (event as CustomEvent<BookMetadata>).detail;
       const opened = next.selectedNoteId !== state().selectedNoteId;
-      setState({ ...props, ...next, activeTag: next.activeTag });
+      setState({ ...props, ...next, activeTag: next.activeTag, currentHref: next.href });
       if (opened) setExpanded((current) => [...new Set([...current, ...(ancestorIds(next.tree, next.selectedNoteId) ?? [])])]);
     };
     window.addEventListener(BOOK_SNAPSHOT_EVENT, update);
     onCleanup(() => window.removeEventListener(BOOK_SNAPSHOT_EVENT, update));
   });
+  // The graph starts from the open note and keeps Book, so its links lead into Book; Close returns to the page it opened from.
+  const graphHref = () =>
+    buildGraphUrl(props.notebookId, state().selectedNoteId, "book", props.current === "graph" ? props.graphBack : state().currentHref);
+  const currentNoteId = () => (props.current === "graph" ? null : state().selectedNoteId);
   const items = (nodes: BookTreeNode[]) =>
     nodes.map((node) => (
       <AppWorkspace.NavTree.Item
@@ -76,19 +86,32 @@ export default function BookNavigator(props: BookNavigatorProps) {
         {node.children.length > 0 ? items(node.children) : undefined}
       </AppWorkspace.NavTree.Item>
     ));
+  // A writer leaves Book from the top of the navigation: an unlocked note opens in Write, the
+  // same target as the floating edit button; without a note or with a locked one, the read-only workspace.
+  // Both entries fill the same slot, so switching between them never moves the contents list.
+  const workspaceEntry = () => {
+    const current = state();
+    if (!current.canWrite) return null;
+    if (current.selectedNoteId && !current.locked)
+      return { label: t().write, icon: "ti ti-pencil", href: withPresentationMode(current.currentHref, "write") };
+    return {
+      label: t().openWorkspace,
+      icon: "ti ti-layout-sidebar",
+      href: withPresentationMode(
+        current.selectedNoteId ? buildNoteUrl(props.notebookId, current.selectedNoteId) : `/app/notebooks/${props.notebookId}`,
+        "readonly",
+      ),
+    };
+  };
   const navigation = () => (
     <>
-      {state().canWrite && (!state().selectedNoteId || state().locked) && (
-        <AppWorkspace.SidebarItem
-          href={withPresentationMode(
-            state().selectedNoteId ? buildNoteUrl(props.notebookId, state().selectedNoteId!) : `/app/notebooks/${props.notebookId}`,
-            "readonly",
-          )}
-          icon="ti ti-layout-sidebar"
-        >
-          {t().openWorkspace}
-        </AppWorkspace.SidebarItem>
-      )}
+      <Show when={workspaceEntry()}>
+        {(entry) => (
+          <AppWorkspace.SidebarItem href={entry().href} icon={entry().icon}>
+            {entry().label}
+          </AppWorkspace.SidebarItem>
+        )}
+      </Show>
       <AppWorkspace.SidebarSection title={t().notes}>
         <Show
           when={state().tree.length > 0}
@@ -96,7 +119,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
         >
           <AppWorkspace.NavTree
             ariaLabel={t().notes}
-            selectedId={state().selectedNoteId}
+            selectedId={currentNoteId()}
             expandedIds={expanded()}
             onExpandedIdsChange={setExpanded}
           >
@@ -133,7 +156,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
     label: node.title,
     icon: "ti ti-file-text",
     ...readingPage(withPresentationMode(buildNoteUrl(props.notebookId, node.id), "book")),
-    active: state().selectedNoteId === node.id,
+    active: currentNoteId() === node.id,
     // The sheet shows the same folds as the sidebar tree and hands its toggles back to this island.
     expanded: expanded().includes(node.id),
     children: node.children.map(noteEntry),
@@ -145,19 +168,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
   const mobileNavigation = createNavigation({
     switcher,
     items: () => [
-      ...(state().canWrite && (!state().selectedNoteId || state().locked)
-        ? [
-            {
-              id: "workspace",
-              label: t().openWorkspace,
-              icon: "ti ti-layout-sidebar",
-              href: withPresentationMode(
-                state().selectedNoteId ? buildNoteUrl(props.notebookId, state().selectedNoteId!) : `/app/notebooks/${props.notebookId}`,
-                "readonly",
-              ),
-            },
-          ]
-        : []),
+      ...[workspaceEntry()].flatMap((entry) => (entry ? [{ id: "workspace", ...entry }] : [])),
       { id: "notes", label: t().notes, children: state().tree.map(noteEntry) },
       ...(state().tags.length
         ? [
@@ -175,6 +186,7 @@ export default function BookNavigator(props: BookNavigatorProps) {
             },
           ]
         : []),
+      { id: "graph", label: workspaceText().noteLinks, icon: "ti ti-affiliate", href: graphHref(), active: props.current === "graph" },
     ],
     onAction: (action) => openReadingPage(action.slice("open:".length)),
     onExpandedChange: (id, open) => {
@@ -195,10 +207,16 @@ export default function BookNavigator(props: BookNavigatorProps) {
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarSwitcher {...switcher()} />
           <AppWorkspace.SidebarBody>{navigation()}</AppWorkspace.SidebarBody>
+          {/* Marking the graph as the current page also names it, so the workspace head shows no way up beside it. */}
+          <AppWorkspace.SidebarFooter class="notebook-sidebar-foot">
+            <AppWorkspace.SidebarItem icon="ti ti-affiliate" href={graphHref()} active={props.current === "graph"}>
+              {workspaceText().noteLinks}
+            </AppWorkspace.SidebarItem>
+          </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
-      {/* Book view has no editor toolbar, so it always offers the visible way back. */}
-      <NavigationVisibilityControls hidden={navigationHidden()} showControl />
+      {/* Book view has no editor toolbar, so it offers the visible way back; the graph's own toolbar holds the toggle. */}
+      <NavigationVisibilityControls hidden={navigationHidden()} showControl={props.current !== "graph"} />
     </>
   );
 }

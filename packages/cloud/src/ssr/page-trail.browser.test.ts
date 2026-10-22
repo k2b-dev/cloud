@@ -69,7 +69,7 @@ window.shortcuts = () => contextCommandsWithShortcuts().filter((command) => comm
       if (!response.headers.get("content-type")?.includes("text/html")) return response;
       // Without island bundles, the page gets the stylesheet and the runtime instead.
       const markup = (await response.text())
-        .replace(/<script type="module">[^<]*solid-island[^<]*<\/script>/g, "")
+        .replace(/<script type="module"[^>]*>[^<]*solid-island[^<]*<\/script>/g, "")
         .replace(
           "</head>",
           `<style>${css}</style><style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>`,
@@ -205,8 +205,9 @@ describe("the rule decides the form by depth", () => {
           const detail = await trail(page);
           expect(detail.head).toMatchObject({ display: "flex", borders: none });
           expect(detail.head!.box.height).toBe(46);
-          // Flush up to 1536 px; the card's own edge above it.
-          expect(detail.head!.box.top).toBeLessThanOrEqual(device.width >= 1536 ? 9 : 0);
+          // The head sits inside the app card's top border at every tablet/desktop width.
+          if (device.width < 1024) expect(detail.head!.box.top).toBe(9);
+          else expect(detail.head!.box.top).toBeLessThanOrEqual(9);
           expect(detail).toMatchObject({ form: "back", title: { text: "user07", tag: "p" }, arrow: null });
           // The page's own heading is its only one; the head's title is no second.
           expect(await page.getByRole("heading", { level: 1 }).allTextContents()).toEqual(["User Seven"]);
@@ -264,11 +265,12 @@ describe("the rule decides the form by depth", () => {
       const { context, page } = await open(ipadPortrait, path, { language });
       try {
         const before = await trail(page);
-        // The permanent detail now narrows the head too. Only the parent fits;
-        // the first level joins the middle levels in the menu.
+        // The lg detail does not fit beside Main here, so it waits behind
+        // Details and leaves the head its width: the first level and the
+        // parent fit, and only the middle levels go into the menu.
         expect(before.more).toBe(true);
-        expect(before.crumbs).toEqual(["…", folders[3]!]);
-        const hidden = folders.slice(0, 3);
+        expect(before.crumbs).toEqual([folders[0]!, "…", folders[3]!]);
+        const hidden = folders.slice(1, 3);
         expect(hidden.length).toBeGreaterThan(0);
         // The collapse changes no geometry.
         expect(before.head!.box.height).toBe(46);

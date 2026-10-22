@@ -27,7 +27,7 @@ clearing emits an empty string through both value callbacks.
 ## Input modes
 
 - `type` supports text, search, email, URL, and telephone input.
-- `multiline` renders a plain textarea.
+- `multiline` renders a plain textarea. Its initial value, including leading newlines, is readable before hydration.
 - `markdown` renders the shared `MarkdownEditor` and implies multiline input.
 - `password` adds a show or hide control.
 - `variant="ai"` changes the field treatment and default icon. It does not add AI behavior.
@@ -52,6 +52,84 @@ Browser autofill remains enabled for native single-line inputs. While the
 browser reports an autofilled value, `TextInput` extends one semantic surface
 across the input, leading icon, affixes, and clear or password control. Editing
 the value returns the field to its regular visual state.
+
+## Compact inline values
+
+Use `variant="compact"` for a single-line value in a dense editor or tool row.
+It renders a 26 px shell without an icon container; `icon` and `activeIcon` do
+not apply. Compose a visible value name with `prefix` and provide `aria-label`
+when no field label is rendered. The native `size` sets the value width
+(default 9 characters). Long values scroll within the input.
+
+The compact variant uses 12 px text with a fine primary pointer and at least
+16 px on a coarse pointer. Its 20 px text line and 26 px shell keep their
+height; the larger touch font makes each character wider. Do not shrink or
+scale touch text to reproduce a smaller mockup font.
+
+`error` retains the visible error message and its accessible association, just as
+in the default variant. A compact field must not hide a diagnostic to fit a row.
+Compact mode is intended for ordinary single-line values, not password,
+multiline, or Markdown editing.
+
+```tsx
+<TextInput
+  variant="compact"
+  monospace
+  prefix={<span>:region</span>}
+  aria-label="Region"
+  size={9}
+  value={region}
+  onValueChange={setRegion}
+/>
+```
+
+## Place a native field error elsewhere
+
+Use `externalErrorId` only when your composition renders the complete matching
+error outside the field. It applies to native inputs and plain textareas in
+any variant. Markdown mode keeps its regular inline error.
+
+Keep passing `error`: it controls the invalid state and error outline. With an
+active error and a valid `externalErrorId`, the input describes that target
+instead of rendering a local error paragraph. Existing labels and descriptions
+remain connected. Without an error, the target ID is not added to the input.
+Without a valid ID, the ordinary visible inline error remains, including in
+compact mode.
+
+The ID must be nonempty and contain no ASCII whitespace; numbers and
+punctuation are allowed. The library checks this syntax only. Your component
+must render a unique target in the same document, keep it visible while the
+error is active, and provide the complete matching error text. A hidden,
+missing, or unrelated target loses the useful diagnosis. Keep both the field's
+`error` and the target text derived from the same validation state.
+
+Your component also owns the necessary error announcement. External mode
+creates neither a local error message nor a live region. Use your existing
+status live region, or provide an appropriate announcement in your
+composition; avoid announcing the same error twice. The visible target must
+already exist in server HTML when the server renders an active error.
+
+```tsx
+const errorId = createUniqueId();
+const error = () => region() ? undefined : "Enter a region before continuing.";
+
+<>
+  <TextInput
+    variant="compact"
+    aria-label="Region"
+    prefix=":region"
+    value={region}
+    onValueChange={setRegion}
+    error={error}
+    externalErrorId={errorId}
+  />
+  <p id={errorId} role="status">{error()}</p>
+</>;
+```
+
+Changing the target ID, returning to an inline error, or correcting the value
+updates the association without replacing the native input. Do not also add
+the error ID unconditionally through `aria-describedby`.
 
 ## Touch devices
 
@@ -89,9 +167,10 @@ type TextInputProps = Omit<
     minLength?: number;
     maxLength?: number;
     type?: "text" | "search" | "email" | "url" | "tel";
-    variant?: "default" | "ai";
+    variant?: "default" | "ai" | "compact";
     icon?: string;
     activeIcon?: string;
+    externalErrorId?: string;
     prefix?: JSX.Element;
     suffix?: JSX.Element;
     clearable?: boolean;
@@ -115,11 +194,11 @@ type TextInputProps = Omit<
 Prefer a visible `label`. When the surrounding layout cannot render one, pass
 `"aria-label"`; a placeholder is not a persistent label.
 
-Descriptions and errors are connected to the input. The error message is announced as a live alert. Clear and password controls have accessible names.
+Descriptions and errors are connected to the input. Inline errors use a live alert; with `externalErrorId`, your composition owns the visible error and its announcement. Clear and password controls have accessible names.
 
 ## Runtime
 
-The field renders in server HTML. Editing, clearing, password visibility, markdown behavior, and callbacks require hydrated Solid client code.
+The field renders in server HTML. Editing, clearing, password visibility, markdown behavior, and callbacks require browser code.
 
 ## Example
 

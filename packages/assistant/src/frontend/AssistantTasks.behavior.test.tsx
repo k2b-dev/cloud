@@ -1,14 +1,22 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import type { AiChatTaskOccurrenceView, AiChatTaskView } from "@k2b/cloud/ai";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { AssistantLiveProvider, createAssistantLiveHub } from "./assistant-live";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 25));
+// The schedule line and the run retention window read the clock; keep it fixed.
+setSystemTime(new Date("2026-10-01T09:00:00.000Z"));
+afterAll(() => {
+  setSystemTime();
+});
 const task: AiChatTaskView = {
   id: "task01",
   chatId: "chat01",
   chatTitle: "Chat",
+  title: "Weekly overview",
+  name: "Weekly overview",
+  reason: null,
   prompt: "Weekly overview: read my calendar",
   grants: [],
   schedule: { kind: "cron", cron: "30 9 * * 1" },
@@ -129,13 +137,80 @@ test("task list opens the selected task without a manual form; details expose ac
       .click();
     await tick();
     await tick();
-    expect(confirmation).toHaveBeenCalledWith("Task queued. The result will appear here and in the chat when it is ready.", {
-      title: "Scheduled task",
+    expect(confirmation).toHaveBeenCalledWith("Run queued. The result will appear here and in the chat when it is ready.", {
+      title: "Routine",
     });
   } finally {
     dispose();
     fetchMock.mockRestore();
     confirmation.mockRestore();
     dom.cleanup();
+  }
+});
+
+test("a task older than the 90-day run window says no runs in that window instead of none yet", async () => {
+  const dom = createDomTestHarness();
+  const { AssistantTaskDetail } = await import("./AssistantTasksDialog");
+  const old = { ...task, createdAt: "2026-06-01T09:00:00Z" };
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => Response.json({ task: old, occurrences: [], permissions: [] }), {
+      preconnect: globalThis.fetch.preconnect,
+    }),
+  );
+  const dispose = render(
+    () => (
+      <AssistantLiveProvider value={createAssistantLiveHub()}>
+        <AssistantTaskDetail taskId="task01" onOpenRun={() => {}} onEdit={() => {}} />
+      </AssistantLiveProvider>
+    ),
+    dom.root,
+  );
+  try {
+    await tick();
+    expect(dom.root.textContent).toContain("No runs in the last 90 days");
+    expect(dom.root.textContent).not.toContain("No occurrences yet");
+  } finally {
+    dispose();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});
+
+test("the chat's routine list names routines in English and German", async () => {
+  const { AssistantTasksView } = await import("./AssistantTasksDialog");
+  const { LocaleProvider } = await import("@k2b/ui");
+  const expected = {
+    en: ["No routines", "Ask in the chat for a reminder or a routine.", "Set up new routines and make changes in the chat."],
+    de: [
+      "Keine Routinen",
+      "Bitte den Assistenten im Chat um eine Erinnerung oder eine Routine.",
+      "Neue Routinen und Änderungen planst du im Chat.",
+    ],
+  };
+  for (const [locale, [empty, hint, footer]] of Object.entries(expected)) {
+    const dom = createDomTestHarness();
+    const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(async () => Response.json([]), { preconnect: globalThis.fetch.preconnect }),
+    );
+    const dispose = render(
+      () => (
+        <LocaleProvider locale={locale}>
+          <AssistantLiveProvider value={createAssistantLiveHub()}>
+            <AssistantTasksView chatId="chat01" onOpenRun={() => {}} />
+          </AssistantLiveProvider>
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
+    try {
+      await tick();
+      expect(dom.root.textContent).toContain(empty!);
+      expect(dom.root.textContent).toContain(hint!);
+      expect(dom.root.textContent).toContain(footer!);
+    } finally {
+      dispose();
+      fetchMock.mockRestore();
+      dom.cleanup();
+    }
   }
 });

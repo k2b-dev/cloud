@@ -82,16 +82,34 @@ const gateway = Bun.serve({
 });
 
 const stableClaims = (claims: JWTPayload) => {
-  const { iat, exp, jti, nonce, ...stable } = claims;
+  const { iat, exp, jti, nonce, auth_epoch, ...stable } = claims;
   assert.equal(typeof iat, "number");
   assert.equal(typeof exp, "number");
   if (claims.token_use === "access") assert.equal(typeof jti, "string");
-  return { fields: Object.keys(claims).sort(), values: stable };
+  return {
+    fields: Object.keys(claims)
+      .filter((field) => field !== "auth_epoch")
+      .sort(),
+    values: stable,
+  };
 };
+// Epoch and login extension additions are checked separately from the stable upgrade snapshot.
+const tokenFields = (tokens: client.Tokens) =>
+  Object.keys(tokens)
+    .filter((field) => field !== "refresh_token_expires_in")
+    .sort();
 const discovery = async () => {
   const configuration = await client.json(await client.request("/.well-known/openid-configuration"));
   assert.deepEqual(await client.json(await client.request("/.well-known/oauth-authorization-server")), configuration);
-  return configuration;
+  assert(configuration && typeof configuration === "object");
+  return Object.fromEntries(
+    Object.entries(configuration)
+      .filter(([field]) => field !== "cloud_login_ttl_supported" && field !== "cloud_login_hint_supported")
+      .map(([field, value]) => [
+        field,
+        field === "claims_supported" && Array.isArray(value) ? value.filter((claim) => claim !== "auth_epoch") : value,
+      ]),
+  );
 };
 const actor = async (token: string, status = 200) =>
   client.json(
@@ -104,7 +122,12 @@ const exercise = async (
   clients: { public: client.Client; confidential: client.Client; service: client.Client; dynamic: client.Client },
   cookie: string,
   userId: string,
+  epochRequired: boolean,
 ) => {
+  const [user] = epochRequired
+    ? await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`
+    : [];
+  const authEpoch = user ? Number(user.auth_epoch) : null;
   const snapshot: Record<string, unknown> = { discovery: await discovery() };
   for (const [name, registration] of [
     ["public", clients.public],
@@ -118,13 +141,15 @@ const exercise = async (
     assert.equal(access.sub, userId);
     assert.equal(access.token_use, "access");
     assert.equal(access.principal_type, "user");
+    if (epochRequired) assert.equal(access.auth_epoch, authEpoch);
+    assert.equal(id.auth_epoch, undefined);
     assert.equal(id.nonce, grant.nonce);
     assert.deepEqual(id.groups, ["Reference child", "Reference parent"]);
     assert.equal(typeof access.jti, "string");
     snapshot[name] = {
       access: stableClaims(access),
       id: stableClaims(id),
-      fields: Object.keys(issued).sort(),
+      fields: tokenFields(issued),
       userinfo: await client.userinfo(issued.access_token),
       actor: await actor(issued.access_token),
     };
@@ -144,8 +169,9 @@ const exercise = async (
   const service = await client.tokens(await client.tokenRequest(clients.service, { grant_type: "client_credentials", scope: "read" }));
   const serviceClaims = await client.verify(service.access_token, "cloud");
   assert.equal(serviceClaims.principal_type, "service_account");
+  assert.equal(serviceClaims.auth_epoch, undefined);
   assert.equal(serviceClaims.resource_id, "reference");
-  snapshot.service = { claims: stableClaims(serviceClaims), fields: Object.keys(service).sort(), actor: await actor(service.access_token) };
+  snapshot.service = { claims: stableClaims(serviceClaims), fields: tokenFields(service), actor: await actor(service.access_token) };
   snapshot.invalidSecret = await client.error(
     await client.tokenRequest(
       { ...clients.service, clientSecret: "incorrect" },
@@ -189,8 +215,10 @@ const exercise = async (
   const dynamicClaims = await client.verify(dynamic.access_token, client.resource);
   const dynamicId = await client.verify(dynamic.id_token, clients.dynamic.clientId);
   assert.equal(dynamicId.nonce, dynamicGrant.nonce);
+  if (epochRequired) assert.equal(dynamicClaims.auth_epoch, authEpoch);
+  assert.equal(dynamicId.auth_epoch, undefined);
   assert.deepEqual(dynamicClaims.aud, [client.resource]);
-  snapshot.dynamic = { access: stableClaims(dynamicClaims), id: stableClaims(dynamicId), fields: Object.keys(dynamic).sort() };
+  snapshot.dynamic = { access: stableClaims(dynamicClaims), id: stableClaims(dynamicId), fields: tokenFields(dynamic) };
   assert.equal((await client.request("/oauth/userinfo", { headers: { authorization: `Bearer ${dynamic.access_token}` } })).status, 401);
   await actor(dynamic.access_token, 401);
   await client.tokens(await client.refresh(clients.dynamic, dynamic.refresh_token, undefined, client.resource));
@@ -222,7 +250,7 @@ try {
     service: await client.createClient(login.cookie, "Service reference", false, account.id),
     dynamic: await client.register(),
   };
-  const before = await exercise(clients, login.cookie, login.userId);
+  const before = await exercise(clients, login.cookie, login.userId, fresh);
   if (!fresh) {
     assert(login.token.includes(":"), "Baseline must create an opaque browser session");
     const pendingCode = await client.authorize(clients.public, login.cookie);
@@ -233,7 +261,6 @@ try {
     assert(previous.refresh_token);
     const oldCookie = login.cookie;
     const oldToken = login.token;
-    const legacyKid = decodeProtectedHeader(previous.access_token).kid;
     await stop(oauth.child);
     await stop(core.child);
     core = await start("core", "current");
@@ -270,13 +297,11 @@ try {
     await assert.rejects(client.verify(previous.id_token, clients.confidential.clientId));
     assert.equal((await client.request("/oauth/userinfo", { headers: { authorization: `Bearer ${previous.access_token}` } })).status, 401);
     await actor(previous.access_token, 401);
-    const upgradedRefresh = await client.tokens(await client.refresh(clients.confidential, previous.refresh_token));
-    assert(decodeProtectedHeader(upgradedRefresh.access_token).kid !== legacyKid);
-    await client.verify(upgradedRefresh.access_token, "cloud");
-    await client.verify((await client.tokens(await client.exchange(clients.public, pendingCode))).access_token, "cloud");
-    await client.verify((await client.tokens(await client.exchange(clients.public, pendingResourceCode))).access_token, client.resource);
-    check("old browser and OAuth JWTs rejected; existing clients, refresh families, codes and resource bindings survive");
-    assert.deepEqual(await exercise(clients, login.cookie, login.userId), before, "Public contract differs across upgrade");
+    await client.error(await client.refresh(clients.confidential, previous.refresh_token), "invalid_grant");
+    await client.error(await client.exchange(clients.public, pendingCode), "invalid_grant");
+    await client.error(await client.exchange(clients.public, pendingResourceCode), "invalid_grant");
+    check("existing client registrations survive; earlier OAuth sign-ins and unredeemed codes end once");
+    assert.deepEqual(await exercise(clients, login.cookie, login.userId, true), before, "Stable public contract differs across upgrade");
     check("pre/post discovery, token response fields, stable JWT claims, UserInfo, actors and errors match exactly");
     const jwksResponse = await client.request("/.well-known/jwks.json");
     const etag = jwksResponse.headers.get("etag");

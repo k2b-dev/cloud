@@ -173,6 +173,89 @@ describe("@k2b/ui action runtime behavior", () => {
     dom.cleanup();
   });
 
+  test("choice links keep selection semantics, native modified clicks and row focus", async () => {
+    const dom = createDomTestHarness();
+    const { DropdownItems } = await import("../src/actions/Dropdown");
+    const { focusRowSegment } = await import("../src/actions/menu-rows");
+    const closed: (boolean | undefined)[] = [];
+    const selected: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(DropdownItems, {
+          close: (restoreFocus) => closed.push(restoreFocus),
+          items: [
+            {
+              sectionLabel: "Open as",
+              layout: "row",
+              items: [
+                { label: "Edit", choice: "radio", checked: true, href: "/edit", action: () => selected.push("edit") },
+                { label: "Read", choice: "radio", checked: false, href: "/read", action: () => selected.push("read") },
+                { label: "Book", choice: "radio", checked: false, action: () => selected.push("book") },
+              ],
+            },
+            {
+              label: "Pinned",
+              choice: "checkbox",
+              checked: true,
+              href: "/pinned",
+              closeOnSelect: false,
+              action: () => selected.push("pinned"),
+            },
+            { label: "Unavailable", choice: "radio", checked: false, href: "/disabled", disabled: true, action: () => {} },
+          ],
+        }),
+      dom.root,
+    );
+    try {
+      const edit = dom.root.querySelector<HTMLAnchorElement>('a[href="/edit"]')!;
+      const read = dom.root.querySelector<HTMLAnchorElement>('a[href="/read"]')!;
+      const pinned = dom.root.querySelector<HTMLAnchorElement>('a[href="/pinned"]')!;
+      expect(edit.getAttribute("role")).toBe("menuitemradio");
+      expect(edit.getAttribute("aria-checked")).toBe("true");
+      expect(read.getAttribute("aria-checked")).toBe("false");
+      expect(pinned.getAttribute("role")).toBe("menuitemcheckbox");
+      expect(pinned.getAttribute("aria-checked")).toBe("true");
+      expect(dom.root.querySelector('a[href="/disabled"]')).toBeNull();
+      expect(dom.root.querySelector("button[disabled]")?.getAttribute("aria-disabled")).toBe("true");
+      const click = (link: HTMLAnchorElement, modifiers: MouseEventInit = {}, type = "click") => {
+        const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...modifiers });
+        link.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      expect(click(read)).toBe(true);
+      expect(selected).toEqual(["read"]);
+      expect(closed).toEqual([undefined]);
+      expect(click(pinned)).toBe(true);
+      expect(selected).toEqual(["read", "pinned"]);
+      expect(closed).toEqual([undefined]);
+      for (const modifiers of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }]) {
+        expect(click(read, modifiers)).toBe(false);
+      }
+      expect(selected).toEqual(["read", "pinned"]);
+      expect(closed).toEqual([undefined, false, false, false, false]);
+      expect(click(read, { button: 1 }, "auxclick")).toBe(false);
+      expect(selected).toEqual(["read", "pinned"]);
+      // Space chooses a link-backed choice, as it does the button form, instead of scrolling the page.
+      const space = new KeyboardEvent("keydown", { key: " ", bubbles: true, cancelable: true });
+      read.dispatchEvent(space);
+      expect(space.defaultPrevented).toBe(true);
+      expect(selected).toEqual(["read", "pinned", "read"]);
+      const segments = Array.from(dom.root.querySelectorAll<HTMLElement>(".k2b-dropdown__row > [role='menuitemradio']"));
+      edit.focus();
+      expect(focusRowSegment(segments, "ArrowRight")).toBe(true);
+      expect(dom.document.activeElement).toBe(read);
+      focusRowSegment(segments, "ArrowRight");
+      expect(dom.document.activeElement).toBe(segments[2] ?? null);
+      focusRowSegment(segments, "ArrowRight");
+      expect(dom.document.activeElement).toBe(edit);
+      focusRowSegment(segments, "ArrowLeft");
+      expect(dom.document.activeElement).toBe(segments[2] ?? null);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
   test("keeps split button primary and menu actions independent", async () => {
     const dom = createDomTestHarness();
     installPopoverStub();
@@ -649,6 +732,40 @@ describe("@k2b/ui action runtime behavior", () => {
     expect(compact?.getAttribute("aria-checked")).toBe("true");
     expect(openDuringChange).toBe(false);
     expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test.each(["disabled", "loading"] as const)("a %s SelectChip stays closed when its owner opens it", async (state) => {
+    const dom = createDomTestHarness();
+    installPopoverStub();
+    const { SelectChip } = await import("../src/inputs/SelectChip");
+    const changes: string[] = [];
+
+    const dispose = render(
+      () =>
+        createComponent(SelectChip, {
+          "aria-label": "Model",
+          value: "a",
+          open: true,
+          onOpenChange: () => {},
+          [state]: true,
+          onValueChange: (value: string) => changes.push(value),
+          options: [
+            { value: "a", label: "A" },
+            { value: "b", label: "B" },
+          ],
+        }),
+      dom.root,
+    );
+    await flush();
+
+    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger");
+    expect(trigger?.disabled).toBe(true);
+    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+    expect(dom.root.querySelector<HTMLElement>(".k2b-dropdown__menu")?.matches(":popover-open")).toBe(false);
+    expect(changes).toEqual([]);
 
     dispose();
     dom.cleanup();

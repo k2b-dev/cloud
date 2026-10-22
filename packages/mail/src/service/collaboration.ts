@@ -3,6 +3,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type {
   ActorRef,
+  ConversationCompletionResult,
   CreateConversationComment,
   DeleteConversationComment,
   UpdateConversationCollaboration,
@@ -11,6 +12,7 @@ import type {
 import { createConversationCommentSchema, MAIL_CONVERSATION_ASSIGNEE_LIMIT, MAIL_CONVERSATION_BATCH_LIMIT } from "../contracts";
 import { withShortIdDb } from "../lib/short-id";
 import {
+  conversationVisibleTo,
   type MailboxAccess,
   messageVisibleTo,
   requireMailboxAccess,
@@ -24,6 +26,7 @@ import { listCurrentMailboxUsers, listEligibleAssignees } from "./collaborators"
 import { deriveReopenedConversationWorkStatus, isAutomaticSubmission } from "./conversation-work-state";
 import { resolveMailExecution } from "./execution";
 import { type MailActivityChange, mailLive } from "./live";
+import { isTerminalHydrationFailure } from "./message-hydration";
 import { parseMessageProtocolFacts } from "./message-protocol";
 
 type SqlClient = typeof sql;
@@ -457,6 +460,105 @@ export const getConversationCollaboration = async (params: {
 
 type ConversationCollaborationMutation = CollaborationMutation<ConversationCollaboration> & { addedUserIds: string[] };
 
+/**
+ * The latest decision that covers a still unhydrated link, or changes its status or snooze, wins:
+ * Done, Waiting, and a future snooze cover it; Needs action, reopening, and clearing a snooze
+ * release it only when the status or snooze changes. A no-op release is not a decision because
+ * it does not move the revision that fences older automation steps.
+ * The caller holds the conversation row lock. Update only visible, unhydrated links, limited to
+ * messageId when supplied. A conversation timestamp cannot express which links the decision saw.
+ * onlyUndecided lets a stale workflow step cover a link without overriding a newer decision.
+ */
+export const recordConversationStatusDecision = async (
+  db: SqlClient,
+  params: { conversationId: string; covers: boolean; messageId?: string; onlyUndecided?: boolean },
+): Promise<void> => {
+  await db`
+    UPDATE mail.conversation_messages link
+    SET status_covered = ${params.covers}
+    FROM mail.message_contents message
+    WHERE link.conversation_id = ${params.conversationId}::uuid
+      AND (${params.messageId ?? null}::uuid IS NULL OR link.message_id = ${params.messageId ?? null}::uuid)
+      AND message.id = link.message_id
+      AND message.hydration_status <> 'complete'
+      AND link.status_covered IS DISTINCT FROM ${params.covers}
+      AND (${params.onlyUndecided === true} = false OR link.status_covered IS NULL)
+  `;
+};
+
+/**
+ * Locks a conversation and returns the revision a workflow status step may act at.
+ * The exact revision always applies. One revision later applies only after the trigger's
+ * hydration, when every other unhydrated link was seen by the view.
+ * A seen link got its sequence number before the view read the sequence, and either its
+ * transaction committed before the view's snapshot or it is the view's own write. Links without
+ * an xid predate tracking. Neither a timestamp nor the sequence alone gives commit order; the
+ * snapshot does. The sequence survives a logical restore, transaction IDs do not, so a link
+ * created after the view never counts as seen, and an xid from another cluster keeps the conflict.
+ * A wrong admission could only give the result the exact-revision path already gives.
+ * An unknown keeps the conflict. Returns null when the conversation is gone.
+ */
+export const lockWorkflowConversationStatus = async (
+  db: SqlClient,
+  params: {
+    mailboxId: string;
+    conversationId: string;
+    expectedRevision: number;
+    triggerMessageId: string | null;
+    viewLinks: { snapshot: string; xid: string | null; seq: string } | null;
+  },
+): Promise<{ revision: number | null; workStatus: ConversationCollaboration["workStatus"] } | null> => {
+  // Same lock order as updateWorkflowConversationCollaborationInTransaction: mailbox, then conversation.
+  const [mailbox] = await db<{ id: string }[]>`
+    SELECT id FROM mail.mailboxes
+    WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL
+    FOR SHARE
+  `;
+  if (!mailbox) return null;
+  const [current] = await db<{ revision: string | number; work_status: ConversationCollaboration["workStatus"] }[]>`
+    SELECT revision, work_status
+    FROM mail.conversations
+    WHERE id = ${params.conversationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
+    FOR UPDATE
+  `;
+  if (!current) return null;
+  const revision = Number(current.revision);
+  if (revision === params.expectedRevision) return { revision, workStatus: current.work_status };
+  if (revision !== params.expectedRevision + 1 || !params.triggerMessageId) return { revision: null, workStatus: current.work_status };
+  // A new statement after the lock: a link that a sync committed while this step waited is visible
+  // here, and the lock keeps further links out until this transaction ends.
+  const [links] = await db<{ hydrated_revision: string | number | null; others_seen: boolean }[]>`
+    SELECT trigger_link.hydrated_revision, NOT EXISTS (
+      SELECT 1 FROM mail.conversation_messages link
+      JOIN mail.message_contents message ON message.id = link.message_id
+      WHERE link.conversation_id = ${params.conversationId}::uuid
+        AND link.message_id <> ${params.triggerMessageId}::uuid
+        AND message.hydration_status <> 'complete'
+        AND NOT COALESCE(
+          ${params.viewLinks?.snapshot ?? null}::pg_snapshot IS NOT NULL
+          AND pg_snapshot_xmax(${params.viewLinks?.snapshot ?? null}::pg_snapshot) <= pg_snapshot_xmax(pg_current_snapshot())
+          AND (
+            link.linked_xid IS NULL
+            OR (
+              -- Linked before the view read the sequence, and by then committed or its own write.
+              link.link_seq <= ${params.viewLinks?.seq ?? null}::bigint
+              AND (
+                link.linked_xid = ${params.viewLinks?.xid ?? null}::xid8
+                OR pg_visible_in_snapshot(link.linked_xid, ${params.viewLinks?.snapshot ?? null}::pg_snapshot)
+              )
+            )
+          ), false
+        )
+    ) AS others_seen
+    FROM mail.conversation_messages trigger_link
+    WHERE trigger_link.conversation_id = ${params.conversationId}::uuid
+      AND trigger_link.message_id = ${params.triggerMessageId}::uuid
+  `;
+  const onlyTriggerHydrated =
+    links?.others_seen === true && links.hydrated_revision !== null && Number(links.hydrated_revision) === revision;
+  return { revision: onlyTriggerHydrated ? revision : null, workStatus: current.work_status };
+};
+
 const applyConversationCollaborationInTransaction = async (params: {
   context: MailRequestContext | null;
   mailboxId: string;
@@ -466,6 +568,8 @@ const applyConversationCollaborationInTransaction = async (params: {
   actorOverride?: ActorRef;
   activityMetadata?: Record<string, unknown>;
   assigneesToValidate?: readonly string[];
+  // undefined: person/API, all links; string: workflow trigger only; null: no trigger, record nothing.
+  statusDecisionMessageId?: string | null;
 }): Promise<Result<ConversationCollaborationMutation>> => {
   const [current] = await params.db<CollaborationRow[]>`
     SELECT
@@ -520,7 +624,13 @@ const applyConversationCollaborationInTransaction = async (params: {
       JOIN mail.conversation_messages link ON link.conversation_id = conversation.id
       JOIN mail.message_contents message ON message.id = link.message_id
       WHERE conversation.id = ${params.conversationId}::uuid
-        AND message.hydration_status = 'complete'
+        AND (
+          message.hydration_status = 'complete'
+          OR ${isTerminalHydrationFailure({
+            hydrationStatus: sql`message.hydration_status`,
+            hydrationAttempt: sql`message.hydration_attempt`,
+          })}
+        )
         AND (
           NOT EXISTS (SELECT 1 FROM mail.outbox_submissions submission WHERE submission.message_id = message.id)
           OR EXISTS (
@@ -557,6 +667,10 @@ const applyConversationCollaborationInTransaction = async (params: {
     if (nextStatus === "done") return fail(err.badInput("A completed conversation cannot be snoozed"));
   }
 
+  const covers =
+    ("workStatus" in params.input && (params.input.workStatus === "done" || params.input.workStatus === "waiting")) ||
+    ("completion" in params.input && params.input.completion === "done") ||
+    Boolean(requestedSnooze);
   const assigneesChanged =
     nextAssigneeIds.length !== currentAssigneeIds.length || nextAssigneeIds.some((id) => !currentAssigneeIds.includes(id));
   const completionChanged = "completion" in params.input && params.input.completion !== undefined;
@@ -566,7 +680,21 @@ const applyConversationCollaborationInTransaction = async (params: {
       : requestedSnooze === undefined
         ? toNullableIso(current.snoozed_until)
         : requestedSnooze;
-  const unchanged = !assigneesChanged && nextStatus === current.work_status && nextSnoozedUntil === toNullableIso(current.snoozed_until);
+  const statusOrSnoozeChanged = nextStatus !== current.work_status || nextSnoozedUntil !== toNullableIso(current.snoozed_until);
+  if (
+    params.statusDecisionMessageId !== null &&
+    (covers || statusOrSnoozeChanged) &&
+    (("workStatus" in params.input && params.input.workStatus) ||
+      ("completion" in params.input && params.input.completion !== undefined) ||
+      params.input.snoozedUntil !== undefined)
+  ) {
+    await recordConversationStatusDecision(params.db, {
+      conversationId: params.conversationId,
+      covers,
+      messageId: params.statusDecisionMessageId,
+    });
+  }
+  const unchanged = !assigneesChanged && !statusOrSnoozeChanged;
   if (unchanged) {
     const state = await loadCollaboration(params.mailboxId, params.conversationId, params.db);
     return state ? ok({ value: state, event: null, addedUserIds: [] }) : fail(err.notFound("Conversation"));
@@ -647,6 +775,7 @@ export const updateWorkflowConversationCollaborationInTransaction = async (param
   mailboxId: string;
   workflowVersionId: string;
   conversationId: string;
+  triggerMessageId: string | null;
   input: WorkflowConversationCollaborationInput;
   db: SqlClient;
   activityMetadata?: Record<string, unknown>;
@@ -660,6 +789,7 @@ export const updateWorkflowConversationCollaborationInTransaction = async (param
   return applyConversationCollaborationInTransaction({
     ...params,
     context: null,
+    statusDecisionMessageId: params.triggerMessageId,
     actorOverride: { kind: "workflow", workflowVersionId: params.workflowVersionId },
   });
 };
@@ -849,6 +979,97 @@ export const applyConversationAssignments = async (params: {
       activityIds: committed.events.map((event) => event.activityId),
       added: [...committed.added].map(([userId, conversationIds]) => ({ userId, conversationIds })),
     },
+  });
+};
+
+/**
+ * Completes or reopens many conversations of one mailbox in one transaction.
+ * Like a single completion, this requires write access and actorRead execution;
+ * assigned-only writers may update only their visible conversations. Missing,
+ * foreign, and invisible ids report `not_found`. Each row uses its current
+ * revision through the single-conversation collaboration mutation.
+ */
+export const applyConversationCompletions = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  conversationIds: readonly string[];
+  completion: "done" | "open";
+}): Promise<Result<ConversationCompletionResult>> => {
+  if (params.conversationIds.length === 0 || params.conversationIds.length > MAIL_CONVERSATION_BATCH_LIMIT)
+    return fail(err.badInput(`Pass 1 to ${MAIL_CONVERSATION_BATCH_LIMIT} conversations`));
+  const requestedIds = [...new Set(params.conversationIds)];
+  let result: Result<{ collaborations: Map<string, ConversationCollaboration>; changed: boolean }>;
+  try {
+    result = await sql.begin(async (tx) => {
+      // Read access under the mailbox lock, like a single completion, so a concurrent grant change cannot go stale.
+      const [mailbox] = await tx<{ id: string }[]>`
+        SELECT id FROM mail.mailboxes
+        WHERE id = ${params.mailboxId}::uuid AND deleted_at IS NULL
+        FOR SHARE
+      `;
+      if (!mailbox) return fail(err.notFound("Mailbox"));
+      const access = await requireMailboxAccess(params.context, params.mailboxId, "write", tx);
+      if (!access.ok) return access;
+      const execution = await resolveMailExecution({
+        mailboxId: params.mailboxId,
+        operation: "actorRead",
+        context: params.context,
+        conversationScoped: true,
+        db: tx,
+      });
+      if (!execution.ok) return execution;
+      // Share the stable lock order with bulk assignment.
+      const locked = await tx<{ id: string; short_id: string; revision: string | number }[]>`
+        SELECT id, short_id, revision FROM mail.conversations
+        WHERE mailbox_id = ${params.mailboxId}::uuid
+          AND short_id IN (SELECT value FROM jsonb_array_elements_text(${requestedIds}::jsonb))
+          AND ${conversationVisibleTo(access.data, sql`id`)}
+        ORDER BY id FOR UPDATE
+      `;
+      // A row lock that waited for a concurrent unassignment still judged visibility on the old snapshot,
+      // and the revision it returns is already the new one. Recheck visibility now that the locks are held.
+      const visibleIds =
+        access.data.scope === "mailbox" || locked.length === 0
+          ? null
+          : new Set(
+              (
+                await tx<{ id: string }[]>`
+                  SELECT id FROM mail.conversations
+                  WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${locked.map((row) => row.id)}::jsonb))
+                    AND ${conversationVisibleTo(access.data, sql`id`)}
+                `
+              ).map((row) => row.id),
+            );
+      const rows = visibleIds ? locked.filter((row) => visibleIds.has(row.id)) : locked;
+      const collaborations = new Map<string, ConversationCollaboration>();
+      let changed = false;
+      for (const row of rows) {
+        const applied = await applyConversationCollaborationInTransaction({
+          context: params.context,
+          mailboxId: params.mailboxId,
+          conversationId: row.id,
+          input: { expectedRevision: Number(row.revision), completion: params.completion },
+          db: tx,
+        });
+        if (!applied.ok) throw applied.error;
+        collaborations.set(row.short_id, applied.data.value);
+        if (applied.data.event) changed = true;
+      }
+      return ok({ collaborations, changed });
+    });
+  } catch {
+    return fail(err.internal("Failed to update conversations"));
+  }
+  if (!result.ok) return result;
+  if (result.data.changed) mailLive.wake();
+  return ok({
+    completion: params.completion,
+    results: params.conversationIds.map((conversationId) => {
+      const collaboration = result.data.collaborations.get(conversationId);
+      return collaboration
+        ? { conversationId, status: "ok" as const, workStatus: collaboration.workStatus, revision: collaboration.revision }
+        : { conversationId, status: "not_found" as const };
+    }),
   });
 };
 

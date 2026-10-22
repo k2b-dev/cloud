@@ -4,8 +4,8 @@ navTitle: Styling and accessibility
 section: Frontend
 order: 890
 description: Apply Cloud's visual and interaction rules without forking shared primitives.
-tags: [css, accessibility, themes, design]
-updated: 2026-10-12
+tags: [css, accessibility, themes, design, colors, selection]
+updated: 2026-10-20
 ---
 
 # Styling and accessibility
@@ -39,12 +39,34 @@ Apply these rules in order:
 5. Design loading, empty, error, hover, focus, selected, disabled, mobile, and
    dark states as part of the same component contract.
 
+Keep screens clean and flat. Put the most important value first, use one type
+scale per page, and leave out data the person does not need at that moment. Do
+not place a box inside a box. A flat screen lets the content carry the
+hierarchy, so a person finds the value they came for without reading the
+frame around it. Flatness never justifies weaker usability, contrast, or
+keyboard behavior: check those again after you remove decoration.
+
+## Tables, states, and moved paths
+
+[DataTable](/en/ui/content/tables#presentation) follows the minimal Grids
+reference: no grid, zebra striping, or row lines; 44px rows (40px compact),
+a hover fill, a small muted header without a line, and numbers aligned right
+with tabular figures. Only tables with more than 8 columns get row hairlines,
+automatically. Do not add custom row borders.
+
+Use row-height loading placeholders and distinguish empty, no results, and
+no access without adding a box. Every load error offers **Try again** through
+[empty-state recovery](/en/ui/surfaces/empty-states) with `state="error"` and `onRetry`;
+keep the person's selection. A moved familiar path gets a one-time
+[MovedHint](/en/ui/feedback/moved-hint) at the old place, only for people who may
+use the new path. Mail is the agreed exception and shows no hint there.
+
 ## Group content without decorative lines
 
-Do not use horizontal lines to group ordinary application content. This
-includes `<hr>`, `divide-y`, full-width `border-t` or `border-b`,
-pseudo-element rules, and inset-shadow hairlines. Making a line thinner,
-lighter, shorter, or more transparent does not change its role.
+Do not use lines to group ordinary application content. This includes
+`<hr>`, `divide-y`, full-width `border-t` or `border-b`, pseudo-element rules,
+and inset-shadow hairlines. Making a line thinner, lighter, shorter, or more
+transparent does not change its role.
 
 Do not add these separators between list rows, cards, settings, detail
 sections, menu items, form sections, metadata groups, empty states, or
@@ -52,11 +74,30 @@ pagination. Use whitespace, alignment, a quiet shared surface, or a short
 semantic section label. Prefer one clear group over nested papers; do not
 replace a removed line with a box or hover fill around every row.
 
+Do not draw a line between the header, content, and footer of an app-owned
+surface, such as a dialog, panel, card, or page section. Spacing and type
+already show where the header ends.
+
+App code draws no vertical or horizontal borders between workspace regions
+either: not between sidebar, list, and detail, not under header rows, and not
+at the edge between the app rail and the application. The regions separate
+through the surfaces, spacing, and edges that `AppWorkspace`, `Panes`, and
+`SettingsModal` own. A line that app code adds between regions splits one
+workbench into separate boxes and competes with the content for attention.
+
+To verify, look at the changed screen in light and dark mode and search the
+diff for `border-t`, `border-b`, `border-l`, `border-r`, `divide-`, and `<hr>`
+in app-owned markup.
+
 Boundaries are valid when they explain how a shared component operates:
 
-- `DataTable` may expose row and column structure.
+- `DataTable` adds row hairlines automatically only above 8 columns.
 - A compound control may separate functional parts.
 - A resizable layout may expose an interactive separator.
+- A shared workspace layout may mark the edge between adjacent panes or a
+  drawer.
+- The app bar separates its shortcuts from the ordinary apps with one group
+  divider.
 
 The shared table, control, or layout primitive owns those boundaries. App code
 must not invent an exception. If content needs explicit row boundaries to be
@@ -74,6 +115,24 @@ Do not use one color for unrelated meanings.
 
 An app accent must not recolor every primary button. A red app must not make
 normal navigation look destructive. Status color must not identify an app.
+
+A selected navigation row or a row for an opened or picked object or place
+uses the app's selection fill and ink. A selected tab, view tab, or segment and
+an active filter chip share the navigation fill: like a selected row, they mark
+where the person is or what they picked. Controls keep platform blue: buttons,
+inputs, checkboxes, radios, switches, and focus rings, plus select and
+keyboard-active options, pressed toolbar buttons, and checked cards. Link text
+stays body ink; only its underline follows the app ink. Only the
+one main action is a filled button; a chosen view or filter is never drawn as
+one. Status keeps its status colors. [Colors and selection](/en/ui/surfaces/color)
+lists every state and its primitive.
+
+In the Cloud repository, the `selection-tokens` check rejects new platform
+fills, raw `--app-accent` color mixes, the raw `--app-accent` as text ink,
+border color, or focus outline, and a button whose variant switches to
+`primary` when it is chosen. App ink uses `--ui-app-accent-text`, and focus
+rings use the platform focus. Control and status uses belong in its allowlist
+with a reason.
 
 ## Use shared components first
 
@@ -138,8 +197,20 @@ Inside a Cloud application, use `app-accent-text` and `app-accent-border`
 sparingly for app identity. They are Cloud integration utilities, not
 standalone `@k2b/ui` APIs and not general action or status colors.
 
+`app-accent-text` uses `--ui-app-accent-text`, the app ink that meets WCAG AA
+contrast on Cloud's theme and selection surfaces. `--ui-app-selected` and
+`--ui-app-selected-nav` provide the app's selection fills on the main surface
+and the sidebar. Cloud maps these fills to `--k2b-row-selected` and
+`--k2b-app-workspace-selected`, with `--k2b-app-workspace-active` for
+navigation ink. Tabs, view tabs, segmented controls, and active filter chips
+share the navigation fill; other controls and options retain their platform
+colors.
+
 When app-owned CSS is necessary, use the semantic theme variables already
-provided by the host. A standalone `@k2b/ui` consumer can configure the
+provided by the host. The host's `--ui-focus` is a complete `box-shadow`: use
+`var(--ui-focus)` only as a `box-shadow` value, because the browser drops a
+border, outline, background, or `color-mix()` declaration that uses it as a
+color. A standalone `@k2b/ui` consumer can configure the
 documented `--k2b-*` tokens on its scoped root.
 
 Avoid fixed light backgrounds, black text, hardcoded app colors, and arbitrary
@@ -218,8 +289,15 @@ On Safari, diagrams need Safari 17.4 or later.
 
 - Use one surface to group related content; do not stack papers to manufacture
   hierarchy.
-- Keep in-flow surfaces quiet. Reserve stronger shadows for dialogs, popovers,
-  menus, and other floating layers.
+- Take depth from the shared surface. An in-flow surface gets its depth from
+  the surface step and inset shading of the shared component, such as the
+  quiet well of an input, never from an outer shadow, a nested border, or a
+  box inside a box. Floating layers, such as dialogs, popovers, menus, and
+  toasts, keep their soft outer shadow, because they sit above the page and
+  must read as separate from it. Shared components that own their frame,
+  shadow, or inner sections, such as the workspace card, an `elevated`
+  `Paper`, or a floating `PanelDialog`, keep them; app code does not add its
+  own.
 - Keep one visible dialog frame. With `PanelDialog`, the header and footer stay
   fixed while `PanelDialog.Body` owns scrolling.
 - Inputs are quiet wells with a clear focus state, not permanently emphasized
@@ -232,6 +310,67 @@ drawer are sibling regions inside that frame, not adjacent cards. Use
 `AppWorkspace.Detail`, `AppWorkspace.MainPane`, `AppWorkspace.BottomDrawer`,
 and `Panes` for their documented roles instead of recreating their geometry.
 See [Application shells](/en/docs/frontend/application-shells).
+
+## Keep the layout still
+
+A Cloud screen has no layout shift: a state change never moves or resizes the
+content around it. This applies to focus, hover, pressed, and selected states;
+loading and async results; validation messages; unsaved-changes and save bars;
+badges and counts; fonts and icons that load late; and scrollbars that appear
+or disappear. Content that jumps makes a person lose their place and can turn
+a click into a click on the wrong target.
+
+- Reserve the space for a state before it appears, for example the row for a
+  validation message, the size of a loading result, or the slot of a badge.
+- Draw focus with an outline or an inset ring, not with a border or added
+  padding. Shared components already do this; see
+  [Focus rings](/en/ui/focus).
+- Change the color of an existing border, never its width.
+- Never fix clipping with margins or padding. Use `k2b-focus-inset` or the
+  shared component that owns the clipping region.
+- For scrollbars, follow [Keep dynamic scroll regions stable](#keep-dynamic-scroll-regions-stable).
+
+To verify, decide which neighbors must stay put, then compare their bounding
+boxes before and after each state change, at desktop width and at phone width.
+A browser test can read them with `getBoundingClientRect()` and expect them to
+be equal. When a person opens something on purpose, such as the formatting
+row of a composer, the opened region may grow: test that it grows in the
+intended direction and that content anchored to it follows in the same frame
+instead of jumping. The test "Aa adds one row above the
+field; … never move the field, a control, or the newest message" in
+`packages/ui/src/chat/chat-composer.browser.test.ts` shows the pattern: it
+toggles each state at 720 px and 360 px and checks that the field and every
+control keep their position. While the formatting row opens, it also checks in
+every frame that the newest message stays directly above the composer.
+
+## Respond to hover without movement
+
+Hover and focus never move, resize, or lift an element: no translate, no
+scale, and no growing shadow. Paint changes are fine, such as a color, a focus
+ring, or an action or affordance that the shared component reveals in space it
+already reserves. Movement under the pointer makes a target harder to hit and
+draws attention away from the content. This is the general form of the rule that
+[cards](/en/ui/surfaces/cards) and
+[file drop targets](/en/ui/input/file-drop-target) already follow.
+
+To verify, hover and focus the element and compare its bounding box with the
+resting state. Search the changed CSS for `transform`, `translate`, `scale`,
+and `rotate` inside `:hover` and `:focus` rules, and for an outer `box-shadow`
+inside `:hover` rules. A focus ring drawn with `box-shadow`, such as the inset
+ring that [Focus rings](/en/ui/focus) describes, is paint, not movement. In
+the Cloud repository, the `hover-motion` repository check rejects these
+patterns in package sources, including Tailwind variants such as
+`hover:shadow-sm` and `group-hover:translate-x-0.5`.
+
+## Move with the shared motion tokens
+
+Every duration and curve comes from the `--k2b-motion-*` and `--k2b-ease-*`
+tokens of `@k2b/ui`. Set the state first and animate after it: a result never
+waits for an animation. Animate transform, opacity, and color, never width,
+height, padding, margin, or position. Nothing animates on first paint or on
+mount, and popovers and menus close at once. Reduced motion makes all of it
+instant. [Motion](/en/ui/motion) lists the tokens, their uses, and the
+`motion` repository check.
 
 ## Keep dynamic scroll regions stable
 
@@ -289,17 +428,16 @@ loading, error, and dark treatments.
   `k2b-focus-inset` to your own element that clips focusable content with
   `overflow`. Never add padding or margins so that a ring fits. See
   [Focus rings](/en/ui/focus).
-- With a mouse or trackpad, including a tablet with a mouse, keep progressive
-  actions hidden until their row is hovered, keyboard-focused, or has its menu
-  open. AppWorkspace sidebar actions also appear on the current row, and a
-  tab's close control on the selected tab. Touch-only screens always show
-  them. In your own rows, add `k2b-progressive-row` to the row and
-  `k2b-progressive-action` to the action instead of writing the rule; see
-  [Getting started](/en/ui/getting-started). Custom CSS hides them under
-  `@media (any-hover: hover)`, never `(hover: hover)`, `(hover: none)`, or
-  `(pointer: fine)`, and not with Tailwind's `hover:` or `group-hover:`
-  variants, which carry `(hover: hover)`: a tablet's primary pointer stays the
-  finger when a mouse is attached.
+- Progressive actions follow input mode: touch keeps them visible; mouse or
+  trackpad reveals them on hover, focus, or an open menu. Sidebar actions also
+  show on the current row, and close controls on the selected tab. Where any
+  pointer can hover, sidebar actions overlay their row's text, so touch keeps
+  that reveal for them. Before input, `any-hover` supplies the default. Add
+  `k2b-progressive-row` and `k2b-progressive-action` to your own rows and
+  actions. Custom rest rules need the media and attribute pair from
+  [Input mode](/en/ui/input-mode); mode changes only opacity, visibility, or
+  pointer-events of reserved boxes. Primary-pointer queries and Tailwind hover
+  variants miss a tablet's secondary mouse.
 - Use `InlineGuidance` for a short local hint, action error, or loading message
   while the affected content remains visible. Use its `loading` prop for inline
   progress rather than assembling a spinner and text.
@@ -328,17 +466,26 @@ on the button; progress with a known completion percentage belongs in a progress
 indicator. Keep retry actions beside the feedback and preserve existing content
 when a refresh fails.
 
-## Compose responsive layouts
+## Treat phones as first-class
+
+Design and verify every screen at phone width with touch, in WebKit as well as
+Chromium. A phone is a full Cloud client, not a fallback, and Safari and most
+iOS browsers run WebKit, so a screen checked only in a desktop Chromium is not
+checked.
 
 Use `Layout`, `AppWorkspace`, dialogs, and shared sidebars for responsive
-geometry.
+geometry. Content must not depend on pointer hover. Dialogs must fit the
+viewport and keep their primary actions reachable.
 
-Test narrow and wide viewports. Content must not depend on pointer hover.
-Dialogs must fit the viewport and keep their primary actions reachable.
+A phone layout is a composed state, not a squeezed desktop layout. Move
+navigation and details into their shared mobile behavior, keep touch targets
+usable, and contain table overflow inside the table region. A standalone page
+shows its one card flat on phones; see
+[Layout and navigation](/en/docs/frontend/layout-and-navigation#show-the-pages-one-card-flat-on-phones).
 
-Mobile is a composed state, not a squeezed desktop layout. Move navigation and
-details into their shared mobile behavior, keep touch targets usable, and
-contain table overflow inside the table region.
+To verify, run the browser tests in both engines as described in
+[Test in Chromium and WebKit](/en/docs/contributing/testing#test-in-chromium-and-webkit),
+and check the primary flow at phone width with touch input.
 
 ## Preserve keyboard and screen reader access
 
@@ -363,9 +510,15 @@ checks, drop behavior, mutation, and an equivalent keyboard path.
 adding another live region around the same message. A `danger` tone alone does
 not announce an error: add `role="alert"` when a newly appearing action error
 needs immediate attention. Do not announce every historical error as an alert
-when a list renders. Keep field errors associated with their inputs. Loading
-animations respect reduced-motion preferences; see the
-[component contract](/en/ui/feedback/blocks) for defaults and overrides.
+when a list renders. Keep field errors associated with their inputs.
+
+On a Cloud page, the OS reduced-motion setting or `data-k2b-motion="reduced"`
+on `<html>` makes CSS transitions, animations, and scrolling inside `.k2b-ui`
+instant and stops view transitions. Color may still change, movement does
+not. A delay that only keeps a fast request from flashing a loading indicator
+must keep its wait under reduced motion. Motion that your code drives, such as a smooth `scrollIntoView()` or
+`element.animate()`, checks `prefersReducedMotion()` from `@k2b/ui`; see
+[Motion](/en/ui/motion).
 
 Do not add `aria-grabbed` as a substitute for keyboard-operable movement and
 clear announcements.
@@ -404,16 +557,65 @@ verification pass.
 
 Before accepting a component or screen, verify:
 
+- [The layout stays still](#keep-the-layout-still): focus, hover, loading,
+  async results, validation, save bars, and badges move or resize nothing.
+- [Hover and focus never move, resize, or lift](#respond-to-hover-without-movement)
+  an element; they change only paint.
+- [Motion uses the shared tokens](#move-with-the-shared-motion-tokens),
+  animates no layout property, and is instant under reduced motion.
 - Hierarchy works without decorative color or separator lines.
 - Lists, settings, forms, details, and pagination use spacing or shared
   surfaces instead of `<hr>`, `divide-y`, or app-owned hairlines.
+- [App code draws no lines](#group-content-without-decorative-lines) between
+  header, content, and footer, or between workspace regions.
+- [App-owned in-flow surfaces take depth](#choose-surfaces-deliberately) from
+  the shared surface; app code adds no outer shadow, nested border, or box
+  inside a box.
+- [The screen is clean and flat](#build-hierarchy-before-decoration): the most
+  important value comes first, and data the person does not need is left out.
 - The closest shared primitive owns geometry and interaction behavior.
 - App identity, action, status, selection, and data colors remain independent.
 - App-owned CSS uses semantic host tokens and does not copy a shared component.
 - Hover, focus, active, selected, disabled, loading, empty, and error states
   are covered.
+- [Every action answers at once](/en/docs/frontend/forms-prompts-and-feedback#show-mutation-state)
+  with an optimistic update or a pending state on the acted element, and
+  offers Undo only where the server can reverse it.
 - Progressive disclosure works with pointer, keyboard, and touch.
 - Height-constrained dynamic content keeps a stable width as overflow changes.
 - Desktop and mobile layouts avoid page-level overflow.
+- [Phone width works with touch](#treat-phones-as-first-class) in WebKit and
+  Chromium.
 - Light and dark modes preserve the same hierarchy.
 - Icon-only actions have accessible names and useful focus treatment.
+
+## Show Cloud account avatars
+
+Import `CloudAvatar` from `@k2b/cloud/account/ui` for Cloud account identity.
+Pass the visible `username`, `userId`, and `avatarHash`; uploaded user pictures
+use the account avatar endpoint with the hash as a revision. Without a picture,
+the avatar uses initials.
+
+`kind` defaults to `"user"` and renders a circle. `"service_account"` renders a
+square robot icon; `"system"` renders a square automation icon. These two kinds
+use their semantic icon even when an avatar hash is supplied. Cloud owns this
+mapping; callers do not pass `shape`, `icon`, `name`, or `src`.
+
+```tsx
+import { CloudAvatar } from "@k2b/cloud/account/ui";
+
+<CloudAvatar username="Jana Berger" userId={user.id} avatarHash={user.avatarHash} size="sm" />
+<CloudAvatar username="Stock bot" kind="service_account" size="sm" />
+```
+
+```ts
+type CloudAvatarKind = "user" | "service_account" | "system";
+type CloudAvatarProps = Omit<AvatarProps, "name" | "src" | "shape" | "icon"> & {
+  username: string; userId?: string | null; avatarHash?: string | null; kind?: CloudAvatarKind;
+};
+```
+
+Other presentation props follow [`Avatar`](/en/ui/surfaces/cards). For an
+[`AvatarStack`](/en/ui/surfaces/avatar-stack) person, `cloudAvatarSource(userId,
+avatarHash)` from the same account UI entry point supplies the uploaded picture
+URL, or `undefined` when either value is absent.

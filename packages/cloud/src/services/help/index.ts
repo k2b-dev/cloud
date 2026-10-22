@@ -4,7 +4,8 @@ import { getApp, listApps } from "../../_internal/registry";
 import type { AppRegistryEntry } from "../../contracts/registry";
 import type { RequestActor } from "../../contracts/shared";
 import { resolveAppPresentations } from "../../shared/app-presentation";
-import { helpLocaleChain } from "../../shared/help";
+import { type HelpArticleLink, helpLocaleChain, parseHelpReference } from "../../shared/help";
+import { lexHelpMarkdown, walkHelpTokens } from "../../shared/markdown";
 import { logger } from "../logging";
 import { HELP_RESOURCE_PAGE_SIZE, type HelpSelection, hasHelpBm25, metadata, queryHelp } from "./store";
 import type { HelpReader } from "./types";
@@ -36,9 +37,8 @@ export const createHelpReader = (
 ): HelpReader => {
   const db = dependencies.db ?? sql;
   const visible = (app: AppRegistryEntry | null): app is AppRegistryEntry => app !== null && canReadAppHelp(app, viewer);
-  const select = async (appId?: string): Promise<HelpSelection[]> => {
-    const apps = appId ? [await (dependencies.getApp ?? getApp)(appId)] : await (dependencies.listApps ?? listApps)();
-    return resolveAppPresentations(apps.filter(visible), locale).flatMap((app) =>
+  const selectionFor = (apps: AppRegistryEntry[]): HelpSelection[] =>
+    apps.flatMap((app) =>
       app.help
         ? [
             {
@@ -50,6 +50,9 @@ export const createHelpReader = (
           ]
         : [],
     );
+  const select = async (appId?: string): Promise<HelpSelection[]> => {
+    const apps = appId ? [await (dependencies.getApp ?? getApp)(appId)] : await (dependencies.listApps ?? listApps)();
+    return selectionFor(resolveAppPresentations(apps.filter(visible), locale));
   };
   return {
     async manifest(appId) {
@@ -80,6 +83,7 @@ export const createHelpReader = (
             icon: row.icon ?? undefined,
             description: row.description ?? undefined,
             order: row.sort_order,
+            kind: row.kind,
             locale: row.locale,
             searchUrl: `/api/help/v1/${encodeURIComponent(appId)}/search`,
             url: `/api/help/v1/${encodeURIComponent(appId)}/documents/${encodeURIComponent(row.document_id)}`,
@@ -91,7 +95,44 @@ export const createHelpReader = (
     },
     async read(input) {
       const [row] = await queryHelp(await select(input.appId), { documentId: input.documentId, body: true, limit: 1 }, db);
-      return row?.markdown === undefined ? null : { ...metadata(row), markdown: row.markdown };
+      if (row?.markdown === undefined) return null;
+      const references = new Set<string>();
+      const add = (reference: string) => {
+        const ref = parseHelpReference(reference);
+        if (ref) references.add(`${ref.appId ?? input.appId}/${ref.documentId}`);
+      };
+      if (row.next_id) add(row.next_id);
+      for (const reference of row.related) add(reference);
+      walkHelpTokens(lexHelpMarkdown(row.markdown, row.locale), (token) => {
+        if (token.type === "link" && token.href.startsWith("help:")) add(token.href.slice(5));
+      });
+      // Only targets in the current Help of apps this viewer may see become links; the rest stay text.
+      const referencedApps = new Set([...references].map((reference) => reference.split("/")[0]));
+      const apps = references.size
+        ? resolveAppPresentations(
+            (referencedApps.size === 1 && referencedApps.has(input.appId)
+              ? [await (dependencies.getApp ?? getApp)(input.appId)]
+              : await (dependencies.listApps ?? listApps)()
+            ).filter((app): app is AppRegistryEntry => visible(app) && referencedApps.has(app.id)),
+            locale,
+          )
+        : [];
+      const targets = apps.length ? await queryHelp(selectionFor(apps), { references: [...references] }, db) : [];
+      const accents = new Map(apps.map((app) => [app.id, app.appearance?.accent]));
+      const links: Record<string, HelpArticleLink> = {};
+      for (const target of targets) {
+        links[`${target.app_id}/${target.document_id}`] = {
+          appId: target.app_id,
+          appName: target.app_name,
+          accent: accents.get(target.app_id),
+          documentId: target.document_id,
+          title: target.title,
+          description: target.description ?? undefined,
+          icon: target.icon ?? undefined,
+          url: `/help/apps/${encodeURIComponent(target.app_id)}/${encodeURIComponent(target.document_id)}`,
+        };
+      }
+      return { ...metadata(row), markdown: row.markdown, links };
     },
     async search(input) {
       const query = input.query.trim().slice(0, 200);

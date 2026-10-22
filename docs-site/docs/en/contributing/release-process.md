@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-10
+updated: 2026-10-20
 ---
 
 # Release process
@@ -35,10 +35,48 @@ A `BREAKING CHANGE:` footer in the PR body has the same effect as `!`. Use
 either only with explicit maintainer approval, because it moves every
 application image to a new major version.
 
+release-please copies commit descriptions and `BREAKING CHANGE:` or
+`BREAKING-CHANGE:` paragraphs into the release PR body and parses it as HTML.
+Write placeholders without angle brackets: use `DIR` or `{dir}` instead of
+`<word>`, even inside backticks. The `check` job reads the live PR title and
+body on the PR and again in the merge queue. It refuses HTML-like markup in
+the title, Conventional Commit header lines in the body, breaking-change
+paragraphs, and `BEGIN_NESTED_COMMIT` or `BEGIN_COMMIT_OVERRIDE` blocks
+([#1298](https://github.com/k2b-dev/cloud/issues/1298)). This cheap check
+covers the usual forms of release-please's commit grammar, not every one; the
+`release-body` job below parses with release-please itself. After fixing the
+text, re-run the failed `check` job to check it again.
+
+The `check` job reads the body as written, but the squash merge writes it
+wrapped at about 72 columns, and wrapped text can parse differently. A line
+that now starts with a word directly followed by an opening parenthesis,
+such as `` `color-mix( ``, can make release-please drop the whole commit
+without a warning. A line that now starts with a word and a colon reads as a
+second commit ([#1592](https://github.com/k2b-dev/cloud/issues/1592)).
+Before a release pull request merges, parse every squash commit since the
+last release with `parseConventionalCommits` from the release-please version
+that `main.yml` pins. Restore a dropped `feat` or `fix` with an override pull
+request, as for an advisory merge below.
+
 A change to a runtime contract (configuration, routes, permissions, data
 format, deployment) needs a `feat` or `feat!` title and a note on the matching
 [Operations](/en/docs/operations) page. It lands in the next `cloud-vX.Y.Z`
 automatically.
+
+When a pull request for a built-in app shows screenshots of the UI, take them
+in light mode; use dark mode only when the change is about dark rendering. Use
+demo data, never a person's real data, and show only the states that changed
+or that a decision depends on. Pull requests are public, and one baseline
+theme lets reviewers compare screenshots across changes.
+
+## Refresh the bundled location snapshot
+
+The image mirror keeps every pinned DB-IP month, so builds and rebuilds of old
+releases do not depend on db-ip.com. To ship newer data, run
+`bun scripts/geoip-snapshot.ts <YYYY-MM>` and review the Dockerfile pin and
+[sign-in location snapshot details](/en/docs/operations/sign-in-locations).
+The pull request's `mirror` job copies the new month to the mirror. Merge it
+while DB-IP still serves that month: the current or previous month.
 
 ## Let release-please cut the release
 
@@ -69,6 +107,34 @@ release-please runs on every push to `main`:
    version must already be on npm, or `@k2b/cloud` stays unpublished and the
    release fails.
 
+The release PR runs the `packed` check with `--release`, including in the
+merge queue, to test already published sibling pins from npm and versions
+this release publishes from their tarballs. See
+[What CI runs](/en/docs/contributing/testing#what-ci-runs).
+
+The `release-body` job checks the release PR and its merge queue run. It parses
+the live PR body with the release-please version and dependency tree pinned by
+the action in `main.yml`. It fails when a bumped component is missing, has a
+different version, or has swallowed another release section into its notes.
+
+When this guard fails on an open release PR, the cause is already in a commit
+on `main`. The maintainer must edit the release PR body as described below,
+right before merging: release-please rewrites the body on every push to
+`main`. Re-run the failed job after saving the body; a body edit does not
+start CI.
+
+Merge the release PR only after release-please has refreshed it after the last
+feature PR merged. Check that its parent is the current `main`:
+
+```bash
+git fetch origin && test "$(git rev-parse origin/release-please--branches--main^)" = "$(git rev-parse origin/main)"
+```
+
+If it differs, wait for the `release-please` job of the latest `main.yml` run.
+In [#1221](https://github.com/k2b-dev/cloud/issues/1221), a stale release PR
+left `@k2b/ui` unbumped, so published Cloud code imported an export its pinned
+UI version did not have.
+
 Each package publishes through an npm Trusted Publisher for `k2b-dev/cloud`
 with the workflow file `main.yml`. `release.yml` runs the publish, but it is a
 reusable workflow, and npm checks the workflow that calls it.
@@ -94,6 +160,101 @@ Docker Hub image. See
 
 Every push to `main` also builds `sha-<12>` images for staging. Those tags are
 not releases: they carry no changelog entry and no support commitment.
+
+### Release a fix merged from a security advisory
+
+A fix built in a private security advisory fork reaches `main` when the
+maintainer merges it on the advisory page. GitHub writes one commit titled
+`Merge commit from fork`, without a pull request in this repository. That
+title is not a Conventional Commit, so release-please drops the whole commit
+without a warning: its fixes, features, and `BREAKING CHANGE:` footer reach
+neither the changelog nor the version bump. The `check` job never sees it,
+because no pull request carries it.
+
+The advisory's pull request compares the fork branch with the fork's own
+`main`, which GitHub does not keep current, so it can show no conflict while
+the branch conflicts with `main`. Before the maintainer merges it,
+fast-forward the fork's `main` to `main`, merge `main` into the fork branch,
+push both to the fork only, and check that
+`git merge-tree --write-tree origin/main HEAD` reports no conflict.
+
+Before the release, open a small pull request with a real change and put a
+`BEGIN_COMMIT_OVERRIDE` block in its body. release-please then reads the
+block instead of that pull request's own commit message:
+
+- List the pull request's own entry and the advisory commit's own
+  user-facing entries, with each `BREAKING CHANGE:` footer copied exactly.
+  The advisory commit's body also repeats the history that the fork branch
+  merged from `main`, including earlier `BREAKING CHANGE:` footers. Parse it
+  and leave those repeated entries out, or they appear twice. Put an entry
+  with `!` first: release-please starts a new entry only at a header without
+  `!` after an empty line, so a later `!` header joins the entry before it.
+- Change a file in every component the advisory commit changed, for example
+  under `packages/cloud/` when it changed `@k2b/cloud`. release-please gives
+  the override only to the components of the pull request's own files.
+- Write the marker only once, where the block starts: release-please takes
+  the text after the first `BEGIN_COMMIT_OVERRIDE` in the body, also when that
+  first one stands in a sentence.
+- Keep the block and the rest of the text free of HTML-like markup, and name
+  the behavior, not the vulnerability, until the advisory is published.
+
+After the merge, check that the refreshed release PR lists the advisory
+entries under each component, and run
+`bun scripts/check-release-pr-body.ts --pr <n>` on it. Publish the advisory
+after the release, with the released `@k2b/cloud` version as the first
+patched version.
+
+### Recover a release that release-please skipped
+
+This is a maintainer procedure. Agents never perform these steps:
+`AGENTS.md` forbids agents from creating tags or triggering releases.
+
+For `cloud-v0.44.0`, HTML-like placeholders swallowed the Cloud section of
+release PR #1248, so release-please created only the npm releases
+([#1298](https://github.com/k2b-dev/cloud/issues/1298)). Recover a skipped
+release in this order:
+
+1. Edit the merged release PR body. Replace each `<` that starts markup in
+   the release notes with `&amp;lt;`; keep the structural `details` and
+   `summary` tags. The GitHub release then shows `<`. Do not use `&lt;`:
+   release-please decodes it to `<`, and the GitHub release hides the text
+   as an HTML tag. Check the edited file before saving it on GitHub:
+
+   ```bash
+   bun scripts/check-release-pr-body.ts --pr <n> --body <file>
+   ```
+
+   After saving, run `bun scripts/check-release-pr-body.ts --pr <n>` to check
+   the live body.
+2. Change the PR label from `autorelease: tagged` back to
+   `autorelease: pending`.
+3. Push a branch pointing at the release commit and dispatch `main.yml` on it:
+
+   ```bash
+   git push origin <release-sha>:refs/heads/chore/recover-release-X-Y-Z
+   gh workflow run main.yml --ref chore/recover-release-X-Y-Z
+   ```
+
+   release-please creates the missing tag and GitHub release at that commit
+   and skips existing releases as duplicates. The run builds images from the
+   release commit. CLI asset signing fails on this branch because its
+   signature identity must use `refs/heads/main`. If the `release-please` job
+   still logs `Pull request contains releases, but not for component`, it has
+   set the label to `autorelease: tagged` again: check the live body, repeat
+   step 2, and dispatch again. The first 0.44.0 attempt needed this.
+4. Finish the release from `main`:
+
+   ```bash
+   gh workflow run main.yml --ref main -f version=X.Y.Z
+   ```
+
+   This checks out the release tag and publishes the CLI assets and
+   `release.json`.
+5. Delete the recovery branch:
+
+   ```bash
+   git push origin --delete chore/recover-release-X-Y-Z
+   ```
 
 ## Verify the CLI assets
 
@@ -155,5 +316,5 @@ marks such releases.
 - edit `version` fields, `CHANGELOG.md`, or `.release-please-manifest.json`;
 - create, move, or delete tags;
 - push to `main` directly;
-- re-run a release for a tag that already exists. Fix forward with a new
-  patch release.
+- re-run a release for a tag that already exists, except for the maintainer
+  recovery procedure above. Otherwise, fix forward with a new patch release.

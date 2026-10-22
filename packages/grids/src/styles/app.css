@@ -78,7 +78,8 @@
   margin-bottom: 1rem;
 }
 
-@media (min-width: 64rem) {
+/* Two columns once the app's host is as wide as the sidebar column needs, as in a window that wide. */
+@container k2b-app-area (min-width: 64rem) {
   .grids-navigation-columns {
     column-count: 2;
   }
@@ -129,10 +130,7 @@
   padding: 0.25rem;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(0.125rem);
-  transition:
-    opacity 120ms ease,
-    transform 120ms ease;
+  transition: opacity 120ms ease;
 }
 
 .custom-app-editor-control:active {
@@ -158,14 +156,12 @@
 .custom-app-block:hover > .custom-app-block-control {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0);
 }
 
 @media (hover: none) {
   .custom-app-block > .custom-app-block-control {
     opacity: 1;
     pointer-events: auto;
-    transform: translateY(0);
   }
 }
 
@@ -482,7 +478,7 @@
   table-layout: auto;
 }
 .k2b-ui .grids-object-list-table .grids-object-list-active {
-  background: var(--k2b-selected);
+  background: var(--k2b-row-selected);
 }
 .k2b-ui .grids-object-list-table .grids-object-list-cell {
   width: 100%;
@@ -565,7 +561,7 @@
 
 /* One form draft owns inputs, calculations and saved-state actions. */
 .grids-form-shell {
-  container-type: inline-size;
+  container: grids-form / inline-size;
 }
 .grids-form-workspace {
   display: grid;
@@ -617,7 +613,9 @@
   margin-top: 1rem;
   padding-top: 1rem;
 }
-@container (min-width: 54rem) {
+/* Named: without the shell, as in the builder preview, the form stays one
+   column instead of following the page's root container. */
+@container grids-form (min-width: 54rem) {
   .grids-form-workspace {
     grid-template-columns: minmax(0, 1fr) minmax(16rem, 17.5rem);
   }
@@ -734,30 +732,11 @@
   background: var(--ui-hover);
 }
 
-.grids-overview-table:focus-visible {
-  outline: 2px solid var(--app-accent);
-  outline-offset: 2px;
-}
-
+/* The box; the chip and the app ink come from `k2b-icon-tile` and `app-accent-text` on the same element. */
 .grids-overview-table-icon {
-  display: inline-flex;
   width: 2.25rem;
   height: 2.25rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--ui-radius-control);
-  color: var(--app-accent);
-  background: color-mix(in srgb, var(--app-accent) 12%, var(--ui-surface));
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.5),
-    inset 0 -1px 1px rgb(0 0 0 / 0.05);
   font-size: 1rem;
-}
-
-.dark .grids-overview-table-icon {
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.07),
-    inset 0 -1px 1px rgb(0 0 0 / 0.4);
 }
 
 .grids-overview-table-copy {

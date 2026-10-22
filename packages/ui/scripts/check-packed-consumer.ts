@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 const packageRoot = resolve(import.meta.dir, "..");
 const temporaryRoot = mkdtempSync(join(tmpdir(), "k2b-ui-packed-consumer-"));
@@ -61,12 +61,22 @@ try {
 
   for (const file of [
     "LICENSE",
+    "map-glyphs/OFL.txt",
     "dist/licenses/ibm-plex-sans.txt",
     "dist/licenses/ibm-plex-mono.txt",
     "dist/licenses/tabler-icons.txt",
     "dist/licenses/emojibase-data.txt",
   ]) {
     if (!(await Bun.file(join(installedUi, file)).text()).trim()) throw new Error(`missing packed license: ${file}`);
+  }
+  for (const asset of ["IBM Plex Sans Medium/0-255.pbf", "OFL.txt"]) {
+    const resolved = import.meta.resolve(`@k2b/ui/map-glyphs/${asset}`, join(consumer, "index.ts"));
+    const path = realpathSync(resolved.startsWith("file:") ? new URL(resolved) : resolved);
+    const within = relative(realpathSync(installedUi), path);
+    const stat = lstatSync(path);
+    if (within.startsWith("..") || isAbsolute(within) || !stat.isFile() || stat.size === 0) {
+      throw new Error(`glyph asset did not resolve inside the packed package: ${asset}`);
+    }
   }
   const manifest = await Bun.file(join(installedUi, "package.json")).json();
   await Bun.write(
@@ -93,12 +103,28 @@ try {
       throw new Error("public root did not resolve to packed dist/ssr/index.js: " + resolved);
     }
     const ui = await import("@k2b/ui");
-    const required = ["Button", "Chart", "DatePicker", "Panes", "createPanesLayout", "prompts"];
+    const required = ["Button", "Chart", "DatePicker", "Panes", "createPanesLayout", "prompts", "ReactionBar", "reactionPeople", "RichSelect", "RichSelectFacts"];
     const missing = required.filter((name) => ui[name] === undefined);
     if (missing.length) throw new Error("missing representative exports: " + missing.join(", "));
+    const { mapStyle, mapPalette, mapAttribution } = ui;
+    const style = mapStyle({
+      theme: "light", locale: "de",
+      tiles: "/_geo/tiles/{z}/{x}/{y}.pbf",
+      glyphs: "/_geo/glyphs/{fontstack}/{range}.pbf",
+    });
+    if (style.version !== 8 || style.layers[0]?.paint?.["background-color"] !== mapPalette.light.land || mapAttribution.length !== 3) {
+      throw new Error("packed map exports did not build a style");
+    }
     const { renderToString } = await import("solid-js/web");
     const html = renderToString(() => ui.Button({ children: "Packed button" }));
     if (!html.includes("Packed button")) throw new Error("packed SSR component did not render");
+    const picker = renderToString(() => ui.RichSelect({
+      label: "Destination", value: "review", items: [{ value: "review", label: "Review" }],
+    }));
+    const trigger = picker.match(new RegExp('<button[^>]*role="combobox"[^>]*>(.*?)</button>', "s"))?.[1];
+    if (!trigger?.includes("Review")) {
+      throw new Error("packed RichSelect did not render its selected value and control");
+    }
   `;
   for (const nodeEnv of ["development", "production"]) {
     run([process.execPath, "--no-install", "-e", serverSmoke], consumer, { ...process.env, NODE_ENV: nodeEnv });
@@ -111,6 +137,38 @@ try {
     }
   `;
   run([process.execPath, "--no-install", "--conditions=browser", "-e", browserSmoke], consumer);
+
+  const inspectionSmoke = `
+    const resolved = import.meta.resolve("@k2b/ui/chart-inspection");
+    if (!resolved.includes("/node_modules/@k2b/ui/dist/browser/chart-inspection.js")) {
+      throw new Error("chart inspection did not resolve to packed dist/browser/chart-inspection.js: " + resolved);
+    }
+  `;
+  run([process.execPath, "--no-install", "-e", inspectionSmoke], consumer);
+  run([process.execPath, "--no-install", "--conditions=browser", "-e", inspectionSmoke], consumer);
+
+  const inspectionEntry = join(consumer, "inspection-entry.ts");
+  await Bun.write(inspectionEntry, 'export { inspectChart } from "@k2b/ui/chart-inspection";\n');
+  const inspectionBuild = await Bun.build({
+    entrypoints: [inspectionEntry],
+    target: "browser",
+    format: "esm",
+    external: ["solid-js", "solid-js/*"],
+    minify: true,
+  });
+  if (!inspectionBuild.success) {
+    throw new Error(`packed chart inspection build failed\n${inspectionBuild.logs.join("\n")}`);
+  }
+  const inspectionOutput = await inspectionBuild.outputs[0]!.text();
+  const inspectionBytes = new TextEncoder().encode(inspectionOutput).byteLength;
+  if (inspectionOutput.includes("solid-js")) {
+    throw new Error("packed chart inspection build requires Solid");
+  }
+  // The minified framework-free inspector measured 13,513 bytes. Leave a few
+  // percent for small changes while catching accidental framework dependencies.
+  if (inspectionBytes > 14_000) {
+    throw new Error(`packed chart inspection browser build is too large: ${inspectionBytes} bytes`);
+  }
 
   const globalStyles = import.meta.resolve("@k2b/ui/global.css", join(consumer, "index.ts"));
   if (!globalStyles.includes("/node_modules/@k2b/ui/dist/global.css")) {
@@ -159,8 +217,9 @@ try {
   }
   // Each component family owns its message catalog, so this unminified build
   // carries only the common strings. A leaked family adds several kilobytes;
-  // the budget leaves a few percent for the two components to grow.
-  if (browserOutput.length > 56_000) {
+  // the budget leaves a few percent for the two components to grow. The
+  // locale weekend band and the one-click range moved the pair to about 58 kB.
+  if (browserOutput.length > 60_000) {
     throw new Error(`packed Button + DatePicker browser build is too large: ${browserOutput.length} bytes`);
   }
   for (const unusedMessage of ["chartCopyFailed", "installCopyLink", "qrCameraPreview", "pdfPreviewHttpError", "composerFormatting"]) {
@@ -175,7 +234,7 @@ try {
   }
 
   console.log(
-    `Packed @k2b/ui imports and renders via SSR; global CSS bundles; browser tree-shaking produced ${browserOutput.length} bytes`,
+    `Packed @k2b/ui imports and renders via SSR; global CSS bundles; browser tree-shaking produced ${browserOutput.length} bytes; chart inspection ${inspectionBytes} bytes`,
   );
 } finally {
   rmSync(temporaryRoot, { recursive: true, force: true });

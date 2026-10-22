@@ -1,11 +1,30 @@
 import type { Socket } from "bun";
 
-export type SmtpSinkMessage = { from: string; to: string[]; raw: string };
-export type SmtpSinkOptions = { reply?: (command: string, argument: string) => string | undefined };
-type Session = { buffer: string; decoder: TextDecoder; from: string; to: string[]; lines: string[]; data: boolean; auth: number };
+export type SmtpSinkMessage = { from: string; to: string[]; raw: string; remoteAddress: string };
+export type SmtpDataReply = { release: () => void; drop: () => void };
+export type SmtpSinkOptions = {
+  hostname?: string;
+  port?: number;
+  reply?: (command: string, argument: string) => string | undefined;
+  /** Return true to defer acceptance and the final DATA reply until release(), or drop() without accepting. */
+  hold?: (message: SmtpSinkMessage, reply: SmtpDataReply) => boolean;
+};
+type Connection = { remoteAddress: string; held: boolean; closed: boolean; message?: SmtpSinkMessage };
+type Session = {
+  buffer: string;
+  decoder: TextDecoder;
+  from: string;
+  to: string[];
+  lines: string[];
+  data: boolean;
+  auth: number;
+  connection: Connection;
+};
 
-/** Ephemeral loopback-only SMTP server. Each connection owns its envelope and DATA state. */
+/** Ephemeral SMTP server, loopback-only by default. Each connection owns its envelope and DATA state. */
 export const smtpSink = (options: SmtpSinkOptions = {}) => {
+  let connections = 0;
+  const connectionLog: Connection[] = [];
   const messages: SmtpSinkMessage[] = [];
   const sockets = new Set<Socket<Session>>();
   const reset = (state: Session) => {
@@ -16,16 +35,20 @@ export const smtpSink = (options: SmtpSinkOptions = {}) => {
     state.auth = 0;
   };
   const server = Bun.listen<Session>({
-    hostname: "127.0.0.1",
-    port: 0,
+    hostname: options.hostname ?? "127.0.0.1",
+    port: options.port ?? 0,
     socket: {
       open(socket) {
-        socket.data = { buffer: "", decoder: new TextDecoder(), from: "", to: [], lines: [], data: false, auth: 0 };
+        connections++;
+        const connection: Connection = { remoteAddress: socket.remoteAddress, held: false, closed: false };
+        connectionLog.push(connection);
+        socket.data = { buffer: "", decoder: new TextDecoder(), from: "", to: [], lines: [], data: false, auth: 0, connection };
         sockets.add(socket);
         socket.write("220 localhost SMTP sink\r\n");
       },
       data(socket, bytes) {
         const state = socket.data;
+        if (state.connection.held) return;
         state.buffer += state.decoder.decode(bytes, { stream: true });
         for (let end = state.buffer.indexOf("\r\n"); end >= 0; end = state.buffer.indexOf("\r\n")) {
           const line = state.buffer.slice(0, end);
@@ -37,9 +60,31 @@ export const smtpSink = (options: SmtpSinkOptions = {}) => {
             }
             const override = options.reply?.("MESSAGE", state.lines.join("\r\n"));
             const reply = override ?? "250 Message accepted";
-            if (reply.startsWith("250")) messages.push({ from: state.from, to: [...state.to], raw: state.lines.join("\r\n") + "\r\n" });
+            const message = {
+              from: state.from,
+              to: [...state.to],
+              raw: state.lines.join("\r\n") + "\r\n",
+              remoteAddress: socket.remoteAddress,
+            };
+            state.connection.message = message;
             reset(state);
-            socket.write(`${reply}\r\n`);
+            let settled = false;
+            const release = () => {
+              if (settled || state.connection.closed) return;
+              settled = true;
+              state.connection.held = false;
+              if (reply.startsWith("250")) messages.push(message);
+              socket.write(`${reply}\r\n`);
+            };
+            const drop = () => {
+              if (settled) return;
+              settled = true;
+              state.connection.held = false;
+              socket.end();
+            };
+            state.connection.held = true;
+            if (options.hold?.(message, { release, drop })) return;
+            release();
             continue;
           }
           if (state.auth) {
@@ -96,18 +141,24 @@ export const smtpSink = (options: SmtpSinkOptions = {}) => {
         }
       },
       close(socket) {
+        socket.data.connection.closed = true;
         sockets.delete(socket);
       },
       error(socket) {
+        socket.data.connection.closed = true;
         sockets.delete(socket);
         socket.end();
       },
     },
   });
   return {
-    host: "127.0.0.1",
+    host: options.hostname ?? "127.0.0.1",
     port: server.port!,
     messages,
+    connectionLog,
+    get connections() {
+      return connections;
+    },
     stop() {
       for (const socket of sockets) socket.end();
       server.stop(true);

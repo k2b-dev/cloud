@@ -2,8 +2,13 @@ import { z } from "zod";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_CATALOG_BYTES,
-  CapabilityActionReviewSchema,
+  CAPABILITY_MAX_REVIEW_CONTENT_BYTES,
+  CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
+  CapabilityActionReviewDataSchema,
   CapabilityCatalogSchema,
+  type CapabilityReviewContentRef,
+  CapabilityReviewContentRefSchema,
+  CapabilityReviewContentSchema,
   capabilityResultSchema,
 } from "../contracts/capabilities";
 import { capabilityMessages } from "../shared/capability-messages";
@@ -142,7 +147,29 @@ export const reviewCapabilityAction = async <TInput = unknown>(
       body: JSON.stringify({ input: invocation.input }),
       signal: invocation.signal,
     });
-    return readCapabilityResponse(response, CapabilityActionReviewSchema);
+    return await readCapabilityResponse(
+      response,
+      CapabilityActionReviewDataSchema,
+      CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
+      invocation.signal,
+    );
+  } catch (cause) {
+    return unavailable(cause, undefined, clientLocale(options.headers));
+  }
+};
+
+/** Load exactly one stored snapshot using the caller's normal Cloud authentication. A locator grants no access. */
+export const readCapabilityReviewContent = async (
+  reference: CapabilityReviewContentRef,
+  options: CapabilityHttpOptions & { signal?: AbortSignal } = {},
+) => {
+  try {
+    const ref = CapabilityReviewContentRefSchema.parse(reference);
+    const response = await (options.fetch ?? globalThis.fetch)(
+      requestUrl(options.baseUrl ?? "/api", `${ref.href.slice(4)}?digest=${encodeURIComponent(ref.digest)}`),
+      { headers: options.headers, credentials: "same-origin", cache: "no-store", signal: options.signal },
+    );
+    return await readCapabilityResponse(response, CapabilityReviewContentSchema, CAPABILITY_MAX_REVIEW_CONTENT_BYTES, options.signal);
   } catch (cause) {
     return unavailable(cause, undefined, clientLocale(options.headers));
   }
@@ -180,4 +207,10 @@ export const resolveCommand = async (
   }
 };
 
+export {
+  actionReview,
+  type CapabilityReviewForms,
+  capabilityReviewRememberScope,
+  capabilityReviewView,
+} from "./reviews";
 export { type CapabilityStreamVerb, transferCapabilityStream } from "./streams";

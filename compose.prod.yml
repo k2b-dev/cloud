@@ -67,6 +67,7 @@ services:
     # Mount the referenced files here, never in the shared application volumes.
     environment:
       <<: *shared-env
+      GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS: ${GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS:-}
       NATS_ADMIN_SERVERS: ${NATS_ADMIN_SERVERS:-}
       NATS_ADMIN_CREDS_FILE: ${NATS_ADMIN_CREDS_FILE:-}
       NATS_ADMIN_NKEY_SEED_FILE: ${NATS_ADMIN_NKEY_SEED_FILE:-}
@@ -88,6 +89,7 @@ services:
       start_period: 2s
     environment:
       <<: *shared-env
+      OUTGOING_MAIL_ALLOWED_TARGETS: ${OUTGOING_MAIL_ALLOWED_TARGETS:-}
       ADMIN_LOGIN_TOKEN: ${ADMIN_LOGIN_TOKEN:-}
       CLOUD_OAUTH_BROKER_SECRET: ${CLOUD_OAUTH_BROKER_SECRET:?CLOUD_OAUTH_BROKER_SECRET is required}
       CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: ${CLOUD_IDENTITY_KEY_ENCRYPTION_KEY:?CLOUD_IDENTITY_KEY_ENCRYPTION_KEY is required}
@@ -108,6 +110,9 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     image: ghcr.io/k2b-dev/cloud-app-assistant:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    environment:
+      <<: *shared-env
+      ASSISTANT_RSQL_ALLOWED_TARGETS: ${ASSISTANT_RSQL_ALLOWED_TARGETS:-}
 
   app-capabilities:
     <<: *app-defaults
@@ -155,6 +160,9 @@ services:
   app-notebooks:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-notebooks:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    environment:
+      <<: *shared-env
+      NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS: ${NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS:-}
 
   app-oauth:
     <<: *app-defaults
@@ -169,6 +177,8 @@ services:
   app-pulse:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-pulse:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    environment:
+      <<: *shared-env
 
   app-proxy-auth:
     <<: *app-defaults
@@ -200,3 +210,6 @@ services:
   app-weather:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-weather:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
+    environment:
+      <<: *shared-env
+      GEO_ALLOWED_TARGETS: ${GEO_ALLOWED_TARGETS:-}

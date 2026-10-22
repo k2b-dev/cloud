@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Markdown handbooks and collaborative notebooks with structured blocks, discussions, links, and files.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-10-12
+updated: 2026-10-20
 ---
 
 # Notebooks
@@ -46,7 +46,7 @@ including from Book view. Use the overview to start from a template.
 - Discuss a page in a durable Markdown thread. New comments appear live for
   other users viewing its detail panel, and comment authors can correct or
   remove their own comment for ten minutes.
-- Keep small tables, lists, todos, data blocks, and sections beside the prose
+- Keep small tables, lists, todos, data blocks, charts, and sections beside the prose
   that explains them.
 - Attach images and files to the notebook and reference them from notes. Drop
   or paste them into the editor, or choose them with the paperclip from this
@@ -58,7 +58,18 @@ including from Book view. Use the overview to start from a template.
   Report, Compact, or Custom print style. PDF generation uses the current live
   editor content and does not store a generated copy. In the PDF, links to the
   note itself jump within the document: to the linked heading, or to the top
-  when the note has no such heading.
+  when the note has no such heading. Links to other notes, their headings, tags,
+  and attachments open in Cloud at the installation's public address. Opening
+  them still requires sign-in and notebook access. After the download, the
+  dialog lists what the PDF left out, with a reason and what to do. The PDF marks each item in
+  place. Attached JPEG, PNG, WebP and GIF images appear at the size Book shows
+  them. Images share the administrator's **Max input bytes** budget; large
+  images print at 300, 200 or 150 dpi. Preparing images gets the same time as
+  the renderer's **Timeout** setting, at most 115 seconds. SVG attachments stay
+  available as downloads. External images print when the server can reach them
+  at a public HTTPS address without a redirect.
+  Anything left out shows **Image not included: …** in the PDF and is listed in
+  the dialog.
 - Add filtered page lists with `:::query` and page contents with `:::toc`, using
   your own named data instead of a fixed metadata schema.
 
@@ -69,7 +80,7 @@ export boundary.
 
 Users with read permission always use **Book**. It shows the note as a web page
 with navigation and tag filters, without an editor, detail panel, or discussion
-panel. Query blocks (`:::query`) and tables of contents (`:::toc`) are rendered
+panel. Query blocks (`:::query`), tables of contents (`:::toc`), and charts (`:::chart`) are rendered
 on the server with the page.
 
 Page links, tag filters, search, and pagination update the Book content without
@@ -79,7 +90,7 @@ and query results automatically. Without JavaScript, links and filters still
 work through regular page loads. Switching to Write or Read-only loads that
 workspace as a new page.
 
-In the editor, type `:::` to insert a query or table of contents. Rich mode shows
+In the editor, type `:::` to insert a query, table of contents, or chart. Rich mode shows
 a server-rendered preview; move the cursor into the block or choose **Show
 source** to edit it. Invalid settings are marked at their source lines. Previewing
 a draft does not save it or change the notes returned by the query.
@@ -155,6 +166,23 @@ behavior**. The initial default for editors and admins is Write. An explicit
 view in the page URL overrides this default; read permission still forces
 Book. Locked notes open in Read-only instead of Write.
 
+## Use the note side panel
+
+In Write and Read-only, the panel header shows the last editor and edit time
+on one line, with locked, read-only, or offline state when applicable. The
+avatar stack opens **Here now** with the people present and their current
+sections; select a person to scroll to their cursor.
+
+The action row contains **Edit with AI** and **View**. View offers **Open as**
+(Edit, Read, Book), **Text** (Formatted, Markdown), and **Full width**. The
+**⋯** menu contains Copy content, Download as Markdown, Export as PDF,
+Version history, Show in graph, and Duplicate, subject to the note's permissions.
+
+Sections appear in this order: Comments, Tasks, Contents (from two headings),
+References, Attachments, Linked from, and Activity. Activity uses translated
+sentences and ends with who created the note. Hover or focus a timestamp for
+its exact date; use the versions link to open saved history.
+
 ## Reserve deleting and locking notes for admins
 
 By default, everyone with write access can delete notes and lock them
@@ -186,6 +214,7 @@ fail with the same messages.
 | Link and tag | Connections and searchable labels parsed from note content |
 | Attachment | Notebook-owned file referenced from Markdown |
 | Named data and query | User-defined Markdown properties and filtered lists of notes in this notebook |
+| Chart | A chart from this note's data, with values, a table view, and spreadsheet copy; PDF includes its data table |
 | Activity | Durable, permission-aware semantic changes across a notebook or note |
 | Saved version | Recoverable note snapshot with the set of contributors represented by that version |
 
@@ -202,6 +231,39 @@ the discussion panel. Users with write access can add comments in the detail
 panel, including on a locked note. Locking freezes the note body, not its
 discussion. Comment authors may edit or delete their own comment for ten
 minutes after posting.
+
+## Show data as a chart
+
+A chart reads only this note's data, including evaluated table formulas.
+Point at or tap a chart value to see its series, x label, and formatted value.
+You can also focus the chart and use the arrow keys to read each value.
+Press Escape to close the tooltip.
+
+**Show as table** shows the values as a table in the same place.
+**Copy data** copies the values as tab-separated text for a spreadsheet.
+These controls work in Book, Read-only, the editor's Rich-mode preview,
+and version history. PDF export keeps the chart and its data table.
+
+```text
+@sales
+| Date | Revenue | Costs |
+| --- | --- | --- |
+| 2026-01-01 | 1200 | 600 |
+| 2026-02-01 | 1400 | 700 |
+
+:::chart
+type: area
+title: Sales 2026
+data: @sales
+x: Date
+y: [Revenue, Costs]
+tooltip:
+  label: Amount
+  format: EUR
+:::
+```
+
+Choose `line`, `area`, `bar`, `pie`, `donut`, `scatter`, or `stat`. Line, area, and scatter need numeric or ISO-date x values. Bar uses one value column. You can also reference a named list or data block, or write inline `columns` and `rows`. A note allows 20 charts, each data list at most 480 values, and a chart at most 8 series. Invalid blocks keep their source with a diagnostic.
 
 ## Build a handbook index
 
@@ -395,6 +457,8 @@ workflow, including moving a Git documentation folder into a notebook.
 
 ## Deployment requirements
 
+`PUT /api/notebooks/admin/settings/:key` accepts `replaceUnreadable: true` alongside `value` to explicitly replace an unreadable saved setting, including `notebooks.snapshot_cron`.
+
 Notebooks serves its math stylesheet and WOFF2 fonts below
 `/public/notebooks/katex-<version>/`. The app's development and production
 asset hooks copy these files together. Book and editor pages load the
@@ -429,3 +493,18 @@ Files keeps originals. HEIC, AVIF, TIFF, SVG, video, GIF, BMP, and unknown
 formats remain unchanged and can retain metadata. Previously uploaded images
 are not rewritten. See [Image upload privacy](/en/docs/platform/image-upload-privacy)
 for the supported formats and limits.
+
+## Operate S3 snapshots
+
+Notebook S3 snapshots upload only to public storage by default. For internal
+S3-compatible storage, set `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` in the Notebooks
+container environment. Use the narrowest entry: an exact host name, a single
+IP address, or the smallest required CIDR range. Each entry covers every port
+and path on the host or range. `/0` and other invalid entries stop Notebooks
+at startup. Failed or empty lookups still refuse uploads.
+
+A refused target returns `NOTEBOOK_SNAPSHOT_TARGET_BLOCKED` (HTTP 400) with:
+"This S3 endpoint is on an internal network. Notebook snapshots go only to
+public storage unless an operator allows this target." Existing configurations
+and credentials stay stored; uploads fail with this reason until the operator
+allows the target. A notebook admin can always turn snapshots off.

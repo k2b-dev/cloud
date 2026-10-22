@@ -1,6 +1,7 @@
 import {
   BottomSheet,
   Button,
+  bottomSheetAdaptiveOptions,
   bottomSheetOptions,
   confirmDiscardIfDirty,
   createNavigation,
@@ -34,11 +35,14 @@ export function NavigationDemo() {
         icon: "ti ti-inbox",
         badge: count(),
         active: active() === "inbox",
+        context: active() === "inbox",
         inlineActions: [{ id: "inbox-details", action: "inbox-details", label: "Inbox details", icon: "ti ti-info-circle" }],
       },
       {
         id: "projects",
         label: "Projects",
+        icon: "ti ti-folders",
+        context: active() === "work",
         children: [
           {
             id: "work",
@@ -99,8 +103,8 @@ export function NavigationDemo() {
     <DemoCard
       id="navigation"
       chip={{ kind: "component", name: "Navigation", from: "@k2b/ui" }}
-      description="One live navigation model, native links, local actions, readable nested rows, sections and a status slot that keeps its place. The host chooses where it renders."
-      code={`const navigation = createNavigation({\n  items: () => [{ id: "inbox", label: "Inbox", action: "inbox", badge: count() }],\n  onAction: id => setActive(id),\n});\n<Navigation navigation={navigation} label="Workspace" />`}
+      description="One live navigation model inline and in a sheet. Select the project: its parent stays strong while the child is active. Other container labels use secondary ink; status colors and unmarked rows keep their own appearance."
+      code={`const navigation = createNavigation({\n  items: () => [{\n    id: "projects", label: "Projects", context: active() === "work",\n    children: [{ id: "work", label: "Work", action: "work", active: active() === "work" }],\n  }],\n  onAction: id => setActive(id),\n});\n<Navigation navigation={navigation} label="Workspace" />`}
     >
       <div class="flex flex-col gap-3 max-w-xl">
         <Button onClick={() => void open()}>Open menu sheet</Button>
@@ -137,14 +141,43 @@ export function BottomSheetDemo() {
         </BottomSheet>
       );
     }, bottomSheetOptions);
+  const openDecision = () =>
+    dialogCore.open<void>(
+      (close, context) => (
+        <BottomSheet onDismiss={context.requestDismiss}>
+          <BottomSheet.Header title="Apply changes?" />
+          <BottomSheet.Body>These changes will be visible to everyone in the workspace.</BottomSheet.Body>
+          <BottomSheet.Footer>
+            <Button variant="secondary" onClick={() => close()}>
+              Cancel
+            </Button>
+            <Button onClick={() => close()}>Apply changes</Button>
+          </BottomSheet.Footer>
+        </BottomSheet>
+      ),
+      bottomSheetAdaptiveOptions,
+    );
   return (
     <DemoCard
       id="bottom-sheet"
       chip={{ kind: "component", name: "BottomSheet", from: "@k2b/ui" }}
-      description="A bottom-edge dialog with guarded dismissal, a touch handle, safe-area spacing and the shared focus trap. Enter a draft to exercise the discard guard."
-      code={`dialogCore.open((close, context) => <BottomSheet onDismiss={context.requestDismiss}>\n  <BottomSheet.Header title="Details" close={context.requestDismiss} />\n  <BottomSheet.Body>Content</BottomSheet.Body>\n</BottomSheet>, bottomSheetOptions);`}
+      description="A bottom-edge sheet with guarded dismissal, plus a short decision that becomes a centered dialog from tablet width. Enter a draft to exercise the discard guard, or resize the open decision."
+      code={`dialogCore.open((close, context) => <BottomSheet onDismiss={context.requestDismiss}>\n  <BottomSheet.Header title="Details" close={context.requestDismiss} />\n  <BottomSheet.Body>Content</BottomSheet.Body>\n</BottomSheet>, bottomSheetOptions);
+
+// A decision switches in place from sheet to dialog at 48rem.
+dialogCore.open((close, context) => (
+  <BottomSheet onDismiss={context.requestDismiss}>
+    <BottomSheet.Header title="Apply changes?" />
+    <BottomSheet.Body>These changes will be visible to everyone in the workspace.</BottomSheet.Body>
+    <BottomSheet.Footer>
+      <Button variant="secondary" onClick={() => close()}>Cancel</Button>
+      <Button onClick={() => close()}>Apply changes</Button>
+    </BottomSheet.Footer>
+  </BottomSheet>
+), bottomSheetAdaptiveOptions);`}
     >
       <Button onClick={() => void open()}>Open bottom sheet</Button>
+      <Button onClick={() => void openDecision()}>Open sheet or dialog</Button>
     </DemoCard>
   );
 }
@@ -194,14 +227,20 @@ export function TabBarDemo() {
     <DemoCard
       id="tab-bar"
       chip={{ kind: "component", name: "TabBar", from: "@k2b/ui" }}
-      description="Up to five native links with an icon above each label; the open page carries aria-current. Flat and opaque on the canvas, without a rule; the content's scroll fade marks its edge."
-      code={`<TabBar label="App" items={[
+      description="Up to five native links with an icon above each label; the open page carries aria-current. Flat by default, or rounded with the floating variant; its host places it and keeps content clear."
+      code={`const tabs = [
   { id: "start", label: "Start", icon: "ti ti-home", href: "/pwa/", current: true },
   { id: "tasks", label: "Tasks", icon: "ti ti-checkbox", href: "/pwa/spaces" },
-]} />`}
+];
+
+<TabBar label="App" items={tabs} />
+<TabBar variant="floating" label="App" items={tabs} />`}
     >
       <div class="ui-phone-frame" data-size="bar">
         <TabBar label="Phone app" items={phoneTabs} />
+      </div>
+      <div class="ui-phone-frame p-3" data-size="bar">
+        <TabBar variant="floating" label="Floating app navigation" items={phoneTabs} />
       </div>
     </DemoCard>
   );

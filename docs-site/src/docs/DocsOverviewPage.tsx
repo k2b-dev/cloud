@@ -76,6 +76,7 @@ const documentationGroups = [
       { label: "Operations", path: "/operations" },
       { label: "API reference", path: "/reference" },
       { label: "Public API surface", path: "/reference/api-surface" },
+      { label: "Conventions", path: "/conventions" },
       { label: "Document core changes", path: "/contributing/document-cloud-core-changes" },
       { label: "Performance baseline", path: "/contributing/performance-baseline" },
       { label: "UI catalog", href: "/ui" },

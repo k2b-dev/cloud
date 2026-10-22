@@ -91,3 +91,15 @@ test("logs the matched template after a handler throws", async () => {
   expect((await app.request("/api/demo/items/4711")).status).toBe(500);
   expect(entries[0]?.[2]).toMatchObject({ path: "/api/demo/items/:itemId", status: 500 });
 });
+
+test("panel request logging excludes the context parameter from messages and metadata", async () => {
+  const app = new Hono<AuthContext>().use("*", requestLogger).get("/app/fixture/panel", (c) => c.text("failed", 500));
+  const response = await app.request(
+    `/app/fixture/panel?cloud_panel_context=${encodeURIComponent(JSON.stringify({ scope: { id: "private-place" } }))}`,
+  );
+  expect(response.status).toBe(500);
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.[2]).toMatchObject({ path: "/app/fixture/panel" });
+  expect(JSON.stringify(entries)).not.toContain("cloud_panel_context");
+  expect(JSON.stringify(entries)).not.toContain("private-place");
+});

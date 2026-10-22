@@ -1,6 +1,7 @@
 import {
   announce,
   Button,
+  Chart,
   CodeDisplay,
   DataTable,
   type DataTableColumn,
@@ -20,25 +21,34 @@ import {
   FilterChip,
   Format,
   InlineGuidance,
+  installInputModeController,
   Kbd,
   LabelChip,
   Lightbox,
   LinkCard,
   LocaleProvider,
   LogEntriesTable,
+  MapView,
+  type MapViewMarker,
+  type MapViewOwnLocation,
+  type MapViewStyle,
   MarkdownEditor,
   MarkdownView,
   MessageRow,
   type MessageRowAttachment,
   type MessageRowStatus,
   MessageSystemRow,
+  mapPalette,
   NoticeCard,
   Pagination,
   PanelDialog,
+  Paper,
   PdfPreview,
   Placeholder,
   panelDialogFixedOptions,
   panelDialogOptions,
+  ReactionBar,
+  reactionPeople,
   StatusBadge,
   Steps,
   StructuredDataPreview,
@@ -67,6 +77,173 @@ import { FileGridDemo } from "./file-grid";
 import { PaginationDemo } from "./layout";
 import { CalendarDemo } from "./surfaces";
 import { DemoGrid, type DemoSection } from "./types";
+
+const mapDemoMarkers: MapViewMarker[] = [
+  { id: "museum", mark: 1, label: "Museum", point: { lat: 48.398, lon: 9.992 } },
+  { id: "garden", mark: 2, label: "Garden", point: { lat: 48.403, lon: 9.999 }, tone: "second" },
+  { id: "start", mark: "A", label: "Start", point: { lat: 48.398, lon: 9.992 }, tone: "second" },
+];
+const mapDemoBox = (kind: string, west: number, south: number, east: number, north: number) => ({
+  type: "Feature" as const,
+  properties: { kind },
+  geometry: {
+    type: "Polygon" as const,
+    coordinates: [
+      [
+        [west, south],
+        [east, south],
+        [east, north],
+        [west, north],
+        [west, south],
+      ],
+    ],
+  },
+});
+const mapDemoRoad = (kind: string, coordinates: [number, number][]) => ({
+  type: "Feature" as const,
+  properties: { kind },
+  geometry: { type: "LineString" as const, coordinates },
+});
+// Demo geometry painted with the real mapPalette; a host passes mapStyle() with its tile and glyph templates instead.
+const mapDemoStyle = (dark: boolean): MapViewStyle => {
+  const colors = mapPalette[dark ? "dark" : "light"];
+  const line = (kind: string, color: string, width: number) => ({
+    id: `${kind}-${color}`,
+    type: "line" as const,
+    source: "features",
+    filter: ["==", ["get", "kind"], kind] as ["==", ["get", string], string],
+    layout: { "line-cap": "round" as const, "line-join": "round" as const },
+    paint: { "line-color": color, "line-width": width },
+  });
+  return {
+    version: 8,
+    sources: {
+      features: {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              properties: { kind: "water" },
+              geometry: {
+                type: "Polygon",
+                coordinates: [
+                  [
+                    [9.976, 48.395],
+                    [10.008, 48.4],
+                    [10.008, 48.401],
+                    [9.976, 48.396],
+                    [9.976, 48.395],
+                  ],
+                ],
+              },
+            },
+            mapDemoBox("green", 9.996, 48.402, 10.003, 48.406),
+            mapDemoBox("green", 9.981, 48.402, 9.985, 48.405),
+            mapDemoBox("building", 9.9875, 48.3995, 9.9905, 48.4012),
+            mapDemoBox("building", 9.9925, 48.4002, 9.9952, 48.4018),
+            mapDemoBox("building", 9.9875, 48.4032, 9.9935, 48.4046),
+            mapDemoRoad("minor", [
+              [9.979, 48.4005],
+              [10.006, 48.4025],
+            ]),
+            mapDemoRoad("minor", [
+              [9.991, 48.396],
+              [9.9915, 48.408],
+            ]),
+            mapDemoRoad("major", [
+              [9.976, 48.3975],
+              [9.99, 48.3985],
+              [10.008, 48.4022],
+            ]),
+          ],
+        },
+      },
+    },
+    layers: [
+      { id: "land", type: "background", paint: { "background-color": colors.land } },
+      { id: "water", type: "fill", source: "features", filter: ["==", ["get", "kind"], "water"], paint: { "fill-color": colors.water } },
+      { id: "green", type: "fill", source: "features", filter: ["==", ["get", "kind"], "green"], paint: { "fill-color": colors.green } },
+      {
+        id: "building",
+        type: "fill",
+        source: "features",
+        filter: ["==", ["get", "kind"], "building"],
+        paint: { "fill-color": colors.building },
+      },
+      line("minor", colors.roadCasing, 6),
+      line("major", colors.roadCasing, 9),
+      line("minor", colors.road, 4.5),
+      line("major", colors.road, 7.5),
+    ],
+  };
+};
+const mapDemoStyles = { light: mapDemoStyle(false), dark: mapDemoStyle(true) };
+const MapViewDemo = () => {
+  const [selectedId, setSelectedId] = createSignal("museum");
+  const [location, setLocation] = createSignal<MapViewOwnLocation>();
+  return (
+    <DemoCard
+      id="map-view"
+      chip={[{ kind: "component", name: "MapView", from: "@k2b/ui" }]}
+      description="Pins and routes keep their position while the map image loads. The host list and info tile share selection. The demo paints its own shapes in the map palette."
+      code={
+        '<MapView height={360} style={styles} markers={markers} selectedId={selectedId()} onSelect={setSelectedId} attribution="Demo data" />'
+      }
+    >
+      <MapView
+        height={360}
+        style={mapDemoStyles}
+        markers={mapDemoMarkers}
+        selectedId={selectedId()}
+        onSelect={setSelectedId}
+        attribution="Demo data"
+        notice="A walk around Ulm"
+        infoTile={(marker) => <strong>{marker.label}</strong>}
+        lines={[
+          {
+            id: "walk",
+            points: [
+              { lat: 48.398, lon: 9.992 },
+              { lat: 48.401, lon: 9.994 },
+              { lat: 48.403, lon: 9.999 },
+            ],
+          },
+          {
+            id: "preview",
+            tone: "preview",
+            points: [
+              { lat: 48.403, lon: 9.999 },
+              { lat: 48.405, lon: 9.989 },
+            ],
+          },
+        ]}
+        areas={[
+          {
+            id: "garden",
+            tone: "second",
+            polygon: [
+              { lat: 48.402, lon: 9.996 },
+              { lat: 48.402, lon: 10.003 },
+              { lat: 48.406, lon: 10.003 },
+              { lat: 48.406, lon: 9.996 },
+            ],
+          },
+        ]}
+        ownLocation={location()}
+        onLocate={() => setLocation({ point: { lat: 48.4, lon: 9.99 }, accuracyMeters: 35 })}
+      />
+      <div class="flex flex-wrap gap-2 mt-3">
+        {mapDemoMarkers.map((marker) => (
+          <Button variant="text" aria-pressed={selectedId() === marker.id} onClick={() => setSelectedId(marker.id)}>
+            {marker.mark} {marker.label}
+          </Button>
+        ))}
+      </div>
+    </DemoCard>
+  );
+};
 
 type Row = { id: string; name: string; owner: string; requests: number };
 const rows: Row[] = [
@@ -749,10 +926,156 @@ const chatReactions = (reactions?: DemoReaction[]) =>
     emoji: reaction.emoji,
     count: reaction.by.length,
     own: reaction.by.includes("me"),
-    label: reaction.by.map((person) => chatPeople[person]!.name).join(", "),
+    label: reactionPeople({
+      names: reaction.by.filter((person) => person !== "me").map((person) => chatPeople[person]!.name),
+      own: reaction.by.includes("me"),
+      count: reaction.by.length,
+    }),
   }));
 const agentReply =
   "Here is what changed since this morning: the meter reading API is live with a limit of 60 requests per minute, the sign-in test plan is in the wiki, and the tile colors are still open.";
+
+/** The reactions of one item and the reader's choices, as an application keeps them. */
+function useDemoReactions() {
+  const locale = useLocale();
+  const [entries, setEntries] = createSignal([
+    { key: "👍", emoji: "👍", names: ["Nora Brandt", "Tobias Wendt", "Lea Sommer", "Jonas Peters"], own: true },
+    { key: "🎉", emoji: "🎉", names: ["Nora Brandt", "Release-Bot"], own: false },
+    { key: "❤️", emoji: "❤️", names: ["Lea Sommer"], own: false },
+    { key: "👀", emoji: "👀", names: ["Tobias Wendt"], own: false },
+    { key: "☕", emoji: "☕", names: ["Jonas Peters"], own: false },
+  ]);
+  const [anchor, setAnchor] = createSignal<HTMLElement>();
+  const reactions = () =>
+    entries().map((entry) => {
+      const count = entry.names.length + Number(entry.own);
+      return {
+        key: entry.key,
+        emoji: entry.emoji,
+        own: entry.own,
+        count,
+        label: reactionPeople({ names: entry.names, own: entry.own, count }, locale()),
+      };
+    });
+  const toggle = (key: string) =>
+    setEntries((items) =>
+      items.map((item) => (item.key === key ? { ...item, own: !item.own } : item)).filter((item) => item.own || item.names.length > 0),
+    );
+  const pick = (emoji: string) => {
+    if (entries().some((entry) => entry.key === emoji && entry.own)) return;
+    if (entries().some((entry) => entry.key === emoji)) toggle(emoji);
+    else setEntries((items) => [...items, { key: emoji, emoji, names: [], own: true }]);
+  };
+  return { reactions, toggle, pick, anchor, setAnchor };
+}
+
+const reactionStateCode = `// reactions(), toggle(key), and pick(emoji) come from the item's state; see the page's example.
+const [anchor, setAnchor] = createSignal<HTMLElement>();`;
+
+function ReactionBarChatDemo() {
+  const item = useDemoReactions();
+  return (
+    <>
+      <ReactionBar reactions={item.reactions()} onToggle={item.toggle} onAdd={item.setAnchor} />
+      <EmojiPicker.Popover anchor={item.anchor()} onPick={item.pick} onClose={() => item.setAnchor(undefined)} />
+    </>
+  );
+}
+
+function ReactionBarCardDemo() {
+  const item = useDemoReactions();
+  return (
+    <>
+      <Paper class="k2b-progressive-row" style={{ display: "grid", gap: "0.5rem", width: "16.75rem", padding: "0.625rem" }}>
+        <span style={{ "font-size": "0.875rem", "font-weight": "500" }}>Plan the team offsite</span>
+        <ReactionBar
+          reactions={item.reactions()}
+          onToggle={item.toggle}
+          onAdd={item.setAnchor}
+          density="compact"
+          max={3}
+          add="progressive"
+          moreLabel={(count) => `${count} more reactions, shown in the item`}
+        />
+      </Paper>
+      <EmojiPicker.Popover anchor={item.anchor()} onPick={item.pick} onClose={() => item.setAnchor(undefined)} />
+    </>
+  );
+}
+
+function ReactionBarWrapDemo() {
+  const item = useDemoReactions();
+  return (
+    <>
+      <div style={{ width: "13rem" }}>
+        <ReactionBar reactions={item.reactions()} onToggle={item.toggle} onAdd={item.setAnchor} overflow="wrap" />
+      </div>
+      <EmojiPicker.Popover anchor={item.anchor()} onPick={item.pick} onClose={() => item.setAnchor(undefined)} />
+    </>
+  );
+}
+
+function ReactionBarReadOnlyDemo() {
+  const item = useDemoReactions();
+  return <ReactionBar reactions={item.reactions()} overflow="wrap" />;
+}
+
+const ReactionBarDemos = () => (
+  <DemoGrid>
+    <DemoCard
+      id="reaction-bar"
+      chip={{ kind: "component", name: "ReactionBar", from: "@k2b/ui" }}
+      description="Chat and item detail: 26 px chips in one line that scrolls sideways, and Add reaction with the emoji picker. Hover or hold a chip for the names."
+      code={`${reactionStateCode}
+
+<ReactionBar reactions={reactions()} onToggle={toggle} onAdd={setAnchor} />
+<EmojiPicker.Popover anchor={anchor()} onPick={pick} onClose={() => setAnchor(undefined)} />`}
+    >
+      <ReactionBarChatDemo />
+    </DemoCard>
+    <DemoCard
+      id="reaction-bar-card"
+      chip={{ kind: "component", name: "ReactionBar", from: "@k2b/ui" }}
+      description="Card: 24 px chips, the first three emoji and +n. Add reaction shows while the card is hovered or focused, and not on touch."
+      code={`${reactionStateCode}
+
+<Paper class="k2b-progressive-row">
+  <span>Plan the team offsite</span>
+  <ReactionBar
+    reactions={reactions()}
+    onToggle={toggle}
+    onAdd={setAnchor}
+    density="compact"
+    max={3}
+    add="progressive"
+    moreLabel={(count) => \`\${count} more reactions, shown in the item\`}
+  />
+</Paper>
+<EmojiPicker.Popover anchor={anchor()} onPick={pick} onClose={() => setAnchor(undefined)} />`}
+    >
+      <ReactionBarCardDemo />
+    </DemoCard>
+    <DemoCard
+      id="reaction-bar-wrap"
+      chip={{ kind: "component", name: "ReactionBar", from: "@k2b/ui" }}
+      description="Every reaction of an item: the chips and Add reaction wrap."
+      code={`${reactionStateCode}
+
+<ReactionBar reactions={reactions()} onToggle={toggle} onAdd={setAnchor} overflow="wrap" />
+<EmojiPicker.Popover anchor={anchor()} onPick={pick} onClose={() => setAnchor(undefined)} />`}
+    >
+      <ReactionBarWrapDemo />
+    </DemoCard>
+    <DemoCard
+      id="reaction-bar-read-only"
+      chip={{ kind: "component", name: "ReactionBar", from: "@k2b/ui" }}
+      description="Read-only: the chips are no controls. Hover, or tap on a touch screen, shows the names."
+      code={`<ReactionBar reactions={reactions()} overflow="wrap" />`}
+    >
+      <ReactionBarReadOnlyDemo />
+    </DemoCard>
+  </DemoGrid>
+);
 
 const MessageRowsDemo = () => {
   // A store changes a message in place, so its row updates without mounting again and keeps focus on its controls.
@@ -1293,7 +1616,7 @@ const FilesDemo = () => {
         { kind: "component", name: "FileTree", from: "@k2b/ui" },
         { kind: "component", name: "FileView", from: "@k2b/ui" },
       ]}
-      description="A fully interactive, path-first browser over an application-owned in-memory source. Create, upload, rename, move, delete, edit, save, and download without a backend. The preview dialog shows a plain FileView whose Markdown heading becomes the dialog title."
+      description="A fully interactive, path-first browser over an application-owned in-memory source. Create, upload, rename, move, delete, edit, save, and download without a backend. Tree icons sit in soft chips of their file-type color; folders use the app accent. The preview dialog shows a plain FileView whose Markdown heading becomes the dialog title."
       code={`const source: FileSource = {
   list: async () => entries,
   read: async (path) => content[path],
@@ -1509,7 +1832,30 @@ const IntlDemo = () => (
   </DemoCard>
 );
 
+const KbdHintDemo = () => {
+  onMount(() => onCleanup(installInputModeController()));
+  return (
+    <DemoCard
+      id="kbd-hint"
+      chip={{ kind: "component", name: "Kbd", from: "@k2b/ui" }}
+      description="A keyboard hint. Press a key outside a text field and it appears in its reserved place."
+      code={`onMount(() => onCleanup(installInputModeController()));
+
+<div style={{ display: "flex", "align-items": "center", gap: "1rem" }}>
+  <span>Search</span>
+  <Kbd keys="mod+k" class="k2b-kbd-hint" />
+</div>`}
+    >
+      <div style={{ display: "flex", "align-items": "center", gap: "1rem" }}>
+        <span>Search</span>
+        <Kbd keys="mod+k" class="k2b-kbd-hint" />
+      </div>
+    </DemoCard>
+  );
+};
+
 const demos: DemoSection = {
+  "map-view": () => <MapViewDemo />,
   kbd: () => (
     <DemoGrid>
       <DemoCard
@@ -1548,6 +1894,7 @@ const demos: DemoSection = {
           <Kbd keys="space" platform="apple" />
         </LocaleProvider>
       </DemoCard>
+      <KbdHintDemo />
     </DemoGrid>
   ),
   "label-chip": () => (
@@ -1595,6 +1942,28 @@ const demos: DemoSection = {
   charts: (props) => (
     <DemoGrid columns="one">
       <ChartDemo window={new URLSearchParams(props.search).get("window") === "1h" ? "1h" : "24h"} />
+      <DemoCard
+        id="line-top-legend"
+        chip={{ kind: "component", name: "Chart", from: "@k2b/ui" }}
+        description="A wrapping line legend shares the chart's total height with its plot."
+        code={`<Chart kind="line" legend legendPlacement="top-start" style={{height:"18rem"}} series={[{label:"Orders",data:[{x:1,y:12},{x:2,y:18}]}]} />`}
+      >
+        <Chart
+          kind="line"
+          legend
+          legendPlacement="top-start"
+          style={{ height: "18rem" }}
+          series={[
+            {
+              label: "Orders",
+              data: [
+                { x: 1, y: 12 },
+                { x: 2, y: 18 },
+              ],
+            },
+          ]}
+        />
+      </DemoCard>
     </DemoGrid>
   ),
   tables: () => (
@@ -1639,6 +2008,7 @@ const demos: DemoSection = {
       <MessageRowsDemo />
     </DemoGrid>
   ),
+  "reaction-bar": () => <ReactionBarDemos />,
   "structured-data": () => (
     <DemoGrid columns="one">
       <StructuredDemo />

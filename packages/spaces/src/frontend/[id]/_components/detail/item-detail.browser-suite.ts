@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,7 +8,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemAttachment, SpaceTag } from "@/contracts";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, keptThrough, launchBrowser } from "../../../../../../ui/test/browser";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
 
 // Whether a property row keeps its boxes while hovered, edited, or open, and whether the claim ring and labels line up,
@@ -31,8 +31,8 @@ const styleEntries = [
 const spaceId = "Space1";
 const now = "2026-10-02T08:00:00.000Z";
 const me = "11111111-1111-4111-8111-111111111111";
-const lena = { id: "22222222-2222-4222-8222-222222222222", displayName: "Lena Example", avatarHash: null };
-const tom = { id: me, displayName: "Tom Sample", avatarHash: null };
+const lena = { id: "22222222-2222-4222-8222-222222222222", kind: "user" as const, displayName: "Lena Example", avatarHash: null };
+const tom = { id: me, kind: "user" as const, displayName: "Tom Sample", avatarHash: null };
 const columns: SpaceColumn[] = [{ id: "Col001", spaceId, name: "To do", color: "#3b82f6", rank: "1", isDone: false }];
 const tags: SpaceTag[] = [
   { id: "Tag001", spaceId, name: "Hardware", color: "#2563eb" },
@@ -51,6 +51,7 @@ const task: SpaceItem = {
   endsAt: null,
   allDay: false,
   deadline: "2026-10-06T15:00:00.000Z",
+  deadlineAllDay: false,
   estimatedDurationMinutes: 45,
   activeBlockerCount: 1,
   priority: "medium",
@@ -105,10 +106,13 @@ const detail = (item: SpaceItem, attachments: SpaceItemAttachment[] = []): Space
   links: [],
   attachments,
   checklist: [],
-  blockedBy: [
-    { blocker: dependency("Itm002", "Rename the computers"), createdAt: now },
-    { blocker: dependency("Itm005", "Order toner", now), createdAt: now },
-  ],
+  blockedBy:
+    item.activeBlockerCount === 0
+      ? []
+      : [
+          { blocker: dependency("Itm002", "Rename the computers"), createdAt: now },
+          { blocker: dependency("Itm005", "Order toner", now), createdAt: now },
+        ],
   blocks: [
     { dependent: dependency("Itm003", "Hand out the devices"), createdAt: now },
     { dependent: dependency("Itm004", "Close the inventory list"), createdAt: now },
@@ -140,6 +144,11 @@ const writes: Array<{ method: string; path: string; body: unknown }> = [];
 /** What the server holds: saved properties come back with the next detail snapshot, as from the real route. */
 let stored: SpaceItem = task;
 let browser: Browser;
+
+beforeEach(() => {
+  stored = structuredClone(task);
+  writes.length = 0;
+});
 
 beforeAll(async () => {
   const built = await Promise.all(styleEntries.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
@@ -185,8 +194,47 @@ beforeAll(async () => {
         if (request.method === "GET") return Response.json([]);
         const body = request.headers.get("content-type")?.includes("json") ? await request.json() : null;
         writes.push({ method: request.method, path: url.pathname, body });
-        if (url.pathname === `/api/spaces/${spaceId}/items/Item01` && request.method === "PATCH") {
-          stored = { ...stored, ...(body as Partial<SpaceItem>) };
+        const itemPath = `/api/spaces/${spaceId}/items/Item01`;
+        if (url.pathname === `${itemPath}/claim` && request.method === "POST") {
+          stored = {
+            ...stored,
+            claim: { id: body.claimId, actor: { kind: "user", id: me }, displayName: tom.displayName, avatarHash: null, claimedAt: now },
+            assignees: stored.assignees?.some((person) => person.kind === "user" && person.id === me)
+              ? stored.assignees
+              : [...(stored.assignees ?? []), tom],
+          };
+          return Response.json(stored);
+        }
+        if (url.pathname === `${itemPath}/release` && request.method === "POST") {
+          const claim = stored.claim;
+          stored = {
+            ...stored,
+            claim: null,
+            assignees:
+              body.force && claim?.actor.kind === "user" && claim.actor.id !== me
+                ? stored.assignees?.filter((person) => person.id !== claim.actor.id)
+                : stored.assignees,
+          };
+          return Response.json(stored);
+        }
+        if (url.pathname === `${itemPath}/progress` && request.method === "POST") return Response.json({ message: "ok" });
+        if (url.pathname === itemPath && request.method === "PATCH") {
+          const { assigneeIds, claimId, force, ...patch } = body as Partial<SpaceItem> & {
+            assigneeIds?: string[];
+            claimId?: string;
+            force?: boolean;
+          };
+          const claim = stored.claim;
+          const removesWorker = assigneeIds && claim?.actor.kind === "user" && !assigneeIds.includes(claim.actor.id);
+          if (removesWorker && (claimId !== claim.id || (claim.actor.id !== me && !force))) {
+            return Response.json({ message: "Task claim is no longer active" }, { status: 409 });
+          }
+          stored = {
+            ...stored,
+            ...patch,
+            ...(assigneeIds ? { assignees: assigneeIds.map((id) => [lena, tom].find((person) => person.id === id)!) } : {}),
+            ...(removesWorker ? { claim: null } : {}),
+          };
           return Response.json(stored);
         }
         return Response.json({ message: "ok" });
@@ -254,6 +302,7 @@ const hostLoad = (from: ReturnType<typeof hostCpu>, to: ReturnType<typeof hostCp
 };
 
 const open = async (view: View, scenario: Scenario, theme: "light" | "dark" = "light") => {
+  stored = structuredClone(scenario.item ?? task);
   const id = `case${++caseCounter}`;
   pages.set(id, pageHtml(scenario, theme));
   const context = await browser.newContext({
@@ -373,7 +422,233 @@ const writesReach = async (count: number) => {
 const shot = (page: Page, name: string) =>
   page.locator(".k2b-detail-panel").screenshot({ path: `/tmp/spaces-detail-${browserName}-${name}.png`, animations: "disabled" });
 
+/** The whole Assigned section, including its heading and add-assignee combobox. */
+const peopleSection = (page: Page) =>
+  page.locator(".k2b-detail-panel__section").filter({ has: page.getByRole("heading", { name: "Zuständig", exact: true }) });
+const peopleRows = (page: Page) => peopleSection(page).locator("[data-spaces-assignee-row]");
+const peopleSizes = (page: Page) =>
+  peopleRows(page).evaluateAll((rows) =>
+    rows.map((row) => {
+      const box = row.getBoundingClientRect();
+      return { name: row.querySelector("span.truncate[title]")?.getAttribute("title"), width: box.width, height: box.height };
+    }),
+  );
+const peopleListHeight = (page: Page) =>
+  peopleRows(page)
+    .first()
+    .evaluate((row) => row.parentElement!.getBoundingClientRect().height);
+
 describe("Spaces item detail in a browser", () => {
+  test("claiming and releasing keeps the working assignee in one row without changing the list size", async () => {
+    const page = await open(desktop, { locale: "de", item: { ...task, claim: null, activeBlockerCount: 0 } });
+    try {
+      const sizes = await peopleSizes(page);
+      const height = await peopleListHeight(page);
+      expect(sizes.map((row) => row.name)).toEqual([lena.displayName, tom.displayName]);
+      const holder = peopleRows(page).first();
+      expect(
+        await keptThrough(peopleSection(page), async () => {
+          await page.getByRole("button", { name: "Ich übernehme", exact: true }).click();
+          await holder.locator('[data-ring="success"]').waitFor();
+        }),
+      ).toEqual({ replaced: false, heightChange: 0 });
+      expect(await peopleRows(page).count()).toBe(2);
+      expect(await peopleSection(page).getByText(tom.displayName, { exact: true }).count()).toBe(1);
+      expect(await holder.getByText(tom.displayName, { exact: true }).count()).toBe(1);
+      expect(await holder.getByText("arbeitet daran", { exact: true }).count()).toBe(1);
+      expect(await holder.locator("time").getAttribute("datetime")).toBe(now);
+      expect(await holder.locator("time").evaluate((time) => time.parentElement!.textContent)).toMatch(/^seit /);
+      expect(await page.locator(".k2b-detail-panel").textContent()).not.toContain("nicht zugewiesen");
+      expect(writes).toEqual([{ method: "POST", path: `/api/spaces/${spaceId}/items/Item01/claim`, body: { claimId: stored.claim!.id } }]);
+      expect(await peopleSizes(page)).toEqual([sizes[1]!, sizes[0]!]);
+      expect(await peopleListHeight(page)).toBe(height);
+
+      await page.getByRole("button", { name: "Freigeben", exact: true }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Freigeben", exact: true }).click();
+      await holder.locator('[data-ring="success"]').waitFor({ state: "detached" });
+      expect(await peopleSection(page).getByText(tom.displayName, { exact: true }).count()).toBe(1);
+      expect(await peopleSection(page).getByText("arbeitet daran", { exact: true }).count()).toBe(0);
+      expect(await peopleSizes(page)).toEqual(sizes);
+      expect(await peopleListHeight(page)).toBe(height);
+      expect(writes).toHaveLength(2);
+      expect(writes[1]).toEqual({
+        method: "POST",
+        path: `/api/spaces/${spaceId}/items/Item01/release`,
+        body: { claimId: (writes[0]!.body as { claimId: string }).claimId },
+      });
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("removing another working person asks once, cancel keeps them, and confirm ends their claim", async () => {
+    const page = await open(desktop, { locale: "de" });
+    try {
+      const holder = peopleRows(page).first();
+      const remove = async () => {
+        await holder.hover();
+        await holder.getByRole("button", { name: "Lena Example entfernen", exact: true }).click();
+      };
+      await remove();
+      const dialog = page.getByRole("dialog");
+      expect(await dialog.getByText("Lena Example arbeitet daran – entfernen und die Übernahme beenden?", { exact: true }).count()).toBe(1);
+      await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+      expect(writes).toEqual([]);
+      expect(await holder.getByText(lena.displayName, { exact: true }).count()).toBe(1);
+      expect(await holder.locator('[data-ring="success"]').count()).toBe(1);
+      await remove();
+      await dialog.getByRole("button", { name: "Entfernen und Übernahme beenden", exact: true }).click();
+      await peopleSection(page).getByText(lena.displayName, { exact: true }).waitFor({ state: "detached" });
+      expect(writes).toEqual([
+        {
+          method: "PATCH",
+          path: `/api/spaces/${spaceId}/items/Item01`,
+          body: { assigneeIds: [tom.id], claimId: task.claim!.id, force: true },
+        },
+      ]);
+      expect(await peopleRows(page).count()).toBe(1);
+      expect(await peopleSection(page).locator('[data-ring="success"]').count()).toBe(0);
+      expect(await peopleRows(page).first().getByText(tom.displayName, { exact: true }).count()).toBe(1);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("shows a service account outside the assignees as a working row without a remove action", async () => {
+    const page = await open(desktop, {
+      locale: "de",
+      item: {
+        ...task,
+        assignees: [tom],
+        claim: {
+          ...task.claim!,
+          actor: { kind: "service_account", id: "55555555-5555-4555-8555-555555555555" },
+          displayName: "Label printer",
+        },
+      },
+    });
+    try {
+      const holder = peopleRows(page).first();
+      expect(await peopleRows(page).count()).toBe(2);
+      expect(await holder.getByText("Label printer", { exact: true }).count()).toBe(1);
+      expect(await holder.locator('[data-ring="success"]').count()).toBe(1);
+      expect(await holder.getByText("arbeitet daran", { exact: true }).count()).toBe(1);
+      expect(await holder.locator("time").getAttribute("datetime")).toBe(task.claim!.claimedAt);
+      expect(await holder.getByRole("button").count()).toBe(0);
+      expect(await page.locator(".k2b-detail-panel").textContent()).not.toContain("nicht zugewiesen");
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`an agent is an assignee like a person: working or idle, its row keeps the person rows' size in ${theme}`, async () => {
+      const agent = {
+        id: "66666666-6666-4666-8666-666666666666",
+        kind: "service_account" as const,
+        displayName: "Release agent",
+        avatarHash: null,
+      };
+      const claim = { ...task.claim!, actor: { kind: "service_account" as const, id: agent.id }, displayName: agent.displayName };
+      for (const [state, item] of [
+        ["working", { ...task, assignees: [tom, agent], claim }],
+        ["idle", { ...task, assignees: [tom, agent], claim: null }],
+      ] satisfies [string, SpaceItem][]) {
+        const page = await open(desktop, { locale: "de", item }, theme);
+        try {
+          const rows = peopleRows(page);
+          expect(await rows.count()).toBe(2);
+          const agentRow = rows.filter({ hasText: agent.displayName });
+          // The agent shows the service-account icon, never a picture or a person's initials.
+          expect(await agentRow.locator(".k2b-avatar i.ti-api").count()).toBe(1);
+          // As an assignee, the agent can be removed like a person, also while it works on the task.
+          expect(await agentRow.getByRole("button", { name: `${agent.displayName} entfernen` }).count()).toBe(1);
+          if (state === "working") {
+            expect(await rows.first().getByText(agent.displayName, { exact: true }).count()).toBe(1);
+            expect(await agentRow.locator('[data-ring="success"]').count()).toBe(1);
+            expect(await agentRow.getByText("arbeitet daran", { exact: true }).count()).toBe(1);
+          } else expect(await peopleSection(page).locator('[data-ring="success"]').count()).toBe(0);
+          const sizes = await rows.evaluateAll((elements) =>
+            elements.map((row) => {
+              const avatar = row.querySelector(".k2b-avatar")!.getBoundingClientRect();
+              return { row: row.getBoundingClientRect().height, avatar: [avatar.width, avatar.height] };
+            }),
+          );
+          expect(sizes[0]).toEqual(sizes[1]!);
+          await peopleSection(page).screenshot({
+            path: `/tmp/spaces-detail-${browserName}-agent-${state}-${theme}.png`,
+            animations: "disabled",
+          });
+        } finally {
+          await page.context().close();
+        }
+      }
+    }, 60_000);
+
+    for (const width of [320, 480, "phone"] as const) {
+      test(`people: assigned worker at ${width} in ${theme}`, async () => {
+        const page = await open(width === "phone" ? phone : desktop, { locale: "de" }, theme);
+        try {
+          const panel = page.locator(".k2b-detail-panel");
+          if (width !== "phone") {
+            // The workspace sizes its detail region, as a resize would, so the panel measures the requested width.
+            await panel.evaluate((panel, width) => {
+              const workspace = panel.closest<HTMLElement>(".k2b-app-workspace")!;
+              const size = (value: number) => {
+                for (const name of ["--k2b-detail-size", "--k2b-detail-min", "--k2b-detail-max"])
+                  workspace.style.setProperty(name, `${value}px`);
+              };
+              size(width);
+              size(2 * width - panel.getBoundingClientRect().width);
+            }, width);
+            expect((await panel.boundingBox())!.width).toBe(width);
+          }
+          expect(await peopleRows(page).first().locator('[data-ring="success"]').count()).toBe(1);
+          await peopleSection(page).screenshot({
+            path: `/tmp/spaces-detail-${browserName}-people-assigned-${width}-${theme}.png`,
+            animations: "disabled",
+          });
+          // The claim time shows whole or not at all, never cut off. Whether it fits a phone depends on the platform's
+          // font metrics, so only the 480 px panel, the widest, promises it. The fixture's claim is more than a week
+          // old, so the time reads as its longest form, a full date, on every day the suite runs.
+          const time = await peopleRows(page)
+            .first()
+            .locator("time")
+            .evaluate((time) => {
+              const text = time.parentElement!.getBoundingClientRect();
+              const line = time.parentElement!.parentElement!.getBoundingClientRect();
+              return {
+                whole:
+                  text.left >= line.left - 0.5 &&
+                  text.right <= line.right + 0.5 &&
+                  text.top >= line.top - 0.5 &&
+                  text.bottom <= line.bottom + 0.5,
+                clipped: text.top >= line.bottom - 0.5,
+              };
+            });
+          expect(time.whole || time.clipped).toBe(true);
+          if (width === 480) expect(time.whole).toBe(true);
+          if (width === 320) {
+            const rows = await peopleRows(page).evaluateAll((rows) =>
+              rows.map((row) => ({
+                height: row.getBoundingClientRect().height,
+                avatarHeight: row.querySelector(".k2b-avatar")!.getBoundingClientRect().height,
+                scroll: row.scrollWidth,
+                client: row.clientWidth,
+              })),
+            );
+            for (const row of rows) {
+              expect(row.height).toBe(row.avatarHeight);
+              expect(row.scroll).toBeLessThanOrEqual(row.client);
+            }
+          }
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
+    }
+  }
+
   for (const [name, view] of [
     ["desktop", desktop],
     ["phone", phone],
@@ -465,20 +740,44 @@ describe("Spaces item detail in a browser", () => {
             await page.keyboard.press("Escape");
           }
 
-          // The worker: an outer ring with a gap and a label that says it, beside the same-sized avatar as the others.
+          // The worker: a ring inside the avatar with a small gap and a label, beside the same-sized assignee avatars.
           const worker = await page.evaluate(() => {
             const holder = window.document.querySelector("[data-spaces-claim-holder]")!;
             const avatar = holder.querySelector(".k2b-avatar")!;
             const other = window.document.querySelectorAll(".k2b-detail-panel .k2b-avatar")[1]!;
+            const body = avatar.closest<HTMLElement>(".k2b-detail-panel__body")!;
+            avatar.scrollIntoView({ block: "center" });
+            const rect = avatar.getBoundingClientRect();
+            const bodyRect = body.getBoundingClientRect();
+            const left = bodyRect.left + body.clientLeft;
+            const top = bodyRect.top + body.clientTop;
+            const style = getComputedStyle(avatar);
+            const title = avatar.closest(".k2b-detail-panel__section")?.querySelector("h3");
+            const textEdge = title?.getBoundingClientRect().left ?? Number.NaN;
             return {
-              ring: (({ outlineStyle, outlineWidth, outlineOffset, boxShadow }) =>
-                [outlineStyle, outlineWidth, outlineOffset, boxShadow].join(" "))(getComputedStyle(avatar)),
-              size: avatar.getBoundingClientRect().width,
+              ring: avatar.getAttribute("data-ring"),
+              outline: style.outlineStyle,
+              shadow: style.boxShadow,
+              border: style.borderTopWidth,
+              // The holder starts on its section's text edge, as close to the scrollport as panel content gets, where an
+              // outside ring would be the first to be cut off.
+              flush: Math.abs(rect.left - textEdge) <= 0.5,
+              inside:
+                rect.left >= left - 0.5 &&
+                rect.right <= left + body.clientWidth + 0.5 &&
+                rect.top >= top - 0.5 &&
+                rect.bottom <= top + body.clientHeight + 0.5,
+              size: rect.width,
               otherSize: other.getBoundingClientRect().width,
               label: holder.querySelector(".k2b-status-badge")?.textContent,
             };
           });
-          expect(worker.ring).toBe("solid 2px 2px none");
+          expect(worker.ring).toBe("success");
+          expect(worker.outline).toBe("none");
+          expect(worker.shadow).toBe("none");
+          expect(worker.border).toBe("2px");
+          expect(worker.flush).toBe(true);
+          expect(worker.inside).toBe(true);
           expect(worker.size).toBe(worker.otherSize);
           expect(worker.label).toBe("arbeitet daran");
         } finally {
@@ -555,6 +854,55 @@ describe("Spaces item detail in a browser", () => {
       });
       // Every save refreshed the panel without an error.
       expect(await page.locator("dialog[open]").count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  }, 60_000);
+
+  test("the due date is a whole day until a time is added, and removing the time keeps the day", async () => {
+    const page = await open(desktop, { locale: "en" });
+    try {
+      writes.splice(0);
+      stored = task;
+      const due = planningRow(page, "Due");
+      const value = () => due.locator(".k2b-date-trigger__value").textContent();
+      const rowHeight = () => due.evaluate((row) => row.getBoundingClientRect().height);
+      const height = await rowHeight();
+      const panel = page.locator(".k2b-date-popover:popover-open");
+
+      // An existing timed deadline opens with its time, 17:00 in Berlin.
+      await clickLabel(page, "Due");
+      expect(await panel.getByRole("textbox", { name: "Time" }).inputValue()).toBe("17:00");
+      await panel.getByRole("button", { name: "Remove time" }).click();
+      await panel.getByRole("button", { name: "Apply" }).click();
+      await writesReach(1);
+      expect(writes[0]).toEqual({ method: "PATCH", path: `/api/spaces/${spaceId}/items/Item01`, body: { deadline: "2026-10-06" } });
+      await page.waitForFunction(() =>
+        window.document.querySelector(".k2b-detail-panel .k2b-date-trigger__value")?.textContent?.startsWith("Tue, Oct 6 · "),
+      );
+      expect(await rowHeight()).toBe(height);
+
+      // Without a time, a day is the deadline at once, and a preset is a day too.
+      await clickLabel(page, "Due");
+      expect(await panel.getByRole("button", { name: "Add time" }).isVisible()).toBe(true);
+      await panel.locator('[data-date-day="2026-10-09"]').click();
+      await writesReach(2);
+      expect(writes[1]?.body).toEqual({ deadline: "2026-10-09" });
+
+      // Add time starts at the deadline default and saves an instant.
+      await clickLabel(page, "Due");
+      await panel.getByRole("button", { name: "Add time" }).click();
+      expect(await panel.getByRole("textbox", { name: "Time" }).inputValue()).toBe("17:00");
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.type("0930");
+      await panel.getByRole("button", { name: "Apply" }).click();
+      await writesReach(3);
+      expect(writes[2]?.body).toEqual({ deadline: "2026-10-09T07:30:00.000Z" });
+      await page.waitForFunction(() =>
+        window.document.querySelector(".k2b-detail-panel .k2b-date-trigger__value")?.textContent?.startsWith("Oct 9, 2026, 09:30 · "),
+      );
+      expect(await rowHeight()).toBe(height);
+      expect(await value()).toContain("09:30");
     } finally {
       await page.context().close();
     }

@@ -45,8 +45,10 @@ export {
   emitWorkflowEvent,
   listUndispatchedWorkflowEvents,
   type UndispatchedWorkflowEvent,
+  WORKFLOW_EVENT_MAX_PAYLOAD_BYTES,
   type WorkflowEmission,
   type WorkflowEventInput,
+  WorkflowEventTooLargeError,
 } from "./events";
 export {
   getWorkflowRun,
@@ -66,6 +68,12 @@ export {
   type WorkflowStepSummary,
   workflowHealth,
 } from "./observability";
+export {
+  expireWorkflowEventPayloads,
+  expireWorkflowEventPayloadsBatch,
+  startWorkflowEventRetention,
+  WORKFLOW_EVENT_RETENTION_DAYS,
+} from "./retention";
 export {
   beginWorkflowEffect,
   claimWorkflowRun,

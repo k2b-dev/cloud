@@ -1,7 +1,8 @@
-import { toPgTextArray } from "@k2b/cloud/services";
+import { requireConfirmedBrowserSignIn, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import type { OAuthClient, OAuthScope } from "@/contracts";
 import * as clients from "./clients";
+import { rejectBrowserSignIn } from "./sign-in";
 
 // ==========================
 // OAuth Authorization Codes Service
@@ -11,6 +12,7 @@ type DbCode = {
   code: string;
   client_id: string;
   user_id: string;
+  auth_epoch: string | number | null;
   redirect_uri: string;
   scopes: string[];
   audiences: string[];
@@ -30,6 +32,7 @@ const PKCE_VERIFIER_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 export const create = async (params: {
   clientId: string;
   userId: string;
+  authEpoch: number;
   redirectUri: string;
   scopes: OAuthScope[];
   resource?: string;
@@ -37,14 +40,24 @@ export const create = async (params: {
   codeChallenge?: string;
   codeChallengeMethod?: "S256";
   db?: typeof sql;
+  browserSignIn?: { userId: string; sid: string };
 }): Promise<string> => {
-  const { clientId, userId, redirectUri, scopes, resource, nonce, codeChallenge, codeChallengeMethod, db = sql } = params;
+  const { clientId, userId, authEpoch, redirectUri, scopes, resource, nonce, codeChallenge, codeChallengeMethod, db = sql } = params;
+
+  const lasting = scopes.includes("offline_access");
+  if (lasting) {
+    if (!params.browserSignIn || !params.db || params.db === sql)
+      throw new Error("Offline access requires a browser sign-in and a transaction");
+    if (params.browserSignIn.userId !== userId) return rejectBrowserSignIn("FORBIDDEN");
+    await requireConfirmedBrowserSignIn(db, params.browserSignIn, rejectBrowserSignIn);
+  }
 
   const [row] = await db<{ code: string }[]>`
-    INSERT INTO oauth.codes (client_id, user_id, redirect_uri, scopes, audiences, resource, nonce, code_challenge, code_challenge_method)
+    INSERT INTO oauth.codes (client_id, user_id, auth_epoch, redirect_uri, scopes, audiences, resource, nonce, code_challenge, code_challenge_method, confirmed_sid, confirmed_at)
     SELECT
       client.client_id,
       ${userId}::uuid,
+      ${authEpoch},
       ${redirectUri},
       ${toPgTextArray(scopes)}::text[],
       CASE
@@ -59,7 +72,9 @@ export const create = async (params: {
       ${resource ?? null},
       ${nonce ?? null},
       ${codeChallenge ?? null},
-      ${codeChallengeMethod ?? null}
+      ${codeChallengeMethod ?? null},
+      ${lasting ? params.browserSignIn?.sid : null}::uuid,
+      CASE WHEN ${lasting} THEN now() ELSE NULL END
     FROM oauth.clients client
     WHERE client.client_id = ${clientId}
     RETURNING code
@@ -82,6 +97,7 @@ export const consume = async (params: {
   codeVerifier?: string;
 }): Promise<{
   userId: string;
+  authEpoch: number;
   client: OAuthClient;
   scopes: OAuthScope[];
   audiences: string[];
@@ -93,12 +109,12 @@ export const consume = async (params: {
 
   // Get and validate code
   const [row] = await sql<DbCode[]>`
-    SELECT code, client_id, user_id, redirect_uri, scopes, audiences, resource, nonce, code_challenge, code_challenge_method, expires_at, used
+    SELECT code, client_id, user_id, auth_epoch, redirect_uri, scopes, audiences, resource, nonce, code_challenge, code_challenge_method, expires_at, used
     FROM oauth.codes
     WHERE code = ${code}
   `;
 
-  if (!row) return null;
+  if (!row || row.auth_epoch === null) return null;
 
   // Check if already used
   if (row.used) return null;
@@ -132,6 +148,7 @@ export const consume = async (params: {
     UPDATE oauth.codes
     SET used = true, authority_nonce = ${authorityNonce}::uuid
     WHERE code = ${code}
+      AND auth_epoch IS NOT NULL
       AND used = false
       AND expires_at >= now()
     RETURNING code
@@ -144,6 +161,7 @@ export const consume = async (params: {
 
   return {
     userId: row.user_id,
+    authEpoch: Number(row.auth_epoch),
     client,
     scopes: row.scopes as OAuthScope[],
     audiences: row.audiences,

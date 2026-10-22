@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import type { WorkflowBoundPlan, WorkflowStepOutcome } from "@k2b/cloud/workflows";
+import { describe, expect, mock, test } from "bun:test";
+import type { WorkflowBoundPlan, WorkflowJsonValue, WorkflowStepOutcome } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
 import type { FrozenMailWorkflowSource } from "./workflow-data";
 import {
@@ -114,6 +114,26 @@ describe("Mail workflow projected state", () => {
     expect(projected.inputs).toEqual({ slot: "2026-07-22T08:00:00.000Z" });
   });
 
+  test("evaluates a restored message action config at its live action path", async () => {
+    const message: { id: string; flags: string[] } = { id: "message", flags: [] };
+    const evaluate = mock(async (_value: WorkflowJsonValue, _path?: Array<string | number>) => ({ message }));
+    const ctx = { evaluate } as unknown as WorkflowExecuteActionContext;
+    const step: WorkflowActionStep = {
+      kind: "action",
+      action: "addFlag",
+      config: { message: "${{ inputs.message }}", flag: "\\Seen" },
+      sourcePath: ["steps", 1, "if", "then", 0],
+    };
+
+    await restoreMailWorkflowProjectedState(ctx, step, {
+      state: "completed",
+      output: { action: "addFlag", applied: true, value: "\\Seen" },
+    });
+
+    expect(evaluate.mock.calls).toEqual([[step.config, ["steps", 1, "if", "then", 0, "addFlag"]]]);
+    expect(message.flags).toEqual(["\\Seen"]);
+  });
+
   test("restores completed message and conversation projections before later steps", async () => {
     const projected = createMailWorkflowProjectedState(plan, source, {});
     const variables = new Map<string, unknown>();
@@ -153,5 +173,32 @@ describe("Mail workflow projected state", () => {
 
     expect(projected.source.message.folderId).toBe("archive");
     expect(projected.source.conversation).toMatchObject({ workStatus: "done", revision: 8 });
+  });
+
+  test("restores the live status and revision from a status step that found its value already set", async () => {
+    const projected = createMailWorkflowProjectedState(plan, source, {});
+    const ctx = {
+      plan,
+      evaluate: async (value: unknown) => value,
+      resolveReference: async (reference: string) => (reference === "conversation" ? projected.inputs.conversation : undefined),
+    } as unknown as WorkflowExecuteActionContext;
+    const step = {
+      kind: "action",
+      action: "setConversationStatus",
+      config: { conversation: "conversation" },
+      sourcePath: ["steps", 0],
+    } as WorkflowActionStep;
+    const completed = (output: Record<string, unknown>) =>
+      ({ state: "completed", output }) as Extract<WorkflowStepOutcome, { state: "completed" }>;
+
+    await restoreMailWorkflowProjectedState(ctx, step, completed({ action: "setConversationStatus", applied: false }));
+    expect(projected.source.conversation).toMatchObject({ workStatus: "needs_action", revision: 2 });
+
+    await restoreMailWorkflowProjectedState(
+      ctx,
+      step,
+      completed({ action: "setConversationStatus", applied: false, value: "waiting", revision: 3 }),
+    );
+    expect(projected.source.conversation).toMatchObject({ workStatus: "waiting", revision: 3 });
   });
 });

@@ -9,7 +9,7 @@ export function NoteRowLabel(props: { note: NoteTreeNode }) {
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   return (
     <span class="flex min-w-0 items-center gap-1.5">
-      <span class="truncate">{props.note.title || t().untitled}</span>
+      <span class="k2b-truncate-fade">{props.note.title || t().untitled}</span>
       <Show when={props.note.lockedAt}>
         <i class="ti ti-lock shrink-0 text-xs text-amber-500" role="img" aria-label={t().locked} title={t().locked} />
       </Show>

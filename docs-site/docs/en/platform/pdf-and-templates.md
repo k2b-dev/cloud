@@ -5,7 +5,7 @@ section: Platform services
 order: 590
 description: Render documents from application data with shared template and PDF services.
 tags: [pdf, templates, gotenberg]
-updated: 2026-09-29
+updated: 2026-10-20
 ---
 
 # PDF and templates
@@ -16,6 +16,11 @@ The application owns the document data and HTML. Cloud owns connection
 settings, authentication, timeouts, and size limits. Operators set the
 Gotenberg URL in the `gotenberg.url` setting or bootstrap it with
 `GOTENBERG_URL`; without it, rendering fails with the `not_configured` code.
+
+The **Max input bytes** setting (`gotenberg.max_html_bytes`, default 1 MiB)
+limits HTML, headers, footers, images and fonts together in one render request.
+The request timeout (`gotenberg.timeout_ms`) is also capped by Gotenberg's own
+`--api-timeout` (default 30 s).
 
 ## Render HTML
 
@@ -112,13 +117,24 @@ const result = await renderHtmlToPdf({ html, title: note.title });
 ```
 
 It applies the same presets and `customCss` rules as `renderMarkdownToPdf()`.
-`html` becomes the document body as given, so sanitize it in the application
-renderer. `css` styles the application's own elements. It comes after the
-preset and before `customCss`, so a person's custom CSS can still override it.
+`html` becomes the document body as given, except for `<wbr>` break
+opportunities in long table-cell runs, so text that the application replaces
+afterwards must not rely on staying contiguous inside table cells.
+Sanitize it in the application renderer. `css` styles the application's own
+elements. It comes after the preset and before `customCss`, so a person's
+custom CSS can still override it.
 With `customCss` but no `templateId`, `css` still applies while the preset is
 left out. The print styles for info blocks come with every document, before
 `css`, so an application renderer that emits info blocks through
 `renderMarkdownInfoBlock()` from `@k2b/ui` prints them like Markdown PDFs.
+
+In every document (each preset, no template, or custom CSS only), table cells
+keep words whole so short values such as `Nr.` stay on one line; custom CSS
+can override the cell rule. Words of up to 20 characters stay whole; a longer
+run without a space, such as a long URL or code, gets a break opportunity every
+10 characters so the table fits the page. Because words stay whole, a table
+with many columns of long words can still be wider than the page; split it or
+let custom CSS break cells anywhere.
 
 The result renders offline like any other HTML: the offline policy replaces
 the Content Security Policy that `buildPresetPdfHtml()` writes. `html` and
@@ -269,3 +285,74 @@ Gotenberg endpoints or connection settings. Operators must keep Gotenberg's
 file access limited to its working directory, `/tmp`, and should keep
 Gotenberg itself offline; see
 [Deployment requirements](/en/docs/operations/deployment-requirements#keep-gotenberg-offline).
+
+## Prepare images for print
+
+Use `preparePdfImage()` to fit raw image bytes into pixel boxes before adding
+them to a PDF. It accepts a `Uint8Array` or `Blob` and returns one variant per
+box, in the same order. Images keep their aspect ratio and never scale up.
+
+```ts
+import { preparePdfImage, renderHtmlToPdf } from "@k2b/cloud/services";
+
+const prepared = await preparePdfImage({
+  data: imageBytes,
+  boxes: [{ width: 1600, height: 1200 }],
+  maxBytes: 2 * 1024 * 1024,
+}, { signal: request.signal });
+if (!prepared.ok) throw new Error(prepared.code);
+const variant = prepared.variants[0];
+if (!variant) throw new Error("Image exceeds the encoded byte cap.");
+
+const result = await renderHtmlToPdf({
+  html: '<!doctype html><html><body><img src="img-1.jpg"></body></html>',
+  assets: [{ name: "img-1.jpg", data: variant.data }],
+}, { signal: request.signal });
+```
+
+The same API and types are exported from `@k2b/cloud/services/pdf`.
+Each variant has `data` (a typed `Blob`), `type`, `width`, and `height`.
+A `null` entry means that box's encoding exceeded `maxBytes`; other boxes
+still return their variants. The service does not reduce quality to meet the cap.
+
+Opaque images become 8-bit sRGB JPEG at quality 85. Images with any decoded
+alpha below 255 become PNG with transparency. A fully opaque alpha channel is
+removed. A JPEG passes through byte for byte only when its EXIF orientation is
+absent or 1, its colour space is sRGB or grayscale (not CMYK), it has no
+embedded colour profile, its dimensions already fit the box, and its bytes fit
+`maxBytes`. It must also pass a validation decode. A corrupt JPEG never passes
+through. Other images are re-encoded.
+EXIF rotation is applied before fitting. Animated GIF and WebP use the first
+frame; TIFF uses the first page.
+
+Accepted formats are JPEG, PNG, WebP, GIF, TIFF, and AVIF. HEIC/HEIF with HEVC
+compression returns `unsupported_format` because the prebuilt libvips has no
+HEVC decoder. SVG, PDF, and other formats are also unsupported.
+
+Pass 1..8 boxes with integer dimensions of 1..16383 pixels each. Input is limited
+to 32 MiB; `maxBytes` is an integer from 1 byte to 32 MiB per variant. Sharp's
+default input limit of 268,402,689 pixels still applies, counting one page.
+WebP, GIF, TIFF, and AVIF sources are limited to 16 MiP (about 16.8 MP) because
+their decoders need the whole image in memory; JPEG and PNG keep sharp's default pixel limit.
+The largest decoded variant is limited to 16 MiP (64 MiB as RGBA). A full A4
+page at 300 dpi needs about 5.8 MP.
+
+The service requires the Linux Cloud runtime. It runs at most two isolated
+workers per application process; further calls wait in FIFO order. Each worker
+has a 512 MiB data limit and receives no application credentials. The Bun runtime
+itself uses about half of that limit. The input and decoded variant caps leave
+room for codecs and temporary buffers. An image whose decode needs more memory
+than the worker has returns `too_large`. Queuing, decoding, and encoding share a
+30 s default deadline, matching PDF page decoding.
+Set `{ timeoutMs }` up to 240 s, the request idle-timeout ceiling. Aborting the
+signal or reaching the deadline returns `timed_out` after the child has exited.
+Invalid boxes, byte caps, and timeouts throw as programming errors.
+
+| Code | Meaning |
+| --- | --- |
+| `unsupported_format` | The recognized format or compression is unsupported |
+| `unreadable` | The bytes cannot be identified or decoded, or the worker failed |
+| `too_large` | Input bytes, source pixels, decoded pixels, or decoder memory exceed a limit |
+| `timed_out` | The caller aborted or the deadline ended, including queue time |
+
+An application image that uses this service ships sharp's libvips (about 18 MB).

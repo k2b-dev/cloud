@@ -19,7 +19,7 @@ import { resolveOAuthTokenActor } from "./oauth-tokens";
 import { providers } from "./providers";
 import { serviceAccountCredentials } from "./service-account-credentials";
 import { session } from "./session";
-import { createTestSession } from "./session/session.test-fixture";
+import { createTestBrowserSignIn, createTestSession } from "./session/session.test-fixture";
 import * as settings from "./settings";
 import { encryptValue } from "./settings/crypto";
 
@@ -39,6 +39,7 @@ const sender: AuthNotificationSender = {
     ipaHints.push(email);
     return { id: "test", status: "suppressed" };
   },
+  sendNewBrowserSignIn: async () => {},
   sendPasswordReset: async () => ({ id: "test", status: "suppressed" }),
 };
 
@@ -205,7 +206,8 @@ suite("isolated account category policy", () => {
 
   test("OAuth and cross-app invocations recheck the current category", async () => {
     const existing = await user("ipa", "guest");
-    const oauth = { client_id: "cloud-cli", id: existing.id, sub: existing.id, scope: "read" };
+    const [epoch] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${existing.id}::uuid`;
+    const oauth = { client_id: "cloud-cli", id: existing.id, sub: existing.id, scope: "read", auth_epoch: Number(epoch!.auth_epoch) };
     const claims: CloudInvocationClaims = {
       iss: "http://example.test",
       aud: "app:mail",
@@ -265,7 +267,11 @@ suite("isolated account category policy", () => {
     const existing = await user();
     const owner = await accounts.users.get({ id: existing.id });
     if (!owner) throw new Error("Missing fixture user");
-    const delegated = await serviceAccountCredentials.createUserApiToken({ user: owner, name: "Category test" });
+    const delegated = await serviceAccountCredentials.createUserApiToken({
+      user: owner,
+      browserSignIn: await createTestBrowserSignIn(owner.id),
+      name: "Category test",
+    });
     if (!delegated.ok) throw new Error(delegated.error.message);
     const [resource] = await sql<
       { id: string }[]

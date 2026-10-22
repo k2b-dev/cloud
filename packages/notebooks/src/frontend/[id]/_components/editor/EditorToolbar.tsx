@@ -10,7 +10,12 @@ import { notebookWorkspaceMessages } from "../../messages";
 import { bookMessages } from "../book/messages";
 import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT } from "../detail/events";
 import { readNavigationHidden } from "../settings/NotebookSettingsStore";
-import { createNavigationHidden, NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "../sidebar/navigation-visibility";
+import {
+  createNavigationHidden,
+  keepFocusAfterShowingNavigation,
+  NOTEBOOK_NAVIGATION_ID,
+  setNavigationHidden,
+} from "../sidebar/navigation-visibility";
 import { openAttachmentPicker } from "./AttachmentPicker";
 import {
   type CaretFormat,
@@ -129,6 +134,7 @@ export default function EditorToolbar(props: Props) {
   // visible as well. Fine pointers never lift. Coarse pointers lift only after losing at least 15% of the page height,
   // so the shortcuts bar of a hardware keyboard does not lift it. While zoomed, keep the toolbar in flow.
   let toolbar!: HTMLDivElement;
+  let navigationToggle: HTMLDivElement | undefined;
   const [lift, setLift] = createSignal(0);
   onMount(() => {
     const coarse = window.matchMedia("(pointer: coarse)");
@@ -212,8 +218,9 @@ export default function EditorToolbar(props: Props) {
       style={{ "margin-bottom": lift() ? `${lift()}px` : undefined }}
       on:mousedown={(event) => event.preventDefault()}
     >
-      {/* The navigation sidebar exists from lg up; phones keep the header's menu. */}
-      <div class="hidden shrink-0 lg:flex">
+      {/* The navigation sidebar is a column from a 64 rem app host; below that, from md, the toggle only brings a hidden
+          navigation back, as the graph's does. Phones keep the header's menu (app.css). */}
+      <div ref={navigationToggle} class="notebooks-navigation-toggle" data-navigation-hidden={navigationHidden() ? "" : undefined}>
         <Tooltip.Anchor content={navigationLabel()}>
           <IconButton
             label={navigationLabel()}
@@ -222,7 +229,11 @@ export default function EditorToolbar(props: Props) {
             class="text-dimmed"
             aria-expanded={!navigationHidden()}
             aria-controls={NOTEBOOK_NAVIGATION_ID}
-            onClick={() => setNavigationHidden(!navigationHidden())}
+            onClick={() => {
+              const showing = navigationHidden();
+              setNavigationHidden(!showing);
+              if (showing && navigationToggle) keepFocusAfterShowingNavigation(navigationToggle, () => props.editorView?.focus());
+            }}
           >
             <i
               class={`ti ${navigationHidden() ? "ti-layout-sidebar-left-expand" : "ti-layout-sidebar-left-collapse"} text-sm`}

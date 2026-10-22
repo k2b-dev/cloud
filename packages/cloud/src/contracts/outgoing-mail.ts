@@ -96,7 +96,14 @@ export const MailErrorCodeSchema = z.enum([
   "smtp_failed",
 ]);
 export type MailErrorCode = z.infer<typeof MailErrorCodeSchema>;
-export const MailBounceErrorCodeSchema = z.enum(["open_failed", "search_failed", "apply_failed", "save_failed", "interrupted"]);
+export const MailBounceErrorCodeSchema = z.enum([
+  "open_failed",
+  "target_blocked",
+  "search_failed",
+  "apply_failed",
+  "save_failed",
+  "interrupted",
+]);
 export type MailBounceErrorCode = z.infer<typeof MailBounceErrorCodeSchema>;
 export const AdminMailProfileSchema = MailProfileInputSchema.omit({ smtpPassword: true, revision: true, imap: true }).extend({
   key: MailProfileKeySchema,
@@ -122,6 +129,8 @@ export const AdminMailAppSchema = z.object({
   readDeclared: z.boolean(),
   /** Other apps whose send log this app may read, besides its own. */
   logApps: z.array(z.string()),
+  /** Subset of logApps with explicit content access. Missing on older servers. */
+  logContentApps: z.array(z.string()).optional(),
 });
 export type AdminMailApp = z.infer<typeof AdminMailAppSchema>;
 /** Application IDs as registered, like sender access; Core's own mail is never readable by apps. */
@@ -129,11 +138,15 @@ export const MailLogAppIdSchema = z.string().min(1);
 /** How many other apps' send logs an administrator can let one app read. */
 const MAIL_LOG_GRANT_LIMIT = 100;
 export const MailLogAccessSchema = z
-  .object({ apps: z.array(MailLogAppIdSchema).max(MAIL_LOG_GRANT_LIMIT) })
+  .object({
+    apps: z.array(MailLogAppIdSchema).max(MAIL_LOG_GRANT_LIMIT),
+    contentApps: z.array(MailLogAppIdSchema).max(MAIL_LOG_GRANT_LIMIT).optional(),
+  })
   .strict()
+  .refine((value) => new Set(value.apps).size === value.apps.length && !value.apps.includes("core"), "Choose distinct apps other than core")
   .refine(
-    (value) => new Set(value.apps).size === value.apps.length && !value.apps.includes("core"),
-    "Choose distinct apps other than core",
+    ({ apps, contentApps = [] }) => new Set(contentApps).size === contentApps.length && contentApps.every((id) => apps.includes(id)),
+    "Content apps must be a distinct subset of apps",
   );
 export type MailLogAccess = z.infer<typeof MailLogAccessSchema>;
 
@@ -308,3 +321,8 @@ export type MailServiceError = ServiceError<MailErrorCode> & {
   used?: number;
   requested?: number;
 };
+
+/** One audited read; no HTML, headers, or attachment bytes. */
+export type MailContent = { purged: true; contentPurgedAt: string } | { purged: false; text: string | null; attachmentNames: string[] };
+/** Pass a currently authenticated server context, never browser JSON or a stored actor snapshot. */
+export type MailContentContext = { actor: RequestActor; requestId?: string };

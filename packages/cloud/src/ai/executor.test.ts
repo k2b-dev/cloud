@@ -10,6 +10,7 @@ import {
   type ToolCallBlock,
   type ToolStreamIssue,
 } from "@k2b/nessi";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import type { CapabilityActionReview } from "../contracts/capabilities";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
@@ -71,12 +72,15 @@ describe("malformed tool call steering", () => {
       issue?: ToolStreamIssue;
       providerFailure?: boolean;
       validCall?: boolean;
+      emptyAnswer?: boolean;
+      steerAfterTextAnswer?: boolean;
     } = {},
   ) => {
     const appliedSteers: (AiTurnSteer | null)[] = [];
     const shownSteers: AiTurnSteer[] = [];
     const requests: ProviderRequest[] = [];
     let steeringReads = 0;
+    let lateSteerPending = options.steerAfterTextAnswer;
     let userPolicyResets = 0;
     const mapper = createEventMapper(1, []);
     const liveBlocks: AiTurnBlock[] = [];
@@ -99,6 +103,10 @@ describe("malformed tool call steering", () => {
         steeringReads++;
         // A real steer is returned alongside the repair, then another while its events are still in flight.
         const steers = withUserSteers && (steeringReads === 2 || steeringReads === 3) ? [userSteer(String(steeringReads))] : [];
+        if (lateSteerPending && requests.length === malformedResponses + 1) {
+          lateSteerPending = false;
+          steers.push(userSteer("late"));
+        }
         for (const steer of steers) await store.append({ role: "user", content: [{ type: "text", text: steer.text }] });
         return steers;
       },
@@ -140,7 +148,7 @@ describe("malformed tool call steering", () => {
             yield { type: "issue", issue: { kind: "provider_error", message: "Disconnected", retryable: false } };
             return;
           }
-        } else {
+        } else if (!options.emptyAnswer && (!options.steerAfterTextAnswer || requests.length === malformedResponses + 1)) {
           yield { type: "block_start", blockId: "answer", index: 0, kind: "text" };
           yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "Done" } };
         }
@@ -194,6 +202,7 @@ describe("malformed tool call steering", () => {
       for (const mapped of mapper.translate(event)) {
         if (mapped.type === "block_set") liveBlocks.push(mapped.block);
       }
+      pipeline.blocks = [...new Map(liveBlocks.map((block) => [block.id, block])).values()];
     };
     pipeline.applySteer = async (steer) => {
       shownSteers.push(steer);
@@ -208,6 +217,7 @@ describe("malformed tool call steering", () => {
       const outcome = await executor["driveChatLoop"]({
         loop,
         pipeline,
+        initialRoundFailed: false,
         conversationId: "chat",
         turnId: "turn",
         abortController: new AbortController(),
@@ -233,12 +243,30 @@ describe("malformed tool call steering", () => {
         compactions,
         messages: (await store.load()).map((row) => ({ ...row, createdAt: at })),
         liveBlocks,
+        doneReason: aggregate.mock.calls.at(-1)?.[0].doneReason,
       };
     } finally {
       timing.mockRestore();
       aggregate.mockRestore();
     }
   };
+
+  test("an empty answer after a stored malformed call fails and stamps the assistant's loop as error", async () => {
+    const result = await run(1, false, { emptyAnswer: true });
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "failed", failure: { error: { code: "tool_failed" } } });
+    expect(result.doneReason).toBe("error");
+  });
+
+  test("a text answer clears a failed tool round before late steering and an empty stop", async () => {
+    const result = await run(1, false, { steerAfterTextAnswer: true });
+    expect(result.requests).toHaveLength(3);
+    expect(result.requests[2]?.messages).toContainEqual(
+      expect.objectContaining({ role: "assistant", content: [{ type: "text", text: "Done" }], stopReason: "stop" }),
+    );
+    expect(result.shownSteers.map((steer) => steer.id)).toEqual(["late"]);
+    expect(result.outcome).toMatchObject({ kind: "finished", status: "completed", failure: null });
+    expect(result.doneReason).toBe("stop");
+  });
 
   test("a malformed issue before a valid call keeps live and history tool steps in the same order", async () => {
     const result = await run(1, false, { validCall: true });
@@ -563,7 +591,7 @@ describe("nessi block event mapping", () => {
       links: [{ rel: "edit" as const, href: "/app/mail/drafts/one" }],
       approvalScope: "skills",
     };
-    mapper.setApprovalReviews(new Map([["call-9", review]]));
+    mapper.setApprovalReviews(new Map([["call-9", review]]), new Map([["call-9", "skills"]]));
     const ops = mapper.translate({
       ...turn,
       type: "tool_action_request",
@@ -1366,6 +1394,7 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
     const input = {
       loop,
       pipeline,
+      initialRoundFailed: false,
       conversationId: "chat",
       turnId: "turn",
       abortController: new AbortController(),
@@ -1514,5 +1543,93 @@ test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s cl
     apply.mockRestore();
     flush.mockRestore();
     push.mockRestore();
+  }
+});
+
+test("executor never offers remembering a silent review that asks, even with scope", () => {
+  const mapper = createEventMapper(1, []);
+  const review = { ...reviewFixture(), scope: "mail", ask: "sends" as const };
+  mapper.setApprovalReviews(new Map([["call-9", review]]));
+  expect(
+    mapper.translate({
+      ...turn,
+      type: "tool_action_request",
+      kind: "custom_approval",
+      callId: "call-9",
+      name: "send",
+      args: {},
+      message: "Send?",
+    })[0],
+  ).toMatchObject({ type: "block_set", block: { approval: { review, allowAlways: false, allowChat: false } } });
+});
+
+test("executor ignores a scope on an asking policy and uses only authorized remember scopes", () => {
+  const review = { ...reviewFixture(), scope: "mail" };
+  for (const rememberable of [false, true]) {
+    const mapper = createEventMapper(1, []);
+    mapper.setApprovalReviews(new Map([["call-9", review]]), rememberable ? new Map([["call-9", "mail"]]) : new Map());
+    expect(
+      mapper.translate({
+        ...turn,
+        type: "tool_action_request",
+        kind: "custom_approval",
+        callId: "call-9-approval-0",
+        name: "send",
+        args: {},
+        message: "Send?",
+      })[0],
+    ).toMatchObject({ type: "block_set", block: { approval: { allowAlways: rememberable, allowChat: rememberable } } });
+  }
+});
+
+test("the pipeline keeps the review and check after an approval and execution end", async () => {
+  const save = spyOn(aiConversations, "saveTurnLiveState").mockResolvedValue(true);
+  const publish = spyOn(stream, "publishAiWireEvent").mockResolvedValue(undefined);
+  const review = reviewFixture();
+  const pipeline = new __aiExecutorTest.StreamPipeline({
+    conversationId: "chat",
+    turnId: "turn",
+    attempt: 1,
+    startSeq: 0,
+    leaseOwner: "worker",
+    seedBlocks: [{ id: toolBlockId("send"), kind: "tool", callId: "send", name: "demo.send", args: {}, status: "running" }],
+    allowRememberedApprovals: true,
+  });
+  try {
+    await pipeline.setToolReview("send", review);
+    await pipeline.apply({
+      agentId: "agent",
+      loopId: "turn",
+      turnId: "round",
+      turnIndex: 0,
+      type: "tool_action_request",
+      kind: "custom_approval",
+      callId: "send-approval-0",
+      name: "demo.send",
+      args: {},
+      message: "Send?",
+    });
+    expect(pipeline.blocks[0]).toMatchObject({ status: "awaiting_approval", review });
+    await pipeline.setToolCheck("send", { state: "checking" });
+    expect(pipeline.blocks[0]).toMatchObject({ status: "running", review, check: { state: "checking" } });
+    await pipeline.setToolCheck("send", { state: "done", receipt: { text: "Queued" } });
+    await pipeline.apply({
+      agentId: "agent",
+      loopId: "turn",
+      turnId: "round",
+      turnIndex: 0,
+      type: "tool_execution_end",
+      callId: "send",
+      name: "demo.send",
+      result: { data: null },
+      isError: false,
+    });
+    expect(pipeline.blocks[0]).toMatchObject({ status: "completed", review, check: { state: "done", receipt: { text: "Queued" } } });
+    expect(pipeline.blocks[0]).toMatchObject({ approval: undefined });
+    expect(publish.mock.calls.at(-1)?.[0]).toMatchObject({ type: "block_set", block: { review, check: { state: "done" } } });
+  } finally {
+    await pipeline.flush();
+    save.mockRestore();
+    publish.mockRestore();
   }
 });

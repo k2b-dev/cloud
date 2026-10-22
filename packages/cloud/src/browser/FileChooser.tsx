@@ -14,7 +14,7 @@ import {
 } from "@k2b/ui";
 import { batch, createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
 import { createStore } from "solid-js/store";
-import type { FileProviderEntry, FileProviderTag } from "../contracts/file-provider";
+import type { FileProviderContext, FileProviderEntry, FileProviderTag } from "../contracts/file-provider";
 import { fileChooserMessages } from "./file-chooser-messages";
 import {
   type EntryProblem,
@@ -39,6 +39,14 @@ export type ChooseFilesOptions = {
    * above it, so it also bounds what the browser holds. The provider's own read limit applies to each file as well.
    */
   maxBytes?: number;
+  /**
+   * What the person is working on, as resource refs, for providers that understand it. Only providers whose `list`
+   * accepts `context` receive it; others list as before. A function runs only when the person opens such a provider,
+   * at most once per chooser, and again after it failed. Refs are hints, never access.
+   */
+  context?: FileProviderContext | ((signal: AbortSignal) => Promise<FileProviderContext>);
+  /** The empty root title for a provider that received context. Defaults to the chooser's "No matching files". */
+  noMatchingFiles?: string;
   /** Closes the chooser, or stops waiting for the device's dialog, and resolves `[]` when aborted. */
   signal?: AbortSignal;
 };
@@ -95,7 +103,7 @@ export function FileChooser(props: {
       if (first) (location() ? selection : sourceSelection).focus(first);
     });
   };
-  const folder = createProviderFolder({ caller: props.caller, t, settled: refocus });
+  const folder = createProviderFolder({ caller: props.caller, t, settled: refocus, context: props.options.context });
   const { location, items, openFolder } = folder;
   const [downloads, setDownloads] = createStore<Download[]>([]);
   const [downloading, setDownloading] = createSignal(false);
@@ -297,7 +305,7 @@ export function FileChooser(props: {
               </Switch>
             </Match>
             <Match when={true}>
-              <FolderContents folder={folder} t={t}>
+              <FolderContents folder={folder} t={t} noMatchingFiles={props.options.noMatchingFiles}>
                 <FileGrid
                   rows={items()}
                   getRowId={(entry) => entry.id}

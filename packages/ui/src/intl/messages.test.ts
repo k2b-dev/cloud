@@ -10,6 +10,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const catalogs = {
+  MapView: (await import("../content/map-view-messages")).checkMapViewMessages,
   Shortcut: (await import("./shortcut-messages")).checkShortcutMessages,
   TableOfContents: (await import("../layout/table-of-contents-messages")).checkTableOfContentsMessages,
   Ui: (await import("./messages")).checkUiMessages,
@@ -22,6 +23,7 @@ const catalogs = {
   FileBrowser: (await import("../content/file-browser-messages")).checkFileBrowserMessages,
   FileView: (await import("../content/file-view-messages")).checkFileViewMessages,
   FileInput: (await import("../inputs/file-input-messages")).checkFileInputMessages,
+  DragAndDrop: (await import("../actions/drag-and-drop-messages")).checkDragAndDropMessages,
   FileDrop: (await import("../inputs/file-drop-messages")).checkFileDropMessages,
   Pdf: (await import("../content/pdf-messages")).checkPdfMessages,
   MarkdownInfoBlock: (await import("../content/markdown-info-block-messages")).checkMarkdownInfoBlockMessages,
@@ -38,12 +40,14 @@ const catalogs = {
   Timeline: (await import("../content/timeline-messages")).checkTimelineMessages,
   Viewport: (await import("../content/viewport-messages")).checkViewportMessages,
   Select: (await import("../inputs/select-messages")).checkSelectMessages,
+  RichSelect: (await import("../inputs/rich-select-messages")).checkRichSelectMessages,
   Completion: (await import("../inputs/completion-messages")).checkCompletionMessages,
   Tag: (await import("../inputs/tag-messages")).checkTagMessages,
   Input: (await import("../inputs/input-messages")).checkInputMessages,
   Icon: (await import("../inputs/icon-messages")).checkIconMessages,
   Template: (await import("../inputs/template-messages")).checkTemplateMessages,
   Avatar: (await import("../surfaces/avatar-messages")).checkAvatarMessages,
+  DetailPanel: (await import("../layout/detail-panel-messages")).checkDetailPanelMessages,
   Resource: (await import("../surfaces/resource-messages")).checkResourceMessages,
   Pagination: (await import("../content/pagination-messages")).checkPaginationMessages,
   StructuredData: (await import("../content/structured-data-messages")).checkStructuredDataMessages,
@@ -53,6 +57,7 @@ const catalogs = {
   Toast: (await import("../feedback/toast-messages")).checkToastMessages,
   Spotlight: (await import("../actions/spotlight-messages")).checkSpotlightMessages,
   PanelDialog: (await import("../layout/panel-dialog-messages")).checkPanelDialogMessages,
+  Toolbar: (await import("../actions/toolbar-messages")).checkToolbarMessages,
   Filter: (await import("../actions/filter-messages")).checkFilterMessages,
   RenderError: (await import("../internal/render-error-messages")).checkRenderErrorMessages,
   Feed: (await import("../content/feed-messages")).checkFeedMessages,

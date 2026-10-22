@@ -28,10 +28,11 @@ for (const port of [43220, 43221]) {
   await sql`INSERT INTO auth.session_families(sid,user_id,auth_epoch,signing_kid,expires_at) VALUES (${sid}::uuid,${user.id}::uuid,0,(SELECT kid FROM auth.signing_keys WHERE purpose='session' LIMIT 1),now()+interval '1 hour')`;
   const actor = { userId: String(user.id), sid, admin: false };
   const logins = new Map<string, Awaited<ReturnType<typeof service.startLogin>>>();
-  const app = new Hono().route(APP_APPROVAL_PATH, createAppApprovalRoutes(service));
+  const app = new Hono().route(APP_APPROVAL_PATH, createAppApprovalRoutes({ notify: async () => {} }, service));
   app.post("/fixture/pair", async (c) => {
     // Simulate a fresh interactive fixture session for each new test flow.
     await sql`UPDATE auth.session_families SET issued_at=now() WHERE sid=${sid}::uuid`;
+    await sql`UPDATE auth.app_devices SET revoked_at=COALESCE(revoked_at,now()) WHERE user_id=${actor.userId}::uuid`;
     const pairing = await service.startPairing(actor);
     return c.json({ pairingId: pairing.pairingId, link: appApproval.createPairingLink(pwa, pairing) });
   });

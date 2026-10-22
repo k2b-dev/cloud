@@ -8,7 +8,7 @@ const sanitizeContent = (content: string): string => sanitizeHtml(content, { all
 // sanitize-html decodes entities before escaping &, < and > again. Decode only
 // those escapes once, so literal entity text is not recursively interpreted.
 const htmlText = (html: string): string =>
-  sanitizeContent(html.replace(/<br\b[^>]*>|<\/(?:p|pre|blockquote|div|h[1-6]|li|tr|td|th|ul|ol|table)>/gi, " "))
+  sanitizeContent(html.replace(/<(?:br|hr)\b[^>]*>|<\/(?:p|pre|blockquote|div|h[1-6]|li|tr|td|th|ul|ol|table)>/gi, " "))
     .replace(/&(amp|lt|gt);/g, (entity) => (entity === "&amp;" ? "&" : entity === "&lt;" ? "<" : ">"))
     .replace(/\s+/g, " ")
     .trim();

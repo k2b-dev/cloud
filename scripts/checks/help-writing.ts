@@ -1,22 +1,27 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
+import { lexHelpMarkdown, walkHelpTokens } from "../../packages/cloud/src/shared/markdown";
 import { listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /**
  * Built-in Help follows the writing rules in `docs-site/docs/en/build/write-app-help.md`:
+ * steps blocks have at most `MAX_STEPS` items, base articles declare kind and icon,
  * a sentence in a numbered step has at most `MAX_STEP_WORDS` words, and the text
  * uses no synonym that the Cloud glossary lists for a product term.
  *
  * Findings that existed when the rule was introduced live in `help-writing.baseline`.
  * They are reported as known, not as failures. The baseline counts findings per article:
- * per glossary term, and per long step by its first eight words. An article that has
+ * per missing metadata field, per glossary term, and per step or steps block by its
+ * first eight words. An article that has
  * more findings of a key than the baseline lists fails, and so does a baseline line
  * whose finding is gone. A finding that moves within its article, or a long step that
  * grows, keeps its key; review keeps people from adding baseline lines by hand.
  * `--fix` removes stale lines; `--warnings` lists every known finding.
  */
 export const MAX_STEP_WORDS = 20;
+export const MAX_STEPS = 7;
+const excerpt = (text: string): string => stepText(text).split(/\s+/).slice(0, 8).join(" ");
 
 const GLOSSARY = "docs-site/docs/en/reference/glossary.md";
 const BASELINE = "scripts/checks/help-writing.baseline";
@@ -124,12 +129,42 @@ export const checkHelpSource = (file: string, source: string, terms: readonly Te
   const locale = localeOf(file);
   const localTerms = terms.filter((term) => term.locale === locale);
   const lines = source.split("\n");
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(source);
+  if (locale === "en") {
+    for (const field of ["kind", "icon"]) {
+      if (!frontmatter || !new RegExp(`^${field}:\\s*\\S+`, "m").test(frontmatter[1]!)) {
+        findings.push({
+          file,
+          line: 1,
+          key: `${file} | frontmatter | ${field}`,
+          message: `Base-locale Help article is missing frontmatter field "${field}".`,
+        });
+      }
+    }
+  }
+  const body = frontmatter ? source.slice(frontmatter[0].length) : source;
+  walkHelpTokens(lexHelpMarkdown(body), (token) => {
+    if (token.type !== "guidedHelpBlock" || token.kind !== "steps") return;
+    const lists = (token.tokens ?? []).filter((child) => child.type === "list" && child.ordered);
+    const items = lists.flatMap((list) => (list.type === "list" ? list.items : []));
+    if (items.length > MAX_STEPS) {
+      const start = source.indexOf(token.raw);
+      findings.push({
+        file,
+        line: source.slice(0, start).split("\n").length,
+        key: `${file} | steps | ${excerpt(items[0]!.text)}`,
+        message: `Steps block has ${items.length} steps (at most ${MAX_STEPS}). Split the task or move details into :::details.`,
+      });
+    }
+  });
 
   // Terms are matched in a whole paragraph, so code, bold labels, and multi-word terms can wrap across source lines.
   const checkTerms = (line: number, text: string) => {
     const visible = prose(text);
     for (const term of localTerms) {
       for (const match of visible.matchAll(term.pattern)) {
+        // A capital letter after a prefix term marks a product name such as ClickHouse, not the avoided word.
+        if (term.text.endsWith("*") && /\p{Lu}/u.test(match[0].slice(term.text.length - 1))) continue;
         findings.push({
           file,
           line: line + (visible.slice(0, match.index).match(/\n/g)?.length ?? 0),
@@ -171,12 +206,12 @@ export const checkHelpSource = (file: string, source: string, terms: readonly Te
     for (const sentence of step.paragraphs.flatMap((text) => sentences(stepText(text.join(" "))))) {
       const words = wordCount(sentence);
       if (words <= MAX_STEP_WORDS) continue;
-      const excerpt = sentence.split(/\s+/).slice(0, 8).join(" ");
+      const firstWords = excerpt(sentence);
       findings.push({
         file,
         line: step.line,
-        key: `${file} | step | ${excerpt}`,
-        message: `Step sentence has ${words} words (at most ${MAX_STEP_WORDS}): “${excerpt} …”`,
+        key: `${file} | step | ${firstWords}`,
+        message: `Step sentence has ${words} words (at most ${MAX_STEP_WORDS}): “${firstWords} …”`,
       });
     }
     step = null;
@@ -240,7 +275,7 @@ export const collectHelpFindings = (workspaceRoot: string): HelpFinding[] => {
 };
 
 const BASELINE_HEADER = [
-  "# Known help-writing findings, one per line: <file> | <step|term> | <detail>.",
+  "# Known help-writing findings, one per line: <file> | <step|steps|term|frontmatter> | <detail>.",
   "# The Help rewrite removes lines until the file is empty; the rule never adds lines.",
   "# `bun scripts/check.ts help-writing --fix` removes lines whose finding is gone.",
 ];
@@ -257,7 +292,7 @@ const readBaseline = (path: string): string[] =>
 
 export const rule: Rule = {
   name: "help-writing",
-  description: "Help steps keep sentences short and Help uses the Cloud glossary terms",
+  description: "Built-in Help declares kind/icon, uses at most seven steps per block, short sentences, and the Cloud glossary",
   run: async ({ workspaceRoot, fix, flags }) => {
     const baselinePath = join(workspaceRoot, BASELINE);
     const remaining = new Map<string, number>();

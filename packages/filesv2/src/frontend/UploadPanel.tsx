@@ -1,4 +1,5 @@
-import { Button, IconButton, ProgressRing, Tooltip, toast } from "@k2b/ui";
+import { text } from "@k2b/stdlib";
+import { Button, IconButton, ProgressRing, Tooltip, toast, useLocale } from "@k2b/ui";
 import {
   createEffect,
   createMemo,
@@ -60,6 +61,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
   const title = () => {
     switch (batch.phase) {
       case "running":
+        if (batch.active !== null && batch.rows[batch.active]?.wait === "network") return u().waitingForNetwork;
         return batch.target ? u().uploadingTo(batch.target.label) : u().uploading;
       case "done":
         // Every file already existed and was skipped: nothing was uploaded.
@@ -156,6 +158,23 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
     onCleanup(() => clearTimeout(timer));
   });
 
+  // WebKit sends no pointerleave when the element under a resting pointer leaves the document, and rows change under
+  // it all the time. The next pointerover tells where the pointer went, so a lost leave neither stops the list from
+  // following nor keeps a finished panel open.
+  let panel: HTMLElement | undefined;
+  onMount(() => {
+    const pointerOver = (event: PointerEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (pointerInside() && !scroll?.contains(target)) {
+        setPointerInside(false);
+        follow();
+      }
+      if (hot() && !panel?.contains(target)) setHot(!!panel?.contains(document.activeElement));
+    };
+    document.addEventListener("pointerover", pointerOver, true);
+    onCleanup(() => document.removeEventListener("pointerover", pointerOver, true));
+  });
+
   // A double-click on "Try again" must not land its second click on the "Cancel" the first one turned it into.
   let actionChanged = Number.NEGATIVE_INFINITY;
   createEffect(on(action, () => (actionChanged = performance.now()), { defer: true }));
@@ -173,6 +192,7 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
 
   return (
     <section
+      ref={panel}
       class="filesv2-upload"
       data-phase={batch.phase}
       data-expanded={String(expanded())}
@@ -298,6 +318,13 @@ export function UploadPanel<G>(props: { queue: UploadQueue<G> }): JSX.Element {
 
 function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; onRetry: (event: MouseEvent) => void }) {
   const u = useUploadMessages();
+  const locale = useLocale();
+  const bytes = (value: number) => text.pprintBytes(value, { locale: locale() });
+  // A wait for the network or a busy server says more than the publication in progress; a new try does not.
+  const finishing = () =>
+    props.row.status === "working" && props.row.phase === "finishing" && (!props.row.wait || props.row.wait === "retrying");
+  const note = () =>
+    props.row.status !== "working" ? props.row.reason : finishing() ? u().finishing : props.row.wait ? u().wait(props.row.wait) : null;
   const hint = () => (
     <>
       <strong>{props.row.reason}</strong> {u().retryHint}
@@ -307,12 +334,17 @@ function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; 
     <li
       class="filesv2-upload-row"
       data-status={props.row.status}
+      data-wait={props.row.status === "working" ? (props.row.wait ?? undefined) : undefined}
+      data-phase={props.row.status === "working" ? (props.row.phase ?? undefined) : undefined}
       style={{ "--filesv2-upload-index": props.row.id }}
       aria-posinset={props.row.id + 1}
       aria-setsize={props.total}
     >
       <span class="filesv2-upload-row__status">
         <Switch>
+          <Match when={props.row.status === "working" && props.row.wait !== null && props.row.wait !== "retrying"}>
+            <i class={`ti ${props.row.wait === "network" ? "ti-wifi-off" : "ti-clock-pause"}`} aria-hidden="true" />
+          </Match>
           <Match when={props.row.status === "working"}>
             <ProgressRing value={props.row.size ? (props.row.sent / props.row.size) * 100 : 0} />
           </Match>
@@ -348,10 +380,20 @@ function UploadRowView(props: { row: UploadRow; folder: boolean; total: number; 
             </Show>
           </Show>
           <span class="filesv2-upload-row__base">{props.row.name}</span>
-          <span class="k2b-sr-only">, {u().status(props.row.status)}</span>
+          <span class="k2b-sr-only">, {finishing() ? u().finishingStatus : u().status(props.row.status)}</span>
         </span>
-        <Show when={props.row.status === "failed"}>
-          <span class="filesv2-upload-row__reason">{props.row.reason}</span>
+        {/* A working row always has its second line, so a wait or Finishing… replaces the bytes without moving the name. */}
+        <Show when={props.row.status === "failed" || props.row.status === "working"}>
+          <Show
+            when={note()}
+            fallback={
+              <span class="filesv2-upload-row__progress" aria-hidden="true">
+                {u().transferred({ sent: bytes(props.row.sent), size: bytes(props.row.size) })}
+              </span>
+            }
+          >
+            <span class="filesv2-upload-row__reason">{note()}</span>
+          </Show>
         </Show>
       </span>
       <Show when={props.row.status === "failed"}>

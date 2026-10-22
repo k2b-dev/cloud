@@ -1,11 +1,11 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { SpaceComment, SpaceItem } from "@/contracts";
+import type { SpaceComment, SpaceItem, SpaceItemReaction } from "@/contracts";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-detail-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -32,6 +32,7 @@ const task: SpaceItem = {
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,
@@ -55,7 +56,7 @@ const event: SpaceItem = {
   startsAt: "2026-08-10T10:00:00.000Z",
   endsAt: "2026-08-10T11:00:00.000Z",
   priority: "high",
-  assignees: [{ id: userId, displayName: "Valentin Kolb", avatarHash: null }],
+  assignees: [{ id: userId, kind: "user" as const, displayName: "Valentin Kolb", avatarHash: null }],
   tags: [{ id: "Tag001", spaceId, name: "Release", color: "#2563eb" }],
 };
 
@@ -98,6 +99,8 @@ const renderPanel = (overrides: Partial<Parameters<typeof ItemDetailPanel>[0]> =
       },
     }),
   );
+
+afterEach(() => setSystemTime());
 
 const legacyDetailClasses = ['class="detail-header', 'class="detail-stack', 'class="detail-section', 'class="detail-facts'];
 
@@ -207,20 +210,17 @@ describe("Spaces item detail panel", () => {
     expect(own).toContain('data-own-claim="true"');
     expect(own).not.toContain('data-spaces-claim-action="claim"');
     // An own claim reads like any holder row with the person's name; "You're on it" stays the avatar's name.
-    expect(own).toContain('<span class="truncate text-sm">Valentin Kolb</span>');
+    expect(own).toContain('title="Valentin Kolb">Valentin Kolb</span>');
     expect(own).toContain(`title="You're on it"`);
 
-    // The holder leads the people list in the assignee row layout: extra-small avatar with the outer success ring, the
-    // name with a "working on it" label that says what the ring shows, and a secondary line with the claim time that
-    // wraps instead of hiding the "not assigned" marker.
+    // Working is a state in the same single-line people row, with its time and an accessible ring label.
     const foreign = renderPanel({ item: { ...task, claim } });
     expect(foreign).toContain('title="Mira Beck is on it"');
-    expect(foreign).toContain(
-      '<span class="k2b-avatar spaces-claim-ring" data-size="xs" data-tint="6" style="" role="img" aria-label="Mira Beck is on it">MB</span></span><div class="min-w-0 flex-1"><span class="flex min-w-0 items-center gap-1.5"><span class="truncate text-sm">Mira Beck</span><span class="k2b-status-badge shrink-0" data-tone="ok" data-variant="chip"><span class="k2b-status-badge__label">working on it</span></span></span><span class="block text-xs text-dimmed">since <time class="whitespace-nowrap" datetime="' +
-        now +
-        '">',
-    );
-    expect(foreign).toMatch(/ (<!--!\$-->)?<span class="whitespace-nowrap">· not assigned<\/span>/);
+    expect(foreign).toContain('data-ring="success"');
+    expect(foreign).toContain('<span class="k2b-status-badge__label">working on it</span>');
+    expect(foreign).toContain(`since <time datetime="${now}" title="`);
+    expect(foreign).not.toContain("not assigned");
+    expect(foreign).not.toContain("nicht zugewiesen");
     expect(foreign).not.toContain("Task claimed");
     // Claims coordinate work and do not lock it: anyone who may change the task may take one over, nobody else.
     expect(renderPanel({ item: { ...task, claim }, canWrite: false })).not.toContain("data-spaces-claim-action");
@@ -394,7 +394,7 @@ describe("Spaces item detail panel", () => {
   test("uses the comment count as the empty state without duplicate copy", () => {
     const html = renderPanel({ initialCommentsPage: { items: [], page: 1, perPage: 50, total: 0, hasNext: false } });
 
-    expect(html).toContain('class="k2b-discussion__count">0</span>');
+    expect(html).toContain('class="k2b-detail-panel__none">None yet</span>');
     expect(html).not.toContain("No comments yet.");
   });
 
@@ -628,7 +628,8 @@ test("renders work progress and preserved completion evidence in German", () => 
   expect(html).toContain(">Zuständig</h3>");
   expect(html).toContain('aria-label="Du arbeitest daran"');
   expect(html).toContain("seit <time");
-  expect(html).toMatch(/ (<!--!\$-->)?<span class="whitespace-nowrap">· nicht zugewiesen<\/span>/);
+  expect(html).toContain(`datetime="${now}"`);
+  expect(html).not.toContain("nicht zugewiesen");
   expect(html).not.toContain("data-spaces-claim-action");
   expect(html).toContain(">Letzter Stand</h3>");
   expect(html).toContain("Nächster Schritt");
@@ -639,8 +640,8 @@ test("renders work progress and preserved completion evidence in German", () => 
 
 describe("Spaces item detail groups", () => {
   const holderId = "44444444-4444-4444-8444-444444444444";
-  const mira = { id: holderId, displayName: "Mira Beck", avatarHash: null };
-  const valentin = { id: userId, displayName: "Valentin Kolb", avatarHash: null };
+  const mira = { id: holderId, kind: "user" as const, displayName: "Mira Beck", avatarHash: null };
+  const valentin = { id: userId, kind: "user" as const, displayName: "Valentin Kolb", avatarHash: null };
   const miraClaim = {
     id: "55555555-5555-4555-8555-555555555555",
     actor: { kind: "user" as const, id: holderId },
@@ -649,42 +650,91 @@ describe("Spaces item detail groups", () => {
     claimedAt: now,
   };
   /** The people list of the Work group, from its Assigned section up to the add-assignee picker. */
-  const peopleList = (html: string) => {
-    const start = html.indexOf(">Assigned</h3>");
-    return html.slice(start, html.indexOf('aria-label="Add assignee"', start));
+  const peopleList = (html: string, locale: string) => {
+    const start = html.indexOf(locale === "de" ? ">Zuständig</h3>" : ">Assigned</h3>");
+    const end = html.indexOf(locale === "de" ? 'aria-label="Zuständige Person hinzufügen"' : 'aria-label="Add assignee"', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    return html.slice(start, end);
+  };
+  const rows = (people: string) => people.split(/<div[^>]*data-spaces-assignee-row[^>]*>/).slice(1);
+  const workingRow = (row: string, locale: string) => {
+    expect(row).toContain('data-ring="success"');
+    expect(row).toContain(`<span class="k2b-status-badge__label">${locale === "de" ? "arbeitet daran" : "working on it"}</span>`);
+    expect(row).toContain(`${locale === "de" ? "seit" : "since"} <time datetime="${now}" title="`);
   };
 
-  test("shows an assigned claim holder once, first, with the claim time and the assignee's remove action", () => {
-    const html = renderPanel({ item: { ...task, assignees: [valentin, mira], claim: miraClaim } });
-    const people = peopleList(html);
-
-    expect(people.match(/>Mira Beck<\/span>/g)).toHaveLength(1);
-    expect(people.indexOf("data-spaces-claim-holder")).toBeLessThan(people.indexOf(">Valentin Kolb</span>"));
-    expect(people).toContain(`since <time class="whitespace-nowrap" datetime="${now}">`);
-    expect(people).not.toContain("not assigned");
-    expect(people).toContain('aria-label="Remove Mira Beck"');
-    expect(people).toContain('aria-label="Remove Valentin Kolb"');
-    // The claim is only shown in the people list; there is no separate claim section anymore.
-    expect(html.match(/data-spaces-claim-badge/g)).toHaveLength(1);
-  });
-
-  test("leads with a service account holder that is not assigned and keeps it out of the assignee actions", () => {
-    const html = renderPanel({
-      item: {
-        ...task,
-        assignees: [valentin],
-        claim: { ...miraClaim, actor: { kind: "service_account", id: holderId }, displayName: "Release agent" },
-      },
+  for (const locale of ["en", "de"]) {
+    test(`${locale}: shows an assigned worker once, first, with relative time and the assignee's remove action`, () => {
+      setSystemTime(new Date("2026-08-09T12:00:00.000Z"));
+      const html = renderPanel({ item: { ...task, assignees: [valentin, mira], claim: miraClaim } }, locale);
+      const people = peopleList(html, locale);
+      const list = rows(people);
+      expect(list).toHaveLength(2);
+      expect(people.match(/>Mira Beck<\/span>/g)).toHaveLength(1);
+      expect(list[0]).toContain(">Mira Beck</span>");
+      expect(people).toMatch(/data-spaces-assignee-row data-spaces-claim-holder=""/);
+      workingRow(list[0]!, locale);
+      expect(list[0]).toContain(">12:00</time>");
+      expect(list[0]).toContain(locale === "de" ? 'aria-label="Mira Beck entfernen"' : 'aria-label="Remove Mira Beck"');
+      expect(list[1]).toContain(locale === "de" ? 'aria-label="Valentin Kolb entfernen"' : 'aria-label="Remove Valentin Kolb"');
+      expect(list[1]).not.toContain('data-ring="success"');
+      expect(people).not.toContain("not assigned");
+      expect(people).not.toContain("nicht zugewiesen");
+      expect(html.match(/data-spaces-claim-badge/g)).toHaveLength(1);
     });
-    const people = peopleList(html);
 
-    expect(people.indexOf("data-spaces-claim-holder")).toBeLessThan(people.indexOf(">Valentin Kolb</span>"));
-    expect(people).toContain('class="ti ti-api"');
-    expect(people).toContain(">Release agent</span>");
-    expect(people).toMatch(/ (<!--!\$-->)?<span class="whitespace-nowrap">· not assigned<\/span>/);
-    expect(people).not.toContain('aria-label="Remove Release agent"');
-    expect(people).toContain('aria-label="Remove Valentin Kolb"');
-  });
+    for (const kind of ["user", "service_account"] as const) {
+      test(`${locale}: keeps a ${kind} holder outside the assignees first, without a remove action`, () => {
+        const people = peopleList(
+          renderPanel(
+            {
+              item: {
+                ...task,
+                assignees: [valentin],
+                claim: { ...miraClaim, actor: { kind, id: holderId }, displayName: "Release agent" },
+              },
+            },
+            locale,
+          ),
+          locale,
+        );
+        const list = rows(people);
+        expect(list).toHaveLength(2);
+        expect(list[0]).toContain(">Release agent</span>");
+        workingRow(list[0]!, locale);
+        expect(list[0]).not.toContain("<button");
+        if (kind === "service_account") expect(list[0]).toContain('class="ti ti-api"');
+        expect(list[1]).toContain(">Valentin Kolb</span>");
+        expect(people).not.toContain("not assigned");
+        expect(people).not.toContain("nicht zugewiesen");
+      });
+    }
+
+    test(`${locale}: does not merge a service account into a person with the same id`, () => {
+      const people = peopleList(
+        renderPanel(
+          {
+            item: {
+              ...task,
+              assignees: [mira],
+              claim: { ...miraClaim, actor: { kind: "service_account", id: mira.id }, displayName: "Task worker" },
+            },
+          },
+          locale,
+        ),
+        locale,
+      );
+      const list = rows(people);
+      expect(list).toHaveLength(2);
+      workingRow(list[0]!, locale);
+      expect(list[0]).toContain(">Task worker</span>");
+      expect(list[0]).not.toContain("<button");
+      expect(list[1]).toContain(">Mira Beck</span>");
+      expect(list[1]).not.toContain('data-ring="success"');
+      expect(list[1]).not.toContain("k2b-status-badge");
+    });
+  }
 
   test("keeps the holder visible to readers and hides the assignee controls", () => {
     const html = renderPanel({ item: { ...task, claim: miraClaim }, canWrite: false });
@@ -877,5 +927,77 @@ describe("Spaces item detail groups", () => {
     expect(html).toContain('aria-label="Planung bearbeiten"');
     expect(html).not.toContain("Einordnung");
     expect(html).not.toContain("Fortschritt");
+  });
+});
+
+describe("Spaces detail reactions", () => {
+  beforeEach(() => setSystemTime(new Date(now)));
+  const reactions: SpaceItemReaction[] = ["👍", "❤️", "🎉", "👀", "🚀"].map((emoji, index) => ({
+    emoji,
+    count: index === 0 ? 2 : 1,
+    own: index === 0,
+    people: [{ kind: "user", id: "other", displayName: "Nora Brandt" }],
+  }));
+  // Restrict assertions to the row: the rest of the detail has its own controls.
+  const row = (html: string) => {
+    const start = html.indexOf('class="k2b-reaction-bar spaces-item-reactions"');
+    return start < 0 ? "" : html.slice(start, html.indexOf('class="k2b-tooltip k2b-reaction-bar__hint', start));
+  };
+
+  test("writers see all reactions after the preceding groups and before comments", () => {
+    const html = renderPanel({ item: { ...task, description: "Current instructions", reactions } });
+    expect(html).toMatch(
+      /aria-label="Content"[\s\S]*aria-label="Work"[\s\S]*aria-label="Context"[\s\S]*spaces-item-reactions[\s\S]*k2b-discussion[\s\S]*aria-label="Item metadata"/,
+    );
+    const bar = row(html);
+    expect(bar).toContain('data-density="default"');
+    expect(bar).toContain('data-add="always"');
+    expect(bar.match(/<button[^>]*class="k2b-reaction-bar__chip"/g)).toHaveLength(reactions.length);
+    expect(bar.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(bar.match(/aria-pressed="false"/g)).toHaveLength(reactions.length - 1);
+    for (const { emoji } of reactions) expect(bar).toContain(`data-reaction-key="${emoji}"`);
+    expect(bar).not.toContain("k2b-reaction-bar__more");
+    expect(bar).toContain('aria-label="Add reaction"');
+  });
+
+  test("a writer without reactions sees only Add reaction", () => {
+    const bar = row(renderPanel({ item: { ...task, reactions: [] } }));
+    expect(bar).not.toBe("");
+    expect(bar).toContain('aria-label="Add reaction"');
+    expect(bar.match(/<button\b/g)).toHaveLength(1);
+    expect(bar).not.toContain("k2b-reaction-bar__chip");
+  });
+
+  test("a reader without reactions has no row", () => {
+    expect(renderPanel({ item: { ...task, reactions: [] }, canWrite: false })).not.toContain("spaces-item-reactions");
+  });
+
+  test("a reader sees all reactions as images without Add reaction", () => {
+    const bar = row(renderPanel({ item: { ...task, reactions }, canWrite: false }));
+    expect(bar.match(/class="k2b-reaction-bar__chip" role="img" aria-label=/g)).toHaveLength(reactions.length);
+    expect(bar).not.toContain("<button");
+    expect(bar).not.toContain("aria-pressed");
+    expect(bar).not.toContain('aria-label="Add reaction"');
+    expect(bar).not.toContain("k2b-reaction-bar__more");
+  });
+
+  test("generated occurrences have no controls even for writers; overrides have reactions", () => {
+    const recurringContext = {
+      seriesItemId: itemId,
+      recurrenceId: "2026-08-10T10:00:00.000Z",
+      startsAt: "2026-08-10T10:00:00.000Z",
+      endsAt: "2026-08-10T11:00:00.000Z",
+      allDay: false,
+      isOverride: false,
+    };
+    const generated = renderPanel({ item: { ...task, reactions }, recurringContext, canWrite: true });
+    expect(generated).not.toContain("spaces-item-reactions");
+    expect(generated).not.toContain("k2b-reaction-bar__chip");
+    expect(generated).not.toContain('aria-label="Add reaction"');
+    const override = row(
+      renderPanel({ item: { ...task, reactions }, recurringContext: { ...recurringContext, isOverride: true }, canWrite: true }),
+    );
+    expect(override).toContain('aria-pressed="true"');
+    expect(override).toContain('aria-label="Add reaction"');
   });
 });

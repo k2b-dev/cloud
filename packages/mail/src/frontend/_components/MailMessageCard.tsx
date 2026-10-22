@@ -1,10 +1,10 @@
 import type { CloudTheme } from "@k2b/cloud/shared";
 import type { DateContext } from "@k2b/stdlib";
-import { Button, type DropdownItem, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
+import { Button, type DropdownAction, type DropdownItem, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { DraftDerivationKind, DraftIntent, SenderIdentity } from "../../contracts";
 import type { MailSecurityFinding } from "../../security-contracts";
-import type { MessageDetail } from "../../service/messages";
+import type { MailWorkspaceMessage } from "../../service/workspace";
 import MailCalendarInvitation from "./MailCalendarInvitation";
 import MailMessageAttachments from "./MailMessageAttachments";
 import MailMessageBody from "./MailMessageBody";
@@ -16,11 +16,13 @@ import { mailMessageMessages } from "./mail-message-messages";
 import {
   formatMailMessageDateTime,
   type MessageBodyFormat,
+  type MessageColors,
   messageDeliveryAllowsResponses,
   messageDeliveryControlLabel,
   messageDeliveryPresentation,
   messagePreviewText,
   resolveMessageBodyFormat,
+  resolveMessageColors,
 } from "./mail-message-presentation";
 import type { MailReadingFormat } from "./mail-user-preferences";
 
@@ -46,9 +48,9 @@ type MailMessageCardContext = {
 type MailMessageCardActions = {
   toggle: (messageId: string) => void;
   selectionChange: (messageId: string, value: string) => void;
-  compose: (intent: DraftIntent, message: MessageDetail, quotedBody?: string) => void;
-  quoteReply: (message: MessageDetail, body: HTMLElement) => void;
-  derive: (kind: DraftDerivationKind, message: MessageDetail) => void | Promise<void>;
+  compose: (intent: DraftIntent, message: MailWorkspaceMessage, quotedBody?: string) => void;
+  quoteReply: (message: MailWorkspaceMessage, body: HTMLElement) => void;
+  derive: (kind: DraftDerivationKind, message: MailWorkspaceMessage) => void | Promise<void>;
   reconcile: () => Promise<void>;
   refresh: () => Promise<void>;
   reassign: (messageId: string) => void | Promise<void>;
@@ -56,7 +58,7 @@ type MailMessageCardActions = {
 };
 
 export default function MailMessageCard(props: {
-  message: MessageDetail;
+  message: MailWorkspaceMessage;
   expanded: boolean;
   isLatest: boolean;
   selectionAvailable: boolean;
@@ -89,6 +91,8 @@ export default function MailMessageCard(props: {
   };
   let messageBody!: HTMLDivElement;
   const [bodyFormatOverride, setBodyFormatOverride] = createSignal<MessageBodyFormat | null>(null);
+  const [colorsOverride, setColorsOverride] = createSignal<MessageColors | null>(null);
+  const colors = createMemo(() => resolveMessageColors(props.context.readingFormat, colorsOverride()));
   const [refreshing, setRefreshing] = createSignal(false);
   // Live invalidation replaces the envelope-only snapshot once the body commits;
   // this local action covers paused live updates without a page reload.
@@ -147,23 +151,10 @@ export default function MailMessageCard(props: {
     resolveMessageBodyFormat(
       props.context.readingFormat,
       bodyFormatOverride(),
-      props.context.theme ?? "light",
       Boolean(props.message.sanitizedHtml),
-      Boolean(props.message.plainText),
+      Boolean(props.message.plainText?.trim()),
     ),
   );
-  // Under Automatic only the browser knows the device scheme. Until the island
-  // has read it, both bodies render and the <html> class shows one, so the
-  // format never swaps after the first paint; then the hidden one is dropped.
-  const bodyFollowsScheme = () =>
-    props.context.theme === null &&
-    props.context.readingFormat === "automatic" &&
-    bodyFormatOverride() === null &&
-    Boolean(props.message.sanitizedHtml) &&
-    Boolean(props.message.plainText);
-  const bodyShown = (format: MessageBodyFormat) => bodyFollowsScheme() || bodyFormat() === format;
-  const bodyVisibility = (format: MessageBodyFormat) =>
-    bodyFollowsScheme() ? (format === "html" ? "contents dark:hidden" : "hidden dark:contents") : "contents";
   const responseActions = (): DropdownItem[] =>
     props.context.canWrite && props.context.selectedConversationId && !exceptionalDelivery()
       ? [
@@ -204,20 +195,24 @@ export default function MailMessageCard(props: {
         ]
       : [];
   const displayActions = (): DropdownItem[] => {
-    if (!props.message.sanitizedHtml || !props.message.plainText || !bodyFormat()) return [];
-    const nextFormat = bodyFormat() === "html" ? "plain" : "html";
-    return [
-      {
-        sectionLabel: messages().display,
-        items: [
-          {
-            label: nextFormat === "html" ? messages().viewHtml : messages().viewPlain,
-            icon: nextFormat === "html" ? "ti ti-code" : "ti ti-align-left",
-            action: () => setBodyFormatOverride(nextFormat),
-          },
-        ],
-      },
-    ];
+    const items: DropdownAction[] = [];
+    if (props.message.sanitizedHtml && props.message.plainText?.trim() && bodyFormat()) {
+      const nextFormat = bodyFormat() === "html" ? "plain" : "html";
+      items.push({
+        label: nextFormat === "html" ? messages().viewHtml : messages().viewPlain,
+        icon: nextFormat === "html" ? "ti ti-code" : "ti ti-align-left",
+        action: () => setBodyFormatOverride(nextFormat),
+      });
+    }
+    if (bodyFormat() === "html" && props.context.theme === "dark") {
+      const nextColors = colors() === "adapted" ? "original" : "adapted";
+      items.push({
+        label: nextColors === "original" ? messages().showOriginalColors : messages().adaptColorsToDarkMode,
+        icon: nextColors === "original" ? "ti ti-palette" : "ti ti-moon",
+        action: () => setColorsOverride(nextColors),
+      });
+    }
+    return items.length > 0 ? [{ sectionLabel: messages().display, items }] : [];
   };
   const messageMenuActions = (): DropdownItem[] => [...responseActions(), ...displayActions()];
   const hasCalendarInvitation = () =>
@@ -243,6 +238,7 @@ export default function MailMessageCard(props: {
           type="button"
           class="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-[var(--ui-radius-control)] p-2 text-left"
           aria-expanded={props.expanded}
+          data-mail-message-header
           onClick={() => props.actions.toggle(props.message.id)}
         >
           <span class="min-w-0 flex-1">
@@ -285,7 +281,7 @@ export default function MailMessageCard(props: {
             <time class="shrink-0 text-xs text-dimmed" dateTime={props.message.internalDate}>
               {formatMailMessageDateTime(props.message.internalDate, props.context.dateConfig)}
             </time>
-            <i class={`ti ${props.expanded ? "ti-chevron-up" : "ti-chevron-down"} text-dimmed`} aria-hidden="true" />
+            <i class={`ti ${props.expanded ? "ti-chevron-up" : "ti-chevron-down"} text-dimmed print:hidden`} aria-hidden="true" />
           </span>
         </button>
         <div class="flex h-10 shrink-0 items-center">
@@ -363,39 +359,45 @@ export default function MailMessageCard(props: {
             </div>
           </Show>
           <div ref={messageBody} class="mail-message-body min-w-0 overflow-x-auto text-sm text-primary">
-            {props.message.sanitizedHtml || props.message.plainText ? (
-              (["html", "plain"] as const).map((format) => (
-                <Show when={bodyShown(format)}>
-                  <div class={bodyVisibility(format)} data-mail-body-format={format}>
-                    <MailMessageBody
-                      mailboxId={props.context.mailboxId}
-                      messageId={props.message.id}
-                      format={format}
-                      html={props.message.sanitizedHtml}
-                      plainText={props.message.plainText}
-                      attachments={props.message.attachments}
-                      remoteContent={props.message.remoteContent}
-                      linksDisabled={security().linksDisabled}
-                      onSelectionChange={(value) => props.actions.selectionChange(messageId, value)}
-                    />
-                  </div>
-                </Show>
-              ))
-            ) : props.message.hydrationStatus === "body" || props.message.hydrationStatus === "complete" ? (
-              <Placeholder state="empty" variant="compact" title={messages().noBody} />
-            ) : props.message.hydrationStatus === "failed" ? (
-              <Placeholder state="error" variant="compact" title={messages().bodySyncFailed} />
-            ) : (
-              <Placeholder
-                state="loading"
-                title={messages().bodySyncing}
-                action={
-                  <Button variant="secondary" size="sm" loading={refreshing()} onClick={() => void refresh()}>
-                    {messages().refreshMessage}
-                  </Button>
-                }
-              />
-            )}
+            <Show
+              when={bodyFormat()}
+              keyed
+              fallback={
+                props.message.hydrationStatus === "body" || props.message.hydrationStatus === "complete" ? (
+                  <Placeholder state="empty" variant="compact" title={messages().noBody} />
+                ) : props.message.hydrationStatus === "failed" ? (
+                  <Placeholder state="error" variant="compact" title={messages().bodySyncFailed} />
+                ) : (
+                  <Placeholder
+                    state="loading"
+                    title={messages().bodySyncing}
+                    action={
+                      <Button variant="secondary" size="sm" loading={refreshing()} onClick={() => void refresh()}>
+                        {messages().refreshMessage}
+                      </Button>
+                    }
+                  />
+                )
+              }
+            >
+              {(format) => (
+                <div class="contents" data-mail-body-format={format}>
+                  <MailMessageBody
+                    mailboxId={props.context.mailboxId}
+                    messageId={props.message.id}
+                    format={format}
+                    theme={props.context.theme}
+                    colors={colors()}
+                    html={props.message.sanitizedHtml}
+                    plainText={props.message.plainText}
+                    attachments={props.message.attachments}
+                    remoteContent={props.message.remoteContent}
+                    linksDisabled={security().linksDisabled}
+                    onSelectionChange={(value) => props.actions.selectionChange(messageId, value)}
+                  />
+                </div>
+              )}
+            </Show>
           </div>
           <Show when={hasCalendarInvitation() && props.context.calendarIntegrationAvailable && !security().linksDisabled}>
             <MailCalendarInvitation

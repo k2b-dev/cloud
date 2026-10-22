@@ -27,6 +27,24 @@ textarea changes.
 
 Multiline mode is the default. In this mode, <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Enter</kbd> calls `onSubmit`. With `singleLine`, bare Enter submits and newlines are disabled.
 
+`readOnly` prevents editing and completion insertion while keeping selection,
+copying, scrolling, controlled value updates, and `onSubmit` available. Switching
+to read-only cancels pending suggestions and closes the completion popup.
+
+## Embedded composition
+
+Use `variant="embedded"` when the editor shares a surface with adjacent controls.
+Compose a header and footer as siblings in the application; the editor adds no
+surface, border, radius, shadow, or hover treatment. The host must provide a
+visible focus indicator around the shared surface, for example with
+`:focus-within`.
+
+Set `fill` inside a host with a defined height. The embedded editor inherits the
+host's font size and line height; its input, highlight overlay, placeholder, and
+number gutter stay aligned. On coarse primary pointers, code stays at least
+16 px to prevent iOS focus zoom. At the same host size this shows fewer characters
+than a smaller desktop font. Keep pinch zoom available.
+
 ## Completions
 
 Each `Completion` has an optional trigger and a `suggest` function. The
@@ -79,15 +97,16 @@ type Completion = {
 
 type AutocompleteEditorProps = ValueFieldProps<string> & {
   onSubmit?: () => void; completions?: readonly Completion[]; restoreExpansionOnBackspace?: boolean;
+  lineNumbers?: boolean; markedLine?: number;
   highlight?: (text: string) => string; singleLine?: boolean; lines?: number; fill?: boolean;
   placeholder?: string; spellcheck?: boolean; name?: string; maxLength?: number;
-  textareaRef?: (element: HTMLTextAreaElement) => void; variant?: "default" | "paper";
+  textareaRef?: (element: HTMLTextAreaElement) => void; variant?: "default" | "paper" | "embedded"; readOnly?: boolean;
 };
 ```
 
 `text` is the inserted token. `label` is its displayed name; `expansion` supplies expanded content. `textEdit` replaces the explicit zero-based `[start, end)` character range instead of the detected token. `appendSpace` controls a trailing space (default true; an existing separator or opening scope avoids a second separator). `knownLabels` marks known tokens; `allowAfterWord` permits a trigger immediately after a word character.
 
-Defaults: `lines=3`, `singleLine=false`, `fill=false`, `spellcheck=false`, `variant="default"`, `restoreExpansionOnBackspace=true`. Disable the last option to keep Backspace from restoring an expansion to its trigger. Completion `debounceMs` defaults to 0; `dropdown` is opt-in. `textareaRef` receives the mounted native textarea. `highlight` returns trusted HTML: escape source text and preserve text positions.
+Defaults: `lines=3`, `singleLine=false`, `fill=false`, `spellcheck=false`, `readOnly=false`, `variant="default"`, `restoreExpansionOnBackspace=true`. Disable the last option to keep Backspace from restoring an expansion to its trigger. Completion `debounceMs` defaults to 0; `dropdown` is opt-in. `textareaRef` receives the mounted native textarea. `highlight` returns trusted HTML: escape source text and preserve text positions.
 
 `abbreviations` is a public map used by [MarkdownEditor](/en/ui/input/markdown-editor); its custom map is `Record<string, string>` from abbreviation to expansion.
 
@@ -104,7 +123,7 @@ hints must make sense without color alone.
 
 ## Runtime
 
-The editor requires hydrated Solid client code. Completion resolution, cancellation, caret positioning, keyboard navigation, and the optional overlay depend on browser APIs.
+The editor requires browser code. Completion resolution, cancellation, caret positioning, keyboard navigation, and the optional overlay depend on browser APIs.
 
 ## Example
 
@@ -135,3 +154,19 @@ const mentions: Completion = {
   completions={[mentions]}
 />;
 ```
+
+## Numbered code lines
+
+Set `lineNumbers` for a logical line gutter and horizontal scrolling instead of soft wrapping. `markedLine` marks one one-based line in the gutter (and across the code surface in embedded mode); accompany it with a visible error message. Both input and highlighted overlay keep the same font and scroll position.
+
+For SQL, import `highlightSql` from `@k2b/ui` and pass `highlight={highlightSql}`. It escapes all source text and tolerates incomplete strings and nested comments while typing. It is presentation, not SQL validation. `CodeDisplay` also accepts `language="sql"`.
+
+### Scoped syntax colors
+
+Set `--k2b-code-keyword`, `--k2b-code-string`, `--k2b-code-number`, and
+`--k2b-code-parameter` on the editor’s enclosing element to customize SQL
+colors locally. Parameters default to the number color when their token is
+unset. The same tokens apply to `CodeDisplay` and `DocCode`. Use
+`light-dark(lightColor, darkColor)` for theme-aware values, and keep sufficient
+contrast in both themes. These tokens change color only; highlighted editor
+text keeps the native text’s font metrics so the caret and overlay align.

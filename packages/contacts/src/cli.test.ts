@@ -73,10 +73,10 @@ describe("contact addresses", () => {
     for (const args of [["Cont01"], ["Customers:Ada Lovelace"], ["Book01:Ada Lovelace"], ["--email", "ada@example.org"]]) {
       const result = await runCli(api.url, ["--json", "contacts", "show", ...args]);
       expect(result.exitCode).toBe(0);
-      expect(JSON.parse(result.stdout)).toEqual(contact);
+      expect(JSON.parse(result.stdout)).toEqual({ ...contact, permalink: `${api.url}/open/contacts.contact/~${contact.id}` });
     }
     const shownBook = await runCli(api.url, ["--json", "contacts", "show", "Customers:"]);
-    expect(JSON.parse(shownBook.stdout)).toEqual(book);
+    expect(JSON.parse(shownBook.stdout)).toEqual({ ...book, permalink: `${api.url}/open/contacts.book/~${book.id}` });
     expect(api.requests).toEqual([
       "GET /api/contacts/resolve?contact=Cont01",
       "GET /api/contacts/resolve?book=Customers&contact=Ada+Lovelace",
@@ -129,10 +129,10 @@ describe("commands", () => {
       return undefined;
     });
     const books = await runCli(api.url, ["--json", "contacts", "ls", "--q", "cust"]);
-    expect(JSON.parse(books.stdout).data).toEqual([book]);
+    expect(JSON.parse(books.stdout).data).toEqual([{ ...book, permalink: `${api.url}/open/contacts.book/~${book.id}` }]);
     const listed = await runCli(api.url, ["--json", "contacts", "ls", "Customers", "--tag", "VIP", "--q", "ada"]);
     expect(Object.keys(JSON.parse(listed.stdout))).toEqual(["book", "data", "pagination"]);
-    expect(JSON.parse(listed.stdout).book).toEqual({ id: "Book01", name: "Customers" });
+    expect(JSON.parse(listed.stdout).book).toEqual({ id: "Book01", name: "Customers", permalink: `${api.url}/open/contacts.book/~Book01` });
     expect(api.requests).toEqual([
       "GET /api/contacts/books?q=cust",
       "GET /api/contacts/resolve?book=Customers",

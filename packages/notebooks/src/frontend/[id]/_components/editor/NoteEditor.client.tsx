@@ -2,7 +2,6 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { registerSearchNavigation } from "@k2b/cloud/browser/search";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { encoding } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
@@ -13,7 +12,9 @@ import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { apiClient } from "@/api/client";
+import type { NoteAuthors } from "../../../../lib/activity-actions";
 import { extractNamedBlockSummaries, type NamedBlockSummary } from "../../../../lib/named-blocks";
+import { extractHeadingLines, headingAtLine } from "../../../../lib/note-insights";
 import { deriveNoteTitle } from "../../../../lib/note-title";
 import { inheritPresentationMode, requestedPresentationMode } from "../../../../lib/presentation-url";
 import type { Backlink } from "../../../../service/links";
@@ -30,25 +31,35 @@ import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
 import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { notebookWorkspaceMessages } from "../../messages";
 import {
+  ACTIVE_HEADING_EVENT,
+  type ActiveHeadingEventDetail,
   ATTACHMENTS_UPDATE_EVENT,
+  DETAIL_PANEL_STATE_EVENT,
   EDITOR_COPY_EVENT,
   EDITOR_DOWNLOAD_EVENT,
   EDITOR_INSERT_ATTACHMENT_EVENT,
   EDITOR_PDF_EVENT,
   type EditorPdfEventDetail,
+  JUMP_TO_PARTICIPANT_EVENT,
+  type JumpToParticipantEventDetail,
   NAMED_BLOCK_SCROLL_EVENT,
   NAMED_BLOCKS_UPDATE_EVENT,
   NOTE_SOFT_NAVIGATED_EVENT,
   NOTE_TITLE_CHANGED_EVENT,
   PRESENCE_EVENT,
+  PRESENCE_LOCATIONS_EVENT,
+  RECONNECT_EVENT,
   RICH_MODE_CHANGED_EVENT,
+  SIDEBAR_FILTER_CHANGED_EVENT,
+  SYNC_STATE_EVENT,
+  SYNC_STATE_REQUEST_EVENT,
   TASKS_UPDATE_EVENT,
   TOC_SCROLL_EVENT,
   TOC_UPDATE_EVENT,
   TOGGLE_RICH_MODE_EVENT,
 } from "../detail/events";
 import { extractTaskProgress } from "../detail/tasks";
-import { extractTocFromMarkdown } from "../detail/toc";
+import type { extractTocFromMarkdown } from "../detail/toc";
 import { followFullWidth } from "../full-width";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import {
@@ -64,11 +75,16 @@ import { caretFormat, sameCaretFormat } from "./editor-actions";
 import { createLinkedHeadingJump, type LinkedHeading } from "./linked-heading";
 import { createNoteNavigationCoordinator, headingFromHash, resolveSameNotebookNoteTarget } from "./note-navigation";
 import { NOTE_PREVIEW_ID } from "./note-preview";
+import { createNotePrintCopy } from "./note-print-copy";
+import { participantCursors, presenceLocations } from "./presence-locations";
 import { keepReadingPosition, previewReadingPosition, type ReadingPosition, scrollToReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
+import { createSyncEnded, SyncEndedBar } from "./sync-ended";
+import { createSyncStateBridge } from "./sync-state";
 import { createTabKeyPreference } from "./tab-key-preference";
 
 const TOC_DEBOUNCE_MS = 300;
+type LeaveGuard = Pick<ReturnType<typeof createSyncEnded>, "confirmLeave" | "releaseLeave">;
 type EditorInstanceProps = {
   noteId: string;
   noteTitle: string;
@@ -91,6 +107,7 @@ type EditorInstanceProps = {
 const CURSOR_IDLE_TIMEOUT_MS = 8_000;
 
 type SoftNavigatedDetail = {
+  noteAuthors: NoteAuthors;
   noteId: string;
   noteTitle: string;
   contentMd: string | null;
@@ -136,6 +153,16 @@ export default function NoteEditor(props: Props) {
   const [linkedHeading, setLinkedHeading] = createSignal<LinkedHeading | null>(
     initialHeading ? { noteId: initialEditorProps.noteId, id: initialHeading } : null,
   );
+  let shownHref = window.location.href;
+  let restoringShownHref = false;
+  let leaveGuard: LeaveGuard | undefined;
+  let pendingGuardedNavigations = 0;
+  const registerLeaveGuard = (guard: LeaveGuard) => {
+    leaveGuard = guard;
+    return () => {
+      if (leaveGuard === guard) leaveGuard = undefined;
+    };
+  };
   const navigation = createNoteNavigationCoordinator({
     initialSource: initialHref,
     currentNoteShortId: () => current().noteId,
@@ -235,15 +262,36 @@ export default function NoteEditor(props: Props) {
     }
   });
 
-  const navigateSoft = async (href: string, push: boolean): Promise<SoftNavigationResult> => {
+  /** `traversal`: Back or Forward already moved the history, so a cancel has to restore the shown note's address. */
+  const navigateSoft = async (href: string, push: boolean, traversal = false): Promise<SoftNavigationResult> => {
     const target = resolveSameNotebookNoteTarget(href, window.location.href, props.notebookId);
+    const mode = target ? requestedPresentationMode(new URL(target.canonicalHref, window.location.href).searchParams) : undefined;
+    const keepsEditor = target && target.noteShortId === current().noteId && (!mode || mode === (props.readOnly ? "readonly" : "write"));
+    const guard = keepsEditor ? undefined : leaveGuard;
+    if (guard && !(await guard.confirmLeave())) {
+      if (traversal && window.location.href !== shownHref) {
+        // Without a history index, restoring the shown URL with pushState drops forward entries after it.
+        window.history.pushState(window.history.state, "", shownHref);
+        restoringShownHref = true;
+        try {
+          window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+        } finally {
+          restoringShownHref = false;
+        }
+      }
+      return { kind: "superseded" };
+    }
     if (!target) return { kind: "fallback" };
-    const mode = requestedPresentationMode(new URL(target.canonicalHref, window.location.href).searchParams);
     if (props.readOnly) {
       // Read-only opens another note with a page load; the open note stays, so a link to its heading opens in place.
       if (target.noteShortId !== current().noteId || (mode && mode !== "readonly")) return { kind: "fallback" };
     } else if (mode && mode !== "write") return { kind: "fallback" };
-    return await navigation.navigate(target, push);
+    if (guard) pendingGuardedNavigations++;
+    const result = await navigation.navigate(target, push);
+    if (guard) pendingGuardedNavigations--;
+    if (result.kind === "applied") shownHref = new URL(result.href, window.location.href).href;
+    else if (result.kind === "superseded" && pendingGuardedNavigations === 0) guard?.releaseLeave();
+    return result;
   };
 
   onMount(() => {
@@ -272,13 +320,26 @@ export default function NoteEditor(props: Props) {
     };
 
     const onPopState = () => {
-      void navigateSoft(window.location.href, false).then((result) => {
+      if (restoringShownHref) return;
+      // A Back that lands on the address already shown, such as a closing sheet leaving its history entry, moves
+      // nothing: no heading jump, no reload. A note still loading from an earlier Back is dropped, so the editor stays
+      // with the address.
+      if (window.location.href === shownHref) {
+        navigation.cancel();
+        return;
+      }
+      void navigateSoft(window.location.href, false, true).then((result) => {
         if (result.kind === "fallback") window.location.reload();
       });
     };
 
+    const onFilterChanged = () => {
+      shownHref = window.location.href;
+    };
+
     document.addEventListener("click", onClick);
     window.addEventListener("popstate", onPopState);
+    window.addEventListener(SIDEBAR_FILTER_CHANGED_EVENT, onFilterChanged);
     onCleanup(
       registerSearchNavigation(async ({ href }) => {
         const target = inheritPresentationMode(href, window.location.href);
@@ -286,7 +347,11 @@ export default function NoteEditor(props: Props) {
         const mode = requestedPresentationMode(new URL(target, window.location.href).searchParams);
         if (noteTarget && !props.readOnly && (!mode || mode === "write")) {
           const result = await navigateSoft(target, true);
-          if (result.kind === "fallback") throw new Error("Note navigation failed");
+          if (result.kind === "fallback") {
+            // Search reports the failure and the note stays open, so a confirmed leave must not outlive it.
+            leaveGuard?.releaseLeave();
+            throw new Error("Note navigation failed");
+          }
           return true;
         }
         if (target !== href) {
@@ -300,6 +365,7 @@ export default function NoteEditor(props: Props) {
     onCleanup(() => {
       document.removeEventListener("click", onClick);
       window.removeEventListener("popstate", onPopState);
+      window.removeEventListener(SIDEBAR_FILTER_CHANGED_EVENT, onFilterChanged);
       offSoftRequests();
       navigation.dispose();
     });
@@ -311,7 +377,9 @@ export default function NoteEditor(props: Props) {
         {(note) => {
           const startPosition = previewPosition;
           previewPosition = null;
-          return <EditorInstance {...note} linkedHeading={linkedHeading} startPosition={startPosition} />;
+          return (
+            <EditorInstance {...note} linkedHeading={linkedHeading} startPosition={startPosition} registerLeaveGuard={registerLeaveGuard} />
+          );
         }}
       </Show>
       <Show when={showRouteLoading()}>
@@ -327,7 +395,11 @@ export default function NoteEditor(props: Props) {
 }
 
 function EditorInstance(
-  props: EditorInstanceProps & { linkedHeading: Accessor<LinkedHeading | null>; startPosition: ReadingPosition | null },
+  props: EditorInstanceProps & {
+    linkedHeading: Accessor<LinkedHeading | null>;
+    startPosition: ReadingPosition | null;
+    registerLeaveGuard: (guard: LeaveGuard) => () => void;
+  },
 ) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
@@ -339,7 +411,20 @@ function EditorInstance(
   });
   const [isDark, setIsDark] = createSignal(document.documentElement.classList.contains("dark"));
   const [richMode, setRichMode] = createSignal(props.initialRichMode !== "source");
-  const tabKeys = createTabKeyPreference(() => !!props.readOnly);
+  const syncEnded = createSyncEnded({
+    messages: t,
+    hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
+    resume: () => provider?.resume(),
+    focusEditor: () => editorView()?.focus(),
+  });
+  onCleanup(props.registerLeaveGuard(syncEnded));
+  // The sync-ended bar replaces the toolbar, so a toolbar mounted again starts from the panel's current state.
+  const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
+  const onPanelState = (event: Event) => {
+    const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+    if (detail && typeof detail === "object" && "isOpen" in detail && typeof detail.isOpen === "boolean") setPanelOpen(detail.isOpen);
+  };
+  const tabKeys = createTabKeyPreference(() => !!props.readOnly || !!syncEnded.ended());
 
   const doc = new Y.Doc({ gc: true });
   if (props.initialSnapshot) {
@@ -354,7 +439,7 @@ function EditorInstance(
   const awareness = new Awareness(doc);
 
   const color = getNotebookPresenceColor(props.userId);
-  awareness.setLocalStateField("user", { name: props.displayName, color });
+  awareness.setLocalStateField("user", { userId: props.userId, name: props.displayName, color });
 
   const {
     ref: editorRef,
@@ -390,12 +475,11 @@ function EditorInstance(
     addExtension(() => yCollab(ytext, null, { undoManager }));
     addExtension(() => isolateYjsHistory(undoManager));
     addExtension(() => remoteCursors(ytext, awareness));
-    addExtension(() => keymap.of(yUndoManagerKeymap));
+    addExtension(() => (syncEnded.ended() ? [] : keymap.of(yUndoManagerKeymap)));
   }
 
   let cursorIdleTimer: ReturnType<typeof setTimeout> | undefined;
   let cursorHiddenByIdle = false;
-  let fatalPromptOpen = false;
 
   const publishCurrentCursor = (view: EditorView) => {
     const selection = view.state.selection.main;
@@ -446,13 +530,17 @@ function EditorInstance(
   addExtension(linkedHeadingJump.extension);
 
   addExtension(editor.basicExtensions());
-  addExtension(formattingKeymap({ notebookId: props.notebookId }));
-  addExtension(slashCommandsExtension({ notebookId: props.notebookId, notebookName: props.notebookName, locale: locale() }));
+  // Custom formatting commands dispatch changes even in a read-only state.
+  addExtension(() => (syncEnded.ended() ? [] : formattingKeymap({ notebookId: props.notebookId })));
+  addExtension(() =>
+    syncEnded.ended() ? [] : slashCommandsExtension({ notebookId: props.notebookId, notebookName: props.notebookName, locale: locale() }),
+  );
   addExtension(editor.markdownExtension());
   addExtension(editor.searchTheme());
   let scrollPort: HTMLDivElement | undefined;
   addExtension(fadeScrollMarginsExtension(() => scrollPort));
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
+  addExtension(syncEnded.extension);
   // Tab indents unless the person prefers focus movement; Esc, then Tab always leaves the editor.
   addExtension(tabKeys.extension);
   // List keys work whatever the Tab preference; toolbar formats follow the caret.
@@ -478,7 +566,7 @@ function EditorInstance(
     return isDark() ? editor.rawDarkInit() : editor.rawLightInit();
   });
 
-  addExtension(editor.noteScrollerTheme);
+  addExtension(editor.noteScroller);
 
   addExtension(() => (richMode() ? [] : lineNumbers()));
 
@@ -507,6 +595,12 @@ function EditorInstance(
       : [],
   );
 
+  const syncState = createSyncStateBridge({
+    hasUnsentChanges: () => provider?.hasUnsentChanges() ?? false,
+    emit: (detail) => {
+      if (!props.readOnly) window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail }));
+    },
+  });
   const provider = props.readOnly
     ? null
     : yjs.createYjsProvider({
@@ -514,12 +608,19 @@ function EditorInstance(
         awareness,
         noteId: props.noteId,
         appUrl: props.appUrl,
-        onConnectionChange: setConnected,
+        onConnectionChange: (value) => {
+          setConnected(value);
+          syncState.connectionChanged(value);
+        },
         onHistoryIncomplete: () => setHistoryIncomplete(true),
         onError: (error) => {
           if (error.code === "STORAGE_EXHAUSTED") setStorageExhausted(true);
         },
-        onReady: () => setStorageExhausted(false),
+        onReady: () => {
+          if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
+          syncState.ready();
+          syncEnded.ready();
+        },
         // Forwards every presence update to the OnlineSection island via a
         // window event — the editor itself doesn't need to track participants
         // anymore now that the toolbar no longer renders them.
@@ -533,65 +634,88 @@ function EditorInstance(
           onCursorChange: props.onWorkspaceCursorChange,
         },
         onFatal: (error) => {
-          if (fatalPromptOpen) return;
-          fatalPromptOpen = true;
-          const isLocked = error.code === "NOTE_LOCKED";
-          const isMissing = error.code === "NOTE_NOT_FOUND";
-          const isRevoked = error.code === "ACCESS_REVOKED" || error.code === "ACCESS_DENIED";
-          const isSession = error.code === "SESSION_EXPIRED" || error.code === "LOGIN_REQUIRED";
-          const isStorage = error.code === "STORAGE_EXHAUSTED";
-
-          const title = isStorage
-            ? t().storageExhaustedTitle
-            : isLocked
-              ? t().noteLocked
-              : isMissing
-                ? t().noteNotFound
-                : isRevoked
-                  ? t().accessChanged
-                  : isSession
-                    ? t().sessionExpired
-                    : t().connectionClosed;
-
-          const icon = isStorage
-            ? "ti ti-database-off"
-            : isLocked
-              ? "ti ti-lock"
-              : isMissing
-                ? "ti ti-file-x"
-                : isRevoked
-                  ? "ti ti-shield-off"
-                  : isSession
-                    ? "ti ti-login-2"
-                    : "ti ti-alert-triangle";
-
-          const message = isStorage
-            ? t().storageExhaustedDescription
-            : isLocked
-              ? t().noteLockedDescription
-              : isMissing
-                ? t().noteMissingDescription
-                : isRevoked
-                  ? t().accessChangedDescription
-                  : isSession
-                    ? t().sessionExpiredDescription
-                    : t().connectionClosedDescription;
-
-          void prompts
-            .alert(t().reloadNotice({ message }), {
-              title,
-              icon,
-            })
-            .finally(() => {
-              refreshCurrentPath();
-            });
+          syncState.end();
+          syncEnded.end(error);
+        },
+        onUnsentChange: () => {
+          if (!provider?.hasUnsentChanges()) setStorageExhausted(false);
+          syncState.unsentChanged();
+          syncEnded.refresh();
         },
       });
+
+  let disposed = false;
+  let headingLines = extractHeadingLines(ytext.toString());
+  let panelFrame: number | undefined;
+  let lastActiveHeading: string | null | undefined;
+  let presencePending = false;
+  let forcePresence = false;
+  let lastPresence: string | undefined;
+  const emitPanelLocations = () => {
+    panelFrame = undefined;
+    if (disposed) return;
+    const view = editorView();
+    if (view && scrollPort) {
+      const height = Math.max(0, scrollPort.getBoundingClientRect().top + 8 - view.documentTop);
+      const block = view.lineBlockAtHeight(height);
+      const line = view.state.doc.lineAt(block.from).number;
+      const id = headingAtLine(headingLines, line)?.id ?? null;
+      if (id !== lastActiveHeading) {
+        lastActiveHeading = id;
+        window.dispatchEvent(new CustomEvent<ActiveHeadingEventDetail>(ACTIVE_HEADING_EVENT, { detail: { id } }));
+      }
+    }
+    if (presencePending && view) {
+      const detail = presenceLocations(
+        participantCursors(awareness, ytext),
+        (position) => view.state.doc.lineAt(Math.min(position, view.state.doc.length)).number,
+        headingLines,
+      );
+      const serialized = JSON.stringify(Object.entries(detail).sort(([a], [b]) => a.localeCompare(b)));
+      if (forcePresence || serialized !== lastPresence) {
+        lastPresence = serialized;
+        window.dispatchEvent(new CustomEvent(PRESENCE_LOCATIONS_EVENT, { detail }));
+      }
+      presencePending = false;
+      forcePresence = false;
+    }
+    // Without a view yet, the request stays pending; the view's first geometry update sends it.
+  };
+  const schedulePanelLocations = () => {
+    if (disposed) return;
+    if (panelFrame === undefined) panelFrame = requestAnimationFrame(emitPanelLocations);
+  };
+  const schedulePresenceLocations = () => {
+    presencePending = true;
+    schedulePanelLocations();
+  };
+  awareness.on("change", schedulePresenceLocations);
+  addExtension(
+    EditorView.updateListener.of((update) => {
+      if (update.geometryChanged || update.viewportChanged) schedulePanelLocations();
+    }),
+  );
+  // A panel that mounts after the editor asks once for everything it mirrors, the text mode included.
+  const onSyncStateRequest = () => {
+    if (provider) syncState.request();
+    window.dispatchEvent(new CustomEvent(RICH_MODE_CHANGED_EVENT, { detail: { isRich: richMode() } }));
+    lastActiveHeading = undefined;
+    forcePresence = true;
+    schedulePresenceLocations();
+  };
+  const onReconnect = () => provider?.reconnectNow();
+  const onJumpToParticipant = (event: Event) => {
+    const detail = (event as CustomEvent<JumpToParticipantEventDetail>).detail;
+    const view = editorView();
+    if (!view || typeof detail?.userId !== "string") return;
+    const position = participantCursors(awareness, ytext).get(detail.userId)?.position;
+    if (position === null || position === undefined) return;
+    view.dispatch({ effects: EditorView.scrollIntoView(position, { y: "center" }) });
+  };
 
   let themeObserver: MutationObserver | undefined;
   let tocDebounceTimer: ReturnType<typeof setTimeout> | undefined;
   const pendingFocusFrames = new Set<number>();
-  let disposed = false;
   let lastDerivedTitle = props.noteTitle;
 
   // Both `emitToc` and the task-progress emitter share the same debounced
@@ -600,6 +724,8 @@ function EditorInstance(
   // twice would scan a large note twice per debounce tick.)
   const emitDerivedDocState = () => {
     const md = ytext.toString();
+    headingLines = extractHeadingLines(md);
+    schedulePresenceLocations();
     const title = deriveNoteTitle(md);
     if (title !== lastDerivedTitle) {
       lastDerivedTitle = title;
@@ -614,7 +740,8 @@ function EditorInstance(
       });
       window.dispatchEvent(new CustomEvent(NOTE_TITLE_CHANGED_EVENT, { detail: { noteId: props.noteId, title } }));
     }
-    window.dispatchEvent(new CustomEvent(TOC_UPDATE_EVENT, { detail: extractTocFromMarkdown(md) }));
+    // The headings parsed above are the outline too; a second parse would double the cost on long notes.
+    window.dispatchEvent(new CustomEvent(TOC_UPDATE_EVENT, { detail: headingLines.map(({ line: _line, ...item }) => item) }));
     window.dispatchEvent(new CustomEvent(TASKS_UPDATE_EVENT, { detail: extractTaskProgress(md) }));
     window.dispatchEvent(new CustomEvent(ATTACHMENTS_UPDATE_EVENT, { detail: extractAttachmentIds(md) }));
     window.dispatchEvent(new CustomEvent(NAMED_BLOCKS_UPDATE_EVENT, { detail: extractNamedBlockSummaries(md) }));
@@ -625,7 +752,12 @@ function EditorInstance(
     tocDebounceTimer = setTimeout(emitDerivedDocState, TOC_DEBOUNCE_MS);
   };
 
-  const onTextUpdate = () => scheduleDerivedEmit();
+  // Typing only restarts the debounce; the heading index and the people's sections follow with the outline, so a
+  // long note is not parsed again on every keystroke or remote update.
+  const onTextUpdate = () => {
+    scheduleDerivedEmit();
+    printCopy?.changed();
+  };
   ytext.observe(onTextUpdate);
 
   const onToggleRich = () =>
@@ -644,6 +776,14 @@ function EditorInstance(
 
   const exportContent = () =>
     historyIncomplete() ? `> **${t().historyIncompleteTitle}** ${t().historyIncompleteDetail}\n\n${ytext.toString()}` : ytext.toString();
+
+  let printArticle!: HTMLElement;
+  let printCopy: ReturnType<typeof createNotePrintCopy> | undefined;
+  createEffect(() => {
+    historyIncomplete();
+    locale();
+    printCopy?.changed();
+  });
 
   const onCopy = () => {
     void clipboard.copy(exportContent()).then(
@@ -668,30 +808,10 @@ function EditorInstance(
     const view = editorView();
     if (!view) return;
 
-    // Re-extract from the current doc and match by id (slug). This stays
-    // correct even if the user has edited since the TOC was last emitted.
-    const items = extractTocFromMarkdown(ytext.toString());
-    const target = items.find((item) => item.id === detail.id);
-    if (!target) return;
-
-    // Find the heading line by linear scan of the doc — slug ordering matches
-    // document order, so we count how many headings precede our target and
-    // pick the Nth heading-line in the doc.
-    const targetIndex = items.indexOf(target);
-    let seenHeadings = 0;
-    let lineNumber = 1;
-    const totalLines = view.state.doc.lines;
-    for (let i = 1; i <= totalLines; i++) {
-      const text = view.state.doc.line(i).text;
-      if (/^#{1,6}\s+/.test(text)) {
-        if (seenHeadings === targetIndex) {
-          lineNumber = i;
-          break;
-        }
-        seenHeadings++;
-      }
-    }
-    const lineFrom = view.state.doc.line(lineNumber).from;
+    // Against the document as it is now: the cached index may lag an edit by the debounce.
+    const target = extractHeadingLines(view.state.doc.toString()).find((heading) => heading.id === detail.id);
+    if (!target || target.line > view.state.doc.lines) return;
+    const lineFrom = view.state.doc.line(target.line).from;
     view.dispatch({ selection: { anchor: lineFrom }, scrollIntoView: true });
   };
 
@@ -793,6 +913,7 @@ function EditorInstance(
   };
 
   const onPaste = (event: ClipboardEvent) => {
+    if (syncEnded.ended()) return;
     const fileList = Array.from(event.clipboardData?.files ?? []);
     if (fileList.length === 0) return;
     event.preventDefault();
@@ -800,6 +921,7 @@ function EditorInstance(
   };
 
   onMount(() => {
+    printCopy = createNotePrintCopy(printArticle, { notebookId: props.notebookId, noteId: props.noteId, markdown: exportContent, locale });
     writeSettings(props.notebookId, { lastNoteId: props.noteId });
     provider?.connect();
     const opensHeading = linkedHeadingJump.open();
@@ -820,6 +942,11 @@ function EditorInstance(
     // First emit so the panel reflects the current doc immediately on mount,
     // not only after the first keystroke.
     emitDerivedDocState();
+    schedulePanelLocations();
+    scrollPort?.addEventListener("scroll", schedulePanelLocations, { passive: true });
+    window.addEventListener(SYNC_STATE_REQUEST_EVENT, onSyncStateRequest);
+    window.addEventListener(RECONNECT_EVENT, onReconnect);
+    window.addEventListener(JUMP_TO_PARTICIPANT_EVENT, onJumpToParticipant);
 
     // Showing or hiding the navigation rewraps the note; the same text stays at the top.
     let restoreReadingPosition: (() => void) | null = null;
@@ -867,6 +994,7 @@ function EditorInstance(
     window.addEventListener(EDITOR_DOWNLOAD_EVENT, onDownload);
     window.addEventListener(EDITOR_PDF_EVENT, onPdf);
     window.addEventListener(EDITOR_INSERT_ATTACHMENT_EVENT, onInsertAttachment);
+    window.addEventListener(DETAIL_PANEL_STATE_EVENT, onPanelState);
 
     themeObserver = new MutationObserver(() => {
       setIsDark(document.documentElement.classList.contains("dark"));
@@ -880,6 +1008,14 @@ function EditorInstance(
 
   onCleanup(() => {
     disposed = true;
+    printCopy?.dispose();
+    syncState.dispose();
+    if (panelFrame !== undefined) cancelAnimationFrame(panelFrame);
+    awareness.off("change", schedulePresenceLocations);
+    scrollPort?.removeEventListener("scroll", schedulePanelLocations);
+    window.removeEventListener(SYNC_STATE_REQUEST_EVENT, onSyncStateRequest);
+    window.removeEventListener(RECONNECT_EVENT, onReconnect);
+    window.removeEventListener(JUMP_TO_PARTICIPANT_EVENT, onJumpToParticipant);
     for (const frame of pendingFocusFrames) cancelAnimationFrame(frame);
     pendingFocusFrames.clear();
     if (cursorIdleTimer) {
@@ -896,6 +1032,7 @@ function EditorInstance(
     window.removeEventListener(EDITOR_DOWNLOAD_EVENT, onDownload);
     window.removeEventListener(EDITOR_PDF_EVENT, onPdf);
     window.removeEventListener(EDITOR_INSERT_ATTACHMENT_EVENT, onInsertAttachment);
+    window.removeEventListener(DETAIL_PANEL_STATE_EVENT, onPanelState);
     themeObserver?.disconnect();
     provider?.dispose();
     undoManager?.destroy();
@@ -905,7 +1042,9 @@ function EditorInstance(
 
   return (
     <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
-      <Show when={storageExhausted()}>
+      <article ref={printArticle} class="notebook-book-content notebook-note-print" />
+      {/* Once retries stop, the sync-ended bar owns the message; this notice promises retries. */}
+      <Show when={storageExhausted() && !syncEnded.ended()}>
         <NoticeCard role="alert" tone="danger" title={t().storageExhaustedTitle} detail={t().storageExhaustedDetail} />
       </Show>
       <Show when={historyIncomplete()}>
@@ -940,28 +1079,47 @@ function EditorInstance(
         onPaste={props.readOnly ? undefined : onPaste}
         role="textbox"
         tabIndex={-1}
-        aria-label={props.readOnly ? t().readonlySurface : t().editorSurface}
+        aria-label={props.readOnly || syncEnded.ended() ? t().readonlySurface : t().editorSurface}
       >
         <div ref={editorRef} />
       </ScrollArea>
       {/* Files dropped anywhere on the note's page upload and land at the cursor. */}
-      <FileDropTarget label={t().dropToInsert} disabled={props.readOnly} onDrop={(fileList) => void uploadFilesSequentially(fileList)} />
+      <FileDropTarget
+        label={t().dropToInsert}
+        disabled={props.readOnly || !!syncEnded.ended()}
+        onDrop={(fileList) => void uploadFilesSequentially(fileList)}
+      />
       <Show when={tabKeys.indents()}>
         <p id={tabKeys.hintId} class="sr-only">
           {t().tabIndentHint}
         </p>
       </Show>
       <Show when={!props.readOnly}>
-        <EditorToolbar
-          connected={connected()}
-          editorView={editorView()}
-          notebookId={props.notebookId}
-          noteId={props.noteId}
-          initialPanelOpen={props.initialPanelOpen}
-          format={format()}
-          onUndo={() => undoManager?.undo()}
-          onRedo={() => undoManager?.redo()}
-        />
+        <Show
+          when={syncEnded.ended()}
+          fallback={
+            <EditorToolbar
+              connected={connected()}
+              editorView={editorView()}
+              notebookId={props.notebookId}
+              noteId={props.noteId}
+              initialPanelOpen={panelOpen()}
+              format={format()}
+              onUndo={() => undoManager?.undo()}
+              onRedo={() => undoManager?.redo()}
+            />
+          }
+        >
+          {(ended) => (
+            <SyncEndedBar
+              notebookId={props.notebookId}
+              ended={ended()}
+              sync={syncEnded}
+              markdown={() => ytext.toString()}
+              noteHref={() => window.location.pathname + window.location.search}
+            />
+          )}
+        </Show>
       </Show>
     </div>
   );

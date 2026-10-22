@@ -107,6 +107,8 @@ All commands support the global options `--json`, `--profile`, `--server`, `--to
 
 ## JSON contracts
 
+Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+
 Treat JSON fields as the contract and tolerate additional fields.
 
 - `ls` without a book and `search` return `{ data, pagination }`. `ls <book>` returns `{ book: { id, name }, data: Contact[], pagination }`.

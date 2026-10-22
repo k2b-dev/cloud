@@ -1,117 +1,100 @@
-import { arg, type CloudCliContext, command, confirmFlag, flag } from "@k2b/cloud/cli";
-import type { MetricQueryPoint, PulseCurrentState, PulseQueryCompileResult, PulseRecordedEvent, PulseSavedQuery } from "../contracts";
-import { listSavedQueries, requireRestArg, resolveBaseFromCommand, resolveSavedQueryId } from "./context";
-import { baseFlag, QUERY_INPUT } from "./flags";
-import { eventRows, stateRows } from "./inventory";
-import { savedQueryRows } from "./rows";
-import { jsonRequest, printJsonOrTable, printMessage, printStructured, readApi, readTextInput } from "./shared";
-import type { MessageResult } from "./types";
+import { arg, type CloudCliText, command, confirmFlag, flag, localizeCloudCliText, paginationFlags } from "@k2b/cloud/cli";
+import type { SavedQuery } from "../service/saved-queries";
+import { validateSqlInput } from "../sql-params";
+import { requireDefaultBaseRef } from "./context";
+import { baseFlag } from "./flags";
+import { jsonRequest, printJsonOrTable, printMessage, printStructured, queryString, readApi } from "./shared";
+import { parseSqlParameters, readSqlInput, sqlInputFlags } from "./sql";
 
-type QueryRunResult = {
-  compiled: unknown;
-  points: MetricQueryPoint[];
-  events: PulseRecordedEvent[];
-  states: PulseCurrentState[];
-};
-
-const runQueryText = (ctx: CloudCliContext, baseId: string, query: string): Promise<QueryRunResult> =>
-  readApi<QueryRunResult>(ctx, "/query/metric-text", jsonRequest("POST", { baseId, query }));
-
-const compileQueryText = (ctx: CloudCliContext, baseId: string, query: string): Promise<PulseQueryCompileResult> =>
-  readApi<PulseQueryCompileResult>(ctx, "/query/compile-text", jsonRequest("POST", { baseId, query }));
-
-export const queryCommands = [
-  command("query compile", {
-    summary: "Compile a Pulse query",
-    flags: { ...baseFlag, query: QUERY_INPUT },
-    args: { args: arg.rest({ valueLabel: "base" }) },
-    async run({ ctx, args, flags }) {
-      const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
-      const query = await readTextInput(flags.query, "query", 2000);
-      const result = await compileQueryText(ctx, base.id, query);
-      if (printStructured(ctx, result)) return;
-      if (result.ok) ctx.print("Query is valid.");
-      else {
-        for (const diagnostic of result.diagnostics) ctx.print(`${diagnostic.severity}: ${diagnostic.message}`);
-      }
-    },
-  }),
-  command("query run", {
-    summary: "Run a Pulse query",
-    flags: { ...baseFlag, query: QUERY_INPUT },
-    args: { args: arg.rest({ valueLabel: "base" }) },
-    async run({ ctx, args, flags }) {
-      const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
-      const query = await readTextInput(flags.query, "query", 2000);
-      const result = await runQueryText(ctx, base.id, query);
-      if (printStructured(ctx, result)) return;
-      if (result.points.length) {
-        printJsonOrTable(
+export const createQueryCommands = (locale?: string) => {
+  const t = (text: CloudCliText) => localizeCloudCliText(locale, text);
+  return [
+    command("queries list", {
+      summary: "List saved SQL queries in a base",
+      flags: { ...baseFlag, ...paginationFlags({ defaultPerPage: 25, maxPerPage: 1000 }) },
+      async run({ ctx, flags }) {
+        const base = flags.base ?? (await requireDefaultBaseRef(ctx));
+        const page = flags.page ?? 1;
+        const perPage = flags.perPage ?? 25;
+        const result = await readApi<{ items: SavedQuery[]; total: number; nextOffset: number | null }>(
           ctx,
-          result,
-          result.points.map((point) => ({ bucket: point.bucket, value: point.value ?? "" })),
-          [{ key: "bucket" }, { key: "value" }],
+          `/bases/${encodeURIComponent(base)}/queries${queryString({ limit: perPage, offset: (page - 1) * perPage })}`,
         );
-      } else if (result.events.length) {
-        printJsonOrTable(ctx, result, eventRows(result.events), [{ key: "kind" }, { key: "value" }, { key: "resource" }, { key: "ts" }]);
-      } else if (result.states.length) {
-        printJsonOrTable(ctx, result, stateRows(result.states), [
-          { key: "key" },
-          { key: "value" },
-          { key: "resource" },
-          { key: "updatedAt" },
-        ]);
-      } else {
-        ctx.print("No rows.");
-      }
-    },
-  }),
-  command("query list", {
-    summary: "List saved queries",
-    flags: baseFlag,
-    args: { args: arg.rest({ valueLabel: "base" }) },
-    async run({ ctx, args }) {
-      const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
-      const queries = await listSavedQueries(ctx, base.id);
-      printJsonOrTable(ctx, queries, savedQueryRows(queries), [{ key: "id" }, { key: "name" }, { key: "query" }, { key: "updatedAt" }]);
-    },
-  }),
-  command("query save", {
-    summary: "Save a Pulse query",
-    flags: {
-      ...baseFlag,
-      name: flag.string({ required: true, description: "Saved query name" }),
-      description: flag.string({ description: "Saved query description" }),
-      query: QUERY_INPUT,
-    },
-    args: { args: arg.rest({ valueLabel: "base" }) },
-    async run({ ctx, args, flags }) {
-      const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
-      const query = await readTextInput(flags.query, "query", 2000);
-      const compile = await compileQueryText(ctx, base.id, query);
-      if (!compile.ok) throw new Error(`Query is invalid: ${compile.diagnostics.map((item) => item.message).join("; ")}`);
-      const saved = await readApi<PulseSavedQuery>(
-        ctx,
-        `/bases/${encodeURIComponent(base.id)}/saved-queries`,
-        jsonRequest("POST", { name: flags.name, description: flags.description ?? null, query }),
-      );
-      if (!printStructured(ctx, saved)) ctx.print(`Saved query ${saved.name} (${saved.id}).`);
-    },
-  }),
-  command("query delete", {
-    summary: "Delete a saved query",
-    flags: { ...baseFlag, yes: confirmFlag("Delete this saved query") },
-    args: { args: arg.rest({ valueLabel: "base query", required: true }) },
-    async run({ ctx, args, flags }) {
-      if (!flags.yes) throw new Error("Refusing to delete without --yes.");
-      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, 1);
-      const queryId = await resolveSavedQueryId(ctx, base.id, requireRestArg(rest, 0, "saved query"));
-      const result = await readApi<MessageResult>(
-        ctx,
-        `/bases/${encodeURIComponent(base.id)}/saved-queries/${encodeURIComponent(queryId)}`,
-        jsonRequest("DELETE"),
-      );
-      printMessage(ctx, result, result.message);
-    },
-  }),
-];
+        printJsonOrTable(ctx, result, result.items, [{ key: "id" }, { key: "name" }, { key: "revision" }, { key: "updatedAt" }]);
+      },
+    }),
+    command("queries get", {
+      summary: "Read a saved SQL query",
+      args: { query: arg.required({ valueLabel: "query-id" }) },
+      flags: baseFlag,
+      async run({ ctx, args, flags }) {
+        const base = flags.base ?? (await requireDefaultBaseRef(ctx));
+        const result = await readApi<SavedQuery>(ctx, `/bases/${encodeURIComponent(base)}/queries/${encodeURIComponent(args.query)}`);
+        if (!printStructured(ctx, result)) {
+          ctx.print(`${result.name} (${result.id}, revision ${result.revision})`);
+          ctx.print(result.sql);
+        }
+      },
+    }),
+    command("queries save", {
+      summary: "Create or update a saved SQL query",
+      description: "Updating requires --query and --expected-revision. Reuse --idempotency-key after a failed request.",
+      args: { sql: arg.optional({ valueLabel: "sql-or--" }) },
+      flags: {
+        ...baseFlag,
+        ...sqlInputFlags,
+        pin: flag.boolean({
+          description: t({
+            en: "Show this query on the overview (at most four)",
+            de: "Diese Abfrage auf der Übersicht anzeigen (höchstens vier)",
+          }),
+        }),
+        unpin: flag.boolean({ description: t({ en: "Remove this query from the overview", de: "Diese Abfrage von der Übersicht lösen" }) }),
+        name: flag.string({ required: true, description: "Saved query name" }),
+        query: flag.string({ description: "Query ID to update" }),
+        expectedRevision: flag.int({ name: "expected-revision", min: 1, description: "Revision returned by queries get" }),
+        idempotencyKey: flag.string({ name: "idempotency-key", description: "Stable retry key for this save" }),
+      },
+      async run({ ctx, args, flags }) {
+        if (Boolean(flags.query) !== (flags.expectedRevision !== undefined))
+          throw new Error("Use --query and --expected-revision together.");
+        if (flags.pin && flags.unpin)
+          throw new Error(t({ en: "Use either --pin or --unpin.", de: "Verwende entweder --pin oder --unpin." }));
+        const base = flags.base ?? (await requireDefaultBaseRef(ctx));
+        const sql = await readSqlInput(args.sql, flags.file);
+        const params = parseSqlParameters(flags.param);
+        validateSqlInput(sql, params);
+        const path = `/bases/${encodeURIComponent(base)}/queries${flags.query ? `/${encodeURIComponent(flags.query)}` : ""}`;
+        const request = jsonRequest(flags.query ? "PATCH" : "POST", {
+          pinned: flags.pin ? true : flags.unpin ? false : undefined,
+          name: flags.name,
+          sql,
+          params,
+          expectedRevision: flags.expectedRevision,
+        });
+        if (flags.idempotencyKey) request.headers = { ...request.headers, "Idempotency-Key": flags.idempotencyKey };
+        const result = await readApi<SavedQuery>(ctx, path, request);
+        if (!printStructured(ctx, result)) ctx.print(`Saved ${result.name} (${result.id}, revision ${result.revision}).`);
+      },
+    }),
+    command("queries delete", {
+      summary: "Delete a saved SQL query",
+      args: { query: arg.required({ valueLabel: "query-id" }) },
+      flags: {
+        ...baseFlag,
+        expectedRevision: flag.int({ name: "expected-revision", required: true, min: 1, description: "Revision returned by queries get" }),
+        yes: confirmFlag("Delete this saved query"),
+      },
+      async run({ ctx, args, flags }) {
+        if (!flags.yes) throw new Error("Refusing to delete without --yes.");
+        const base = flags.base ?? (await requireDefaultBaseRef(ctx));
+        const result = await readApi<{ deleted: boolean }>(
+          ctx,
+          `/bases/${encodeURIComponent(base)}/queries/${encodeURIComponent(args.query)}`,
+          jsonRequest("DELETE", { expectedRevision: flags.expectedRevision }),
+        );
+        printMessage(ctx, result, "Saved query deleted.");
+      },
+    }),
+  ];
+};

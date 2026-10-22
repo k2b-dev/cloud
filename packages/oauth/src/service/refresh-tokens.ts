@@ -3,7 +3,7 @@ import { sql } from "bun";
 import type { OAuthClient, OAuthScope } from "@/contracts";
 
 type RefreshTokenStatus = "active" | "issuing" | "rotated" | "revoked" | "reused";
-type RefreshTokenFamilyStatus = "active" | "revoked";
+type RefreshTokenFamilyStatus = "active" | "reserved" | "revoked";
 
 type DbRefreshTokenGrant = {
   id: string;
@@ -51,11 +51,9 @@ export class SafeRefreshIssuanceRejectionError extends Error {}
 
 const TOKEN_PREFIX = "cld_rt";
 const TOKEN_PATTERN = /^cld_rt_([0-9a-f]{24})_([0-9a-f]{64})$/i;
-const REFRESH_TOKEN_LIFETIME_DAYS = 90;
+export const DEFAULT_LOGIN_LIFETIME_SECONDS = 90 * 24 * 60 * 60;
 
 export const shouldIssueRefreshToken = (scopes: OAuthScope[]): boolean => scopes.includes("offline_access");
-
-const nowPlusDays = (days: number): Date => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 
 const randomHex = (bytes: number): string => {
   const values = crypto.getRandomValues(new Uint8Array(bytes));
@@ -109,35 +107,44 @@ const insertRefreshToken = async (params: {
   throw new Error("Failed to generate unique refresh token prefix");
 };
 
-export const create = async (params: {
+export const reserve = async (params: {
   userId: string;
+  authEpoch: number;
   client: OAuthClient;
   scopes: OAuthScope[];
   audiences?: string[];
   resource?: string | null;
   label?: string | null;
+  expiresAt: Date;
 }): Promise<{ refreshToken: string; refreshTokenExpiresAt: string; familyId: string }> => {
-  const expiresAt = nowPlusDays(REFRESH_TOKEN_LIFETIME_DAYS);
+  const { expiresAt } = params;
 
   return sql.begin(async (tx) => {
+    // A reservation is not access yet: Core clears notified_at when it activates the family.
     const [family] = await tx<{ id: string }[]>`
       INSERT INTO oauth.refresh_token_families (
         client_id,
         user_id,
+        auth_epoch,
+        status,
         scopes,
         audiences,
         resource,
         label,
-        expires_at
+        expires_at,
+        notified_at
       )
       VALUES (
         ${params.client.clientId},
         ${params.userId}::uuid,
+        ${params.authEpoch},
+        'reserved',
         ${toPgTextArray(params.scopes)}::text[],
         ${toPgTextArray(params.audiences ?? params.client.audiences)}::text[],
         ${params.resource ?? null},
         ${params.label ?? null},
-        ${expiresAt}
+        ${expiresAt},
+        now()
       )
       RETURNING id
     `;
@@ -158,14 +165,14 @@ export const create = async (params: {
   });
 };
 
-const revokeFamily = async (familyId: string, reason: string): Promise<void> => {
+export const revokeFamily = async (familyId: string, reason: string): Promise<void> => {
   await sql`
     UPDATE oauth.refresh_token_families
     SET status = 'revoked',
       revoked_at = COALESCE(revoked_at, now()),
       revoked_reason = ${reason}
     WHERE id = ${familyId}::uuid
-      AND status = 'active'
+      AND status IN ('active', 'reserved')
   `;
   await sql`
     UPDATE oauth.refresh_tokens
@@ -186,6 +193,7 @@ export const rotate = async (
     scopes: OAuthScope[];
     audiences: string[];
     resource: string | null;
+    familyExpiresAt: Date;
     authorityGrant: { kind: "refresh_token"; tokenId: string; nonce: string };
   }) => Promise<void>,
 ): Promise<RefreshTokenRotationResult> => {
@@ -299,6 +307,7 @@ export const rotate = async (
       scopes: reserved.scopes,
       audiences: reserved.audiences,
       resource: reserved.resource,
+      familyExpiresAt: reserved.familyExpiresAt,
       authorityGrant: reserved.authorityGrant,
     });
   } catch (error) {
@@ -402,6 +411,30 @@ export const revoke = async (refreshToken: string, clientId?: string): Promise<v
 
 /** Remove grants that can no longer authorize or detect a relevant replay. */
 export const cleanup = async (): Promise<number> => {
+  const reservations = await sql`
+    DELETE FROM oauth.refresh_token_families
+    WHERE id IN (
+      SELECT id FROM oauth.refresh_token_families
+      WHERE status = 'reserved' AND created_at < now() - INTERVAL '5 minutes'
+      LIMIT 1000 FOR UPDATE SKIP LOCKED
+    )
+  `;
+  await sql`
+    WITH stale AS (
+      SELECT f.id FROM oauth.refresh_token_families f
+      JOIN auth.users u ON u.id = f.user_id
+      WHERE f.status = 'active' AND f.auth_epoch IS DISTINCT FROM u.auth_epoch
+      LIMIT 1000 FOR UPDATE OF f SKIP LOCKED
+    ), revoked AS (
+      UPDATE oauth.refresh_token_families f
+      SET status = 'revoked', revoked_at = COALESCE(f.revoked_at, now()), revoked_reason = 'auth_epoch_changed'
+      FROM stale WHERE f.id = stale.id
+      RETURNING f.id
+    )
+    UPDATE oauth.refresh_tokens token
+    SET status = 'revoked', revoked_at = COALESCE(token.revoked_at, now())
+    FROM revoked WHERE token.family_id = revoked.id AND token.status IN ('active', 'issuing')
+  `;
   const stranded = await sql<{ family_id: string }[]>`
     UPDATE oauth.refresh_tokens
     SET status = 'revoked', revoked_at = COALESCE(revoked_at, now())
@@ -420,5 +453,5 @@ export const cleanup = async (): Promise<number> => {
     WHERE expires_at < now()
       OR (status = 'revoked' AND revoked_at < now() - INTERVAL '1 day')
   `;
-  return result.count;
+  return result.count + reservations.count;
 };

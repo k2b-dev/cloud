@@ -10,7 +10,8 @@
 @media (prefers-reduced-motion: reduce) { .k2b-ui .k2b-panel-dialog-frame.spaces-item-create-dialog { transition: none; } }
 
 .k2b-ui .spaces-overview-workspace { background: var(--ui-surface); }
-.k2b-ui .spaces-overview-main { box-shadow: none; padding: clamp(1rem, 3vw, 2.5rem); overflow-y: auto; background: var(--ui-surface); }
+/* The head row sits above, so the list starts right below it. */
+.k2b-ui .spaces-overview-main { box-shadow: none; padding: .25rem clamp(1rem, 3vw, 2.5rem) clamp(1rem, 3vw, 2.5rem); overflow-y: auto; background: var(--ui-surface); }
 /* The overview is deliberately not a Space: one page title, one scope chip,
    one list. Spaces live in the sidebar and open their own workspace. */
 .spaces-overview-page { display: flex; min-width: 0; flex-direction: column; gap: 1rem; }
@@ -19,38 +20,39 @@
 /* Unlayered like the shared rule it overrides: the segmented control is full-width by default. */
 .k2b-ui .spaces-overview-views { width: auto; max-width: 100%; overflow-x: auto; }
 .k2b-ui .spaces-overview-views .k2b-segmented-control__option { flex: 0 0 auto; white-space: nowrap; }
-.k2b-ui .spaces-overview-list { padding: .25rem .5rem; }
-.spaces-overview-count[data-zero="true"] { color: var(--color-zinc-500); font-weight: 400; }
+.spaces-overview-count[data-zero="true"] { color: var(--ui-text-dimmed); font-weight: 400; }
 .spaces-overview-space[data-pinned="true"] .ti-flag-off { color: var(--color-orange-600); }
 .dark .spaces-overview-space[data-pinned="true"] .ti-flag-off { color: var(--color-orange-400); }
 .spaces-overview-space-dot, .spaces-overview-space-mark { display: inline-block; width: .5rem; height: .5rem; flex: 0 0 auto; border-radius: 999px; }
-.spaces-overview-tab-count { color: var(--color-zinc-500); font-variant-numeric: tabular-nums; }
+.spaces-overview-tab-count { color: var(--ui-text-dimmed); font-variant-numeric: tabular-nums; }
 .spaces-overview-work-list { display: flex; flex-direction: column; }
 .spaces-overview-work-row { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: .75rem; padding: .75rem .5rem; color: inherit; text-decoration: none; border-radius: var(--ui-radius-control); transition: background-color 120ms ease; }
 .spaces-overview-work-row:hover { background: var(--ui-hover); }
-.spaces-overview-work-row:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px; }
+.spaces-overview-work-row:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
 .spaces-overview-work-row > .spaces-overview-priority { grid-column: 3; grid-row: 1; }
 .spaces-overview-work-row > time { grid-column: 4; grid-row: 1; }
 .spaces-overview-work-row > .ti-chevron-right { grid-column: -2; grid-row: 1; }
 .spaces-overview-work-copy { display: flex; min-width: 0; flex-direction: column; gap: .125rem; }
 .spaces-overview-work-copy strong { overflow: hidden; color: var(--color-zinc-900); font-size: .875rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.spaces-overview-work-copy span, .spaces-overview-work-row time { color: var(--color-zinc-500); font-size: .75rem; white-space: nowrap; }
+.spaces-overview-work-copy span, .spaces-overview-work-row time { color: var(--ui-text-dimmed); font-size: .75rem; white-space: nowrap; }
 .spaces-overview-work-row time { font-variant-numeric: tabular-nums; }
-.spaces-overview-priority { padding: .15rem .4rem; border-radius: 999px; background: var(--ui-surface-muted); color: var(--color-zinc-600); font-size: .625rem; text-transform: capitalize; }
+.spaces-overview-priority { padding: .15rem .4rem; border-radius: 999px; background: var(--ui-surface-muted); color: var(--ui-text-dimmed); font-size: .625rem; text-transform: capitalize; }
 .spaces-overview-priority.is-urgent { color: var(--color-red-600); background: color-mix(in srgb, var(--color-red-500) 10%, transparent); }
 .spaces-overview-priority.is-high { color: var(--color-orange-600); background: color-mix(in srgb, var(--color-orange-500) 10%, transparent); }
 .spaces-overview-activity .k2b-detail-panel { min-height: 0; }
 .spaces-overview-activity-list { display: flex; flex-direction: column; gap: .625rem; margin: 0; padding: 0; list-style: none; }
 .spaces-overview-activity-item { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .625rem; }
-.k2b-ui .spaces-overview-activity-paper { position: relative; display: flex; min-width: 0; flex-direction: column; gap: .1875rem; padding: .625rem 2.125rem .625rem .75rem; color: inherit; text-decoration: none; }
-.spaces-overview-activity-icon { position: absolute; top: .6875rem; right: .75rem; font-size: .875rem; }
-.spaces-overview-activity-meta { display: flex; min-width: 0; align-items: baseline; gap: .375rem; color: var(--color-zinc-500); font-size: .6875rem; line-height: 1rem; }
+/* An entry is a plain row on the Detail surface: space, a hover fill, no frame. */
+.spaces-overview-activity-row { position: relative; display: flex; min-width: 0; flex-direction: column; gap: .1875rem; margin: -.375rem -.5rem; padding: .375rem 2rem .375rem .5rem; color: inherit; text-decoration: none; border-radius: var(--k2b-radius-control); transition: background-color 120ms ease-out; }
+.spaces-overview-activity-row:hover { background: var(--k2b-hover); }
+.spaces-overview-activity-row:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 0; }
+.spaces-overview-activity-icon { position: absolute; top: .5rem; right: .5rem; font-size: .875rem; }
+.spaces-overview-activity-meta { display: flex; min-width: 0; align-items: baseline; gap: .375rem; color: var(--ui-text-dimmed); font-size: .6875rem; line-height: 1rem; }
 .spaces-overview-activity-meta strong { min-width: 0; overflow: hidden; color: var(--color-zinc-900); font-size: .75rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .spaces-overview-activity-meta time { white-space: nowrap; }
-.spaces-overview-activity-description { color: var(--color-zinc-700); font-size: .75rem; line-height: 1.125rem; overflow-wrap: anywhere; }
+.spaces-overview-activity-description { color: var(--ui-text-secondary); font-size: .75rem; line-height: 1.125rem; overflow-wrap: anywhere; }
 .k2b-ui .spaces-overview-mobile-activity { display: none !important; }
 .dark .spaces-overview-work-copy strong, .dark .spaces-overview-activity-meta strong { color: var(--color-zinc-50); }
-.dark .spaces-overview-activity-description { color: var(--color-zinc-300); }
 @media (max-width: 47.999rem) {
   .k2b-ui .spaces-overview-workspace .spaces-overview-main { display: flex !important; }
   /* The activity column stays open but hidden here, so Main drops the space it would leave for a phone sheet. */
@@ -85,8 +87,16 @@
 .k2b-ui .spaces-dependency__remove { flex: none; margin-inline-end: -.25rem; color: var(--k2b-text-muted); }
 .k2b-ui .spaces-dependency__remove:not(:disabled):hover { color: var(--k2b-danger-text); background: transparent; }
 @media (any-hover: hover) {
-  .k2b-ui .spaces-dependency__remove { opacity: 0; transition: opacity 120ms ease-out; }
-  .k2b-ui .spaces-dependency:hover .spaces-dependency__remove, .k2b-ui .spaces-dependency:focus-within .spaces-dependency__remove { opacity: 1; }
+  :where(html:not([data-k2b-input="touch"])) .k2b-ui .spaces-dependency__remove {
+    opacity: 0; transition: opacity 120ms ease-out;
+  }
+}
+:where(html[data-k2b-input="trackpad"]) .k2b-ui .spaces-dependency__remove {
+  opacity: 0; transition: opacity 120ms ease-out;
+}
+
+.k2b-ui .spaces-dependency:hover .spaces-dependency__remove, .k2b-ui .spaces-dependency:focus-within .spaces-dependency__remove {
+  opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
   .spaces-dependency__link::before, .k2b-ui .spaces-dependency__remove { transition: none; }
@@ -95,10 +105,6 @@
 /* Readers see a priority as its dot and label, like the editable row. */
 .spaces-priority-value { display: inline-flex; align-items: center; gap: .5rem; }
 .spaces-priority-value__dot { width: .5rem; height: .5rem; flex: none; border-radius: 999px; }
-
-/* Who is working on a task: a ring behind a small gap, outside the avatar, so it takes no space and nothing moves. The gap
-   is transparent, so it matches any card or panel background, hovered or selected. */
-.k2b-ui .k2b-avatar.spaces-claim-ring { outline: 2px solid var(--k2b-success-text); outline-offset: 2px; }
 
 /* Mobile app, "My tasks": one column of flat rows that spacing alone separates. A task leads with its 44 px check
    button; an event keeps the same slot for its icon, so every title starts at the same edge. */
@@ -119,3 +125,60 @@
 .spaces-pwa__when[data-overdue] { color: var(--k2b-danger-text); }
 .spaces-pwa__dot { width: .5rem; height: .5rem; flex: none; border-radius: 999px; }
 .spaces-pwa__more { margin: 0; color: var(--k2b-text-muted); font-size: .875rem; line-height: 1.25rem; text-align: center; }
+
+/* A Kanban card's footer lets the pointer through to the card link; only the reaction chips and "Add reaction" catch it.
+   "+n" stays text the pointer passes, so a click on it opens the item like the rest of the card. */
+.k2b-ui .spaces-card-reactions :is(.k2b-reaction-bar__chip, .k2b-reaction-bar__add) { pointer-events: auto; }
+
+/* Kanban on the workspace's surface: no column trays, groups apart by space and a clear head (dot, name, count).
+   A card is an object you drag and open, so it may be a rounded surface (exception 1 of the white surface): calm
+   neutral, or tinted 6 % (10 % dark) by its first tag, whose name it always shows. State changes only paint. */
+.spaces-kanban-columns { --spaces-kanban-gap: 1rem; gap: var(--spaces-kanban-gap); }
+.spaces-kanban-column { width: 17.5rem; }
+.k2b-ui .spaces-kanban-card {
+  /* KanbanBoard sets the first tag's colour inline on a tinted card. */
+  --spaces-card-tag: transparent;
+  --spaces-card-fill: color-mix(in srgb, var(--k2b-text) 4%, var(--k2b-surface));
+  --spaces-card-fill-hover: color-mix(in srgb, var(--k2b-text) 7%, var(--k2b-surface));
+  --spaces-card-edge: transparent;
+  background: var(--spaces-card-fill);
+  box-shadow: inset 0 0 0 1px var(--spaces-card-edge);
+  transition: background-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-tint] {
+  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 6%, var(--k2b-surface));
+  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-surface));
+  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 12%, transparent);
+}
+.dark .k2b-ui .spaces-kanban-card,
+.k2b-ui.dark .spaces-kanban-card {
+  --spaces-card-fill: color-mix(in srgb, var(--k2b-text) 5%, var(--k2b-surface));
+  --spaces-card-fill-hover: color-mix(in srgb, var(--k2b-text) 8%, var(--k2b-surface));
+}
+.dark .k2b-ui .spaces-kanban-card[data-spaces-kanban-card-tint],
+.k2b-ui.dark .spaces-kanban-card[data-spaces-kanban-card-tint] {
+  --spaces-card-fill: color-mix(in srgb, var(--spaces-card-tag) 10%, var(--k2b-surface));
+  --spaces-card-fill-hover: color-mix(in srgb, var(--spaces-card-tag) 14%, var(--k2b-surface));
+  --spaces-card-edge: color-mix(in srgb, var(--spaces-card-tag) 16%, transparent);
+}
+.k2b-ui .spaces-kanban-card:hover { background: var(--spaces-card-fill-hover); }
+.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="selected"] {
+  background: var(--spaces-card-fill-hover);
+  box-shadow: inset 0 0 0 1.5px var(--ui-app-accent-border);
+}
+.k2b-ui .spaces-kanban-card[data-spaces-kanban-card-state="held"] { box-shadow: inset 0 0 0 1.5px var(--ui-app-accent-border); }
+.k2b-ui .spaces-kanban-card-title { color: var(--k2b-text); }
+.k2b-ui .spaces-kanban-card-status { background: color-mix(in srgb, var(--k2b-text) 6%, transparent); }
+@media (prefers-reduced-motion: reduce) { .k2b-ui :is(.spaces-kanban-card, .spaces-overview-activity-row) { transition: none; } }
+/* Phone: one column at a time with a look at the next, so it is clear the board goes on. */
+@media not all and (min-width: 48rem) {
+  .spaces-kanban-columns { --spaces-kanban-gap: 0.75rem; }
+  .spaces-kanban-column { width: calc(100vw - 4.5rem); max-width: 20rem; }
+}
+
+/* The head row of a Space. The people row needs the wide head; below an 80 rem workspace it moves under "…"
+   (the menu lists the people then). Decided by the workspace's width from the first frame. */
+[data-spaces-people-row] { display: none; }
+@container k2b-app-area (min-width: 80rem) { [data-spaces-people-row] { display: flex; align-items: center; margin-inline-end: .25rem; } }
+.spaces-head-search { width: 13rem; }
+@media not all and (min-width: 48rem) { .spaces-head-search { width: 10rem; } }

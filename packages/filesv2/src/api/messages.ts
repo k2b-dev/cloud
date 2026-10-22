@@ -1,4 +1,8 @@
 const messages: Record<string, [string, string]> = {
+  configuration_unreadable: [
+    "Files cannot read its saved configuration. Enter the Filegate token again to replace it, or reset the configuration.",
+    "Dateien kann die gespeicherte Konfiguration nicht lesen. Gib den Filegate-Token erneut ein, um sie zu ersetzen, oder setze die Konfiguration zurück.",
+  ],
   share_password_required: [
     "Enter the share password to continue. If your access expired, reload this page.",
     "Gib das Freigabe-Passwort ein. Wenn dein Zugriff abgelaufen ist, lade diese Seite neu.",
@@ -97,6 +101,14 @@ const messages: Record<string, [string, string]> = {
     "Document editing is not configured for this Cloud.",
     "Die Dokumentbearbeitung ist in dieser Cloud nicht konfiguriert.",
   ],
+  activity_scope_missing: [
+    "Files could not complete this operation. Try again.",
+    "Dateien konnte diese Aktion nicht abschließen. Versuche es erneut.",
+  ],
+  activity_scope_mismatch: [
+    "Files could not complete this operation. Try again.",
+    "Dateien konnte diese Aktion nicht abschließen. Versuche es erneut.",
+  ],
   internal: [
     "Files hit an unexpected error. The server log has the details.",
     "In Files ist ein unerwarteter Fehler aufgetreten. Details stehen im Server-Log.",
@@ -168,6 +180,7 @@ const messages: Record<string, [string, string]> = {
   ],
   area_disabled: ["This storage area is disabled.", "Dieser Dateibereich ist deaktiviert."],
   forbidden: ["You do not have permission to read this path.", "Du hast keine Leseberechtigung für diesen Pfad."],
+  create_forbidden: ["You do not have permission to create folders here.", "Du darfst hier keine Ordner anlegen."],
   reserved_path: [
     "This reserved path is not available in the file browser.",
     "Dieser reservierte Pfad ist im Dateibrowser nicht zugänglich.",
@@ -207,4 +220,13 @@ export function errorMessage(code: string, locale: string): string {
     "Storage is currently unavailable. Try again after checking the connection.",
     "Die Ablage ist derzeit nicht verfügbar. Bitte Verbindung prüfen und erneut versuchen.",
   ])[locale.startsWith("de") ? 1 : 0]!;
+}
+
+/** Public share failures offer recovery appropriate for a visitor. */
+export function publicErrorMessage(code: string, locale: string): string {
+  if (code === "configuration_unreadable")
+    return locale.startsWith("de")
+      ? "Dateien ist derzeit nicht verfügbar. Wende dich an eine Administratorin oder einen Administrator."
+      : "Files is not available right now. Ask an administrator.";
+  return errorMessage(code, locale);
 }

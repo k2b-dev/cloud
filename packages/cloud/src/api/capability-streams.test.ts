@@ -51,6 +51,7 @@ const expiresAt = () => new Date(Date.now() + 60_000).toISOString();
 let writable = true;
 const saved = new Map<string, Uint8Array>();
 let aborted = false;
+let writeExtra: Record<string, unknown> = {};
 const definition = defineCapabilities({
   protocolVersion: 2,
   queries: {
@@ -102,7 +103,7 @@ const definition = defineCapabilities({
           if (!writable) throw { code: "FORBIDDEN", message: "Revoked", status: 403 };
           const bytes = new Uint8Array(await new Response(body).arrayBuffer());
           saved.set(ref.id, bytes);
-          return { data: { id: ref.id } };
+          return { data: { id: ref.id }, ...writeExtra };
         },
         status: async (ref) =>
           saved.has(ref.id) ? { state: "completed", result: { data: { id: ref.id } } } : aborted ? { state: "aborted" } : { state: "open" },
@@ -326,4 +327,41 @@ test("Core binds turn streams to their continuation and rechecks operation polic
   });
   expect(response.status).toBe(200);
   expect((await response.arrayBuffer()).byteLength).toBe(payload.length);
+});
+
+const shortenedReceipt = {
+  text: "Imported {archive}",
+  slots: { archive: { kind: "object", title: "archive.zip" } },
+  preview: { kind: "page", title: "archive.zip", body: "First lines", format: "plain", truncated: true },
+};
+
+test("a stream completion follows the same receipt rules as an ordinary Action result", async () => {
+  try {
+    for (const [extra, status] of [
+      [{ receipt: shortenedReceipt }, 409],
+      [{ receipt: shortenedReceipt, links: [{ rel: "open", href: "/archives/upload-1" }] }, 200],
+    ] as const) {
+      writeExtra = extra;
+      saved.clear();
+      const ref = await open("action", "archive.import");
+      expect((await dispatchCapabilityStream(request(ref, payload), authority, "write", deps)).status).toBe(status);
+    }
+  } finally {
+    writeExtra = {};
+  }
+});
+
+test("Core rejects a stream completion receipt that the provider did not check", async () => {
+  const ref = await open("action", "archive.import");
+  for (const [body, status] of [
+    [{ data: { id: "upload-1" }, receipt: shortenedReceipt }, 502],
+    [{ data: { id: "upload-1" }, receipt: shortenedReceipt, links: [{ rel: "open", href: "/archives/upload-1" }] }, 200],
+    [{ data: { id: "upload-1" }, receipt: { text: "{missing}" } }, 502],
+  ] as const) {
+    const response = await dispatchCapabilityStream(request(ref, payload), authority, "write", {
+      ...deps,
+      fetch: async () => Response.json(body),
+    });
+    expect(response.status).toBe(status);
+  }
 });

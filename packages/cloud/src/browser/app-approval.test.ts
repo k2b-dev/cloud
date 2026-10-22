@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import {
   APP_APPROVAL_LIMITS,
   APP_APPROVAL_PATH,
@@ -11,6 +11,9 @@ import {
   appPairingProofMessage,
 } from "../contracts/app-approval";
 import { AppApprovalClientError, appApproval } from "./app-approval";
+
+beforeAll(() => setSystemTime(new Date("2026-10-17T12:00:00Z")));
+afterAll(() => setSystemTime());
 
 const issuer = "https://cloud.example";
 const authenticatorOrigin = "https://auth.example";
@@ -210,5 +213,218 @@ test("older discovery and unknown features do not announce Actions", async () =>
   for (const discovery of [info, { ...info, features: ["future"] }]) {
     const client = await appApproval.connect({ issuer, authenticatorOrigin, fetch: async () => Response.json(discovery) });
     expect(client.actions).toBe(false);
+  }
+});
+
+test("terminal consent requires both Cloud support and an explicit app opt-in", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  for (const features of [undefined, ["actions"], ["actions", "terminal-logins"]]) {
+    for (const asks of [false, true]) {
+      const optedIn = asks && features?.includes("terminal-logins") === true;
+      const terminal = { client: { id: "cli", name: "Terminal" }, scopes: ["openid", "profile"], lifetimeSeconds: 3600 };
+      const login = { requestId: id, challenge: secret, comparison: "000123", createdAt: new Date().toISOString(), expiresAt: expiresAt() };
+      const client = await appApproval.connect({
+        issuer,
+        authenticatorOrigin,
+        fetch: async (url, init) => {
+          if (url.endsWith("/info")) return Response.json({ ...info, ...(features ? { features } : {}) });
+          const request = AppDeviceRequestSchema.parse(JSON.parse(String(init.body)));
+          expect(request.proof.command).toEqual({ operation: "inbox", ...(optedIn ? { accept: ["terminal-logins"] } : {}) });
+          await verify(key, appDeviceProofMessage(request.proof), request.signature);
+          return Response.json({
+            logins: [{ ...login, ...(optedIn ? { terminal } : {}) }],
+            actions: [],
+            moreActions: 0,
+            pollAfterSeconds: 5,
+          });
+        },
+      });
+      expect(client.terminalLogins).toBe(features?.includes("terminal-logins") === true);
+      const inbox = await client.inbox(device, undefined, asks ? { accept: ["terminal-logins"] } : undefined);
+      expect(inbox.logins).toEqual([{ ...login, ...(optedIn ? { terminal } : {}) }]);
+    }
+  }
+});
+
+test("device changes opt in only to advertised features and sign exactly the shown request", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  const change = {
+    changeId: id,
+    kind: "revoke",
+    device: { id, name: "Phone" },
+    endSessions: true,
+    createdAt: new Date().toISOString(),
+    expiresAt: expiresAt(),
+  } as const;
+  for (const features of [undefined, ["actions"], ["actions", "device-changes"]]) {
+    const commands: import("../contracts/app-approval").AppDeviceProof["command"][] = [];
+    const client = await appApproval.connect({
+      issuer,
+      authenticatorOrigin,
+      fetch: async (url, init) => {
+        if (url.endsWith("/info")) return Response.json({ ...info, features });
+        const body = AppDeviceRequestSchema.parse(JSON.parse(String(init.body)));
+        await verify(key, appDeviceProofMessage(body.proof), body.signature);
+        commands.push(body.proof.command);
+        if (body.proof.command.operation === "inbox")
+          return Response.json({
+            logins: [],
+            actions: [],
+            moreActions: 0,
+            pollAfterSeconds: 5,
+            ...(body.proof.command.accept?.includes("device-changes") ? { changes: [change], moreChanges: 0 } : {}),
+          });
+        return Response.json({
+          state: body.proof.command.operation === "change" && body.proof.command.decision === "approve" ? "approved" : "denied",
+        });
+      },
+    });
+    expect(client.deviceChanges).toBe(features?.includes("device-changes") === true);
+    await client.inbox(device);
+    expect(JSON.stringify(commands[0])).toBe('{"operation":"inbox"}');
+    const inbox = await client.inbox(device, undefined, { accept: ["device-changes"] });
+    expect(commands[1]).toEqual(
+      features?.includes("device-changes") ? { operation: "inbox", accept: ["device-changes"] } : { operation: "inbox" },
+    );
+    expect("changes" in inbox).toBe(client.deviceChanges);
+    expect("moreChanges" in inbox).toBe(client.deviceChanges);
+    if ("moreChanges" in inbox) expect(inbox.moreChanges).toBe(0);
+    await client.decideChange(device, change, "approve");
+    expect(commands[2]).toEqual({
+      operation: "change",
+      changeId: id,
+      kind: "revoke",
+      targetId: id,
+      endSessions: true,
+      decision: "approve",
+    });
+    await client.decideChange(device, change, "deny");
+    const count = commands.length;
+    await expect(
+      client.decideChange(device, { ...change, expiresAt: new Date(Date.now() - 1_000).toISOString() }, "approve"),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(commands).toHaveLength(count);
+  }
+});
+
+test("device changes require the opted-in inbox and matching decision response", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  const client = await appApproval.connect({
+    issuer,
+    authenticatorOrigin,
+    fetch: async (url, init) => {
+      if (url.endsWith("/info")) return Response.json({ ...info, features: ["device-changes"] });
+      const { proof } = AppDeviceRequestSchema.parse(JSON.parse(String(init.body)));
+      return Response.json(
+        proof.command.operation === "inbox" ? { logins: [], actions: [], moreActions: 0, pollAfterSeconds: 5 } : { state: "denied" },
+      );
+    },
+  });
+  await expect(client.inbox(device, undefined, { accept: ["device-changes"] })).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  await expect(
+    client.decideChange(
+      device,
+      {
+        changeId: id,
+        kind: "pair",
+        device: { id, name: "Phone" },
+        endSessions: false,
+        createdAt: new Date().toISOString(),
+        expiresAt: expiresAt(),
+      },
+      "approve",
+    ),
+  ).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+});
+
+test("device changes require both changes and moreChanges in the inbox", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  for (const fields of [{ changes: [] }, { moreChanges: 0 }]) {
+    const client = await appApproval.connect({
+      issuer,
+      authenticatorOrigin,
+      fetch: async (url) =>
+        Response.json(
+          url.endsWith("/info")
+            ? { ...info, features: ["device-changes"] }
+            : { logins: [], actions: [], moreActions: 0, pollAfterSeconds: 5, ...fields },
+        ),
+    });
+    await expect(client.inbox(device, undefined, { accept: ["device-changes"] })).rejects.toMatchObject({ code: "INVALID_RESPONSE" });
+  }
+});
+
+test("pairing result reads let the server apply an extended approval deadline", async () => {
+  const key = await appApproval.createKey();
+  const client = await appApproval.connect({
+    issuer,
+    authenticatorOrigin,
+    fetch: async (url) => Response.json(url.endsWith("/info") ? info : { state: "claimed", deviceId: id, comparison: "123456" }),
+  });
+  const old = { ...payload(), expiresAt: new Date(Date.now() - 1_000).toISOString() };
+  expect((await client.pairingResult(old, key)).state).toBe("claimed");
+  await expect(client.claim(old, key, "Phone")).rejects.toMatchObject({ code: "INVALID_INPUT" });
+});
+
+test("context opt-in is signed only when advertised, for pending and inbox", async () => {
+  const key = await appApproval.createKey();
+  const device = { issuer, deviceId: id, key };
+  for (const features of [undefined, ["actions", "terminal-logins"], ["actions", "terminal-logins", "login-context"]]) {
+    for (const asks of [false, true]) {
+      const optedIn = asks && features?.includes("login-context") === true;
+      const client = await appApproval.connect({
+        issuer,
+        authenticatorOrigin,
+        fetch: async (url, init) => {
+          if (url.endsWith("/info")) return Response.json({ ...info, ...(features ? { features } : {}) });
+          const request = AppDeviceRequestSchema.parse(JSON.parse(String(init.body)));
+          const operation = request.proof.command.operation;
+          if (operation !== "pending" && operation !== "inbox") throw new Error("Unexpected command");
+          expect(request.proof.command).toEqual({ operation, ...(optedIn ? { accept: ["login-context"] } : {}) });
+          // Independently reconstruct the pre-extension body and signature bytes for old Clouds.
+          const message = JSON.stringify([
+            "cloud-app-approval-v1",
+            "device",
+            issuer,
+            device.deviceId,
+            request.proof.jti,
+            1792238400,
+            1792238460,
+            operation,
+            ...(optedIn ? [["login-context"]] : []),
+          ]);
+          expect(appDeviceProofMessage(request.proof)).toBe(message);
+          await verify(key, message, request.signature);
+          expect(String(init.body)).toBe(
+            JSON.stringify({
+              proof: {
+                issuer,
+                deviceId: id,
+                jti: request.proof.jti,
+                issuedAt: 1792238400,
+                expiresAt: 1792238460,
+                command: { operation, ...(optedIn ? { accept: ["login-context"] } : {}) },
+              },
+              signature: request.signature,
+            }),
+          );
+          return Response.json(
+            operation === "pending"
+              ? { requests: [], pollAfterSeconds: 5 }
+              : { logins: [], actions: [], moreActions: 0, pollAfterSeconds: 5 },
+          );
+        },
+      });
+      expect(client.loginContext).toBe(features?.includes("login-context") === true);
+      await client.pending(device, undefined, asks ? { accept: ["login-context"] } : undefined);
+      await client.inbox(device, undefined, asks ? { accept: ["login-context"] } : undefined);
+      // An untyped caller reusing its inbox list on pending loses only the value pending does not serve.
+      // @ts-expect-error terminal-logins is inbox-only
+      if (asks) await client.pending(device, undefined, { accept: ["terminal-logins", "login-context"] });
+    }
   }
 });

@@ -3,10 +3,14 @@ import type { JSX } from "solid-js";
 import { For, Show } from "solid-js";
 import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
 import ClaimAvatar from "./claim/ClaimAvatar";
+import { isClaimHolder } from "./claim/claim";
 
 type Props = {
   assignees: SpaceItemAssignee[];
-  /** The claim holder leads the stack with its success ring, appears once, and never folds into the overflow. */
+  /**
+   * Who works on the task. That person leads the stack with the success ring, appears once, and never folds into the
+   * overflow: an assignee who holds the claim is drawn as the holder, and a holder outside the assignees still leads.
+   */
   claim?: SpaceItemClaim | null;
   currentUserId?: string;
   /** Visible avatars including the claim holder; the rest collapse into `+N`. */
@@ -27,36 +31,44 @@ const SIZE_CLASS: Record<AvatarSize, string> = {
   xl: "h-20 w-20 text-xl",
 };
 
+/** One assignee: a person with their picture or initials, a service account with the same API icon its claim shows. */
+export function AssigneeAvatar(props: { assignee: SpaceItemAssignee; size?: AvatarSize; class?: string }) {
+  const person = () => props.assignee.kind === "user";
+  return (
+    <Avatar
+      name={props.assignee.displayName}
+      src={
+        person() && props.assignee.avatarHash
+          ? `/api/accounts/users/${encodeURIComponent(props.assignee.id)}/avatar?rev=${encodeURIComponent(props.assignee.avatarHash)}`
+          : undefined
+      }
+      icon={person() ? undefined : "ti ti-api"}
+      size={props.size ?? "xs"}
+      class={props.class}
+    />
+  );
+}
+
 export default function AssigneeAvatars(props: Props) {
   const max = () => props.max ?? 3;
   const size = () => props.size ?? "xs";
-  const holderId = () => (props.claim?.actor.kind === "user" ? props.claim.actor.id : null);
-  const others = () => props.assignees.filter((assignee) => assignee.id !== holderId());
+  const others = () => props.assignees.filter((assignee) => !isClaimHolder(props.claim, assignee));
   const visible = () => others().slice(0, Math.max(max() - (props.claim ? 1 : 0), 0));
   const hiddenCount = () => others().length - visible().length;
-  const names = () => props.assignees.map((assignee) => assignee.displayName).join(", ");
+  /** Names in stack order: the working person first. */
+  const names = () => [...(props.claim ? [props.claim.displayName] : []), ...others().map((assignee) => assignee.displayName)].join(", ");
 
   return (
     <Show when={props.assignees.length > 0 || props.claim} fallback={props.empty ?? null}>
       <div class={`flex min-w-0 items-center gap-2 ${props.class ?? ""}`} title={names() || undefined}>
-        {/* `isolate` keeps the holder's layer inside the stack. The holder's ring lies outside its avatar, so the holder
-            keeps a ring's width to the next avatar instead of overlapping it, and paints above it so the ring stays whole. */}
-        <div class="isolate flex shrink-0 -space-x-1">
+        {/* The holder does not tuck under the next avatar, so its whole ring stays visible and touches the next one. */}
+        <div class="flex shrink-0 -space-x-1">
           <Show when={props.claim}>
-            {(claim) => <ClaimAvatar claim={claim()} currentUserId={props.currentUserId ?? ""} size={size()} class="relative z-[1] me-1" />}
+            {(claim) => <ClaimAvatar claim={claim()} currentUserId={props.currentUserId ?? ""} size={size()} class="me-0" />}
           </Show>
           <For each={visible()}>
             {(assignee) => (
-              <Avatar
-                name={assignee.displayName}
-                src={
-                  assignee.avatarHash
-                    ? `/api/accounts/users/${encodeURIComponent(assignee.id)}/avatar?rev=${encodeURIComponent(assignee.avatarHash)}`
-                    : undefined
-                }
-                size={size()}
-                class={`border-2 border-[var(--ui-surface)] ${props.avatarClass ?? ""}`}
-              />
+              <AssigneeAvatar assignee={assignee} size={size()} class={`border-2 border-[var(--ui-surface)] ${props.avatarClass ?? ""}`} />
             )}
           </For>
           <Show when={hiddenCount() > 0}>

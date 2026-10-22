@@ -1,12 +1,13 @@
 import { env } from "@k2b/cloud/config";
-import { accounts, isAccountCategoryAllowed, isStandaloneServiceAccountKind, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
-import { isAccountExpired } from "@k2b/cloud/services/account-model";
+import type { User } from "@k2b/cloud/contracts";
+import { accounts, isStandaloneServiceAccountKind, serviceAccounts, toPgTextArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import * as jose from "jose";
 import { DYNAMIC_CLIENT_SCOPES, type OAuthClient, type OAuthScope } from "@/contracts";
 import * as refreshTokens from "./refresh-tokens";
 import {
   issueOAuthTokenBatch,
+  OAuthAuthorityGrantRejectedError,
   type OAuthTokenRequest,
   type OAuthUserGrantReference,
   type ServiceAccessTokenRequest,
@@ -193,6 +194,7 @@ export const getOpenIdConfiguration = (issuer: string) => ({
     "client_id",
     "azp",
     "scope",
+    "auth_epoch",
     "service_account_id",
     "service_account_kind",
     "app_id",
@@ -202,37 +204,64 @@ export const getOpenIdConfiguration = (issuer: string) => ({
   code_challenge_methods_supported: ["S256"],
   grant_types_supported: ["authorization_code", "refresh_token", "client_credentials", "urn:ietf:params:oauth:grant-type:device_code"],
   resource_parameter_supported: true,
+  cloud_login_ttl_supported: true,
+  cloud_login_hint_supported: true,
   // Authorization responses include RFC 9207 `iss`; keep its optional support
   // flag unadvertised until current loopback MCP clients preserve the value.
 });
 
-/**
- * Create access token and optionally id_token
- */
-export const createTokens = async (params: {
-  userId: string;
-  client: OAuthClient;
-  scopes?: OAuthScope[];
-  audiences?: string[];
-  resource?: string | null;
-  issueRefreshToken?: boolean;
-  refreshTokenLabel?: string | null;
-  authorityGrant: OAuthUserGrantReference;
-}): Promise<{
+type InitialUserGrant = Exclude<OAuthUserGrantReference, { kind: "refresh_token" }>;
+type TokenGrantParams =
+  | { authorityGrant: InitialUserGrant; authEpoch: number }
+  | { authorityGrant: Extract<OAuthUserGrantReference, { kind: "refresh_token" }> };
+
+/** Create access and optional ID tokens from the current grant authority. */
+export const createTokens = async (
+  params: {
+    userId: string;
+    client: OAuthClient;
+    scopes?: OAuthScope[];
+    audiences?: string[];
+    resource?: string | null;
+    issueRefreshToken?: boolean;
+    refreshTokenLabel?: string | null;
+    login: { lifetimeSeconds: number } | { endsAt: Date };
+  } & TokenGrantParams,
+): Promise<{
   accessToken: string;
   idToken: string | null;
   expiresIn: number;
   scope: string;
   refreshToken?: string;
+  refreshTokenExpiresIn?: number;
 }> => {
-  const { userId, client, authorityGrant } = params;
+  const { userId, client } = params;
   const scopes = params.scopes ?? client.scopes;
   const audiences = params.audiences ?? client.audiences;
   const accessTokenAudiences = params.audiences ? dedupe(params.audiences) : dedupe(["cloud", client.clientId, ...audiences]);
 
-  const expiresIn = ACCESS_TOKEN_LIFETIME_SECONDS;
+  const endsAt = "lifetimeSeconds" in params.login ? new Date(Date.now() + params.login.lifetimeSeconds * 1000) : params.login.endsAt;
+  const expiresIn = Math.min(ACCESS_TOKEN_LIFETIME_SECONDS, Math.floor((endsAt.getTime() - Date.now()) / 1000));
+  if (expiresIn < 1) throw new OAuthAuthorityGrantRejectedError();
   const scopeValue = scopes.join(" ");
 
+  const reservation =
+    "authEpoch" in params && params.issueRefreshToken && refreshTokens.shouldIssueRefreshToken(scopes)
+      ? await refreshTokens.reserve({
+          userId,
+          authEpoch: params.authEpoch,
+          client,
+          scopes,
+          audiences: accessTokenAudiences,
+          resource: params.resource,
+          label: params.refreshTokenLabel,
+          expiresAt: endsAt,
+        })
+      : null;
+  const authorityGrant: OAuthUserGrantReference =
+    params.authorityGrant.kind !== "refresh_token" && reservation
+      ? { ...params.authorityGrant, familyId: reservation.familyId }
+      : params.authorityGrant;
   const requests: OAuthTokenRequest[] = [
     {
       kind: "user_access",
@@ -250,28 +279,25 @@ export const createTokens = async (params: {
     requests.push(idTokenRequest);
   }
 
-  const signed = await issueOAuthTokenBatch(requests);
+  let signed: string[];
+  try {
+    signed = await issueOAuthTokenBatch(requests);
+  } catch (error) {
+    if (reservation) await refreshTokens.revokeFamily(reservation.familyId, "authority_issuance_failed");
+    throw error;
+  }
   const accessToken = signed[0]!;
   const idToken = signed[1] ?? null;
-
-  const refreshToken =
-    params.issueRefreshToken && refreshTokens.shouldIssueRefreshToken(scopes)
-      ? await refreshTokens.create({
-          userId,
-          client,
-          scopes,
-          audiences: accessTokenAudiences,
-          resource: params.resource,
-          label: params.refreshTokenLabel,
-        })
-      : null;
 
   return {
     accessToken,
     idToken,
-    expiresIn,
+    // Account for time spent signing at the absolute login end.
+    expiresIn: Math.min(expiresIn, Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000))),
     scope: scopeValue,
-    ...(refreshToken ? { refreshToken: refreshToken.refreshToken } : {}),
+    ...(reservation
+      ? { refreshToken: reservation.refreshToken, refreshTokenExpiresIn: Math.max(0, Math.floor((endsAt.getTime() - Date.now()) / 1000)) }
+      : {}),
   };
 };
 
@@ -354,15 +380,8 @@ export const verifyAccessToken = async (params: { token: string; issuer: string 
  * Create userinfo response based on scopes
  * Build UserInfo claims for the already validated access-token subject.
  */
-export const createUserInfo = async (params: {
-  userId: string;
-  subject: string;
-  scopes: OAuthScope[];
-}): Promise<Record<string, unknown> | null> => {
-  const { userId, subject, scopes } = params;
-  const user = await accounts.users.get({ id: userId });
-  if (!user || isAccountExpired(user.accountExpires)) return null;
-  if (!(await isAccountCategoryAllowed(user))) return null;
+export const createUserInfo = async (params: { user: User; subject: string; scopes: OAuthScope[] }): Promise<Record<string, unknown>> => {
+  const { user, subject, scopes } = params;
 
   const userInfo: Record<string, unknown> = {
     sub: subject,

@@ -236,7 +236,10 @@ export function openDatabaseDialog(id: string, title: string) {
                 <>
                   <Show when={value.configured} fallback={<NoticeCard tone="warning" title={t().DB_NOT_CONFIGURED} />}>
                     <Show when={value.unavailable}>
-                      <NoticeCard tone="warning" title={t().DB_UNREACHABLE} />
+                      <NoticeCard
+                        tone="warning"
+                        title={value.unavailable === "DB_TARGET_BLOCKED" ? t().DB_TARGET_BLOCKED : t().DB_UNREACHABLE}
+                      />
                     </Show>
                     <p>{value.connected ? a().connected : a().disconnected}</p>
                     <Show when={value.overview}>

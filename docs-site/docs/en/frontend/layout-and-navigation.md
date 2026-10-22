@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-10-12
+updated: 2026-10-18
 ---
 
 # Layout and navigation
@@ -19,6 +19,14 @@ pages, breadcrumbs and a footer.
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it.
 
+Application authors put objects in the sidebar and views of the open object
+in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
+quiet secondary actions share that row while the workspace width permits;
+filters wrap and the quiet filtered result count disappears first. Put the
+one filled primary action in `Head.primary`; on phones the shell leaves its
+place beside the bottom bar. See [Objects on the left, views in the head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head)
+for the complete rule and API.
+
 ## Know the shell at each width
 
 The shell has three forms. They are CSS on the same server-rendered markup, so
@@ -27,10 +35,9 @@ when people navigate.
 
 | Width | Signed-in pages | Anonymous pages |
 | --- | --- | --- |
-| Below 768 px (phones) | Header with Home, the app name, help, search, and the app menu; no app bar | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
-| 768 to 1023 px (tablets) | No header. The app bar runs down the left edge, and the app area meets the window's top, right, and bottom edges without spacing, radius, shadow, or border | The same header controls; header, content, and footer as cards on the app background |
-| 1024 to 1535 px (laptops) | Same as above | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
-| From 1536 px | No header. The app area is a card with 8 px spacing on the app background | Same as above |
+| Below 768 px (phones) | App gradient with a title row, search, help, and the app menu; a soft content card and a floating bar with Home and the first apps of the app bar | Flat header with Home, the app name, help, search, the app grid on app pages, theme and language, and sign-in |
+| 768 to 1023 px (tablets) | No header. A 60 px app bar in a rounded gradient container sits beside the app card. Both have 20 px corners, 8 px spacing to the window edges, and 8 px between them | The same header controls; header, content, and footer as cards on the app background |
+| From 1024 px | No header. The 56 px app bar sits on the app background. The app area is a card whose spacing grows from 4 px at 1024 px to 8 px at 1440 px and whose radius grows from 10 px to 14 px. Wider windows keep those dimensions | Header with breadcrumbs, theme and language, and sign-in; cards on the app background |
 
 Where the app area is a card, the outermost workspace is that card. It has
 rounded corners and the card's frame, also when it is `flat`. Render that
@@ -38,21 +45,42 @@ workspace as the page's own content, not inside a wrapper element, so it fills
 the app area and its frame shows in the card spacing. A page without a
 workspace shows its content on the app background, so scroll the content in a
 `ScrollArea` and do not wrap it in an opaque surface that fills the app area.
+When the sidebar is hidden, also together with the app bar, the work area
+takes its column and rounds its start corners with the card, so nothing in the
+workspace paints past the card's corners.
 
-From 768 px the app bar holds Home, the apps, the app grid, search, help, and
-the profile avatar. Between the app bar and the app area there is no line:
-the app bar shows the app background, and the app area is one opaque surface.
-Global announcements and account notices stay above the app as a strip across
-the app area; from 768 to 1535 px it has no radius or border.
+From 768 px the app bar holds Home, the button that hides the sidebar, the
+apps, the app grid, search, help, and the profile avatar. Its controls are
+44 px targets. From 768 to 1023 px the app bar's container carries the app
+gradient on a neutral canvas. The selected app has a surface background, and
+there is no separator between shortcuts and apps. Announcements and account
+notices above the app are cards with the same 8 px spacing.
 
 The installed app on a tablet reports safe areas, such as the status bar and
-the home indicator. From 768 to 1535 px the app bar and the app area still
-reach the window's edges. The app bar fills those areas with the app
-background, and the app area fills them with its surface. Their content stays
-inside the safe areas: a regular page scrolls to its end above the home
-indicator, and `AppWorkspace` keeps the content of its sidebar, panes, and
-drawer above it. Below 768 px the whole canvas keeps the safe areas as padding,
-because it is one flat surface there.
+the home indicator. From 768 to 1023 px these insets add to the 8 px spacing:
+the app bar and card stay clear of them on every side. From 1024 px the card
+and app bar stay below the status bar. The card keeps its spacing at the
+bottom, and its surfaces keep their content
+above the home indicator.
+
+Below 768 px, including narrow tablet split views, the signed-in canvas
+shows the app gradient. Its title row has no line or surface fill and holds
+the app's name, search, help, and the app menu in that order. **Home** moves
+from the header to the first place of the floating bottom bar. The bar then
+shows the first four links of the person's app bar, shortcuts included, in
+the same order. When the current app comes later, it takes the fourth place,
+so the bar always marks it. The open item is the surface color on the bar's
+app gradient. Home is marked on the start page that `/` opens. When the
+person changes their app bar, the bar follows without a reload.
+
+The phone's content is a soft card with 28 px top corners. A regular signed-in
+page scrolls inside that card (`main`), while the window stays still. Content
+wider than the card scrolls sideways inside it, as from 768 px. The card
+keeps space for the bar at its end and when scrolling to a focused control.
+The bar sits 8 px above the bottom safe area; the title row and canvas keep
+the top and side safe areas. Anonymous phones retain Home in the header, its
+bottom line, a flat surface, and document scrolling. The phone app's own flat
+bottom bar is unchanged.
 
 Applications need no changes for any of this. `AppWorkspace` adds its compact
 navigation between 768 and 1023 px on its own; see
@@ -63,20 +91,32 @@ A regular page, without `fullWidth` or `fullPage`, owns its inset: from 768 px
 no header sits above a signed-in page, so give the content its own padding, as
 `AppOverview` does.
 
-`AppWorkspace.Detail` occupies a full-height column beside the workspace head
-and panes from 768 px. Below 768 px it is a half or full sheet at the window’s
-bottom edge. A closable panel on a coarse pointer from 768 to 1023 px overlays
-Main as a drawer. Pass its existing close action as `onClose` in an island or
-client component, or mark a server-rendered panel’s close control with
-`data-workspace-detail-close`. Use `scrollClass="k2b-detail-trail"` on
-DataTable, and `k2b-detail-trail` on a board’s horizontal scroller: beside
-the panel the table keeps its column widths, and under a tablet drawer both
-get the drawer’s width as space at their end. The trail is the clipping scroll
-viewport and carries the surface radius. Put it directly in Main’s content box
-with `scroll={false}` on Main and no vertical scroller around it; a reserved
-scrollbar gutter would widen the gap before the panel beyond
-`--k2b-workspace-detail-inset`.
-See [Add contextual detail](/en/docs/frontend/application-shells#add-contextual-detail).
+From 768 px, `AppWorkspace.Detail` is a column when it fits beside Main's
+minimum (320 px, raised with `AppWorkspace.Main minWidth`). Otherwise it waits
+behind **Details**; selecting an item opens it directly as a drawer. The
+column shares the workspace surface. The drawer sits flush with the app card's
+edge; Escape parks it and returns focus to Details. Opening Cloud's panel
+parks the drawer; closing the panel restores the column if it fits. The panel
+never closes automatically. Below 768 px, Detail remains a phone sheet or page.
+Use `scrollClass="k2b-detail-trail"` on DataTable or mark a board's horizontal
+scroller with `k2b-detail-trail` so its last item can scroll beside an open drawer.
+See [Detail and panel](/en/ui/layout/workspace#detail-and-panel) for sizing,
+focus, gestures, and the close-action contract.
+
+### Hide the app bar and navigation
+
+From 768 px, **Hide sidebar** below Home in the app bar or `Cmd+\` (`Ctrl+\`
+on other systems) hides the app bar. From 1024 px, it also hides the outermost
+workspace's sidebar; from 768 to 1023 px that sidebar is an overlay behind the
+workspace head's button anyway. The shortcut is listed under keyboard
+shortcuts in Help. The **Show sidebar** button at the bottom start corner
+of the app area, the same shortcut, or a drag from the left edge on a touch
+screen shows them again. The browser remembers the choice in a cookie, so a
+reload shows the same page. Phones ignore it. On keyboard layouts without a
+direct backslash key, such as German, use the button.
+
+Applications need no code. Keep actions people need available outside the
+sidebar too, through the application's own links.
 
 ## Render the application layout
 
@@ -98,15 +138,59 @@ pages the shell turns them into the way up (see below). Anonymous pages show
 the entries as breadcrumbs in their header from 1024 px; the final breadcrumb
 has no link. A plain string is valid for a one-level title.
 
+Signed-in pages show the shared panel slot when at least one authorized
+application declares a provider. Use `panel={false}` to hide it on sign-in,
+print, presentation, or public pages that use `Layout`. Anonymous pages have
+no slot. `PanelLayout` renders the provider page itself, without shell chrome.
+See [Offer a panel](/en/docs/platform/panels).
+
+`help?: string[]` names two or three articles from the current app's Help that
+fit this page, for example `help={["inventory-start", "inventory-access"]}`.
+Help lists them first under **For this view**, in the declared order. Cloud
+removes duplicates, ignores IDs outside the reader's authorized Help manifest,
+and keeps at most three IDs of at most 180 characters each. Without a manifest, the section is absent. These
+articles stay in their usual task tiles or kind groups too. See
+[In-product Help](/en/docs/platform/help#use-the-automatically-derived-surfaces).
+
+`context?: { scope?: CloudResourceRef } | false` reports the current place to
+the visible panel, for example
+`context={{ scope: { type: "inventory.warehouse", id: warehouse.id } }}`.
+Use the public ID the owning app's resource reader accepts. Cloud adds the
+current app ID and the filtered `help` IDs above. An invalid scope is omitted;
+`context={false}` disables all context for the document. With no current app
+or no panel slot, there is no context.
+
+When the place changes inside one document, publish its current scope from a
+reactive effect in browser code. Dispose that effect's previous publication
+when it changes or unmounts:
+
+```ts
+import { publishPageContext } from "@k2b/cloud/browser/panel";
+import { createEffect, onCleanup } from "solid-js";
+
+createEffect(() => {
+  onCleanup(publishPageContext({ scope: currentScope() }));
+});
+```
+
+Each call owns one source. The most recent active source with a scope wins;
+disposing it reveals the next source, then the server scope. Publishers work
+before the lazy panel controller loads and across independent islands. Cloud
+asks consent per provider app before sharing; Core providers need no consent.
+See [Page context](/en/docs/platform/panels#page-context) for reading it and
+its authorization boundaries.
+
+`printHint?: string` supplies the application's final localized export or printing guidance. In regular and focus mode, `Layout` appends a screen-hidden `data-print-fallback` as the last child of the app canvas. When no `data-print-region` exists, only this fallback prints. Its default hint is “Open the item you want to print, or use the app's export.” Pass an app-specific sentence, such as “Open a note to print it, or download it as a PDF from the note's details.” See [Browser printing](/en/ui/layout/print) for marking printable content.
+
 Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
 surface without the footer. Full-page and focus-mode surfaces contain viewport
 overscroll: their inner content, including embedded editors, owns scrolling
 without moving the outer Cloud shell or triggering pull-to-refresh.
 
 The shell measures the visible window with the dynamic viewport (`dvh`), not
-`vh`. From 768 px, and for full-page surfaces at every width, it is exactly as
-tall as the window and its content scrolls inside it. Below 768 px, a regular
-page is at least as tall as the window and grows with its content. `vh` follows
+`vh`. Signed-in pages, pages from 768 px, and full-page surfaces at every
+width are exactly as tall as the window and scroll their content inside it.
+Below 768 px, a regular anonymous page grows with its content. `vh` follows
 the larger viewport of a browser whose toolbar can collapse, such as Safari on
 iPad, so a page sized with it would scroll by that difference although its
 content fits. Full-page Help follows the same rule. A surface that renders
@@ -114,10 +198,10 @@ without the shell, such as a pop-out window or an unattended display, takes its
 height from `dvh` too, with `h-dvh` or `min-h-dvh`.
 
 The layout reserves a stable scrollbar gutter on every page scroller it owns:
-the content area of regular pages from 768 px and, below 768 px, the document
-of every page except full-page and focus-mode surfaces. Switching between short
-and long pages or tabs therefore does not shift the content sideways where
-scrollbars take layout space.
+the content area of regular pages from 768 px and, below 768 px, the soft card
+of signed-in pages and the document of anonymous pages, except full-page and
+focus-mode surfaces. Switching between short and long pages or tabs therefore
+does not shift the content sideways where scrollbars take layout space.
 
 Every Cloud page, with any layout, preloads the Latin IBM Plex Sans faces at
 weights 400, 500, and 600 next to its stylesheets. The first frame therefore
@@ -380,7 +464,7 @@ content.
 The layout places the profile menu with CSS:
 
 - Below 768 px, the app menu in the header holds the profile actions; the
-  header has no avatar.
+  title row has no avatar. Home and the apps are in the bottom bar.
 - From 768 px, the avatar is the last control of the app bar, below search and
   help. Its menu opens beside the app bar and grows upward from the avatar.
 
@@ -613,8 +697,12 @@ See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
 ## Show the container an app works in
 
 Use `AppWorkspace.SidebarSwitcher` when the app works inside one container
-chosen from several: a notebook, space, mailbox, base, or venue. Put it first
-in `SidebarDesktop`, above the navigation for that container. It replaces
+chosen from several and the sidebar shows that container's contents: a
+notebook's pages, a base's tables, a mailbox's folders, or a venue. When the
+containers are themselves the objects, list them as sidebar rows instead, so
+another one is one click away; Spaces lists every Space this way. Put the
+switcher first in `SidebarDesktop`, above the navigation for that container.
+It replaces
 app-made **All …** sidebar rows with one head and a panel of containers and
 actions. Offer **New …** only to people who may create, and **All …** as a
 link to the overview.
@@ -633,7 +721,16 @@ search, and keyboard behavior.
 ## Mobile workspace menu
 
 Below 768 px, the header launcher hosts the current application's navigation
-and an **All apps** switch. From 768 px the app bar and the workspace's own
+and an **All apps** switch. Pages with `WorkspaceNavigation` also turn the
+phone title into **Name ⌄**, which opens the same menu. Other pages keep the
+plain title. An overview sidebar with `mobile="stacked"` shows a horizontally
+scrolling row of object chips above the content below 64 rem; **All** opens
+the complete sidebar in a bottom sheet below 48 rem and a centered dialog
+from 48 rem. On phones, an outer `mobileSurface="flush"` workspace puts this
+object row on the shell above the content card. Declare its `Head` after the
+sidebar: view tabs stay inside the card, and server, keyboard, and hydrated
+order agree. Contained workspaces and tablet layouts keep their own surface.
+From 768 px the app bar and the workspace's own
 navigation take over. The mobile workspace uses the full canvas without a
 second application title or exterior frame. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation)
 for the SSR snapshot and island-owned action APIs. `@k2b/ui` remains independent

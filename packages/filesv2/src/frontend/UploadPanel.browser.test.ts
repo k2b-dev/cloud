@@ -63,9 +63,11 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (options: BrowserContextOptions, theme: "light" | "dark" = "light", lang = "en") => {
+const open = async (options: BrowserContextOptions, theme: "light" | "dark" = "light", lang = "en", clock = false) => {
   const context = await browser.newContext({ ...options, reducedMotion: "reduce" });
   const tab = await context.newPage();
+  // A flowing fake clock lets a test skip a retry delay instead of waiting for it in real time.
+  if (clock) await tab.clock.install();
   await tab.route("http://upload.test/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/") return route.fulfill({ contentType: "text/html", body: page(theme, lang) });
@@ -81,6 +83,12 @@ const run = async (tab: Page, script: string) => {
   await tab.evaluate(script);
   await settle(tab);
 };
+/** Rests the mouse on the middle of an element. */
+const pointAt = async (tab: Page, selector: string) => {
+  const box = (await (await tab.$(selector))!.boundingBox())!;
+  await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+};
+const active = '.filesv2-upload-row[data-status="working"]';
 
 /** Invented demo files, sizes in bytes. */
 const demo: [string, number][] = [
@@ -158,15 +166,35 @@ describe("upload panel in a browser", () => {
       // One finished row stays above the active one.
       expect(await scrollTop()).toBe(5 * 36);
       expect(await tab.getAttribute('.filesv2-upload-row[data-status="working"]', "style")).toContain("--filesv2-upload-index: 6");
-      const list = (await tab.$(".filesv2-upload__scroll"))!.boundingBox();
-      const box = (await list)!;
-      await tab.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await pointAt(tab, `${active} .filesv2-upload-row__progress`);
       await run(tab, "window.uploads.finish()");
-      await run(tab, "window.uploads.finish()");
+      expect(await scrollTop()).toBe(5 * 36);
+      // Finishing a file removes its byte count from under the resting pointer. WebKit then sends no pointerleave when
+      // the pointer goes, unless a later hover update came first, so the pointer leaves right away (#1371).
+      await pointAt(tab, `${active} .filesv2-upload-row__progress`);
+      await tab.evaluate("window.uploads.finish()");
       expect(await scrollTop()).toBe(5 * 36);
       await tab.mouse.move(10, 10);
       await settle(tab);
       expect(await scrollTop()).toBe(7 * 36);
+    } finally {
+      await tab.context().close();
+    }
+  });
+
+  test("a finished batch leaves after five seconds once the pointer left, also when its row changed under the pointer", async () => {
+    const tab = await open(desktop, "light", "en", true);
+    try {
+      await run(tab, `window.uploads.add(${JSON.stringify(demo.slice(0, 2))})`);
+      await run(tab, "window.uploads.finish()");
+      // As above: the last file's byte count leaves from under the pointer, and the pointer leaves right after it.
+      await pointAt(tab, `${active} .filesv2-upload-row__progress`);
+      await tab.evaluate("window.uploads.finish()");
+      await tab.mouse.move(10, 10);
+      await settle(tab);
+      expect(await tab.getAttribute(".filesv2-upload", "data-phase")).toBe("done");
+      await tab.clock.fastForward(5_000);
+      await tab.waitForSelector(".filesv2-upload", { state: "detached", timeout: 2_000 });
     } finally {
       await tab.context().close();
     }
@@ -257,6 +285,207 @@ describe("upload panel in a browser", () => {
       await tab.context().close();
     }
   });
+
+  /** Contrast of an element's text against the toast surface, after the browser resolved both colors to sRGB. */
+  const contrast = (tab: Page, selector: string) =>
+    tab.evaluate((selector) => {
+      const element = document.querySelector<HTMLElement>(selector)!;
+      const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+      const rgb = (color: string) => {
+        canvas.clearRect(0, 0, 1, 1);
+        canvas.fillStyle = color;
+        canvas.fillRect(0, 0, 1, 1);
+        return [...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+      };
+      const luminance = (color: string) => {
+        const [r, g, b] = rgb(color).map((value) => {
+          const channel = value / 255;
+          return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+      };
+      const text = luminance(getComputedStyle(element).color);
+      const surface = luminance(getComputedStyle(element.closest("[data-k2b-toast]")!).backgroundColor);
+      return (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
+    }, selector);
+
+  for (const [device, options] of [
+    ["desktop", desktop],
+    ["phone", phone],
+  ] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      const lang = device === "phone" ? "de" : "en";
+      test(`waiting for the network or a busy server keeps every box in place (${device}, ${theme})`, async () => {
+        const tab = await open(options, theme, lang, true);
+        const text = {
+          en: {
+            title: "Waiting for network",
+            network: "Waiting for network",
+            busy: "File server busy, trying again soon",
+            retrying: "Trying again",
+            uploading: "Uploading to “Projects”",
+          },
+          de: {
+            title: "Wartet auf Netzwerk",
+            network: "Wartet auf Netzwerk",
+            busy: "Dateiserver ausgelastet, gleich neuer Versuch",
+            retrying: "Neuer Versuch",
+            uploading: "Hochladen nach „Projects“",
+          },
+        }[lang];
+        const shot = (state: string) => tab.screenshot({ path: `/tmp/filesv2-upload-wait-${device}-${theme}-${state}.png` });
+        const rowState = () =>
+          tab.$eval(active, (row) => {
+            const reason = row.querySelector<HTMLElement>(".filesv2-upload-row__reason");
+            return {
+              wait: (row as HTMLElement).dataset.wait ?? null,
+              reason: reason?.textContent ?? null,
+              // The reason fits its row: no ellipsis on a 390 px phone either.
+              fits: reason ? reason.scrollWidth <= reason.clientWidth : true,
+              box: (({ left, top, width, height }) => [left, top, width, height].map(Math.round))(row.getBoundingClientRect()),
+              // A working row always has its second line (bytes, a wait or Finishing…), so the name never moves.
+              name: Math.round(row.querySelector(".filesv2-upload-row__base")!.getBoundingClientRect().top),
+            };
+          });
+        try {
+          await run(tab, `window.uploads.add(${JSON.stringify(demo)})`);
+          for (let index = 0; index < 3; index++) await run(tab, "window.uploads.finish()");
+          await run(tab, "window.uploads.progress(100_000)");
+          const first = await boxes(tab);
+          const row = await rowState();
+          expect(row.wait).toBeNull();
+
+          // The network goes away: the file in flight waits, nothing else starts, nothing moves.
+          await tab.context().setOffline(true);
+          await run(tab, "window.uploads.interrupt('network')");
+          expect(await tab.textContent(".filesv2-upload__title")).toBe(text.title);
+          const waiting = await rowState();
+          expect(waiting).toEqual({ ...row, wait: "network", reason: text.network, fits: true });
+          expect(await boxes(tab)).toEqual(first);
+          expect(await tab.$$eval('.filesv2-upload-row[data-status="pending"]', (rows) => rows.length)).toBeGreaterThan(0);
+          expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
+          expect(await contrast(tab, `${active} .filesv2-upload-row__status`)).toBeGreaterThanOrEqual(3);
+          await shot("network");
+
+          // Back online: the same file tries again at once, and the panel returns to the upload once Cloud answers.
+          await tab.context().setOffline(false);
+          await settle(tab);
+          await run(tab, "window.uploads.alive()");
+          expect(await tab.textContent(".filesv2-upload__title")).toBe(text.uploading);
+          const retrying = { ...waiting, wait: "retrying", reason: text.retrying };
+          expect(await rowState()).toEqual(retrying);
+          expect(await boxes(tab)).toEqual(first);
+
+          // A busy file server: a calm reason while the queue waits, then a new try on the same file.
+          await run(tab, "window.uploads.interrupt('busy')");
+          expect(await rowState()).toEqual({ ...waiting, wait: "busy", reason: text.busy });
+          expect(await boxes(tab)).toEqual(first);
+          expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
+          await shot("busy");
+          // The first busy retry waits 2 s; skip it instead of spending it in real time.
+          await tab.clock.fastForward(2_000);
+          await settle(tab);
+          expect(await rowState()).toEqual(retrying);
+          expect(await boxes(tab)).toEqual(first);
+          await shot("retrying");
+          await run(tab, "window.uploads.progress(200_000)");
+          expect(await rowState()).toEqual(retrying);
+          expect(await boxes(tab)).toEqual(first);
+          const heights = await tab.$$eval(".filesv2-upload-row", (rows) => [
+            ...new Set(rows.map((row) => row.getBoundingClientRect().height)),
+          ]);
+          expect(heights).toHaveLength(1);
+        } finally {
+          await tab.context().close();
+        }
+      });
+
+      test(`finishing a large file keeps every box in place (${device}, ${theme})`, async () => {
+        const tab = await open(options, theme, lang, true);
+        const text = {
+          en: { finishing: "Finishing…", status: "Finishing", busy: "File server busy, trying again soon" },
+          de: { finishing: "Wird abgeschlossen…", status: "Wird abgeschlossen", busy: "Dateiserver ausgelastet, gleich neuer Versuch" },
+        }[lang];
+        const shot = (state: string) => tab.screenshot({ path: `/tmp/filesv2-upload-finishing-${device}-${theme}-${state}.png` });
+        const rowState = () =>
+          tab.$eval(active, (row) => {
+            const reason = row.querySelector<HTMLElement>(".filesv2-upload-row__reason");
+            const round = (box: DOMRect) => [box.left, box.top, box.width, box.height].map(Math.round);
+            return {
+              phase: (row as HTMLElement).dataset.phase ?? null,
+              reason: reason?.textContent ?? null,
+              progress: row.querySelector(".filesv2-upload-row__progress")?.textContent ?? null,
+              fits: reason ? reason.scrollWidth <= reason.clientWidth : true,
+              spoken: row.querySelector(".filesv2-upload-row__name .k2b-sr-only:last-child")?.textContent ?? null,
+              box: round(row.getBoundingClientRect()),
+              ring: round(row.querySelector(".filesv2-upload-row__status")!.getBoundingClientRect()),
+              name: Math.round(row.querySelector(".filesv2-upload-row__base")!.getBoundingClientRect().top),
+            };
+          });
+        try {
+          await run(tab, `window.uploads.add(${JSON.stringify(demo)})`);
+          for (let index = 0; index < 3; index++) await run(tab, "window.uploads.finish()");
+          await run(tab, "window.uploads.progress(8_600_000)");
+          const first = await boxes(tab);
+          const sending = await rowState();
+          expect(sending.reason).toBeNull();
+          // While bytes travel, the second line counts them; it is already there, so later lines move nothing.
+          expect(sending.progress).toMatch(lang === "de" ? / von / : / of /);
+          await shot("sending");
+
+          // A commit that answers within a second says nothing, so small files do not flicker.
+          await run(tab, "window.uploads.finishing()");
+          await tab.clock.fastForward(500);
+          await settle(tab);
+          expect(await rowState()).toEqual(sending);
+
+          // A longer commit shows the calm line in the reason slot; the row, its ring and the panel stay where they are.
+          await tab.clock.fastForward(500);
+          await settle(tab);
+          const finishing = await rowState();
+          expect(finishing).toEqual({
+            ...sending,
+            phase: "finishing",
+            reason: text.finishing,
+            progress: null,
+            fits: true,
+            spoken: `, ${text.status}`,
+          });
+          expect(await boxes(tab)).toEqual(first);
+          expect(await contrast(tab, `${active} .filesv2-upload-row__reason`)).toBeGreaterThanOrEqual(4.5);
+          await shot("finishing");
+
+          // A busy answer to the commit replaces the line in the same slot, and the new try finishes in it again.
+          await run(tab, "window.uploads.interrupt('busy')");
+          expect(await rowState()).toMatchObject({
+            phase: null,
+            reason: text.busy,
+            progress: null,
+            box: sending.box,
+            ring: sending.ring,
+            name: sending.name,
+          });
+          expect(await boxes(tab)).toEqual(first);
+          await tab.clock.fastForward(2_000);
+          await settle(tab);
+          await run(tab, "window.uploads.finishing()");
+          await tab.clock.fastForward(1_000);
+          await settle(tab);
+          expect(await rowState()).toEqual(finishing);
+          expect(await boxes(tab)).toEqual(first);
+
+          await run(tab, "window.uploads.finish()");
+          expect(await boxes(tab)).toEqual(first);
+          const heights = await tab.$$eval(".filesv2-upload-row", (rows) => [
+            ...new Set(rows.map((row) => row.getBoundingClientRect().height)),
+          ]);
+          expect(heights).toHaveLength(1);
+        } finally {
+          await tab.context().close();
+        }
+      });
+    }
+  }
 
   for (const theme of ["light", "dark"] as const) {
     test(`on a ${theme} phone the panel sits at the top edge, fits 390 px and takes taps on 44 px targets`, async () => {

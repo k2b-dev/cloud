@@ -2,9 +2,10 @@ import { beforeAll, beforeEach, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import type { RequestActor } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
-import { type ExecutionIdentity, Filegate, type Node, type Session, type WriteOptions } from "@k2b/filegate";
+import type { ExecutionIdentity, Node, Session, WriteOptions } from "@k2b/filegate";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import type { BaseSummary } from "../contracts";
 import { type Binding, bindings } from "../data/bases";
@@ -13,6 +14,7 @@ import { migrateSharing } from "../data/sharing-migration";
 import { sameUploadExecution, sameUploadOptions, uploads } from "../data/uploads";
 import { migrate } from "../migrate";
 import { FilesError } from "./errors";
+import { connectFilegate } from "./filegate-facade";
 import { createSharingService, type SharingAccess } from "./sharing";
 
 const suite = suiteFor("database");
@@ -79,9 +81,11 @@ suite("share authority, public privacy and durable inbox budgets", () => {
   const listCalls: Array<{ path: string | null; after: string | null }> = [];
   const sessions = new Map<string, Session>();
   const config = {
+    activityRetentionDays: 365,
     url: "http://filegate.test:4000",
     token: "test",
     tokenConfigured: true,
+    unreadable: false,
     cloud: {
       enabled: true,
       root: "cloud",
@@ -196,7 +200,7 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     },
     { preconnect: fetch.preconnect },
   );
-  const filegate = new Filegate({ baseUrl: config.url, token: config.token, fetch: transport });
+  const filegate = connectFilegate(config, transport);
   const authorize = async (_actor: RequestActor, _baseId: string, path: string, directory = false): Promise<SharingAccess> => {
     authorizationCalls++;
     if (denied || deniedPaths.has(path)) throw new FilesError("forbidden", 403);
@@ -240,7 +244,7 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     });
   const service = makeService();
   const create = (overrides: Partial<Parameters<typeof service.createShare>[1]> = {}) =>
-    service.createShare(actor, {
+    service.createShare(testCall(actor), {
       baseId: summary.id,
       kind: "inbox",
       folder: "Inbox",
@@ -255,6 +259,7 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     await assertPrivateDatabase();
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
     await migrate();
   });
   beforeEach(async () => {
@@ -295,7 +300,7 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     const saved = await shares.get(share.id);
     expect(saved?.token_hash).toBe(shareTokenHash(token(share)));
     expect(JSON.stringify(saved)).not.toContain(token(share));
-    expect((await service.listShares(actor)).items[0]?.url).toBeNull();
+    expect((await service.listShares(testCall(actor))).items[0]?.url).toBeNull();
     expect((await service.publicShare(token(share), "inbox")).note).toBe("hello visitors");
     const privateOnly = await create({ note: "old internal secret" });
     expect((await service.publicShare(token(privateOnly), "inbox")).note).toBeNull();
@@ -316,21 +321,21 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     const share = await create();
     denied = true;
     await expect(service.publicShare(token(share), "inbox")).rejects.toMatchObject({ code: "not_found" });
-    expect((await service.listShares(actor)).items).toHaveLength(1);
+    expect((await service.listShares(testCall(actor))).items).toHaveLength(1);
     const stranger: RequestActor = { ...actor, user: { ...actor.user, id: randomUUID() } };
-    expect((await service.listShares(stranger)).items).toHaveLength(0);
-    await expect(service.revokeShare(stranger, { id: share.id })).rejects.toMatchObject({ code: "not_found" });
-    expect((await service.revokeShare(actor, { id: share.id })).state).toBe("revoked");
+    expect((await service.listShares(testCall(stranger))).items).toHaveLength(0);
+    await expect(service.revokeShare(testCall(stranger), { id: share.id })).rejects.toMatchObject({ code: "not_found" });
+    expect((await service.revokeShare(testCall(actor), { id: share.id })).state).toBe("revoked");
   });
   test("inactive creators are hidden and admin list/revoke is independent of file access", async () => {
     const share = await create();
     inactiveCreator = true;
     await expect(service.publicShare(token(share), "inbox")).rejects.toMatchObject({ code: "not_found" });
-    await expect(service.listShares(actor, { admin: true })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.listShares(testCall(actor), { admin: true })).rejects.toMatchObject({ code: "forbidden" });
     admin = true;
     denied = true;
-    expect((await service.listShares(actor, { admin: true })).items).toHaveLength(1);
-    expect((await service.revokeShare(actor, { id: share.id, admin: true })).state).toBe("revoked");
+    expect((await service.listShares(testCall(actor), { admin: true })).items).toHaveLength(1);
+    expect((await service.revokeShare(testCall(actor), { id: share.id, admin: true })).state).toBe("revoked");
   });
   test("quota reservation is atomic across concurrent requests and rejects unsafe sizes", async () => {
     const share = await create();
@@ -356,7 +361,7 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     await expect(service.publicInboxUpload(token(share), { idempotencyKey: randomUUID(), name: "b", size: 6 })).rejects.toMatchObject({
       code: "inbox_total_limit",
     });
-    await service.revokeShare(actor, { id: share.id });
+    await service.revokeShare(testCall(actor), { id: share.id });
     expect(await service.publicInboxCommit(token(share), opened.id)).toEqual({ name: "a", size: 6 });
   });
   test("missing receipts retain reservations and are visible to admins", async () => {
@@ -369,13 +374,13 @@ suite("share authority, public privacy and durable inbox budgets", () => {
       code: "inbox_total_limit",
     });
     admin = true;
-    expect((await service.adminUploadReservations(actor)).items[0]?.error).toBe("receipt_unknown");
+    expect((await service.adminUploadReservations(testCall(actor))).items[0]?.error).toBe("receipt_unknown");
   });
   test("expired receipts release their reservation even after link revocation", async () => {
     const share = await create();
     const opened = await service.publicInboxUpload(token(share), { idempotencyKey: randomUUID(), name: "a", size: 10 });
     sessions.values().next().value!.state = "expired";
-    await service.revokeShare(actor, { id: share.id });
+    await service.revokeShare(testCall(actor), { id: share.id });
     await service.reconcileInboxUploads();
     expect((await uploads.getForShare(opened.id, share.id))?.state).toBe("expired");
   });
@@ -413,19 +418,19 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     const docs = await create({ kind: "download", paths: ["Docs"] });
     await create({ kind: "inbox", folder: "Inbox" });
     const revoked = await create({ kind: "download", paths: ["Old"] });
-    await service.revokeShare(actor, { id: revoked.id });
+    await service.revokeShare(testCall(actor), { id: revoked.id });
     const expired = await create({ kind: "download", paths: ["Expired"] });
     await sql`UPDATE filesv2.shares SET expires_at=now() - interval '1 minute' WHERE id=${expired.id}::uuid`;
     expect(await shares.activeDownloadItems(binding.id)).toEqual([["Docs"]]);
-    await service.revokeShare(actor, { id: docs.id });
+    await service.revokeShare(testCall(actor), { id: docs.id });
     expect(await shares.activeDownloadItems(binding.id)).toEqual([]);
   });
   test("share pagination exposes every row once and an aborted recovery tick does no work", async () => {
     await Promise.all(Array.from({ length: 51 }, (_, i) => create({ title: `Share ${i}` })));
-    const first = await service.listShares(actor);
+    const first = await service.listShares(testCall(actor));
     expect(first.items).toHaveLength(50);
     expect(first.next).not.toBeNull();
-    const second = await service.listShares(actor, { after: first.next! });
+    const second = await service.listShares(testCall(actor), { after: first.next! });
     expect(second.items).toHaveLength(1);
     expect(second.next).toBeNull();
     expect(new Set([...first.items, ...second.items].map((item) => item.id)).size).toBe(51);
@@ -530,7 +535,7 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     loseCreate = true;
     await expect(service.publicInboxUpload(token(share), input)).rejects.toThrow();
     loseCreate = false;
-    await service.revokeShare(actor, { id: share.id });
+    await service.revokeShare(testCall(actor), { id: share.id });
     await service.reconcileInboxUploads();
     expect(createRequests).toHaveLength(1);
     const session = sessions.values().next().value!;

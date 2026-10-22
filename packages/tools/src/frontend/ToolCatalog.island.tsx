@@ -38,7 +38,7 @@ export const toolCatalogMessages = i18n.define({
 const toolHref = (tool: LocalizedTool): string => `/tools/${tool.id}`;
 
 const ToolIcon = (props: { tool: LocalizedTool }) => (
-  <span class="tools-tool-icon">
+  <span class="tools-tool-icon k2b-icon-tile app-accent-text">
     <i class={`${props.tool.icon} text-base`} />
   </span>
 );

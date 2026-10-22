@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  type CapabilityInvocationResult,
   capabilityContractIssues,
   capabilityResultSchema,
   contactDirectory,
@@ -24,7 +25,13 @@ import {
   ContactUpdateInputSchema,
 } from "./capability-contracts";
 import { type Contact, contactsService } from "./service";
+import * as access from "./service/access";
+import * as books from "./service/books";
+import * as contacts from "./service/contacts";
+import * as favorites from "./service/favorites";
+import * as notes from "./service/notes";
 import * as publicResources from "./service/public-resources";
+import * as domainTags from "./service/tags";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const bookId = "22222222-2222-4222-8222-222222222222";
@@ -136,6 +143,7 @@ const publicContact = <T extends Contact>(value: T): T => ({
 });
 
 beforeEach(() => {
+  spyOn(access, "getActorBookPermission").mockResolvedValue("admin");
   spyOn(publicResources, "resolvePublicId").mockImplementation(async (table, value) => {
     if (table === "books" && value === publicBookId) return bookId;
     if (table === "contacts" && value === publicContactId) return contactId;
@@ -206,9 +214,9 @@ describe("contacts capabilities", () => {
   });
 
   test("reviews a destructive contact action without mutating it", async () => {
-    spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
-    spyOn(contactsService.book, "get").mockResolvedValue(book);
-    spyOn(contactsService.contact, "get").mockResolvedValue(contact);
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "get").mockResolvedValue(contact);
     const remove = spyOn(contactsService.contact, "remove");
     const review = contactsCapabilities.actions["contact.delete"].review;
     if (!review) throw new Error("Contact delete review missing");
@@ -220,8 +228,8 @@ describe("contacts capabilities", () => {
   });
 
   test("returns one semantic Cloud link with each listed contact", async () => {
-    spyOn(contactsService.book, "get").mockResolvedValue(book);
-    spyOn(contactsService.contact, "list").mockResolvedValue({
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "list").mockResolvedValue({
       items: [contact],
       page: 1,
       perPage: 25,
@@ -261,9 +269,9 @@ describe("contacts capabilities", () => {
   });
 
   test("keeps legacy website text from invalidating an otherwise readable contact", async () => {
-    spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
-    spyOn(contactsService.book, "get").mockResolvedValue(book);
-    spyOn(contactsService.contact, "get").mockResolvedValue(contact);
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "get").mockResolvedValue(contact);
 
     const definition = contactsCapabilities.queries["contact.read"];
     const result = await definition.run({ id: publicContactId }, context);
@@ -366,9 +374,9 @@ describe("contacts capabilities", () => {
       websites: [],
       bankAccounts: [],
     } satisfies Contact;
-    spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
-    spyOn(contactsService.book, "get").mockResolvedValue(book);
-    spyOn(contactsService.contact, "get").mockResolvedValue(oversized);
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "get").mockResolvedValue(oversized);
 
     const result = await contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, context);
     expect(result.ok).toBeTrue();
@@ -381,9 +389,9 @@ describe("contacts capabilities", () => {
   });
 
   test("shows bounded before and after values when reviewing contact updates", async () => {
-    spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
-    spyOn(contactsService.book, "get").mockResolvedValue(book);
-    spyOn(contactsService.contact, "get").mockResolvedValue(contact);
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "get").mockResolvedValue(contact);
     const review = contactsCapabilities.actions["contact.update"].review;
     if (!review) throw new Error("Contact update review missing");
 
@@ -411,9 +419,9 @@ describe("contacts capabilities", () => {
   });
 
   test("summarizes contact changes as user-visible outcomes", async () => {
-    spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
-    spyOn(contactsService.book, "get").mockResolvedValue(book);
-    spyOn(contactsService.contact, "get").mockResolvedValue(contact);
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "get").mockResolvedValue(contact);
     const recordAudit = spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
     spyOn(contactsService.contact, "update").mockResolvedValue({
@@ -447,7 +455,7 @@ describe("contacts capabilities", () => {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    spyOn(contactsService.tag, "changeAssignments").mockResolvedValue({ ok: true, data: [customerTag] });
+    spyOn(domainTags, "changeAssignments").mockResolvedValue({ ok: true, data: [customerTag] });
     const tags = await contactsCapabilities.actions["tag.change"].run(
       { contactId: publicContactId, addTagIds: [publicTagId], removeTagIds: [] },
       context,
@@ -455,7 +463,7 @@ describe("contacts capabilities", () => {
     expect(tags).toMatchObject({ ok: true, data: { summary: "Added #customer to Ada Example." } });
     if (tags.ok) expect(capabilityResultSchema(contactsCapabilities.actions["tag.change"].data).safeParse(tags.data).success).toBeTrue();
 
-    spyOn(contactsService.favorite, "set").mockResolvedValue();
+    spyOn(favorites, "set").mockResolvedValue();
     const favorite = await contactsCapabilities.actions["favorite.set"].run({ contactId: publicContactId, favorite: true }, context);
     expect(favorite).toMatchObject({ ok: true, data: { summary: "Ada Example is in favorites." } });
   });
@@ -469,10 +477,10 @@ describe("contacts capabilities", () => {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
-    spyOn(contactsService.book, "get").mockResolvedValue(book);
-    spyOn(contactsService.contact, "get").mockResolvedValue(contact);
-    spyOn(contactsService.tag, "list").mockResolvedValue([tag]);
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "get").mockResolvedValue(contact);
+    spyOn(domainTags, "list").mockResolvedValue([tag]);
 
     const tagReview = await contactsCapabilities.actions["tag.change"].review!(
       { contactId: publicContactId, addTagIds: [publicTagId], removeTagIds: [] },
@@ -493,7 +501,7 @@ describe("contacts capabilities", () => {
       (Object.values(contactsCapabilities.actions) as CapabilityActionDefinition[]).filter((action) => action.approval === "rememberable")
         .length,
     );
-    expect(results.map((result) => (result.ok ? result.data.approvalScope : null))).toEqual([
+    expect(results.map((result) => (result.ok ? CapabilityActionReviewSchema.parse(result.data).approvalScope : null))).toEqual([
       `book:${publicBookId}`,
       `book:${publicBookId}`,
       "favorites",
@@ -529,7 +537,7 @@ describe("contacts capabilities", () => {
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
-      expect(result.data.approvalScope?.length).toBeGreaterThan(0);
+      expect(CapabilityActionReviewSchema.parse(result.data).approvalScope?.length).toBeGreaterThan(0);
       const parsed = CapabilityActionReviewSchema.safeParse(result.data);
       if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
     }
@@ -595,7 +603,7 @@ describe("contacts capabilities", () => {
   });
 
   test("emits semantic contact links while preserving the v1 openHref contract", async () => {
-    spyOn(contactsService.contact, "search").mockResolvedValue({
+    spyOn(contacts, "search").mockResolvedValue({
       items: [contact],
       page: 1,
       perPage: 8,
@@ -643,21 +651,103 @@ describe("contacts capabilities", () => {
     });
   });
 
-  test("search respects book membership even for admins, matching contact navigation", async () => {
-    const search = spyOn(contactsService.contact, "search").mockImplementation(async (options) => ({
-      items: options.bypassAccess ? [contact] : [],
-      page: 1,
-      perPage: 20,
-      total: options.bypassAccess ? 1 : 0,
-      hasNext: false,
-    }));
-
-    const result = await contactsCapabilities.queries["contact.search"].run({ query: "Ada", tags: [], limit: 20 }, context);
-    expect(result).toEqual({ ok: true, data: { data: [] } });
-    expect(search).toHaveBeenCalledWith(expect.objectContaining({ subject: context.accessSubject, boundBookId: null }));
+  test("tag, note, and favorite capabilities preserve access messages and stop before domain lists or writes", async () => {
+    spyOn(access, "getActorBookPermission").mockResolvedValue("none");
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "get").mockResolvedValue(contact);
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(publicResources, "resolvePublicId").mockImplementation(async (table) => {
+      if (table === "books") return bookId;
+      if (table === "contacts") return contactId;
+      return "66666666-6666-4666-8666-666666666666";
+    });
+    spyOn(domainTags, "get").mockResolvedValue({
+      id: "66666666-6666-4666-8666-666666666666",
+      bookId,
+      name: "Customer",
+      color: "#112233",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    spyOn(notes, "get").mockResolvedValue({
+      id: "66666666-6666-4666-8666-666666666666",
+      contactId,
+      authorUserId: userId,
+      authorDisplayName: user.displayName,
+      authorAvatarHash: null,
+      content: "Note",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      canEdit: false,
+      canDelete: false,
+    });
+    const list = spyOn(domainTags, "listPage");
+    const change = spyOn(domainTags, "changeAssignments");
+    const favorite = spyOn(favorites, "set");
+    spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+    const results = [
+      await contactsCapabilities.queries["tag.read"].run({ id: publicTagId }, context),
+      await contactsCapabilities.queries["note.read"].run({ id: "Note01" }, context),
+      await contactsCapabilities.queries["tag.list"].run({ bookId: publicBookId, limit: 25 }, context),
+      await contactsCapabilities.actions["favorite.set"].run({ contactId: publicContactId, favorite: true }, context),
+    ];
+    for (const result of results)
+      expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN", message: "Read access to this address book is required" } });
+    expect(
+      await contactsCapabilities.actions["tag.change"].run(
+        { contactId: publicContactId, addTagIds: [publicTagId], removeTagIds: [] },
+        context,
+      ),
+    ).toMatchObject({ ok: false, error: { code: "FORBIDDEN", message: "Write access to this address book is required" } });
+    expect(list).not.toHaveBeenCalled();
+    expect(change).not.toHaveBeenCalled();
+    expect(favorite).not.toHaveBeenCalled();
   });
 
-  test("agent service accounts read through their direct grant within their scopes; resource-bound keys stay bound", async () => {
+  test("Cloud administrators use their grants for detail, list, suggestions, and search", async () => {
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    const permission = spyOn(access, "getActorBookPermission").mockResolvedValue("none");
+    const contactRead = await contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, context);
+    const bookRead = await contactsCapabilities.queries["book.read"].run({ id: publicBookId }, context);
+    expect(contactRead.ok).toBeFalse();
+    expect(bookRead.ok).toBeFalse();
+    if (!contactRead.ok) expect(contactRead.error.code).toBe("FORBIDDEN");
+    if (!bookRead.ok) expect(bookRead.error.code).toBe("FORBIDDEN");
+    expect(permission).toHaveBeenCalledTimes(2);
+    expect(permission).toHaveBeenLastCalledWith({ bookId, actor: context.actor, accessSubject: context.accessSubject });
+
+    const adminList = spyOn(books, "listAdmin");
+    const listPage = spyOn(books, "listPage").mockResolvedValue({
+      items: [],
+      page: 1,
+      perPage: 25,
+      total: 0,
+      hasNext: false,
+    });
+    const bookList = contactsCapabilities.queries["book.list"];
+    expect((await bookList.run(bookList.input.parse({}), context)).ok).toBeTrue();
+    expect(adminList).not.toHaveBeenCalled();
+    expect(listPage).toHaveBeenCalledWith(expect.objectContaining({ subject: context.accessSubject, boundBookId: null }));
+
+    const search = spyOn(contacts, "search").mockResolvedValue({
+      items: [],
+      page: 1,
+      perPage: 20,
+      total: 0,
+      hasNext: false,
+    });
+    expect((await contactsCapabilities.queries["contact.suggest"].run({ query: "Ada", limit: 20 }, context)).ok).toBeTrue();
+    const result = await contactsCapabilities.queries["contact.search"].run({ query: "Ada", tags: [], limit: 20 }, context);
+    expect(result).toEqual({ ok: true, data: { data: [] } });
+    expect(search).toHaveBeenCalledTimes(2);
+    for (const [options] of search.mock.calls) {
+      expect(options.subject).toEqual(context.accessSubject);
+      expect(options).not.toHaveProperty("bypassAccess");
+    }
+  });
+
+  test("service-account detail checks delegate actor and subject; collections keep scope limits", async () => {
     const agentId = "77777777-7777-4777-8777-777777777777";
     const serviceAccountContext = (
       account: { id: string; kind: "agent" | "resource_bound"; resourceId: string | null },
@@ -689,18 +779,18 @@ describe("contacts capabilities", () => {
         signal: new AbortController().signal,
       }) satisfies CapabilityExecutionContext;
     const agent = (scopes: string[]) => serviceAccountContext({ id: agentId, kind: "agent", resourceId: null }, scopes);
-    spyOn(contactsService.book, "get").mockResolvedValue(book);
-    spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
-    spyOn(contactsService.contact, "get").mockResolvedValue(contact);
-    const permission = spyOn(contactsService.book.permission, "get").mockResolvedValue("write");
-    const listPage = spyOn(contactsService.book, "listPage").mockResolvedValue({
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(contacts, "get").mockResolvedValue(contact);
+    const permission = spyOn(access, "getActorBookPermission").mockResolvedValue("write");
+    const listPage = spyOn(books, "listPage").mockResolvedValue({
       items: [{ ...book, permission: "write" }],
       page: 1,
       perPage: 25,
       total: 1,
       hasNext: false,
     });
-    const search = spyOn(contactsService.contact, "search").mockResolvedValue({
+    const search = spyOn(contacts, "search").mockResolvedValue({
       items: [contact],
       page: 1,
       perPage: 20,
@@ -717,8 +807,9 @@ describe("contacts capabilities", () => {
     );
     // Scopes cap the grant: a read-only token reports read access on a write grant.
     if (listed.ok) expect(listed.data.data.map((item) => item.permission)).toEqual(["read"]);
-    expect((await contactRead.run({ id: publicContactId }, agent(["read"]))).ok).toBeTrue();
-    expect(permission).toHaveBeenLastCalledWith({ bookId, subject: { type: "service_account", serviceAccountId: agentId } });
+    const reader = agent(["read"]);
+    expect((await contactRead.run({ id: publicContactId }, reader)).ok).toBeTrue();
+    expect(permission).toHaveBeenLastCalledWith({ bookId, actor: reader.actor, accessSubject: reader.accessSubject });
     const found = await contactsCapabilities.queries["contact.search"].run({ query: "Ada", tags: [], limit: 20 }, agent(["read"]));
     expect(found.ok && found.data.data.length).toBe(1);
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ boundBookId: null }));
@@ -728,13 +819,14 @@ describe("contacts capabilities", () => {
     permission.mockResolvedValue("none");
     expect((await contactRead.run({ id: publicContactId }, agent(["read"]))).ok).toBeFalse();
 
-    // A resource-bound key stays inside its bound book, whatever it was granted elsewhere.
+    // Exact binding and detail scope caps are covered by api/book-permission.integration.test.ts.
     permission.mockResolvedValue("admin");
     const bound = serviceAccountContext(
       { id: "88888888-8888-4888-8888-888888888888", kind: "resource_bound", resourceId: "99999999-9999-4999-8999-999999999999" },
       ["read"],
     );
-    expect((await contactRead.run({ id: publicContactId }, bound)).ok).toBeFalse();
+    expect((await contactRead.run({ id: publicContactId }, bound)).ok).toBeTrue();
+    expect(permission).toHaveBeenLastCalledWith({ bookId, actor: bound.actor, accessSubject: bound.accessSubject });
   });
 
   test("keeps exact resolution bounded and rejects unrelated contact fields", () => {
@@ -766,4 +858,61 @@ test("implements every contact-directory function with the IDs consumers use by 
   expect(issues("read", "contact.read")).toEqual([]);
   expect(issues("listWritableBooks", "book.list")).toEqual([]);
   expect(issues("create", "contact.create")).toEqual([]);
+});
+
+test("every declared Type has a reader open-link case or an explicit reason", async () => {
+  const noteId = "77777777-7777-4777-8777-777777777777";
+  const note = {
+    id: noteId,
+    contactId,
+    content: "Context",
+    authorUserId: userId,
+    authorDisplayName: user.displayName,
+    authorAvatarHash: null,
+    canEdit: true,
+    canDelete: true,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  const tag = {
+    id: "66666666-6666-4666-8666-666666666666",
+    bookId,
+    name: "Customer",
+    color: "#112233",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  spyOn(publicResources, "resolvePublicId").mockImplementation(async (table, value) => {
+    if (table === "books" && value === publicBookId) return bookId;
+    if (table === "contacts" && value === publicContactId) return contactId;
+    if (table === "tags" && value === publicTagId) return tag.id;
+    if (table === "notes" && value === "Note01") return noteId;
+    return null;
+  });
+  spyOn(publicResources, "projectNotes").mockImplementation(async (items) =>
+    items.map((item) => ({ ...item, id: "Note01", contactId: publicContactId })),
+  );
+  spyOn(books, "get").mockResolvedValue(book);
+  spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+  spyOn(contacts, "get").mockResolvedValue(contact);
+  spyOn(domainTags, "get").mockResolvedValue(tag);
+  spyOn(notes, "get").mockResolvedValue(note);
+  const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+    book: { reader: "book.read", read: async () => contactsCapabilities.queries["book.read"].run({ id: publicBookId }, context) },
+    contact: {
+      reader: "contact.read",
+      read: async () => contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, context),
+    },
+    tag: { reader: "tag.read", read: async () => contactsCapabilities.queries["tag.read"].run({ id: publicTagId }, context) },
+    note: { reader: "note.read", read: async () => contactsCapabilities.queries["note.read"].run({ id: "Note01" }, context) },
+  };
+  expect(Object.keys(cases).sort()).toEqual(Object.keys(contactsCapabilities.types).sort());
+  for (const [typeId, type] of Object.entries(contactsCapabilities.types)) {
+    const fixture = cases[typeId];
+    if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
+    expect(fixture.reader).toBe(type.reader);
+    const result = await fixture.read();
+    if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+    assertResourceOpenLink(result.data);
+  }
 });

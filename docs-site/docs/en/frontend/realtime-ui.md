@@ -5,7 +5,7 @@ section: Frontend
 order: 870
 description: Update an open page from its application's live channels while preserving reload and recovery behavior.
 tags: [realtime, websocket, cursors]
-updated: 2026-10-04
+updated: 2026-10-19
 ---
 
 # Realtime UI
@@ -54,6 +54,11 @@ onMount(() => {
   for it, they collapse into one `resync`.
 - `resync` loads the canonical state again. Events that arrive meanwhile are
   applied after it. A reconnect while it runs resumes after its cursor.
+- `caughtUp` reports whether the subscription has applied every update the
+  server sent. It starts `false` and is `true` while the socket is open, the
+  server has confirmed the subscription, and no event or `resync` waits or
+  runs. Keep state that only live updates refresh, such as counts, without
+  loading it again only while it is `true`; otherwise load it.
 - `revoked` ends the subscription: the resource is gone or no longer readable.
 - `unavailable` reports that live updates stopped: the session ended, the
   socket was refused, or `apply` or `resync` failed four times (after 1, 3,
@@ -144,10 +149,16 @@ const replacePage = () => {
 };
 ```
 
-Wait for open editors to close before an automatic reload, so a reload does
-not discard a draft. `reloadOnce` also returns `false` when `sessionStorage`
-is unavailable. A reload that follows an explicit user action does not need
-the guard.
+`reloadOnce` never reloads under an open modal dialog. Once the last one
+closes, it shows a notice with a Reload action instead, because the person
+may have confirmed work in that dialog, and a reload would cancel its request.
+A modeless window, such as global search moved aside, leaves the page usable
+and does not hold the reload. While a dialog holds it, `reloadOnce` returns
+`true`, so a dialog that shows live data says itself that its updates are
+paused. Wait for open editors outside a dialog to close before you call
+`reloadOnce`, so an automatic reload does not discard a draft.
+`reloadOnce` also returns `false` when `sessionStorage` is unavailable. A
+reload that follows an explicit user action does not need the guard.
 
 An ended session reaches the page as `unavailable`. Reload, so the page's
 route policy sends the person to sign-in with a return URL. Do not navigate to

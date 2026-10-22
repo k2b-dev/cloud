@@ -36,6 +36,8 @@ Halte einen anderen erlaubten Zugang für die Administration oder deinen Notfall
 
 Das Sperren eines Kontotyps lehnt auch spätere Anfragen bestehender Sitzungen, benutzergebundener OAuth-Tokens, persönlicher API-Schlüssel und benutzergebundener Hintergrundarbeit ab. Es löscht keine Konten und stoppt nicht den FreeIPA-Sync. Erlaubst du den Typ wieder, funktionieren ansonsten gültige Zugangsdaten wieder. Die Notfallwiederherstellung erlaubt nach ausdrücklicher Bestätigung wieder alle lokalen **Login**-Konten. Welche Typen die Anmeldeseite zeigt, ändert sie nicht.
 
+Unter **Admin → Einstellungen → Anmeldung → Ortsangaben** siehst du Quelle und Erstellungsdatum der City- und ASN-Datenbanken. Lade eine eigene `.mmdb`- oder `.mmdb.gz`-Datei hoch oder setze einen Typ auf den mitgelieferten Stand zurück. Uploads bleiben bis zum Zurücksetzen aktiv. Sind die Daten älter als etwa sechs Monate, erscheint ein Hinweis. Die Datei muss eine City- oder ASN-Datenbank mit IPv6-Suchbaum sein; beachte die Lizenz des Anbieters. Es gelten 192 MiB entpackt und 128 MiB pro Upload-Anfrage. Solange DB-IP-Daten aktiv sind, erscheint der Quellenhinweis zu DB-IP.
+
 ## Die weiteren Einstellungsgruppen finden {icon="settings"}
 
 :::reference
@@ -46,7 +48,7 @@ Das Sperren eines Kontotyps lehnt auch spätere Anfragen bestehender Sitzungen, 
 - **Accounts & Anmeldung → Linux-Identitäten:** Reserviere einen ID-Bereich und lege Standardwerte für Home und Shell fest. Bei eingeschalteter Vergabe erhalten neue lokale Vollkonten und hochgestufte Gäste ihre Linux-Attribute automatisch. Das Einschalten ändert ältere Vollkonten nicht; nutze dafür **Backfill bestehender Accounts**. Schaltest du die Vergabe aus, verschwindet die Backfill-Tabelle, und bestehende Identitäten bleiben in Konten erhalten. Linux-Identitäten schalten weder die Anmeldung am Rechner noch sudo frei.
 - **Accounts & Anmeldung → FreeIPA:** FreeIPA-Verbindungseinstellungen, Synchronisierungsregeln und Gruppenzuordnung.
 - **KI:** Konfiguriere Modellprofile und Zugangsdaten der Anbieter und prüfe die Hintergrundarbeit. Mit **Skills** oder **Projekte** stellst du den Zugriff wieder her, wenn niemand mehr Zugriff **Verwalten** auf eine gemeinsam genutzte Ressource hat. Diese Wiederherstellungsseiten können Zugriff geben oder nicht mehr benötigte Ressourcen dauerhaft löschen. Einen gelöschten App-Skill installiert die App erst wieder, wenn du **Wiederherstellen** wählst.
-- **Einstellungen → Ausgehende Mail** und **Einstellungen → PDF-Erstellung:** SMTP-Zustellung, Absenderzugangsdaten, Gotenberg-Verbindung und ihre Zugangsdaten sowie Grenzen für die PDF-Erstellung.
+- **Einstellungen → Ausgehende Mail** und **Einstellungen → PDF-Erstellung:** SMTP-Zustellung, Absenderzugangsdaten, Gotenberg-Verbindung und ihre Zugangsdaten sowie Grenzen für die PDF-Erstellung. Für interne SMTP- und Bounce-IMAP-Hosts muss der Betreiber `OUTGOING_MAIL_ALLOWED_TARGETS` in Core setzen; standardmäßig sind nur öffentliche Ziele erlaubt.
 - **Einstellungen → E-Mail-Vorlagen**, **Einstellungen → Sicherheit** und **Einstellungen → Rechtliches:** Transaktionale E-Mail-Vorlagen, Ratenbegrenzungen, Standards für den Zugriffsschutz, Nutzungsbedingungen, Datenschutzerklärung und Impressum.
 :::
 

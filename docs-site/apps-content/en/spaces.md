@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-10
+updated: 2026-10-19
 ---
 
 # Spaces
@@ -14,9 +14,12 @@ Spaces organizes tasks and events for a team, project, household, class, or
 recurring process. The same items can be viewed as a list, table, Kanban board,
 or calendar without copying the work into separate systems.
 
-Open the Space name in the sidebar or phone menu to switch Spaces. Signed-in
-users can choose **New space** to create and open a blank Space. The overview
-also offers the task board, event calendar, and project tracker starters.
+Open another Space in the sidebar, shared by the overview and every Space.
+On phones, open the title menu **Space name ⌄**, or **Spaces ⌄** on the overview.
+Both offer **My work**, every accessible Space, and **New space** for signed-in
+users. The create dialog offers **Template** with **Blank space**, **Task board**,
+**Event calendar**, and **Project tracker**; choosing one fills the form and sets
+the starting view. Every field stays editable before creating the Space.
 
 ## Use Spaces
 
@@ -33,12 +36,22 @@ also offers the task board, event calendar, and project tracker starters.
   enabled calendar feed to another calendar client.
 
 The Spaces start page brings accessible work together without changing its
-owning Space. A sidebar lists your Spaces with their open items and last
-activity; opening one enters its workspace, and **New space** starts one from
-a starter. Pin frequently used Spaces, search Spaces, tasks, and events,
-and switch between **For me**, **Today**, and **Upcoming**. On larger screens,
-the Activity panel shows recent Space and item changes; on mobile it opens
-from the Activity button.
+owning Space. **My work** in the sidebar opens it and shows the count assigned
+to you. Each Space row shows its open item count; pinned Spaces come first.
+The sidebar width is shared between the overview and Space pages and can be
+resized. In the page header, switch between **For me**, **Today**, and
+**Upcoming**, search Spaces, tasks, and events, or choose **New task** to choose
+a Space for a new task. On larger screens, the Activity panel shows recent
+Space and item changes; on mobile it opens from the **Activity** button.
+
+Inside a Space, **List**, **Table**, **Kanban**, and **Calendar** are tabs in the
+page header. Search and filter chips share that header in list, table, and
+Kanban; **Reset** clears active filters and search. The calendar keeps its own
+toolbar. The header also offers scoped search, **New task** or **New event**,
+and the **…** menu for **Space settings**, **Copy iCal URL** when enabled, and
+**Keyboard shortcuts** in Kanban. On phones, the primary action is a round
+**+** button. If you can edit the Space, the header previews people with access
+beside the menu or inside it when space is limited.
 
 The selected work view and its counters arrive with the page. Switching work
 views loads the selected list on demand; Back and Forward restore the view
@@ -62,6 +75,7 @@ When the installation runs the
 page and, when there is room, in its tab bar for people with the `user` role. Guests do not see it.
 The page at `/pwa/spaces` shows the start page's **For me**, **Today**, and
 **Upcoming** lists with their counts, across every Space you can read.
+Tasks you claim also count as yours in **For me**.
 
 - Each row shows the title, the Space with its color, and the deadline or, for
   an event, its time or **All day**. An overdue deadline is red.
@@ -96,20 +110,48 @@ Rows do not open the item. Read and edit details in Spaces on the web.
 | Space | Permission-scoped work area with columns, tags, items, and settings |
 | Item | Task or event with shared content and workflow fields |
 | Column and tag | Ordered workflow stage and cross-cutting label |
+| Reaction | One emoji reaction per person on an item |
 | Comment, checklist entry, and assignee | Collaboration context attached to one item |
 | Link | A Cloud resource reference or an external URL on one item; GitHub issue and pull request links show a cached preview |
 | Calendar surface | Time-based view, invitation integration, and optional iCal export |
 
-Tasks use deadlines; events use a schedule and may recur. Views, filters, and
+Tasks use deadlines; events use a schedule and may recur. Deadlines are all-day by default. Choose **Add time** for a specific time and **Remove time** to return to an all-day deadline. An all-day deadline becomes overdue on the following day in the application timezone. Day and week calendars show it in the all-day row; month and year show it on its date. Existing timed deadlines keep their time. Views, filters, and
 grouping change how items are presented, not which resource owns them.
+
+Each person can react once per emoji. Reacting needs write access; seeing reactions
+needs read access. Standalone and agent accounts react under their own name.
+Reactions send no notifications and record no activity, so they do not reset the
+inactive marker. An item holds at most 20 different emoji, ordered by the first
+remaining reaction. Counts do not change this order. A reaction on a series belongs
+to the series item. Generated occurrences have none; saved overrides have their own.
+
+Kanban card footers show up to three reaction chips and "+n" for further emoji.
+Select a chip to add or remove your reaction. With a mouse, the card's add button
+shows on hover or focus; on touch screens the card has none, so open the item.
+The item shows all reactions above the comments, with an add button that is
+always visible for people who can edit the item.
+Readers see read-only chips. Generated occurrences show no reactions. Recent
+emoji are stored per browser under `spaces:recent-emoji`. If saving fails, a
+toast offers **Try again** to repeat the failed action. When the item already has
+20 different emoji, a new one is not sent; the toast says to react with one that is
+already there and offers no **Try again**.
+
+Item reads include `reactions`: each summary has an `emoji`, `count`, `own`, and
+up to three other `people` in reaction order. Responses to other item changes
+leave `reactions` out, so keep the summary you already have. Add your reaction with
+`PUT /api/spaces/:id/items/:itemId/reactions/:emoji`; remove it with `DELETE`
+of the same path. Percent-encode the emoji, for example `👍🏽` or `❤️`.
+Both return `{ reactions }`. Repeating either intent succeeds without a change.
+An invalid emoji returns 400; a 21st different emoji returns 409 with
+`REACTION_LIMIT_REACHED`. These routes do not accept `recurrence_id`.
 
 The item details read top to bottom. A task starts with **Planning**: due date,
 estimate, priority, and tags, plus a hint that jumps to the first active blocker
 while any remain. The description, checklist, and attachments follow; then
 **Assigned**, **Latest status**, and **Last result**; then **Blocked by**,
-**Blocks**, **Related tasks**, and **Links & resources**; then comments and the
+**Blocks**, **Related tasks**, and **Links & resources**; then reactions, comments, and the
 collapsed **Details**. An event shows its schedule under **Planning**, then its
-location, link, and invitations, its content, the assigned people, links,
+location, link, and invitations, its content, the assignees, links,
 comments, and details. Parts without content stay hidden unless you can edit
 them.
 
@@ -171,8 +213,9 @@ a phone, and its arrows move by whole weeks. Both load the week before and
 after while you scroll, and the URL follows the first day you see; an item
 opens there in place. Another filter keeps the days already loaded and the
 place you see, and **Back** after an item keeps the day you scrolled to. The count next to the filters counts the days you see.
-Deadlines show as dashed lines with a checkbox, or **Space**, to check the
-task off, and keep their time when you drag them. Free time creates an event
+Timed deadlines show as dashed lines with a checkbox, or **Space**, to check the
+task off, and keep their time when you drag them. All-day deadlines sit in the
+all-day row; move them in the month view, where they stay all-day, or in the task. Free time creates an event
 where it lies, and a task dragged from the row below the day view into free
 time gets that time, keeps its deadline also when it moves later, and leaves
 the row. **H**, **J**, **K**, **1** to **4**, **G**, **N**, and **Shift+N**
@@ -180,7 +223,7 @@ move, switch views, go to a date, and create in the calendar, and the left
 and right arrow keys page like **K** and **J**; the keyboard button of the
 calendar lists them. In the year view, **N** and **Shift+N** open the full
 form on the shown date.
-See [Day and week views](/en/ui/surfaces/calendar#day-and-week-views-with-dayhours)
+See [Day and week views](/en/ui/content/calendar#day-and-week-views-with-dayhours)
 for the behavior in detail.
 
 An item's **Links & resources** list holds Cloud resource references and external URLs
@@ -191,8 +234,9 @@ fetched server-side, cached in Valkey for five minutes per Space, and never
 fetched while a page renders: a first view shows the plain link and the
 detail panel fills the preview once. Public repositories work without
 configuration. A Space administrator can store one GitHub token per Space
-under **Settings › GitHub**; it is encrypted at rest, used only to preview
-links in that Space, and never displayed again. Without a token, private links
+under **… → Space settings → Connections → GitHub**; it is encrypted at rest,
+used only to preview links in that Space, and never displayed again. Without a
+token, private links
 render without a preview. Spaces never writes to GitHub.
 
 Task checklist entries are deliberately small: one completion state and one
@@ -232,7 +276,7 @@ with names unique per kind. A template stores a title and a description that
 may contain `{{date}}`, `{{weekday}}`, and `{{week}}`, a priority, tags,
 assignees or **Assign to me** for whoever creates the item, a task checklist
 and estimate, and an event's location, link, all-day flag, and duration. A due
-time for tasks or a start time for events defaults to 17:00 or 09:00.
+time is optional for tasks: without one, the deadline is all-day. Events default to a 09:00 start.
 
 Its date rule decides which dates the new item dialog proposes:
 
@@ -244,8 +288,7 @@ Its date rule decides which dates the new item dialog proposes:
 
 Proposals are local calendar dates in the person's time zone, so week, month,
 and daylight-saving changes never move a proposed day. A weekday rule offers
-today only while the template's time still lies ahead; an offset always counts
-from today. When someone presses **+**, a Space with templates of that kind
+today all day for a task without a time, or only while the template's time still lies ahead when it has one. An offset always counts from today. When someone presses **+**, a Space with templates of that kind
 shows a **Template** chip row (a searchable list with more than six), and
 choosing one fills the form and shows the proposals as date chips with the
 first selected, next to **Other date…** and, for tasks, **No date**.
@@ -297,6 +340,8 @@ cld spaces ls "Product" --mine --due-before 2026-10-01 --json
 cld spaces show "Product":"Fix mobile dialog" --json
 cld spaces add "Product":"Write release notes" --deadline 2026-10-20 --assignee me
 cld spaces done "Product":"Fix mobile dialog"
+cld spaces reactions add "Product":"Fix mobile dialog" "👍🏽"
+cld spaces reactions remove "Product":"Fix mobile dialog" "👍🏽"
 ```
 
 `cld spaces templates ls <space>` and `templates show <space>:<template>`
@@ -306,14 +351,18 @@ list templates with their rule and next proposals in the local time zone.
 given `--deadline` or `--starts-at` picks the day instead, and `--starts-at`
 needs `--ends-at`.
 
+For task deadlines, the API and CLI accept `YYYY-MM-DD` as an all-day date or an ISO date-time as a timed deadline. For example, `cld spaces due <item> 2026-10-24` sets an all-day deadline; `cld spaces due <item> 2026-10-24T17:00:00+02:00` adds a time. Responses carry `deadline` unchanged as a calendar date or normalized ISO instant, and `deadlineAllDay` is true only for a date-only deadline. It is false for timed or absent deadlines. Send `deadline: null` to clear a deadline through the update API. Calendar dates never pass through a timezone. `--due-before` still compares against an instant; an all-day deadline sorts at the start of its day in the configured timezone.
+
 Titles are matched exactly. When a space name or title matches several
 resources, the command fails with every candidate as `path (id)` and changes
 nothing; retry with an ID. There is no default space, so every address names
-its space.
+its space. `--assignee` and `assign` accept `me`, a person or service account
+UUID, a username, or a service account name with access to the Space. Repeat
+`--assignee` to replace the assignment with several people or accounts.
 
 The commands follow the shared `cld` verbs: `ls`, `show`, `add`, `set`, `mv`,
 and `rm`, the quick actions `done`, `reopen`, `assign`, and `due`, `deps` for
-blockers, and the groups `comments`, `attachments`, `checklist`, `references`, `links`,
+blockers, and the groups `reactions`, `comments`, `attachments`, `checklist`, `references`, `links`,
 `invitation`, and `access`. `calendar` and `overlap` query a time range across
 spaces. Every command supports `--json`; destructive commands need `--yes`,
 and long text comes from `--from <file|->`. Run `cld spaces help` for the
@@ -407,17 +456,28 @@ latest progress note as **Latest status** and the latest result as **Last
 result**, below the **Assigned** list; reopening preserves the result. Earlier
 notes are recorded in task activity.
 
-A claim says who is working on a task right now; assignment says who is
-responsible, and the Kanban column stays the only status. People claim from the
-board card or the task details with **I'm on it** and release with a second
-click, optionally leaving a handoff note that is saved as progress. In any
-column, the board card puts the holder first in its avatar stack with a green
-ring, shows them once even when they are also assigned, and never hides them in
-the `+N` overflow. In the task details, the holder leads the **Assigned** list
-in the same row style with the green ring and the time they started working.
-An assigned holder appears once; a holder who is not assigned, such as a
-service account, still leads and is marked as not assigned. People and service
-accounts render the same way.
+Assignees can be people or active service accounts, including agents. People
+need direct or group access to the Space; service accounts need their own
+direct access. A Space API key can be assigned only within its own Space, and
+personal automation keys cannot be assignees. Assignment never grants access.
+
+Claiming as a person or an agent also assigns you; the claim is the working
+state of one assignee. This applies to every account that may claim, also
+when it has write access only through access for all signed-in accounts. Releasing your own claim keeps you assigned.
+**Assigned to me** and **For me** select your personal assignments, including
+tasks you claimed. **Assigned** and **Unassigned** count both people and
+service accounts; filtering by an assignee ID can select either kind. The
+Kanban column stays the only status. People claim from the board card or the task details with **I'm on it** and release with a second
+click, optionally leaving a handoff note that is saved as progress. Board cards,
+list rows, and table cells put the working person first in the avatar stack,
+with a green ring. They appear once and never in the `+N` overflow.
+
+In the task details, **Assigned** is one list. The working person's row comes
+first with the green ring, **working on it**, and the time they started working.
+The row stays one line: in a narrow panel, the start time gives way to the name
+and the label. A holder outside the assignees, such as a personal automation
+key or an account that was deleted, still appears first as a working row,
+without a remove action.
 
 Claims coordinate work; they do not lock it. A claim guards completion, not the
 column: anyone who can edit the Space can move a claimed task between open
@@ -427,15 +487,29 @@ and completing ends the claim; the web UI sends it for your own claim. A
 wormhole transfer ends the claim too, because the task leaves the Space, so it
 needs the holder's claim ID in the same way. Anyone with write access may take
 over someone else's claim. In the task details, **Take over** ends the exact
-observed claim and claims the task for you. If someone else claimed a task,
-completing or reopening it from the board, the list, the calendar tray, or the
-details, or sending it through a wormhole, asks once, for example "Claimed by
-Jana Berger – take over and complete?", and then takes the claim over and makes
-the change in one step. Cancel leaves the task, and the card, where they were.
-Task activity records who took a claim over from whom. The previous holder's
-next progress, release, or completion call with the ended claim ID gets `409`
-"Task claim is no longer active", also when someone has claimed the task again
-since.
+observed claim and claims the task for you. This moves the claim and
+assignment together: the previous holder is removed from the assignees,
+and you are assigned. Releasing someone else's claim with force also removes
+that account's assignment, even without a new claim. Completing, reopening,
+moving, or transferring a task with someone else's claim ends that claim but
+keeps the assignees as they are.
+
+Removing the working person or service account from **Assigned** ends their
+claim. Removing someone else asks once, for example "Jana Berger is working on this – remove
+them and end their claim?". A stale assignee list from a client that has not
+seen the new claim is refused with `409`; no fields change. API updates need
+the holder's `claimId`, plus `force` for someone else's claim. CLI `assign` and
+`set`, and the `task.update` and `event.update` capabilities, require you to
+release the claim first.
+
+If someone else claimed a task, completing or reopening it from the board, the
+list, the calendar tray, or the details, or sending it through a wormhole,
+asks once, for example "Claimed by Jana Berger – take over and complete?", and
+then takes the claim over and makes the change in one step. Cancel leaves the
+task, and the card, where they were. Task activity records who took a claim
+over from whom. The previous holder's next progress, release, or completion
+call with the ended claim ID gets `409` "Task claim is no longer active", also
+when someone has claimed the task again since.
 
 Use `cld spaces ls <space-id> --ready --json` to find open tasks without
 active blockers. Read `show <item> --context` before starting, then claim the task
@@ -457,6 +531,8 @@ in those pages using `comments list` and `deps`; use `activity --cursor` to read
 older work notes. Pages are fresh reads and may change during collaboration.
 The `comments list` output and the `blocks` field of `deps` are paginated objects.
 
+Agents use `reaction.add` and `reaction.remove` with `{ itemId, emoji }` for the same reaction intents. `item.read` includes the full reaction summary; list capabilities include each emoji with its `count` and `own` state.
+
 For capabilities, use `task.work.read`, `task.claim`, `task.release` and
 `task.progress`; `task.release` and `task.set-completed` accept `force` to take
 over the exact claim named by `claimId`, `task.set-completed` also accepts
@@ -471,6 +547,9 @@ See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
 
+On upgrade, Spaces preserves existing person assignments and extends item
+and template assignments to service accounts. Startup also adds existing
+non-personal service-account claim holders to their task’s assignees.
 
 ## Commands in global search
 

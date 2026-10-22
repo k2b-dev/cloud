@@ -36,6 +36,7 @@
     "@codemirror/view": "catalog:",
     "@lezer/common": "1.5.3",
     "@lezer/highlight": "1.2.4",
+    "@lezer/markdown": "1.7.2",
     "@uiw/codemirror-themes": "4.25.12",
     "@k2b/ui": "workspace:*",
     "@k2b/cloud": "workspace:*",
@@ -54,7 +55,7 @@
     "solid-js": "catalog:",
     "y-codemirror.next": "0.3.6",
     "y-protocols": "1.0.7",
-    "yjs": "13.6.33",
+    "yjs": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
@@ -65,6 +66,7 @@
     "@types/sanitize-html": "catalog:",
     "bun-plugin-tailwind": "catalog:",
     "playwright": "catalog:",
+    "sharp": "0.35.5",
     "typescript": "catalog:"
   },
   "license": "AGPL-3.0-or-later"

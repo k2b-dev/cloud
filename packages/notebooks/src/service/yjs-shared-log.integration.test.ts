@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SQL, sql } from "bun";
 import { connectTestNats, requireDatabaseUrl, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 
 /**
  * The shared Yjs log (#166): one topic for every note keeps the JetStream
@@ -124,7 +125,7 @@ if (!databaseName) {
       schemaReady = true;
     }
     const notebookId = crypto.randomUUID();
-    await sql`INSERT INTO notebooks.notebooks(id, short_id, name) VALUES (${notebookId}::uuid, ${notebookId.slice(0, 6)}, 'Fixture')`;
+    await sql`INSERT INTO notebooks.notebooks(id, short_id, name) VALUES (${notebookId}::uuid, ${testShortId()}, 'Fixture')`;
     return notebookId;
   };
 

@@ -1,7 +1,8 @@
 import { join } from "node:path";
 import { cliPluginListRoutes } from "@k2b/cloud/api";
-import { type AuthContext, auth } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { authFlows, coreSettings, legalConsent } from "@k2b/cloud/services";
+import { resolveHomePath } from "@k2b/cloud/shared";
 import { getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
 import { Hono } from "hono";
 import cliInstaller from "../../../cloud-cli/scripts/install.sh" with { type: "text" };
@@ -20,8 +21,8 @@ import { afterSignInHref, isReauthenticationRequest, resolveAuthenticatedLoginRe
 import newPasswordPage from "./auth/new-password/page";
 import loginPage from "./auth/page";
 import passwordResetPage from "./auth/password-reset/page";
+import helpPanelPage from "./help/panel.page";
 import registeredHelpPage from "./help/registered.page";
-import { resolveHomePath } from "./home";
 import { makeLegalPage } from "./legal/page-handler";
 import accessPage from "./me/access.page";
 import appPage from "./me/app.page";
@@ -32,6 +33,7 @@ import notificationsPage from "./me/notifications.page";
 import profilePage from "./me/page";
 import securityPage from "./me/security.page";
 import notFoundPage from "./NotFound";
+import { createResourceOpenRoutes } from "./open";
 
 /**
  * Creates the SSR pages router.
@@ -40,6 +42,13 @@ import notFoundPage from "./NotFound";
 export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hono<AuthContext> => {
   const brandingPublicDir = options?.brandingPublicDir ?? "public";
   const pages = new Hono<AuthContext>()
+    .use("/me/notifications/history/*", middleware.noTransform())
+    .use("/admin/outgoing-mail", middleware.noTransform())
+    .use("/admin/outgoing-mail/*", middleware.noTransform())
+    .use("/me/approvals", middleware.noTransform())
+    .use("/me/approvals/*", middleware.noTransform())
+    // Several settings tabs serialize text users write (feedback, conversation titles) next to other users' records.
+    .use("/admin/settings/*", middleware.noTransform())
     // Prevent browser from caching SSR pages (user state changes on login/logout)
     // Skip for branding assets — they set their own cache headers
     .use("*", async (c, next) => {
@@ -54,6 +63,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
       const configured = await coreSettings.get<string>("app.home_path");
       return c.redirect(resolveHomePath(configured), 302);
     })
+    .get("/panel", auth.requireRole("authenticated", ssr.access), ...helpPanelPage)
     .get("/help/apps/:appId", auth.requireRole("authenticated", ssr.access), ...registeredHelpPage)
     .get("/help/apps/:appId/:topic", auth.requireRole("authenticated", ssr.access), ...registeredHelpPage)
     // Serve the installer from the currently deployed Core bundle, rather than
@@ -141,7 +151,8 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
       // data URI, so PNG/ICO uploads still work).
       return serveBranding(c, "app.favicon", join(brandingPublicDir, "logo.svg"), "image/svg+xml");
     })
-    .route("/branding", createAppIconRoutes());
+    .route("/branding", createAppIconRoutes())
+    .route("/open", createResourceOpenRoutes());
 
   // 404 catch-all (must be after all mounted routes)
   pages.get("/*", auth.requireRole("*"), ...notFoundPage);

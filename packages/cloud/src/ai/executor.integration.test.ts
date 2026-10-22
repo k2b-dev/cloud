@@ -4,13 +4,15 @@ import { openAICompatible } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
-import { databaseSuite, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileCapabilities } from "../_internal/capabilities";
+import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
 import * as registry from "../_internal/registry";
 import { approvalRoutes } from "../api/approvals";
+import * as capabilityDispatch from "../api/capabilities";
 import type { User } from "../contracts";
-import { defineCapabilities } from "../contracts/capabilities";
+import { type CapabilityActionReviewData, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
@@ -20,13 +22,15 @@ import { normalizeLocale } from "../shared/locale";
 import { reconcileAppSkills } from "./app-skill-store";
 import { type AppSkillDefinition, skill as appSkill, appSkillManifestHash, registerAppSkills } from "./app-skills";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiToolApproval } from "./approvals";
+import { buildAiCapabilityCatalog } from "./capabilities";
 import * as capabilityExecution from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
+import { aiTurnErrorText } from "./chat/turn-error";
 import { aiChatTasks } from "./chat-tasks";
 import { DEFAULT_COMPACTION_PROMPT } from "./compaction";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
-import { isMalformedToolCallId } from "./malformed-tool-call-repair";
+import { isMalformedToolCallId, newMalformedToolCallId } from "./malformed-tool-call-repair";
 import { aiMemories } from "./memories";
 import { migrateCloudAi } from "./migrate";
 import { aiModelAccess } from "./model-access";
@@ -35,9 +39,11 @@ import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
 import { completeThroughStream, createAiProvider } from "./provider";
 import { AiQuotaError } from "./quotas";
+import { readReviewContent } from "./review-content";
 import { listPendingAiTurnActions } from "./runtime";
 import * as settings from "./settings";
 import { aiSkills } from "./skills";
+import * as conversationStore from "./store";
 import { aiConversations } from "./store";
 import * as stream from "./stream";
 import { type AiLiveTopicEvent, aiStreamTopic } from "./stream";
@@ -210,6 +216,23 @@ const toolCallCompletion = (id: string, name: string, args: unknown): string[] =
     ],
   }),
   sseChunk({ choices: [{ delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }),
+  "data: [DONE]\n\n",
+];
+
+/** A progress sentence and a tool call in one model answer, as a model streams them before it acts. */
+const textThenToolCallCompletion = (text: string, id: string, name: string, args: unknown): string[] => [
+  sseChunk({ choices: [{ delta: { role: "assistant", content: text } }] }),
+  sseChunk({
+    choices: [{ delta: { tool_calls: [{ index: 0, id, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }],
+  }),
+  sseChunk({ choices: [{ delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }),
+  "data: [DONE]\n\n",
+];
+
+/** A model answer that stops without text and without a tool call. */
+const emptyStopCompletion = (): string[] => [
+  sseChunk({ choices: [{ delta: { role: "assistant" } }] }),
+  sseChunk({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 0, total_tokens: 5 } }),
   "data: [DONE]\n\n",
 ];
 
@@ -391,7 +414,8 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
-  test.each(["unchanged", "changed", "used"] as const)("resumed capability approval binds the live review (%s)", async (mode) => {
+  const resumeModes = ["unchanged", "changed", "revoked", "used", "rejected_empty", "approved_empty", "failed_empty"] as const;
+  test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.write"] });
     const compiled = compileCapabilities(
@@ -427,13 +451,19 @@ suite("AI executor integration", () => {
     const review = spyOn(capabilityExecution, "reviewAiCapability").mockResolvedValue({ message: "Original effect", approvalScope: "one" });
     const execute = spyOn(capabilityExecution, "executeAiCapability").mockResolvedValue({ data: { written: true } });
     try {
-      completionQueue = [toolCallCompletion("write-1", "demo__action__write", { value: "one" }), textCompletion("Done")];
+      const emptyStop = mode.endsWith("_empty");
+      if (mode === "failed_empty") execute.mockRejectedValue(new Error("Write failed"));
+      completionQueue = [
+        toolCallCompletion("write-1", "demo__action__write", { value: "one" }),
+        emptyStop ? emptyStopCompletion() : textCompletion("Done"),
+      ];
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
         modelProfileId: MODEL_ID,
         runConfig: {
           kind: "chat",
           input: "Write item",
+          locale: "en",
           actor: { kind: "user", user: actorUser(userId) },
           toolSource: { kind: "default", appTools: true },
         },
@@ -443,6 +473,10 @@ suite("AI executor integration", () => {
       const onApprovalRequested = async ({ approvalId }: { approvalId: string }) => {
         expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("waiting_for_action");
         expect(await approvals.get(approvalId)).toMatchObject({ status: "pending" });
+        const stored = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.callId === "write-1")).toMatchObject({
+          review: { legacy: { question: "Original effect", rows: [] } },
+        });
         approvalEvents.push(approvalId);
         if (mode === "unchanged") throw new Error("Notification unavailable");
       };
@@ -477,12 +511,12 @@ suite("AI executor integration", () => {
         });
         expect(response.status).toBe(200);
       } else {
-        await approvals.decide(first.approvalId, { approved: true }, { userId, via: "web_session" });
+        await approvals.decide(first.approvalId, { approved: mode !== "rejected_empty" }, { userId, via: "web_session" });
         await aiConversations.resolvePendingTurnAction({
           conversationId: conversation.id,
           turnId: turn.id,
           callId: first.callId,
-          event: { type: "approval_response", callId: first.callId, approved: true },
+          event: { type: "approval_response", callId: first.callId, approved: mode !== "rejected_empty" },
         });
       }
       if (mode === "changed") {
@@ -490,6 +524,8 @@ suite("AI executor integration", () => {
         await rememberAiToolApproval({ actorUserId: userId }, { toolName: "demo.write", approvalScope: "one" });
         review.mockResolvedValue({ message: "Changed effect", approvalScope: "one" });
       }
+      // Signing out everywhere voids the unused approval, so the call asks again with the same review.
+      if (mode === "revoked") await sql`UPDATE auth.users SET auth_epoch=auth_epoch+1 WHERE id=${userId}::uuid`;
       if (mode === "used") {
         // An earlier run used the approval and stopped during the Action, before the call asked anything else.
         expect(
@@ -501,7 +537,21 @@ suite("AI executor integration", () => {
         ).toEqual({ ok: true });
       }
       await run("waiting");
-      if (mode === "used") {
+      if (emptyStop) {
+        const expectedStatus = mode === "failed_empty" ? "failed" : "completed";
+        const result = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
+        expect(result).toMatchObject({
+          status: expectedStatus,
+          error: mode === "failed_empty" ? aiTurnErrorText({ code: "tool_failed" }, "en") : null,
+        });
+        const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        expect(messages.at(-1)?.meta?.turnError ?? null).toEqual(mode === "failed_empty" ? { code: "tool_failed" } : null);
+        expect(messages.findLast(({ message }) => message.role === "assistant")?.loopDoneReason).toBe(
+          mode === "failed_empty" ? "error" : "stop",
+        );
+        if (mode === "rejected_empty") expect(execute).not.toHaveBeenCalled();
+        else expect(execute).toHaveBeenCalledTimes(1);
+      } else if (mode === "used") {
         expect(execute).not.toHaveBeenCalled();
         expect(await approvals.get(first.approvalId)).toMatchObject({ status: "consumed" });
         expect(await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).toEqual([]);
@@ -510,13 +560,16 @@ suite("AI executor integration", () => {
           "This approval was already used",
         );
         expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
-      } else if (mode === "changed") {
+      } else if (mode === "changed" || mode === "revoked") {
         expect(execute).not.toHaveBeenCalled();
         expect(await approvals.get(first.approvalId)).toMatchObject({ status: "cancelled" });
         const next = (await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).find(
           (row) => row.status === "pending",
         );
-        expect(next).toMatchObject({ callId: "write-1-approval-1", review: { message: "Changed effect" } });
+        expect(next).toMatchObject({
+          callId: "write-1-approval-1",
+          review: { message: mode === "changed" ? "Changed effect" : "Original effect" },
+        });
         expect(next?.approvalId).not.toBe(first.approvalId);
         expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("waiting_for_action");
       } else {
@@ -727,6 +780,180 @@ suite("AI executor integration", () => {
     } finally {
       getCapabilitySpy.mockRestore();
       registrySpy.mockRestore();
+      executeSpy.mockRestore();
+      completionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test.each(["no_scope", "scoped", "review_throws", "mandate_denied"] as const)("background action review gate: %s", async (mode) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const locale = "de";
+    const compiled = compileCapabilities(
+      "demo",
+      defineCapabilities({
+        protocolVersion: 2,
+        presentation: {
+          baseLocale: "en",
+          translations: { de: { actions: { write: { title: "Eintrag schreiben" } } } },
+        },
+        actions: {
+          write: {
+            title: "Write item",
+            description: "Write one item.",
+            input: z.object({ value: z.string().describe("Value to write.") }).strict(),
+            data: z.object({ written: z.boolean() }),
+            approval: "rememberable",
+            idempotency: "required",
+            destructive: false,
+            openWorld: false,
+            review: async () => ok({ message: "Write one item." }),
+            run: async () => ok({ data: { written: true } }),
+          },
+        },
+      }),
+    );
+    const entry: CapabilityRegistryEntry = {
+      appId: "demo",
+      appName: "Demo",
+      appDescription: "Test actions",
+      appIcon: "ti ti-box",
+      appAccent: "#0f766e",
+      endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
+      manifest: compiled.manifest,
+      presentation: compiled.presentation,
+    };
+    const [action] = buildAiCapabilityCatalog([entry], locale);
+    if (!action) throw new Error("Expected action in catalog");
+    const title = action.display.title;
+    const requestSchema = z.object({
+      messages: z.array(z.object({ role: z.string(), tool_call_id: z.string().optional(), content: z.unknown() })),
+      tools: z.array(z.object({ function: z.object({ name: z.string() }) })).optional(),
+    });
+    const requests: z.infer<typeof requestSchema>[] = [];
+    const getCapabilitySpy = spyOn(registry, "getCapability").mockImplementation(async (appId) => (appId === entry.appId ? entry : null));
+    const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([entry]);
+    const reviewSpy = spyOn(capabilityExecution, "reviewAiCapability").mockResolvedValue({
+      message: "Write one item.",
+      ...(mode === "scoped" ? { approvalScope: "value:one" } : {}),
+    });
+    const executeSpy = spyOn(capabilityExecution, "executeAiCapability").mockResolvedValue({ data: { written: true } });
+    try {
+      if (mode === "review_throws") reviewSpy.mockRejectedValue(new Error("Review unavailable"));
+      expect(action.operation).toMatchObject({ approval: "rememberable", review: true });
+      expect(title).not.toBe(action.title);
+      const task = await aiChatTasks.create({
+        userId,
+        chatId: conversation.shortId,
+        prompt: "Write one item",
+        locale,
+        grants: [{ appId: "demo", capabilityId: "write", kind: "action", fixedInput: { value: "one" } }],
+        schedule: { kind: "cron", cron: "0 9 * * *" },
+        timezone: "UTC",
+      });
+      if (!task?.mandateId) throw new Error("Expected scheduled task mandate");
+      const occurrence = await aiChatTasks.createOccurrence({
+        taskId: task.id,
+        scheduledFor: "2026-01-01T09:00:00.000Z",
+        trigger: "manual",
+        requestKey: `review:${task.id}`,
+      });
+      if (!occurrence) throw new Error("Expected occurrence");
+      const delivered = await aiChatTasks.deliverOccurrence({
+        occurrenceId: occurrence.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: task.prompt,
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default", appTools: true },
+        },
+        userMessage: userMessage(task.prompt),
+        expectedRevision: task.revision,
+      });
+      if (!delivered.delivered) throw new Error("Expected background run");
+      const args = { value: mode === "mandate_denied" ? "other" : "one" };
+      completionQueue = [
+        toolCallCompletion("load-write", "load_tools", { names: [action.name] }),
+        toolCallCompletion("write-1", action.providerName, args),
+        textCompletion(mode === "scoped" ? "The item was written." : "The routine lacked permission to write the item."),
+      ];
+      onCompletionRequest = (body) => {
+        requests.push(requestSchema.parse(body));
+      };
+      const leaseOwner = "background-review-exec";
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: delivered.turnId,
+        leaseOwner,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      if (!claim) throw new Error("Expected claim");
+      await createExecutor(leaseOwner, undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: delivered.turnId,
+        claim,
+        signal: new AbortController().signal,
+      });
+      expect(requests).toHaveLength(3);
+      expect(requests[1]?.tools?.map((tool) => tool.function.name)).toContain(action.providerName);
+      const toolResult = requests[2]?.messages.find((message) => message.role === "tool" && message.tool_call_id === "write-1")?.content;
+      const turn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: delivered.turnId });
+      const runConfig = await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: delivered.turnId });
+      if (!turn || runConfig?.kind !== "chat") throw new Error("Expected background chat turn");
+      expect(turn.status).toBe("completed");
+      expect(runConfig.locale).toBe(locale);
+      const needsApproval = mode === "no_scope" || mode === "review_throws";
+      if (needsApproval) {
+        expect(toolResult).toBe(
+          `NEEDS_APPROVAL: ${title} needs the user's approval every time, and routines never ask. Stop and say in one sentence what was missing.`,
+        );
+        expect(runConfig.background?.needsApproval).toEqual({ action: title });
+      } else {
+        expect(runConfig.background?.needsApproval).toBeUndefined();
+      }
+      if (mode === "mandate_denied") {
+        expect(reviewSpy).not.toHaveBeenCalled();
+        expect(toolResult).toBe(
+          "This task's grants do not allow demo.write with these inputs; continue with the granted tools or explain what is missing.",
+        );
+      } else {
+        expect(reviewSpy).toHaveBeenCalledTimes(1);
+        expect(reviewSpy.mock.calls[0]?.[0]).toMatchObject({ entry: action, args, locale, mandate: { id: task.mandateId } });
+      }
+      if (mode === "scoped") {
+        const stored = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: delivered.turnId });
+        expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.name === "demo.write")).toMatchObject({
+          review: { legacy: { question: "Write one item.", rows: [] } },
+        });
+        const [message] = await sql<
+          { meta: unknown }[]
+        >`SELECT meta FROM ai.task_messages WHERE loop_id=${delivered.turnId} AND role='assistant' AND meta ? 'toolReviews'`;
+        expect(message?.meta).toMatchObject({ toolReviews: { "write-1": { legacy: { question: "Write one item." } } } });
+        expect(executeSpy).toHaveBeenCalledTimes(1);
+        expect(executeSpy.mock.calls[0]?.[0]).toMatchObject({ entry: action, args, actionApproval: "approved" });
+      } else {
+        expect(executeSpy).not.toHaveBeenCalled();
+      }
+      expect(await aiChatTasks.finalizeTurn({ turnId: delivered.turnId, status: turn.status })).toEqual({
+        occurrenceId: occurrence.id,
+        failed: needsApproval,
+      });
+      expect(await aiChatTasks.get({ userId, taskId: task.shortId })).toMatchObject(
+        needsApproval
+          ? { state: "needs_attention", reasonCode: "needs_approval", reasonAction: title }
+          : { state: "active", reasonCode: null, reasonAction: null },
+      );
+    } finally {
+      getCapabilitySpy.mockRestore();
+      registrySpy.mockRestore();
+      reviewSpy.mockRestore();
       executeSpy.mockRestore();
       completionQueue = [];
       onCompletionRequest = null;
@@ -1169,7 +1396,7 @@ suite("AI executor integration", () => {
     }
   });
 
-  test("a linked Studio approval asks with its own record's question and only while that request is open", async () => {
+  test.each([false, true])("a linked Studio approval retains its stored question and content (full=%s)", async (fullContent) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
@@ -1204,7 +1431,18 @@ suite("AI executor integration", () => {
         approvalPolicies: new Map([["code_run", "never"]]),
         frontendModes: new Map(),
       };
-      const studio = async (kind: "studio_app" | "assistant_turn") => {
+      const content = {
+        kind: "page" as const,
+        title: "Unsaved proposal",
+        body: `${"x".repeat(80_000)}\u0000END`,
+        format: "plain" as const,
+      };
+      const fullReview = { ...reviewFixture(), ask: "app_asks" as const, content };
+      const reviews = new Map<string, CapabilityActionReviewData>();
+      pipeline.setApprovalReviews(reviews, new Map());
+      const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "linked-approval-test" });
+      await session.append({ role: "assistant", content: [{ type: "tool_call", id: "run", name: "code_run", args: {} }] });
+      const studio = async (kind: "studio_app" | "assistant_turn", review?: CapabilityActionReviewData) => {
         const record = await approvals.request({
           appId: "demo",
           action: "write",
@@ -1214,6 +1452,7 @@ suite("AI executor integration", () => {
           assurance: "standard",
           sentence: "Demo: Write item\nWrite one?",
           input: { value: "one" },
+          review,
           expiresInMs: 60_000,
         });
         if (!record.ok) throw new Error("Expected a new approval request");
@@ -1242,11 +1481,11 @@ suite("AI executor integration", () => {
           approvalContext: { actorUserId: userId },
           allowRememberedApprovals: true,
           rememberableCapabilityApprovals: new Map(),
-          capabilityActionReviews: new Map(),
+          capabilityActionReviews: reviews,
           approvalTargets: new Map(),
           linkedApprovals: new Map([[callId, approvalId]]),
         });
-      const linked = await studio("studio_app");
+      const linked = await studio("studio_app", fullContent ? fullReview : undefined);
       await ask("run-approval-0", linked);
       expect(
         await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "run-approval-0" }),
@@ -1254,6 +1493,32 @@ suite("AI executor integration", () => {
         approvalId: linked,
         message: "Demo: Write item\nWrite one?",
       });
+      if (fullContent) {
+        const block = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === "run-approval-0");
+        if (!block || block.kind !== "tool" || !block.review || !("contentRef" in block.review) || !block.review.contentRef)
+          throw new Error("The relayed proposal must carry its stored content reference");
+        const { digest, href } = block.review.contentRef;
+        expect(href).toContain(`/turns/${turn.id}/reviews/run`);
+        expect(JSON.stringify(pipeline.blocks)).not.toContain("x".repeat(1_000));
+        expect(block.approval?.review).toMatchObject({ contentRef: { href, digest } });
+        expect(await readReviewContent({ conversationId: chat.id, turnId: turn.id, callId: "run" }, digest, userId)).toEqual(content);
+        await pipeline.flush();
+        const history = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id });
+        expect(JSON.stringify(history)).not.toContain("x".repeat(1_000));
+        expect(buildBlocksFromMessages(history)).toContainEqual(
+          expect.objectContaining({ review: expect.objectContaining({ contentRef: { href, digest } }) }),
+        );
+        await approvals.decide(linked, { approved: true }, { userId, via: "web_session" });
+        const request = await approvals.get(linked);
+        expect(
+          await approvals.consume(linked, {
+            input: { value: "one" },
+            review: fullReview,
+            requester: { kind: "studio_app", ref: request!.requesterRef },
+          }),
+        ).toMatchObject({ ok: true });
+        expect(await readReviewContent({ conversationId: chat.id, turnId: turn.id, callId: "run" }, digest, userId)).toEqual(content);
+      }
       const decided = await studio("studio_app");
       await approvals.decide(decided, { approved: false }, { userId, via: "web_session" });
       for (const [callId, approvalId] of [
@@ -2376,6 +2641,93 @@ suite("AI executor integration", () => {
     }
   });
 
+  test.each(["empty", "text", "malformed"] as const)("a recovered worker restores a failed tool round (%s)", async (answer) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Find the report",
+          locale: "en",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Find the report"),
+      });
+      await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "failed-round-dead-worker",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      const earlier = aiConversations.createSessionStore({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "failed-round-dead-worker",
+      });
+      const malformed = answer === "malformed";
+      const callId = malformed ? newMalformedToolCallId() : "search-failed";
+      await earlier.append({
+        role: "assistant",
+        content: [
+          { type: "text", text: "I am searching for the report." },
+          { type: "tool_call", id: callId, name: "search_tools", args: malformed ? {} : { query: 42 } },
+        ],
+        stopReason: "tool_use",
+      });
+      if (malformed) {
+        // The worker died after the assistant append, before Cloud's repair wrapper saved its error result.
+        expect((await earlier.load()).some(({ message }) => message.role === "tool_result")).toBe(false);
+      } else {
+        await earlier.append({ role: "tool_result", callId, name: "search_tools", result: "Invalid query", isError: true });
+      }
+      await sql`UPDATE ai.turns SET lease_expires_at = now() - interval '1 second' WHERE id = ${turn.id}`;
+
+      nextCompletion = answer === "text" ? textCompletion("The requested tool is unavailable.") : emptyStopCompletion();
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: "failed-round-live-worker",
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      expect(claim?.turn.attempt).toBe(2);
+      await createExecutor("failed-round-live-worker", undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+
+      const failed = answer !== "text";
+      expect(await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id })).toMatchObject({
+        status: failed ? "failed" : "completed",
+        error: failed ? aiTurnErrorText({ code: "tool_failed" }, "en") : null,
+      });
+      const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+      if (malformed) {
+        expect(messages.find(({ message }) => message.role === "tool_result" && message.callId === callId)?.message).toMatchObject({
+          role: "tool_result",
+          callId,
+          isError: true,
+        });
+      }
+      expect(messages.at(-1)?.meta?.turnError ?? null).toEqual(failed ? { code: "tool_failed" } : null);
+      expect(messages.findLast(({ message }) => message.role === "assistant")?.loopDoneReason).toBe(failed ? "error" : "stop");
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("steering submitted during the final provider response continues the same turn", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });
@@ -2776,6 +3128,86 @@ suite("AI executor integration", () => {
       expect(sent[2]).toMatchObject({ tool_call_id: "call-1" });
       expect(sent[4]).toMatchObject({ tool_call_id: "call-open", content: expect.stringContaining("may or may not have run") });
       expect(sent[5]).toMatchObject({ content: "Mach an der Stelle weiter, an der du aufgehört hast." });
+    } finally {
+      completionQueue = [];
+      rejectionQueue = [];
+      onCompletionRequest = null;
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test.each([
+    ["a provider error after failed steps", "provider_400"],
+    ["an empty stop after a failed step", "empty_stop"],
+    ["a whitespace stop after a failed step", "whitespace_stop"],
+    ["an empty stop after a malformed call", "malformed_stop"],
+    ["a text answer after a failed step", "recovered"],
+    ["an empty stop after a later successful round", "successful_round"],
+  ] as const)("%s finalizes the turn with consistent failure metadata", async (_name, scenario) => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const progress = "I am passing the text correctly now.";
+      const badCall = (n: number) => textThenToolCallCompletion(progress, `call-${n}`, "search_tools", { query: 42 });
+      if (scenario === "provider_400") {
+        completionQueue = [badCall(1), badCall(2), badCall(3)];
+        onCompletionRequest = () => {
+          if (completionQueue.length === 0)
+            rejectionQueue.push(() => Response.json({ error: { message: "Invalid schema for function 'x': tuple" } }, { status: 400 }));
+        };
+      } else if (scenario === "malformed_stop") {
+        completionQueue = [malformedToolCallCompletion(), emptyStopCompletion()];
+      } else {
+        completionQueue = [badCall(1)];
+        if (scenario === "successful_round") completionQueue.push(toolCallCompletion("search-ok", "search_tools", { query: "report" }));
+        completionQueue.push(
+          scenario === "recovered"
+            ? textCompletion("The requested tool is unavailable.")
+            : scenario === "whitespace_stop"
+              ? textCompletion("  \n ")
+              : emptyStopCompletion(),
+        );
+      }
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: conversation.id,
+        modelProfileId: MODEL_ID,
+        runConfig: {
+          kind: "chat",
+          input: "Edit the note",
+          locale: "en",
+          actor: { kind: "user", user: actorUser(userId) },
+          toolSource: { kind: "default" },
+        },
+        userMessage: userMessage("Edit the note"),
+      });
+      const claim = await aiConversations.claimTurn({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        leaseOwner: `failure-end-${scenario}`,
+        leaseMs: 30_000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 60_000,
+      });
+      await createExecutor(`failure-end-${scenario}`, undefined, fakeValidateToolTurn).run({
+        conversationId: conversation.id,
+        turnId: turn.id,
+        claim: claim!,
+        signal: new AbortController().signal,
+      });
+      const finalTurn = await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
+      const history = await aiConversations.listMessages({ conversationId: conversation.id });
+      const completed = scenario === "recovered" || scenario === "successful_round";
+      const code = scenario === "provider_400" ? "model_unavailable" : "tool_failed";
+      expect(finalTurn).toMatchObject({
+        status: completed ? "completed" : "failed",
+        error: completed ? null : aiTurnErrorText({ code }, "en"),
+      });
+      const loopMessages = history.filter((message) => message.loopId === turn.id && message.kind === "message");
+      expect(loopMessages.at(-1)?.meta?.turnError ?? null).toEqual(completed ? null : { code });
+      expect(loopMessages.findLast(({ message }) => message.role === "assistant")?.loopDoneReason).toBe(completed ? "stop" : "error");
+      if (completed) expect(loopMessages.every((message) => !message.meta?.turnError)).toBe(true);
     } finally {
       completionQueue = [];
       rejectionQueue = [];
@@ -3592,6 +4024,153 @@ suite("local client in-lease results", () => {
         suspending.mockRestore();
         claims.mockRestore();
         onCompletionRequest = null;
+        completionQueue = [];
+        await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    },
+  );
+});
+
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("stored Assistant Action outcomes", () => {
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
+
+  test.each([
+    { outcome: "done", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "not_done", code: "IDEMPOTENCY_UNCERTAIN", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "pending", code: "IDEMPOTENCY_IN_PROGRESS", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "failed", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: true, dispatched: true, claimFails: true },
+    // A timeout after dispatch proves nothing either: it is checked like a lost answer.
+    { outcome: "not_done", code: "DEADLINE_EXCEEDED", status: 504, legacy: false, withCheck: true, dispatched: true },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: false, withCheck: false, dispatched: true },
+    { outcome: "pending", code: "APP_UNAVAILABLE", status: 503, legacy: false, withCheck: false, dispatched: true },
+    { outcome: "pending", code: "ACTION_OUTCOME_UNKNOWN", status: 409, legacy: true, withCheck: false, dispatched: true },
+    { outcome: "pending", code: "APP_UNAVAILABLE", status: 503, legacy: false, withCheck: true, dispatched: false },
+    { outcome: "pending", code: "APP_UNAVAILABLE", status: 503, legacy: false, withCheck: true, dispatched: true },
+    { outcome: "pending", code: "INTERNAL", status: 500, legacy: false, withCheck: true, dispatched: true },
+    { outcome: "pending", code: "REQUEST_CANCELLED", status: 499, legacy: false, withCheck: true, dispatched: true },
+  ] as const)(
+    "Action failure $code: $outcome, check=$withCheck, legacy=$legacy, dispatched=$dispatched",
+    async ({ outcome, code, status, legacy, withCheck, dispatched, ...failure }) => {
+      const claimFails = "claimFails" in failure && failure.claimFails;
+      const userId = await insertUser();
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["demo.send"] });
+      const compiled = compileReviewFixture(legacy ? null : { silent: "you" });
+      const entry: CapabilityRegistryEntry = {
+        appId: "demo",
+        appName: "Demo",
+        appDescription: "Test outcomes",
+        appIcon: "ti ti-box",
+        endpoint: "http://demo.invalid/api/_internal/capabilities/v1",
+        manifest: compiled.manifest,
+      };
+      let liveReview: CapabilityActionReviewData = legacy
+        ? { message: "Original draft?", approvalScope: "one" }
+        : { ...reviewFixture(), scope: "one", ...(withCheck ? { check: { query: "check", input: { id: "original" } } } : {}) };
+      const originalReview = structuredClone(liveReview);
+      const receipt = { text: "Queued the original draft" };
+      const calls: Array<{ kind: string; capabilityId: string; review?: boolean }> = [];
+      const registrySpy = spyOn(registry, "listCapabilities").mockResolvedValue([entry]);
+      const dispatch = spyOn(capabilityDispatch, "dispatchCapability").mockImplementation(async (input) => {
+        calls.push({ kind: input.kind, capabilityId: input.capabilityId, review: input.review });
+        if (input.review) return Response.json(liveReview);
+        if (input.kind === "actions") {
+          if (dispatched) input.onUpstreamAttempt?.();
+          return Response.json({ code, message: "Action failed" }, { status });
+        }
+        expect(input).toMatchObject({ kind: "queries", capabilityId: "check", input: { id: "original" }, origin: "assistant" });
+        expect(input.authority?.actor).toMatchObject({ kind: "user", user: { id: userId } });
+        // The review is already durable before either dispatch, including a call auto-approved by an old always row.
+        const stored = await aiConversations.listMessages({ conversationId: conversation.id });
+        // The claim is durable before the Query runs, so a stopped worker leaves a check that goes stale and stays checkable.
+        expect(buildBlocksFromMessages(stored).find((block) => block.kind === "tool" && block.callId === "send-1")).toMatchObject({
+          review: originalReview,
+          check: { state: "checking" },
+        });
+        return outcome === "failed"
+          ? Response.json({ data: { outcome: "invalid" } })
+          : Response.json({ data: { outcome, ...(outcome === "done" ? { receipt } : {}) } });
+      });
+      const claimSpy = claimFails
+        ? spyOn(conversationStore, "claimAiToolCheck").mockRejectedValue(new Error("Transient check claim failure"))
+        : undefined;
+      const modelRequests: unknown[] = [];
+      onCompletionRequest = (body) => {
+        modelRequests.push(body);
+      };
+      try {
+        // Existing global approvals continue to apply, even though new cards no longer offer that choice.
+        await rememberAiToolApproval({ actorUserId: userId }, { toolName: "demo.send", approvalScope: "one" });
+        completionQueue = [toolCallCompletion("send-1", "demo__action__send", {}), textCompletion("Checked the result")];
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelProfileId: MODEL_ID,
+          runConfig: {
+            kind: "chat",
+            input: "Send the draft",
+            locale: "en",
+            actor: { kind: "user", user: actorUser(userId) },
+            toolSource: { kind: "default", appTools: true },
+            toolApprovalContext: { actorUserId: userId },
+          },
+          userMessage: userMessage("Send the draft"),
+        });
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner: "outcome-exec",
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60_000,
+        });
+        if (!claim) throw new Error("Expected claimed turn");
+        await createExecutor("outcome-exec", undefined, fakeValidateToolTurn).run({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          claim,
+          signal: new AbortController().signal,
+        });
+        expect(calls.filter((call) => call.kind === "actions" && !call.review)).toHaveLength(1);
+        const preDispatchFailure = !dispatched && code === "APP_UNAVAILABLE";
+        expect(calls.filter((call) => call.kind === "queries")).toHaveLength(withCheck && !preDispatchFailure && !claimFails ? 1 : 0);
+        expect(await aiConversations.listPendingActionRecords({ conversationId: conversation.id, turnId: turn.id })).toEqual([]);
+        liveReview = legacy
+          ? { message: "Changed draft?" }
+          : { ...reviewFixture(), sentence: { ...reviewFixture().sentence, action: "Changed {subject} to {to}" } };
+        const messages = await aiConversations.listTurnMessages({ conversationId: conversation.id, loopId: turn.id });
+        const block = buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send-1");
+        expect(block).toMatchObject({ review: legacy ? { legacy: { question: "Original draft?", rows: [] } } : originalReview });
+        if (claimFails) {
+          expect(claimSpy).toHaveBeenCalledTimes(1);
+          expect(block).toMatchObject({ status: "failed", isError: true });
+          expect(JSON.stringify(block)).toContain("ACTION_OUTCOME_UNKNOWN");
+          expect(JSON.stringify(modelRequests.at(-1))).toContain("ACTION_OUTCOME_UNKNOWN");
+          expect(JSON.stringify(modelRequests.at(-1))).not.toContain("Transient check claim failure");
+        } else if (withCheck && !preDispatchFailure) {
+          expect(block).toMatchObject({ check: { state: outcome }, status: outcome === "done" ? "completed" : "failed" });
+          if (outcome === "done")
+            expect(block).toMatchObject({ check: { receipt }, result: { receipt, data: null, outcomeCheck: "done" }, isError: false });
+          else expect(JSON.stringify(block)).toContain(outcome === "not_done" ? "ACTION_NOT_DONE" : "ACTION_OUTCOME_UNKNOWN");
+        } else {
+          if (block?.kind !== "tool") throw new Error("Expected tool block");
+          expect(block.check).toBeUndefined();
+          expect(block).toMatchObject({ status: "failed" });
+          expect(JSON.stringify(block)).toContain(preDispatchFailure ? "APP_UNAVAILABLE" : "ACTION_OUTCOME_UNKNOWN");
+          if (preDispatchFailure) expect(JSON.stringify(block)).not.toContain("ACTION_OUTCOME_UNKNOWN");
+        }
+      } finally {
+        claimSpy?.mockRestore();
+        onCompletionRequest = null;
+        dispatch.mockRestore();
+        registrySpy.mockRestore();
         completionQueue = [];
         await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
         await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;

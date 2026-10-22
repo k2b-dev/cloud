@@ -1,5 +1,4 @@
-import { dates } from "@k2b/stdlib";
-import { announce, Button, ButtonLink, Chat, NoticeCard, useLocale } from "@k2b/ui";
+import { announce, Button, Chat, NoticeCard, useLocale } from "@k2b/ui";
 import {
   type Accessor,
   createEffect,
@@ -16,36 +15,23 @@ import {
   untrack,
 } from "solid-js";
 import { markdown } from "../../shared";
+import { type ChatTaskReason, chatTaskReasonSentence, chatTaskReasonState, chatTaskStopSentence } from "../chat-task-reasons";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
-import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
-import {
-  type AiApprovalDecision,
-  ApprovalBlockView,
-  CompactionBlockView,
-  CompactToolRow,
-  SurveyToolView,
-  TextEditorToolView,
-} from "./blocks";
+import { toolSubject, useReaderTimeZone } from "./action-sentences";
+import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
 import { CloudChartBlock } from "./chart-block";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
-import {
-  aiToolIcon,
-  capabilityErrorDescription,
-  displayToolName,
-  isCardToolName,
-  isChartToolName,
-  isRecord,
-  isSurveyToolName,
-} from "./message-utils";
+import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord, isSurveyToolName } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
+import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
 import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
-import type { AiTurnAction, AiTurnActionState, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
+import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -65,8 +51,17 @@ export type AiTurnSegment = {
   earlier: boolean;
   /** Read reactively, so a ticking clock does not rebuild the segment. */
   duration: () => AiTurnDuration | null;
-  /** Shown above the work of a delivered scheduled result. */
-  scheduledTask?: { taskId: string; occurrenceId: string } | null;
+  /**
+   * Shown above the work of a delivered scheduled result. `stop` and `reason` add a system line the chat words in
+   * the reader's language; with `stop` or `reasonOnly` that line replaces the stored text.
+   */
+  scheduledTask?: {
+    taskId: string;
+    occurrenceId: string;
+    reason?: ChatTaskReason;
+    reasonOnly?: true;
+    stop?: { cause: "paused" | "deleted"; done: string[] };
+  } | null;
   /**
    * The live turn cannot reach the model or the server right now: a model call waits for its retry, or the stream
    * reconnects. The working segment's work line says so while its clock stands; a turn without a work line yet says
@@ -417,42 +412,6 @@ const resultSummary = (block: ToolBlock): string => {
   return typeof value === "string" && value.trim().length <= 500 ? value.trim() : "";
 };
 
-/** Links a result offers, limited to paths inside this Cloud. */
-const resultLinks = (block: ToolBlock): Record<string, unknown>[] => {
-  const value = resultRecord(block)?.links;
-  return Array.isArray(value)
-    ? value.filter(
-        (link): link is Record<string, unknown> =>
-          isRecord(link) && typeof link.href === "string" && /^\/(?![\\/])[^\\\u0000-\u001f\u007f]*$/.test(link.href),
-      )
-    : [];
-};
-
-function ResultLinks(props: { links: Record<string, unknown>[] }) {
-  const locale = useLocale();
-  const t = () => aiChatMessages(locale());
-  const label = (link: Record<string, unknown>) =>
-    typeof link.title === "string" ? link.title : link.rel === "edit" ? t().edit : link.rel === "download" ? t().download : t().open;
-  return (
-    <span class="flex min-w-0 flex-wrap items-center justify-end gap-1">
-      <For each={props.links}>
-        {(link) => (
-          <ButtonLink
-            class="ai-chat-result-link"
-            href={String(link.href)}
-            target="_blank"
-            rel="noopener noreferrer"
-            size="xs"
-            variant="ghost"
-          >
-            {label(link)}
-          </ButtonLink>
-        )}
-      </For>
-    </span>
-  );
-}
-
 /** The summary and links of a table result, unless its receipt in place 4 already shows them. */
 function CapabilityResultRow(props: { block: ToolBlock }) {
   const locale = useLocale();
@@ -516,87 +475,11 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
   );
 }
 
-type ReceiptState = Exclude<AiTurnActionState, "open" | "interaction">;
-
-/**
- * One line for an action in place 4, the same element while it runs and once it is done, rejected, failed, or not run.
- * It says what happened in the owning app's words: its sentence for the outcome, such as "Moved report.pdf to the
- * trash", else, once done, the application's own summary of the call. Without either it puts the state in the reader's
- * language before what the call does, such as "Rejected: Write report.md", or before its title and target.
- */
-function AiReceipt(props: { block: ToolBlock; state: ReceiptState; stopped: boolean }) {
-  const locale = useLocale();
-  const timeZone = useReaderTimeZone();
-  const t = () => aiChatMessages(locale());
-  const block = () => props.block;
-  const subject = () => {
-    const sentence = toolSubject(block(), locale(), timeZone);
-    if (sentence) return sentence;
-    const title = block().presentation?.title ?? displayToolName(block().name, locale());
-    const target = toolTarget(block());
-    return target ? `${title} · ${target}` : title;
-  };
-  const capabilityAction = () => block().presentation?.kind === "capability";
-  const links = () => (props.state === "done" ? resultLinks(block()) : []);
-  const outcomeLabel = () => {
-    const state = props.state;
-    if (state === "running") return t().receiptRunning({ title: subject() });
-    if (state === "done") {
-      // A tool that is not a Cloud action has no effect of its own to report; the receipt records the decision.
-      if (!capabilityAction()) return t().receiptApproved({ title: subject() });
-      return toolOutcome(block(), "done", locale(), timeZone) || resultSummary(block()) || t().receiptDone({ title: subject() });
-    }
-    if (state === "rejected") return toolOutcome(block(), "rejected", locale(), timeZone) ?? t().receiptRejected({ title: subject() });
-    if (state === "failed") return t().receiptFailed({ title: subject() });
-    const notRun = toolOutcome(block(), "notRun", locale(), timeZone);
-    return notRun
-      ? t().receiptNotRunSentence({ sentence: notRun, stopped: props.stopped })
-      : t().receiptNotRun({ title: subject(), stopped: props.stopped });
-  };
-  const declined = () => props.state === "rejected" || props.state === "not_run";
-  const label = () => {
-    const at = block().at;
-    return at && props.state !== "running" ? `${outcomeLabel()} · ${dates.formatTime(at, { locale: locale(), timeZone })}` : outcomeLabel();
-  };
-  return (
-    <Chat.Activity
-      class="ai-turn-receipt"
-      icon={declined() ? "ti ti-circle-off" : aiToolIcon(block().name, block().presentation?.appIcon)}
-      accent={declined() ? undefined : block().presentation?.appAccent}
-      label={label()}
-      busy={props.state === "running"}
-      description={props.state === "failed" ? capabilityErrorDescription(block().result) : undefined}
-      trailing={links().length > 0 ? <ResultLinks links={links()} /> : undefined}
-    />
-  );
-}
-
 function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; turnId: string; phase: AiTurnPhase }) {
   const locale = useLocale();
   const timeZone = useReaderTimeZone();
-  let row!: HTMLDivElement;
-  // Set while focus is in this place, including after the focused control disappeared with the decided card.
-  let focusedHere = false;
-  // The decision the server accepted for a card here; its receipt replaces the card before the turn reports it. It
-  // belongs to the call it answered: code that asks again shows the next request on the same block as a new card.
-  const [decided, setDecided] = createSignal<AiApprovalDecision | null>(null);
   const action = () => props.action();
   const state = () => action()?.state;
-  const decision = () => {
-    const current = action();
-    const value = decided();
-    return current && value?.callId === current.block.callId ? value.approved : null;
-  };
-  const card = () => {
-    const current = action();
-    return current?.state === "open" && current.block.status === "awaiting_approval" && decision() === null ? current.block : undefined;
-  };
-  const receipt = (): ReceiptState | undefined => {
-    const current = action();
-    if (!current || card()) return undefined;
-    if (current.state === "open" && current.block.status === "awaiting_approval") return decision() ? "running" : "rejected";
-    return current.state === "open" || current.state === "interaction" ? undefined : current.state;
-  };
   // Screen readers hear a waiting approval once, as one short line instead of the whole card, without moving focus.
   createEffect(
     on(state, (next, previous) => {
@@ -612,37 +495,14 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
       );
     }),
   );
-  // A card the user decided becomes its receipt in place, once, as the direct result of the decision. Focus stays on
-  // that place without scrolling.
-  createEffect(
-    on(
-      () => card() !== undefined,
-      (open, wasOpen) => {
-        if (!wasOpen || open || !focusedHere || typeof document === "undefined") return;
-        const focused = document.activeElement;
-        if (!focused || focused === document.body || row.contains(focused)) row.focus({ preventScroll: true });
-      },
-    ),
-  );
   return (
-    <div
-      ref={row}
-      class="ai-turn__action"
-      aria-live="off"
-      tabIndex={-1}
-      onFocusIn={() => {
-        focusedHere = true;
-      }}
-      onFocusOut={(event) => {
-        if (event.relatedTarget instanceof Node && !row.contains(event.relatedTarget)) focusedHere = false;
-      }}
-    >
+    <div class="ai-turn__action" aria-live="off">
       <Show when={action()}>
         {(current) => (
           <Switch>
-            <Match when={card()}>{(block) => <ApprovalBlockView turnId={props.turnId} block={block()} onDecided={setDecided} />}</Match>
-            <Match when={receipt()}>
-              {(receiptState) => <AiReceipt block={current().block} state={receiptState()} stopped={props.phase === "stopped"} />}
+            {/* A question and every outcome of its call share one element, so an answer collapses it in place. */}
+            <Match when={current().state !== "interaction"}>
+              <ToolActionView block={current().block} turnId={props.turnId} state={current().state} phase={props.phase} />
             </Match>
             <Match when={true}>
               <Switch
@@ -789,6 +649,7 @@ function AiTurnText(props: {
  */
 export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosureState: AiToolDisclosureState }): JSX.Element {
   const locale = useLocale();
+  const timeZone = useReaderTimeZone();
   const chatActions = useAiChatActions();
   const layout = () => props.segment().layout;
   const results = createMemo(() => new Map(layout().results.map((result) => [result.id, result])));
@@ -829,7 +690,17 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           </div>
         </Show>
         <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
-        <Show when={layout().text.length > 0}>
+        <Show when={props.segment().scheduledTask?.stop}>
+          {(stop) => (
+            <Chat.Activity
+              class="ai-turn__routine-line"
+              wrap
+              icon="ti ti-player-stop"
+              label={chatTaskStopSentence(stop().done, locale())}
+            />
+          )}
+        </Show>
+        <Show when={layout().text.length > 0 && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
           <AiTurnText
             blocks={() => layout().text}
             live={live}
@@ -837,6 +708,17 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             quiet={() => layout().textIsStatus}
             earlier={() => props.segment().earlier}
           />
+        </Show>
+        <Show when={props.segment().scheduledTask?.stop ? undefined : props.segment().scheduledTask?.reason}>
+          {(reason) => (
+            <Chat.Activity
+              class="ai-turn__routine-line"
+              wrap
+              icon={chatTaskReasonState(reason().code) === "paused" ? "ti ti-player-pause" : "ti ti-alert-triangle"}
+              tone={chatTaskReasonState(reason().code) === "paused" ? "neutral" : "warning"}
+              label={chatTaskReasonSentence(reason(), { locale: locale(), timeZone })}
+            />
+          )}
         </Show>
         <For each={actionIds()}>
           {(id) => <AiTurnActionView action={() => actions().get(id)} turnId={props.segment().turnId} phase={props.segment().phase} />}

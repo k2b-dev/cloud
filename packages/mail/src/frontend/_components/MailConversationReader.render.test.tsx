@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -78,6 +78,7 @@ const renderReader = (
     keep?: ConversationKeep | null;
     canAdmin?: boolean;
     toolbarActions?: Array<"reply" | "reply_all" | "trash" | "spam" | "keep">;
+    readingFormat?: "automatic" | "html" | "plain";
     theme?: "light" | "dark" | null;
   } = {},
 ) => {
@@ -107,7 +108,7 @@ const renderReader = (
       totalMessageCount: messages.length,
       error: null,
       dateConfig: { locale: "en", timeZone: "Europe/Berlin" },
-      readingFormat: "automatic",
+      readingFormat: options.readingFormat ?? "automatic",
       theme: options.theme === undefined ? "light" : options.theme,
       calendarIntegrationAvailable: false,
       listCollapsed: false,
@@ -135,15 +136,50 @@ const renderReader = (
 };
 
 describe("Mail conversation reader", () => {
-  test("renders both bodies under Automatic so the html class picks one before the first paint", () => {
-    const both = { ...message, contentType: "multipart/alternative", sanitizedHtml: "<p>Hello</p>" };
-    const automatic = renderReader([], { messages: [both], theme: null });
-    expect(automatic).toContain('class="contents dark:hidden" data-mail-body-format="html"');
-    expect(automatic).toContain('class="hidden dark:contents" data-mail-body-format="plain"');
+  test("leaves conversations and empty readers to the shell print fallback until prepared", () => {
+    setSystemTime(new Date(now));
+    try {
+      expect(renderReader([])).not.toContain("data-print-region");
+      expect(renderReader([], { messages: [] })).not.toContain("data-print-region");
+    } finally {
+      setSystemTime();
+    }
+  });
+  test("renders one HTML body with a whitespace-only alternative in every theme", () => {
+    for (const theme of [null, "light", "dark"] as const) {
+      for (const plainText of ["\n", " ", "\t\n "]) {
+        const html = renderReader([], { messages: [{ ...message, sanitizedHtml: "<p>Hello</p>", plainText }], theme });
+        expect(html).toContain('class="contents" data-mail-body-format="html"');
+        expect(html).not.toContain('data-mail-body-format="plain"');
+        expect(html.match(/data-mail-body-format=/g)).toHaveLength(1);
+        expect(html).not.toContain("View as plain text");
+      }
+    }
+  });
 
-    const dark = renderReader([], { messages: [both], theme: "dark" });
-    expect(dark).toContain('class="contents" data-mail-body-format="plain"');
-    expect(dark).not.toContain('data-mail-body-format="html"');
+  test("Automatic shows only HTML in dark mode even when real plain text exists", () => {
+    const html = renderReader([], { messages: [{ ...message, sanitizedHtml: "<p>Hello</p>" }], theme: "dark" });
+    expect(html).toContain('class="contents" data-mail-body-format="html"');
+    expect(html).not.toContain('data-mail-body-format="plain"');
+    expect(html.match(/data-mail-body-format=/g)).toHaveLength(1);
+    expect(html).toContain("Show original colors");
+  });
+
+  test("the plain reading preference shows only the plain alternative", () => {
+    const html = renderReader([], { messages: [{ ...message, sanitizedHtml: "<p>Hello</p>" }], theme: "dark", readingFormat: "plain" });
+    expect(html).toContain('class="contents" data-mail-body-format="plain"');
+    expect(html).not.toContain('data-mail-body-format="html"');
+    expect(html).not.toContain("Show original colors");
+  });
+
+  test("offers adaptation for original HTML colors in dark mode", () => {
+    const html = renderReader([], {
+      messages: [{ ...message, plainText: null, sanitizedHtml: "<p>Hello</p>" }],
+      theme: "dark",
+      readingFormat: "html",
+    });
+    expect(html).toContain("Adapt colors to dark mode");
+    expect(html).not.toContain("View as plain text");
   });
 
   test("marks Reply when the conversation has a draft without rendering a header CTA", () => {
@@ -152,10 +188,8 @@ describe("Mail conversation reader", () => {
     expect(html).toContain('data-mail-toolbar-action="reply"');
     expect(html).toContain('aria-label="Reply, draft available"');
     expect(html).toContain("data-mail-draft-label");
-    expect(html).toContain("sm:inline");
     expect(html).toContain("Draft available");
     expect(html).toContain("data-mail-draft-indicator");
-    expect(html).toContain("sm:hidden");
     expect(html).not.toContain("Continue draft");
   });
 

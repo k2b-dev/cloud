@@ -7,15 +7,26 @@
   --ui-surface-subtle: rgb(248 248 248 / 0.96);
   --ui-surface-muted: rgb(243 244 243 / 0.96);
   --ui-surface-raised: rgb(255 255 255 / 0.99);
-  /* Dimmed text stays at WCAG AA on the muted surfaces it often sits on, such
-     as dialog section groups, not only on the plain surface. */
-  --ui-text-dimmed: color-mix(in srgb, var(--color-zinc-500) 80%, var(--color-zinc-600));
+  /* The ink hierarchy matches @k2b/ui: secondary is its text-secondary, and
+     dimmed sits one step below its text-muted. Dimmed keeps at least 6.5:1
+     on the muted surfaces it often sits on, such as dialog section groups. */
+  --ui-text-secondary: #27272a;
+  --ui-text-dimmed: #55555e;
   --ui-border: rgb(218 220 219 / 0.68);
   --ui-border-strong: rgb(207 210 208 / 0.9);
   --ui-hover: rgb(239 240 239 / 0.9);
   --ui-active: rgb(229 231 230 / 0.94);
   --ui-selected: color-mix(in srgb, var(--color-blue-500) 7%, var(--ui-surface));
-  --ui-app-accent-text: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
+  /* app-color.ts computes these defaults from --color-blue-500; app-color.test.ts pins them. */
+  --app-ink-light: #2469d4;
+  --app-ink-dark: #589aff;
+  --app-selected-light: #f0f6ff;
+  --app-selected-dark: #15243b;
+  --app-selected-nav-light: #eaf2ff;
+  --app-selected-nav-dark: #152742;
+  --ui-app-accent-text: var(--app-ink-light);
+  --ui-app-selected: var(--app-selected-light);
+  --ui-app-selected-nav: var(--app-selected-nav-light);
   --ui-app-accent-border: var(--app-accent, var(--color-blue-500));
   --ui-focus: inset 0 0 0 2px color-mix(in srgb, var(--color-blue-500) 45%, transparent);
   --ui-action-primary-surface: var(--color-zinc-900);
@@ -38,12 +49,10 @@
   --ui-check-surface: var(--ui-field);
   --ui-check-border: var(--ui-border-strong);
   --ui-check-shadow: none;
-  --ui-check-hover-transform: none;
   --ui-data-header: var(--ui-surface-subtle);
   --ui-data-divider: var(--ui-border);
   --ui-data-row-divider: color-mix(in srgb, var(--ui-border) 72%, transparent);
   --ui-data-row-hover: rgb(9 9 11 / 0.025);
-  --ui-data-row-selected: var(--ui-selected);
   --ui-data-column-hover: rgb(9 9 11 / 0.012);
   --ui-dialog-surface: var(--ui-surface-raised);
   --ui-dialog-border: var(--ui-border-strong);
@@ -138,13 +147,16 @@
   --ui-surface-subtle: color-mix(in srgb, var(--ui-surface) 68%, var(--ui-surface-muted));
   --ui-surface-muted: #20242a;
   --ui-surface-raised: #181d24;
-  --ui-text-dimmed: color-mix(in srgb, var(--color-zinc-500) 40%, var(--color-zinc-400));
+  --ui-text-secondary: #f1f1f3;
+  --ui-text-dimmed: #a8a8b2;
   --ui-border: #29313a;
   --ui-border-strong: #3a4552;
   --ui-hover: #252c35;
   --ui-active: color-mix(in srgb, var(--ui-hover) 72%, var(--ui-border-strong));
   --ui-selected: color-mix(in srgb, var(--color-blue-400) 12%, var(--ui-surface));
-  --ui-app-accent-text: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
+  --ui-app-accent-text: var(--app-ink-dark);
+  --ui-app-selected: var(--app-selected-dark);
+  --ui-app-selected-nav: var(--app-selected-nav-dark);
   --ui-app-accent-border: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
   --ui-focus: inset 0 0 0 2px color-mix(in srgb, var(--color-blue-400) 55%, transparent);
   --ui-action-primary-surface: var(--color-zinc-100);
@@ -165,7 +177,6 @@
   --ui-check-surface: var(--ui-field);
   --ui-check-border: var(--ui-border-strong);
   --ui-check-shadow: none;
-  --ui-check-hover-transform: none;
   --ui-data-row-hover: rgb(255 255 255 / 0.045);
   --ui-data-column-hover: rgb(255 255 255 / 0.018);
   --ui-dropdown-menu-surface: var(--ui-surface-raised);
@@ -188,23 +199,32 @@
   --ui-shadow-workspace-edge: -3px 0 6px -5px rgb(0 0 0 / 0.28), 3px 0 6px -5px rgb(0 0 0 / 0.28);
 }
 
-/* App appearance is applied on the canvas rather than :root. Recompute the
-   derived accent roles here so an app never inherits the platform fallback. */
+/* Custom properties resolve where declared. Each app scope must re-read its
+   inline per-app values instead of inheriting the resolved platform defaults.
+   The page shell's body carries the current app's scope so portalled dialogs inherit it. */
 .cloud-app-canvas,
 .app-accent-scope {
-  --ui-app-accent-text: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
+  --ui-app-accent-text: var(--app-ink-light);
+  --ui-app-selected: var(--app-selected-light);
+  --ui-app-selected-nav: var(--app-selected-nav-light);
   --ui-app-accent-border: var(--app-accent, var(--color-blue-500));
   /* Portable UI components consume their own optional hook; Cloud alone maps
      it to the active app appearance. */
   --k2b-app-workspace-active: var(--ui-app-accent-text);
+  --k2b-app-workspace-selected: var(--ui-app-selected-nav);
+  --k2b-row-selected: var(--ui-app-selected);
   --k2b-detail-panel-accent: var(--ui-app-accent-text);
   --k2b-link-accent: var(--ui-app-accent-text);
 }
 
 .dark :is(.cloud-app-canvas, .app-accent-scope) {
-  --ui-app-accent-text: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
+  --ui-app-accent-text: var(--app-ink-dark);
+  --ui-app-selected: var(--app-selected-dark);
+  --ui-app-selected-nav: var(--app-selected-nav-dark);
   --ui-app-accent-border: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
   --k2b-app-workspace-active: var(--ui-app-accent-text);
+  --k2b-app-workspace-selected: var(--ui-app-selected-nav);
+  --k2b-row-selected: var(--ui-app-selected);
   --k2b-detail-panel-accent: var(--ui-app-accent-text);
   --k2b-link-accent: var(--ui-app-accent-text);
 }
@@ -224,7 +244,7 @@
 }
 
 @utility text-secondary {
-  @apply text-zinc-700 dark:text-zinc-300;
+  color: var(--ui-text-secondary);
 }
 
 @utility text-dimmed {
@@ -232,5 +252,6 @@
 }
 
 @utility text-label {
-  @apply text-sm font-medium text-zinc-700 dark:text-zinc-300;
+  @apply text-sm font-medium;
+  color: var(--ui-text-secondary);
 }

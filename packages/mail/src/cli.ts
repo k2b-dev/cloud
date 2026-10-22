@@ -8,6 +8,7 @@ import {
   type CloudCliContext,
   type CloudCliText,
   cliAmbiguityText,
+  cloudResourceUrl,
   command,
   confirmFlag,
   createAccessCommands,
@@ -18,8 +19,10 @@ import {
   printStructured,
   printRows as printTable,
   readCliInput,
+  withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
+import { principalLabel } from "@k2b/cloud/shared";
 import { text } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CalendarInvitationImportResult, CalendarInvitationPreview, SpacesMailDestinationContext } from "./app-integration-contracts";
@@ -38,10 +41,10 @@ import {
   type ComposeFormattingWarning,
   type ComposePreview,
   type ComposeSafetyApproval,
-  type ComposeSafetyReview,
   type ComposeSignatureDefault,
   type ComposeSuggestion,
   type ComposeTemplate,
+  type ConversationCompletionResult,
   type ConversationDraftSummary,
   type CreatedAttachmentLink,
   type CreateIncomingAutomation,
@@ -58,6 +61,7 @@ import {
   type DraftIntent,
   type DraftLease,
   type DraftRecoveryCopy,
+  type DraftSendReview,
   draftEditableContentInputSchema,
   type FolderDisplay,
   folderDisplaySchema,
@@ -66,6 +70,7 @@ import {
   MAIL_CONVERSATION_ASSIGNEE_LIMIT,
   MAIL_CONVERSATION_BATCH_LIMIT,
   type Mailbox,
+  type MailboxComposeLogo,
   type MailboxComposeStyle,
   type MailboxHealth,
   type MailboxOperationalHealth,
@@ -150,6 +155,11 @@ type ConversationReadView = {
   messages: MessageSummary[];
   messagesTruncated: boolean;
 };
+
+const withMessagePermalink = (ctx: CloudCliContext, message: MessageDetail) => ({
+  ...withCloudResourcePermalink(ctx, "mail.message", message),
+  attachments: message.attachments.map((attachment) => withCloudResourcePermalink(ctx, "mail.attachment", attachment)),
+});
 
 const DEFAULT_MAILBOX_KEY = "mail.mailbox";
 const DEFAULT_WAIT_TIMEOUT_SECONDS = 120;
@@ -928,21 +938,24 @@ const reviewDraftSafety = async (
   mailboxId: string,
   draft: Pick<MailDraft, "id" | "revision">,
   approve: boolean,
-): Promise<ComposeSafetyApproval | undefined> => {
-  const review = await readApi<ComposeSafetyReview>(
+): Promise<{ expectedContentHash: string; safetyApproval?: ComposeSafetyApproval }> => {
+  const review = await readApi<DraftSendReview>(
     ctx,
     `/mailboxes/${mailboxId}/drafts/${draft.id}/safety-review`,
     jsonRequest("POST", { expectedRevision: draft.revision }),
   );
-  if (review.warnings.length === 0) return undefined;
+  if (review.warnings.length === 0) return { expectedContentHash: review.contentHash };
   if (!approve) {
     const details = review.warnings.map((warning) => `- ${warning.title}: ${warning.description}`).join("\n");
     throw new Error(`Sending requires review:\n${details}\nPass --approve-safety after reviewing these warnings.`);
   }
   return {
-    revision: review.revision,
-    fingerprint: review.fingerprint,
-    warningIds: review.warnings.map((warning) => warning.id),
+    expectedContentHash: review.contentHash,
+    safetyApproval: {
+      revision: review.revision,
+      fingerprint: review.fingerprint,
+      warningIds: review.warnings.map((warning) => warning.id),
+    },
   };
 };
 
@@ -1198,7 +1211,7 @@ const mutationFlags = {
 };
 
 const printCollaboration = (ctx: CloudCliContext, value: ConversationCollaboration): void => {
-  if (printStructured(ctx, value)) return;
+  if (printStructured(ctx, { ...value, permalink: cloudResourceUrl(ctx, { type: "mail.conversation", id: value.conversationId }) })) return;
   ctx.print(`Conversation: ${value.conversationId}`);
   ctx.print(`Revision: ${value.revision}`);
   ctx.print(`Status: ${value.workStatus}`);
@@ -1862,7 +1875,7 @@ const everydayCommands = (t: Translate) => {
           const mailboxes = await listMailboxes(ctx);
           printTable(
             ctx,
-            mailboxes,
+            mailboxes.map((mailbox) => withCloudResourcePermalink(ctx, "mail.mailbox", mailbox)),
             mailboxes.map((mailbox) => ({
               name: mailbox.name,
               health: mailbox.health,
@@ -1900,7 +1913,7 @@ const everydayCommands = (t: Translate) => {
         );
         printTable(
           ctx,
-          page,
+          { ...page, items: page.items.map((conversation) => withCloudResourcePermalink(ctx, "mail.conversation", conversation)) },
           page.items.map((thread) => ({
             date: thread.latestMessageAt,
             unread: thread.unread ? t({ en: "yes", de: "ja" }) : "",
@@ -1952,7 +1965,14 @@ const everydayCommands = (t: Translate) => {
           messages: messagePage.items,
           messagesTruncated: messagePage.nextCursor !== null,
         };
-        if (printStructured(ctx, value)) return;
+        if (
+          printStructured(ctx, {
+            ...value,
+            permalink: cloudResourceUrl(ctx, { type: "mail.conversation", id: value.conversationId }),
+            messages: value.messages.map((message) => withCloudResourcePermalink(ctx, "mail.message", message)),
+          })
+        )
+          return;
         const none = t({ en: "none", de: "keine" });
         ctx.print(`${t({ en: "Conversation", de: "Unterhaltung" })}: ${conversationId}`);
         ctx.print(
@@ -1989,7 +2009,7 @@ const everydayCommands = (t: Translate) => {
           ctx,
           `/mailboxes/${mailbox.id}/messages/${requireMailResourceId(args.message, "Message id")}`,
         );
-        if (printStructured(ctx, message)) return;
+        if (printStructured(ctx, withMessagePermalink(ctx, message))) return;
         ctx.print(`${t({ en: "Subject", de: "Betreff" })}: ${message.subject}`);
         ctx.print(`${t({ en: "From", de: "Von" })}: ${message.from.map((address) => address.address).join(", ")}`);
         ctx.print(`${t({ en: "To", de: "An" })}: ${message.to.map((address) => address.address).join(", ")}`);
@@ -2123,7 +2143,9 @@ const everydayCommands = (t: Translate) => {
         const missing = result.results.filter((item) => item.status !== "ok");
         if (!printStructured(ctx, result)) {
           const count = result.results.length - missing.length;
-          const names = result.assignees.map((user) => `${user.displayName} (${user.uid})`).join(", ") || assigneeUserIds.join(", ");
+          const names =
+            result.assignees.map((user) => `${user.displayName} (${user.uid})`).join(", ") ||
+            assigneeUserIds.map((userId) => principalLabel({ principal: { type: "user", userId } }, ctx.options.locale)).join(", ");
           ctx.print(
             names
               ? t({
@@ -2141,6 +2163,38 @@ const everydayCommands = (t: Translate) => {
         return missing.length > 0 ? 1 : undefined;
       },
     }),
+    ...(["done", "reopen"] as const).map((name) =>
+      command(name, {
+        summary:
+          name === "done"
+            ? t({ en: "Mark conversations done", de: "Unterhaltungen als erledigt markieren" })
+            : t({ en: "Reopen conversations", de: "Unterhaltungen wieder öffnen" }),
+        args: conversationsArg(t),
+        flags: mailboxOption,
+        examples: [name === "done" ? "cld mail done Convo1 Convo2" : "cld mail reopen Convo1"],
+        run: async ({ ctx, args, flags }) => {
+          const conversationIds = requireConversationIds(args.conversations, t);
+          const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+          const result = await readApi<ConversationCompletionResult>(
+            ctx,
+            `/mailboxes/${mailbox.id}/conversations/completion`,
+            jsonRequest("POST", { conversationIds, completion: name === "done" ? "done" : "open" }),
+          );
+          const missing = result.results.filter((item) => item.status !== "ok");
+          if (!printStructured(ctx, result)) {
+            const count = result.results.length - missing.length;
+            ctx.print(
+              name === "done"
+                ? t({ en: `Marked ${count} conversation(s) Done.`, de: `${count} Unterhaltung(en) als erledigt markiert.` })
+                : t({ en: `Reopened ${count} conversation(s).`, de: `${count} Unterhaltung(en) wieder geöffnet.` }),
+            );
+            for (const item of missing)
+              ctx.error(`${item.conversationId}: ${t({ en: "not found in this mailbox", de: "in diesem Postfach nicht gefunden" })}`);
+          }
+          return missing.length > 0 ? 1 : undefined;
+        },
+      }),
+    ),
     command("keep", {
       summary: t({ en: "Keep conversations and later replies", de: "Unterhaltungen und spätere Antworten aufbewahren" }),
       args: conversationsArg(t),
@@ -2398,7 +2452,7 @@ const everydayCommands = (t: Translate) => {
         );
         printTable(
           ctx,
-          page,
+          { ...page, items: page.items.map((comment) => withCloudResourcePermalink(ctx, "mail.comment", comment)) },
           page.items.map((comment) => ({
             date: comment.createdAt,
             author: comment.author.displayName,
@@ -2443,8 +2497,13 @@ const everydayCommands = (t: Translate) => {
             referencedMessageId: flags.message ? requireMailResourceId(flags.message, "Referenced message id") : undefined,
           }),
         );
-        if (printStructured(ctx, value)) return;
-        ctx.print(t({ en: `Added comment ${value.id}.`, de: `Kommentar ${value.id} hinzugefügt.` }));
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.comment", value))) return;
+        ctx.print(
+          t({
+            en: `Added comment ${value.id}. ${cloudResourceUrl(ctx, { type: "mail.comment", id: value.id })}`,
+            de: `Kommentar ${value.id} hinzugefügt. ${cloudResourceUrl(ctx, { type: "mail.comment", id: value.id })}`,
+          }),
+        );
       },
     }),
     command("comments update", {
@@ -2475,7 +2534,7 @@ const everydayCommands = (t: Translate) => {
           `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversation, "Conversation id")}/comments/${requireMailResourceId(args.comment, "Comment id")}`,
           jsonRequest("PATCH", { expectedRevision: flags.revision, body: body ?? "" }),
         );
-        if (printStructured(ctx, value)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.comment", value))) return;
         ctx.print(
           t({
             en: `Updated comment ${value.id} to revision ${value.revision}.`,
@@ -2563,12 +2622,12 @@ const everydayCommands = (t: Translate) => {
             sourceMessageId: source.id,
           }),
         );
-        if (printStructured(ctx, draft)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         printFormattingWarnings(ctx, draft.formattingWarnings);
         ctx.print(
           t({
-            en: `Created reply draft ${draft.id} to ${draft.to.map((address) => address.address).join(", ")}. Send it with \`cld mail send ${draft.id}\`.`,
-            de: `Antwortentwurf ${draft.id} an ${draft.to.map((address) => address.address).join(", ")} angelegt. Senden mit \`cld mail send ${draft.id}\`.`,
+            en: `Created reply draft ${draft.id} to ${draft.to.map((address) => address.address).join(", ")}. Send it with \`cld mail send ${draft.id}\`. ${cloudResourceUrl(ctx, { type: "mail.draft", id: draft.id })}`,
+            de: `Antwortentwurf ${draft.id} an ${draft.to.map((address) => address.address).join(", ")} angelegt. Senden mit \`cld mail send ${draft.id}\`. ${cloudResourceUrl(ctx, { type: "mail.draft", id: draft.id })}`,
           }),
         );
       },
@@ -2632,12 +2691,12 @@ const everydayCommands = (t: Translate) => {
             ...(flags.noAttachments || source.attachments.length === 0 ? {} : { includeSourceAttachments: true }),
           }),
         );
-        if (printStructured(ctx, draft)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         printFormattingWarnings(ctx, draft.formattingWarnings);
         ctx.print(
           t({
-            en: `Created forward draft ${draft.id}. Send it with \`cld mail send ${draft.id}\`.`,
-            de: `Weiterleitungsentwurf ${draft.id} angelegt. Senden mit \`cld mail send ${draft.id}\`.`,
+            en: `Created forward draft ${draft.id}. Send it with \`cld mail send ${draft.id}\`. ${cloudResourceUrl(ctx, { type: "mail.draft", id: draft.id })}`,
+            de: `Weiterleitungsentwurf ${draft.id} angelegt. Senden mit \`cld mail send ${draft.id}\`. ${cloudResourceUrl(ctx, { type: "mail.draft", id: draft.id })}`,
           }),
         );
       },
@@ -2677,7 +2736,7 @@ const everydayCommands = (t: Translate) => {
         const scheduledAt = flags.schedule ? parseOffsetDateTime(flags.schedule, "--schedule") : undefined;
         const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
         const draft = await readApi<MailDraft>(ctx, `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draft, "Draft id")}`);
-        const safetyApproval = await reviewDraftSafety(ctx, mailbox.id, draft, flags.approveSafety);
+        const reviewed = await reviewDraftSafety(ctx, mailbox.id, draft, flags.approveSafety);
         const queued = await readApi<MailCommand>(
           ctx,
           `/mailboxes/${mailbox.id}/commands`,
@@ -2689,7 +2748,7 @@ const everydayCommands = (t: Translate) => {
             scheduledAt,
             undoSeconds: flags.undo,
             idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID(),
-            ...(safetyApproval ? { safetyApproval } : {}),
+            ...reviewed,
           }),
         );
         const result = flags.wait ? await waitForCommand(ctx, mailbox.id, queued.id, flags.timeoutSeconds) : queued;
@@ -2731,6 +2790,85 @@ const everydayCommands = (t: Translate) => {
   ];
 };
 
+const composeLogoCommands = (t: Translate) => [
+  command("compose logo get", {
+    summary: t({ en: "Show the mailbox signature logo", de: "Das Postfachlogo für Signaturen anzeigen" }),
+    flags: mailboxFlag,
+    run: async ({ ctx, flags }) => {
+      const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+      const result = await readApi<MailboxComposeLogo>(ctx, `/mailboxes/${mailbox.id}/compose-logo`);
+      if (printStructured(ctx, result)) return;
+      const logo = result.logo;
+      ctx.print(
+        logo
+          ? `${logo.contentType}, ${logo.pixelWidth}x${logo.pixelHeight} px, ${logo.displayWidth} px, ${logo.altText}, ${logo.byteLength} ${t({ en: "bytes", de: "Bytes" })}, SHA-256 ${logo.sha256.slice(0, 12)}`
+          : t({ en: "No mailbox logo.", de: "Kein Postfachlogo." }),
+      );
+    },
+  }),
+  command("compose logo set", {
+    summary: t({
+      en: "Upload a PNG or JPEG signature logo (mailbox admin)",
+      de: "Ein PNG- oder JPEG-Signaturlogo hochladen (Postfachadmin)",
+    }),
+    flags: {
+      ...mailboxFlag,
+      file: flag.string({
+        required: true,
+        description: t({ en: "PNG or JPEG file, at most 100 KiB", de: "PNG- oder JPEG-Datei, höchstens 100 KiB" }),
+      }),
+      width: flag.int({
+        min: 1,
+        max: 600,
+        description: t({ en: "Display width in pixels (default 200)", de: "Anzeigebreite in Pixeln (Standard 200)" }),
+      }),
+      alt: flag.string({
+        description: t({ en: "Alternative text (default mailbox name)", de: "Alternativtext (Standard: Postfachname)" }),
+      }),
+    },
+    run: async ({ ctx, flags }) => {
+      if (!flags.file)
+        throw new Error(t({ en: "Pass --file with a PNG or JPEG file.", de: "Gib mit --file eine PNG- oder JPEG-Datei an." }));
+      const file = Bun.file(flags.file);
+      if (!(await file.exists())) throw new Error(t({ en: "Logo file does not exist.", de: "Die Logodatei existiert nicht." }));
+      if (file.size > 102400)
+        throw new Error(
+          t({
+            en: "The logo may contain at most 100 KiB (102400 bytes).",
+            de: "Das Logo darf höchstens 100 KiB (102400 Bytes) enthalten.",
+          }),
+        );
+      // Bound the read too, in case the file grows after stat.
+      const content = Buffer.from(await file.slice(0, 102401).arrayBuffer());
+      if (content.byteLength > 102400)
+        throw new Error(
+          t({
+            en: "The logo may contain at most 100 KiB (102400 bytes).",
+            de: "Das Logo darf höchstens 100 KiB (102400 Bytes) enthalten.",
+          }),
+        );
+      const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+      const result = await readApi<MailboxComposeLogo>(
+        ctx,
+        `/mailboxes/${mailbox.id}/compose-logo`,
+        jsonRequest("PUT", { content: content.toString("base64"), displayWidth: flags.width, altText: flags.alt }),
+      );
+      if (!printStructured(ctx, result)) ctx.print(t({ en: "Mailbox logo uploaded.", de: "Postfachlogo hochgeladen." }));
+    },
+  }),
+  command("compose logo remove", {
+    summary: t({ en: "Remove the mailbox signature logo (mailbox admin)", de: "Das Postfachlogo entfernen (Postfachadmin)" }),
+    flags: { ...mailboxFlag, yes: confirmFlag(t({ en: "Confirm logo removal", de: "Entfernen des Logos bestätigen" })) },
+    run: async ({ ctx, flags }) => {
+      if (!flags.yes)
+        throw new Error(t({ en: "Pass --yes to remove the mailbox logo.", de: "Bestätige das Entfernen des Postfachlogos mit --yes." }));
+      const mailbox = await resolveMailbox(ctx, flags.mailbox, t);
+      const result = await readApi<MailboxComposeLogo>(ctx, `/mailboxes/${mailbox.id}/compose-logo`, { method: "DELETE" });
+      if (!printStructured(ctx, result)) ctx.print(t({ en: "Mailbox logo removed.", de: "Postfachlogo entfernt." }));
+    },
+  }),
+];
+
 /** Commands whose help stays in English; `mailCommands` adds the localized everyday commands. */
 const specialistCommands = {
   groupSummaries: {
@@ -2749,7 +2887,7 @@ const specialistCommands = {
     message: "Inspect and manage individual messages",
     operator: "Inspect and run bounded mailbox operator actions",
     provider: "Discover and manage mail provider connections",
-    reference: "Resolve and manage immutable conversation references",
+    "reference-number": "Resolve and manage immutable conversation reference numbers",
     reminder: "Manage personal conversation reminders",
     "remote-content": "Manage personal remote image preferences",
     repair: "Repair mailbox folder and message hydration state",
@@ -2767,6 +2905,7 @@ const specialistCommands = {
     "compose signature": "Inspect and select default signatures",
     "compose snippet": "Render reusable composition snippets",
     "compose style": "Inspect and replace mailbox email styles",
+    "compose logo": "Inspect and replace the mailbox signature logo",
     "compose template": "Create and manage signatures and snippets",
     "conversation keyword": "Add or remove provider keywords on conversations",
     "conversation tag": "Inspect and update conversation tags",
@@ -2778,7 +2917,7 @@ const specialistCommands = {
     "identity transport": "Manage custom SMTP transports for identities",
     "mailbox deleted": "Inspect recoverable deleted mailboxes",
     "message keyword": "Add or remove provider keywords on messages",
-    "reference config": "Inspect and manage mailbox reference settings",
+    "reference-number config": "Inspect and manage mailbox reference number settings",
     "automation backfill": "Run and inspect incoming-automation backfills",
     "workflow version": "Create, inspect, and restore workflow versions",
     "admin mailbox access": "Manage direct access to a mailbox",
@@ -2804,8 +2943,8 @@ const specialistCommands = {
             description: flags.description,
           }),
         );
-        if (printStructured(ctx, mailbox)) return;
-        ctx.print(`Created ${mailbox.name} (${mailbox.id}).`);
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", mailbox))) return;
+        ctx.print(`Created ${mailbox.name} (${mailbox.id}). ${cloudResourceUrl(ctx, { type: "mail.mailbox", id: mailbox.id })}`);
       },
     }),
     command("use", {
@@ -2816,7 +2955,7 @@ const specialistCommands = {
       run: async ({ ctx, args }) => {
         const mailbox = await resolveMailbox(ctx, args.mailbox);
         await ctx.setDefault(DEFAULT_MAILBOX_KEY, mailbox.id);
-        if (printStructured(ctx, { mailbox, defaultMailbox: mailbox.id })) return;
+        if (printStructured(ctx, { mailbox: withCloudResourcePermalink(ctx, "mail.mailbox", mailbox), defaultMailbox: mailbox.id })) return;
         ctx.print(`Using ${mailbox.name} (${mailbox.id}).`);
       },
     }),
@@ -2824,7 +2963,7 @@ const specialistCommands = {
       summary: "Show the default mailbox",
       run: async ({ ctx }) => {
         const mailbox = await resolveMailbox(ctx);
-        if (printStructured(ctx, mailbox)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", mailbox))) return;
         ctx.print(`${mailbox.name} (${mailbox.id}).`);
       },
     }),
@@ -2838,7 +2977,7 @@ const specialistCommands = {
       run: async ({ ctx, args }) => {
         const resolved = await resolveMailbox(ctx, args.mailbox);
         const mailbox = await getMailbox(ctx, resolved.id);
-        if (printStructured(ctx, { ...mailbox, permission: resolved.permission })) return;
+        if (printStructured(ctx, { ...withCloudResourcePermalink(ctx, "mail.mailbox", mailbox), permission: resolved.permission })) return;
         {
           ctx.print(`${mailbox.name} (${mailbox.id})`);
           ctx.print(`Health: ${mailbox.health}${mailbox.healthReason ? ` - ${mailbox.healthReason}` : ""}`);
@@ -2899,7 +3038,7 @@ const specialistCommands = {
         if (!flags.yes) throw new Error("Pass --yes to restore the deleted mailbox.");
         const mailboxId = requireMailResourceId(args.mailboxId, "Mailbox id");
         const restored = await readApi<Mailbox>(ctx, `/mailboxes/${mailboxId}/restore`, { method: "POST" });
-        if (printStructured(ctx, restored)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", restored))) return;
         ctx.print(`Restored ${restored.name} in paused state. Verify the provider, then explicitly resume synchronization.`);
       },
     }),
@@ -2970,7 +3109,7 @@ const specialistCommands = {
         if (mailbox.health !== target) {
           throw new Error(`${mailbox.name} entered ${mailbox.health}${mailbox.healthReason ? `: ${mailbox.healthReason}` : "."}`);
         }
-        if (printStructured(ctx, mailbox)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", mailbox))) return;
         ctx.print(`${mailbox.name}: ${mailbox.health}.`);
       },
     }),
@@ -3190,7 +3329,7 @@ const specialistCommands = {
           throw new Error("Pass --name, --description, --search-backend, --automatic-replies, or --sync.");
         }
         const updated = await readApi<Mailbox>(ctx, `/mailboxes/${mailbox.id}`, jsonRequest("PATCH", update));
-        if (printStructured(ctx, updated)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.mailbox", updated))) return;
         ctx.print(`Updated ${updated.name} (${updated.id}).`);
       },
     }),
@@ -4473,7 +4612,7 @@ const specialistCommands = {
         });
         printTable(
           ctx,
-          result,
+          { ...result, items: result.items.map((message) => withCloudResourcePermalink(ctx, "mail.message", message)) },
           result.items.map((item) => ({
             date: item.internalDate,
             from: item.from.map((address) => address.address).join(", "),
@@ -4673,7 +4812,8 @@ const specialistCommands = {
           `/mailboxes/${mailbox.id}/messages/${requireMailResourceId(args.messageId, "Message id")}/calendar-invitation/respond`,
           jsonRequest("POST", { participationStatus: flags.status, idempotencyKey: flags.idempotencyKey ?? crypto.randomUUID() }),
         );
-        if (!printStructured(ctx, draft)) ctx.print(`Created response draft ${draft.id}.`);
+        if (!printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft)))
+          ctx.print(`Created response draft ${draft.id}. ${cloudResourceUrl(ctx, { type: "mail.draft", id: draft.id })}`);
       },
     }),
     command("message edit-as-new", {
@@ -4706,8 +4846,10 @@ const specialistCommands = {
           `/mailboxes/${mailbox.id}/messages/${requireMailResourceId(args.messageId, "Message id")}/derive-draft`,
           jsonRequest("POST", input),
         );
-        if (printStructured(ctx, draft)) return;
-        ctx.print(`Created independent draft ${draft.id} from message ${args.messageId}.`);
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
+        ctx.print(
+          `Created independent draft ${draft.id} from message ${args.messageId}. ${cloudResourceUrl(ctx, { type: "mail.draft", id: draft.id })}`,
+        );
       },
     }),
     command("message resend", {
@@ -4740,8 +4882,10 @@ const specialistCommands = {
           `/mailboxes/${mailbox.id}/messages/${requireMailResourceId(args.messageId, "Message id")}/derive-draft`,
           jsonRequest("POST", input),
         );
-        if (printStructured(ctx, draft)) return;
-        ctx.print(`Created resend draft ${draft.id}; review it before sending.`);
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
+        ctx.print(
+          `Created resend draft ${draft.id}; review it before sending. ${cloudResourceUrl(ctx, { type: "mail.draft", id: draft.id })}`,
+        );
       },
     }),
     command("message inspect", {
@@ -4754,7 +4898,14 @@ const specialistCommands = {
           ctx,
           `/mailboxes/${mailbox.id}/messages/${requireMailResourceId(args.messageId, "Message id")}/inspector`,
         );
-        if (printStructured(ctx, inspector)) return;
+        if (
+          printStructured(ctx, {
+            ...inspector,
+            permalink: cloudResourceUrl(ctx, { type: "mail.message", id: args.messageId }),
+            attachments: inspector.attachments.map((attachment) => withCloudResourcePermalink(ctx, "mail.attachment", attachment)),
+          })
+        )
+          return;
         ctx.print(`Subject: ${inspector.subject || "(no subject)"}`);
         ctx.print(`Message-ID: ${inspector.messageId ?? "unavailable"}`);
         ctx.print(
@@ -4836,7 +4987,7 @@ const specialistCommands = {
           description: `a matching message in ${mailbox.name}`,
         });
         if (!hit) throw new Error("Matching message disappeared.");
-        if (printStructured(ctx, hit)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.message", hit))) return;
         ctx.print(`${hit.subject} (${hit.id}).`);
       },
     }),
@@ -5132,7 +5283,7 @@ const specialistCommands = {
         const page = await readApi<MailFocusPage>(ctx, `/overview/conversations?${query}`);
         printTable(
           ctx,
-          page,
+          { ...page, items: page.items.map((resource) => withCloudResourcePermalink(ctx, "mail.conversation", resource)) },
           page.items.map((thread) => ({
             date: thread.latestMessageAt,
             unread: thread.unread ? "yes" : "",
@@ -5181,7 +5332,7 @@ const specialistCommands = {
         );
         printTable(
           ctx,
-          page,
+          { ...page, items: page.items.map((resource) => withCloudResourcePermalink(ctx, "mail.message", resource)) },
           page.items.map((message) => ({
             date: message.internalDate,
             from: message.from.map((address) => address.address).join(", "),
@@ -5214,7 +5365,7 @@ const specialistCommands = {
         );
         printTable(
           ctx,
-          drafts,
+          drafts.map((resource) => withCloudResourcePermalink(ctx, "mail.draft", resource)),
           drafts.map((draft) => ({
             updated: draft.updatedAt,
             author: draft.createdByDisplayName,
@@ -5274,7 +5425,7 @@ const specialistCommands = {
             confirm: true,
           }),
         );
-        if (printStructured(ctx, value)) return;
+        if (printStructured(ctx, { ...value, target: withCloudResourcePermalink(ctx, "mail.conversation", value.target) })) return;
         ctx.print(`Merged ${value.movedMessageCount} messages into ${value.target.id} at revision ${value.target.revision}.`);
       },
     }),
@@ -5311,8 +5462,17 @@ const specialistCommands = {
             confirm: true,
           }),
         );
-        if (printStructured(ctx, value)) return;
-        ctx.print(`Split ${value.movedMessageCount} messages into ${value.created.id}.`);
+        if (
+          printStructured(ctx, {
+            ...value,
+            source: withCloudResourcePermalink(ctx, "mail.conversation", value.source),
+            created: withCloudResourcePermalink(ctx, "mail.conversation", value.created),
+          })
+        )
+          return;
+        ctx.print(
+          `Split ${value.movedMessageCount} messages into ${value.created.id}. ${cloudResourceUrl(ctx, { type: "mail.conversation", id: value.created.id })}`,
+        );
       },
     }),
     command("conversation reassign-message", {
@@ -5354,7 +5514,14 @@ const specialistCommands = {
             confirm: true,
           }),
         );
-        if (printStructured(ctx, value)) return;
+        if (
+          printStructured(ctx, {
+            ...value,
+            source: withCloudResourcePermalink(ctx, "mail.conversation", value.source),
+            target: withCloudResourcePermalink(ctx, "mail.conversation", value.target),
+          })
+        )
+          return;
         ctx.print(`Moved message ${value.messageId} into ${value.target.id} at revision ${value.target.revision}.`);
       },
     }),
@@ -5385,9 +5552,12 @@ const specialistCommands = {
           ctx,
           `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversationId, "Conversation id")}/context?${query}`,
         );
-        if (printStructured(ctx, value)) return;
+        if (printStructured(ctx, { ...value, permalink: cloudResourceUrl(ctx, { type: "mail.conversation", id: value.conversationId }) }))
+          return;
         ctx.print(`Participants: ${value.participants.length}`);
-        ctx.print(`Contacts: ${value.contacts.status === "ready" ? value.contacts.items.length : "unavailable"}`);
+        ctx.print(
+          `Contacts: ${value.contacts.status === "ready" ? value.contacts.items.length : value.contacts.status === "absent" ? "no contact directory installed" : "unavailable"}`,
+        );
         if (value.contacts.status === "ready" && value.contacts.nextCursor) ctx.print(`Next Contacts cursor: ${value.contacts.nextCursor}`);
       },
     }),
@@ -5407,7 +5577,7 @@ const specialistCommands = {
         );
         printTable(
           ctx,
-          items,
+          items.map((resource) => withCloudResourcePermalink(ctx, "mail.conversation", resource)),
           items.map((item) => ({
             date: item.latestMessageAt,
             reason: item.reasons.map((reason) => (reason.kind === "subject" ? "same subject" : `participant ${reason.value}`)).join(", "),
@@ -5447,7 +5617,7 @@ const specialistCommands = {
         );
         printTable(
           ctx,
-          page,
+          { ...page, items: page.items.map((conversation) => withCloudResourcePermalink(ctx, "mail.conversation", conversation)) },
           page.items.map((item) => ({
             date: item.latestMessageAt,
             participants: item.participantSummary,
@@ -5579,7 +5749,7 @@ const specialistCommands = {
           ctx,
           `/mailboxes/${mailbox.id}/conversations/${requireMailResourceId(args.conversationId, "Conversation id")}/reminder`,
         );
-        if (printStructured(ctx, value)) return;
+        if (printStructured(ctx, value ? withCloudResourcePermalink(ctx, "mail.reminder", value) : value)) return;
         if (value) ctx.print(`${value.dueAt} (${value.state}, revision ${value.revision}, ${value.id}).`);
         ctx.print("No reminder.");
       },
@@ -5612,7 +5782,7 @@ const specialistCommands = {
             expectedRevision: flags.revision ?? null,
           }),
         );
-        if (printStructured(ctx, value)) return;
+        if (printStructured(ctx, value ? withCloudResourcePermalink(ctx, "mail.reminder", value) : value)) return;
         ctx.print(`Reminder set for ${value.dueAt} at revision ${value.revision}.`);
       },
     }),
@@ -5784,7 +5954,7 @@ const specialistCommands = {
         }>(ctx, `/mailboxes/${mailbox.id}/saved-views/${requireMailResourceId(args.viewId, "Saved view id")}/conversations?${query}`);
         printTable(
           ctx,
-          page,
+          { ...page, items: page.items.map((resource) => withCloudResourcePermalink(ctx, "mail.conversation", resource)) },
           page.items.map((thread) => ({
             date: thread.latestMessageAt,
             unread: thread.unread ? "yes" : "",
@@ -6393,7 +6563,7 @@ const specialistCommands = {
         const drafts = await readApi<MailDraft[]>(ctx, `/mailboxes/${mailbox.id}/drafts?limit=${flags.limit ?? 100}`);
         printTable(
           ctx,
-          drafts,
+          drafts.map((resource) => withCloudResourcePermalink(ctx, "mail.draft", resource)),
           drafts.map((draft) => ({
             updated: draft.updatedAt,
             state: draft.state,
@@ -6418,7 +6588,7 @@ const specialistCommands = {
       run: async ({ ctx, args, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
         const draft = await readApi<MailDraft>(ctx, `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}`);
-        if (printStructured(ctx, draft)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         {
           ctx.print(`${draft.subject || "[No subject]"} (${draft.id})`);
           ctx.print(`State: ${draft.state}; revision ${draft.revision}; ${draft.attachments.length} attachment(s)`);
@@ -6508,8 +6678,8 @@ const specialistCommands = {
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
         const draft = await createDraft(ctx, mailbox.id, flags);
-        if (printStructured(ctx, draft)) return;
-        ctx.print(`Created draft ${draft.id} (revision ${draft.revision}).`);
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
+        ctx.print(`Created draft ${draft.id} (revision ${draft.revision}). ${cloudResourceUrl(ctx, { type: "mail.draft", id: draft.id })}`);
         printFormattingWarnings(ctx, draft.formattingWarnings);
       },
     }),
@@ -6536,7 +6706,7 @@ const specialistCommands = {
             draft: await readDraftEditableContent(flags),
           }),
         );
-        if (printStructured(ctx, draft)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         ctx.print(`Updated draft ${draft.id} to revision ${draft.revision}.`);
         printFormattingWarnings(ctx, draft.formattingWarnings);
       },
@@ -6609,7 +6779,7 @@ const specialistCommands = {
             () => undefined,
           );
         }
-        if (printStructured(ctx, draft)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         ctx.print(`Restored recovery copy into draft ${draft.id}; revision ${draft.revision}.`);
       },
     }),
@@ -6650,7 +6820,7 @@ const specialistCommands = {
           contentType: flags.contentType,
           uploadId: flags.upload,
         });
-        if (printStructured(ctx, draft)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         ctx.print(`Added attachment to draft ${draft.id}; revision ${draft.revision}.`);
       },
     }),
@@ -6731,7 +6901,7 @@ const specialistCommands = {
           `/mailboxes/${mailbox.id}/drafts/${requireMailResourceId(args.draftId, "Draft id")}/attachments/${requireMailResourceId(args.attachmentId, "Draft attachment id")}?${query}`,
           { method: "DELETE" },
         );
-        if (printStructured(ctx, draft)) return;
+        if (printStructured(ctx, withCloudResourcePermalink(ctx, "mail.draft", draft))) return;
         ctx.print(`Removed attachment from draft ${draft.id}; revision ${draft.revision}.`);
       },
     }),
@@ -6816,7 +6986,7 @@ const specialistCommands = {
         const page = await readApi<ScheduledSendPage>(ctx, `/mailboxes/${mailbox.id}/scheduled-sends?${query}`);
         printTable(
           ctx,
-          page,
+          { ...page, items: page.items.map((resource) => withCloudResourcePermalink(ctx, "mail.delivery", resource)) },
           page.items.map((item) => ({
             scheduled: item.scheduledAt,
             nextAttempt: item.nextAttemptAt ?? "",
@@ -6860,11 +7030,19 @@ const specialistCommands = {
             disposition: flags.discard ? "discard" : "draft",
           }),
         );
-        if (printStructured(ctx, result)) return;
+        if (
+          printStructured(
+            ctx,
+            result.disposition === "draft"
+              ? { ...result, permalink: cloudResourceUrl(ctx, { type: "mail.draft", id: result.draftId }) }
+              : result,
+          )
+        )
+          return;
         ctx.print(result.disposition === "draft" ? `Restored draft ${result.draftId}.` : `Discarded message ${result.draftId}.`);
       },
     }),
-    command("reference config show", {
+    command("reference-number config show", {
       summary: "Show mailbox reference number settings",
       flags: mailboxFlag,
       run: async ({ ctx, flags }) => {
@@ -6885,7 +7063,7 @@ const specialistCommands = {
         ctx.print(`Revision: ${configuration.revision}`);
       },
     }),
-    command("reference config set", {
+    command("reference-number config set", {
       summary: "Create or update mailbox reference number settings",
       flags: {
         ...mailboxFlag,
@@ -6934,7 +7112,7 @@ const specialistCommands = {
         ctx.print(`Saved reference number settings at revision ${configuration.revision}.`);
       },
     }),
-    command("reference list", {
+    command("reference-number list", {
       summary: "List immutable references for a conversation",
       args: {
         conversationId: arg.required({ description: "Conversation id" }),
@@ -6962,7 +7140,7 @@ const specialistCommands = {
         );
       },
     }),
-    command("reference ensure", {
+    command("reference-number ensure", {
       summary: "Idempotently ensure a conversation reference",
       args: {
         conversationId: arg.required({ description: "Conversation id" }),
@@ -6987,7 +7165,7 @@ const specialistCommands = {
         ctx.print(`${result.created ? "Allocated" : "Found"} ${result.reference.value} (${result.reference.role}).`);
       },
     }),
-    command("reference find", {
+    command("reference-number find", {
       summary: "Resolve an exact conversation reference",
       args: { value: arg.required({ description: "Exact reference value" }) },
       flags: mailboxFlag,
@@ -7774,11 +7952,15 @@ const mailCommands = (locale?: string) => {
     }),
     groupSummaries: {
       ...specialistCommands.groupSummaries,
+      "compose logo": t({
+        en: "Inspect and replace the mailbox signature logo",
+        de: "Das Signaturlogo des Postfachs anzeigen und ersetzen",
+      }),
       comments: t({ en: "Discuss a conversation internally", de: "Eine Unterhaltung intern besprechen" }),
       tag: t({ en: "Tag conversations and manage mailbox tags", de: "Unterhaltungen taggen und Postfach-Tags verwalten" }),
       conversation: t({ en: "Inspect, merge, and split conversations", de: "Unterhaltungen prüfen, zusammenführen und teilen" }),
     },
-    commands: [...everydayCommands(t), ...specialistCommands.commands],
+    commands: [...everydayCommands(t), ...specialistCommands.commands, ...composeLogoCommands(t)],
   });
 };
 

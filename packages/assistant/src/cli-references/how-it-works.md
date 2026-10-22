@@ -1,7 +1,7 @@
 # How the Assistant works
 
 Read this before you set up Projects, knowledge, references, Skills, memories,
-or scheduled tasks for someone. It explains what the Assistant can see, what it
+or routines for someone. It explains what the Assistant can see, what it
 may change, and in whose name. The [Assistant CLI](index.md) reference holds the
 full command syntax.
 
@@ -15,8 +15,8 @@ In short:
   to a Project is the one exception that grants access: members can use it.
 - App reads never ask for approval. Changes to app data ask first, unless the
   app marks the Action as safe without approval.
-- Scheduled tasks can use only the capabilities granted to the task. Nothing
-  can be approved while a task runs in the background.
+- Routines can use only the capabilities granted to the routine. Nothing
+  can be approved while a routine runs in the background.
 - Your own direct `cld` calls are not Assistant turns. They run with your CLI
   profile's identity and skip the Assistant's approval prompts, so ask the user
   before you change their data.
@@ -210,7 +210,7 @@ Common reference types:
 | Mailbox or mail conversation | `mail.mailbox`, `mail.conversation` |
 | File or folder | `filesv2.entry` |
 | Address book or contact | `contacts.book`, `contacts.contact` |
-| Pulse base or saved query | `pulse.base`, `pulse.saved_query` |
+| Pulse base or source | `pulse.base`, `pulse.source` |
 
 The live list is every `manifest.types` entry with a `reader` in
 `cld capabilities catalog --json`. Cloud rejects a type that does not exist or
@@ -221,7 +221,7 @@ Skills with `projects skills link`, not as a reference.
 
 The Assistant can run any Action an installed app publishes, within the user's
 rights. Examples are creating Spaces tasks, editing notes, drafting or sending
-mail, updating Grids records, creating Skills, and scheduling chat tasks. It
+mail, updating Grids records, creating Skills, and scheduling routines. It
 can also change who may use a Skill or Studio App the user manages, after a
 fresh review. Check `cld capabilities catalog --json` for the current set.
 
@@ -248,7 +248,7 @@ an explicit invocation and never asks.
 | Query, such as search or read | Never |
 | Action with `approval: "none"` | Never |
 | Action with `approval: "rememberable"` | Asks; the user may choose **Approve for this chat** or **Always approve** for the app's scope |
-| Action without an `approval` field | Asks for every call; cannot be remembered or granted to a scheduled task |
+| Action without an `approval` field | Asks for every call; cannot be remembered or granted to a routine |
 | Built-in tools on chat files, memories, web search, PDFs, and Code Mode | Never; capability calls and HTTP requests inside Code Mode still ask |
 | HTTP request from Code Mode | Asks; a GET or HEAD without a body, with at most `Accept`, `Accept-Language`, `Range`, `User-Agent`, `If-None-Match`, or `If-Modified-Since` (each value up to 128 characters) and no secret, offers **Allow this website for this chat** |
 | `web_extract` or `fetch_file` for an address the chat did not supply | Asks, like an HTTP request; an address from the user, a search result, or a read page's links never asks |
@@ -290,15 +290,17 @@ authorized. An unresolved approval exits with status `2`; resolve it with
 `cld assistant actions list|approve|reject`. `actions approve --always`
 remembers a rememberable approval, so use it only when the user asked for that.
 
-## Scheduled tasks and mandates
+## Routines and their rights
 
-A scheduled task belongs to one chat and runs as that chat's owner, with the
+The CLI and API call routines tasks: `cld assistant tasks`, `core.ai.task.*`.
+
+A routine belongs to one chat and runs as that chat's owner, with the
 owner's full account, including an administrator role. Each call checks the
 owner's current access when it runs.
 
-Creating a task also creates its **mandate**: a stored, confirmed authorization
+Creating a routine also creates its **mandate**: a stored, confirmed authorization
 for that one background workload. Its `grants` list names every capability the
-task may call. Background runs work like this:
+routine may call. Background runs work like this:
 
 - Every app capability needs a grant, including Queries. That also covers
   opening a Project reference: grant the type's reader Query, such as
@@ -312,24 +314,24 @@ task may call. Background runs work like this:
   A call rejected by the grants or fixed inputs returns a tool error the model
   can recover from.
 - An unavailable, paused, revoked, expired, or changed mandate fails the run and
-  moves the task to `needs_attention`. So does a target app rejecting the
+  moves the routine to `needs_attention`. So does a target app rejecting the
   sponsor with HTTP 401 or 403, an unknown Action outcome, or a tool that needs
   approval or a browser.
 - Only Actions with `approval: "none"` or `"rememberable"` can be granted.
   Cloud rejects any other grant with "Capability always requires interactive
   approval".
 - Before each run, Cloud checks that the owner is active, the chat is not
-  archived, and the mandate is unchanged. Otherwise the task moves to
+  archived, and the mandate is unchanged. Otherwise the routine moves to
   `needs_attention` or stays paused.
-- A task in a Project chat uses the Project state that is current when the run
+- A routine in a Project chat uses the Project state that is current when the run
   starts.
 - Apps can limit background work further. For example, Grids document stream
   references do not work in scheduled runs.
 
-With today's apps, a scheduled task therefore cannot send mail or delete,
+With today's apps, a routine therefore cannot send mail or delete,
 because `mail.draft.send` and `spaces.item.delete` always ask. It can create
 and update tasks, add comments, edit notes, or create mail drafts when you
-grant those Actions. For anything else, let the task write its proposal
+grant those Actions. For anything else, let the routine write its proposal
 into the chat; the user can then ask the Assistant there to carry it out and
 approve each step.
 

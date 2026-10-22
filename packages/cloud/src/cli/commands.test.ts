@@ -293,6 +293,18 @@ describe("CLI command builder", () => {
     ).toThrow('CLI command group "logs" requires a summary.');
   });
 
+  test("rejects the reserved reference command, which cld uses for skill references", () => {
+    for (const path of ["reference", "reference list"]) {
+      expect(() =>
+        defineCliCommands({
+          name: "inventory",
+          summary: "Inventory",
+          commands: [command(path, { summary: "Reserved", run: () => undefined })],
+        }),
+      ).toThrow('CLI module "inventory" must not declare the reserved command "reference"');
+    }
+  });
+
   test("rejects missing args, invalid ints, invalid enums, and unknown flags", async () => {
     const mod = defineCliCommands({
       name: "admin",

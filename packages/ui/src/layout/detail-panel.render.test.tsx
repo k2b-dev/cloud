@@ -58,6 +58,7 @@ describe("DetailPanel", () => {
 
     expect(html).toContain('class="k2b-detail-panel"');
     expect(html).toContain("<h2>Invoice review</h2>");
+    expect(html).toContain('data-identity="true"');
     expect(html).toContain('class="k2b-detail-panel__header-leading"');
     expect(html).toContain('class="k2b-detail-panel__supporting"');
     expect(html).toContain('class="k2b-detail-panel__meta"');
@@ -68,7 +69,8 @@ describe("DetailPanel", () => {
     expect(html).toContain("<h3 id=");
     expect(html).toMatch(/<section[^>]+aria-labelledby="k2b-detail-panel-section-[^"]+"/);
     expect(html).toContain("No workflow context yet");
-    expect(html).toContain('class="k2b-detail-panel__section-meta">0</div>');
+    // State text sits right after the title, inside the heading row.
+    expect(html).toMatch(/<h3 id="[^"]+">Workflow<\/h3><span class="k2b-detail-panel__section-meta">0<\/span>/);
     expect(html).toContain('data-open="true"');
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain('aria-controls="k2b-detail-panel-section-');
@@ -89,10 +91,10 @@ describe("DetailPanel", () => {
     expect(sectionRule).not.toContain("box-shadow");
     expect(summaryRule).toContain("background: var(--k2b-surface)");
     expect(summaryRule).not.toContain("box-shadow");
-    expect(headerRule).toContain("padding: 0.875rem 0 0.75rem");
+    expect(headerRule).toContain("padding: 0.875rem 0.5rem 0.75rem");
     expect(bodyRule).toContain("overflow-y: auto");
     expect(bodyRule).toContain("scrollbar-gutter: stable");
-    expect(bodyRule).toContain("padding: 0.5rem 0 1rem");
+    expect(bodyRule).toContain("padding: 0.25rem 0.5rem 1rem");
   });
 
   test("absorbs its stable scrollbar gutter into the workspace trailing inset", async () => {
@@ -103,10 +105,11 @@ describe("DetailPanel", () => {
     const bodyRule = css.match(/\.k2b-ui \.k2b-detail-panel__body \{([^}]*)\}/)?.[1];
     const workspaceDetailRule = layoutCss.match(/\.k2b-ui \.k2b-app-workspace__detail \{([^}]*)\}/)?.[1];
 
-    expect(workspaceDetailRule).toContain("--k2b-detail-panel-scroll-inset: 1rem");
+    expect(workspaceDetailRule).toContain("--k2b-detail-panel-scroll-inset: 0.5rem");
+    expect(workspaceDetailRule).toContain("padding: 0 0.5rem env(safe-area-inset-bottom, 0px)");
     expect(panelRule).toContain("width: calc(100% + var(--k2b-detail-panel-scroll-inset, 0rem))");
     expect(panelRule).toContain("margin-inline-end: calc(-1 * var(--k2b-detail-panel-scroll-inset, 0rem))");
-    expect(headerRule).toContain("padding-inline-end: var(--k2b-detail-panel-scroll-inset, 0rem)");
+    expect(headerRule).toContain("padding-inline-end: calc(var(--k2b-detail-panel-scroll-inset, 0rem) + 0.5rem)");
     expect(bodyRule).toContain("scrollbar-gutter: stable");
   });
 
@@ -244,13 +247,17 @@ describe("DetailPanel", () => {
 
     expect(css).toContain(".k2b-ui .k2b-detail-panel__action {");
     const actionRule = css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action \{([^}]*)\}/)?.[1] ?? "";
-    expect(actionRule).toContain("color: var(--k2b-text-muted);");
+    expect(actionRule).toContain("color: var(--k2b-text-secondary);");
     expect(actionRule).toContain("background: transparent;");
     const actionHoverRule =
       css.match(/\.k2b-ui \.k2b-button\.k2b-detail-panel__action:not\(:disabled, \[aria-disabled="true"\]\):hover,[^{]+\{([^}]*)\}/)?.[1] ??
       "";
-    expect(actionHoverRule).toContain("color: var(--k2b-detail-panel-accent, var(--k2b-action));");
+    expect(actionHoverRule).toContain("color: var(--k2b-text);");
     expect(actionHoverRule).toContain("background: transparent;");
+    // The hover fill is a pseudo element reaching into the gutter, so the row's text never moves.
+    const bleedRule = css.match(/\.k2b-ui \.k2b-detail-panel__action > \.k2b-button__label::before \{([^}]*)\}/)?.[1] ?? "";
+    expect(bleedRule).toContain("inset-inline: -0.5rem;");
+    expect(bleedRule).toContain("pointer-events: none;");
     const menuHoverRule =
       css.match(
         /\.k2b-ui \.k2b-button\.k2b-detail-panel__action-menu-trigger:not\(:disabled, \[aria-disabled="true"\]\):hover,[^{]+\{([^}]*)\}/,
@@ -260,10 +267,13 @@ describe("DetailPanel", () => {
     expect(css).toMatch(/@media \(any-hover: hover\)[\s\S]*\.k2b-detail-panel__action-menu-trigger \{[^}]*opacity: 0/);
     expect(css).toContain(".k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-menu-trigger");
     expect(css).toContain('.k2b-detail-panel__action-menu-trigger[aria-expanded="true"]');
-    // The secondary action shares the progressive reveal; touch devices without hover always see it.
+    // Touch input keeps secondary actions visible, regardless of pointer capabilities.
     const hoverHidden =
-      css.match(/@media \(any-hover: hover\) \{\s*\.k2b-ui \.k2b-detail-panel__action-secondary,[^{]+\{([^}]*)\}/)?.[1] ?? "";
+      css.match(
+        /@media \(any-hover: hover\) \{\s*:where\(html:not\(\[data-k2b-input="touch"\]\)\) \.k2b-ui \.k2b-detail-panel__action-secondary,[^{]+\{([^}]*)\}/,
+      )?.[1] ?? "";
     expect(hoverHidden).toContain("opacity: 0;");
+    expect(css).toContain(':where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-detail-panel__action-secondary');
     expect(css).toContain(".k2b-detail-panel__action-row:hover .k2b-detail-panel__action-secondary");
     expect(css).toContain(".k2b-detail-panel__action-row:focus-within .k2b-detail-panel__action-secondary");
     expect(css).not.toMatch(/\.k2b-detail-panel__action-secondary[^{]*\{[^}]*transform/);
@@ -273,9 +283,10 @@ describe("DetailPanel", () => {
       )?.[1] ?? "";
     expect(dangerRule).toContain("color: var(--k2b-danger-text);");
     const leadingRule = css.match(/\.k2b-ui \.k2b-detail-panel__action-leading \{([^}]*)\}/)?.[1] ?? "";
-    expect(leadingRule).toContain("width: 1rem;");
-    expect(leadingRule).toContain("justify-content: flex-start;");
-    expect(leadingRule).toContain("color: inherit;");
+    // The section icon's 20 px column, so row text starts where the section title does.
+    expect(leadingRule).toContain("width: 1.25rem;");
+    expect(leadingRule).toContain("justify-content: center;");
+    expect(leadingRule).toContain("color: var(--k2b-text-muted);");
     const titleRule = css.match(/\.k2b-ui \.k2b-detail-panel__action-title \{([^}]*)\}/)?.[1] ?? "";
     expect(titleRule).toContain("color: inherit;");
     expect(titleRule).toContain("font-size: 0.75rem;");
@@ -290,5 +301,37 @@ describe("DetailPanel", () => {
     expect(css).toContain("text-transform: uppercase;");
     expect(css).toContain("var(--k2b-detail-panel-accent, var(--k2b-accent-600))");
     expect(css).toContain("font-weight: 400;");
+  });
+
+  test("puts a count chip right after the title, reads zero as words, and keeps one trailing control", () => {
+    const html = renderToString(() =>
+      createComponent(DetailPanel.Body, {
+        get children() {
+          return [
+            createComponent(DetailPanel.Section, { title: "Comments", icon: "ti ti-message", count: 3, actions: "Comment" }),
+            createComponent(DetailPanel.Section, { title: "Links", icon: "ti ti-link", count: 0 }),
+            createComponent(DetailPanel.Section, { title: "Tasks", icon: "ti ti-list-check", meta: "2 of 4 done" }),
+            createComponent(DetailPanel.Section, {
+              title: "Contents",
+              icon: "ti ti-list",
+              count: 5,
+              collapsible: true,
+              defaultOpen: true,
+              children: createComponent(DetailPanel.Action, { href: "#a", title: "Overview", current: true }),
+            }),
+          ];
+        },
+      }),
+    );
+    expect(html).toMatch(
+      /<h3 id="[^"]+">Comments<\/h3><span class="k2b-count-chip">3<\/span><\/div><\/div><div class="k2b-detail-panel__section-actions">Comment<\/div>/,
+    );
+    expect(html).toMatch(/Links<\/h3><span class="k2b-detail-panel__none">None yet<\/span>/);
+    expect(html).toMatch(/Tasks<\/h3><span class="k2b-detail-panel__section-meta">2 of 4 done<\/span>/);
+    // The current row is exposed to assistive technology, not only by color.
+    expect(html).toContain('aria-current="location"');
+    expect(html).toContain('data-current="true"');
+    // Every action row reserves the leading column, so text starts on one edge.
+    expect(html).toContain('<span class="k2b-detail-panel__action-leading"></span>');
   });
 });

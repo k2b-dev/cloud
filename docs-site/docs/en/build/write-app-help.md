@@ -5,7 +5,7 @@ section: Build an app
 order: 175
 description: Write English and German Help articles with short steps, one term per concept, and warnings before the risky step.
 tags: [help, writing, english, german, glossary, steps]
-updated: 2026-10-10
+updated: 2026-10-17
 ---
 
 # Write app help
@@ -48,7 +48,32 @@ German Help follows the same rules: kurze Sätze, Aktiv, Imperativ mit „du“ 
 Anleitungen, ein Begriff für eine Bedeutung. Write idiomatic German, not
 translated English word order.
 
+## Choose where an article appears
+
+Set `kind` in the base article's frontmatter: `start` introduces the app,
+`task` answers “How do I…?”, `reference` supports lookup, and `troubleshoot`
+helps recover from a problem. Translations inherit `kind` and `order`; repeated
+values must match the base article.
+
+Task articles become tiles under **What do you want to do?**. Give the most
+frequent tasks the lowest `order` values. Cloud sorts by `order` (default
+`100`), then title, and shows at most eight tiles. Remaining tasks follow as a
+list, so every task stays reachable. The other kinds appear under **Get
+started**, **Look up**, and **Solve problems**; empty groups are absent.
+
+Name two or three articles that fit each main page with Layout's
+`help={["inventory-start", "inventory-access"]}` prop. They appear first under
+**For this view** in the Help panel, in the declared order, and remain in their
+usual groups. Layout sends the IDs through the panel context so the server
+can render them before the browser runtime starts.
+Keep these IDs beside the app's Help declaration and test that every ID exists
+in each language you ship. See [In-product Help](/en/docs/platform/help#use-the-automatically-derived-surfaces)
+for the Layout example and filtering rules.
+
 ## Structure an article
+
+A task article fits on two screens: the short answer, at most three sections,
+each with at most seven steps.
 
 - **One task per article.** The title names the task as the reader thinks of
   it: “Share a Space”, „Space teilen“. An overview, reference, or
@@ -56,7 +81,8 @@ translated English word order.
   problems”.
 - **Frontmatter.** `title` is the task. `description` is one sentence that says
   what the reader can do. Both appear in search and in agent results, so they
-  follow the glossary too.
+  follow the glossary too. Built-in base articles also declare `icon` and
+  `kind`: `start`, `task`, `reference`, or `troubleshoot`.
 - **First sentence.** Say what the reader achieves and what they need first,
   for example an access level.
 - **Sections.** Each level-two heading is one subtask and is also written as a
@@ -65,6 +91,37 @@ translated English word order.
   result the reader sees, then the next step if there is one.
 - **Facts.** Put facts that the reader looks up, not follows, in a `reference`
   block. Put alternatives in a `compare` block.
+- **Block spacing.** Put a blank line between text and a `steps`,
+  `reference`, `compare`, or `details` block; an opener directly after a text
+  line fails startup.
+- **Details.** Put reasons and special cases in `:::details`. The reader can
+  open them; search and agents still find them.
+- **Icons.** Show a control's icon with `{icon}` on its label. Do not describe
+  the icon in words, such as “the crossed-out eye”.
+- **No change notes.** Help describes the product as it is. Notes such as “old
+  links” or “former limits” do not belong in Help.
+- **Contracts and limits.** Put system contracts and limits in an article with
+  `kind: reference` or in the developer documentation.
+
+Use `needs: view`, `edit`, or `manage` for a glossary access level. Choose the
+next task with `next: <id>` and related guidance with `related: [<id>, <app>/<id>]`.
+Link within text with `[Share](help:<id>#section)`. Translations inherit this
+metadata when they omit it; repeated values must match the base article.
+
+Key caps, label chips, and details look like this in the source:
+
+```md
+Choose **Hide**{icon="eye-off"}, or press :kbd[mod+k].
+Open **Space settings → Sharing**{icon="settings"}.
+
+:::details Why is sharing unavailable?
+You need **Manage** access to change who can use this Space.
+:::
+```
+
+Key caps follow the reader's keyboard. Menu paths become chips joined by ›.
+Details start collapsed, remain searchable, and reach agents in full.
+Level-two headings need no icons.
 
 ## Learn from real Help
 
@@ -220,6 +277,8 @@ The `help-writing` rule checks every Help article under `packages/*/src/help`
 in the Cloud repository. It reports:
 
 - a sentence in a numbered step with more than 20 words;
+- a `:::steps` block with more than seven top-level numbered steps;
+- a built-in base-locale article without `kind` or `icon` in its frontmatter;
 - a synonym that the [Cloud glossary](/en/docs/reference/glossary) lists for
   the article's language, in titles, descriptions, headings, and prose.
 
@@ -235,7 +294,8 @@ bun scripts/check.ts help-writing --fix        # remove fixed findings from the 
 Findings that existed when the rule started are listed in
 `scripts/checks/help-writing.baseline`. The rule reports them as known
 findings and does not fail on them. The baseline counts findings per article:
-per glossary term, and per long step by its first eight words. An article
+per glossary term, per missing frontmatter field, and per long step or steps
+block by its first eight words. An article
 that gains a finding fails `bun run check`. A baseline line whose finding is
 gone fails too. The count does not see a finding that moves within its
 article or a long step that grows, and review keeps people from adding

@@ -46,7 +46,11 @@ On Android, install Cloud Login from Chrome; see
    Check the Cloud address before connecting.
 4. Compare the six-digit codes in Cloud and the authenticator.
    Confirm only if they match.
-5. Keep both pages open until pairing completes. The device then appears under
+5. If this account already has an active paired device on this Cloud, open
+   Cloud Login on it and approve the pairing. The request expires after five
+   minutes; denial or expiry leaves the new device unpaired. The first device
+   pairs as soon as the codes are confirmed.
+6. Keep both pages open until pairing completes. The device then appears under
    **My account → Security**.
 
 The pairing link is a temporary secret. Do not put it in tickets, screenshots
@@ -73,21 +77,33 @@ opens **Accounts → Users → the user → Pair sign-in app**.
    reopens at this step.
 
 This issues a sign-in credential for that person, not for the administrator.
-The action is audited. The user is notified by email when their account has an
+Assisted pairing completes after code confirmation, including when the account
+already has a paired device. The action is audited. The user is notified by email when their account has an
 email address.
 
 ## Review or remove a device
 
 Under **My account → Security**, rename devices so you recognize them.
-Revoke a lost or unwanted device there. Revocation stops that credential from
-approving new sign-ins; it does not sign out Cloud sessions already created.
-Revoked devices disappear from the device list.
+Request removal of a lost or unwanted device there, then approve the request
+in Cloud Login on an active paired device. The device being removed can also
+approve its own removal, but only another paired device can deny it. Until
+approval, it stays active; denial or expiry leaves it unchanged. The request
+ends when the browser session that asked for it signs out.
+
+You can also end the browser sign-ins that device approved; this is selected
+by default. The requesting session stays signed in, as do sign-ins approved by
+other devices and sessions with no device link. Sessions issued before this
+update have no device link. Once revoked, the device cannot approve new
+sign-ins.
 
 Removing a Cloud locally from the authenticator and revoking its Cloud
 credential are different actions. For a lost device, use Cloud's device list.
 If browser data is lost or no configured unlock method works, sign in through
-another allowed Cloud method, revoke the old credential and pair again.
-If you cannot sign in at all, ask an administrator to revoke the device.
+another allowed Cloud method. If no paired device is usable, ask an
+administrator to revoke the old device and help pair a replacement through
+administrator-assisted pairing when enabled. Ask an administrator as well when
+a device you do not recognize denies your removal requests. These
+administrator actions do not need approval on a paired device.
 
 Cloud also revokes all your paired devices when it signs your account out
 everywhere, for example after you reset your FreeIPA password with

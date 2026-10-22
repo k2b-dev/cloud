@@ -1,32 +1,42 @@
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard, PageTrailProvider } from "@k2b/ui";
+import { AppWorkspace, appWorkspaceLayoutStyle, keyboardPlatform, LocaleProvider, NoticeCard, PageTrailProvider } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
+import { readPanelCookie } from "../_internal/panel-cookie";
+import { readShellFocusCookie } from "../_internal/shell-focus";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
+import { type CloudResourceRef, CloudResourceRefSchema } from "../contracts/capabilities";
+import { PANEL_HELP_ID_MAX_LENGTH, PanelPageContextSchema } from "../contracts/panel-context";
 import { isPwaShellAvailable } from "../contracts/pwa";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
 import { hasRole, type User } from "../contracts/shared";
+import { isAppSessionActor } from "../server/actor";
 import { getLocale } from "../server/locale";
 import { getDateConfig } from "../server/time";
-import { dates } from "../shared";
+import { dates, resolveHomePath } from "../shared";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import AnnouncementBanners from "./AnnouncementBanners";
 import { appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
-import { resolveRuntimeRoute, visibleNavigationApps } from "./app-navigation";
-import { getLayoutHelp } from "./help";
+import { resolveRuntimeRoute, visibleNavigationApps, visiblePanelProviders } from "./app-navigation";
+import { getLayoutHelp, layoutHelpFailed } from "./help";
 import LayoutFooter from "./LayoutFooter";
 import LayoutHeader from "./LayoutHeader";
 import LayoutRail, { type LayoutAppLink } from "./LayoutRail";
+import LayoutTabBar from "./LayoutTabBar";
 import type { LayoutContext } from "./layout-context";
+import { HELP_VIEW_LIMIT } from "./layout-help-start";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 import PageTrailRow from "./PageTrailRow";
+import PanelSlot from "./PanelSlot";
+import { getPageSwapBuild, pageSwapSignature } from "./page-swap";
 import { derivePageTrail } from "./page-trail";
 import { platformMessages } from "./platform-messages";
 import { sortRailApps } from "./rail-navigation";
 import { requestPath } from "./request-path";
 import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
+import ShellFocusToggle from "./ShellFocusToggle";
 import ShellRuntime from "./ShellRuntime.island";
-import { type ShellData, ShellDataProvider } from "./shell-data";
+import { type ShellData, ShellDataProvider, ShellDataScript } from "./shell-data";
 
 // Types
 type Breadcrumb = LayoutBreadcrumb;
@@ -34,10 +44,18 @@ type LayoutProps = {
   children: JSX.Element;
   c: LayoutContext;
   title?: string | Breadcrumb[];
+  /** Up to three ids of the current app's Help articles that fit this page; Help lists them first under "For this view". Unknown ids and articles the reader may not see are ignored. */
+  help?: readonly string[];
+  /** Share only the current place with the visible panel; false disables context for this document. */
+  context?: { scope?: CloudResourceRef } | false;
   fullPage?: boolean /** Keep the shell viewport-bound and suppress its footer. */;
   fullWidth?: boolean /** Delegate scrolling and clipping to the page's work surface. */;
+  /** Hide the panel slot on this page (sign-in, print, presentation, public pages). */
+  panel?: false;
   focusMode?: boolean /** Render only the app canvas and content for dedicated editors or pop-out windows. */;
   flushCanvas?: boolean /** Remove app-canvas spacing for edge-to-edge focus surfaces such as pop-out windows. */;
+  /** Final localized app-specific export or printing guidance, shown when no data-print-region exists. */
+  printHint?: string;
   workspaceSidebarCollapsible?: boolean /** Resolve persisted sidebar geometry for the page's sidebar policy during SSR. */;
 }; // ==========================
 // Helpers
@@ -148,6 +166,11 @@ export default function Layout(props: LayoutProps) {
   const lang = getLocale(c);
   const t = platformMessages.resolve([lang]).t;
   const user = c.get("user");
+  const providers = user && props.panel !== false ? visiblePanelProviders(runtime.apps, user, lang) : [];
+  const panelState = readPanelCookie(
+    providers.length ? cookie : undefined,
+    providers.map((provider) => provider.id),
+  );
   const pathname = new URL(c.req.raw.url).pathname;
   const currentRoute = resolveRuntimeRoute(runtime.apps, pathname);
   const currentApp = resolveCurrentApp(runtime.apps, pathname);
@@ -163,6 +186,8 @@ export default function Layout(props: LayoutProps) {
   const searchLinks = Object.fromEntries(
     runtime.apps.flatMap((app) => (visibleAppIds.has(app.id) && app.searchLinks?.length ? [[app.id, app.searchLinks] as const] : [])),
   );
+  const swapBuild = getPageSwapBuild(c);
+  const swap = swapBuild !== undefined && !focusMode && !!currentRoute?.prefix;
   const settings = c.get("settings");
   const announcements = c.get("announcements");
   const appName = settings?.app?.name || "Cloud";
@@ -178,6 +203,7 @@ export default function Layout(props: LayoutProps) {
   const page = c.get("page") as Record<string, unknown>;
   const pageTitle = typeof title === "string" ? title : (title?.at(-1)?.title ?? appName);
   if (!page.title) page.title = pageTitle;
+  page.appAccent = currentApp?.appearance?.accent;
   const breadcrumbs: Breadcrumb[] = !title ? [{ title: appName }] : typeof title === "string" ? [{ title }] : title;
   // The way up is derived from the title array by one rule (see `derivePageTrail`). Anonymous pages keep their
   // header breadcrumbs, and focus surfaces such as pop-out editors have no way up; both show the title alone. The
@@ -187,6 +213,8 @@ export default function Layout(props: LayoutProps) {
     ? { title: pageTitle, ancestors: [] }
     : derivePageTrail(title ?? appName, currentRoute?.prefix, appName, `${pathname}${new URL(c.req.raw.url).search}`);
   const showRail = !!user;
+  // The app bar and the app's navigation hidden with Cmd/Ctrl+\ or the sidebar buttons; phones ignore it in CSS.
+  const shellFocus = showRail && readShellFocusCookie(cookie);
   // The profile menu offers the mobile app only while the installation runs it.
   const appHref = user && isPwaShellAvailable(runtime.apps) ? "/me/app" : undefined;
   const profileName = user?.displayName || user?.uid || "?";
@@ -198,14 +226,48 @@ export default function Layout(props: LayoutProps) {
   // keeps short and long pages at the same width where scrollbars take space.
   const mainLayoutClass = fullPage || fullWidth ? "flex flex-col" : "md:overflow-auto md:[scrollbar-gutter:stable]";
   const canvasStyle =
-    [appAppearanceStyle(currentApp?.appearance), appWorkspaceLayoutStyle(workspaceLayout), focusMode && flushCanvas ? "padding:0" : ""]
+    [
+      appAppearanceStyle(currentApp?.appearance),
+      appWorkspaceLayoutStyle(workspaceLayout),
+      panelState.widthRem !== undefined ? `--cloud-panel-width-set:${panelState.widthRem}rem` : "",
+      focusMode && flushCanvas ? "padding:0" : "",
+    ]
       .filter(Boolean)
       .join(";") || undefined;
   const appLabel = currentApp?.name ?? (pathname.startsWith("/admin") ? t.admin : undefined);
+  const helpIds = new Set(registeredHelp?.documents.map((topic) => topic.id));
+  const viewHelp = [...new Set(props.help)]
+    .filter((id) => helpIds.has(id) && id.length <= PANEL_HELP_ID_MAX_LENGTH)
+    .slice(0, HELP_VIEW_LIMIT);
+  const scope = props.context && CloudResourceRefSchema.safeParse(props.context.scope);
+  // Fail closed: a page whose place does not validate shares nothing rather than failing to render.
+  const pageContext =
+    (providers.length &&
+      props.context !== false &&
+      PanelPageContextSchema.safeParse({
+        v: 1,
+        seq: 0,
+        pageId: crypto.randomUUID(),
+        app: currentApp?.id,
+        ...(scope && scope.success ? { scope: scope.data } : {}),
+        ...(viewHelp.length ? { help: viewHelp } : {}),
+      }).data) ||
+    null;
+  const panel: ShellData["panel"] = providers.length
+    ? { providers, provider: panelState.provider ?? providers[0]?.id, context: pageContext, consent: c.get("panelConsent") }
+    : undefined;
   const shellData: ShellData = {
+    ...(panel ? { panel } : {}),
+    platform: keyboardPlatform(c.req.raw.headers.get("User-Agent") ?? ""),
+    ...(viewHelp.length ? { help: viewHelp } : {}),
+    ...(layoutHelpFailed(c) ? { helpFailed: true as const } : {}),
     apps: allApps,
     ...(user
-      ? { rail: c.get("railPreferences") ?? defaultRailPreferences(), profile: { name: profileName, avatarSrc: profileAvatarSrc, appHref } }
+      ? {
+          rail: c.get("railPreferences") ?? defaultRailPreferences(),
+          home: resolveHomePath(settings?.app?.home_path),
+          profile: { name: profileName, avatarSrc: profileAvatarSrc, appHref },
+        }
       : {}),
     legalLinks,
     theme,
@@ -213,24 +275,59 @@ export default function Layout(props: LayoutProps) {
     searchLinks,
     appId: currentApp?.id,
   };
+  // What the kept shell shows outside the column: when any of it differs, the next page loads as a document.
+  const signature = swap
+    ? pageSwapSignature({
+        app: currentApp?.id,
+        kind: user ? "app" : "anonymous",
+        user: user?.id ?? null,
+        appSession: isAppSessionActor(c.get("actor")),
+        locale: lang,
+        theme: c.get("page").theme,
+        build: swapBuild,
+        shell: {
+          // The document's <html> theme and the profile menu keep this preference.
+          themePreference: theme,
+          providers,
+          apps: allApps,
+          legalLinks,
+          searchLinks,
+          home: shellData.home,
+          profile: shellData.profile,
+          announcements: user ? (announcements?.latestAnnouncementVersion ?? null) : null,
+          help: registeredHelp?.manifestHash ?? (layoutHelpFailed(c) ? "failed" : null),
+        },
+      })
+    : undefined;
   if (focusMode) {
     return (
       <LocaleProvider locale={lang}>
         <div
-          class="cloud-app-canvas flex h-dvh w-full overflow-hidden"
+          class="cloud-app-canvas relative flex h-dvh w-full overflow-hidden"
           style={canvasStyle}
+          data-panel-transient=""
           data-app-id={currentApp?.id}
           data-app-base={currentRoute?.prefix}
           data-page-trail-title-only=""
           data-layout-full-page="true"
           data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
         >
-          <ShellRuntime pageTrail help={runtimeHelp} />
+          <ShellRuntime pageTrail help={runtimeHelp} panel={panel ? true : undefined} />
           <PageTrailProvider trail={pageTrail}>
-            <main class="min-h-0 min-w-0 flex-1">
+            <main class="min-h-0 min-w-0 flex-1" data-cloud-app-area="">
               <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
             </main>
           </PageTrailProvider>
+          {/* Focus pages carry shell data only for their panel providers. */}
+          {panel && (
+            <ShellDataProvider data={{ panel, platform: shellData.platform, theme, apps: [], legalLinks: [], searchLinks: {} }}>
+              <PanelSlot panel={panel} state={{ ...panelState, open: false }} platform={shellData.platform} />
+            </ShellDataProvider>
+          )}
+          <div data-print-fallback="">
+            <p>{t.printFallbackTitle}</p>
+            <p>{props.printHint ?? t.printFallbackHint}</p>
+          </div>
         </div>
       </LocaleProvider>
     );
@@ -241,18 +338,25 @@ export default function Layout(props: LayoutProps) {
   return (
     <LocaleProvider locale={lang}>
       <div
-        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-dvh md:h-dvh md:overflow-hidden"}`}
+        class={`cloud-app-canvas relative flex w-full ${fullPage && !swap ? "h-dvh overflow-hidden" : "min-h-dvh md:h-dvh md:overflow-hidden"}`}
         style={canvasStyle}
+        data-nav-shell={signature}
+        data-nav-scope={swap ? currentRoute?.prefix : undefined}
+        data-nav-attributes={swap ? "data-layout-full-page data-workspace-sidebar-collapsed" : undefined}
+        data-panel={panelState.open ? "open" : undefined}
         data-app-id={currentApp?.id}
         data-app-base={currentRoute?.prefix}
         data-page-trail-title-only={titleOnly ? "" : undefined}
         data-layout-full-page={fullPage ? "true" : undefined}
         data-layout-authenticated={showRail ? "true" : undefined}
+        data-shell-focus={shellFocus ? "true" : undefined}
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
       >
         <ShellRuntime
+          panel={panel ? true : undefined}
           workspace={{ appId: currentApp?.id }}
           pageTrail
+          focus={showRail}
           help={runtimeHelp}
           commands={{ searchResources: !!user }}
           push={!!user}
@@ -261,12 +365,20 @@ export default function Layout(props: LayoutProps) {
               ? { entries: announcements.announcements, latestVersion: announcements.latestAnnouncementVersion }
               : undefined
           }
-          banners={user && announcements?.banners.length ? true : undefined}
+          banners={user && (swap || announcements?.banners.length) ? true : undefined}
         />
-        <ShellDataProvider data={shellData}>
-          {showRail && <LayoutRail currentPath={requestPath(c)} />}
-          <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
+        <ShellDataProvider data={shellData} skipScript={swap}>
+          {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} />}
+          {showRail && <ShellFocusToggle variant="float" />}
+          {showRail && <div class="cloud-shell-reveal" data-cloud-shell-reveal="" aria-hidden="true" />}
+          <div
+            class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"
+            data-cloud-app-area=""
+            data-nav-root={swap ? "" : undefined}
+          >
+            {swap && <ShellDataScript data={shellData} />}
             <LayoutHeader
+              panelOpen={panel ? panelState.open : undefined}
               authenticated={showRail}
               title={appLabel ?? breadcrumbs.at(-1)?.title}
               launchpad={!!(user || appLabel)}
@@ -277,13 +389,31 @@ export default function Layout(props: LayoutProps) {
             {user && <ExpiryWarnings user={user} dateConfig={dateConfig} locale={lang} />}
             <PageTrailProvider trail={pageTrail}>
               <PageTrailRow trail={pageTrail} />
-              <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
+              <main
+                class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}
+                data-scroll-preserve={swap ? "cloud-main" : undefined}
+                data-scroll-page={swap ? "" : undefined}
+              >
                 <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
               </main>
             </PageTrailProvider>
             {!fullPage && !showRail && <LayoutFooter appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />}
+            {swap && (
+              <div data-print-fallback="">
+                <p>{t.printFallbackTitle}</p>
+                <p>{props.printHint ?? t.printFallbackHint}</p>
+              </div>
+            )}
           </div>
+          {panel && <PanelSlot panel={panel} state={panelState} platform={shellData.platform} />}
+          {showRail && <LayoutTabBar currentPath={requestPath(c)} />}
         </ShellDataProvider>
+        {!swap && (
+          <div data-print-fallback="">
+            <p>{t.printFallbackTitle}</p>
+            <p>{props.printHint ?? t.printFallbackHint}</p>
+          </div>
+        )}
       </div>
     </LocaleProvider>
   );

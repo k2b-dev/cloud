@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
 import { resolveCapabilityActionWording, resolveCapabilityOperationTitle } from "../_internal/capabilities";
+import { capabilityReviewView } from "../_internal/capability-reviews";
 import {
   CAPABILITY_APPROVAL_REASON_FIELD,
   CAPABILITY_APPROVAL_REASON_MAX_CHARS,
@@ -13,10 +14,11 @@ import {
 import { HELP_READ_MAX_CHARS, HELP_SEARCH_MAX_LIMIT, readHelpArticle } from "../_internal/help-catalog";
 import {
   type CapabilityActionManifest,
-  type CapabilityActionReview,
+  type CapabilityActionReviewData,
   type CapabilityQueryManifest,
-  CloudResourceRefSchema,
+  capabilityActionPolicy,
   cloudResourceRefAppId,
+  LinkedCloudResourceReferenceSchema,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
@@ -29,6 +31,7 @@ import { recordRejectedAiCapability } from "./capability-execution";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTool } from "./code-source-tools";
 import { CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES } from "./default-tools";
+import { addCloudResourceHrefs } from "./resource-refs";
 import { type AiToolPreparationContext, defineAiTool, type PreparedAiTools, prepareAiTools } from "./tools";
 import type { AiConversationService, AiRuntimeTool, AiToolPresentation } from "./types";
 
@@ -424,6 +427,7 @@ const SCHEMA_KEYS = new Set([
   "required",
   "items",
   "prefixItems",
+  "additionalItems",
   "additionalProperties",
   "anyOf",
   "oneOf",
@@ -434,29 +438,139 @@ const SCHEMA_KEYS = new Set([
   "definitions",
 ]);
 
-const reduceSchemaValue = (value: unknown, key?: string): unknown => {
-  if (key === "const") return structuredClone(value);
+type SchemaReductionContext = {
+  root: Record<string, unknown>;
+  mirrorNames: Map<string, string>;
+  mirrors: Record<string, Record<string, unknown>>;
+};
+
+/** A local reference into the input schema: the root (`#`) or one of its `$defs` or `definitions`. */
+const localReference = (
+  reference: unknown,
+  root: Record<string, unknown>,
+): { identity: string; keyword: string; name: string; schema: unknown } | null => {
+  if (reference === "#") {
+    const { $defs: _defs, definitions: _definitions, ...schema } = root;
+    return { identity: "#", keyword: "$defs", name: "root", schema };
+  }
+  const match = typeof reference === "string" ? /^#\/(\$defs|definitions)\/([^/]+)$/.exec(reference) : null;
+  if (!match) return null;
+  const [, keyword, encodedName] = match;
+  const name = encodedName!.replace(/~1/g, "/").replace(/~0/g, "~");
+  const definitions = root[keyword!];
+  if (!definitions || typeof definitions !== "object" || !Object.hasOwn(definitions, name)) return null;
+  return { identity: `${keyword}/${name}`, keyword: keyword!, name, schema: Reflect.get(definitions, name) };
+};
+
+/** Whether a raw schema reaches a tuple; `visited` keeps each definition to one visit per question. */
+const containsTuple = (value: unknown, context: SchemaReductionContext, key?: string, visited = new Set<string>()): boolean => {
+  if (key === "const" || key === "enum" || key === "default" || key === "required" || key === "type") return false;
+  if (Array.isArray(value)) return value.some((item) => containsTuple(item, context, undefined, visited));
+  if (!value || typeof value !== "object") return false;
+  if (key === "properties" || key === "$defs" || key === "definitions") {
+    return Object.values(value).some((schema) => containsTuple(schema, context, undefined, visited));
+  }
+  if (Object.hasOwn(value, "prefixItems") || Array.isArray(Reflect.get(value, "items"))) return true;
+  const reference = localReference(Reflect.get(value, "$ref"), context.root);
+  if (reference && !visited.has(reference.identity)) {
+    visited.add(reference.identity);
+    if (containsTuple(reference.schema, context, undefined, visited)) return true;
+  }
+  return Object.entries(value).some(([childKey, childValue]) => containsTuple(childValue, context, childKey, visited));
+};
+
+const reduceSchemaValue = (value: unknown, context: SchemaReductionContext, key?: string, merged = false): unknown => {
+  if (key === "const" || key === "default") return structuredClone(value);
   if (Array.isArray(value)) {
     if (key === "required" || key === "enum" || key === "type") return structuredClone(value);
-    return value.map((item) => reduceSchemaValue(item));
+    return value.map((item) => reduceSchemaValue(item, context, undefined, merged));
   }
   if (!value || typeof value !== "object") return value;
+  if (key === "properties" || key === "$defs" || key === "definitions") {
+    return Object.fromEntries(Object.entries(value).map(([name, schema]) => [name, reduceSchemaValue(schema, context, undefined, merged)]));
+  }
 
   const output: Record<string, unknown> = {};
   for (const [childKey, childValue] of Object.entries(value)) {
-    if (key === "properties" || key === "$defs" || key === "definitions") {
-      output[childKey] = reduceSchemaValue(childValue);
-      continue;
+    if (!SCHEMA_KEYS.has(childKey) || (merged && childKey === "default")) continue;
+    // Tuple widening can make surrounding union branches overlap, so their defaults belong to the app.
+    const unionMerged =
+      merged ||
+      ((childKey === "anyOf" || childKey === "oneOf") &&
+        Array.isArray(childValue) &&
+        childValue.some((branch) => containsTuple(branch, context)));
+    output[childKey] = reduceSchemaValue(childValue, context, childKey, unionMerged);
+  }
+  if (output.oneOf !== undefined) {
+    if (output.anyOf === undefined) output.anyOf = output.oneOf;
+    else {
+      output.allOf = [...(Array.isArray(output.allOf) ? output.allOf : []), { anyOf: output.anyOf }, { anyOf: output.oneOf }];
+      delete output.anyOf;
     }
-    if (!SCHEMA_KEYS.has(childKey)) continue;
-    output[childKey] = reduceSchemaValue(childValue, childKey);
+    delete output.oneOf;
+  }
+
+  const positions = Array.isArray(output.prefixItems) ? output.prefixItems : Array.isArray(output.items) ? output.items : null;
+  if (positions) {
+    const rest = Array.isArray(output.prefixItems) ? output.items : output.additionalItems;
+    // Extra items of an open tuple may be anything, so the AI side must not narrow them to the positions.
+    const schemas = rest === undefined || rest === true ? [] : rest === false ? positions : [...positions, rest];
+    // Position-erased branches must leave defaults to the app's authoritative tuple schema.
+    const mergedSchemas = schemas.some((schema) => JSON.stringify(schema) !== JSON.stringify(schemas[0]))
+      ? schemas.map((schema) => reduceSchemaValue(schema, context, undefined, true))
+      : schemas;
+    const distinct = mergedSchemas.filter(
+      (schema, index) => mergedSchemas.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(schema)) === index,
+    );
+    output.items = distinct.length === 0 ? {} : distinct.length === 1 ? distinct[0] : { anyOf: distinct };
+    if (rest === false)
+      output.maxItems = Math.min(typeof output.maxItems === "number" ? output.maxItems : positions.length, positions.length);
+  }
+  delete output.prefixItems;
+  delete output.additionalItems;
+  if (output.items === false) output.maxItems = 0;
+  // Zod drops array bounds without an item schema, so "any item" stays an empty schema.
+  if (typeof output.items === "boolean") output.items = {};
+  const reference = merged ? localReference(output.$ref, context.root) : null;
+  if (reference) {
+    const { identity, keyword, name } = reference;
+    const definitions = context.root[keyword];
+    const mirrors = context.mirrors[keyword] ?? {};
+    context.mirrors[keyword] = mirrors;
+    let mirrorName = context.mirrorNames.get(identity);
+    if (mirrorName === undefined) {
+      mirrorName = `${name}.ai`;
+      for (
+        let suffix = 1;
+        (definitions && typeof definitions === "object" && Object.hasOwn(definitions, mirrorName)) || Object.hasOwn(mirrors, mirrorName);
+        suffix++
+      ) {
+        mirrorName = `${name}.ai${suffix}`;
+      }
+      // Reserve the mirror before descending so recursive refs never reach default-bearing originals.
+      context.mirrorNames.set(identity, mirrorName);
+      mirrors[mirrorName] = {};
+      mirrors[mirrorName] = reduceSchemaValue(reference.schema, context, undefined, true);
+    }
+    output.$ref = `#/${keyword}/${mirrorName.replace(/~/g, "~0").replace(/\//g, "~1")}`;
   }
   return output;
 };
 
-/** Keep the provider-useful shape while leaving authoritative validation in the target app. */
-export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> =>
-  reduceSchemaValue(schema) as Record<string, unknown>;
+/**
+ * Keep the provider-useful shape while leaving authoritative validation in the target app.
+ * Tuples reach the model as bounded arrays of their item schemas and `oneOf` as `anyOf`, because loosened branches may
+ * overlap; the app still validates exact tuple positions and exclusive unions.
+ */
+export const reduceAiCapabilityInputSchema = (schema: Record<string, unknown>): Record<string, unknown> => {
+  const context: SchemaReductionContext = { root: schema, mirrorNames: new Map(), mirrors: {} };
+  const reduced = reduceSchemaValue(schema, context) as Record<string, unknown>;
+  for (const [keyword, mirrors] of Object.entries(context.mirrors)) {
+    const definitions = reduced[keyword];
+    reduced[keyword] = { ...(definitions && typeof definitions === "object" ? definitions : {}), ...mirrors };
+  }
+  return reduced;
+};
 
 export const aiCapabilityInputSchema = (schema: Record<string, unknown>): z.ZodType =>
   z.fromJSONSchema(reduceAiCapabilityInputSchema(schema));
@@ -638,14 +752,20 @@ export const createAiToolMetaTools = (input: {
 };
 
 export const createLoadedAiCapabilityTools = (input: {
+  apps: readonly CapabilityRegistryEntry[];
   catalog: readonly AiCapabilityCatalogEntry[];
   loadedNames: readonly string[];
   actor: RequestActor;
   /** Locale of the turn; the approval text a person reads is worded in it. */
   locale?: string;
-  review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
-  authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown) => Promise<void>;
-  onReview?: (callId: string, review: CapabilityActionReview) => void;
+  review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReviewData | null>;
+  authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<void>;
+  onReview?: (
+    callId: string,
+    review: CapabilityActionReviewData,
+    approval: CapabilityActionManifest["approval"],
+    entry: AiCapabilityCatalogEntry,
+  ) => void | Promise<void>;
   execute: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
 }): AiRuntimeTool[] => {
   const byName = new Map(input.catalog.map((entry) => [entry.name, entry]));
@@ -656,7 +776,7 @@ export const createLoadedAiCapabilityTools = (input: {
       defineAiTool({
         name: entry.providerName,
         canonicalName: entry.name,
-        description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
+        description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN or NEEDS_APPROVAL. Never retry IDEMPOTENCY_UNCERTAIN or IDEMPOTENCY_IN_PROGRESS. After ACTION_NOT_DONE, ask the person before trying again. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
         inputSchema: aiCapabilityInputSchema(
           offersApprovalReason(entry) ? withApprovalReason(entry.operation.inputSchema) : entry.operation.inputSchema,
         ),
@@ -666,16 +786,21 @@ export const createLoadedAiCapabilityTools = (input: {
         approval: "never",
       }).server(async (modelArgs, context) => {
         const args = withoutApprovalReason(entry, modelArgs);
-        await input.authorizeBackground?.(entry, args);
+        await input.authorizeBackground?.(entry, args, context);
         if (!input.authorizeBackground && entry.kind === "action" && (entry.operation as CapabilityActionManifest).approval !== "none") {
           const review = (await input.review?.(entry, args, context)) ?? null;
-          if (review && context.callId) input.onReview?.(context.callId, review);
+          if (review && context.callId)
+            await input.onReview?.(context.callId, review, "approval" in entry.operation ? entry.operation.approval : undefined, entry);
           // Text-only readers such as the CLI read what the card shows: the app's sentence, its review, and the model's reason.
           const locale = input.locale ?? DEFAULT_LOCALE;
           const message = capabilityApprovalText({
             appName: entry.display.appName,
             subject: capabilityActionSubject(aiCapabilityActionWording(entry, locale), args, { locale, timeZone: context.timeZone }),
-            review: review?.message,
+            review: review
+              ? capabilityReviewView(review, {
+                  timeZone: context.timeZone ?? "UTC",
+                }).message
+              : undefined,
             reason: offersApprovalReason(entry) ? capabilityApprovalReason(modelArgs) : null,
             locale,
           });
@@ -686,7 +811,7 @@ export const createLoadedAiCapabilityTools = (input: {
             throw new Error("Capability Action was rejected by the user.");
           }
         }
-        return input.execute(entry, args, context);
+        return addCloudResourceHrefs(await input.execute(entry, args, context), input.apps);
       }),
     ];
   });
@@ -701,14 +826,14 @@ export const createAiResourceReaderTool = (input: {
     name: "read_cloud_resource",
     description:
       "Read a Cloud resource from its structured reference using the resource type's current canonical reader. Pass refs returned by search, Projects, or other capabilities unchanged; never substitute an id from another resource type.",
-    inputSchema: CloudResourceRefSchema,
+    inputSchema: LinkedCloudResourceReferenceSchema,
     outputSchema: z.unknown(),
     approval: "never",
   }).server(async (ref, context) => {
     if (ref.type === "assistant.artifact") {
       const tool = createCodeSourceTool("code_read");
       if (tool.location !== "server") throw new Error("Code reader must execute on the server.");
-      return tool.run(CODE_SOURCE_TOOLS.code_read.input.parse({ id: ref.id }), context);
+      return addCloudResourceHrefs(await tool.run(CODE_SOURCE_TOOLS.code_read.input.parse({ id: ref.id }), context), input.apps);
     }
     const appId = cloudResourceRefAppId(ref);
     const app = input.apps.find((candidate) => candidate.appId === appId);
@@ -718,7 +843,7 @@ export const createAiResourceReaderTool = (input: {
       (candidate) => candidate.appId === appId && candidate.kind === "query" && candidate.operation.localId === reader.localId,
     );
     if (!entry) throw new Error(`Cloud resource reader ${appId}.${reader.localId} is unavailable.`);
-    return input.execute(entry, { id: ref.id }, context);
+    return addCloudResourceHrefs(await input.execute(entry, { id: ref.id }, context), input.apps);
   });
 
 /** Nessi resolver: one registry/load-state snapshot drives discovery, loading, schemas, and execution per model turn. */
@@ -760,9 +885,14 @@ export const createAiToolResolver =
     locale?: string;
     maxLoadedTools?: number;
     execute?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
-    review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
-    authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown) => Promise<void>;
-    onReview?: (callId: string, review: CapabilityActionReview) => void;
+    review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReviewData | null>;
+    authorizeBackground?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<void>;
+    onReview?: (
+      callId: string,
+      review: CapabilityActionReviewData,
+      approval: CapabilityActionManifest["approval"],
+      entry: AiCapabilityCatalogEntry,
+    ) => void | Promise<void>;
     onPrepared?: (snapshot: {
       prepared: PreparedAiTools;
       presentations: Map<string, AiToolPresentation>;
@@ -794,6 +924,7 @@ export const createAiToolResolver =
           capabilityId: entry.operation.localId,
           kind: entry.kind,
           approval: entry.kind === "action" && "approval" in entry.operation ? entry.operation.approval : undefined,
+          capabilityPolicy: capabilityActionPolicy(entry.app.manifest, entry.operation.localId),
         }));
     const mandateExcluded = new Set(
       fullCapabilityCatalog.filter((entry) => !mandateAllows(entry)).flatMap((entry) => [entry.name, entry.providerName]),
@@ -860,6 +991,7 @@ export const createAiToolResolver =
       ...activeBuiltIns,
       ...(input.execute
         ? createLoadedAiCapabilityTools({
+            apps: registry,
             catalog: capabilityCatalog,
             loadedNames,
             actor: input.actor,

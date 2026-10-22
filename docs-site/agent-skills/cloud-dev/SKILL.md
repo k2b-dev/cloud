@@ -48,8 +48,8 @@ and durable data.
   process alone does not prove route readiness.
 - Cloud authenticates and resolves access subjects. The application checks
   resource permissions in every service path: `actor` for identity and audit,
-  `accessSubject` for grants; UI visibility is not authorization. Grant
-  changes keep a manager (`ensureManagerRemains()`). Only a `resource_bound`
+  `accessSubject` for grants; UI visibility and page context refs are not
+  authorization. Grant changes keep a manager (`ensureManagerRemains()`). Only a `resource_bound`
   service account carries `appId`, `resourceType`, and `resourceId`;
   `standalone` and `agent` accounts hold their own grants, capped by scopes.
 - Send an interactive credential only to Core. Framework-owned cross-app calls
@@ -68,11 +68,12 @@ and durable data.
   Use NATS-backed Sync for distributed coordination and Valkey for caches
   and Cloud rate limits. Commit state before retryable effects with stable keys; an effect
   that must survive a crash is an outbox row in the same transaction (`defineLive`, `createPgOutbox`).
+  A settings write over an unreadable stored value fails with `setting_unreadable`; merge only over `settings.read()` with `stored !== "unreadable"`.
 
 ## Reuse public building blocks
 
 Choose documented Cloud entry points and services before creating a parallel
-mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP. To show mail across related apps, declare `mail:read` and let the operator grant the apps; your app still authorizes which of its users see it. Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; Files keeps originals. Request a URL that a person, an administrator, or remote content chooses only through `requestPublicHttps` from `@k2b/cloud/services`, never `fetch()`, which reaches internal networks.
+mechanism. Public application code must work outside the Cloud monorepo. For app mail, read **Outgoing mail** (`/en/docs/platform/outgoing-mail`), declare `platformPermissions: ["mail:send"]` and send through `mail.send` or `mail.enqueue` for bulk mail from `@k2b/cloud/services`; never configure app-owned SMTP. To show mail across related apps, declare `mail:read` and let the operator grant the apps; your app still authorizes which of its users see it. Strip content image uploads in the owning service with `@k2b/cloud/services/image-metadata`; Files keeps originals. Request a URL that a person, an administrator, or remote content chooses only through `requestPublicHttps` from `@k2b/cloud/services`, never `fetch()`, which reaches internal networks; when operators must reach internal targets, read an explicit allowlist from the app's env registry and use `createAllowedNetworkFetch` from `@k2b/cloud/services` for HTTP or resolve through `resolveAllowedNetworkAddresses` for other transports, and never let a person widen it. SDK clients that resolve hosts on their own, such as `Bun.S3Client`, never send to a person-chosen endpoint; use them only to sign, then send through `pinnedNetworkLookup`.
 
 Prefer the documented K2B foundations before building an application-local
 alternative:
@@ -92,37 +93,36 @@ Declare Sync handles with `lazySync()`, use them after `app.start()`, start
 workers in lifecycle startup, and drain them before releasing dependencies.
 Shared resources need one owner and identical settings. Never declare one per
 entity: JetStream reserves each stream's bytes, so per-entity logs share one
-topic keyed by `tenantId` with watermark cursors (Topics and live events).
+topic keyed by `tenantId` with watermark cursors (Topics and live events); collaborative text uses `@k2b/cloud/shared-text` (Shared text documents).
 
 Cloud and every application are equal consumers of `@k2b/ui`. The standalone
 SolidJS library remains independent of Cloud and application domains.
 
 - Use existing `@k2b/ui` components whenever they express the required
-  control, feedback, surface, or layout behavior.
+  control, feedback, surface, or layout behavior. A hierarchy of columns (settings areas, list and reader) uses `AppWorkspace.Main level` with the selection in the URL. Drag and drop inside the page uses `DragSource` and `DropTarget`, and every drop also has a menu entry such as "Move to …", the guaranteed path for keyboard and screen reader users. A chosen view, range, segment or filter is a selection (`ViewTabs`, `Tabs`, `SegmentedControl`, `FilterChip`, `FilterToggle`); a filled primary button is only the one main action.
 - Do not recreate generic component contracts inside an application. If no
   primitive fits, surface the gap and agree with the application author
   whether to extend `@k2b/ui` or build application-owned UI.
-- Custom UI follows the same tokens, semantics, interaction, accessibility,
-  responsive, theme, and state principles. Reusable presentation belongs in
-  the library; applications retain their domain behavior.
-- Give an application's landing page the shared overview pattern: either a
-  sidebar-first `AppWorkspace` (`SidebarItem variant="object"` rows,
-  `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` with one
-  primary action) for many objects, or `AppOverview.Cards` of `LinkCard`s for
-  few; one secondary fact per row or card. Inside one container, head its
-  sidebar and phone menu with `AppWorkspace.SidebarSwitcher`.
+- Custom UI follows the same tokens, semantics, interaction, accessibility, responsive, theme, and state principles.
+  Reusable presentation belongs in the library; applications retain their domain behavior. Check every screen
+  against **Styling and accessibility** (`/en/docs/frontend/styling-and-accessibility`).
+- Give an application's landing page the shared overview pattern: either a sidebar-first `AppWorkspace`
+  (`SidebarItem variant="object"` rows, `AppWorkspace.Main width="content"`, a `PanelHeader size="lg"` with one
+  primary action) for many objects, or `AppOverview.Cards` of `LinkCard`s for few; one secondary fact per row or
+  card. Inside one container, head its sidebar and phone menu with `AppWorkspace.SidebarSwitcher`. Application chrome tied to the workspace sidebar or levels uses `@container k2b-app-area` queries, not viewport breakpoints.
+- Every view prints its complete content via `data-print-region` or the fallback with the app's export hint (`Layout.printHint`).
 
 ## Keep server and browser behavior coherent
 
+- Mount `middleware.noTransform()` where another party can repeatedly write chosen text (including container names, backlink titles and display names) next to content they cannot read that is worth guessing (messages, submissions, secrets); names alone are not secrets; see **Response compression** (`/en/docs/build/routing`).
 - SSR owns the authorized initial snapshot; Solid islands own only browser interaction. Islands, dialogs, and
   floating windows that cannot render fail alone behind a notice (add no wrappers). Prefer typed Hono clients over raw transport calls.
-- Invalidate the canonical read after writes instead of maintaining a second
-  client-side domain model.
+- Invalidate the canonical read after writes instead of keeping a second client-side domain model. Every action
+  answers at once, optimistically or pending; Undo only if the server can reverse it (**Forms, prompts, and feedback**).
 - Keep reloadable state in the URL; automatic reloads use `reloadOnce()`, and code only an action needs loads
   in it through `importOnDemand()`. Live updates use `defineLive()` and `liveConnection()`; acknowledge after a covering snapshot.
-- Hand islands the route as a path (`requestPath(c)` from `@k2b/cloud/ssr`),
-  never the absolute request URL: behind the gateway its origin is the
-  internal upstream, not the browser's.
+- Hand islands the route as a path (`requestPath(c)` from `@k2b/cloud/ssr`), never the absolute request URL:
+  behind the gateway its origin is the internal upstream, not the browser's.
 - Resolve the request locale once. Use `getLocale(c)` on the server and the inherited `@k2b/ui` locale in
   Solid; never keep a process-global locale or thread it through ordinary component props. Format dates and
   numbers with `Format.*`; a formatter without a locale renders English. Applications own localized human
@@ -130,11 +130,11 @@ SolidJS library remains independent of Cloud and application domains.
   and widgets, not message keys. Setting presentation inherits the application's base locale; notification
   senders pass locale metadata so `render` and `email` produce final text from the same canonical locale
   without adding locale to the domain payload. Keep product text calm and precise; localizations preserve
-  meaning, while code, identifiers, paths, and external labels stay verbatim. Show group names via
-  `groupDisplayName()` (`@k2b/cloud/shared`). `Layout`, `AdminLayout`, and `MinimalLayout` install the SSR
-  locale provider. Use `MinimalLayout` for an app-styled standalone page with persisted locale and theme, no
-  Cloud header or navigation, and a shared legal and preferences footer. A custom root using none of these
-  layouts must install one provider around its returned tree.
+  meaning, while code, identifiers, paths, and external labels stay verbatim. Name groups with `groupDisplayName()`
+  and principals with `principalLabel()` (`@k2b/cloud/shared`), never IDs. `Layout`, `AdminLayout`, and
+  `MinimalLayout` install the SSR locale provider. Use `MinimalLayout` for an app-styled standalone page with
+  persisted locale and theme, no Cloud header or navigation, and a shared legal and preferences footer. A custom
+  root using none of these layouts must install one provider around its returned tree.
 - Pass each page's `Layout` title array; the shell derives the way up from it (**Layout and navigation**).
   Build no back buttons for it; an app with its own header places `PageTrail` there.
 
@@ -156,8 +156,8 @@ result fields or changing contracts; keep detailed API rules in that guide. Clou
 capability call on every surface; an application writes `context.requestId` into its own audit rows so the two trails
 join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
 (`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.
-Cloud records every approval as one platform request and repeats the Action's review right before the approved call runs; a changed review asks again, so keep reviews deterministic and carry a revision in the input of Actions on changeable state. Apps show and decide their open approvals only through the shared `Approvals` component and `/api/approvals` route, with no app-owned approval routes or tables; an editor bridge can only reject `confirm` requests.
-For a shared cross-app contract, read `/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`.
+Every Type with a page declares a reader that returns the resource's `open` link, a page the caller may open; link resources with `cloudResourceHref`, never a hand-built URL, and check each reader with `assertResourceOpenLink` (*Resource links*). Cloud records every approval as one platform request and repeats the Action's review right before the approved call runs; a changed review asks again, so keep reviews deterministic and carry a revision in the input of Actions on changeable state. Routines check the mandate first, review each Action that needs approval, and refuse it without an `approvalScope`; a review only narrows. Use the public complete-review `content` contract for unsaved or large proposals; a link to the current resource is not a snapshot of the proposed change. Keep streams and lists compact and read stored content through Cloud's authorized reader. Apps show and decide their open approvals only through the shared `Approvals` component and `/api/approvals` route, with no app-owned approval routes or tables; an editor bridge can only reject `confirm` requests.
+For a shared cross-app contract, read `/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`. To review an application against Cloud's conventions, read **Conventions for Cloud applications** (`/en/docs/conventions`) and follow its audit procedure.
 
 For deployment questions, read **Deployment requirements** in the Docs
 collection (`/en/docs/operations/deployment-requirements`) before selecting

@@ -6,6 +6,7 @@ import { refreshAppBadges } from "../browser/app-badges";
 import { APPROVAL_COUNTS_PATH } from "../contracts/approvals";
 import { APP_BADGE_INTERVAL_MS, appBadgeCount, approvalCount, watchAppBadges } from "./app-badges";
 import type { RailApp } from "./rail-navigation";
+import type { ShellData } from "./shell-data";
 
 const apps: RailApp[] = [
   {
@@ -82,6 +83,43 @@ const mountRail = async () => {
   const { default: RailApps } = await import("./RailApps");
   return render(() => createComponent(RailApps, { apps, settings, currentPath: "/app/mail" }), dom.root);
 };
+
+test.each(["rail", "phone bar"])("the retained %s follows the arriving page's rail preferences", async (surface) => {
+  const { default: CloudShell } = await import("./CloudShell.island");
+  const data: ShellData = { apps, rail: settings, legalLinks: [], profile: { name: "Fixture" }, theme: "system", searchLinks: {} };
+  const script = document.createElement("script");
+  script.id = "cloud-shell-data";
+  script.type = "application/json";
+  script.textContent = JSON.stringify(data);
+  const bar = document.createElement("div");
+  bar.className = "cloud-tab-bar__row";
+  const mount = document.createElement("div");
+  dom.root.append(script, bar, mount);
+  const dispose = render(() => createComponent(CloudShell, { slot: "rail", currentPath: "/" }), mount);
+  try {
+    expect(mount.querySelector('[data-cloud-rail-apps] a[href="/app/mail"]')).not.toBeNull();
+    expect(bar.querySelector(".cloud-tab-bar__live")).toBeNull();
+    const arriving = document.createElement("script");
+    arriving.id = script.id;
+    arriving.type = script.type;
+    arriving.textContent = JSON.stringify({
+      ...data,
+      rail: {
+        revision: 1,
+        visibility: { mail: false },
+        shortcuts: [{ id: "custom", kind: "link", title: "Custom", href: "/custom", icon: "ti ti-link" }],
+      },
+    });
+    script.replaceWith(arriving);
+    window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: dom.root } }));
+    const root = surface === "rail" ? mount : bar;
+    const links = surface === "rail" ? "[data-cloud-rail-apps]" : ".cloud-tab-bar__live";
+    expect(root.querySelector(`${links} a[href="/app/mail"]`) === null).toBe(true);
+    expect(root.querySelector(`${links} a[href="/custom"]`) !== null).toBe(true);
+  } finally {
+    dispose();
+  }
+});
 
 test("the rail reads each declared badge once after hydration and shows only positive counts", async () => {
   const dispose = await mountRail();
@@ -318,5 +356,91 @@ test("approval counts refresh even without an app badge endpoint", async () => {
     expect(approvalCount()).toBe(0);
   } finally {
     stop();
+  }
+});
+
+test.each(["cancel", "cancel rejects", "no body", "network abort"] as const)(
+  "failed badge and approval reads clear previous counts and recover: %s",
+  async (failure) => {
+    const endpoint = "/api/chat/badge";
+    const succeed = () => {
+      responses[endpoint] = () => Response.json({ count: 3 });
+      responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 2, apps: { chat: 2 } });
+    };
+    succeed();
+    const stop = watchAppBadges([endpoint, endpoint]);
+    try {
+      await settle();
+      expect(appBadgeCount({ endpoint, appId: "chat" })).toBe(5);
+      const cancelled: string[] = [];
+      for (const path of [endpoint, APPROVAL_COUNTS_PATH]) {
+        responses[path] = () => {
+          if (failure === "network abort") throw new DOMException("Request aborted", "AbortError");
+          if (failure === "no body") return new Response(null, { status: 204 });
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode("forbidden"));
+              },
+              cancel() {
+                cancelled.push(path);
+                if (failure === "cancel rejects") return Promise.reject(new Error("Cleanup failed"));
+              },
+            }),
+            { status: 403 },
+          );
+        };
+      }
+      refreshAppBadges();
+      await settle();
+      expect(appBadgeCount({ endpoint, appId: "chat" })).toBe(0);
+      expect(approvalCount()).toBe(0);
+      expect(cancelled.sort()).toEqual(failure.startsWith("cancel") ? [endpoint, APPROVAL_COUNTS_PATH].sort() : []);
+
+      succeed();
+      fetchSpy.mockClear();
+      refreshAppBadges();
+      await settle();
+      expect(appBadgeCount({ endpoint, appId: "chat" })).toBe(5);
+      expect(requested().sort()).toEqual([endpoint, APPROVAL_COUNTS_PATH].sort());
+    } finally {
+      stop();
+    }
+    fetchSpy.mockClear();
+    refreshAppBadges();
+    await settle();
+    expect(requested()).toEqual([]);
+  },
+);
+
+test("a disposed watcher cannot clear new counts when its error cleanup rejects late", async () => {
+  const endpoint = "/api/chat/badge";
+  const rejectCleanup: Array<() => void> = [];
+  for (const path of [endpoint, APPROVAL_COUNTS_PATH]) {
+    responses[path] = () =>
+      new Response(
+        new ReadableStream({
+          cancel: () => new Promise<void>((_, reject) => rejectCleanup.push(() => reject(new Error("Late cleanup failure")))),
+        }),
+        { status: 503 },
+      );
+  }
+  let stop = watchAppBadges([endpoint]);
+  try {
+    await settle();
+    expect(rejectCleanup).toHaveLength(2);
+    stop();
+    responses[endpoint] = () => Response.json({ count: 9 });
+    responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 4, apps: { chat: 4 } });
+    stop = watchAppBadges([endpoint]);
+    await settle();
+    expect(appBadgeCount({ endpoint, appId: "chat" })).toBe(13);
+    for (const reject of rejectCleanup) reject();
+    await settle();
+    expect(appBadgeCount({ endpoint, appId: "chat" })).toBe(13);
+    expect(approvalCount()).toBe(4);
+  } finally {
+    stop();
+    for (const reject of rejectCleanup) reject();
   }
 });

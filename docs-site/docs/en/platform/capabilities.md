@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-11
+updated: 2026-10-21
 ---
 
 # App capabilities
@@ -286,6 +286,10 @@ entry without a translation shows its base text, so a missing locale never
 hides a capability. Translate at least the title and description of every
 Type, Query, Action, Command, and search tag.
 
+Cloud's Assistant and chat presentation surfaces word every app through its
+own presentation and never treat one app differently by its ID, name, or tool
+name, so built-in and third-party apps read the same.
+
 The model always receives the base presentation, and so do the tools the
 [MCP server](/en/docs/platform/mcp) lists. Tool names, titles, descriptions,
 and schema field descriptions are prompt text for a model: they stay
@@ -305,6 +309,10 @@ text of `cld assistant actions` show these sentences, in the reader's
 language; the approval text adds the Action's live review message below the
 sentence. They are optional: an Action without them reads as its title with
 up to two labelled fields, such as "Send email · Recipients: jana@example.com".
+
+`presentation.sentences` is deprecated and will be removed with the next major
+release. Use [per-call review forms](#describe-each-call-with-policy-and-typed-slots)
+for new Actions.
 
 Declare the base-locale sentences under `presentation.sentences`, keyed by
 Action local ID, and each translation under the Action's entry in
@@ -392,9 +400,9 @@ the generic wording instead of showing a gap or losing its last words. A
 missing outcome sentence uses the generic state words around the approval
 sentence, such as "Rejected: Send email to jana@example.com". A `done`
 sentence takes the place of the Action's runtime `summary` in the receipt;
-leave `done` out when the summary says more about the call, as Mail does for
-sending, where the summary names the subject and whether the email was queued
-or scheduled.
+leave `done` out when the summary says more about the call. Mail uses per-call
+review forms and receipts for sending, naming the subject and whether delivery
+is queued or scheduled.
 The generic sentence takes labels from the first clause of the localized field
 descriptions, up to 40 characters, and skips identifiers, revisions, flags,
 and long text; start descriptions with a short noun phrase, such as
@@ -464,12 +472,77 @@ types: {
 consumer that a `CloudResourceRef` of this Type can be read programmatically.
 The referenced Query is the only read implementation; do not publish a second
 `item.get` or a Project-specific reader for the same operation. Omit `reader`
-when the resource has no useful bounded machine representation.
+only when the resource has neither a page nor a useful bounded machine
+representation.
 
 When an application lets a user copy or paste this identity, use Cloud's
 versioned resource clipboard format instead of embedding an ID in app-specific
 JSON or inferring it from text. See
 [Copy and paste Cloud resources](/en/docs/platform/resource-references).
+
+### Resource links
+
+The owning application returns a root-relative semantic link with `rel: "open"`
+for each resource it exposes. Its canonical reader returns that destination
+in top-level `links`. Choose a page the current caller may open: a reader's
+Mail draft opens a read view, while a writer's draft opens the composer. A
+resource without its own page can open its containing page, such as a comment's
+conversation. Never build another application's page route.
+
+Cloud supplies a permanent entry through `cloudResourceHref(ref)` from
+`@k2b/cloud/contracts`: `/open/<type>/~<encoded-id>`. The required `~` prefix keeps
+IDs such as `.` and `..` intact during URL normalization; the helper supports
+the full 512-character resource ID limit. For example,
+`{ type: "mail.draft", id: "AbC123" }` produces `/open/mail.draft/~AbC123`.
+Core invokes the Type's live reader under the signed-in user's authority and
+redirects to its first top-level `open` link. Signed-out users return to the
+permalink after signing in. Missing access, unavailable apps and missing
+readers or destinations show the same 404 page. Links without `~` also return 404.
+
+These fields serve different boundaries:
+
+| Field | Author and meaning |
+| --- | --- |
+| Provider `links[].rel: "open"` with `href` | The owning app's root-relative, permission-aware destination |
+| Consumer `refs[].href` | Assistant adds the canonical `/open` link for refs with live readers; MCP makes it absolute using the installation's `app.url` |
+| CLI `permalink` | An absolute `/open` URL on the selected profile's server, added by `cloudResourceUrl(ctx, ref)` or `withCloudResourcePermalink(ctx, type, resource)` |
+
+Providers keep the strict ref shape and root-relative semantic links. MCP's
+advertised output schema accepts its added `refs[].href`; that consumer field
+is optional and does not become a provider field. Assistant's
+`read_cloud_resource` and MCP's `cloud__resource__read` accept a ref with its
+`href` unchanged. A ref whose ID is not well-formed Unicode gets no `href` or
+`permalink`. Generic `cld capabilities
+read`, `query` and `action` add permalinks for refs with live readers and make
+returned semantic links absolute, including links inside resource lists. They
+read the catalog for this only when a result names refs; if the catalog is
+unavailable, the command warns and still prints the successful result.
+Assistant CLI JSON, JSONL, terminal and ACP output make supplied Cloud-relative
+Markdown links absolute. Models use supplied links and never construct URLs.
+
+A permalink identifies a resource; it grants no access and contains only its
+Type and ID. A CLI must omit a canonical link if its reader requires access the
+caller lacks. Published Grids app commands add no permalinks: projections can
+be accessible without Base access, but canonical readers require it.
+See [CLI modules](/en/docs/platform/cli-modules).
+
+### Test resource links
+
+Give every Type with a page a reader. In the provider's tests, call each reader
+for a caller of every access level that may read the resource. Check its
+top-level destination with `assertResourceOpenLink(result)` from
+`@k2b/cloud/capabilities/testing`.
+
+A reader must return a page that caller may open: Mail drafts open the composer
+for writers and the read view for readers. A denied read returns no link.
+Actions that remove a resource or the caller's access to it do not name it in
+`refs`.
+
+Older owning-app readers that return only `edit` remain usable: Core accepts a
+validated `edit` destination during rollout when no `open` is supplied. Readers
+without any destination still work through capability calls but cannot open a
+permalink. Update owning apps together with Core; see the
+[rollout note](/en/docs/operations/deployment-requirements#enable-resource-permalinks).
 
 ### Queries read data
 
@@ -681,15 +754,22 @@ asks for every Action call. `approval: "rememberable"` lets a supporting client
 offer an explicit **Approve for this chat** or **Always approve** choice after
 showing the Action review. That review must return an opaque, app-owned
 `approvalScope`. A remembered choice matches the current actor, qualified
-Action, and exact scope, and a chat choice also the chat; for example, Mail
-uses one scope per mailbox. Choose the smallest stable domain in which repeated
+Action, and exact scope, and a chat choice also the chat. Mail now uses per-call
+reviews, with a mailbox scope on silent calls. Choose the smallest stable domain in which repeated
 calls have the same understandable consequence. A review may omit
 `approvalScope` for arguments whose consequence should be confirmed every time,
 for example a Files copy into another storage base or into a publicly shared
-folder, a Spaces task with assignees, or a Mail move to Trash.
+folder or a Spaces task with assignees. Mail moves to Trash use a silent shared
+policy because the conversation can be moved back.
 Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
 on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.
+
+Routines check their mandate first, then call the review before every Action
+whose `approval` is not `"none"`, including background Code Mode; they run it
+only when the review returns an `approvalScope`. Omit the scope for consequences
+that need confirmation every time: routines will refuse them, and a review
+can only narrow the mandate.
 
 People decide [Action approvals](/en/docs/identity/approvals) in the chat,
 an app, or Cloud's approval lists.
@@ -769,7 +849,7 @@ idempotency, and delegated mandate restrictions still apply. Omitting `approval`
 keeps the default confirmation behavior. Use `rememberable` when users should
 choose whether to approve future operations in the same scope.
 
-Every review returns the same fixed Cloud type:
+Legacy Actions without a policy return this deprecated type:
 
 ```ts
 type CapabilityActionReview = {
@@ -844,6 +924,312 @@ Otherwise every approval of the Action asks again. The repeated review protects
 only what it shows, so an Action that refers to changeable state, such as a
 draft, also carries the expected revision in its input.
 
+### Describe each call with policy and typed slots
+
+New applications can declare `policy` and return `CapabilityActionCallReview`.
+The old `approval`, `CapabilityActionReview`, and
+`presentation.sentences` contracts are deprecated and will be removed with the
+next major release. Existing applications keep working in this release.
+
+Upgrade **Core and every application that calls Actions** (at least Assistant
+and Capabilities) before an application returns new reviews or receipts. An
+older Core can discover the Action through its derived `approval`, but older
+Core and caller versions reject these new result shapes.
+
+Choose the widest reach of a silent Action:
+
+| Policy | Meaning |
+| --- | --- |
+| `{ silent: "you" }` | Only the person sees the result |
+| `{ silent: "draft" }` | A private draft that takes effect through a later Action that asks |
+| `{ silent: "shared" }` | Other people can see the result, including content later chats or routines read |
+| `{ silent: "you", routines: false }` | A silent Action that routines must never receive as a grant |
+| `{ ask: reason }` | Ask for every call, with a Cloud-owned reason line |
+
+The reason codes are `sends`, `deletes`, `cannot_undo`, `involves_people`,
+`changes_access`, `keeps_working`, `sensitive`, and `app_asks`. The app chooses
+the code; Cloud supplies its English or German text. An unknown language uses
+English frame words while retaining that review's locale for Intl formatting.
+
+In **this release**, `silent` behaves exactly like `approval: "rememberable"`:
+the first call asks, and the person may remember its scope. It does not yet
+mean automatic execution. `ask` behaves like omitted `approval` and asks every
+time. A silent review with `ask` cannot be remembered, even when it has `scope`.
+
+Declaration rules apply at `app.start()`:
+
+- Declare either `policy` or `approval`, never both. A policy requires `review`.
+- `destructive: true` or `openWorld: true` requires an asking policy, a review,
+  and `idempotency: "required"`.
+- Asking with `sends` or `deletes` requires `idempotency: "required"` even when
+  both effect flags are false.
+- `routines` may only be the literal `false`, and only on a silent policy.
+- Unknown policy fields, reasons, and reaches fail startup.
+
+A policy review contains `locale`, `sentence`, and `slots`. Its five required
+forms are `action`, `running`, `done`, `confirm`, and `decline`. Optional
+`rejected`, `notRun`, and `short` forms override Cloud's defaults. The `action`
+form omits the question mark; Cloud supplies it. Keep the forms in the app's
+localized message catalog and return the locale actually used for all forms.
+
+Slots are typed values:
+
+| Kind | Fields and bounds |
+| --- | --- |
+| `object` | `title` (1–200), optional resource `ref`, `icon`, and `gone: true` after deletion |
+| `place` | `title` (1–200), optional `ref` and `icon` |
+| `person` | `people` (1–20); each has a name or address, optional UUID `userId`; optional `total` from the listed count to 100,000 |
+| `time` | `start`, optional `end`, `format: "date"` or `"date-time"`; real calendar dates or RFC 3339 instants with offset, end not before start |
+| `count` | Integer `value` (0–1,000,000,000) and localized `noun` forms; `other` required |
+| `text` | `value` (1–200) rendered as ordinary text |
+
+Person names have at most 200 characters, as long as a mail display name, and addresses 320. Icons use
+`ti ti-<name>`. Each noun form has 1–40 characters. `gone` is valid only on an
+object. A chip shows at most 40 characters, cut in the middle to preserve file
+extensions. People show up to three names plus a count of the rest. Plain text
+includes addresses and quotes object and place titles. Counts use the review's
+plural rules. Calendar days never shift with time zones; instants use the
+reader's explicit time zone. Plain text is bounded to 400 characters.
+
+`actionReview` is available from `@k2b/cloud/capabilities` and its `/server`
+entry point. It builds and validates the review without performing I/O. Literal
+forms enforce exactly the slot names in `sentence.action`: a missing slot,
+an extra slot, or another form introducing a new name is a type error. A
+catalog typed as plain `string` falls back to a string-keyed slot record.
+
+```ts
+import { actionReview } from "@k2b/cloud/capabilities";
+
+const forms = {
+  locale: "en",
+  sentence: {
+    action: "Transfer {amount} {item} to {to}",
+    running: "Transferring {amount} {item} to {to}",
+    done: "Transferred {amount} {item} to {to}",
+    confirm: "Transfer to {to}",
+    decline: "Keep item",
+  },
+} as const;
+
+const review = actionReview(forms, {
+  amount: { kind: "count", value: 2, noun: { one: "unit of", other: "units of" } },
+  item: { kind: "object", title: "Dock" },
+  to: { kind: "person", people: [{ name: "Lea Berg", address: "lea@example.com" }] },
+});
+```
+
+Optional review fields describe this call:
+
+| Field | Purpose |
+| --- | --- |
+| `preview` | The thing being changed, in one of the seven shapes below |
+| `consequences` | Up to six `{ text, slots?, mark? }` sentences; mark a consequence `added` or `removed` |
+| `ask` | Ask for this call with a reason, on either policy; overrides the declared reason |
+| `reach` | Narrow a silent policy's reach, in order `you < draft < shared`; invalid on an asking policy |
+| `effects` | Integer 1–1,000 for the number of changes in a batch; callers otherwise assume one |
+| `check` | `{ query, input }`: a same-app Query that returns `CapabilityActionCheckSchema`, with valid Query input |
+| `scope` | Stable app-owned domain (1–200 characters) for remembered approval; grants no permission |
+| `links` | Up to ten semantic links to inspect the reviewed revision |
+
+After an unknown Assistant Action outcome, Core runs the review's `check` Query
+once: `done` shows its receipt, `not_done` shows not run, and `pending` keeps the
+unknown line. A failed check also stays unknown; **Check again** repeats only
+the Query, never the Action, and without `check`, no repeat button is offered.
+
+The preview is one of:
+
+| Kind | Content and bounds |
+| --- | --- |
+| `message` | `from?`, `to`, `cc?`, `bcc?`, `more?`, `subject`, `body`, `format`, `attachments?`, `moreAttachments?`, `sendAt?`, `warnings?`, `truncated?`; up to 50 per recipient class and 50 attachments, at least one recipient; counts at most 100,000; subject at most 998, body 10,000, attachment name 255; up to five warnings of 300 characters |
+| `event` | `title`, `start`, optional `end`, `allDay`, valid IANA `timeZone`, `place`, `location`, `recurrence`, `attendees`, `description`; title and place fields at most 200, 50 attendees, description 2,000 |
+| `task` | `title`, optional `place`, `due`, `assignees`, `status`, `checklist`, `tags`, `description`; 20 assignees and checklist rows of 200, ten tags of 60, status 60, description 2,000 |
+| `page` | `title`, optional `place`, `body`, `format`, `truncated`, `changes`; body at most 10,000, 20 added/removed changes of 2,000 |
+| `file` | `name`, optional `place`, `path`, byte `size`, `mediaType`, `to`; name at most 255, path and destination 1,024, media type 120 |
+| `rule` | `when` as a sentence, `does` (at most 4,000), up to 12 consequence sentences in `may`, `seesChat` |
+| `fields` | 1–12 `rows` with `label` (at most 60), `value`, optional complete `before` value (each at most 2,000), optional `date` or `date-time` format |
+
+Page and task titles and places are bounded to 200 characters. Message and page
+`format` is `plain` or `markdown`. Markdown uses Cloud's safe renderer without
+loading images. `before` promises the complete old value; use a revision check
+in the Action input so the review names exactly what the Action replaces.
+
+A **sends message must be complete**: show the effective `from`, every recipient
+class and attachment, scheduled `sendAt`, and the app's own safety `warnings`.
+Any positive `more.to`, `more.cc`, `more.bcc`, or `moreAttachments` requires an
+`open` link to the complete reviewed revision, on every message preview,
+including receipts. Reviews can instead supply complete `content` as described below. Every truncated preview requires that content or an `open` link.
+Cloud rejects a message preview without `from` when the declared policy or the
+review's own `ask` is `sends`; the application is responsible
+for truthfully supplying its schedule and warnings. The `from` requirement
+applies only to reviews; receipts may omit it.
+
+Both the application and Core use the same validation function. Invalid reviews
+or receipts follow the existing `INVALID_APP_RESPONSE` path; a dispatched
+Action without retry safety retains the unknown-outcome behavior. Validation
+also checks:
+
+- Placeholders use `{name}` matching `^[a-z][A-Za-z0-9]{0,31}$`; other braces
+  are invalid. Every `{name}` names a slot; `action`, `running`, and `done`
+  each name every slot.
+- At most six slots and three chip occurrences in `action`. Templates have at
+  most 200 characters; `short` has at most 60. Each button names at most one
+  slot and renders to at most 40 characters. Button object titles and the
+  name of a single person are cut to 24 characters; a group of people renders
+  as a count.
+- Sentence forms, slot strings, consequences and single-line preview fields
+  reject controls, invisible format characters and line separators. Multiline
+  preview fields allow newline and tab, and reject the other unsafe characters.
+  These strings must be well-formed Unicode: do not split a surrogate pair when
+  shortening a preview. Full review content preserves the original code units.
+- The review locale is canonical BCP 47 and belongs to the app's presentation
+  locales or falls back to one through its locale ancestors.
+- The serialized compact review is at most **32 KiB of UTF-8 JSON**, including
+  all preview fields and slots, but excluding the optional complete `content`.
+
+#### Supply the complete proposed content
+
+A policy review may include `content: CapabilityReviewContent` from
+`@k2b/cloud/contracts`. Use it when the proposal is unsaved or a resource link
+cannot reproduce exactly what the person is approving. Return the complete
+proposed value, including changes beyond the compact preview's limits.
+
+`content` is a passive `message` or `page` with `format: "plain"`. A message
+contains `subject`, `body`, `to`, optional `from`, `cc`, `bcc`, `attachments`
+(`name`, optional byte `size`), `sendAt`, and `warnings`. It supports 600 total
+recipients, 202 attachment descriptions and six warnings of 300 characters.
+Names are bounded to 200 characters, addresses to 320, subjects to 998 and
+attachment names to 255. A page contains `title`, optional `place`, and `body`.
+Both kinds may include the nonnegative integer `baseRevision` of the resource
+used to prepare the proposal. Recipient-free draft proposals are valid. A sends review, whether declared by
+policy or requested per call, requires a sender and at least one full recipient.
+Applications supply every attachment, schedule and safety warning themselves.
+
+The complete content is bounded to **16 MiB of serialized UTF-8 JSON**.
+Oversize content fails before approval; never shorten it or substitute a saved
+older version. HTML and attachment bytes do not belong in this field. Preserve
+source characters: Cloud displays control and invisible characters visibly,
+without changing the stored value or digest. Short and complete content both
+participate in the approval digest.
+
+Upgrade Core and callers before providers return this field. Review responses
+have a dedicated bound of 16 MiB plus the 32 KiB compact review and JSON
+structure. Ordinary Query and Action results retain their 256 KiB limit.
+Direct `reviewCapabilityAction()` calls return the full bounded review without
+creating an approval or application object. `cld capabilities review <app-id>
+<action-id> --input <json>` prints the review as JSON.
+
+Cloud persists the full snapshot in its existing approval and chat records.
+Lists, chat history and streams contain a compact presentation with a
+Cloud-generated `contentRef: { href, digest }`; providers must not supply it.
+Read that exact snapshot with `readCapabilityReviewContent(ref, options)` from
+`@k2b/cloud/capabilities`. The helper accepts the normal HTTP client options and
+an abort signal, validates the route and response, and disables caching.
+The reference grants no access. See [approval readers](/en/docs/identity/approvals#approval-routes)
+for authorization and [storage and upgrades](/en/docs/operations/deployment-requirements#store-complete-action-review-content).
+
+Use `assertCapabilityReview(review, context?)` and
+`checkActionReviewMessages({ locales, forms, slots })` from
+`@k2b/cloud/capabilities/testing` in one test per locale. The first throws with
+the issue list; optional context also checks the declaration, locale set, and
+check Query. The catalog check reports missing required forms, sentence-rule
+violations, and questions longer than 80 visible characters, counting chip
+labels and the question mark. The 80-character bound is a catalog check, not a
+runtime rejection rule. Keep fixtures deterministic with fixed dates.
+
+`capabilityReviewRememberScope(review, approval)` and
+`capabilityReviewView(review, { timeZone })` are transitional helpers for
+surfaces that still read the legacy shape, available from
+`@k2b/cloud/capabilities` and `@k2b/cloud/capabilities/server`.
+The former resolves a rememberable scope and the latter supplies legacy
+message, detail, and link fields; both will be removed with the next major.
+
+#### Receipts and outcome checks
+
+An Action result may return `receipt: { text, slots?, preview? }`, reusing the
+same slot, sentence, and preview rules. Every receipt slot must appear in its
+text; its slots belong to the receipt itself. Receipt completeness uses the
+result's top-level links. A Query result must not contain `receipt` in its
+envelope. Query data may use `CapabilityActionCheckSchema`, returning
+`{ outcome: "done" | "not_done" | "pending", receipt? }`. Mail uses the dedicated
+`draft.send.check` Query to read the delivery state for an exact draft revision;
+queued or accepted delivery does not claim that the email has been sent.
+Mail send reviews link to a revision-checked read view of the complete rendered
+message, including its signature and generated attachments. A changed draft
+returns a conflict instead of substituting newer content.
+
+The five `CapabilityActionOutcome` states are `running`, `done`, `rejected`,
+`not_run`, and `unknown`. A done result uses its receipt when supplied, otherwise
+the review's `done` form. Rejected and not-run outcomes use the corresponding
+forms or Cloud's fallback; an unknown outcome uses Cloud's uncertainty frame.
+A queued message's receipt says “queued” or “scheduled”, never “sent” before
+that is known. The check contract lets a later consumer settle an unknown
+outcome; declaring it does not itself run a reconciliation or retry.
+
+#### Mixed versions and routine grants
+
+Manifests publish policies in an optional top-level `policies` map keyed by
+Action local ID, with sorted keys. Action entries carry derived approval:
+`silent` becomes `rememberable`, `ask` omits `approval`, and both advertise
+`review: true`. A manifest without policies keeps its earlier hash. Older
+readers ignore the new top-level map and keep discovering every Action.
+
+This release drops an Action whose policy is unreadable, disagrees with its
+derived approval or review flag, or declares silent destructive/open-world
+work. A policy for an unknown Action is dropped. Producers remain strict.
+Consumers use `capabilityActionPolicy(manifest, localId)` from
+`@k2b/cloud/contracts` to resolve the policy.
+
+Routine grants accept only silent policy Actions without `routines: false`,
+independently of their derived approval. Each unattended call still runs its
+review. A review with `ask`, or a missing or failed review, prevents
+execution with `NEEDS_APPROVAL`. A cancelled routine stops like any other
+cancelled routine step. Silent reviews need no scope in a routine.
+Legacy Actions retain their existing routine rules.
+
+#### Migrate an application
+
+1. Upgrade Core and the applications that call Actions (at least Assistant and
+   Capabilities) first, then rebuild the app with this release of `@k2b/cloud`.
+2. Replace `approval` with `policy`, choosing the widest reach or the reason
+   the Action always asks. Keep the existing effect flags and retry safety.
+3. Move catalog sentences into the review forms for every supported locale.
+   Return typed slots and, where useful, a preview; delete the migrated
+   `presentation.sentences` entries.
+4. Replace `approvalScope` with `scope`. On silent Actions, use per-call `ask`
+   where confirmation is always needed and `reach` where the call is narrower.
+5. Add a receipt or use the review's `done` form. Set `effects` for batch work
+   and add a check Query for sending or deleting when the outcome can be read.
+6. Test each locale with the helpers above. The manifest evolution check
+   accepts the one-time move from rememberable approval to silent or asking
+   policy, and from omitted approval to asking policy.
+
+For the `item.transfer` Action, the review callback changes from:
+
+```ts
+approval: "rememberable",
+review: async (input) => ok({
+  message: `Transfer ${input.quantity} × ${input.itemName}`,
+  approvalScope: "inventory",
+}),
+```
+
+To an asking policy using the forms shown above (the rest of the Action stays
+in its declaration):
+
+```ts
+policy: { ask: "involves_people" },
+review: async (input) => ok(actionReview(forms, {
+  amount: { kind: "count", value: input.quantity, noun: { one: "unit of", other: "units of" } },
+  item: { kind: "object", title: input.itemName },
+  to: { kind: "person", people: [{ name: input.recipient }] },
+})),
+```
+
+For a multilingual app, resolve `forms` once from the app's catalog using
+`context.locale`. The German action form would be
+`"{amount} {item} an {to} übergeben"`, with matching running, done, confirm,
+and decline forms.
+
 ## Write valid contracts
 
 Cloud validates the declaration at startup:
@@ -883,6 +1269,8 @@ exports, and document bodies belong in app-owned upload or download APIs
 referenced by a capability.
 
 Each operation publishes input and data JSON Schema plus a stable schema hash.
+Tuples are allowed in input schemas: the model sees a bounded array of their
+item schemas, and the app's own schema validates the exact tuple.
 The result envelope is one fixed Core contract and is not repeated in every
 manifest entry. Refresh the live catalog after `SCHEMA_MISMATCH`.
 
@@ -930,6 +1318,19 @@ change kind, remove fields or operations, add required input, weaken a
 previously guaranteed result field, change safety or idempotency semantics, or
 remove or replace an advertised reader, review, or search token. Publish a new
 local ID for those changes and migrate callers deliberately.
+
+New optional input fields require a previously closed object without
+`patternProperties`. Otherwise the new field's schema could reject values
+that callers were already allowed to send under that name.
+
+Input unions may add or reorder variants when every old variant remains
+compatible under the same field and constraint checks. For a changed `oneOf`,
+the checker also requires proof that every pair of resulting variants is
+disjoint: both must require a shared property whose scalar `const` or `enum`
+values do not overlap. Optional tags, overlapping variants, and cases without
+this proof are rejected. `anyOf` additions do not need disjointness. These
+rules apply recursively to nested input unions; they do not permit new result
+union variants or changes to the union's surrounding constraints.
 
 Keep a previous manifest fixture and check it in provider tests:
 
@@ -1129,9 +1530,10 @@ it when the operation title and structured data already say everything useful.
 Provider-owned `refs` use qualified declared Types. Foreign qualified refs are
 opaque cross-app identities and need not be redeclared by the provider. An app
 may enrich a foreign ref only when it has an authoritative user-facing label;
-otherwise it returns the bare identity. Links are root-relative same-origin
-Cloud paths. They are hints: a caller may open one, but an operation does not
-require UI merely because it returns a link.
+otherwise it returns the bare identity. Provider links are root-relative
+same-origin Cloud paths. Readers return the resource's top-level `open` link
+for [Resource links](#resource-links); links on other results remain optional
+hints and do not require UI.
 When `hasMore` is true, `nextCursor` is required; on the final page it must be
 absent. Treat cursors as opaque values.
 
@@ -1198,6 +1600,32 @@ the validation path while the public error omits returned values. Once a
 non-idempotent Action has been dispatched, a lost, unreadable, oversized, or
 schema-invalid response is reported as `ACTION_OUTCOME_UNKNOWN`; clients must
 not offer an automatic retry.
+
+## Deadlines and cancellation
+
+Synchronous Queries have one **45-second** dispatch budget. It starts when
+Cloud's shared dispatcher receives the invocation and includes the live
+registry lookup, input validation, invocation authority, app request, and
+complete JSON response read. Preparation consumes the same budget; an expired
+invocation cannot start a later app request. Action reviews keep **15 seconds**
+and Actions keep **30 seconds**. Short discovery and recent-resource reads,
+and Command resolution, keep their separate 15-second budgets.
+
+Cloud forwards caller cancellation and the dispatch deadline to the app's
+`context.signal`. Pass it to downstream reads, queue admission, and expensive
+work, and check it before starting work after an await. Stop cancelled work
+and bound any cleanup. A caller cancellation returns HTTP 499
+`REQUEST_CANCELLED`; an expired budget returns HTTP 504 `DEADLINE_EXCEEDED`.
+A dispatched non-idempotent Action retains `ACTION_OUTCOME_UNKNOWN` when its
+outcome is uncertain. Cancellation does not undo a committed effect.
+
+The budget does not extend an application's own resource or execution limits.
+Cloud's JSON invocation endpoints keep their HTTP connection open for the
+operation budget plus transport headroom, then restore the normal idle timeout.
+If your own SSR or HTTP handler awaits a server-side capability call, it owns
+its request's idle timeout: use
+[`setRequestTimeout()`](/en/docs/server/http#answer-slow-requests) and restore it
+when answering. Streaming responses own their separate lifecycle.
 
 ## Invoke capabilities
 
@@ -1510,8 +1938,19 @@ onMount(() => {
 });
 ```
 
+Pass an `AbortSignal` as the fourth argument when the request may outlive its
+reason, for example `openCommand(id, input, { returnTo }, signal)` from a view
+the person can leave. `openCommand` resolves `true` after a mounted handler
+accepted the request and its promise resolved, or navigation started. It
+resolves `false` when nothing opened because the signal aborted or its code
+could not load; Cloud shows a reload notice when code cannot load.
+The signal covers loading the code and resolving the link; an accepting mounted
+handler takes over at once and runs its own interaction without receiving the signal.
+
 `openCommand` offers the request to mounted handlers synchronously. Exactly one
 accepting handler owns it; with no owner Cloud resolves the link and navigates.
+If resolution fails, it throws an error with the resolver's message and the
+capability error (`{ code, message, status }`) in `cause`.
 Overlapping owners produce an error before either runs; use `accepts` to keep ownership unambiguous.
 A rejected handler surfaces an error and never triggers fallback navigation.
 Document events connect independent islands without a shared Solid context.
@@ -1538,6 +1977,23 @@ Localize titles, descriptions, and input field descriptions under
 `presentation.translations.<locale>.commands`, keyed by local Command ID.
 Follow the palette's [action wording guidance](/en/docs/platform/search#write-distinct-action-titles-and-useful-descriptions)
 so users can distinguish actions by scope and understand what each one opens.
+
+### Where Commands appear
+
+The global palette and the composer's slash menu discover Commands that accept
+an empty input (`{}`), from apps in the person's navigation. The slash menu
+lists them in its last section, **Open in apps**, and leaves out its own app's
+Commands. Navigation controls discoverability; the target page still checks
+access.
+
+Write a title with a verb and an object, such as **New task**. The description
+is one sentence about what opens. Include German and English search words in
+`keywords`; translate titles, descriptions, and keywords in
+`presentation.translations.<locale>.commands`.
+
+Before opening an app, the composer saves the draft, including references and
+attachments. A failed save opens nothing. It supplies `returnTo` for the saved
+chat, but the target app decides whether and when to use it and may ignore it.
 
 ### Calendar Command entry points
 

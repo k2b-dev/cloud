@@ -55,6 +55,7 @@ export const aiUsageMessages = i18n.define({
       refresh: "Refresh",
       showUnassigned: "Show unassigned",
       periodHelp: "Period uses the start of each run. Feedback shows current ratings for chat turns started in this period. Snapshot:",
+      compareBy: "Compare by",
       comparisonHelp:
         "Chat and background inference are counted once. Negative share is shown with rating count and response coverage. Duration is elapsed time per actual provider attempt. Costs use configured reference prices; missing prices are not zero.",
       feedbackHelp:
@@ -196,6 +197,7 @@ export const aiUsageMessages = i18n.define({
       showUnassigned: "Nicht zugeordnete anzeigen",
       periodHelp:
         "Der Zeitraum bezieht sich auf den Start des Laufs. Feedback zeigt aktuelle Bewertungen zu Chat-Durchläufen, die in diesem Zeitraum gestartet wurden. Stand:",
+      compareBy: "Vergleichen nach",
       comparisonHelp:
         "Chat- und Hintergrundinferenz werden einmal gezählt. Der Negativanteil wird mit Anzahl und Abdeckung der Bewertungen gezeigt. Die Dauer gilt pro tatsächlichem Provider-Aufruf. Kosten nutzen konfigurierte Referenzpreise; fehlende Preise sind nicht null.",
       feedbackHelp:

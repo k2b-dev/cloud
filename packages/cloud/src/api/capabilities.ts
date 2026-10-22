@@ -3,6 +3,12 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
+import {
+  capabilityActionReceiptIssues,
+  capabilityActionReviewIssues,
+  capabilityQueryChecksActionOutcome,
+} from "../_internal/capability-reviews";
+import { capabilityTimeoutMs, createCapabilityDeadline, withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import { getCapability, listApps } from "../_internal/registry";
 import { resolveCommandLink } from "../capabilities/command-link";
 import {
@@ -23,45 +29,45 @@ import {
   CAPABILITY_MAX_CATALOG_BYTES,
   CAPABILITY_MAX_REQUEST_BYTES,
   CAPABILITY_MAX_RESULT_BYTES,
+  CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
   CAPABILITY_ORIGIN_HEADER,
   CAPABILITY_PROTOCOL_VERSION,
-  CapabilityActionReviewSchema,
+  CapabilityActionReviewDataSchema,
   type CapabilityCatalog,
   CapabilityCatalogSchema,
   CapabilityErrorSchema,
   CapabilityIdempotencyKeySchema,
   type CapabilityOrigin,
+  capabilityActionPolicy,
   capabilityResultJsonSchema,
 } from "../contracts/capabilities";
 import { CapabilityStreamSchema } from "../contracts/capability-streams";
 import { CommandLinkSchema, CommandRequestSchema } from "../contracts/commands";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import { getLocale, LOCALE_HEADER, preferredLocale } from "../server/locale";
 import {
   type AuthContext,
   auth,
-  getLocale,
   jsonResponse,
-  LOCALE_HEADER,
-  preferredLocale,
   type RequestAuthority,
   rejectReservedWorkloadCredential,
   requiresAuth,
   v,
-} from "../server";
-import { logger, settings } from "../services";
+} from "../server/middleware";
+import { noTransform } from "../server/middleware/no-transform";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
 import type { InvocationAuthority } from "../services/identity/invocation-token";
 import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
+import { logger } from "../services/logging";
 import { withMandateIssueAuthority } from "../services/mandates";
+import * as settings from "../services/settings";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { capabilityMessages } from "../shared/capability-messages";
 import { dispatchCapabilityStream, sealCapabilityStream } from "./capability-streams";
 
 const log = logger("capabilities");
-const QUERY_TIMEOUT_MS = 15_000;
-const ACTION_TIMEOUT_MS = 30_000;
 const DEFAULT_CATALOG_LIMIT = 10;
 const MAX_CATALOG_LIMIT = 25;
 const MAX_SCHEMA_VALIDATORS = 512;
@@ -102,12 +108,20 @@ export type CapabilityRouteDependencies = {
   withMandateIssueAuthority?: typeof withMandateIssueAuthority;
   queryTimeoutMs?: number;
   actionTimeoutMs?: number;
+  reviewTimeoutMs?: number;
   appUrl?: () => Promise<string>;
 };
 
 export type CapabilityDispatchDependencies = Pick<
   CapabilityRouteDependencies,
-  "getCapability" | "fetch" | "queryTimeoutMs" | "actionTimeoutMs" | "signInvocation" | "withActiveSigner" | "withMandateIssueAuthority"
+  | "getCapability"
+  | "fetch"
+  | "queryTimeoutMs"
+  | "actionTimeoutMs"
+  | "reviewTimeoutMs"
+  | "signInvocation"
+  | "withActiveSigner"
+  | "withMandateIssueAuthority"
 >;
 
 type MandatedCapabilityAuthority = {
@@ -206,23 +220,6 @@ const capabilityJsonResponse = (body: unknown, status: number): Response =>
     headers: { "content-type": "application/json" },
   });
 
-const waitWithin = <T>(value: Promise<T>, signal: AbortSignal): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    const aborted = () => reject(signal.reason);
-    if (signal.aborted) return aborted();
-    signal.addEventListener("abort", aborted, { once: true });
-    value.then(
-      (result) => {
-        signal.removeEventListener("abort", aborted);
-        resolve(result);
-      },
-      (error) => {
-        signal.removeEventListener("abort", aborted);
-        reject(error);
-      },
-    );
-  });
-
 export type CapabilityDispatchParams = {
   /** Trusted Core continuation binding; never read from client headers. */
   continuation?: string;
@@ -238,6 +235,8 @@ export type CapabilityDispatchParams = {
   authority?: RequestAuthority;
   mandate?: MandatedCapabilityAuthority;
   callingAppId?: string;
+  /** Internal observation only: called immediately before attempting the app request. */
+  onUpstreamAttempt?: () => void;
   dependencies?: CapabilityDispatchDependencies;
 };
 
@@ -263,14 +262,17 @@ const runCapabilityDispatch = async (
   params: CapabilityDispatchParams,
   requestId: string,
   observed: CapabilityDispatchObservation,
+  deadline: ReturnType<typeof createCapabilityDeadline>,
 ): Promise<CapabilityDispatchOutcome> => {
+  const { signal } = deadline;
   const messages = capabilityMessages(params.locale ?? preferredLocale(params.request.headers));
   const registryEntry = params.dependencies?.getCapability ?? getCapability;
   const fetchUpstream = params.dependencies?.fetch ?? globalThis.fetch;
   let entry: CapabilityRegistryEntry | null;
   try {
-    entry = await registryEntry(params.appId);
+    entry = await deadline.wait(() => registryEntry(params.appId));
   } catch (error) {
+    deadline.check();
     log.warn("Capability registry unavailable", {
       appId: params.appId,
       error: error instanceof Error ? error.message : String(error),
@@ -357,21 +359,16 @@ const runCapabilityDispatch = async (
 
   const invocationOperation = capabilityInvocationOperation(params.kind, params.capabilityId, params.review);
   const mandate = params.mandate;
-  const timeoutMs =
-    params.kind === "queries" || params.review
-      ? (params.dependencies?.queryTimeoutMs ?? QUERY_TIMEOUT_MS)
-      : (params.dependencies?.actionTimeoutMs ?? ACTION_TIMEOUT_MS);
-  const timeout = AbortSignal.timeout(timeoutMs);
-  const signal = AbortSignal.any([params.request.signal, timeout]);
   let headers: Headers;
   try {
     headers = mandate
       ? await (async () => {
-          const issued = await waitWithin(
+          const issued = await deadline.wait(() =>
             (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
               "invocation",
-              (signer, db) =>
-                (params.dependencies?.withMandateIssueAuthority ?? withMandateIssueAuthority)(
+              (signer, db) => {
+                deadline.check();
+                return (params.dependencies?.withMandateIssueAuthority ?? withMandateIssueAuthority)(
                   {
                     mandateId: mandate.mandateId,
                     expectedRevision: mandate.mandateRevision,
@@ -381,10 +378,11 @@ const runCapabilityDispatch = async (
                     actionApproval: mandate.actionApproval ?? "none",
                     input: params.input,
                     capabilityApproval: "approval" in operation ? (operation.approval ?? "always") : "always",
+                    capabilityPolicy: capabilityActionPolicy(entry.manifest, params.capabilityId),
                     requestId,
                   },
                   async (mandateAuthority) => {
-                    signal.throwIfAborted();
+                    deadline.check();
                     observed.subject = mandateAuthority.subject;
                     return (params.dependencies?.signInvocation ?? signInvocationToken)({
                       targetAppId: params.appId,
@@ -398,10 +396,10 @@ const runCapabilityDispatch = async (
                     });
                   },
                   { db },
-                ),
-              { signal, timeoutMs },
+                );
+              },
+              { signal, timeoutMs: deadline.remainingMs() },
             ),
-            signal,
           );
           if (!issued.ok) {
             if (issued.error.code === "INTERNAL") throw new Error("Mandate invocation issuance failed");
@@ -416,11 +414,12 @@ const runCapabilityDispatch = async (
       : await (async () => {
           if (!params.authority) throw new Error("Resolved request authority is required for Cloud invocation issuance");
           const authority = params.authority;
-          const signed = await waitWithin(
+          const signed = await deadline.wait(() =>
             (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
               "invocation",
-              (signer) =>
-                (params.dependencies?.signInvocation ?? signInvocationToken)({
+              (signer) => {
+                deadline.check();
+                return (params.dependencies?.signInvocation ?? signInvocationToken)({
                   targetAppId: params.appId,
                   callingAppId: params.callingAppId ?? "core",
                   operation: invocationOperation,
@@ -429,10 +428,10 @@ const runCapabilityDispatch = async (
                   requestId,
                   signer,
                   issuer: signer.issuer,
-                }),
-              { signal, timeoutMs },
+                });
+              },
+              { signal, timeoutMs: deadline.remainingMs() },
             ),
-            signal,
           );
           return new Headers({
             "content-type": "application/json",
@@ -449,7 +448,7 @@ const runCapabilityDispatch = async (
       );
       return denied;
     }
-    if (params.request.signal.aborted || timeout.aborted) {
+    if (signal.aborted) {
       const cancelled = params.request.signal.aborted;
       const failure = errorResponse(
         cancelled ? CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled : CAPABILITY_FRAMEWORK_ERROR_CODES.deadlineExceeded,
@@ -463,6 +462,7 @@ const runCapabilityDispatch = async (
     const failure = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.internal, messages.issuanceFailed, 500, { retrySafe: true });
     return failure;
   }
+  deadline.check();
   headers.set("x-request-id", requestId);
   headers.set(CAPABILITY_ORIGIN_HEADER, params.origin);
   for (const name of ["traceparent", "tracestate"] as const) {
@@ -545,17 +545,34 @@ const runCapabilityDispatch = async (
     return outcome;
   };
 
+  // Claims are mutations: await their settlement, then refuse any late upstream start.
+  try {
+    deadline.check();
+  } catch {
+    const cancelled = params.request.signal.aborted;
+    return settle(
+      errorResponse(
+        cancelled ? CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled : CAPABILITY_FRAMEWORK_ERROR_CODES.deadlineExceeded,
+        cancelled ? messages.requestCancelled : messages.deadlineExceeded,
+        cancelled ? 499 : 504,
+        { retrySafe: true },
+      ),
+      "nothing_happened",
+    );
+  }
+
   let response: Response;
   try {
-    response = await fetchUpstream(
-      `${entry.endpoint}/${params.kind}/${encodeURIComponent(params.capabilityId)}${params.review ? "/review" : ""}`,
-      {
+    params.onUpstreamAttempt?.();
+    const fetchResponse = () =>
+      fetchUpstream(`${entry.endpoint}/${params.kind}/${encodeURIComponent(params.capabilityId)}${params.review ? "/review" : ""}`, {
         method: "POST",
         headers,
         body: requestBody,
         signal,
-      },
-    );
+      });
+    // A read may be released at its deadline; Action effects retain their existing uncertainty handling.
+    response = params.kind === "queries" || params.review ? await deadline.wait(fetchResponse) : await fetchResponse();
   } catch (error) {
     log.warn("Capability app unavailable", {
       appId: params.appId,
@@ -570,7 +587,7 @@ const runCapabilityDispatch = async (
       });
       return settle(cancelled, "uncertain");
     }
-    if (timeout.aborted) {
+    if (signal.aborted) {
       const deadline = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.deadlineExceeded, messages.deadlineExceeded, 504, {
         retrySafe: params.kind === "queries" || ("idempotency" in operation && operation.idempotency === "required"),
       });
@@ -585,7 +602,24 @@ const runCapabilityDispatch = async (
     return settle(unavailable, "uncertain");
   }
 
-  const upstreamBody = await readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES);
+  let upstreamBody: Awaited<ReturnType<typeof readBoundedJson>>;
+  try {
+    upstreamBody = await deadline.wait(() =>
+      readBoundedJson(response, params.review ? CAPABILITY_MAX_REVIEW_RESPONSE_BYTES : CAPABILITY_MAX_RESULT_BYTES, signal),
+    );
+  } catch {
+    if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
+    const cancelled = params.request.signal.aborted;
+    return settle(
+      errorResponse(
+        cancelled ? CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled : CAPABILITY_FRAMEWORK_ERROR_CODES.deadlineExceeded,
+        cancelled ? messages.requestCancelled : messages.deadlineExceeded,
+        cancelled ? 499 : 504,
+        { retrySafe: true },
+      ),
+      "uncertain",
+    );
+  }
   if (!upstreamBody.ok) {
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const code =
@@ -608,18 +642,39 @@ const runCapabilityDispatch = async (
     return settle(invalid, "uncertain");
   }
 
+  const reviewContext = {
+    policy: capabilityActionPolicy(entry.manifest, params.capabilityId),
+    approval: "approval" in operation ? operation.approval : undefined,
+    queries: entry.manifest.queries,
+    validateQueryInput: (query: (typeof entry.manifest.queries)[number], input: Record<string, unknown>) =>
+      schemaValidator(`${query.schemaHash}:input`, query.inputSchema)?.safeParse(input).success === true,
+    ...(entry.presentation ? { locales: [entry.presentation.baseLocale, ...Object.keys(entry.presentation.translations)] } : {}),
+  };
   const resultValidator = params.review
-    ? CapabilityActionReviewSchema
+    ? CapabilityActionReviewDataSchema
     : schemaValidator(`${operation.schemaHash}:result`, capabilityResultJsonSchema(operation.dataSchema));
   const parsedResult = resultValidator?.safeParse(upstreamBody.data);
-  const parsedReview = params.review ? CapabilityActionReviewSchema.safeParse(upstreamBody.data) : null;
-  // A rememberable Action may leave out its scope for arguments that should ask every time; any other Action has none.
-  const reviewApprovalScopeIsValid =
-    !params.review ||
-    !parsedReview?.success ||
-    ("approval" in operation && operation.approval === "rememberable") ||
-    parsedReview.data.approvalScope === undefined;
-  if (!resultValidator || !parsedResult?.success || !reviewApprovalScopeIsValid) {
+  const field = (value: unknown, key: string): unknown =>
+    value !== null && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+  const receipt = field(upstreamBody.data, "receipt");
+  const links = field(upstreamBody.data, "links");
+  const reviewIssues = params.review
+    ? capabilityActionReviewIssues(upstreamBody.data, reviewContext)
+    : receipt === undefined
+      ? []
+      : params.kind === "queries"
+        ? ["Queries cannot return a receipt"]
+        : capabilityActionReceiptIssues(receipt, links);
+  const nestedReceipt = field(field(upstreamBody.data, "data"), "receipt");
+  if (
+    !params.review &&
+    params.kind === "queries" &&
+    nestedReceipt !== undefined &&
+    !("idempotency" in operation) &&
+    capabilityQueryChecksActionOutcome(operation)
+  )
+    reviewIssues.push(...capabilityActionReceiptIssues(nestedReceipt, links));
+  if (!resultValidator || !parsedResult?.success || reviewIssues.length > 0) {
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.outsideResultSchema({ appId: params.appId }), 502);
     return settle(invalid, "uncertain");
@@ -628,6 +683,7 @@ const runCapabilityDispatch = async (
   const body = upstreamBody.data as Record<string, unknown>;
   if (!params.review && body.stream !== undefined) {
     const stream = CapabilityStreamSchema.safeParse(body.stream);
+    const authority = params.authority;
     if (
       !stream.success ||
       !operation.stream ||
@@ -635,25 +691,29 @@ const runCapabilityDispatch = async (
       stream.data.size > operation.stream.maxBytes ||
       Date.parse(stream.data.expiresAt) <= Date.now() ||
       Date.parse(stream.data.expiresAt) > Date.now() + 86_400_000 ||
-      !params.authority
+      !authority
     )
       return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain");
     try {
-      body.stream = await sealCapabilityStream(stream.data, {
-        appId: params.appId,
-        kind: params.kind,
-        capabilityId: params.capabilityId,
-        schemaHash: operation.schemaHash,
-        authority: params.authority,
-        requestId,
-        origin: params.origin,
-        continuation: params.continuation,
-      });
+      const seal = () =>
+        sealCapabilityStream(stream.data, {
+          appId: params.appId,
+          kind: params.kind,
+          capabilityId: params.capabilityId,
+          schemaHash: operation.schemaHash,
+          authority,
+          requestId,
+          origin: params.origin,
+          continuation: params.continuation,
+        });
+      body.stream = params.kind === "queries" ? await deadline.wait(seal) : await seal();
       if (Buffer.byteLength(JSON.stringify(body)) > CAPABILITY_MAX_RESULT_BYTES) throw new Error("Stream result too large");
     } catch {
+      if (params.kind === "queries") deadline.check();
       return settle(errorResponse("INVALID_APP_RESPONSE", "Invalid stream offer", 502), "uncertain");
     }
   }
+  if (params.kind === "queries" || params.review) deadline.check();
   return settle({ body, status: 200 }, "succeeded");
 };
 
@@ -682,50 +742,82 @@ const resultDataMeta = (body: unknown) =>
  * read-only preview and are not executions, so they are not recorded.
  */
 export const dispatchCapability = async (params: CapabilityDispatchParams): Promise<Response> => {
-  const requestId = normalizeInvocationRequestId(params.request.headers.get("x-request-id")) ?? crypto.randomUUID();
-  const observed: CapabilityDispatchObservation = { subject: null, destructive: false };
-  const startedAt = new Date();
-  const outcome = await runCapabilityDispatch(params, requestId, observed);
-  if (!params.review) {
-    const actor = params.authority?.actor;
-    const principal = dispatchPrincipal(params, observed);
-    const accessSubject = params.authority?.accessSubject;
-    const subject =
-      accessSubject?.type === "user"
-        ? ({ type: "user", id: accessSubject.userId } as const)
-        : accessSubject?.type === "service_account"
-          ? ({ type: "service_account", id: accessSubject.serviceAccountId } as const)
-          : null;
-    const errorCode = outcome.status >= 400 ? bodyErrorCode(outcome.body) : null;
-    await recordCapabilityExecution({
-      requestId,
-      origin: params.origin,
-      appId: params.appId,
-      capability: `${params.appId}.${params.capabilityId}`,
-      kind: params.kind === "queries" ? "query" : "action",
-      destructive: observed.destructive,
-      actorKind: principal?.type ?? null,
-      actorId: principal?.id ?? null,
-      userId: actor?.kind === "user" ? actor.user.id : (actor?.delegatedUser?.id ?? (principal?.type === "user" ? principal.id : null)),
-      accessSubject: subject && subject.id !== principal?.id ? subject : null,
-      status: executionStatus(outcome.status, errorCode),
-      errorCode,
-      inputMeta: capabilityValueMeta(params.input),
-      outputMeta: outcome.status < 400 ? resultDataMeta(outcome.body) : null,
-      idempotencyKey: CapabilityIdempotencyKeySchema.safeParse(params.request.headers.get("idempotency-key")).data ?? null,
-      replayed: outcome.replayed === true,
-      startedAt,
-      completedAt: new Date(),
-    }).catch((error) => {
-      // History is operational evidence; losing a row must not fail the call.
-      log.error("Capability execution could not be recorded", {
+  const deadline = createCapabilityDeadline(
+    capabilityTimeoutMs(params.review ? "review" : params.kind === "queries" ? "query" : "action", params.dependencies),
+    params.request.signal,
+  );
+  try {
+    const requestId = normalizeInvocationRequestId(params.request.headers.get("x-request-id")) ?? crypto.randomUUID();
+    const observed: CapabilityDispatchObservation = { subject: null, destructive: false };
+    const startedAt = new Date();
+    let outcome: CapabilityDispatchOutcome;
+    try {
+      outcome = await runCapabilityDispatch(params, requestId, observed, deadline);
+    } catch (error) {
+      if (!deadline.signal.aborted) throw error;
+      const cancelled = params.request.signal.aborted;
+      const messages = capabilityMessages(params.locale ?? preferredLocale(params.request.headers));
+      outcome = errorResponse(
+        cancelled ? CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled : CAPABILITY_FRAMEWORK_ERROR_CODES.deadlineExceeded,
+        cancelled ? messages.requestCancelled : messages.deadlineExceeded,
+        cancelled ? 499 : 504,
+        { retrySafe: true },
+      );
+    }
+    if (!params.review) {
+      const actor = params.authority?.actor;
+      const principal = dispatchPrincipal(params, observed);
+      const accessSubject = params.authority?.accessSubject;
+      const subject =
+        accessSubject?.type === "user"
+          ? ({ type: "user", id: accessSubject.userId } as const)
+          : accessSubject?.type === "service_account"
+            ? ({ type: "service_account", id: accessSubject.serviceAccountId } as const)
+            : null;
+      const errorCode = outcome.status >= 400 ? bodyErrorCode(outcome.body) : null;
+      const recording = recordCapabilityExecution({
+        requestId,
+        origin: params.origin,
         appId: params.appId,
-        capabilityId: params.capabilityId,
-        error: error instanceof Error ? error.message : String(error),
+        capability: `${params.appId}.${params.capabilityId}`,
+        kind: params.kind === "queries" ? "query" : "action",
+        destructive: observed.destructive,
+        actorKind: principal?.type ?? null,
+        actorId: principal?.id ?? null,
+        userId: actor?.kind === "user" ? actor.user.id : (actor?.delegatedUser?.id ?? (principal?.type === "user" ? principal.id : null)),
+        accessSubject: subject && subject.id !== principal?.id ? subject : null,
+        status: executionStatus(outcome.status, errorCode),
+        errorCode,
+        inputMeta: capabilityValueMeta(params.input),
+        outputMeta: outcome.status < 400 ? resultDataMeta(outcome.body) : null,
+        idempotencyKey: CapabilityIdempotencyKeySchema.safeParse(params.request.headers.get("idempotency-key")).data ?? null,
+        replayed: outcome.replayed === true,
+        startedAt,
+        completedAt: new Date(),
+      }).catch((error) => {
+        // History is operational evidence; losing a row must not fail the call.
+        log.error("Capability execution could not be recorded", {
+          appId: params.appId,
+          capabilityId: params.capabilityId,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
+      // Operational history must not extend a Query's response budget. The store
+      // bounds this independent, best-effort write even for already-expired calls.
+      if (params.kind === "queries") {
+        try {
+          await deadline.wait(() => recording);
+        } catch {
+          // The outcome is already known; return it while the bounded record finishes.
+        }
+      } else {
+        await recording;
+      }
+    }
+    return capabilityJsonResponse(outcome.body, outcome.status);
+  } finally {
+    deadline.clear();
   }
-  return capabilityJsonResponse(outcome.body, outcome.status);
 };
 
 class MandateDispatchError extends Error {
@@ -741,6 +833,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
     (c.req.param("kind") === "actions" ? requireWriteScope : requireReadScope)(c, next);
 
   return new Hono<AuthContext>()
+    .use("/capabilities/v1/*", noTransform())
     .use("/capabilities/v1/*", dependencies.authenticate ?? auth.requireRole("authenticated"))
     .use("/capabilities/v1/*", rejectReservedWorkloadCredential)
     .post(
@@ -856,33 +949,34 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
         },
       }),
       requireReadScope,
-      async (c) => {
-        const locale = getLocale(c);
-        const messages = capabilityMessages(locale);
-        const body = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
-        if (!body.ok) {
-          const message = body.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
-          const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message, 400);
-          return capabilityJsonResponse(error.body, error.status);
-        }
-        const request = CapabilityInvocationRequestSchema.safeParse(body.data);
-        if (!request.success) {
-          const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, messages.requestInputOnly, 400);
-          return capabilityJsonResponse(error.body, error.status);
-        }
-        return dispatchCapability({
-          request: c.req.raw,
-          kind: "actions",
-          review: true,
-          origin: "http",
-          appId: c.req.param("appId") ?? "",
-          capabilityId: c.req.param("capabilityId") ?? "",
-          input: request.data.input,
-          authority: auth.getAuthority(c),
-          locale,
-          dependencies,
-        });
-      },
+      async (c) =>
+        withCapabilityRequestTimeout(c, "review", async () => {
+          const locale = getLocale(c);
+          const messages = capabilityMessages(locale);
+          const body = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
+          if (!body.ok) {
+            const message = body.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
+            const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message, 400);
+            return capabilityJsonResponse(error.body, error.status);
+          }
+          const request = CapabilityInvocationRequestSchema.safeParse(body.data);
+          if (!request.success) {
+            const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, messages.requestInputOnly, 400);
+            return capabilityJsonResponse(error.body, error.status);
+          }
+          return dispatchCapability({
+            request: c.req.raw,
+            kind: "actions",
+            review: true,
+            origin: "http",
+            appId: c.req.param("appId") ?? "",
+            capabilityId: c.req.param("capabilityId") ?? "",
+            input: request.data.input,
+            authority: auth.getAuthority(c),
+            locale,
+            dependencies,
+          });
+        }),
     )
     .post(
       "/capabilities/v1/:kind{queries|actions}/:appId/:capabilityId",
@@ -907,33 +1001,34 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
         },
       }),
       requireInvocationScope,
-      async (c) => {
-        const locale = getLocale(c);
-        const messages = capabilityMessages(locale);
-        const body = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
-        if (!body.ok) {
-          const message = body.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
-          const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message, 400);
-          return capabilityJsonResponse(error.body, error.status);
-        }
-        const request = CapabilityInvocationRequestSchema.safeParse(body.data);
-        if (!request.success) {
-          const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, messages.requestInputOnly, 400);
-          return capabilityJsonResponse(error.body, error.status);
-        }
+      async (c) =>
+        withCapabilityRequestTimeout(c, c.req.param("kind") === "queries" ? "query" : "action", async () => {
+          const locale = getLocale(c);
+          const messages = capabilityMessages(locale);
+          const body = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
+          if (!body.ok) {
+            const message = body.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
+            const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message, 400);
+            return capabilityJsonResponse(error.body, error.status);
+          }
+          const request = CapabilityInvocationRequestSchema.safeParse(body.data);
+          if (!request.success) {
+            const error = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, messages.requestInputOnly, 400);
+            return capabilityJsonResponse(error.body, error.status);
+          }
 
-        return dispatchCapability({
-          request: c.req.raw,
-          kind: c.req.param("kind") as "queries" | "actions",
-          origin: "http",
-          appId: c.req.param("appId") ?? "",
-          capabilityId: c.req.param("capabilityId") ?? "",
-          input: request.data.input,
-          authority: auth.getAuthority(c),
-          locale,
-          dependencies,
-        });
-      },
+          return dispatchCapability({
+            request: c.req.raw,
+            kind: c.req.param("kind") as "queries" | "actions",
+            origin: "http",
+            appId: c.req.param("appId") ?? "",
+            capabilityId: c.req.param("capabilityId") ?? "",
+            input: request.data.input,
+            authority: auth.getAuthority(c),
+            locale,
+            dependencies,
+          });
+        }),
     );
 };
 

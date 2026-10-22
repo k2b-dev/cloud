@@ -94,6 +94,8 @@ export const artifactMessages = i18n.define({
         "The source has changed. Your draft is still in the editor. Download it before loading the latest version; review the changes before saving again.",
       downloadDraft: "Download my draft",
       loadLatest: "Load latest source",
+      DB_TARGET_BLOCKED:
+        "The rsql server address is on an internal network that the operator has not allowed. An operator can allow it with ASSISTANT_RSQL_ALLOWED_TARGETS.",
       DB_UNREACHABLE: "The database server is unreachable. Ask an administrator to check the rsql connection.",
       DB_TIMEOUT: "The database server did not respond in time. Retry or ask an administrator to check the rsql server.",
       DB_AUTH_FAILED: "The database server rejected its credentials. Ask an administrator to check the stored rsql token.",
@@ -161,7 +163,7 @@ export const artifactMessages = i18n.define({
       retry: "Try again",
       sources: "Sources",
       knowledge: "Project knowledge",
-      tasks: "Scheduled tasks",
+      tasks: "Routines",
       sourceMissing: "This source file no longer exists.",
       createReview: "Create this private app:",
       saveReview: "Save a new source revision for:",
@@ -304,6 +306,8 @@ export const artifactMessages = i18n.define({
         "Der Quelltext wurde geändert. Dein Entwurf bleibt im Editor. Lade ihn herunter, bevor du die aktuelle Version lädst; prüfe die Änderungen vor dem erneuten Speichern.",
       downloadDraft: "Meinen Entwurf herunterladen",
       loadLatest: "Aktuellen Quelltext laden",
+      DB_TARGET_BLOCKED:
+        "Die rsql-Serveradresse liegt in einem internen Netzwerk, das der Betreiber noch nicht freigegeben hat. Der Betreiber kann es mit ASSISTANT_RSQL_ALLOWED_TARGETS freigeben.",
       DB_UNREACHABLE: "Der Datenbankserver ist nicht erreichbar. Ein Administrator sollte die rsql-Verbindung prüfen.",
       DB_TIMEOUT:
         "Der Datenbankserver hat nicht rechtzeitig geantwortet. Versuche es erneut oder bitte einen Administrator, den rsql-Server zu prüfen.",
@@ -375,7 +379,7 @@ export const artifactMessages = i18n.define({
       retry: "Erneut versuchen",
       sources: "Quellen",
       knowledge: "Projektwissen",
-      tasks: "Geplante Aufgaben",
+      tasks: "Routinen",
       sourceMissing: "Diese Quelldatei existiert nicht mehr.",
       createReview: "Diese private App erstellen:",
       saveReview: "Eine neue Quelltextversion speichern für:",

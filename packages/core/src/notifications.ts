@@ -1,6 +1,14 @@
 import { createHash } from "node:crypto";
 import { type BoundNotificationMap, type NotificationDeliveryPolicy, notification } from "@k2b/cloud";
-import { type AppDeviceEnrollmentNotice, notifications, type PwaDevicePairedNotice, renderTemplate } from "@k2b/cloud/services";
+import { APP_LOGIN_CONTEXT_BROWSERS, APP_LOGIN_CONTEXT_OSES } from "@k2b/cloud/contracts/app-approval";
+import {
+  type AppDeviceEnrollmentNotice,
+  notifications,
+  type PwaDevicePairedNotice,
+  renderTemplate,
+  SIGN_IN_METHODS,
+  type SignInMethod,
+} from "@k2b/cloud/services";
 import type { AccountLifecycleNotificationSender } from "@k2b/cloud/services/account-lifecycle/notification-sender";
 import type { AuthNotificationSender } from "@k2b/cloud/services/auth-flows";
 import * as settings from "@k2b/cloud/services/settings";
@@ -16,9 +24,37 @@ const notificationMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      newBrowserTitle: "New sign-in from a new browser",
+      unknownBrowser: "Unknown browser",
+      unknownSystem: "an unknown system",
+      macOrIpad: "macOS or iPadOS",
+      browserLine: ({ browser, os }: { browser: string; os: string }) => `${browser} on ${os}`,
+      approximatePlace: ({ place }: { place: string }) => `Approximately ${place}`,
+      greeting: ({ firstName }: { firstName: string | null }) => (firstName ? `Hi ${firstName},` : "Hi,"),
+      newBrowserIntro: "Your account was just signed in from a browser Cloud did not know yet.",
+      browserLabel: "Browser",
+      locationLabel: "Location",
+      timeLabel: "Time",
+      methodLabel: "Sign-in method",
+      passwordMethod: "Password",
+      passkeyMethod: "Passkey",
+      emailCodeMethod: "Email code",
+      cloudLoginMethod: ({ device }: { device: string | null }) => (device ? `Cloud Login, approved on “${device}”` : "Cloud Login"),
+      passwordResetMethod: "Password reset",
+      expiredPasswordMethod: "Expired password changed",
+      adminTokenMethod: "Emergency admin access",
+      wasThisYou: "Was this you? Then you don't need to do anything.",
+      newBrowserAction:
+        "If this wasn't you, check your paired devices under <strong>Account\u00a0› Sign-in</strong> and contact your administrator.",
+      openSignIn: "Open sign-in",
+      newBrowserFooter: "You get this notice once per new browser. You can turn it off under Account\u00a0› Notifications.",
+      approximateFooter: " Locations are approximate.",
       deviceTitle: "New sign-in device linked",
       deviceBody: ({ name, assisted }: { name: string; assisted: boolean }) =>
         `The device “${name}” can now approve Cloud sign-ins.${assisted ? " An administrator helped link it." : ""} If this was not you, contact your administrator and revoke the device.`,
+      accessCommandTitle: "New access for the command line",
+      accessAppTitle: ({ app }: { app: string }) => `${app} has access to your account`,
+      accessBody: ({ time }: { time: string }) => `New access was confirmed on ${time}. If this was not you, contact your administrator.`,
       signInCode: "Sign-in code",
       signInBody: "Enter this code or open the link in this email to sign in. Both work once.",
       signInSubject: ({ appName }: { appName: string }) => `Sign-in code for ${appName}`,
@@ -38,9 +74,38 @@ const notificationMessages = i18n.define({
       phonePairedAt: ({ url }: { url: string }) => `at ${url}`,
     },
     de: {
+      newBrowserTitle: "Neue Anmeldung aus einem neuen Browser",
+      unknownBrowser: "Unbekannter Browser",
+      unknownSystem: "einem unbekannten System",
+      macOrIpad: "macOS oder iPadOS",
+      browserLine: ({ browser, os }) => `${browser} auf ${os}`,
+      approximatePlace: ({ place }) => `Ungefähr ${place}`,
+      greeting: ({ firstName }) => (firstName ? `Hallo ${firstName},` : "Hallo,"),
+      newBrowserIntro: "dein Konto wurde gerade in einem Browser angemeldet, den Cloud noch nicht kannte.",
+      browserLabel: "Browser",
+      locationLabel: "Ort",
+      timeLabel: "Zeit",
+      methodLabel: "Anmeldeweg",
+      passwordMethod: "Passwort",
+      passkeyMethod: "Passkey",
+      emailCodeMethod: "E-Mail-Code",
+      cloudLoginMethod: ({ device }) => (device ? `Cloud Login, bestätigt auf „${device}“` : "Cloud Login"),
+      passwordResetMethod: "Passwort zurückgesetzt",
+      expiredPasswordMethod: "Abgelaufenes Passwort geändert",
+      adminTokenMethod: "Admin-Notfallzugang",
+      wasThisYou: "Warst du das? Dann musst du nichts tun.",
+      newBrowserAction:
+        "Falls du das nicht warst, prüfe unter <strong>Konto\u00a0› Anmeldung</strong> deine gekoppelten Geräte und wende dich an die Administration.",
+      openSignIn: "Anmeldung öffnen",
+      newBrowserFooter:
+        "Diese Benachrichtigung kommt einmal pro neuem Browser. Du kannst sie unter Konto\u00a0› Benachrichtigungen abschalten.",
+      approximateFooter: " Ortsangaben sind ungefähr.",
       deviceTitle: "Neues Anmeldegerät gekoppelt",
       deviceBody: ({ name, assisted }) =>
         `Das Gerät „${name}“ kann jetzt Cloud-Anmeldungen bestätigen.${assisted ? " Ein Administrator hat die Kopplung unterstützt." : ""} Falls du das nicht warst, kontaktiere deinen Administrator und widerrufe das Gerät.`,
+      accessCommandTitle: "Neuer Zugang für die Kommandozeile",
+      accessAppTitle: ({ app }) => `${app} hat Zugriff auf dein Konto`,
+      accessBody: ({ time }) => `Neuer Zugang wurde am ${time} bestätigt. Falls du das nicht warst, wende dich an die Administration.`,
       signInCode: "Anmeldecode",
       signInBody: "Melde dich mit diesem Code oder über den Link in dieser E-Mail an. Beides funktioniert einmalig.",
       signInSubject: ({ appName }) => `Anmeldecode für ${appName}`,
@@ -75,18 +140,155 @@ const absoluteUrl = async (path: string): Promise<string> => {
 };
 const accountExtensionUrl = (): Promise<string> => absoluteUrl("/auth/extend");
 
-/** The pairing time in the installation's timezone, named so that nobody has to guess it. */
-const pairedTime = async (pairedAt: string, locale: string): Promise<string> => {
+/** A notice's time in the installation's timezone, named so that nobody has to guess it. */
+const installationTime = async (at: string, locale: string): Promise<string> => {
   const timeZone = (await settings.get<string>("app.timezone"))?.trim() || "UTC";
-  return `${dates.formatDateTime(pairedAt, { locale, timeZone })} (${timeZone})`;
+  return `${dates.formatDateTime(at, { locale, timeZone })} (${timeZone})`;
 };
 const phonePairedBody = async (
   data: { name: string; platform: PwaPlatform; pairedAt: string },
   locale: string,
   where: string,
-): Promise<string> => text(locale).phonePairedBody({ ...data, time: await pairedTime(data.pairedAt, locale), where });
+): Promise<string> => text(locale).phonePairedBody({ ...data, time: await installationTime(data.pairedAt, locale), where });
+
+const newBrowserData = z.object({
+  browser: z.enum(APP_LOGIN_CONTEXT_BROWSERS),
+  os: z.enum(APP_LOGIN_CONTEXT_OSES),
+  country: z
+    .string()
+    .regex(/^[A-Z]{2}$/)
+    .nullable(),
+  city: z.string().max(96).nullable(),
+  signedInAt: z.string().datetime(),
+  method: z.enum(SIGN_IN_METHODS),
+  device: z.string().min(1).max(80).nullable(),
+  firstName: z.string().max(200).nullable(),
+});
+type NewBrowserData = z.infer<typeof newBrowserData>;
+const browserLine = (data: NewBrowserData, locale: string): string => {
+  const t = text(locale);
+  const browsers = {
+    firefox: "Firefox",
+    chrome: "Chrome",
+    safari: "Safari",
+    edge: "Edge",
+    samsung: "Samsung Internet",
+    opera: "Opera",
+    other: t.unknownBrowser,
+  };
+  const systems = {
+    windows: "Windows",
+    macos: "macOS",
+    "mac-or-ipad": t.macOrIpad,
+    ios: "iOS",
+    android: "Android",
+    linux: "Linux",
+    chromeos: "ChromeOS",
+    other: t.unknownSystem,
+  };
+  return t.browserLine({ browser: browsers[data.browser], os: systems[data.os] });
+};
+const signInMethod = (method: SignInMethod, device: string | null, locale: string): string => {
+  const t = text(locale);
+  const methods = {
+    password: t.passwordMethod,
+    passkey: t.passkeyMethod,
+    email_code: t.emailCodeMethod,
+    cloud_login: t.cloudLoginMethod({ device }),
+    password_reset: t.passwordResetMethod,
+    expired_password: t.expiredPasswordMethod,
+    admin_token: t.adminTokenMethod,
+  };
+  return methods[method];
+};
+const escapeHtml = (value: string): string =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+const newBrowserEmail = async (data: NewBrowserData, locale: string) => {
+  const t = text(locale);
+  const rows: [string, string][] = [[t.browserLabel, browserLine(data, locale)]];
+  if (data.country) {
+    const country = new Intl.DisplayNames([locale], { type: "region" }).of(data.country) || data.country;
+    rows.push([t.locationLabel, t.approximatePlace({ place: data.city ? `${data.city}, ${country}` : country })]);
+  }
+  rows.push(
+    [t.timeLabel, await installationTime(data.signedInAt, locale)],
+    [t.methodLabel, signInMethod(data.method, data.device, locale)],
+  );
+  const details = rows
+    .map(
+      ([label, value]) =>
+        `<tr><td style="color:#71717a;padding:4px 16px 4px 0;white-space:nowrap;vertical-align:top">${escapeHtml(label)}</td><td style="color:#18181b;font-weight:600;padding:4px 0;vertical-align:top">${escapeHtml(value)}</td></tr>`,
+    )
+    .join("");
+  const greeting = t.greeting({ firstName: data.firstName });
+  const signInUrl = await absoluteUrl("/me/security");
+  const footer = t.newBrowserFooter + (data.country ? t.approximateFooter : "");
+  return {
+    subject: t.newBrowserTitle,
+    // The plain-text part keeps one line per detail; the frame would otherwise flatten the table into one line.
+    content: [
+      greeting,
+      t.newBrowserIntro,
+      rows.map(([label, value]) => `${label}: ${value}`).join("\n"),
+      t.wasThisYou,
+      t.newBrowserAction.replace(/<\/?strong>/g, ""),
+      `${t.openSignIn}: ${signInUrl}`,
+      footer,
+    ].join("\n\n"),
+    rawHtml: `<p style="margin-top:0">${escapeHtml(greeting)}</p>
+<p>${escapeHtml(t.newBrowserIntro)}</p>
+<div style="background:#f4f4f5;border-radius:10px;padding:12px 16px"><table style="border:0;width:100%" cellpadding="0" cellspacing="0">${details}</table></div>
+<p>${escapeHtml(t.wasThisYou)}</p>
+<p>${t.newBrowserAction}</p>
+<p><a href="${escapeHtml(signInUrl)}" style="display:inline-block;background:#1d4ed8;color:#ffffff;padding:10px 18px;border-radius:8px;font-weight:600;text-decoration:none">${escapeHtml(t.openSignIn)}</a></p>
+<p style="font-size:12px;color:#71717a;margin-bottom:0">${escapeHtml(footer)}</p>`,
+  };
+};
+
+export type OAuthNewAccessNotice = {
+  familyId: string;
+  userId: string;
+  kind: "command_line" | "app";
+  clientName: string;
+  createdAt: string;
+};
+
+const accessTitle = (data: { kind: "command_line" | "app"; clientName: string }, locale: string) =>
+  data.kind === "command_line" ? text(locale).accessCommandTitle : text(locale).accessAppTitle({ app: data.clientName });
 
 export const NOTIFICATIONS = {
+  oauthNewAccess: notification({
+    recipient: "user",
+    label: "New access",
+    description: "Notice when a new application or command line access is confirmed.",
+    presentation: presentation("Neuer Zugang", "Hinweis, wenn ein neuer Zugang für eine Anwendung oder die Kommandozeile bestätigt wird."),
+    delivery: { recommended: ["email", "browser"] },
+    data: z.object({ kind: z.enum(["command_line", "app"]), clientName: z.string(), createdAt: z.string().datetime() }),
+    render: async (data, { locale }) => ({
+      title: accessTitle(data, locale),
+      body: text(locale).accessBody({ time: await installationTime(data.createdAt, locale) }),
+      targetHref: "/me/security",
+    }),
+    email: async (data, { locale }) => ({
+      subject: accessTitle(data, locale),
+      content: `${text(locale).accessBody({ time: await installationTime(data.createdAt, locale) })} ${await absoluteUrl("/me/security")}`,
+    }),
+  }),
+  newBrowserSignIn: notification({
+    recipient: "user",
+    label: "New sign-in from a new browser",
+    description: "Once per new browser, after the sign-in.",
+    presentation: presentation("Neue Anmeldung aus einem neuen Browser", "Einmal pro neuem Browser, nach der Anmeldung."),
+    // A personal preference: email first, a browser notification where email is not set up.
+    delivery: { recommended: ["email", "browser"] },
+    data: newBrowserData,
+    render: async (data, { locale }) => {
+      // The browser channel shows only `preview` next to the title, also on the lock screen: no place here.
+      const summary = `${browserLine(data, locale)} · ${await installationTime(data.signedInAt, locale)}`;
+      return { title: text(locale).newBrowserTitle, body: summary, preview: summary, targetHref: "/me/security" };
+    },
+    email: (data, { locale }) => newBrowserEmail(data, locale),
+  }),
   deviceEnrollment: notification({
     recipient: "user",
     label: "Sign-in device enrollment",
@@ -236,11 +438,23 @@ const fingerprint = (value: string): string => createHash("sha256").update(value
 
 export type CoreNotificationSender = AuthNotificationSender &
   AccountLifecycleNotificationSender & {
+    sendOAuthNewAccess: (notice: OAuthNewAccessNotice) => Promise<unknown>;
     sendDeviceEnrollment: (notice: AppDeviceEnrollmentNotice) => Promise<unknown>;
     sendAppDevicePaired: (notice: PwaDevicePairedNotice) => Promise<unknown>;
   };
 
 export const createCoreNotificationSender = (definitions: CoreNotificationDescriptors): CoreNotificationSender => ({
+  sendOAuthNewAccess: async ({ familyId, userId, kind, clientName, createdAt }) => {
+    const result = await notifications.send(definitions.oauthNewAccess, {
+      recipient: { userId },
+      data: { kind, clientName, createdAt },
+      idempotencyKey: `oauth-new-access:${familyId}`,
+      locale: await configuredLocale(),
+    });
+    if (result.status === "suppressed" && result.deliveries.some((delivery) => delivery.errorCode === "preparation_failed"))
+      throw new Error("The new-access notice could not be prepared");
+    return result;
+  },
   sendDeviceEnrollment: async ({ deviceId, userId, name, assisted }) =>
     notifications.send(definitions.deviceEnrollment, {
       recipient: { userId },
@@ -260,6 +474,18 @@ export const createCoreNotificationSender = (definitions: CoreNotificationDescri
     // destination, is done.
     if (result.status === "suppressed" && result.deliveries.some((delivery) => delivery.errorCode === "preparation_failed"))
       throw new Error("The new-phone notice could not be prepared");
+    return result;
+  },
+  sendNewBrowserSignIn: async ({ browserId, userId, browser, os, country, city, signedInAt, method, device, firstName, locale }) => {
+    const result = await notifications.send(definitions.newBrowserSignIn, {
+      recipient: { userId },
+      data: { browser, os, country, city, signedInAt, method, device, firstName },
+      idempotencyKey: `new-browser-sign-in:${browserId}:${signedInAt}`,
+      locale: await configuredLocale(locale ?? undefined),
+    });
+    // A disabled notice is done; a failed preparation stays pending for maintenance.
+    if (result.status === "suppressed" && result.deliveries.some((delivery) => delivery.errorCode === "preparation_failed"))
+      throw new Error("The new-browser notice could not be prepared");
     return result;
   },
   sendMagicLink: async ({ email, token, magicLink, locale }) =>

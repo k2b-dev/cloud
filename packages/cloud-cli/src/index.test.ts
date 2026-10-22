@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { packInlinePlugin } from "../test/fixtures/build-plugin";
 import { installFirstPartyModules } from "../test/fixtures/first-party";
 import { LOGIN_PAGE_CSP } from "./login-page";
 
@@ -14,6 +15,7 @@ type MockServerState = {
   meCalls: number;
   failFirstMe?: boolean;
   tokenResponse?: unknown;
+  tokenStatus?: number;
   tokenDelayMs?: number;
   appsCalls?: number;
   appsSearch?: string | null;
@@ -118,6 +120,7 @@ const startMockServer = (state: MockServerState) =>
             scope: "openid",
             refresh_token: grantType === "authorization_code" ? "login-refresh" : "new-refresh",
           },
+          { status: state.tokenStatus ?? 200 },
         );
       }
 
@@ -606,19 +609,17 @@ describe("cloud CLI OAuth session handling", () => {
 
   test("delivers multi-megabyte JSON to a slow reader before exiting with the command's code", async () => {
     const dir = await createTempDir();
-    const pluginDir = join(dir, "cloud", "cld", "plugins", "bulk");
-    await mkdir(join(pluginDir, "dist"), { recursive: true });
-    await writeFile(
-      join(pluginDir, "package.json"),
-      JSON.stringify({ name: "bulk", version: "1.0.0", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
-    );
-    await writeFile(
-      join(pluginDir, "dist", "cli.js"),
+    const pluginDir = join(dir, "package-bulk");
+    await packInlinePlugin(
+      pluginDir,
       `export default { name: "bulk", summary: "Bulk output", requiresCloud: false, run: (ctx) => {
         ctx.json({ items: Array.from({ length: 20000 }, (_, id) => ({ id, subject: "x".repeat(200) })) });
         return 3;
       } };`,
     );
+
+    const installBulk = await runCli(join(dir, "config.json"), ["plugins", "install", pluginDir, "--yes"], { XDG_CONFIG_HOME: dir });
+    expect(installBulk.exitCode, installBulk.stderr).toBe(0);
 
     const proc = startCli(join(dir, "config.json"), ["plugins", "run", "bulk"], { XDG_CONFIG_HOME: dir });
     const chunks: Uint8Array[] = [];
@@ -793,10 +794,47 @@ describe("cloud CLI OAuth session handling", () => {
         if (detail) expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
         else expect(html).not.toContain("<code>");
         expect(await proc.exited).toBe(1);
-        expect(await stderrPromise).toContain(detail ?? error);
+        expect(await stderrPromise).toContain(error === "access_denied" ? "Sign-in was denied in the browser." : (detail ?? error));
         await stdoutPromise;
         expect(state.authorizationCodeCalls).toBe(0);
       } finally {
+        server.stop(true);
+      }
+    });
+  }
+
+  for (const locale of ["en", "de"]) {
+    test(`a refused code exchange asks for browser confirmation in ${locale}`, async () => {
+      const state: MockServerState = {
+        refreshCalls: 0,
+        authorizationCodeCalls: 0,
+        revokeCalls: 0,
+        meCalls: 0,
+        tokenResponse: { error: "invalid_grant" },
+        tokenStatus: 400,
+      };
+      const server = startMockServer(state);
+      const dir = await createTempDir();
+      const configPath = join(dir, "config.json");
+      const proc = startCli(configPath, ["--locale", locale, "login", "--server", `http://127.0.0.1:${server.port}`, "--no-open"]);
+      try {
+        const stderrPromise = new Response(proc.stderr).text();
+        const callbackUrl = await readLoginCallbackUrl(proc.stdout, locale);
+        const stdoutPromise = proc.stdout.pipeTo(new WritableStream());
+        callbackUrl.searchParams.set("code", "test-code");
+        expect((await fetch(callbackUrl)).status).toBe(200);
+        expect(await proc.exited).toBe(1);
+        expect(await stderrPromise).toContain(
+          locale === "de"
+            ? "Führe `cld login` erneut aus und bestätige die Anmeldung im Browser."
+            : "Run `cld login` again and confirm the sign-in in the browser.",
+        );
+        await stdoutPromise;
+        expect(state.authorizationCodeCalls).toBe(1);
+        expect(await Bun.file(configPath).exists()).toBe(false);
+      } finally {
+        proc.kill();
+        await proc.exited;
         server.stop(true);
       }
     });
@@ -1347,22 +1385,20 @@ describe("cloud CLI OAuth session handling", () => {
   test.skipIf(process.platform === "win32")("openUrl validates links, checks the host, and silently reports opener results", async () => {
     const dir = await createTempDir();
     const configPath = join(dir, "config.json");
-    const pluginDir = join(dir, "cloud", "cld", "plugins", "browser");
+    const pluginDir = join(dir, "package-browser");
     const binDir = join(dir, "bin");
     const logPath = join(dir, "browser.log");
-    await mkdir(join(pluginDir, "dist"), { recursive: true });
     await mkdir(binDir);
-    await writeFile(
-      join(pluginDir, "package.json"),
-      JSON.stringify({ name: "browser", version: "1.0.0", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
-    );
-    await writeFile(
-      join(pluginDir, "dist", "cli.js"),
+    await packInlinePlugin(
+      pluginDir,
       `export default { name: "browser", summary: "Open a link", requiresCloud: false, run: async (ctx) => {
         ctx.json({ opened: await ctx.openUrl(ctx.args[0]), locale: ctx.options.locale ?? null });
         return 0;
       } };`,
     );
+
+    const installBrowser = await runCli(join(dir, "config.json"), ["plugins", "install", pluginDir, "--yes"], { XDG_CONFIG_HOME: dir });
+    expect(installBrowser.exitCode, installBrowser.stderr).toBe(0);
     await writeFile(
       join(binDir, process.platform === "darwin" ? "open" : "xdg-open"),
       `#!/bin/sh
@@ -1415,19 +1451,17 @@ exit "$BROWSER_EXIT"
     const server = startMockServer(state);
     const dir = await createTempDir();
     const configPath = join(dir, "config.json");
-    const pluginDir = join(dir, "cloud", "cld", "plugins", "cookies");
-    await mkdir(join(pluginDir, "dist"), { recursive: true });
-    await writeFile(
-      join(pluginDir, "package.json"),
-      JSON.stringify({ name: "cookies", version: "1.0.0", cld: { apiVersion: 1, entry: "dist/cli.js" } }),
-    );
-    await writeFile(
-      join(pluginDir, "dist", "cli.js"),
+    const pluginDir = join(dir, "package-cookies");
+    await packInlinePlugin(
+      pluginDir,
       `export default { name: "cookies", summary: "Own cookie", run: async (ctx) => {
         await ctx.fetch("/api/me", { headers: { Cookie: "a=b" } });
         return 0;
       } };`,
     );
+
+    const installCookies = await runCli(join(dir, "config.json"), ["plugins", "install", pluginDir, "--yes"], { XDG_CONFIG_HOME: dir });
+    expect(installCookies.exitCode, installCookies.stderr).toBe(0);
     const cloud = ["--server", `http://127.0.0.1:${server.port}`, "--token", "test-token"];
 
     try {

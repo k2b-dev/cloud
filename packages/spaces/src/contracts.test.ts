@@ -6,14 +6,18 @@ import {
   CreateSpaceSchema,
   CreateTaskChecklistEntrySchema,
   CreateWormholeSchema,
+  DeadlineInputSchema,
   ItemFilterResponseSchema,
   ItemFilterSchema,
   isPlayableVideoType,
   MAX_TASK_ATTACHMENT_SIZE_BYTES,
   MoveItemSchema,
   OverlapQuerySchema,
+  ReactionEmojiSchema,
   ReorderColumnsSchema,
   ReorderWormholesSchema,
+  SpaceAssignableUserSchema,
+  SpaceItemAssigneeSchema,
   SpaceItemAttachmentSchema,
   SpaceItemSchema,
   UpdateItemSchema,
@@ -33,6 +37,12 @@ test("filtered item responses require overdue without changing the shared item s
   expect(overdue.parse(false)).toBeFalse();
   for (const invalid of [undefined, null, "false", 0]) expect(overdue.safeParse(invalid).success).toBeFalse();
   expect("overdue" in SpaceItemSchema.shape).toBeFalse();
+});
+
+test("item updates accept an exact claim UUID and force for assignee changes", () => {
+  const claimId = "99999999-9999-4999-8999-999999999999";
+  expect(UpdateItemSchema.parse({ assigneeIds: [], claimId, force: true })).toEqual({ assigneeIds: [], claimId, force: true });
+  expect(UpdateItemSchema.safeParse({ assigneeIds: [], claimId: "not-a-uuid", force: true }).success).toBeFalse();
 });
 
 describe("Spaces contract time ranges", () => {
@@ -193,4 +203,34 @@ describe("attachment media types", () => {
       expect(attachmentMediaType(`notes.${extension}`, "")).toBe("application/octet-stream");
     }
   });
+});
+
+test("reaction emoji accepts exactly one fully-qualified RGI emoji", () => {
+  for (const emoji of ["👍", "👍🏽", "❤️", "👩‍💻", "🇩🇪", "1️⃣"]) expect(ReactionEmojiSchema.safeParse(emoji).success).toBe(true);
+  for (const emoji of ["❤", "ab", "👍👍", "", " ", "👍\n"]) expect(ReactionEmojiSchema.safeParse(emoji).success).toBe(false);
+});
+
+test("assignee contracts distinguish people and service accounts without changing UUID inputs", () => {
+  const id = "99999999-9999-4999-8999-999999999999";
+  for (const kind of ["user", "service_account"] as const) {
+    const assignee = { id, kind, displayName: "Task worker", avatarHash: null };
+    expect(SpaceItemAssigneeSchema.parse(assignee)).toEqual(assignee);
+    expect(SpaceAssignableUserSchema.parse({ ...assignee, uid: "Task worker" }).kind).toBe(kind);
+    expect(UpdateItemSchema.parse({ assigneeIds: [id] })).toEqual({ assigneeIds: [id] });
+  }
+  expect(SpaceItemAssigneeSchema.safeParse({ id, kind: "group", displayName: "Team", avatarHash: null }).success).toBeFalse();
+});
+
+test("deadline inputs distinguish real calendar dates and timed instants", () => {
+  for (const deadline of ["2026-10-24", "2024-02-29", START, "2026-10-24T17:00:00+02:00"]) {
+    expect(DeadlineInputSchema.parse(deadline)).toBe(deadline);
+    expect(CreateItemSchema.parse({ columnId, title: "Task", deadline }).deadline).toBe(deadline);
+    expect(UpdateItemSchema.parse({ deadline }).deadline).toBe(deadline);
+    expect(SpaceItemSchema.shape.deadline.parse(deadline)).toBe(deadline);
+  }
+  for (const deadline of ["2026-02-30", "2026-02-29", "2026-13-01", "24.10.2026"]) {
+    expect(CreateItemSchema.safeParse({ columnId, title: "Task", deadline }).success).toBeFalse();
+    expect(UpdateItemSchema.safeParse({ deadline }).success).toBeFalse();
+  }
+  expect(UpdateItemSchema.parse({ deadline: null }).deadline).toBeNull();
 });

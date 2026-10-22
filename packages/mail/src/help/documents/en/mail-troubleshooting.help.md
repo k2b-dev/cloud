@@ -4,9 +4,10 @@ title: Troubleshoot Mail
 icon: ti ti-lifebuoy
 description: Diagnose missing mail, paused transport, sending failures, draft conflicts, and search gaps.
 order: 80
+kind: troubleshoot
 ---
 
-Start with the symptom that you see. When transport, folders, or search can be involved, use **Mailbox tools → Mailbox health**.
+Start with the symptom that you see. When transport, folders, or search can be involved, use **… → Mailbox health**.
 
 ## The mailbox is missing from the overview {icon="lifebuoy"}
 
@@ -22,7 +23,7 @@ Mail checks access when the page loads and during live updates. If your access e
 
 :::steps
 1. Check the health warning above the conversation list.
-2. Open **Mailbox tools → Mailbox health**.
+2. Open **… → Mailbox health**.
 3. If the mailbox is paused, choose **Resume mailbox**.
 4. Choose **Sync now**.
 5. If folders are missing or changed, choose **Rediscover folders**.
@@ -45,16 +46,16 @@ Mail checks every synchronized folder about once a minute. The Inbox usually upd
 - **Providers that do not report changes:** This applies to the newest few thousand messages of a folder. Changes to older messages in a larger folder arrive in turns and can take longer.
 - **More than 500 folders:** When an installation synchronizes more than 500 folders, Mail still checks every Inbox each minute and the other folders in turns. Those can take a few minutes.
 
-To check a mailbox immediately, open **Mailbox tools → Mailbox health** and choose **Sync now**.
+To check a mailbox immediately, open **… → Mailbox health** and choose **Sync now**.
 
 ## A folder is missing from the sidebar {icon="folder"}
 
-With **Manage** access, open **Settings → Folders** and tell these cases apart:
+With **Manage** access, open **… → Settings → Folders** and tell these cases apart:
 
 - **Hidden:** Choose **Everywhere** or **Only in the folder** under **Where mail appears** to show the folder in the Cloud navigation again. This does not change the provider.
 - **Not subscribed:** Subscribe if this provider or another mail client uses IMAP subscriptions to decide which folders it shows.
 - **Unavailable:** The connected account no longer shows the folder. Check the provider account, the namespace, and the access at the provider, then run **Rediscover folders**.
-- **Needs review:** Discovery found conflicting state at the provider. Check **Folder discovery** in **Mailbox tools → Mailbox health** before you change mail.
+- **Needs review:** Discovery found conflicting state at the provider. Check **Folder discovery** in **… → Mailbox health** before you change mail.
 
 A hidden parent also hides its nested subfolders from the sidebar, so the hierarchy stays understandable. Their mail and their own visibility settings stay.
 
@@ -63,7 +64,7 @@ A hidden parent also hides its nested subfolders from the sidebar, so the hierar
 Someone with **Manage** access paused the mailbox, or restored it, and a restored mailbox always starts paused.
 
 :::steps
-1. Open **Mailbox tools → Mailbox health**.
+1. Open **… → Mailbox health**.
 2. Check the provider connection and the health.
 3. Choose **Resume mailbox**.
 :::
@@ -76,20 +77,20 @@ Check these conditions:
 
 - You have **Edit** or **Manage** access.
 - **From** uses a verified sender.
-- **Mailbox tools → Mailbox health** shows a working connection.
+- **… → Mailbox health** shows a working connection.
 - The draft has recipients and either body content or an attachment.
 - Every attachment upload completed successfully, and no file is larger than 100 MiB.
 - You reviewed all sending warnings for the current saved version. If you change recipients, links, text, or attachments after approval, you must review again.
 - The complete encoded message fits the current outgoing limit that the provider publishes.
 - The provider credential has not expired and was not revoked.
 
-An attachment can fit the 100 MiB limit per file of Mail while the complete encoded message still exceeds a smaller provider limit. Remove one or more attachments, or create a public download link and send that link instead. With **Manage** access, you can check and refresh the observed values in **Mailbox tools → Mailbox health → Provider limits**.
+An attachment can fit the 100 MiB limit per file of Mail while the complete encoded message still exceeds a smaller provider limit. Remove one or more attachments, or create a public download link and send that link instead. With **Manage** access, you can check and refresh the observed values in **… → Mailbox health → Provider limits**.
 
-If the provider credential changed, use **Settings → Accounts & identities → Connected account → Edit account**. Mail cannot show the existing secret, and you cannot edit only part of it.
+If the provider credential changed, use **… → Settings → Accounts & identities → Connected account → Edit account**. Mail cannot show the existing secret, and you cannot edit only part of it.
 
 ## Automatic replies say that no identity is available {icon="send"}
 
-Open **Settings → Accounts & identities → Sending identities**. Check that one identity meets both conditions:
+Open **… → Settings → Accounts & identities → Sending identities**. Check that one identity meets both conditions:
 
 :::steps
 1. The identity status is **Ready**.
@@ -140,18 +141,18 @@ To check one folder from a terminal, `cld mail ls "Mailbox:Sent Mail"` also acce
 5. If the missing words are in a newly received attachment, wait for background extraction to finish. Then try again.
 6. **Best match** ranks the newest 1,000 matching messages of a mailbox. For a very common word, add a more specific word.
 7. To reach older messages, you can also choose **Newest first**.
-8. If broad search fails across the mailbox, ask someone with **Manage** access to check the search state. It is in **Mailbox tools → Mailbox health**.
+8. If broad search fails across the mailbox, ask someone with **Manage** access to check the search state. It is in **… → Mailbox health**.
 :::
 
 Local tags and internal comments exist only in Cloud. Provider folders and keywords depend on the synchronized remote state.
 
 Attachment extraction never blocks receiving, reading, or sending a message. Mail automatically retries interrupted extraction work. It also regularly recovers attachments that were saved before a worker could pick them up. Encrypted, scanned, unsupported, damaged, or oversized attachments are final results: the original file stays available, but its content is not searchable.
 
-**Mailbox tools → Mailbox health** shows **Repair and projection coverage**. If it shows a gap, someone with **Manage** access can queue **Hydrate missing bodies**, **Rebuild search**, or **Repair thread projection**. Wait for the durable command to finish before you repeat it. Search and thread repairs rebuild derived data and keep the mailbox content and the collaboration state.
+**… → Mailbox health** shows **Repair and projection coverage**. If it shows a gap, someone with **Manage** access can queue **Hydrate missing bodies**, **Rebuild search**, or **Repair thread projection**. Wait for the durable command to finish before you repeat it. Search and thread repairs rebuild derived data and keep the mailbox content and the collaboration state.
 
 ## A command needs attention {icon="lifebuoy"}
 
-Open **Mailbox tools → Mailbox health → Advanced diagnostics and repairs**. Find the redacted command entry by its ID and error code.
+Open **… → Mailbox health → Advanced diagnostics and repairs**. Find the redacted command entry by its ID and error code.
 
 In the terminal, `cld mail command list --state failed` or `--state needs_attention` lists the affected commands with their error. When a page is full, Mail prints the `--before` value for the next page; keep the same `--state`. With **Manage** access, `cld mail operator run reconcile --command <id>` and `cld mail operator run retry --command <id>` follow the same rules as the buttons below. A failed move or send cannot be retried there.
 
@@ -170,7 +171,7 @@ When Mail reports an unclear result, do not repeat a move, delete, flag change, 
 Creating, renaming, deleting, and subscribing folders depend on the current provider state. So do the mappings for Archive, Trash, Junk, Sent, and Drafts. With **Manage** access:
 
 :::steps
-1. Run **Rediscover folders** in **Mailbox tools → Mailbox health**.
+1. Run **Rediscover folders** in **… → Mailbox health**.
 2. Check that the folder is active and that the provider allows the required operation.
 3. Update the matching mapping or subscription if needed.
 4. Try the action once more.
@@ -182,4 +183,4 @@ Shared folders and folders of other users can be readable while creating, renami
 
 ## The mailbox was restored but still does not sync {icon="point"}
 
-This is expected. A restore leaves the mailbox paused on purpose. Someone with **Manage** access can then check credentials, connection health, and folder discovery before background work continues. Complete those checks in **Mailbox tools → Mailbox health**, then choose **Resume mailbox**.
+This is expected. A restore leaves the mailbox paused on purpose. Someone with **Manage** access can then check credentials, connection health, and folder discovery before background work continues. Complete those checks in **… → Mailbox health**, then choose **Resume mailbox**.

@@ -46,6 +46,10 @@ describe("@k2b/ui portable chat family", () => {
       "ContextUsage",
       "ContextPopup",
       "ContextPanel",
+      "Decision",
+      "Outcome",
+      "Preview",
+      "Mark",
     ]);
     for (const legacyExport of ["ChatTimeline", "ChatMessage", "ChatActivity", "ChatComposer", "ChatContextUsage"]) {
       expect(legacyExport in publicUi).toBe(false);
@@ -713,7 +717,9 @@ describe("@k2b/ui portable chat family", () => {
   test("uses a text-color shimmer instead of a color pulse for busy activities", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
 
-    expect(css).toContain('.k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"])');
+    expect(css).toContain(
+      '.k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])',
+    );
     expect(css).toContain("background-clip: text;");
     expect(css).toMatch(/animation: k2b-chat-activity-shimmer [\d.]+s linear infinite;/);
     expect(css).toContain("@keyframes k2b-chat-activity-shimmer");
@@ -725,7 +731,9 @@ describe("@k2b/ui portable chat family", () => {
   test("keeps semantic activity tones stronger than an optional identity accent", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
 
-    expect(css).toContain('.k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="danger"])');
+    expect(css).toContain(
+      '.k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])',
+    );
     expect(css).toContain("var(--k2b-chat-activity-accent) 78%, black");
     expect(css).toContain("var(--k2b-chat-activity-accent) 58%, white");
     expect(css).toContain('.k2b-chat-activity[data-body-inset="false"] > .k2b-chat-activity__body');
@@ -807,4 +815,33 @@ test("composer context actions expose their toggle state", () => {
   expect(html).toContain('aria-label="Hide tasks"');
   expect(html).toMatch(/role="tooltip"[^>]*>Hide tasks</);
   expect(html).toContain('aria-pressed="true"');
+});
+
+test("activity toggle SSR is stable, named, and controls only its body", () => {
+  const markup = (defaultOpen = false, body = true) =>
+    renderToString(() =>
+      createComponent(Chat.Activity, {
+        get label() {
+          return createComponent(Chat.Activity.Toggle, { children: "3 of 4 tasks" });
+        },
+        defaultOpen,
+        children: body ? "Task list" : undefined,
+      }),
+    );
+  const closed = markup();
+  expect(markup()).toBe(closed);
+  expect(closed).toContain('aria-expanded="false"');
+  const bodyId = closed.match(/aria-controls="([^"]+)"/)?.[1];
+  expect(bodyId).toBeTruthy();
+  expect(closed).toMatch(new RegExp(`<div id="${bodyId}" class="k2b-chat-activity__body" hidden`));
+  expect(closed).not.toMatch(/<(details|summary)\b/);
+  const opened = markup(true);
+  expect(opened).toContain('aria-expanded="true"');
+  expect(opened.match(/<div id="[^"]+" class="k2b-chat-activity__body"[^>]*>/)?.[0]).not.toContain("hidden");
+  const summary = renderToString(() => createComponent(Chat.Activity, { label: "Worked", children: "Steps" }));
+  expect(summary).toContain("<details");
+  expect(summary).toContain("<summary");
+  const plain = markup(false, false);
+  expect(plain).toContain("3 of 4 tasks");
+  expect(plain).not.toContain("<button");
 });

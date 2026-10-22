@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { APP_APPROVAL_LIMITS } from "./app-approval";
-import { CapabilityActionReviewSchema, CapabilityAppIdSchema } from "./capabilities";
+import { CapabilityActionReviewPresentationSchema, CapabilityAppIdSchema } from "./capabilities";
 
 export { APPROVAL_COUNTS_PATH, APPROVALS_API_PATH, APPROVALS_PAGE_PATH } from "./approval-paths";
 
@@ -42,7 +42,7 @@ export const PendingApprovalSchema = z
     /** What the person reads: the first line names the app and the Action, later lines add `Label: value` details. */
     sentence: z.string(),
     /** The owning app's review as the person saw it when Cloud asked. */
-    review: CapabilityActionReviewSchema.nullable(),
+    review: CapabilityActionReviewPresentationSchema.nullable(),
     /** Where the request waits. The title is chat content, written by a person or a model, never Cloud's own words. */
     requester: z.object({ kind: z.literal("chat"), appId: z.string(), title: z.string().nullable(), href: z.string() }).strict(),
     /** Ways the person may remember this approval, the same the chat card offers. */

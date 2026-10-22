@@ -10,6 +10,7 @@ import {
 } from "../contracts/capabilities";
 import {
   FILE_PROVIDER_NAME_CONFLICT,
+  FileProviderContextListInputSchema,
   FileProviderListDataSchema,
   FileProviderListInputSchema,
   FileProviderReadInputSchema,
@@ -74,6 +75,7 @@ const provider: FileProviderSource = {
   name: "Drive",
   icon: "ti ti-folders",
   list: "folder.list",
+  context: false,
   read: "file.read",
   maxBytes: 1024,
 };
@@ -102,8 +104,8 @@ describe("file provider discovery", () => {
     broken.manifest = { ...broken.manifest, queries: broken.manifest.queries.filter((query) => query.localId !== "file.read") };
     const sources = fileProviderSources([providerApp("zeta", "Zeta", 2048), plain, broken, providerApp("alpha", "Alpha")], "en");
     expect(sources).toEqual([
-      { appId: "alpha", name: "Alpha", icon: "ti ti-folders", list: "folder.list", read: "file.read", maxBytes: 1024 },
-      { appId: "zeta", name: "Zeta", icon: "ti ti-folders", list: "folder.list", read: "file.read", maxBytes: 2048 },
+      { appId: "alpha", name: "Alpha", icon: "ti ti-folders", list: "folder.list", context: false, read: "file.read", maxBytes: 1024 },
+      { appId: "zeta", name: "Zeta", icon: "ti ti-folders", list: "folder.list", context: false, read: "file.read", maxBytes: 2048 },
     ]);
   });
 
@@ -602,4 +604,41 @@ describe("reading a provider file", () => {
     });
     expect(peak).toBe(2);
   });
+});
+
+test("provider discovery detects explicit context support", () => {
+  const contextual = app(
+    "invoices",
+    "Invoices",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: { "folder.list": { ...list, input: FileProviderContextListInputSchema }, "file.read": read(1024) },
+      fileProvider: { list: "folder.list", read: "file.read" },
+    }),
+  );
+  expect(fileProviderSources([contextual, providerApp("drive", "Drive")], "en").map(({ appId, context }) => ({ appId, context }))).toEqual([
+    { appId: "drive", context: false },
+    { appId: "invoices", context: true },
+  ]);
+});
+
+test("sends context on every supporting provider page and never sends it to another provider", async () => {
+  const context = { refs: [{ type: "customers.customer", id: "c1" }] };
+  for (const supports of [true, false]) {
+    const calls: unknown[] = [];
+    const caller = {
+      locale: "en",
+      fetch: async (_url: string | URL | Request, init?: RequestInit) => {
+        calls.push(JSON.parse(String(init?.body)).input);
+        return json({ data: { writable: false, items: [], next: calls.length === 1 ? "page2" : null } });
+      },
+    };
+    const source = { ...provider, context: supports };
+    const first = await listProviderFolder(source, { parent: "docs", query: "invoice", context }, caller);
+    await listProviderFolder(source, { parent: "docs", query: "invoice", context, cursor: first.next! }, caller);
+    expect(calls).toEqual([
+      { parent: "docs", query: "invoice", limit: 50, ...(supports ? { context } : {}) },
+      { parent: "docs", query: "invoice", limit: 50, cursor: "page2", ...(supports ? { context } : {}) },
+    ]);
+  }
 });

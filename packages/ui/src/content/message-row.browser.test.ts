@@ -794,10 +794,10 @@ describe(`MessageRow in ${browserName}`, () => {
       expect(await rowOf(page, "m14").getByRole("button", { name: "👍 1 reaction" }).getAttribute("aria-pressed")).toBe("true");
       expect(
         await rowOf(page, "m12")
-          .locator(".k2b-message-row__reaction-list")
+          .locator(".k2b-reaction-bar__scroll")
           .evaluate((list) => list.scrollWidth > list.clientWidth),
       ).toBe(true);
-      expect(await rowOf(page, "m11").locator(".k2b-message-row__reaction").count()).toBe(0);
+      expect(await rowOf(page, "m11").locator(".k2b-reaction-bar__chip").count()).toBe(0);
 
       await page.evaluate(() => fixture.setReactions({}));
       await settle();
@@ -857,10 +857,11 @@ describe(`MessageRow in ${browserName}`, () => {
       ).toBe(1);
 
       // An empty, reserved bar shows "Add reaction" only while the message is hovered or focused.
-      const add = rowOf(page, "m14").getByRole("button", { name: "Add reaction" });
-      expect(await add.evaluate((button) => getComputedStyle(button).opacity)).toBe("0");
+      // The paint rule sits on the button's ReactionBar slot, `.k2b-reaction-bar__add`.
+      const add = rowOf(page, "m14").locator(".k2b-reaction-bar__add", { has: page.getByRole("button", { name: "Add reaction" }) });
+      expect(await add.evaluate((slot) => getComputedStyle(slot).opacity)).toBe("0");
       await rowOf(page, "m14").focus();
-      expect(await add.evaluate((button) => getComputedStyle(button).opacity)).toBe("1");
+      expect(await add.evaluate((slot) => getComputedStyle(slot).opacity)).toBe("1");
     } finally {
       await page.close();
     }
@@ -898,7 +899,7 @@ describe(`MessageRow in ${browserName}`, () => {
         }),
       );
       expect(await focused()).toMatchObject({ same: true, pressed: "false" });
-      expect(await rowOf(page, "m11").locator(".k2b-message-row__reaction").count()).toBe(2);
+      expect(await rowOf(page, "m11").locator(".k2b-reaction-bar__chip").count()).toBe(2);
       expect((await recorded(page)).toggled).toEqual(["m11 👍", "m11 👍"]);
     } finally {
       await page.close();
@@ -950,8 +951,8 @@ describe(`MessageRow in ${browserName}`, () => {
           Array.from(document.querySelectorAll<HTMLElement>(".k2b-virtual-feed__item"), (item) => {
             const row = item.querySelector(".k2b-message-row")!.getBoundingClientRect();
             const line = item.querySelector(".k2b-message-row__line")!;
-            const list = item.querySelector<HTMLElement>(".k2b-message-row__reaction-list")!;
-            const add = item.querySelector(".k2b-message-row__react")!.getBoundingClientRect();
+            const list = item.querySelector<HTMLElement>(".k2b-reaction-bar__scroll")!;
+            const add = item.querySelector(".k2b-reaction-bar__add")!.getBoundingClientRect();
             const text = line.querySelector(".k2b-message-row__receipt, .k2b-message-row__line-text");
             return {
               key: item.dataset.key,
@@ -1014,9 +1015,9 @@ describe(`MessageRow in ${browserName}`, () => {
       const reactions = rowOf(page, "r1").getByRole("group", { name: "Reactions" });
       expect(await reactions.getByRole("img", { name: "☕ your reaction: Robin" }).count()).toBe(1);
       expect(await reactions.getByRole("img", { name: "😀 1 reaction" }).count()).toBe(1);
-      expect(await rowOf(page, "r1").locator("button.k2b-message-row__reaction").count()).toBe(0);
+      expect(await rowOf(page, "r1").locator("button.k2b-reaction-bar__chip").count()).toBe(0);
 
-      const list = rowOf(page, "r1").locator(".k2b-message-row__reaction-list");
+      const list = rowOf(page, "r1").locator(".k2b-reaction-bar__scroll");
       await rowOf(page, "r1").focus();
       await page.keyboard.press("Tab");
       expect(await list.evaluate((element) => element === document.activeElement)).toBe(true);
@@ -1024,10 +1025,8 @@ describe(`MessageRow in ${browserName}`, () => {
       expect(await list.getAttribute("data-scroll-fade")).toBe("bottom");
       await page.keyboard.press("ArrowRight");
       await page.keyboard.press("ArrowRight");
-      await page.waitForFunction(() => document.querySelector(".k2b-message-row__reaction-list")!.scrollLeft >= 24);
-      await page.waitForFunction(
-        () => document.querySelector(".k2b-message-row__reaction-list")!.getAttribute("data-scroll-fade") === "both",
-      );
+      await page.waitForFunction(() => document.querySelector(".k2b-reaction-bar__scroll")!.scrollLeft >= 24);
+      await page.waitForFunction(() => document.querySelector(".k2b-reaction-bar__scroll")!.getAttribute("data-scroll-fade") === "both");
     } finally {
       await page.close();
     }
@@ -1069,7 +1068,7 @@ describe(`MessageRow in ${browserName}`, () => {
       await tap(file.x + 20, file.y + file.height - 1);
       expect(await recorded(page)).toMatchObject({ opened: ["Plan.pdf"], threadOpened: undefined });
 
-      const chip = await box("t2", ".k2b-message-row__reaction");
+      const chip = await box("t2", ".k2b-reaction-bar__chip");
       await tap(chip.x + chip.width / 2, chip.y - reach(chip.height) + 1);
       await tap(chip.x + chip.width / 2, chip.y + chip.height + reach(chip.height) - 1);
       expect((await recorded(page)).toggled).toEqual(["t2 👍", "t2 👍"]);
@@ -1088,6 +1087,35 @@ describe(`MessageRow in ${browserName}`, () => {
       await page.close();
     }
   }, 30_000);
+
+  (browserName === "chromium" ? test : test.skip)(
+    "a touch hold on a chat reaction shows names without toggling",
+    async () => {
+      const page = await open({ touch: true, rich: true });
+      const session = await page.context().newCDPSession(page);
+      try {
+        const chip = rowOf(page, "m11").locator(".k2b-reaction-bar__chip").first();
+        await chip.scrollIntoViewIfNeeded();
+        const box = await chip.boundingBox();
+        await session.send("Input.dispatchTouchEvent", {
+          type: "touchStart",
+          touchPoints: [{ x: box!.x + box!.width / 2, y: box!.y + box!.height / 2, id: 1 }],
+        });
+        await page.waitForTimeout(650);
+        const hint = rowOf(page, "m11").locator(".k2b-reaction-bar__hint");
+        expect(await hint.evaluate((element) => element.matches(":popover-open"))).toBe(true);
+        expect(await hint.textContent()).toBe("👍 Tobias, Mara, Robin, Minutes");
+        expect(await hint.getAttribute("data-touch")).toBe("");
+        await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await page.waitForTimeout(100);
+        expect((await recorded(page)).toggled).toEqual([]);
+      } finally {
+        await session.detach();
+        await page.close();
+      }
+    },
+    30_000,
+  );
 
   test("the thread bar, the read line, and the footer keep a fixed height whatever they show", async () => {
     const page = await open({ width: 320, locale: "de", rich: true });
@@ -1189,8 +1217,8 @@ describe(`MessageRow in ${browserName}`, () => {
                   // Text drawn on a fill of its own: the edited marker on the bubble, chips on their fill.
                   for (const [name, selector, fill] of [
                     ["edited", ".k2b-message-row__edited", ".k2b-message-row__bubble"],
-                    ["reaction", ".k2b-message-row__reaction", ".k2b-message-row__reaction"],
-                    ["own reaction", ".k2b-message-row__reaction[data-own]", ".k2b-message-row__reaction[data-own]"],
+                    ["reaction", ".k2b-reaction-bar__chip", ".k2b-reaction-bar__chip"],
+                    ["own reaction", ".k2b-reaction-bar__chip[data-own]", ".k2b-reaction-bar__chip[data-own]"],
                     ["file", ".k2b-message-row__file-name", ".k2b-message-row__file"],
                     ["file detail", ".k2b-message-row__file-detail", ".k2b-message-row__file"],
                   ] as const) {

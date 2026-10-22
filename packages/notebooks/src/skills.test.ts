@@ -16,6 +16,7 @@ test("app skill retains domain and declared cross-app guidance", async () => {
     "Never invent a `note://` target",
     "consider Spaces",
     ":::query",
+    ":::chart",
     ":::toc",
     ":::data",
     "original saved note's hash",

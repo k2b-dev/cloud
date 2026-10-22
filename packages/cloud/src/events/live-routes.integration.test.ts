@@ -24,6 +24,14 @@ const suite = suiteFor("database", "nats", "valkey");
 const APP = "livetest";
 const readers = new Map<string, Set<string>>();
 const failing = new Set<string>();
+const serverCloses: { code: number; reason: string }[] = [];
+const recordedWebsocket = {
+  ...websocket,
+  close(ws: Parameters<typeof websocket.close>[0], code: number, reason: string) {
+    serverCloses.push({ code, reason });
+    websocket.close(ws, code, reason);
+  },
+};
 
 /** Access here belongs to the person, whatever credential the socket uses. */
 const principal = ({ accessSubject }: LiveViewer) =>
@@ -86,10 +94,10 @@ const open = async (pod: number, headers: Record<string, string>) => {
   };
 };
 
-const until = async (condition: () => boolean, timeoutMs = 5_000) => {
+const until = async (condition: () => boolean, timeoutMs = 5_000, message = "Condition not reached in time") => {
   const deadline = Date.now() + timeoutMs;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error("Condition not reached in time");
+    if (Date.now() > deadline) throw new Error(message);
     await Bun.sleep(20);
   }
 };
@@ -108,7 +116,12 @@ suite("live routes", () => {
     LIVE_LIMITS.keysEveryRounds = 1;
     origin = publicCloudOrigin(await settings.get<string>("app.url"));
     for (const pod of pods) {
-      pod.server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: new Hono().route("/live", pod.routes).fetch, websocket });
+      pod.server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch: new Hono().route("/live", pod.routes).fetch,
+        websocket: recordedWebsocket,
+      });
     }
     stopOutbox = await startLiveOutbox(APP);
   });
@@ -309,13 +322,20 @@ suite("live routes", () => {
         for (let n = 0; n < 600; n++) await live.publish(tx, { key: "flood", data: { n, pad } });
       });
       live.wake();
-      await Bun.sleep(8_000);
+      await until(
+        () => serverCloses.some(({ code, reason }) => code === 1013 && reason === "backpressure"),
+        30_000,
+        "The server did not close the slow client with 1013 backpressure",
+      );
+      // Resume at once: the close frame waits behind buffered frames. Bun drops a peer
+      // that has not read its close after about 12 seconds; a later resume reads 1006.
       client.kill("SIGCONT");
-      await Promise.race([client.exited, Bun.sleep(20_000)]);
-      await lines;
+      await until(() => output.join("").includes("closed "), 10_000, "The slow client did not report its close");
       expect(output.join("")).toContain("closed 1013");
     } finally {
       client.kill("SIGKILL");
+      await client.exited;
+      await lines;
     }
   }, 60_000);
 
@@ -349,8 +369,9 @@ suite("live routes", () => {
     try {
       const signer = await prepareIdentitySigner("oauth");
       const { issuer } = await getIdentityRuntimeConfig();
+      const [account] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${hal.id}::uuid`;
       const token = (scope: string) =>
-        new SignJWT({ token_use: "access", client_id: clientId, id: hal.id, scope })
+        new SignJWT({ token_use: "access", client_id: clientId, id: hal.id, auth_epoch: Number(account!.auth_epoch), scope })
           .setProtectedHeader({ alg: "RS256", kid: signer.kid })
           .setIssuer(issuer)
           .setAudience("cloud")
@@ -380,7 +401,12 @@ suite("live routes", () => {
     allow("stop", ivy);
     // A mount that served no socket before the stop, like a quiet replica.
     const quiet = { routes: live.routes(channels), server: null as ReturnType<typeof Bun.serve> | null };
-    quiet.server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: new Hono().route("/live", quiet.routes).fetch, websocket });
+    quiet.server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: new Hono().route("/live", quiet.routes).fetch,
+      websocket: recordedWebsocket,
+    });
     pods.push(quiet);
     const closed = async (socket: Awaited<ReturnType<typeof open>>) => {
       await until(() => socket.state.closed !== null);

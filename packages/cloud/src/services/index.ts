@@ -8,6 +8,7 @@ export { accountIdentities, AccountIdentityError } from "./accounts/identities";
 export type { AccountIdentityUser, AccountIdentityGroup, AccountIdentityPage, AccountIdentityAvailability } from "./accounts/identities";
 export type { AccountIdentityReconciliation } from "./accounts/identity-reconciliation";
 export { providers } from "./providers";
+export { createAllowedNetworkFetch } from "./allowed-network-fetch";
 export { requestPublicHttps, type PublicHttpInput } from "./public-http";
 export { authFlows } from "./auth-flows";
 export { toPgIntArray, toPgTextArray, toPgUuidArray, escapeLikePattern, isUniqueViolation } from "./postgres";
@@ -113,8 +114,8 @@ export type { AccountLifecycleNotificationSender } from "./account-lifecycle/not
 export { lifecycleJobs } from "./account-lifecycle/scheduler";
 
 export { settings } from "./settings/namespace";
-export { loadCache, get, set, remove, getAll } from "./settings";
-export type { SettingEntry } from "./settings";
+export { loadCache, get, read, readStates, set, remove, getAll, SettingUnreadableError } from "./settings";
+export type { SettingEntry, SettingRead, StoredSettingState } from "./settings";
 export { SETTINGS, SETTINGS_MAP, registerSettings } from "./settings/defaults";
 export { validateSettingValue, normalizeSettingValue, getSettingLabel } from "./settings/defaults";
 export type { SettingDef, SettingKind, SettingOption } from "./settings/defaults";
@@ -163,6 +164,9 @@ export {
   renderHtmlToPdfWithConfig,
   renderTemplatePdfPreview,
   testGotenberg,
+  preparePdfImage,
+  PDF_IMAGE_MAX_INPUT_BYTES,
+  PDF_IMAGE_MAX_BOXES,
 } from "./pdf";
 export type {
   BuildPresetPdfHtmlInput,
@@ -183,6 +187,12 @@ export type {
   TemplatePdfPreviewError,
   TemplatePdfPreviewPhase,
   TemplatePdfPreviewResult,
+  PdfImageBox,
+  PdfImageVariant,
+  PdfImageErrorCode,
+  PreparePdfImageInput,
+  PreparePdfImageOptions,
+  PreparePdfImageResult,
 } from "./pdf";
 
 export { createSyncOpsRoutes, SYNC_OPS_DEAD_LETTER_LIMIT } from "./sync-ops";
@@ -197,7 +207,16 @@ export type {
 
 export { latestTopicCursor } from "./topic-cursor";
 export { readAccountCategoryPolicy, isAccountCategoryAllowed } from "./account-category-policy";
-export { AppApprovalError, appApproval, type AppDeviceAdministrator, type AppDeviceEnrollmentNotice } from "./app-approval";
+export {
+  AppApprovalError,
+  appApproval,
+  type AppDeviceAdministrator,
+  type AppDeviceEnrollmentNotice,
+  type AppApprovalConfig,
+  type AppTerminalLogins,
+  type AppTerminalLoginInput,
+  readAppApprovalConfig,
+} from "./app-approval";
 export { PwaError, pwaDevices, type PwaDeviceAdministrator, type PwaDevicePairedNotice } from "./pwa-devices";
 export { legalConsent } from "./legal-consent";
 
@@ -208,6 +227,8 @@ export type { WebVitalsOverview, WebVitalsQuery, WebVitalMetric, WebVitalName } 
 
 export { mail } from "./outgoing-mail";
 export type {
+  MailContent,
+  MailContentContext,
   MailProfile,
   MailAttachment,
   MailMessage,
@@ -218,3 +239,29 @@ export type {
   MailPage,
   MailServiceError,
 } from "../contracts/outgoing-mail";
+
+export {
+  NetworkTargetBlockedError,
+  isNetworkTargetBlocked,
+  pinnedNetworkLookup,
+  resolvePublicNetworkAddresses,
+  resolveAllowedNetworkAddresses,
+} from "./network-security";
+export type { NetworkLookup, PublicNetworkAddress } from "./network-security";
+
+export { geoip } from "./geoip";
+export {
+  knownBrowsers,
+  KNOWN_BROWSER_LIMITS,
+  SIGN_IN_METHODS,
+  type SignInMethod,
+  type NewBrowserSignInNotice,
+  type NewBrowserSignInNotifier,
+} from "./known-browsers";
+export { LASTING_ACCESS_SIGN_IN_SECONDS, requireConfirmedBrowserSignIn } from "./session/recent";
+
+export { deviceOffersApproval } from "./approvals/device";
+
+/** Core-owned geo implementation; applications use geoClient from the server entry. */
+export { coreGeo, createGeoService } from "./geo/service";
+export { migrate as migrateGeo } from "./geo/migrate";

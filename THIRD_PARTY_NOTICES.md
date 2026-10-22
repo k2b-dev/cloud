@@ -9,6 +9,12 @@ materials.
 
 ## Runtime and Distributed Assets
 
+- The Core image contains the DB-IP IP to City Lite and IP to ASN Lite
+  databases, © DB-IP.com, licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+  Attribution: [IP Geolocation by DB-IP](https://db-ip.com).
+  Converted from gzip only; otherwise unmodified.
+
 - IBM Plex fonts are provided under the SIL Open Font License 1.1.
 - Tabler Icons are used for UI iconography. The package metadata for
   `@tabler/icons-webfont` may omit the `license` field in some published
@@ -21,6 +27,11 @@ materials.
 
 - Grids uses `@stackforge-eu/factur-x`, which is EUPL-1.2, for its German
   E-Invoice renderer.
+
+- Tools ships `libheif-js` 1.23.5 under LGPL-3.0, including `libheif`
+  (LGPL-3.0) and `libde265` (LGPL-3.0). It reaches browsers only as a lazily
+  loaded Tools chunk for HEIC/HEIF conversion. LGPL-3.0 is compatible with
+  Cloud's AGPL-3.0 distribution; these libraries retain their LGPL terms.
 
 ## Dependency Licenses
 

@@ -176,12 +176,16 @@
   }
 }
 
+/* The current navigation target carries the app's navigation fill and ink. */
 @utility sidebar-icon-action-active {
-  @apply bg-blue-50 text-blue-700 hover:bg-blue-100 hover:text-blue-800;
-  @apply dark:bg-blue-950/45 dark:text-blue-300 dark:hover:bg-blue-900/45 dark:hover:text-blue-200;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-blue-500) 22%, transparent),
-    var(--ui-control-bevel);
+  color: var(--ui-app-accent-text);
+  background: var(--ui-app-selected-nav);
+  box-shadow: none;
+
+  &:hover {
+    color: var(--ui-app-accent-text);
+    background: var(--ui-app-selected-nav);
+  }
 }
 
 @utility sidebar-icon-action-success {
@@ -225,13 +229,13 @@
 
 @utility sidebar-item-active {
   position: relative;
-  background: var(--ui-selected);
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
+  background: var(--ui-app-selected-nav);
+  color: var(--ui-app-accent-text);
   @apply font-medium;
   box-shadow: var(--ui-shadow-surface);
 
   &:hover {
-    color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 88%, black);
+    color: var(--ui-app-accent-text);
   }
 
   &::before {
@@ -239,14 +243,6 @@
     background: var(--app-accent, var(--color-blue-500));
     @apply pointer-events-none absolute left-1 top-1/2 h-3.5 w-0.5 -translate-y-1/2 rounded-full;
   }
-}
-
-.dark .sidebar-item-active {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
-}
-
-.dark .sidebar-item-active:hover {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 45%, white);
 }
 
 @utility sidebar-item-meta {
@@ -722,13 +718,13 @@
 @utility list-item-active {
   border-left: 0;
   position: relative;
-  background: var(--ui-selected);
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
+  background: var(--ui-app-selected);
+  color: var(--ui-app-accent-text);
   @apply rounded-lg font-medium;
   box-shadow: var(--ui-shadow-surface);
 
   &:hover {
-    color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 88%, black);
+    color: var(--ui-app-accent-text);
   }
 
   &::before {
@@ -738,22 +734,16 @@
   }
 }
 
-.dark .list-item-active {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white);
-}
-
-.dark .list-item-active:hover {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 45%, white);
-}
-
 @utility section-label {
   @apply text-[0.6875rem] font-medium normal-case tracking-normal mb-5 text-dimmed select-none;
 }
 
+/* A rail control: a 44 px target in the 56 px rail. Its icon is 20 px
+   (`text-xl` on the icon). */
 @utility rail-item {
   border-right: 0;
   border-radius: var(--ui-radius-surface);
-  @apply w-8 h-8;
+  @apply w-11 h-11;
   @apply flex items-center justify-center text-dimmed;
   @apply transition-[background-color,color] duration-150 ease-out;
 
@@ -793,6 +783,12 @@
   text-align: center;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* On the corner of the rail icon, not of its 44 px target. */
+.rail-item > .cloud-app-badge {
+  top: 0.25rem;
+  right: 0.1875rem;
 }
 
 .app-icon > .cloud-app-badge {
@@ -841,8 +837,8 @@
 .layout-profile-preferences__link,
 .layout-profile-preferences__dropdown-trigger {
   display: none;
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -1055,23 +1051,14 @@
   padding: 0 0.25rem;
 }
 
+/* The box and the app ink; the chip comes from the shared `k2b-icon-tile` on the same element. */
 .sidebar-header-icon {
   width: 1.4375rem;
   height: 1.4375rem;
-  border-radius: 0.4375rem;
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 9%, transparent) !important;
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 80%, black) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 16%, transparent);
 }
 
-.sidebar-header-icon-mobile {
-  background: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 9%, transparent) !important;
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 80%, black) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 16%, transparent);
-}
-
-.dark :is(.sidebar-header-icon, .sidebar-header-icon-mobile) {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-400)) 58%, white) !important;
+:is(.sidebar-header-icon, .sidebar-header-icon-mobile) {
+  color: var(--ui-app-accent-text) !important;
 }
 
 .sidebar-header-title {
@@ -1107,9 +1094,9 @@
 }
 
 .sidebar-icon-action-active {
-  color: color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 78%, black);
-  background: var(--ui-selected);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-accent, var(--color-blue-500)) 20%, transparent);
+  color: var(--ui-app-accent-text);
+  background: var(--ui-app-selected-nav);
+  box-shadow: none;
 }
 
 :is(.sidebar-item-active, .list-item-active) {
@@ -1122,7 +1109,7 @@
 }
 
 .file-tree > li > div[data-state="selected"] {
-  background: var(--ui-selected) !important;
+  background: var(--ui-app-selected) !important;
   box-shadow: none !important;
 }
 

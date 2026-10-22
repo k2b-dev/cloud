@@ -7,6 +7,72 @@ with the owning Solid component. `Navigation` renders readable, nested rows.
 The library does not own the app router, subscriptions, permissions, or a
 mobile launcher.
 
+Active rows use `--k2b-app-workspace-selected` with `--k2b-app-workspace-active` ink.
+
+## Container context
+
+Use `context: true` on the current container, such as a mailbox whose folder
+is the active destination. Its name stays semibold while the folder alone
+keeps `active` and `aria-current="page"`. Set `context: false` on other
+containers to show their names and icons in the readable muted text tone. Omit
+`context` to keep the existing appearance.
+
+This presentation applies only to the marked row. Children, status colors,
+actions, and keyboard focus keep their own treatment. A context marker never
+selects or disables a destination; `active` still controls selection ink and
+fill, even on a row with `context: false`. The owner derives both fields from
+its existing location state. The renderer adds no navigation state.
+
+```tsx
+{
+  id: "mailbox",
+  label: "Support",
+  href: "/mail/support",
+  context: true,
+  children: [{ id: "inbox", label: "Inbox", href: "/mail/support/inbox", active: true }],
+}
+```
+
+## Label overflow
+
+Navigation labels fade, never end in an ellipsis. Use the shared utilities for
+app-owned sidebar, tree, rail, tab, chip, and launcher labels inside `.k2b-ui`:
+
+- `k2b-truncate-fade` keeps one line and fades its last 1.5rem.
+- `k2b-truncate-fade-lines` wraps up to two lines and fades the last line over
+  half its width. Set `--k2b-truncate-fade-lines` to change the line count. For
+  one line, set it to `1` together with `white-space: nowrap`. Give it a line
+  height of at least 1.3, or glyphs that reach past the line box count as
+  overflow and fade a label that fits.
+- `--k2b-truncate-fade-inset` reserves the covered end when hover actions
+  overlay the text. It inherits from the row and includes the fade before the
+  actions. A fading label inside another one or inside row metadata resets it
+  to `0px`, because it does not end where the actions start.
+
+Put the class on a non-focusable inner text element that is a block or flex
+item. A mask on a link, button, or focusable heading would clip its focus
+ring. Keep the full text in the DOM for the accessible name.
+
+Labels that fit stay undimmed. CSS scroll timelines enable the fade only when
+text overflows. An engine without scroll timelines cannot tell the two apart,
+so there an overflowing label ends in an ellipsis and a label that fits stays
+as it is. WebKit can update the fade a moment late after a container changes
+width. RTL text fades on the left. The mask works on any fill, including
+hover, selection, and dark surfaces. Menu rows that wrap without clipping can
+keep wrapping.
+
+The detection runs as CSS animations on scroll timelines, which keep running
+and never finish. A browser test that waits for page animations to settle
+selects `document.getAnimations().filter((animation) => animation.timeline === document.timeline)`.
+
+```tsx
+// The row is a flex container, so the label is a flex item.
+<a href="/projects" class="project-row">
+  <i class="ti ti-folder" aria-hidden="true" />
+  <span class="k2b-truncate-fade">{project.name}</span>
+</a>
+```
+
 ## Import and example
 
 ```tsx
@@ -24,7 +90,7 @@ const navigation = createNavigation({
 
 Items use stable, unique `id` values, a `label`, and either `href`, an `action`
 key, or `children`. Optional fields are `icon`, `iconLabel`, `badge` (string or
-number), `description`, `status`, `active`, `disabled`, `color`, secondary
+number), `description`, `status`, `active`, `context`, `disabled`, `color`, secondary
 `actions`, and `inlineActions`. Everything in the item tree is serializable;
 functions remain in the controller.
 
@@ -143,7 +209,8 @@ The host owns opening, closing, history, and the source of live updates.
 
 ## Example
 
-The live showcase renders one controller inline and inside a sheet. Simulate a
+The live showcase renders one controller inline and inside a sheet. Select the
+project to see its parent context stay strong beside the active child. Simulate a
 live update while the sheet is open to check that the badge changes in place
 and that the status of the first row under **Today** comes and goes without
 moving a row.

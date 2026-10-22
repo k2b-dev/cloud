@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { generateSpecs } from "hono-openapi";
 import {
   CreateOAuthClientSchema,
   DynamicClientRegistrationRequestSchema,
@@ -6,8 +7,61 @@ import {
   OAuthClientParamSchema,
   UpdateOAuthClientSchema,
 } from "./contracts";
+import oauthRoutes from "./oauth";
 
 describe("OAuth contracts", () => {
+  test("OpenAPI documents the login ttl input and optional refresh lifetime output", async () => {
+    const spec = await generateSpecs(oauthRoutes);
+    const tokenRoute = spec.paths["/oauth/token"]?.post;
+    expect(tokenRoute?.requestBody).toMatchObject({
+      content: {
+        "application/x-www-form-urlencoded": {
+          schema: {
+            oneOf: expect.arrayContaining([
+              expect.objectContaining({
+                properties: expect.objectContaining({ ttl: expect.objectContaining({ type: "string", maxLength: 15 }) }),
+              }),
+              expect.objectContaining({
+                properties: expect.objectContaining({
+                  grant_type: expect.objectContaining({ const: "refresh_token" }),
+                  ttl: expect.objectContaining({ description: "Not accepted for this grant; sending it returns invalid_request." }),
+                }),
+              }),
+            ]),
+          },
+        },
+      },
+    });
+    expect(spec.paths["/oauth/device_authorization"]?.post?.requestBody).toMatchObject({
+      content: {
+        "application/x-www-form-urlencoded": {
+          schema: {
+            properties: { ttl: { type: "string", maxLength: 15 }, login_hint: { type: "string", minLength: 1, maxLength: 254 } },
+          },
+        },
+      },
+    });
+    const deviceRoute = spec.paths["/oauth/device_authorization"]?.post;
+    expect(deviceRoute?.responses?.["503"]).toBeDefined();
+    const deviceResponse = deviceRoute?.responses?.["200"];
+    if (!deviceResponse || "$ref" in deviceResponse) throw new Error("Device response schema is missing");
+    expect(deviceResponse.content?.["application/json"]?.schema).toMatchObject({
+      anyOf: [
+        { required: ["device_code", "user_code", "verification_uri", "verification_uri_complete", "expires_in", "interval"] },
+        {
+          required: ["device_code", "comparison", "expires_in", "interval"],
+          properties: { comparison: { pattern: "^\\d{6}$" }, expires_in: { const: 300 }, interval: { const: 5 } },
+        },
+      ],
+    });
+    const response = tokenRoute?.responses?.["200"];
+    if (!response || "$ref" in response) throw new Error("Token response schema is missing");
+    const schema = response.content?.["application/json"]?.schema;
+    if (!schema || "$ref" in schema) throw new Error("Token response schema is missing");
+    expect(schema.properties?.refresh_token_expires_in).toMatchObject({ type: "integer", minimum: 0 });
+    expect(schema.required).not.toContain("refresh_token_expires_in");
+  });
+
   test("normalizes create payloads without changing valid client intent", () => {
     const parsed = CreateOAuthClientSchema.parse({
       name: "  Demo client  ",

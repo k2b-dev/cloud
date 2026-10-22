@@ -1,5 +1,15 @@
 import { expect, test } from "bun:test";
+import {
+  type CloudAiChartInput,
+  cloudAiAppChartSchema,
+  cloudAiChartRows,
+  cloudAiChartTable,
+  cloudAiChartTooltip,
+} from "@k2b/cloud/ai/browser";
+import { escapeXml } from "@k2b/stdlib";
+import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { createCloud } from "./cloud";
+import { CloudError } from "./errors";
 import { boundMoney, chart, chartOptions, chartSvg, html } from "./lib";
 import { parseCsv, toCsv } from "./sheet-lib";
 
@@ -54,7 +64,8 @@ test("chart thins complete labels and always supplies an escaped accessible name
   );
   expect(markup).not.toContain("…");
   expect(markup).toContain(labels[0]!);
-  expect(labels.filter((label) => markup.includes(label)).length).toBeLessThan(labels.length);
+  const axisText = [...markup.matchAll(/<text\b[^>]*>([^<]*)<\/text>/g)].map((match) => match[1]);
+  expect(labels.filter((label) => axisText.includes(label)).length).toBeLessThan(labels.length);
   expect(markup).toContain('role="img" aria-label="A &amp; B — &quot;report&quot;"');
   expect(String(chart({ kind: "sparkline", data: [1, 2] }, "en-US"))).toContain('role="img"');
 });
@@ -440,4 +451,213 @@ test("an app stat shows its title like every other kind", () => {
   const markup = String(chart({ kind: "stat", title: "Revenue", subtitle: "EUR", value: 12, delta: 2, better: "up" }, "en"));
   expect(markup).toContain(">Revenue</text>");
   expect(markup).toContain('aria-label="Revenue — EUR"');
+});
+
+test("cloud.chart preserves shared tooltip data and rejects unknown tooltip keys", () => {
+  const tooltip = { label: "Umsatz", format: { style: "currency" as const, currency: "EUR" } };
+  const options = { kind: "bar", data: [{ label: "Jan", value: 1200 }], tooltip };
+  const markup = String(chart(options, "de-DE"));
+  const id = /data-chart-id="([^"]+)"/.exec(markup)?.[1];
+  expect(chartOptions.get(id ?? "")?.input).toMatchObject({ tooltip });
+  expect(() => chart({ ...options, tooltip: { ...tooltip, unknown: true } }, "de-DE")).toThrow(CloudError);
+  expect(() => chart({ ...options, tooltip: { ...tooltip, unknown: true } }, "de-DE")).toThrow(/tooltip/);
+});
+
+const decodeChartAttribute = (value: string) =>
+  value
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;|&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+
+/** Read the compact table without a DOM, preserving exactly the text a browser receives. */
+const printedTable = (markup: string) => {
+  expect([...markup.matchAll(/<table\b/g)]).toHaveLength(1);
+  const [drawing, table] = markup.split('<table class="k2b-chart__table" hidden>');
+  expect(drawing).toEndWith("</div></div>");
+  expect(drawing).not.toContain("<table");
+  expect(markup).toEndWith("</table>");
+  expect(table).toBeDefined();
+  const cells = (row: string) => [...row.matchAll(/<td(?: class="num")?>([\s\S]*?)<\/td>/g)].map((cell) => decodeChartAttribute(cell[1]!));
+  return {
+    caption: decodeChartAttribute(/<caption>([\s\S]*?)<\/caption>/.exec(table!)![1]!),
+    headers: [...table!.matchAll(/<th scope="col"( class="num")?>([\s\S]*?)<\/th>/g)].map((cell) => ({
+      label: decodeChartAttribute(cell[2]!),
+      numeric: Boolean(cell[1]),
+    })),
+    rows: [.../<tbody>([\s\S]*?)<\/tbody>/.exec(table!)![1]!.matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map((row) => cells(row[1]!)),
+    numericCells: [...table!.matchAll(/<td class="num">/g)].length,
+  };
+};
+
+for (const input of [
+  {
+    kind: "bar",
+    title: "Umsatz",
+    data: [
+      { label: `Jan <&"' <text x="1" y="2">`, value: 1200 },
+      { label: "Feb", value: 900 },
+    ],
+  },
+  {
+    kind: "line",
+    title: "Umsatz",
+    series: [
+      {
+        label: "Shop",
+        data: [
+          { x: 1, y: 1200 },
+          { x: 2, y: 900 },
+        ],
+      },
+    ],
+  },
+  {
+    kind: "line",
+    title: "Umsatz",
+    subtitle: "By shop",
+    series: [
+      {
+        label: "Shop A",
+        data: [
+          { x: 1, y: 1200 },
+          { x: 2, y: 900 },
+        ],
+      },
+      {
+        label: "Shop B",
+        data: [
+          { x: 1, y: 800 },
+          { x: 2, y: 700 },
+        ],
+      },
+    ],
+  },
+  { kind: "scatter", title: "Umsatz", series: [{ data: [{ x: 1, y: 1200 }] }] },
+  { kind: "pie", title: "Umsatz", data: [{ label: "Jan", value: 1200 }] },
+  { kind: "donut", title: "Umsatz", data: [{ label: "Jan", value: 1200 }] },
+  { kind: "heatmap", title: "Umsatz", data: [{ x: "Jan", y: "Shop", value: 1200 }] },
+  { kind: "stat", title: "Umsatz", value: 1200, delta: 100, sparkline: [1000, 1200] },
+  { kind: "histogram", title: "Umsatz", data: [900, 1200], bins: [800, 1000, 1300] },
+  { kind: "boxplot", title: "Umsatz", data: [{ label: "Jan", values: [1, 1, 1, 1, 20] }] },
+  { kind: "gauge", title: "Umsatz", value: 1200, max: 2000 },
+  { kind: "barGauge", title: "Umsatz", data: [{ label: "Jan", value: 1200 }], max: 2000 },
+  { kind: "sparkline", title: "Umsatz", data: [900, 1200] },
+] satisfies CloudAiChartInput[])
+  test(`app ${input.kind} print table, marks and redraws use exactly the chat formatter`, () => {
+    const options = { ...input, tooltip: { label: "Umsatz", format: { style: "currency" as const, currency: "EUR" } } };
+    const markup = String(chart(options, "de-DE"));
+    const expected = cloudAiChartTable(cloudAiAppChartSchema().parse(options), "de-DE");
+    expect(printedTable(markup)).toEqual({
+      caption: [input.title, "subtitle" in input ? input.subtitle : undefined].filter(Boolean).join(" — "),
+      headers: expected.columns.map(({ label, numeric }) => ({ label, numeric })),
+      rows: expected.rows.map((row) => expected.columns.map((col) => row.cells[col.id] ?? "")),
+      numericCells: expected.rows.length * expected.columns.filter((col) => col.numeric).length,
+    });
+    const saved = chartOptions.get(/data-chart-id="([^"]+)"/.exec(markup)?.[1] ?? "");
+    if (saved) expect(chartSvg(saved, "de-DE", 300, 280)).not.toContain("<table");
+    for (const svg of [markup, ...(saved ? [chartSvg(saved, "de-DE", 300, 280)] : [])]) {
+      const rows = cloudAiChartRows(options, "de-DE");
+      const marks = [...svg.matchAll(/data-chart-datum="([^"]*)" data-chart-tooltip='([^']*)'><title>([\s\S]*?)<\/title>/g)];
+      expect(marks.length).toBeGreaterThan(0);
+      expect(marks.length).toBe([...svg.matchAll(/data-chart-datum=/g)].length);
+      for (const mark of marks) {
+        const datum: unknown = JSON.parse(decodeChartAttribute(mark[1]!));
+        if (!isChartDatum(datum)) throw new Error("Invalid mark");
+        const row = rows.add(datum);
+        const tooltip = cloudAiChartTooltip(rows.columns(), row);
+        expect(JSON.parse(decodeChartAttribute(mark[2]!))).toEqual(JSON.parse(JSON.stringify(tooltip)));
+        expect(mark[3]).toBe(escapeXml([tooltip.title, ...tooltip.rows.map((r) => `${r.label}: ${r.value}`)].filter(Boolean).join(" · ")));
+      }
+    }
+  });
+
+test("app tooltips keep German currency spacing and function formats through redraws", () => {
+  for (const extra of [
+    { tooltip: { label: "Umsatz", format: { style: "currency", currency: "EUR" } } },
+    { yAxis: { format: (v: number) => `${v} kWh` } },
+    { format: (v: number) => `${v} units`, yAxis: { format: (v: number) => `${v} kWh` } },
+  ]) {
+    const markup = String(chart({ kind: "bar", title: "Umsatz", data: [{ label: "Jan", value: 1200 }], ...extra }, "de-DE"));
+    const saved = chartOptions.get(/data-chart-id="([^"]+)"/.exec(markup)?.[1] ?? "");
+    if (!saved) throw new Error("Missing redraw options");
+    for (const svg of [markup, chartSvg(saved, "de-DE", 300, 280)]) {
+      const rows = cloudAiChartRows(saved.input, "de-DE", { formats: { x: saved.xFormat, y: saved.yFormat, value: saved.format } });
+      const mark = /data-chart-datum="([^"]*)" data-chart-tooltip='([^']*)'/.exec(svg)!;
+      const datum: unknown = JSON.parse(decodeChartAttribute(mark[1]!));
+      if (!isChartDatum(datum)) throw new Error("Invalid mark");
+      const row = rows.add(datum);
+      expect(JSON.parse(decodeChartAttribute(mark[2]!))).toEqual(cloudAiChartTooltip(rows.columns(), row));
+      expect(svg).toContain(
+        "tooltip" in extra
+          ? "<title>Jan · Umsatz: 1.200,00\u00a0€</title>"
+          : `<title>Jan · Wert: 1200 ${"format" in extra ? "units" : "kWh"}</title>`,
+      );
+    }
+  }
+});
+
+test("chart print tables preserve German currency, custom formats and escaped text", () => {
+  const currency = String(
+    chart(
+      {
+        kind: "bar",
+        title: "Umsatz",
+        data: [{ label: "Jan", value: 1200 }],
+        tooltip: { label: "Umsatz", format: { style: "currency", currency: "EUR" } },
+      },
+      "de-DE",
+    ),
+  );
+  expect(printedTable(currency).headers.map((col) => col.label)).toEqual(["Kategorie", "Umsatz"]);
+  expect(printedTable(currency).rows).toEqual([["Jan", "1.200,00\u00a0€"]]);
+
+  const custom = String(
+    chart(
+      {
+        kind: "bar",
+        data: [
+          { label: "Jan", value: 12 },
+          { label: "Feb", value: 8 },
+        ],
+        format: (v: number) => `${v} pcs`,
+      },
+      "en",
+    ),
+  );
+  expect(printedTable(custom).caption).toBe("bar chart");
+  expect(printedTable(custom).rows).toEqual([
+    ["Jan", "12 pcs"],
+    ["Feb", "8 pcs"],
+  ]);
+  const tooltips = [...custom.matchAll(/data-chart-tooltip='([^']*)'/g)].map((match) => JSON.parse(decodeChartAttribute(match[1]!)));
+  expect(tooltips).toEqual(printedTable(custom).rows.map(([title, value]) => ({ title, rows: [{ label: "Value", value }] })));
+
+  const hostile = String(
+    chart(
+      {
+        kind: "bar",
+        title: 'A & "B"',
+        data: [{ label: "<img src=x onerror=alert(1)>", value: 1 }],
+        tooltip: { label: '<Value & "units">' },
+      },
+      "en",
+    ),
+  );
+  expect(hostile).not.toContain("<img");
+  const table = hostile.slice(hostile.indexOf("<table"));
+  expect(table).toContain("<caption>A &amp; &quot;B&quot;</caption>");
+  expect(table).toContain("<td>&lt;img src=x onerror=alert(1)&gt;</td>");
+  expect(table).toContain("&lt;Value &amp; &quot;units&quot;&gt;</th>");
+});
+
+test("an uninspectable empty stat omits its print table", () => {
+  expect(String(chart({ kind: "stat", value: null }, "en"))).not.toContain("<table");
+});
+
+test("a gauge label with replacement patterns stays literal in its mark data", () => {
+  const markup = String(chart({ kind: "gauge", title: "Margin", value: 42, label: "Profit $& costs $$" }, "en"));
+  const encoded = /data-chart-datum="([^"]*)" data-chart-tooltip/.exec(markup)?.[1];
+  expect(JSON.parse(decodeChartAttribute(encoded ?? "")).label).toBe("Profit $& costs $$");
 });

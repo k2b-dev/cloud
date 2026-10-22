@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { createSignal } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
+import type { AppWorkspaceLayoutState } from "../src/layout/app-workspace-state";
 import { createDomTestHarness } from "./dom";
 
 describe("@k2b/ui AppWorkspace behavior", () => {
@@ -8,6 +9,111 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
   }
+
+  for (const defaultSize of [208, 280])
+    for (const kind of ["sidebar", "drawer"] as const)
+      test(`double-click resets a reactive ${kind} handle (sidebar default ${defaultSize}) and forgets its saved size`, async () => {
+        const dom = createDomTestHarness();
+        const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+        const { installAppWorkspaceController } = await import("../src/layout/app-workspace-controller");
+        const initial = { version: 2 as const, sidebarWidth: 300, sidebarCollapsed: true, drawerHeights: { activity: 320, other: 280 } };
+        const [state, setState] = createSignal<AppWorkspaceLayoutState>(initial);
+        const [sidebarHidden, setSidebarHidden] = createSignal(false);
+        const dispose = render(
+          () => (
+            <AppWorkspace controller={false} layoutState={state}>
+              <AppWorkspace.Sidebar id="folders" collapsible defaultSize={defaultSize} hidden={sidebarHidden()}>
+                <AppWorkspace.SidebarDesktop>Folders</AppWorkspace.SidebarDesktop>
+              </AppWorkspace.Sidebar>
+              <AppWorkspace.Content>
+                <AppWorkspace.Main>Message</AppWorkspace.Main>
+              </AppWorkspace.Content>
+              <AppWorkspace.BottomDrawer id="activity" open height="sm">
+                Activity
+              </AppWorkspace.BottomDrawer>
+            </AppWorkspace>
+          ),
+          dom.root,
+        );
+        const root = dom.root.querySelector<HTMLElement>("[data-k2b-app-workspace]")!;
+        const handle = root.querySelector<HTMLElement>(`[data-app-workspace-resize="${kind}"]`)!;
+        const sidebar = root.querySelector<HTMLElement>(".k2b-app-workspace__sidebar")!;
+        const drawer = root.querySelector<HTMLElement>(".k2b-app-workspace__drawer")!;
+        const rect = (width: number, height: number) => ({
+          width,
+          height,
+          left: 0,
+          right: width,
+          top: 0,
+          bottom: height,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        });
+        Object.defineProperty(root, "getBoundingClientRect", { value: () => rect(1800, 900) });
+        Object.defineProperty(sidebar, "getBoundingClientRect", {
+          value: () => rect(Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-sidebar-width")) || 208, 900),
+        });
+        Object.defineProperty(drawer, "getBoundingClientRect", {
+          value: () => rect(1800, Number.parseFloat(root.style.getPropertyValue("--k2b-workspace-drawer-activity-height")) || 192),
+        });
+        dom.root.style.setProperty("--k2b-workspace-sidebar-width", "64px");
+        dom.root.style.setProperty("--k2b-workspace-drawer-activity-height", "320px");
+        const readStyle = getComputedStyle;
+        const computed = spyOn(globalThis, "getComputedStyle").mockImplementation((element) => {
+          const style = readStyle(element);
+          if (element !== root) return style;
+          const readProperty = style.getPropertyValue.bind(style);
+          style.getPropertyValue = (name) => readProperty(name) || dom.root.style.getPropertyValue(name);
+          return style;
+        });
+        const written: unknown[] = [];
+        const stop = installAppWorkspaceController({
+          root,
+          readState: state,
+          writeState: (next) => {
+            written.push(next);
+            setState(next);
+          },
+        });
+        try {
+          handle.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+          if (kind === "sidebar") {
+            expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe(`${defaultSize}px`);
+            expect(root.hasAttribute("data-sidebar-collapsed")).toBe(false);
+            expect(handle.getAttribute("aria-valuenow")).toBe(String(defaultSize));
+            expect(written.at(-1)).not.toHaveProperty("sidebarWidth");
+            expect(written.at(-1)).not.toHaveProperty("sidebarCollapsed");
+            expect(written.at(-1)).toHaveProperty("drawerHeights", initial.drawerHeights);
+            // The handle unmounts while hidden. Another region's reactive save
+            // must preserve the reset for the replacement handle too.
+            setSidebarHidden(true);
+            expect(root.querySelector('[data-app-workspace-resize="sidebar"]')).toBeNull();
+            root
+              .querySelector<HTMLElement>('[data-app-workspace-resize="drawer"]')!
+              .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+            expect(root.style.getPropertyValue("--k2b-workspace-sidebar-width")).toBe(`${defaultSize}px`);
+            setSidebarHidden(false);
+            const replacement = root.querySelector<HTMLElement>('[data-app-workspace-resize="sidebar"]')!;
+            expect(replacement).not.toBe(handle);
+            expect(replacement.getAttribute("aria-valuenow")).toBe(String(defaultSize));
+          } else {
+            expect(root.style.getPropertyValue("--k2b-workspace-drawer-activity-height")).toBe("192px");
+            expect(handle.getAttribute("aria-valuenow")).toBe("192");
+            expect(written.at(-1)).toHaveProperty("drawerHeights", { other: 280 });
+            expect(written.at(-1)).toHaveProperty("sidebarWidth", 300);
+            root
+              .querySelector<HTMLElement>('[data-app-workspace-resize="sidebar"]')!
+              .dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+            expect(root.style.getPropertyValue("--k2b-workspace-drawer-activity-height")).toBe("192px");
+          }
+        } finally {
+          computed.mockRestore();
+          stop();
+          dispose();
+          dom.cleanup();
+        }
+      });
 
   test("fades only scrollable sidebar content and clears the hint at the end", async () => {
     const dom = createDomTestHarness();
@@ -82,6 +188,60 @@ describe("@k2b/ui AppWorkspace behavior", () => {
       expect(dom.root.querySelector("input")).toBeNull();
       setCount(1);
       expect(mounts).toBe(2);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("level navigation preserves mounted content and forwards enhanced back steps", async () => {
+    const dom = createDomTestHarness();
+    delegateEvents(["click"], dom.document);
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    const [level, setLevel] = createSignal("item");
+    const navigated: string[] = [];
+    let mounts = 0;
+    const Draft = () => {
+      mounts++;
+      return <input aria-label="Level draft" />;
+    };
+    const dispose = render(
+      () => (
+        <AppWorkspace.Main
+          level={level()}
+          onLevelNavigate={(event) => {
+            navigated.push(event.href);
+            setLevel(event.url.searchParams.get("level") ?? "sections");
+          }}
+        >
+          <AppWorkspace.MainPane id="sections" label="Sections" href="/?level=sections">
+            Areas
+          </AppWorkspace.MainPane>
+          <AppWorkspace.MainPane id="items" label="Items" href="/?level=items">
+            Providers
+          </AppWorkspace.MainPane>
+          <AppWorkspace.MainPane id="item" label="Item">
+            <Draft />
+          </AppWorkspace.MainPane>
+        </AppWorkspace.Main>
+      ),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>("input")!;
+      input.value = "Keep this draft";
+      input.focus();
+      setLevel("sections");
+      expect(dom.root.querySelector("input") === input).toBe(true);
+      expect(dom.document.activeElement === input).toBe(true);
+      expect(dom.root.querySelector('[data-workspace-level="1"]')?.getAttribute("data-workspace-mobile-active")).toBe("true");
+      setLevel("item");
+      dom.root.querySelector<HTMLAnchorElement>('[aria-label="Back to Items"]')!.click();
+      expect(navigated).toEqual(["/?level=items"]);
+      expect(level()).toBe("items");
+      expect(dom.root.querySelector("input") === input).toBe(true);
+      expect(input.value).toBe("Keep this draft");
+      expect(mounts).toBe(1);
     } finally {
       dispose();
       dom.cleanup();
@@ -351,5 +511,41 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     dispose();
     pushState.mockRestore();
     dom.cleanup();
+  });
+
+  test("keeps the head row's views mounted when another direct child of the workspace changes", async () => {
+    const dom = createDomTestHarness();
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    const [drawer, setDrawer] = createSignal(false);
+    let builds = 0;
+    const Views = () => {
+      builds++;
+      return <input aria-label="Views" />;
+    };
+    const dispose = render(
+      () => (
+        <AppWorkspace>
+          <AppWorkspace.Head views={<Views />} />
+          <AppWorkspace.Main>
+            <div>Main</div>
+          </AppWorkspace.Main>
+          <Show when={drawer()}>
+            <div data-drawer>Drawer</div>
+          </Show>
+        </AppWorkspace>
+      ),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>('input[aria-label="Views"]')!;
+      expect(input).not.toBeNull();
+      setDrawer(true);
+      expect(dom.root.querySelector("[data-drawer]")).not.toBeNull();
+      expect(builds).toBe(1);
+      expect(dom.root.querySelector('input[aria-label="Views"]')).toBe(input);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
   });
 });

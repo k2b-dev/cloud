@@ -3,6 +3,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Checkbox, Tag } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem, type SpaceTag } from "@/contracts";
+import { formatDeadline } from "@/presentation/deadline";
 import { isTaskOverdue } from "@/task-overdue";
 import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
 import type { RetryToast } from "../../../lib/feedback";
@@ -234,7 +235,7 @@ export default function ItemRow(props: ItemRowProps) {
                   <Show when={!props.agenda && schedule()}>
                     <span class={`inline-flex shrink-0 items-center gap-1 ${isOverdue() ? "text-red-500" : ""}`}>
                       <i class={`ti ${isEvent() ? "ti-calendar-event" : "ti-clock"}`} />
-                      {dates.formatDateRelative(schedule()!, props.dateConfig)}
+                      {isEvent() ? dates.formatDateRelative(schedule()!, props.dateConfig) : formatDeadline(schedule()!, props.dateConfig)}
                     </span>
                   </Show>
                   <Show when={!props.agenda && isEvent()}>
@@ -274,9 +275,9 @@ export default function ItemRow(props: ItemRowProps) {
               </Show>
             </div>
 
-            <Show when={props.item.assignees?.length}>
+            <Show when={props.item.assignees?.length || props.item.claim}>
               <div class="shrink-0">
-                <AssigneeAvatars assignees={props.item.assignees!} />
+                <AssigneeAvatars assignees={props.item.assignees ?? []} claim={props.item.claim} currentUserId={props.currentUserId} />
               </div>
             </Show>
           </a>

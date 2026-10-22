@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { descriptionPreview } from "./description-preview";
 
 describe("descriptionPreview", () => {
+  test("flattens real line breaks and preserves stored literal backslash-n", () => {
+    expect(descriptionPreview("Caption:\nText\r\nMore\rEnd")).toBe("Caption: Text More End");
+    expect(descriptionPreview("Caption:\\nText")).toBe("Caption:\\nText");
+  });
+
   test("keeps visible Markdown text without its presentation syntax", () => {
     expect(
       descriptionPreview(`

@@ -4,7 +4,7 @@ import { createRuntimeLifecycle, createRuntimeTaskTracker, logger, stopRuntimeJo
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services/postgres";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { evaluateWorkflowTriggerInputs } from "@k2b/cloud/workflows/runtime";
-import { emitWorkflowEvent, notifyWorkflowWorker } from "@k2b/cloud/workflows/store";
+import { emitWorkflowEvent, notifyWorkflowWorker, WorkflowEventTooLargeError } from "@k2b/cloud/workflows/store";
 import type { JobContext, JobFailureDecision, Worker } from "@k2b/sync";
 import { redis, sql } from "bun";
 import { withShortIdDb } from "../lib/short-id";
@@ -34,6 +34,7 @@ import { isAllMailFolder, isInboxFolder, isSentFolder, isTrashOrJunkFolder } fro
 import { withLeaseHeartbeat } from "./lease-heartbeat";
 import { enqueueMailInvalidation, mailLive } from "./live";
 import { mailScheduler } from "./mail-scheduler";
+import { deleteUnusedMailboxLogoVersions } from "./mailbox-logos";
 import { assertMailboxTransportFence, loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { deleteAbandonedBlobUploads, deleteOrphanedBlobs } from "./message-blobs";
 import { hydrateMessageFromSource, recordMissingMessageSources, releaseExpiredHydrationClaims } from "./message-hydration";
@@ -928,7 +929,7 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
       updated_at = now()
   `;
 
-  await retireKeptCopyPlacements(params.db, messageContentId, remoteRef.id);
+  await retireKeptCopyPlacements(params.db, [{ messageId: messageContentId, remoteRefId: remoteRef.id }]);
 
   const emitMessageReceived = async (): Promise<void> => {
     const deliveryKey = `message:${remoteRef.id}`;
@@ -970,30 +971,37 @@ const ingestStorableEnvelope = async (params: IngestEnvelopeParams): Promise<str
         array_position(${toPgUuidArray(workflowIds.map((row) => row.workflow_id))}::uuid[], activation.workflow_id),
         activation.id
     `;
-    const triggerValues = {
-      message: snapshot.source.message,
-      conversation: snapshot.source.conversation,
-      occurredAt,
-    };
     for (const activation of activations) {
       const config = typeof activation.trigger_config === "string" ? JSON.parse(activation.trigger_config) : activation.trigger_config;
       const withValues =
         config.with !== null && typeof config.with === "object" && !Array.isArray(config.with)
           ? (config.with as Record<string, WorkflowJsonValue>)
           : {};
-      await emitWorkflowEvent(
-        {
-          appId: MAIL_WORKFLOW_APP_ID,
-          scopeId: params.mailboxId,
-          type: MAIL_WORKFLOW_EVENT.messageReceived,
-          targetWorkflowId: activation.workflow_id,
-          data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
-          context: mailWorkflowEventContext(snapshot),
-          dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
-          occurredAt: new Date(occurredAt),
-        },
-        { db: params.db },
-      );
+      const triggerValues = { message: snapshot.source.message, conversation: snapshot.source.conversation, occurredAt };
+      try {
+        await emitWorkflowEvent(
+          {
+            appId: MAIL_WORKFLOW_APP_ID,
+            scopeId: params.mailboxId,
+            type: MAIL_WORKFLOW_EVENT.messageReceived,
+            targetWorkflowId: activation.workflow_id,
+            data: evaluateWorkflowTriggerInputs(triggerValues, withValues, occurredAt),
+            context: mailWorkflowEventContext(snapshot),
+            dedupeKey: `${deliveryKey}:${activation.workflow_id}`,
+            occurredAt: new Date(occurredAt),
+          },
+          { db: params.db },
+        );
+      } catch (error) {
+        if (!(error instanceof WorkflowEventTooLargeError)) throw error;
+        // A pathological message must never stall mailbox sync.
+        log.warn("Skipped oversized message workflow event", {
+          mailboxId: params.mailboxId,
+          workflowId: activation.workflow_id,
+          field: error.field,
+          bytes: error.bytes,
+        });
+      }
     }
   };
   // An incoming message whose first copy is in All Mail waits for its first copy in another folder:
@@ -2154,8 +2162,9 @@ export const commitSyncBatch = async (params: {
 };
 
 /**
- * Imports one batch of the folder. A sync that checks for new mail goes before commands and
- * hydration of the same mailbox; a batch that continues with older mail is `background` work.
+ * Imports one batch of the folder. Syncs and background work take turns with commands of the
+ * same mailbox. A sync that checks for new mail gets a head start over background work; a batch
+ * that continues with older mail is `background` work.
  */
 export const syncFolderBatch = async (
   folderId: string,
@@ -2698,6 +2707,7 @@ export const hydrateMessageBatch = async (
                       messageId: source.key,
                       source: source.stream,
                       expectedSize: source.expectedSize,
+                      signal,
                       claimId,
                       transportFence,
                     });
@@ -3269,6 +3279,7 @@ const mailRuntimeLifecycle = createRuntimeLifecycle({
         await deleteAbandonedDraftAttachmentUploads();
         await deleteAbandonedBlobUploads();
         await deleteOrphanedBlobs();
+        await deleteUnusedMailboxLogoVersions({ limit: 1000 });
       },
     });
     await mailScheduler().create({

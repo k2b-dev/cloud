@@ -22,6 +22,8 @@ const lineBreakDocument = [
     ),
   "Ende der Notiz.",
 ].join("\n\n");
+// An image that never arrives shows the place its size suffix reserves. It has its own page, whose load event never fires.
+const pendingImageDocument = [prose, "", "![Ausstehend](/pending.png =800x200)", "", "Ende der Notiz."].join("\n");
 const markdown = [
   "# Gemeinsam schreiben",
   "",
@@ -50,6 +52,8 @@ const markdown = [
   "![Wochenübersicht](/wide.png)",
   "",
   "![Explizite Größe](/wide.png =1600x400)",
+  "",
+  '![Nur Höhe](/wide.png =x120 "Breites Bild")',
   "",
   "```mermaid",
   "graph TD",
@@ -114,10 +118,17 @@ beforeAll(async () => {
       if (url.pathname === "/harness.js")
         return new Response(bundle, { headers: { "content-type": "application/javascript; charset=utf-8" } });
       if (url.pathname === "/wide.png") return new Response(png, { headers: { "content-type": "image/png" } });
+      if (url.pathname === "/pending.png") return new Promise<Response>(() => {});
       const book = url.searchParams.get("mode") === "book";
       const rows = Number(url.searchParams.get("queryRows") ?? 0);
       const truncated = url.searchParams.has("queryTruncated");
-      const note = url.searchParams.has("queryRows") ? queryDocument : url.searchParams.has("lineBreaks") ? lineBreakDocument : markdown;
+      const note = url.searchParams.has("queryRows")
+        ? queryDocument
+        : url.searchParams.has("lineBreaks")
+          ? lineBreakDocument
+          : url.searchParams.has("pendingImage")
+            ? pendingImageDocument
+            : markdown;
       const result = renderNotebookBook({
         markdown: note,
         notebookId: "book01",
@@ -167,15 +178,19 @@ const open = async (
   mode: "write" | "book" | "source",
   width: number,
   dark = false,
-  fixture: { queryRows?: number; queryTruncated?: boolean; lineBreaks?: boolean } = {},
+  fixture: { queryRows?: number; queryTruncated?: boolean; lineBreaks?: boolean; pendingImage?: boolean } = {},
   engine = browser,
 ) => {
   const page = await engine.newPage({ viewport: { width, height: 800 }, isMobile: width === 390, hasTouch: width === 390 });
   await page.goto(
-    `${server.url}?mode=${mode}${dark ? "&dark" : ""}${fixture.queryRows === undefined ? "" : `&queryRows=${fixture.queryRows}`}${fixture.queryTruncated ? "&queryTruncated" : ""}${fixture.lineBreaks ? "&lineBreaks" : ""}`,
+    `${server.url}?mode=${mode}${dark ? "&dark" : ""}${fixture.queryRows === undefined ? "" : `&queryRows=${fixture.queryRows}`}${fixture.queryTruncated ? "&queryTruncated" : ""}${fixture.lineBreaks ? "&lineBreaks" : ""}${fixture.pendingImage ? "&pendingImage" : ""}`,
+    fixture.pendingImage ? { waitUntil: "domcontentloaded" } : undefined,
   );
   await page.waitForFunction(() => "harness" in window);
-  await settle(page);
+  // WebKit's `document.fonts.ready` waits for the image that never arrives; that page measures before it settles.
+  if (fixture.pendingImage)
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  else await settle(page);
   return page;
 };
 const settle = (page: Page) => page.evaluate(() => (window as unknown as { harness: ReadingColumnHarness }).harness.settle());
@@ -389,12 +404,34 @@ for (const mode of ["write", "book"] as const) {
     }
   });
   for (const width of [2560, 390]) {
-    test(`${mode}: ${mode === "book" ? "natural and explicitly sized images" : "the natural image and diagram"} align with and fit the column at ${width}px`, async () => {
+    test(`${mode}: an image's size suffix holds its place before the image arrives at ${width}px`, async () => {
+      const page = await open(mode, width, false, { pendingImage: true });
+      try {
+        const column = await measure(page);
+        const pending = await page.locator('img[alt="Ausstehend"]').evaluate((element) => {
+          if (!(element instanceof HTMLImageElement)) throw new Error("Not an image.");
+          const rect = element.getBoundingClientRect();
+          return {
+            loaded: element.complete && element.naturalWidth > 0,
+            left: rect.left,
+            width: rect.width,
+            ratio: element.clientWidth / element.clientHeight,
+          };
+        });
+        // `=800x200` holds its 4:1 place, so the text below does not move when the image loads.
+        expect(pending.loaded).toBeFalse();
+        closeTo(pending.left, column.left);
+        closeTo(pending.width, Math.min(800, column.width));
+        expect(Math.abs(pending.ratio - 4)).toBeLessThanOrEqual(0.05);
+      } finally {
+        await page.close();
+      }
+    });
+    test(`${mode}: natural and sized images${mode === "write" ? " and the diagram" : ""} align with and fit the column at ${width}px`, async () => {
       const page = await open(mode, width);
       try {
         const column = await measure(page);
-        const images = mode === "book" ? ["Wochenübersicht", "Explizite Größe"] : ["Wochenübersicht"];
-        for (const alt of images) {
+        for (const alt of ["Wochenübersicht", "Explizite Größe", "Nur Höhe"]) {
           if (mode === "write") {
             await page.evaluate((text) => (window as unknown as { harness: ReadingColumnHarness }).harness.scrollTo(text), `![${alt}]`);
             await settle(page);
@@ -407,11 +444,15 @@ for (const mode of ["write", "book"] as const) {
           await settle(page);
           const image = await page.locator(`img[alt="${alt}"]`).evaluate((element) => {
             const rect = element.getBoundingClientRect();
-            return { left: rect.left, width: rect.width };
+            // The ratio holds for the picture itself; the editor adds a 1px border around it.
+            return { left: rect.left, width: rect.width, height: rect.height, ratio: element.clientWidth / element.clientHeight };
           });
           closeTo(image.left, column.left);
           expect(image.width).toBeGreaterThan(0);
           expect(image.width).toBeLessThanOrEqual(column.width);
+          // `=1600x400` keeps its 4:1 shape in a narrower column; `=x120` keeps its height.
+          if (alt === "Explizite Größe") expect(Math.abs(image.ratio - 4)).toBeLessThanOrEqual(0.05);
+          if (alt === "Nur Höhe") closeTo(image.height, 120);
         }
         if (mode === "write") {
           await page.locator(".cm-mermaid-widget").scrollIntoViewIfNeeded();

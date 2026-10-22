@@ -1,6 +1,100 @@
 import { sql } from "bun";
 import { backfillShortIds, type ShortIdTable } from "./lib/short-id";
 
+/** Converges both fresh and upgraded assignee tables; schema is injectable for isolated migration tests. */
+export const migrateAssigneePrincipals = async ({
+  table,
+  schema = "spaces",
+  db = sql,
+}: {
+  table: "item_assignees" | "item_template_assignees";
+  schema?: string;
+  db?: typeof sql;
+}): Promise<void> => {
+  if (!/^[a-z][a-z0-9_]*$/.test(schema)) throw new Error("Invalid assignee migration schema");
+  const ownerColumn = table === "item_assignees" ? "item_id" : "template_id";
+  const relation = `${schema}.${table}`;
+  // Manual revert: delete service-account rows; drop the principal check, both unique constraints and
+  // service_account_id column; set user_id NOT NULL and restore PRIMARY KEY (item_id/template_id, user_id).
+  await db
+    .unsafe(`
+    ALTER TABLE ${relation}
+    ADD COLUMN IF NOT EXISTS service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE;
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conrelid = '${relation}'::regclass AND conname = '${table}_user_key'
+      ) THEN
+        ALTER TABLE ${relation} ADD CONSTRAINT ${table}_user_key UNIQUE (${ownerColumn}, user_id);
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conrelid = '${relation}'::regclass AND conname = '${table}_service_account_key'
+      ) THEN
+        ALTER TABLE ${relation} ADD CONSTRAINT ${table}_service_account_key UNIQUE (${ownerColumn}, service_account_id);
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conrelid = '${relation}'::regclass AND conname = '${table}_pkey'
+      ) THEN
+        ALTER TABLE ${relation} DROP CONSTRAINT ${table}_pkey;
+      END IF;
+      IF EXISTS (
+        SELECT 1 FROM pg_attribute WHERE attrelid = '${relation}'::regclass AND attname = 'user_id' AND attnotnull
+      ) THEN
+        ALTER TABLE ${relation} ALTER COLUMN user_id DROP NOT NULL;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conrelid = '${relation}'::regclass AND conname = '${table}_principal_check'
+      ) THEN
+        ALTER TABLE ${relation} ADD CONSTRAINT ${table}_principal_check CHECK (num_nonnulls(user_id, service_account_id) = 1);
+      END IF;
+    END $$;
+    CREATE INDEX IF NOT EXISTS idx_${table}_service_account ON ${relation}(service_account_id);
+  `)
+    .simple();
+};
+
+const claimHolderJoins = sql`
+  LEFT JOIN auth.users u ON tw.claim->'actor'->>'kind' = 'user' AND u.id::text = tw.claim->'actor'->>'id'
+  LEFT JOIN auth.service_accounts sa ON tw.claim->'actor'->>'kind' = 'service_account'
+    AND sa.id::text = tw.claim->'actor'->>'id' AND sa.kind <> 'user_delegated'
+`;
+
+/**
+ * Assigns the person or service account holding a claim where an older release left them unassigned; runs on every start. A start without
+ * such claims only reads. Each repair holds the item row lock that claims and assignee changes hold, and reads the
+ * claim again under it, so a replica starting while another releases or unassigns the holder cannot assign them back.
+ * Claims of deleted principals and user-delegated service accounts get no assignee.
+ */
+export const backfillClaimAssignees = async (db = sql): Promise<number> => {
+  const candidates = await db<{ item_id: string }[]>`
+    SELECT tw.item_id
+    FROM spaces.task_work tw
+    ${claimHolderJoins}
+    WHERE tw.claim IS NOT NULL AND (u.id IS NOT NULL OR sa.id IS NOT NULL)
+      AND NOT EXISTS (
+        SELECT 1 FROM spaces.item_assignees ia
+        WHERE ia.item_id = tw.item_id AND (ia.user_id = u.id OR ia.service_account_id = sa.id)
+      )
+  `;
+  let added = 0;
+  for (const { item_id: itemId } of candidates) {
+    added += await db.begin(async (tx) => {
+      await tx`SELECT 1 FROM spaces.items WHERE id = ${itemId}::uuid FOR UPDATE`;
+      const inserted = await tx`
+        INSERT INTO spaces.item_assignees (item_id, user_id, service_account_id)
+        SELECT tw.item_id, u.id, sa.id
+        FROM spaces.task_work tw
+        ${claimHolderJoins}
+        WHERE tw.item_id = ${itemId}::uuid AND tw.claim IS NOT NULL AND (u.id IS NOT NULL OR sa.id IS NOT NULL)
+        ON CONFLICT DO NOTHING
+      `;
+      return inserted.count;
+    });
+  }
+  if (added > 0) console.log(`  ✓ spaces claim assignees backfill: ${added} task(s)`);
+  return added;
+};
+
 export const migrate = async (): Promise<void> => {
   await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`.simple();
   await sql`CREATE EXTENSION IF NOT EXISTS btree_gist`.simple();
@@ -149,6 +243,19 @@ export const migrate = async (): Promise<void> => {
       )
     )
   `.simple();
+
+  await sql`
+    ALTER TABLE spaces.items ADD COLUMN IF NOT EXISTS deadline_date DATE NULL;
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conrelid = 'spaces.items'::regclass AND conname = 'items_deadline_one_kind'
+      ) THEN
+        ALTER TABLE spaces.items ADD CONSTRAINT items_deadline_one_kind CHECK (deadline IS NULL OR deadline_date IS NULL);
+      END IF;
+    END $$;
+  `.simple();
+
   await sql`ALTER TABLE spaces.items DROP COLUMN IF EXISTS email_thread_id`.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS spaces.task_work (
@@ -535,7 +642,9 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_item_assignees_user
     ON spaces.item_assignees(user_id)
   `.simple();
+  await migrateAssigneePrincipals({ table: "item_assignees" });
   console.log("  ✓ spaces.item_assignees table");
+  await backfillClaimAssignees();
 
   await sql`
     CREATE TABLE IF NOT EXISTS spaces.item_tags (
@@ -605,6 +714,7 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_item_template_assignees_user
     ON spaces.item_template_assignees(user_id)
   `.simple();
+  await migrateAssigneePrincipals({ table: "item_template_assignees" });
   console.log("  ✓ spaces.item_templates tables");
 
   await sql`
@@ -635,6 +745,24 @@ export const migrate = async (): Promise<void> => {
     ADD COLUMN IF NOT EXISTS service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE SET NULL
   `.simple();
   console.log("  ✓ spaces.comments table");
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_reactions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      item_id UUID NOT NULL REFERENCES spaces.items(id) ON DELETE CASCADE,
+      emoji TEXT NOT NULL,
+      user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+      service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      CONSTRAINT item_reactions_one_reactor CHECK (num_nonnulls(user_id, service_account_id) = 1)
+    )
+  `.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_item_reactions_user
+    ON spaces.item_reactions(item_id, emoji, user_id) WHERE user_id IS NOT NULL`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_item_reactions_service_account
+    ON spaces.item_reactions(item_id, emoji, service_account_id) WHERE service_account_id IS NOT NULL`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_item_reactions_item_emoji_created
+    ON spaces.item_reactions(item_id, emoji, created_at)`.simple();
 
   await sql`
     CREATE OR REPLACE FUNCTION spaces.check_overlap(

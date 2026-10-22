@@ -22,9 +22,18 @@ test.skipIf(isServer)("list filters retain rapid choices while displayed results
     },
   }));
   const { default: SpacesListRoute } = await import("../src/frontend/[id]/_components/workspace/SpacesListRoute.island");
+  const { default: SpaceHeadFilters } = await import("../src/frontend/[id]/_components/filter/SpaceHeadFilters.island");
   const { parseFilterFromUrl } = await import("../src/frontend/[id]/_components/filter/types");
   const dispose = render(
-    () =>
+    () => [
+      createComponent(SpaceHeadFilters, {
+        spaceId: "Space1",
+        columns: [],
+        tags: [],
+        currentView: "list",
+        initialSource: base,
+        initialTotal: 7,
+      }),
       createComponent(SpacesListRoute, {
         spaceId: "Space1",
         currentView: "list",
@@ -38,6 +47,7 @@ test.skipIf(isServer)("list filters retain rapid choices while displayed results
         canWrite: false,
         currentUserId: "33333333-3333-4333-8333-333333333333",
       }),
+    ],
     dom.root,
   );
   const click = async (label: string, selector = "button") => {
@@ -61,21 +71,22 @@ test.skipIf(isServer)("list filters retain rapid choices while displayed results
     const requested = new URL(requests.at(-1)!, "http://localhost");
     expect(requested.searchParams.get("type")).toBe("task");
     expect(requested.searchParams.get("status")).toBe("completed");
-    expect(dom.root.textContent).toContain("initial");
+    expect(dom.root.querySelector("[data-spaces-filter-count]")?.textContent).toBe("7 items");
     expect(dom.window.location.search).toBe("?view=list&q=initial");
 
     const input = dom.root.querySelector("input")!;
+    expect(input.value).toBe("initial");
     input.focus();
     input.value = "unsent draft";
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    dom.root.querySelector<HTMLAnchorElement>('a[aria-label="Clear all filters"]')!.click();
+    dom.root.querySelector<HTMLAnchorElement>('a[aria-label="Reset"]')!.click();
     await flush();
     expect(input.value).toBe("");
     const clearRequest = requests.at(-1);
     await new Promise((resolve) => setTimeout(resolve, 220));
     expect(requests.at(-1)).toBe(clearRequest);
     expect(new URL(clearRequest!, "http://localhost").searchParams.has("q")).toBe(false);
-    expect(dom.root.textContent).toContain("initial");
+    expect(dom.root.querySelector("[data-spaces-filter-count]")?.textContent).toBe("7 items");
   } finally {
     dispose();
     dom.cleanup();

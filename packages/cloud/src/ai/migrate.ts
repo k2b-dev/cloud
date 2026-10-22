@@ -1,6 +1,7 @@
 import { sql } from "bun";
-import { CapabilityActionReviewSchema } from "../contracts/capabilities";
+import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
+import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiQuotas } from "./quotas-migrate";
@@ -403,6 +404,15 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.messages(conversation_id, loop_id, seq ASC)
     WHERE loop_id IS NOT NULL
   `.simple();
+  // "Recent" in the slash menu reads the newest messages a person sent in each of their latest chats. Without it the
+  // read walks every Assistant and tool row of those chats. The predicate matches the store query word for word.
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_messages_sent_by_person
+    ON ai.messages(conversation_id, seq DESC) INCLUDE (created_at, id)
+    WHERE role = 'user' AND kind = 'message'
+      AND NOT (COALESCE(meta, '{}'::jsonb) ? 'scheduledTask')
+      AND NOT (COALESCE(meta, '{}'::jsonb) ? 'agentMessage')
+  `.simple();
 
   // Optional pg_textsearch ranking. Native weighted FTS above is always the
   // correctness path; missing extension support must never block startup.
@@ -514,6 +524,12 @@ export const migrateCloudAi = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_ai_turns_completed_chat
     ON ai.turns(completed_at, id)
     WHERE status = 'completed' AND run_config->>'kind' = 'chat'
+  `.simple();
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_turns_background_finished
+    ON ai.turns(completed_at, id)
+    WHERE run_config ? 'background' AND status IN ('completed', 'failed', 'aborted')
   `.simple();
 
   await sql`
@@ -879,6 +895,8 @@ export const migrateCloudAi = async (): Promise<void> => {
     )
   `.simple();
 
+  await sql.begin(migrateChatTaskReasons);
+
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS idempotency_fingerprint TEXT`.simple();
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 0`.simple();
   await sql`ALTER TABLE ai.chat_tasks ADD COLUMN IF NOT EXISTS mandate_id UUID`.simple();
@@ -992,6 +1010,17 @@ export const migrateCloudAi = async (): Promise<void> => {
     )
   `.simple();
 
+  await sql`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ai_chat_task_occurrences_state_check'
+          AND pg_get_constraintdef(oid) LIKE '%stopped%') THEN
+        ALTER TABLE ai.chat_task_occurrences DROP CONSTRAINT IF EXISTS ai_chat_task_occurrences_state_check;
+        ALTER TABLE ai.chat_task_occurrences ADD CONSTRAINT ai_chat_task_occurrences_state_check
+          CHECK (state IN ('queued', 'running', 'completed', 'failed', 'stopped'));
+      END IF;
+    END $$
+  `.simple();
+
   await sql`ALTER TABLE ai.chat_task_occurrences ADD COLUMN IF NOT EXISTS task_revision BIGINT NOT NULL DEFAULT 0`.simple();
 
   await sql`
@@ -1000,9 +1029,28 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
 
   await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_turn
+    ON ai.chat_task_occurrences(turn_id)
+  `.simple();
+
+  await sql`
     CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_queued
     ON ai.chat_task_occurrences(created_at ASC, id ASC)
     WHERE state = 'queued'
+  `.simple();
+
+  await sql`
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'ai' AND indexname = 'idx_ai_chat_task_occurrences_finished'
+          AND indexdef NOT LIKE '%stopped%') THEN
+        DROP INDEX ai.idx_ai_chat_task_occurrences_finished;
+      END IF;
+    END $$
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_chat_task_occurrences_finished
+    ON ai.chat_task_occurrences(completed_at, id)
+    WHERE state IN ('completed', 'failed', 'stopped')
   `.simple();
 
   await sql`
@@ -1273,7 +1321,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       CONSTRAINT ai_memory_learning_runs_kind_check CHECK (run_kind IN ('turn', 'workflow')),
       CONSTRAINT ai_memory_learning_runs_evidence_check CHECK (
         (run_kind = 'turn' AND evidence_key IS NULL)
-        OR (run_kind = 'workflow' AND turn_id IS NOT NULL AND evidence_key IS NOT NULL)
+        OR (run_kind = 'workflow' AND evidence_key IS NOT NULL)
       ),
       CONSTRAINT ai_memory_learning_runs_changes_check CHECK (jsonb_typeof(changes) = 'array')
     )
@@ -1299,7 +1347,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`
     ALTER TABLE ai.memory_learning_runs ADD CONSTRAINT ai_memory_learning_runs_evidence_check CHECK (
       (run_kind = 'turn' AND evidence_key IS NULL)
-      OR (run_kind = 'workflow' AND turn_id IS NOT NULL AND evidence_key IS NOT NULL)
+      OR (run_kind = 'workflow' AND evidence_key IS NOT NULL)
     )
   `.simple();
   await sql`
@@ -2249,6 +2297,21 @@ export const migrateCloudAi = async (): Promise<void> => {
     AFTER UPDATE OF status, error, completed_at, cancel_requested_at ON ai.turns
     FOR EACH ROW EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list,conversation-detail')
   `.simple();
+  // Only questions for the person change the list of open questions; browser tool calls come and go per turn.
+  await sql`DROP TRIGGER IF EXISTS ai_live_pending_actions_changed ON ai.pending_actions`.simple();
+  await sql`DROP TRIGGER IF EXISTS ai_live_pending_actions_removed ON ai.pending_actions`.simple();
+  await sql`
+    CREATE TRIGGER ai_live_pending_actions_changed
+    AFTER INSERT OR UPDATE OF status ON ai.pending_actions
+    FOR EACH ROW WHEN (NEW.kind IN ('approval', 'custom_approval'))
+    EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')
+  `.simple();
+  await sql`
+    CREATE TRIGGER ai_live_pending_actions_removed
+    AFTER DELETE ON ai.pending_actions
+    FOR EACH ROW WHEN (OLD.kind IN ('approval', 'custom_approval'))
+    EXECUTE FUNCTION ai.live_conversation_child_changed('conversation-list')
+  `.simple();
   await sql`DROP TRIGGER IF EXISTS ai_live_chat_tasks_changed ON ai.chat_tasks`.simple();
   await sql`
     CREATE TRIGGER ai_live_chat_tasks_changed AFTER INSERT OR UPDATE OR DELETE ON ai.chat_tasks
@@ -2451,7 +2514,11 @@ export const migrateCloudAi = async (): Promise<void> => {
   {
     const { coreSettings } = await import("../services");
     const { setAiCredential, splitAiProfileCredentials } = await import("./credentials");
-    const split = splitAiProfileCredentials((await coreSettings.get<string>("ai.model_profiles_json")) ?? "[]");
+    const profiles = await coreSettings.read<string>("ai.model_profiles_json");
+    if (profiles.stored === "unreadable") {
+      console.warn('[ai] cannot read setting "ai.model_profiles_json"; skipping credential split');
+    }
+    const split = profiles.stored === "unreadable" ? null : splitAiProfileCredentials(profiles.value ?? "[]");
     if (split && split.credentials.length > 0) {
       for (const { profileId, secret } of split.credentials) await setAiCredential(profileId, secret);
       await coreSettings.set("ai.model_profiles_json", split.profilesJson);
@@ -2624,7 +2691,7 @@ const backfillApprovalRequests = async (): Promise<void> => {
             WHERE r.requester_kind='assistant_turn' AND r.requester_ref=a.turn_id::text || '/' || a.call_id)
         ORDER BY a.created_at, a.id LIMIT 200 FOR UPDATE OF a SKIP LOCKED`;
       for (const row of rows) {
-        const review = CapabilityActionReviewSchema.safeParse(row.review == null ? null : decoded(row.review));
+        const review = CapabilityActionReviewDataSchema.safeParse(row.review == null ? null : decoded(row.review));
         // request computes both canonical digests; preserve the original wait deadline, including expiry.
         const record = await approvals.request(
           {

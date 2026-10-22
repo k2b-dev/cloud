@@ -7,6 +7,7 @@ import {
   type CapabilityResult,
   type CloudResourceView,
   capabilityPage,
+  cloudResourceHref,
   defineCapabilities,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
@@ -18,6 +19,7 @@ import { get as settingsGet } from "@k2b/cloud/services/settings";
 import { normalizeTimeZone } from "@k2b/cloud/shared";
 import { type DateContext, dates, err, fail, i18n, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
 import type { z } from "zod";
+import { isDateOnlyDeadline } from "@/presentation/deadline";
 import {
   CalendarDestinationListDataSchema,
   CalendarDestinationListInputSchema,
@@ -60,6 +62,8 @@ import {
   ItemResourceReferenceRemoveDataSchema,
   ItemResourceReferenceRemoveInputSchema,
   ItemTagsSetInputSchema,
+  ReactionDataSchema,
+  ReactionInputSchema,
   SpaceAssigneeListDataSchema,
   SpaceAssigneeListInputSchema,
   SpaceBrowseDataSchema,
@@ -85,6 +89,7 @@ import {
   TaskDependentListInputSchema,
   TaskListDataSchema,
   TaskListInputSchema,
+  TaskProgressInputSchema,
   TaskSetCompletedInputSchema,
   TaskUpdateInputSchema,
   TemplateCreateInputSchema,
@@ -113,6 +118,7 @@ import {
   type SpaceComment,
   type SpaceItem,
   type SpaceItemAttachment,
+  type SpaceItemReaction,
   type SpaceItemTemplate,
   type TemplateDateRule,
 } from "./contracts";
@@ -131,10 +137,11 @@ import { isSpaceResourceId, resolveSpaceApiKeyPermission, SPACE_RESOURCE_TYPE, S
 import type { CommentAuthor } from "./service/comments";
 import { localizeSpacesError, type SpacesMessages, spacesMessages } from "./service/messages";
 import { spacesPublicResources } from "./service/public-resources";
+import type { ReactionViewer } from "./service/reactions";
 import { CalendarReadLimitError } from "./service/recurrence";
 import * as taskWork from "./service/task-work";
 import { isTaskOverdue } from "./task-overdue";
-import { ClaimTaskSchema, ProgressTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "./work-contracts";
+import { ClaimTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "./work-contracts";
 
 const encodeCursor = (page: number): string => Buffer.from(JSON.stringify({ v: 1, page }), "utf8").toString("base64url");
 
@@ -309,8 +316,13 @@ const requireSpace = async (shortId: string, context: CapabilityExecutionContext
   return spaceId ? requireSpaceUuid(spaceId, context, required) : capabilityFail(context, err.notFound("Space"), "spaceNotFound");
 };
 
-const requireItemUuid = async (internalId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
-  const item = await spacesService.item.get({ id: internalId });
+const requireItemUuid = async (
+  internalId: string,
+  context: CapabilityExecutionContext,
+  required: PermissionLevel = "read",
+  viewer?: ReactionViewer,
+) => {
+  const item = await spacesService.item.get({ id: internalId, viewer });
   if (!item) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
   const access = await requireSpaceUuid(item.spaceId, context, required);
   if (!access.ok) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
@@ -320,9 +332,16 @@ const requireItemUuid = async (internalId: string, context: CapabilityExecutionC
     : capabilityFail(context, err.notFound("Item"), "itemNotFound");
 };
 
-const requireItem = async (itemId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
+const requireItem = async (
+  itemId: string,
+  context: CapabilityExecutionContext,
+  required: PermissionLevel = "read",
+  viewer?: ReactionViewer,
+) => {
   const internalId = await spacesPublicResources.resolvePublicId("items", itemId);
-  return internalId ? requireItemUuid(internalId, context, required) : capabilityFail(context, err.notFound("Item"), "itemNotFound");
+  return internalId
+    ? requireItemUuid(internalId, context, required, viewer)
+    : capabilityFail(context, err.notFound("Item"), "itemNotFound");
 };
 
 const isEvent = (item: SpaceItem): item is SpaceItem & { startsAt: string; endsAt: string } => Boolean(item.startsAt && item.endsAt);
@@ -352,7 +371,15 @@ const reviewItemCreate = async (
       ...(input.templateId !== undefined ? [{ label: t.fromTemplate, value: input.templateId }] : []),
       ...("startsAt" in input && input.startsAt ? [{ label: t.starts, value: input.startsAt, format: "date-time" as const }] : []),
       ...("endsAt" in input && input.endsAt ? [{ label: t.ends, value: input.endsAt, format: "date-time" as const }] : []),
-      ...("deadline" in input && input.deadline ? [{ label: t.deadline, value: input.deadline, format: "date-time" as const }] : []),
+      ...("deadline" in input && input.deadline
+        ? [
+            {
+              label: t.deadline,
+              value: input.deadline,
+              format: isDateOnlyDeadline(input.deadline) ? ("date" as const) : ("date-time" as const),
+            },
+          ]
+        : []),
       ...(input.description ? [{ label: t.description, value: input.description, display: "block" as const }] : []),
       ...(input.assigneeIds?.length ? [{ label: t.assignees, value: String(input.assigneeIds.length) }] : []),
     ],
@@ -386,10 +413,18 @@ const reviewTaskWork = async (
   });
 };
 
+/** Reactor names are bounded like assignee names, so 20 emoji with three named people stay within the result budget. */
+const boundReactionNames = (reactions: SpaceItemReaction[]) =>
+  reactions.map((reaction) => ({
+    ...reaction,
+    people: reaction.people.map((person) => ({ ...person, displayName: truncateText(person.displayName, 200).text })),
+  }));
+
 const mapRelations = (item: SpaceItem) => ({
+  reactions: item.reactions && boundReactionNames(item.reactions),
   assignees: (item.assignees ?? [])
     .slice(0, 100)
-    .map((entry) => ({ id: entry.id, displayName: truncateText(entry.displayName, 200).text })),
+    .map((entry) => ({ id: entry.id, kind: entry.kind, displayName: truncateText(entry.displayName, 200).text })),
   tags: (item.tags ?? [])
     .slice(0, 100)
     .map((entry) => ({ id: entry.id, name: truncateText(entry.name, 100).text, color: truncateText(entry.color, 100).text })),
@@ -397,11 +432,16 @@ const mapRelations = (item: SpaceItem) => ({
     (item.assignees?.length ?? 0) > 100 ||
     (item.tags?.length ?? 0) > 100 ||
     (item.assignees ?? []).some((entry) => truncateText(entry.displayName, 200).truncated) ||
-    (item.tags ?? []).some((entry) => truncateText(entry.name, 100).truncated || truncateText(entry.color, 100).truncated),
+    (item.tags ?? []).some((entry) => truncateText(entry.name, 100).truncated || truncateText(entry.color, 100).truncated) ||
+    (item.reactions ?? []).some((reaction) => reaction.people.some((person) => truncateText(person.displayName, 200).truncated)),
 });
 
 const mapListRelations = (item: SpaceItem) => ({
-  assignees: (item.assignees ?? []).slice(0, 3).map((entry) => ({ id: entry.id, displayName: truncateText(entry.displayName, 100).text })),
+  // Lists carry counts only; item.read names the people.
+  reactions: item.reactions?.map(({ emoji, count, own }) => ({ emoji, count, own })),
+  assignees: (item.assignees ?? [])
+    .slice(0, 3)
+    .map((entry) => ({ id: entry.id, kind: entry.kind, displayName: truncateText(entry.displayName, 100).text })),
   assigneeCount: item.assignees?.length ?? 0,
   tags: (item.tags ?? [])
     .slice(0, 3)
@@ -426,6 +466,7 @@ const mapTask = (item: SpaceItem) => {
     description: description.text,
     descriptionTruncated: description.truncated,
     deadline: item.deadline,
+    deadlineAllDay: item.deadlineAllDay,
     estimatedDurationMinutes: item.estimatedDurationMinutes,
     activeBlockerCount: item.activeBlockerCount,
     priority: item.priority,
@@ -492,6 +533,7 @@ const mapTaskSummary = (item: SpaceItem, dateConfig?: DateContext) => {
     descriptionPreview: description.text,
     descriptionTruncated: description.truncated,
     deadline: item.deadline,
+    deadlineAllDay: item.deadlineAllDay,
     overdue: isTaskOverdue(item, dateConfig),
     estimatedDurationMinutes: item.estimatedDurationMinutes,
     activeBlockerCount: item.activeBlockerCount,
@@ -827,6 +869,7 @@ const runSpaceAssigneeList = async (input: z.infer<typeof SpaceAssigneeListInput
   return ok({
     data: users.map((user) => ({
       id: user.id,
+      kind: user.kind,
       displayName: truncateText(user.displayName, 200).text,
       description: truncateText(user.description ?? "", 300).text,
     })),
@@ -853,6 +896,7 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
   const page = await spacesService.item.listFiltered({
     spaceId: access.data.internalId,
     currentUserId: context.user?.id,
+    viewer: reactionViewer(context),
     ...(dateConfig ? { dateConfig } : {}),
     filter: {
       type: kind,
@@ -904,9 +948,10 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
           item.descriptionTruncated = true;
           shortened = true;
         }
-        if (item.assignees.length || item.tags.length) {
+        if (item.assignees.length || item.tags.length || item.reactions?.length) {
           item.assignees = item.assignees.slice(0, -1);
           item.tags = item.tags.slice(0, -1);
+          item.reactions = item.reactions?.slice(0, -1);
           item.relationsTruncated = true;
           shortened = true;
         }
@@ -930,7 +975,7 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
 };
 
 const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: CapabilityExecutionContext) => {
-  const resolved = await requireItem(input.id, context);
+  const resolved = await requireItem(input.id, context, "read", reactionViewer(context));
   if (!resolved.ok) return resolved;
   const data = isEvent(resolved.data.item)
     ? mapEvent(resolved.data.item)
@@ -940,7 +985,7 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
           mapAttachment(resolved.data.item, attachment),
         ),
       };
-  return ok({
+  const result = {
     data,
     summary: boundedCapabilitySummary(
       spacesMessages(context.locale).readItem({
@@ -950,7 +995,13 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
     ),
     refs: [itemRef(data, data.kind)],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
-  });
+  };
+  // Reactor names are the one relation added after the other bounds were sized; a full item drops them, keeping the counts.
+  if (data.reactions && Buffer.byteLength(JSON.stringify(result), "utf8") > CAPABILITY_MAX_RESULT_BYTES) {
+    data.reactions = data.reactions.map((reaction) => ({ ...reaction, people: [] }));
+    data.relationsTruncated = true;
+  }
+  return ok(result);
 };
 
 const runCommentList = async (input: z.infer<typeof CommentListInputSchema>, context: CapabilityExecutionContext) => {
@@ -1136,7 +1187,8 @@ const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>, cont
       : result.status === 404
         ? { code: "NOT_FOUND" as const, message: result.error, status: 404 as const }
         : result.status === 409
-          ? err.conflict(result.error)
+          ? // err.conflict takes a subject noun and appends "already exists"; a service conflict is a full sentence.
+            { code: "CONFLICT" as const, message: result.error, status: 409 as const }
           : result.status === 500
             ? err.internal(result.error)
             : err.badInput(result.error);
@@ -1298,6 +1350,7 @@ const runChecklistCreate = async (input: z.infer<typeof TaskChecklistCreateInput
       ? ok({
           data: { id: result.data.id, label: result.data.label, completed: result.data.completed },
           refs: [itemRef(task.data.item, "task")],
+          links: [{ rel: "open", href: buildSpaceItemHref(task.data.item.spaceId, task.data.item.id) }],
         })
       : mutationError(result, context);
   });
@@ -1318,6 +1371,7 @@ const runChecklistUpdate = async (input: z.infer<typeof TaskChecklistUpdateInput
       ? ok({
           data: { id: result.data.id, label: result.data.label, completed: result.data.completed },
           refs: [itemRef(task.data.item, "task")],
+          links: [{ rel: "open", href: buildSpaceItemHref(task.data.item.spaceId, task.data.item.id) }],
         })
       : mutationError(result, context);
   });
@@ -1330,7 +1384,11 @@ const runChecklistDelete = async (input: z.infer<typeof TaskChecklistDeleteInput
     if (!id) return fail(localizeSpacesError(err.notFound("Checklist entry"), context.locale));
     const result = await spacesService.item.checklist.remove({ itemId: task.data.internalId, id, actor: spaceActivityActor(context) });
     return result.ok
-      ? ok({ data: { id: input.entryId, deleted: true as const }, refs: [itemRef(task.data.item, "task")] })
+      ? ok({
+          data: { id: input.entryId, deleted: true as const },
+          refs: [itemRef(task.data.item, "task")],
+          links: [{ rel: "open", href: buildSpaceItemHref(task.data.item.spaceId, task.data.item.id) }],
+        })
       : mutationError(result, context);
   });
 
@@ -1485,7 +1543,8 @@ const fillFromTemplate = async (
   if (!timeZone.ok) return timeZone;
   const draft = await spacesService.template.draft({
     template: resolved.data.internal,
-    date: input.date ?? (input.at ? localNow(new Date(input.at), timeZone.data).date : undefined),
+    date:
+      input.date ?? (input.at ? (isDateOnlyDeadline(input.at) ? input.at : localNow(new Date(input.at), timeZone.data).date) : undefined),
     noDate: input.noDate,
     timeZone: timeZone.data,
     locale: context.locale,
@@ -1656,7 +1715,7 @@ const mapTemplate = (template: SpaceItemTemplate, timeZone: string, context: Cap
   description: template.description,
   priority: template.priority,
   tags: template.tags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
-  assignees: template.assignees.map((assignee) => ({ id: assignee.id, displayName: assignee.displayName })),
+  assignees: template.assignees.map((assignee) => ({ id: assignee.id, kind: assignee.kind, displayName: assignee.displayName })),
   assignCreator: template.assignCreator,
   checklist: template.checklist,
   estimatedDurationMinutes: template.estimatedDurationMinutes,
@@ -1860,6 +1919,14 @@ const commentAuthor = (context: CapabilityExecutionContext): CommentAuthor | nul
     : null;
 };
 
+/** Reads personalize reactions for the account behind the call, also for accounts that cannot react. */
+const reactionViewer = (context: CapabilityExecutionContext): ReactionViewer =>
+  context.user
+    ? { kind: "user", id: context.user.id }
+    : context.actor.kind === "user"
+      ? { kind: "user", id: context.actor.user.id }
+      : { kind: "service_account", id: context.actor.serviceAccount.id };
+
 const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "comment.create", "space_item", input.itemId), async () => {
     const author = commentAuthor(context);
@@ -1938,6 +2005,7 @@ const runCalendarInvitationPreview = async (
             event: item.data.item.title,
           }),
         ),
+        refs: [itemRef(item.data.item, "event")],
         links: [{ rel: "open" as const, href: buildSpaceItemHref(access.data.space.id, item.data.item.id) }],
       })
     : ok({
@@ -2052,6 +2120,7 @@ const runCalendarInvitationResponseCommit = async (
             }),
           ),
           refs: [{ type: "mail.draft", id: input.draftId }],
+          links: [{ rel: "open", href: cloudResourceHref({ type: "mail.draft", id: input.draftId }) }],
         })
       : fail(localizeSpacesError(result.error, context.locale));
   });
@@ -2146,7 +2215,11 @@ export const spacesCapabilities = defineCapabilities({
       run: async (input, context) => {
         const resolved = await requireItem(input.id, context);
         if (!resolved.ok) return resolved;
-        return ok({ data: await taskWork.read(resolved.data.internalId) });
+        return ok({
+          data: await taskWork.read(resolved.data.internalId),
+          refs: [itemRef(resolved.data.item, "task")],
+          links: [{ rel: "open", href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
+        });
       },
     },
     "space.search": {
@@ -2276,7 +2349,7 @@ export const spacesCapabilities = defineCapabilities({
     "space.assignee.list": {
       title: "List assignable Space members",
       description:
-        "List people eligible for task or event assignment in one writable Space. Get spaceId from space.list or space.search and pass a returned user ID to an item Action.",
+        "List people and service accounts eligible for task or event assignment in one writable Space. Service accounts need their own direct access. Get spaceId from space.list or space.search and pass a returned ID to an item Action.",
       input: SpaceAssigneeListInputSchema,
       data: SpaceAssigneeListDataSchema,
       openWorld: false,
@@ -2394,7 +2467,7 @@ export const spacesCapabilities = defineCapabilities({
     "task.claim": {
       title: "Claim task work",
       description:
-        "Claim an open unblocked task for one worker. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict. Claims coordinate work and do not lock it: any writer can take one over, and progress, release or completion with the ended claimId then returns 409 'Task claim is no longer active'.",
+        "Claim an open unblocked task for one worker. Claiming as a person or a service account other than a personal automation key also assigns you to the task. Generate a UUID claimId and reuse it only for retries; competing claims return a conflict. Claims coordinate work and do not lock it: any writer can take one over, and progress, release or completion with the ended claimId then returns 409 'Task claim is no longer active'.",
       input: ClaimTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
       data: TaskWorkSchema,
       destructive: false,
@@ -2414,13 +2487,19 @@ export const spacesCapabilities = defineCapabilities({
             operation: "claim",
             ...{ claimId: input.claimId },
           });
-          return result.ok ? ok({ data: result.data }) : mutationError(result, context);
+          return result.ok
+            ? ok({
+                data: result.data,
+                refs: [itemRef(resolved.data.item, "task")],
+                links: [{ rel: "open", href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
+              })
+            : mutationError(result, context);
         }),
     },
     "task.release": {
       title: "Release task work",
       description:
-        "Release your current claim using its exact claimId. With force, take over another worker's claim by its exact claimId; any writer may, and the task activity records who took it over. Progress and completion results remain available.",
+        "Release your current claim using its exact claimId; you stay assigned. With force, release another worker's exact claim and remove them from the assignees; any writer may, and task activity records who took it over. Progress and completion results remain available.",
       input: ReleaseTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
       data: TaskWorkSchema,
       destructive: false,
@@ -2440,14 +2519,20 @@ export const spacesCapabilities = defineCapabilities({
             operation: "release",
             ...{ claimId: input.claimId, force: input.force },
           });
-          return result.ok ? ok({ data: result.data }) : mutationError(result, context);
+          return result.ok
+            ? ok({
+                data: result.data,
+                refs: [itemRef(resolved.data.item, "task")],
+                links: [{ rel: "open", href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
+              })
+            : mutationError(result, context);
         }),
     },
     "task.progress": {
       title: "Progress task work",
       description:
         "Save a full progress and handoff note under the actual user or service account identity. Supply the current claimId when claimed; the previous note remains in task activity.",
-      input: ProgressTaskSchema.extend({ itemId: ItemReadInputSchema.shape.id }),
+      input: TaskProgressInputSchema,
       data: TaskWorkSchema,
       destructive: false,
       openWorld: false,
@@ -2466,7 +2551,13 @@ export const spacesCapabilities = defineCapabilities({
             operation: "progress",
             ...{ claimId: input.claimId, content: input.content },
           });
-          return result.ok ? ok({ data: result.data }) : mutationError(result, context);
+          return result.ok
+            ? ok({
+                data: result.data,
+                refs: [itemRef(resolved.data.item, "task")],
+                links: [{ rel: "open", href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
+              })
+            : mutationError(result, context);
         }),
     },
     "task.checklist.create": {
@@ -2725,7 +2816,11 @@ export const spacesCapabilities = defineCapabilities({
               ? [
                   input.deadline === null
                     ? { label: t.deadline, value: t.clearDeadline }
-                    : { label: t.deadline, value: input.deadline, format: "date-time" as const },
+                    : {
+                        label: t.deadline,
+                        value: input.deadline,
+                        format: isDateOnlyDeadline(input.deadline) ? ("date" as const) : ("date-time" as const),
+                      },
                 ]
               : []),
             ...(input.estimatedDurationMinutes !== undefined
@@ -2927,6 +3022,104 @@ export const spacesCapabilities = defineCapabilities({
         });
       },
       run: runItemDelete,
+    },
+    "reaction.add": {
+      title: "Add reaction",
+      description: "Add your own emoji reaction on an item in a writable Space. No notifications or activity.",
+      input: ReactionInputSchema,
+      data: ReactionDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const t = spacesMessages(context.locale);
+        if (!commentAuthor(context))
+          return capabilityFail(context, err.forbidden("Reactions require a person or a standalone service account"), "reactionsNeedUser");
+        const resolved = await requireItem(input.itemId, context, "write");
+        if (!resolved.ok) return resolved;
+        return ok({
+          message: t.reviewAddReaction({ title: resolved.data.item.title }),
+          details: [
+            { label: t.item, value: resolved.data.item.title },
+            { label: t.emoji, value: input.emoji },
+          ],
+          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: itemApprovalScope(input.itemId),
+        });
+      },
+      run: async (input, context) =>
+        audited(actionAudit(context, "reaction.add", "space_item", input.itemId), async () => {
+          const actor = commentAuthor(context);
+          if (!actor)
+            return capabilityFail(
+              context,
+              err.forbidden("Reactions require a person or a standalone service account"),
+              "reactionsNeedUser",
+            );
+          const resolved = await requireItem(input.itemId, context, "write");
+          if (!resolved.ok) return resolved;
+          const result = await spacesService.item.reactions.add({
+            itemId: resolved.data.internalId,
+            spaceId: resolved.data.internalSpaceId,
+            emoji: input.emoji,
+            actor,
+          });
+          if (!result.ok) return fail(localizeSpacesError(result.error, context.locale));
+          return ok({
+            data: { reactions: boundReactionNames(result.data.reactions) },
+            summary: spacesMessages(context.locale).addedReaction({ title: resolved.data.item.title }),
+          });
+        }),
+    },
+    "reaction.remove": {
+      title: "Remove reaction",
+      description: "Remove your own emoji reaction on an item in a writable Space. No notifications or activity.",
+      input: ReactionInputSchema,
+      data: ReactionDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const t = spacesMessages(context.locale);
+        if (!commentAuthor(context))
+          return capabilityFail(context, err.forbidden("Reactions require a person or a standalone service account"), "reactionsNeedUser");
+        const resolved = await requireItem(input.itemId, context, "write");
+        if (!resolved.ok) return resolved;
+        return ok({
+          message: t.reviewRemoveReaction({ title: resolved.data.item.title }),
+          details: [
+            { label: t.item, value: resolved.data.item.title },
+            { label: t.emoji, value: input.emoji },
+          ],
+          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: itemApprovalScope(input.itemId),
+        });
+      },
+      run: async (input, context) =>
+        audited(actionAudit(context, "reaction.remove", "space_item", input.itemId), async () => {
+          const actor = commentAuthor(context);
+          if (!actor)
+            return capabilityFail(
+              context,
+              err.forbidden("Reactions require a person or a standalone service account"),
+              "reactionsNeedUser",
+            );
+          const resolved = await requireItem(input.itemId, context, "write");
+          if (!resolved.ok) return resolved;
+          const result = await spacesService.item.reactions.remove({
+            itemId: resolved.data.internalId,
+            spaceId: resolved.data.internalSpaceId,
+            emoji: input.emoji,
+            actor,
+          });
+          if (!result.ok) return fail(localizeSpacesError(result.error, context.locale));
+          return ok({
+            data: { reactions: boundReactionNames(result.data.reactions) },
+            summary: spacesMessages(context.locale).removedReaction({ title: resolved.data.item.title }),
+          });
+        }),
     },
     "comment.create": {
       title: "Create comment",

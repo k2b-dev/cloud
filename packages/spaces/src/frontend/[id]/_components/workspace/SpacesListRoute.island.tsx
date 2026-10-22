@@ -4,12 +4,12 @@ import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ItemListResult, SpaceColumn, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
 import { useSpaceMessages } from "../../messages";
-import FilterBar from "../filter/FilterBar";
 import { buildFilterUrl, defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
 import ItemsList from "../list";
 import { createLeavingItems } from "../shared/leaving";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import ItemsTable from "../table/ItemsTable";
+import { provideSpacesRouteFilters } from "./route-filters";
 import { useSpacesRouteQuery } from "./route-query";
 import { subscribeToSpacesDetailStep } from "./workspace-events";
 
@@ -41,6 +41,17 @@ export default function SpacesListRoute(props: Props) {
       snapshot.kind === "list" && snapshot.currentView === props.currentView ? { itemsResult: snapshot.itemsResult } : null,
     domains: ["view"],
   });
+  provideSpacesRouteFilters(
+    () => ({
+      view: props.currentView,
+      source: view.current().source,
+      requestedSource: view.source(),
+      busy: view.busy(),
+      searchReset: view.searchReset(),
+      total: view.current().itemsResult.total,
+    }),
+    view,
+  );
   const itemsResult = () => view.current().itemsResult;
   /** Rows a tick just took out of the list stay a moment, so the list does not empty under the pointer. */
   const leaving = createLeavingItems<SpaceItem>();
@@ -62,10 +73,6 @@ export default function SpacesListRoute(props: Props) {
       ),
     );
   });
-
-  const commitFilterPatch = (patch: Partial<FilterState>) => {
-    view.open(buildFilterUrl(view.source(), { ...patch, page: 1 }, view.requestedFilter()));
-  };
 
   const clearFilters = () => {
     view.open(buildFilterUrl(view.source(), defaultFilter, defaultFilter));
@@ -116,6 +123,7 @@ export default function SpacesListRoute(props: Props) {
           spaceId={props.spaceId}
           columns={props.columns}
           tags={props.tags}
+          currentUserId={props.currentUserId}
           selectedItemId={selectedItemId()}
           baseUrl={baseUrl()}
           scrollPreserveKey={`spaces-table-${props.spaceId}`}
@@ -149,21 +157,6 @@ export default function SpacesListRoute(props: Props) {
 
   return (
     <>
-      <FilterBar
-        spaceId={props.spaceId}
-        columns={props.columns}
-        tags={props.tags}
-        filter={view.requestedFilter()}
-        resultFilter={view.filter()}
-        searchBusy={view.busy()}
-        searchReset={view.searchReset()}
-        total={itemsResult().total}
-        baseUrl={baseUrl()}
-        hideGroupBy={props.currentView === "table"}
-        onFilterChange={commitFilterPatch}
-        onSearchChange={(search) => commitFilterPatch({ search })}
-        onClearFilters={clearFilters}
-      />
       <Show when={view.error()}>
         {(error) => (
           <div class="flex items-center justify-between gap-2 py-1 text-xs text-red-600" role="alert">

@@ -8,7 +8,6 @@ import {
   Dropdown,
   type DropdownItem,
   IconButton,
-  IconButtonLink,
   type NavigationItem,
   NoticeCard,
   Placeholder,
@@ -22,12 +21,11 @@ import { mayDeleteOrLockNotes } from "../../../../lib/note-delete-permission";
 import { parseSidebarFilter, type SidebarFilter, withSidebarFilter } from "../../../../lib/sidebar-filter";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
 import { extractTags } from "../../../lib/tag-extract";
-import { buildAttachmentsUrl, buildNoteUrl } from "../../../params";
+import { buildAttachmentsUrl, buildGraphUrl, buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
-import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
+import { NOTE_SOFT_NAVIGATED_EVENT, SIDEBAR_FILTER_CHANGED_EVENT } from "../detail/events";
 import { resolveSameNotebookNoteTarget } from "../editor/note-navigation";
 import { openNoteSearchPrompt } from "../search/openNoteSearchPrompt";
-import NotebookSettingsButton from "../settings/NotebookSettingsButton";
 import { openNotebookSettingsDialog } from "../settings/NotebookSettingsPanel";
 import { writeSettings } from "../settings/NotebookSettingsStore";
 import { showRestoredVersionNotice } from "../versions/restore-notice";
@@ -45,6 +43,10 @@ type Props = {
   ctx: NotebookContext;
   /** The page's editor toolbar shows the navigation toggle, so the sidebar adds no control of its own. */
   editorToolbar?: boolean;
+  /** The notebook page this sidebar stands beside, when it is one of the footer's items. */
+  current?: "attachments" | "graph";
+  /** The page Links returns to on Close when this page is not a note: its own address, or the graph's return page. */
+  graphBack?: string;
 };
 
 /** The filter in the address; showing a hidden navigation mounts the sidebar again after the address may have changed. */
@@ -89,6 +91,24 @@ export default function NotebookSidebar(props: Props) {
     writeSettings(notebook().id, { treeSort: value });
   };
   const attachmentsHref = () => buildAttachmentsUrl(notebook().id, props.ctx.presentationMode);
+  // The graph starts from the open note and keeps the sidebar filter. It carries the page it opened from, so Close
+  // returns there; while it shows, its footer item is the current page instead of that note.
+  const graphHref = () => {
+    const note = selectedNoteId();
+    const back =
+      props.graphBack ?? (note ? withSidebarFilter(buildNoteUrl(notebook().id, note, props.ctx.presentationMode), filter()) : undefined);
+    return withSidebarFilter(buildGraphUrl(notebook().id, note, props.ctx.presentationMode, back), filter());
+  };
+  const currentNoteId = () => (props.current === "graph" ? null : selectedNoteId());
+  const openSettings = () =>
+    openNotebookSettingsDialog({
+      notebook: notebook(),
+      tree: noteTree(),
+      isAdmin: props.ctx.permission === "admin",
+      canWrite,
+      dateConfig: props.ctx.dateConfig,
+      host: () => document.getElementById(NOTEBOOK_NAVIGATION_ID) ?? document.documentElement,
+    });
   const navigationHidden = createNavigationHidden(props.ctx.navigationHidden);
   followStoredNavigationHidden(navigationHidden);
 
@@ -100,6 +120,7 @@ export default function NotebookSidebar(props: Props) {
     setFilterState(next);
     const href = withSidebarFilter(`${window.location.pathname}${window.location.search}`, next);
     window.history.replaceState(window.history.state, "", `${href}${window.location.hash}`);
+    window.dispatchEvent(new Event(SIDEBAR_FILTER_CHANGED_EVENT));
   };
   const toggleFilter = (view: "favorites" | "recents") => setFilter(filter().view === view ? {} : { view });
   onMount(() => {
@@ -226,7 +247,7 @@ export default function NotebookSidebar(props: Props) {
     // The home icon takes the lock's place, so the homepage shows its lock at the row's end; the empty slot keeps the label in place.
     status: isHomepage(node) ? (node.lockedAt ? { icon: "ti ti-lock", label: t().locked } : null) : undefined,
     href: level ? buildNoteUrl(notebook().id, node.id, props.ctx.presentationMode) : listHref(node),
-    active: selectedNoteId() === node.id,
+    active: currentNoteId() === node.id,
     children: level ? node.children.map((child) => noteEntry(child, node.children)) : undefined,
     actions: phoneActions(node, level),
   });
@@ -318,7 +339,15 @@ export default function NotebookSidebar(props: Props) {
               ...sortedTree().map((node) => noteEntry(node, sortedTree())),
             ],
           },
-      { id: "attachments", label: t().attachments, icon: "ti ti-paperclip", href: attachmentsHref(), badge: attachmentCount() },
+      { id: "graph", label: t().noteLinks, icon: "ti ti-affiliate", href: graphHref(), active: props.current === "graph" },
+      {
+        id: "attachments",
+        label: t().attachments,
+        icon: "ti ti-paperclip",
+        href: attachmentsHref(),
+        badge: attachmentCount(),
+        active: props.current === "attachments",
+      },
       { id: "settings", label: t().settings, icon: "ti ti-settings", action: "settings" },
     ],
     onNavigate: handleSameNotebookNoteNavigate,
@@ -332,13 +361,7 @@ export default function NotebookSidebar(props: Props) {
         return;
       }
       if (action === "settings") {
-        await openNotebookSettingsDialog({
-          notebook: notebook(),
-          tree: noteTree(),
-          isAdmin: props.ctx.permission === "admin",
-          canWrite,
-          dateConfig: props.ctx.dateConfig,
-        });
+        await openSettings();
         return;
       }
       if (action === "search") {
@@ -428,7 +451,7 @@ export default function NotebookSidebar(props: Props) {
               onClick={() => toggleFilter("favorites")}
             >
               <i class="ti ti-star" aria-hidden="true" />
-              <span>{t().favorites}</span>
+              <span class="k2b-truncate-fade">{t().favorites}</span>
             </Button>
             <Button
               size="xs"
@@ -438,7 +461,7 @@ export default function NotebookSidebar(props: Props) {
               onClick={() => toggleFilter("recents")}
             >
               <i class="ti ti-clock" aria-hidden="true" />
-              <span>{t().recent}</span>
+              <span class="k2b-truncate-fade">{t().recent}</span>
             </Button>
             <Show when={tags().length > 0 || tagFilter()}>
               <Dropdown.Root
@@ -466,7 +489,7 @@ export default function NotebookSidebar(props: Props) {
                   aria-current={tagFilter() ? "true" : undefined}
                 >
                   <i class="ti ti-hash" aria-hidden="true" />
-                  <span>{tagFilter() ?? t().tags}</span>
+                  <span class="k2b-truncate-fade">{tagFilter() ?? t().tags}</span>
                   <i class="ti ti-chevron-down notebook-sidebar-chip__chevron" aria-hidden="true" />
                 </Dropdown.Trigger>
               </Dropdown.Root>
@@ -505,7 +528,7 @@ export default function NotebookSidebar(props: Props) {
                   <NoteTree
                     tree={sortedTree()}
                     notebookId={notebook().id}
-                    selectedNoteId={selectedNoteId()}
+                    selectedNoteId={currentNoteId()}
                     presentationMode={props.ctx.presentationMode}
                     homepageId={notebook().homepageNoteId}
                     onMove={orderable() ? (move) => actions.handlePlace(move.id, placementForMove(move)) : undefined}
@@ -515,7 +538,7 @@ export default function NotebookSidebar(props: Props) {
               }
             >
               <div class="notebook-sidebar-filter">
-                <span class="notebook-sidebar-filter__label">
+                <span class="notebook-sidebar-filter__label k2b-truncate-fade">
                   {filterLabel()} <small>{t().noteCount({ count: listedNotes().length })}</small>
                 </span>
                 <IconButton size="xs" label={t().clearFilter} tooltip={t().clearFilter} onClick={() => setFilter({})}>
@@ -534,7 +557,7 @@ export default function NotebookSidebar(props: Props) {
                 }
               >
                 <NoteRowsContextMenu menu={listMenu}>
-                  <AppWorkspace.NavTree ariaLabel={filterLabel()} selectedId={selectedNoteId()}>
+                  <AppWorkspace.NavTree ariaLabel={filterLabel()} selectedId={currentNoteId()}>
                     <For each={listedNotes()}>
                       {(note) => (
                         <AppWorkspace.NavTree.Item
@@ -555,25 +578,28 @@ export default function NotebookSidebar(props: Props) {
             </Show>
           </AppWorkspace.SidebarBody>
 
-          <AppWorkspace.SidebarFooter>
-            {/* The start of the footer stays free for who is in the notebook. */}
-            <div class="notebook-sidebar-foot">
-              <IconButtonLink href={attachmentsHref()} label={t().attachments} tooltip={t().attachmentCount({ count: attachmentCount() })}>
-                <i class="ti ti-paperclip" />
-              </IconButtonLink>
-              <NotebookSettingsButton
-                notebook={notebook()}
-                tree={noteTree()}
-                permission={props.ctx.permission}
-                dateConfig={props.ctx.dateConfig}
-              />
-            </div>
+          {/* Marking a footer item as the current page also names it, so the workspace head shows no way up beside it. */}
+          <AppWorkspace.SidebarFooter class="notebook-sidebar-foot">
+            <AppWorkspace.SidebarItem icon="ti ti-affiliate" href={graphHref()} active={props.current === "graph"}>
+              {t().noteLinks}
+            </AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem
+              icon="ti ti-paperclip"
+              href={attachmentsHref()}
+              active={props.current === "attachments"}
+              meta={attachmentCount() > 0 ? attachmentCount() : undefined}
+            >
+              {t().attachments}
+            </AppWorkspace.SidebarItem>
+            <AppWorkspace.SidebarItem icon="ti ti-settings" onClick={() => void openSettings()}>
+              {t().settings}
+            </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       {/* Views without the editor toolbar, such as an empty notebook, Read-only or
-          the attachments, still need a visible way back. */}
-      <NavigationVisibilityControls hidden={navigationHidden()} showControl={!props.editorToolbar} />
+          the attachments, still need a visible way back. The graph's own toolbar holds the toggle. */}
+      <NavigationVisibilityControls hidden={navigationHidden()} showControl={!props.editorToolbar && props.current !== "graph"} />
     </>
   );
 }

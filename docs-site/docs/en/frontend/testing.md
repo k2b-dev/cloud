@@ -5,7 +5,7 @@ section: Frontend
 order: 900
 description: Test server-rendered pages, interactive islands, navigation, and application states.
 tags: [testing, frontend, accessibility]
-updated: 2026-10-04
+updated: 2026-10-14
 ---
 
 # Frontend testing
@@ -53,6 +53,11 @@ For an owner-local query, also cover:
 
 Mock the typed API boundary. Do not mock the component's own state transitions.
 
+A browser test that waits for page animations to finish selects only those on
+the document timeline. Navigation labels from `@k2b/ui` run scroll-driven
+animations that never finish, so a wait on every animation never ends:
+`document.getAnimations().filter((animation) => animation.timeline === document.timeline)`.
+
 ## Test URL behavior
 
 Verify parsing and link building together.
@@ -85,7 +90,9 @@ covering snapshot. Test an event that arrives while invalidation is in flight.
 
 ## Run a visual and accessibility pass
 
-Check narrow and wide layouts in light and dark mode.
+Check narrow and wide layouts in light and dark mode. Compare element
+positions before and after each state change; see
+[Keep the layout still](/en/docs/frontend/styling-and-accessibility#keep-the-layout-still).
 
 Complete the primary flow with the keyboard. Verify focus order, accessible
 names, dialog focus return, status announcements, and contrast.

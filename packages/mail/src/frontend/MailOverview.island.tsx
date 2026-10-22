@@ -1,36 +1,18 @@
 import { listenPopState, navigate, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { detailPanel, mutation as mutations, query as queries } from "@k2b/stdlib/solid";
-import {
-  AppWorkspace,
-  Button,
-  ButtonLink,
-  IconButton,
-  PanelHeader,
-  Paper,
-  Placeholder,
-  prompts,
-  SegmentedControl,
-  toast,
-  useLocale,
-} from "@k2b/ui";
+import { detailPanel, query as queries } from "@k2b/stdlib/solid";
+import { AppWorkspace, Button, Placeholder, useLocale, ViewTabs } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MailContactDirectory } from "../contact-directory-settings";
-import {
-  type DeletedMailbox,
-  type DeletedMailboxPage,
-  MAX_MAILBOX_PREFERENCES,
-  type Mailbox,
-  type MailFocusPage,
-  type MailFocusView,
-} from "../contracts";
+import type { Mailbox, MailFocusPage, MailFocusView } from "../contracts";
 import type { MailConversationDetailData } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
-import { createMailboxCreation } from "./_components/create-mailbox-dialog";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
+import MailSidebar from "./_components/MailSidebar";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
-import { mailboxOverviewSubtitle } from "./_components/mail-health-presentation";
+import { createMailboxPreferences } from "./_components/mail-mailbox-preferences";
+import { openViewTabsInPlace } from "./_components/mail-view-tabs";
 import { mailOverviewMessages } from "./mail-overview-messages";
 import { assertCursorProgress } from "./pagination";
 
@@ -42,35 +24,14 @@ type MailFocusOverview = {
   counts: MailFocusPage["counts"];
   mailboxCounts: MailFocusPage["mailboxCounts"];
 };
-type MailboxOverviewItem = { id: string; href: string; name: string; subtitle: string };
 /** A Focus page and the hidden mailboxes it leaves out. */
 type MailFocusViewPage = MailFocusPage & { excludedMailboxIds: string[] };
 
-/** The object list needs room for a title and an address; the overview does not resize. */
-const OVERVIEW_LAYOUT = { version: 2 as const, sidebarWidth: 304 };
 const FOCUS_PAGE_SIZE = 50;
+/** F2: Fokus's Detail is a column only while Main keeps this width beside it. */
+const MAIL_FOCUS_MAIN_MIN = 420;
 
 const primaryParticipant = (summary: string, fallback: string): string => summary.split(/\s[·,]\s/u)[0]?.trim() || fallback;
-const participantInitials = (summary: string): string => {
-  const words =
-    summary
-      .split(/\s[·,]\s/u)[0]
-      ?.trim()
-      .split(/\s+/u)
-      .filter(Boolean) ?? [];
-  return (
-    words
-      .slice(0, 2)
-      .map((word) => word[0]?.toLocaleUpperCase())
-      .join("") || "M"
-  );
-};
-const avatarTone = (summary: string): string =>
-  String([...primaryParticipant(summary, "")].reduce((total, character) => total + character.codePointAt(0)!, 0) % 5);
-
-/** Follow-up dialogs load with the action that opens them, not with the overview. */
-type HealthDialog = typeof import("./_components/MailboxHealthDialog");
-
 function MailOverviewView(props: {
   mailboxes: MailboxWithPermission[];
   /** Null when the server could not read Focus; `initialFocusError` then says why. */
@@ -89,11 +50,13 @@ function MailOverviewView(props: {
   const messages = createMemo(() => mailOverviewMessages.resolve([locale()]).t);
   const formatCount = (count: number) => count.toLocaleString(locale());
   const [view, setView] = createSignal<MailFocusView>(props.initialView);
-  const [pinnedMailboxIds, setPinnedMailboxIds] = createSignal(props.initialPinnedMailboxIds);
-  const [hiddenMailboxIds, setHiddenMailboxIds] = createSignal(props.initialHiddenMailboxIds);
-  const [mailboxAnnouncement, setMailboxAnnouncement] = createSignal("");
+  const mailboxPreferences = createMailboxPreferences({
+    pinnedMailboxIds: props.initialPinnedMailboxIds,
+    hiddenMailboxIds: props.initialHiddenMailboxIds,
+  });
+  const hiddenMailboxIds = mailboxPreferences.hiddenMailboxIds;
   const [initialFocusError, setInitialFocusError] = createSignal(props.initialFocusError);
-  const mailboxIsHidden = (mailboxId: string) => hiddenMailboxIds().includes(mailboxId);
+  const mailboxIsHidden = mailboxPreferences.isHidden;
   // Counts are the same in every view's page, so the newest page any view loaded supplies them.
   const [latestCounts, setLatestCounts] = createSignal({
     counts: props.initialFocus?.counts ?? { mine: 0, unassigned: 0, waiting: 0, all: 0 },
@@ -165,132 +128,26 @@ function MailOverviewView(props: {
   );
   const counts = () => latestCounts().counts;
   const mailboxCounts = () => latestCounts().mailboxCounts;
-  const mailboxCountsById = createMemo(() => new Map(mailboxCounts().map((item) => [item.mailboxId, item])));
-  // Counts stay out of the items: a refreshed Focus page then updates the rows in place
-  // instead of recreating them, which would drop keyboard focus.
-  const mailboxOverviewItems = createMemo<MailboxOverviewItem[]>(() =>
-    props.mailboxes.map((mailbox) => ({
-      id: mailbox.id,
-      href: `/app/mail/${mailbox.id}?view=needs_action`,
-      name: mailbox.name,
-      subtitle: mailboxOverviewSubtitle(mailbox, locale()),
-    })),
-  );
-  const mailboxStats = (mailboxId: string) => mailboxCountsById().get(mailboxId) ?? { unread: 0, needsAction: 0 };
-  const orderedMailboxOverviewItems = createMemo(() => {
-    return [...mailboxOverviewItems()].sort((left, right) => {
-      const leftIndex = pinnedMailboxIds().indexOf(left.id);
-      const rightIndex = pinnedMailboxIds().indexOf(right.id);
-      if (leftIndex === -1 && rightIndex === -1) return 0;
-      if (leftIndex === -1) return 1;
-      if (rightIndex === -1) return -1;
-      return leftIndex - rightIndex;
-    });
-  });
-  const visibleMailboxItems = createMemo(() => orderedMailboxOverviewItems().filter((mailbox) => !mailboxIsHidden(mailbox.id)));
-  const hiddenMailboxItems = createMemo(() => orderedMailboxOverviewItems().filter((mailbox) => mailboxIsHidden(mailbox.id)));
-  const mailboxIsPinned = (mailboxId: string) => pinnedMailboxIds().includes(mailboxId);
-  const mailboxRowElement = (mailboxId: string | undefined) =>
-    mailboxId ? document.querySelector<HTMLElement>(`.mail-overview-mailbox[data-mailbox="${mailboxId}"]`) : null;
-  const mailboxLink = (mailboxId: string | undefined) => mailboxRowElement(mailboxId)?.querySelector<HTMLElement>("a") ?? null;
-  const mailboxHasFocus = (mailboxId: string) => mailboxRowElement(mailboxId)?.contains(document.activeElement) ?? false;
-  // Pinning, hiding, and showing move a row or recreate it in the other section, and the
-  // browser then drops keyboard focus on the page body. Put it on the given target instead.
-  const restoreMailboxFocus = (hadFocus: boolean, target: HTMLElement | null) => {
-    if (hadFocus && (!document.activeElement || document.activeElement === document.body)) target?.focus();
-  };
-  // Pins and hidden mailboxes belong to the person and apply on every device. The row moves at
-  // once and saves run in order. A failed save puts the mailbox back where the server last
-  // confirmed it, so overlapping changes never leave a state the server does not have.
-  const confirmedPreferences = { pinned: props.initialPinnedMailboxIds, hidden: props.initialHiddenMailboxIds };
-  let preferenceSaves = Promise.resolve();
-  /** Puts the mailbox at `index`, or leaves it out with -1. */
-  const placeMailbox = (ids: string[], mailboxId: string, index: number) => {
-    const others = ids.filter((id) => id !== mailboxId);
-    return index === -1 ? others : [...others.slice(0, index), mailboxId, ...others.slice(index)];
-  };
-  // A new pin or hide is the newest; an existing one keeps its place.
-  const withPreference = (ids: string[], mailboxId: string, value: boolean) =>
-    ids.includes(mailboxId) === value ? ids : placeMailbox(ids, mailboxId, value ? 0 : -1);
-  /** Returns false when the list is full, so the row stays where it is. */
-  const changeMailboxPreference = (mailboxId: string, preference: "pinned" | "hidden", value: boolean): boolean => {
-    const [shown, setShown] = preference === "pinned" ? [pinnedMailboxIds, setPinnedMailboxIds] : [hiddenMailboxIds, setHiddenMailboxIds];
-    // Focus leaves out every hidden mailbox in one request, so the lists stay within its limit.
-    if (value && shown().length >= MAX_MAILBOX_PREFERENCES) {
-      const count = formatCount(MAX_MAILBOX_PREFERENCES);
-      toast.error(preference === "pinned" ? messages().pinLimitReached({ count }) : messages().hideLimitReached({ count }));
-      return false;
-    }
-    setShown((ids) => withPreference(ids, mailboxId, value));
-    preferenceSaves = preferenceSaves.then(async () => {
-      try {
-        const response = await apiClient.mailboxes[":mailboxId"].preference.$patch({
-          param: { mailboxId },
-          json: preference === "pinned" ? { pinned: value } : { hidden: value },
-        });
-        if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveMailboxPreference));
-        const saved = await response.json();
-        confirmedPreferences[preference] = withPreference(confirmedPreferences[preference], mailboxId, saved[preference]);
-      } catch (error) {
-        const index = confirmedPreferences[preference].indexOf(mailboxId);
-        setShown((ids) => placeMailbox(ids, mailboxId, index));
-        toast.error(error instanceof Error ? error.message : messages().failedSaveMailboxPreference);
-      }
-    });
-    return true;
-  };
-  const toggleMailboxPin = (mailbox: MailboxOverviewItem) => {
-    const pin = !mailboxIsPinned(mailbox.id);
-    const hadFocus = mailboxHasFocus(mailbox.id);
-    if (!changeMailboxPreference(mailbox.id, "pinned", pin)) return;
-    setMailboxAnnouncement(pin ? messages().pinned({ name: mailbox.name }) : messages().unpinned({ name: mailbox.name }));
-    restoreMailboxFocus(hadFocus, mailboxLink(mailbox.id));
-  };
-  const toggleMailboxHidden = (mailbox: MailboxOverviewItem) => {
-    const hide = !mailboxIsHidden(mailbox.id);
-    const hadFocus = mailboxHasFocus(mailbox.id);
-    const visible = visibleMailboxItems();
-    const position = visible.findIndex((item) => item.id === mailbox.id);
-    const neighborId = (visible[position + 1] ?? visible[position - 1])?.id;
-    if (!changeMailboxPreference(mailbox.id, "hidden", hide)) return;
-    setMailboxAnnouncement(hide ? messages().mailboxHidden({ name: mailbox.name }) : messages().mailboxShown({ name: mailbox.name }));
-    if (hide && selection()?.mailboxId === mailbox.id) {
-      setSelection(null);
-      updateSelectionUrl(null);
-    }
-    // A hidden row lands in the collapsed Hidden section: focus the row that took its place, or
-    // that section once the list is empty. A shown row stays reachable, so focus follows it.
-    restoreMailboxFocus(
-      hadFocus,
-      hide
-        ? (mailboxLink(neighborId) ?? document.querySelector<HTMLElement>(".mail-overview-hidden-mailboxes button[aria-expanded]"))
-        : mailboxLink(mailbox.id),
-    );
-  };
   const canWriteMailbox = (mailboxId: string) => {
     const permission = props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.permission;
     return permission === "write" || permission === "admin";
   };
   /** False where the person sees only the conversations assigned to them. */
   const mailboxWide = (mailboxId: string) => props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.accessScope !== "assigned";
-  const focusDescription = () => {
-    const count = counts()[view()];
-    if (view() === "mine") return messages().focusDescriptionMine({ count });
-    if (view() === "unassigned") return messages().focusDescriptionUnassigned({ count });
-    if (view() === "waiting") return messages().focusDescriptionWaiting({ count });
-    return messages().focusDescriptionAll({ count });
-  };
-  const focusViewOptions = () => [
-    { value: "mine" as const, label: focusViewLabel(messages().forMe, counts().mine) },
-    { value: "unassigned" as const, label: focusViewLabel(messages().unassigned, counts().unassigned) },
-    { value: "waiting" as const, label: focusViewLabel(messages().waiting, counts().waiting) },
-    { value: "all" as const, label: focusViewLabel(messages().allActive, counts().all) },
-  ];
-  const focusViewLabel = (label: string, count: number) => (
-    <>
-      {label} <span class="mail-focus-tab-count">{count}</span>
-    </>
-  );
+  const focusTabs = () =>
+    (
+      [
+        ["mine", messages().forMe],
+        ["unassigned", messages().unassigned],
+        ["waiting", messages().waiting],
+        ["all", messages().allActive],
+      ] as const
+    ).map(([id, label]) => ({ id, label, href: id === "mine" ? "/app/mail" : `/app/mail?view=${id}`, count: formatCount(counts()[id]) }));
+  // Focus switches views in place, keeping each view's loaded rows; the tabs stay links for a new tab or a reload.
+  openViewTabsInPlace(focusTabs, (href) => {
+    const parsed = new URL(href, window.location.origin).searchParams.get("view");
+    selectView(parsed === "unassigned" || parsed === "waiting" || parsed === "all" ? parsed : "mine");
+  });
   // As many loading rows as the view will show, up to one page. A view expected to be empty gets one
   // row in a box of the empty state's height.
   const expectedRows = () => Math.min(counts()[view()], FOCUS_PAGE_SIZE);
@@ -306,8 +163,11 @@ function MailOverviewView(props: {
     return counts()[view()] === 0 || !(results.stale() || results.refreshing());
   };
   const [selection, setSelection] = createSignal<MailFocusSelection | null>(props.initialSelection);
-  const [wideLayout, setWideLayout] = createSignal(false);
-  const detailOpen = () => wideLayout() && selection() !== null;
+  // Fokus has no reader: from 48 rem a chosen conversation opens its Detail, as a column while Main keeps 420 px and
+  // otherwise as the drawer. A click on a phone opens the reader instead; a selection in the URL keeps its Detail
+  // (the sheet on a phone) before and after the island mounts.
+  const [wideLayout, setWideLayout] = createSignal(true);
+  const detailOpen = () => selection() !== null;
   const closeDetail = () => {
     setSelection(null);
     updateSelectionUrl(null);
@@ -328,7 +188,7 @@ function MailOverviewView(props: {
       const [mailboxId, conversationId] = source.split("/");
       if (!mailboxId || !conversationId) throw new Error(messages().invalidConversationSelection);
       const response = await apiClient.mailboxes[":mailboxId"]["workspace-detail"][":conversationId"].$get(
-        { param: { mailboxId, conversationId } },
+        { param: { mailboxId, conversationId }, query: {} },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadConversationDetails));
@@ -372,56 +232,12 @@ function MailOverviewView(props: {
     void focusResults().refresh();
   };
 
-  const [deletedOpen, setDeletedOpen] = createSignal(false);
-  const deletedResults = queries.createInfinite<string, DeletedMailboxPage, string>({
-    source: () => "deleted-mailboxes",
-    enabled: deletedOpen,
-    loadPage: async (_source, { cursor, abortSignal }) => {
-      const response = await apiClient.mailboxes.deleted.$get({ query: { limit: "100", cursor } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadDeletedMailboxes));
-      const page = await response.json();
-      assertCursorProgress(cursor, page.nextCursor, "deleted-mailbox");
-      return page;
-    },
-    getNextCursor: (page) => page.nextCursor,
-  });
-  const deletedMailboxes = createMemo(() => {
-    const merged = new Map<string, DeletedMailbox & { permission: "admin" }>();
-    for (const page of deletedResults.pages()) for (const mailbox of page.items) merged.set(mailbox.id, mailbox);
-    return [...merged.values()];
-  });
-
-  const createMailbox = createMailboxCreation(props, messages);
-
-  const restoreMailbox = mutations.create<{ mailbox: Mailbox; health?: HealthDialog } | null, string>({
-    mutation: async (mailboxId, { abortSignal }) => {
-      const confirmed = await prompts.confirm(messages().restoreWarning, {
-        title: messages().restoreMailbox,
-        confirmText: messages().restoreMailbox,
-      });
-      if (!confirmed || abortSignal.aborted) return null;
-      // As for a new mailbox: the health dialog loads during the request, and without it the mailbox still opens.
-      const health = import("./_components/MailboxHealthDialog").catch(() => undefined);
-      const response = await apiClient.mailboxes[":mailboxId"].restore.$post({ param: { mailboxId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readApiError(response, messages().failedRestoreMailbox));
-      return { mailbox: await response.json(), health: await health };
-    },
-    onSuccess: (restored) => {
-      if (!restored) return;
-      const { mailbox, health } = restored;
-      void deletedResults.refresh();
-      toast.success(messages().mailboxRestored);
-      if (!health) return navigateTo(`/app/mail/${mailbox.id}`);
-      void health.openMailboxHealthDialog({ mailboxId: mailbox.id }).then(() => navigateTo(`/app/mail/${mailbox.id}`));
-    },
-    onError: (error) => prompts.error(error.message),
-  });
-
   onMount(() => {
-    const media = window.matchMedia("(min-width: 64rem)");
-    const updateWideLayout = () => setWideLayout(media.matches);
-    updateWideLayout();
-    media.addEventListener("change", updateWideLayout);
+    const tablet = window.matchMedia("(min-width: 48rem)");
+    const followViewport = () => setWideLayout(tablet.matches);
+    followViewport();
+    tablet.addEventListener("change", followViewport);
+    onCleanup(() => tablet.removeEventListener("change", followViewport));
     const stop = listenPopState(({ url }) => {
       const parsed = url.searchParams.get("view");
       showView(parsed === "unassigned" || parsed === "waiting" || parsed === "all" ? parsed : "mine");
@@ -430,86 +246,9 @@ function MailOverviewView(props: {
       setSelection(mailboxId && conversationId ? { mailboxId, conversationId } : null);
     });
     onCleanup(() => {
-      media.removeEventListener("change", updateWideLayout);
       stop();
     });
   });
-  onCleanup(() => {
-    restoreMailbox.abort();
-  });
-
-  const mailboxRow = (mailbox: MailboxOverviewItem) => {
-    const pinned = () => mailboxIsPinned(mailbox.id);
-    const hidden = () => mailboxIsHidden(mailbox.id);
-    const stats = () => mailboxStats(mailbox.id);
-    // One number per row: needs action. Unread is a dot; both exact counts live in the tooltip and sr-only text.
-    const countLabels = () => [
-      ...(stats().needsAction > 0 ? [messages().needsActionCount({ count: stats().needsAction })] : []),
-      ...(stats().unread > 0 ? [messages().unreadCount({ count: stats().unread })] : []),
-    ];
-    return (
-      <AppWorkspace.SidebarItem
-        variant="object"
-        href={mailbox.href}
-        title={[mailbox.name, mailbox.subtitle, ...countLabels()].join(" · ")}
-        description={mailbox.subtitle}
-        class="mail-overview-mailbox"
-        data={{ mailbox: mailbox.id, pinned: pinned() && !hidden() ? "true" : undefined, hidden: hidden() ? "true" : undefined }}
-        actions={
-          <AppWorkspace.SidebarItemActions visibility="hover">
-            <Show
-              when={!hidden()}
-              fallback={
-                <IconButton
-                  label={messages().showMailbox({ name: mailbox.name })}
-                  size="xs"
-                  variant="text"
-                  onClick={() => toggleMailboxHidden(mailbox)}
-                >
-                  <i class="ti ti-eye" aria-hidden="true" />
-                </IconButton>
-              }
-            >
-              <IconButton
-                label={pinned() ? messages().unpinMailbox({ name: mailbox.name }) : messages().pinMailbox({ name: mailbox.name })}
-                size="xs"
-                variant="text"
-                aria-pressed={pinned()}
-                onClick={() => toggleMailboxPin(mailbox)}
-              >
-                <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
-              </IconButton>
-              <IconButton
-                label={messages().hideMailbox({ name: mailbox.name })}
-                size="xs"
-                variant="text"
-                onClick={() => toggleMailboxHidden(mailbox)}
-              >
-                <i class="ti ti-eye-off" aria-hidden="true" />
-              </IconButton>
-            </Show>
-          </AppWorkspace.SidebarItemActions>
-        }
-      >
-        <AppWorkspace.SidebarItemIcon>
-          <i class={hidden() ? "ti ti-eye-off" : pinned() ? "ti ti-flag" : "ti ti-mail"} />
-          <Show when={stats().unread > 0}>
-            <span class="mail-overview-unread-dot" />
-          </Show>
-        </AppWorkspace.SidebarItemIcon>
-        <AppWorkspace.SidebarItemLabel>{mailbox.name}</AppWorkspace.SidebarItemLabel>
-        <AppWorkspace.SidebarItemMeta>
-          <span class="mail-overview-needs-action" aria-hidden="true">
-            {stats().needsAction > 0 ? formatCount(stats().needsAction) : ""}
-          </span>
-          <Show when={countLabels().length > 0}>
-            <span class="sr-only">{countLabels().join(", ")}</span>
-          </Show>
-        </AppWorkspace.SidebarItemMeta>
-      </AppWorkspace.SidebarItem>
-    );
-  };
-
   const focusPanel = () => (
     <>
       <Show when={focusError()}>
@@ -533,29 +272,24 @@ function MailOverviewView(props: {
           <span class="sr-only">{messages().loadingFocus}</span>
           <For each={skeletonRows()}>
             {() => (
-              <div class="mail-focus-row" aria-hidden="true">
-                <span class="mail-focus-unread-slot" />
-                <span class="mail-focus-avatar mail-focus-skeleton-shape" />
-                <span class="mail-focus-copy">
-                  <span class="mail-focus-sender">
-                    <span class="mail-focus-skeleton-shape" style={{ width: "8rem" }} />
-                  </span>
-                  <span class="mail-focus-subject">
-                    <span class="mail-focus-skeleton-shape" style={{ width: "60%" }} />
-                  </span>
-                  <span class="mail-focus-preview">
-                    <span class="mail-focus-skeleton-shape" style={{ width: "85%" }} />
-                  </span>
-                  <span class="mail-focus-meta">
-                    <span>
+              <div class="mail-list-entry mail-focus-row" data-lines="4" aria-hidden="true">
+                <span class="mail-list-row">
+                  <span class="mail-row-dot" />
+                  <span class="mail-row-lines">
+                    <span class="mail-row-from">
+                      <span class="mail-focus-skeleton-shape" style={{ width: "8rem" }} />
+                    </span>
+                    <span class="mail-row-subject-line">
+                      <span class="mail-focus-skeleton-shape" style={{ width: "60%" }} />
+                    </span>
+                    <span class="mail-list-preview">
+                      <span class="mail-focus-skeleton-shape" style={{ width: "85%" }} />
+                    </span>
+                    <span class="mail-row-extra">
                       <span class="mail-focus-skeleton-shape" style={{ width: "10rem" }} />
                     </span>
                   </span>
                 </span>
-                <span class="mail-focus-time">
-                  <span class="mail-focus-skeleton-shape" style={{ width: "3rem" }} />
-                </span>
-                <span class="mail-focus-chevron" />
               </div>
             )}
           </For>
@@ -583,53 +317,63 @@ function MailOverviewView(props: {
             {(item) => (
               <a
                 href={`/app/mail/${item.mailboxId}?conversation=${item.id}`}
-                class="mail-focus-row group"
-                classList={{ "is-selected": selection()?.conversationId === item.id && selection()?.mailboxId === item.mailboxId }}
+                class="mail-list-entry mail-focus-row"
+                classList={{
+                  "mail-list-entry-unread": item.unread,
+                  "mail-list-entry-active": selection()?.conversationId === item.id && selection()?.mailboxId === item.mailboxId,
+                }}
+                data-lines="4"
                 aria-current={selection()?.conversationId === item.id && selection()?.mailboxId === item.mailboxId ? "true" : undefined}
                 onClick={(event) => selectConversation(event, { mailboxId: item.mailboxId, conversationId: item.id })}
               >
-                <span class="mail-focus-unread-slot" aria-hidden="true">
-                  <Show when={item.unread}>
-                    <span class="mail-focus-unread-dot" />
-                  </Show>
-                </span>
-                <span class="mail-focus-avatar" data-tone={avatarTone(item.participantSummary)} aria-hidden="true">
-                  {participantInitials(item.participantSummary)}
-                </span>
-                <span class="mail-focus-copy">
-                  <span class="mail-focus-sender">{primaryParticipant(item.participantSummary, messages().unknownSender)}</span>
-                  <span class={`mail-focus-subject ${item.unread ? "mail-focus-subject-unread" : ""}`}>
-                    {item.subject || messages().noSubject}
-                  </span>
-                  <span class="mail-focus-preview">{item.preview || messages().noPreview}</span>
-                  <span class="mail-focus-meta">
-                    <span>
-                      <i class="ti ti-inbox" aria-hidden="true" /> {item.mailboxName}
+                <span class="mail-list-row">
+                  <span class="mail-row-dot" aria-hidden="true" />
+                  <span class="mail-row-lines">
+                    <span class="mail-row-from">
+                      <span class="mail-row-sender">{primaryParticipant(item.participantSummary, messages().unknownSender)}</span>
+                      <time
+                        class="mail-row-time"
+                        dateTime={item.latestMessageAt}
+                        title={dates.formatDateTime(item.latestMessageAt, props.dateConfig)}
+                      >
+                        {dates.formatDateTimeRelative(item.latestMessageAt, props.dateConfig)}
+                      </time>
                     </span>
-                    <span class={item.workStatus === "waiting" ? "mail-focus-status-waiting" : "mail-focus-status-action"}>
-                      <i class={item.workStatus === "waiting" ? "ti ti-clock" : "ti ti-message-exclamation"} aria-hidden="true" />
-                      {item.workStatus === "waiting" ? messages().waiting : messages().needsAction}
+                    <span class="mail-row-subject-line">
+                      <span class="mail-row-subject">{item.subject || messages().noSubject}</span>
+                      <span class="mail-row-marks">
+                        <Show when={item.hasAttachments}>
+                          <span class="mail-row-mark" role="img" aria-label={messages().attachment}>
+                            <i class="ti ti-paperclip" aria-hidden="true" />
+                          </span>
+                        </Show>
+                        <Show when={item.flagged}>
+                          <span class="mail-row-mark mail-row-flag" role="img" aria-label={messages().flagged}>
+                            <i class="ti ti-flag-filled" aria-hidden="true" />
+                          </span>
+                        </Show>
+                        <Show when={item.assigneeUserIds.length > 0}>
+                          <span class="mail-row-mark" role="img" aria-label={messages().assigned}>
+                            <i class="ti ti-user-check" aria-hidden="true" />
+                          </span>
+                        </Show>
+                      </span>
                     </span>
-                    <Show when={item.flagged}>
-                      <span>
-                        <i class="ti ti-flag-filled" aria-hidden="true" /> {messages().flagged}
+                    <span class="mail-list-preview">{item.preview || messages().noPreview}</span>
+                    <span class="mail-row-extra">
+                      <span class="mail-row-mailbox">
+                        <i class="ti ti-inbox" aria-hidden="true" />
+                        <span class="mail-row-mailbox-name">{item.mailboxName}</span>
                       </span>
-                    </Show>
-                    <Show when={item.hasAttachments}>
-                      <span>
-                        <i class="ti ti-paperclip" aria-hidden="true" /> {messages().attachment}
-                      </span>
-                    </Show>
+                      <Show when={item.workStatus === "waiting"}>
+                        <span class="mail-row-waiting">
+                          <i class="ti ti-hourglass" aria-hidden="true" />
+                          {messages().waiting}
+                        </span>
+                      </Show>
+                    </span>
                   </span>
                 </span>
-                <time
-                  class="mail-focus-time"
-                  dateTime={item.latestMessageAt}
-                  title={dates.formatDateTime(item.latestMessageAt, props.dateConfig)}
-                >
-                  {dates.formatDateTimeRelative(item.latestMessageAt, props.dateConfig)}
-                </time>
-                <i class="ti ti-chevron-right mail-focus-chevron" aria-hidden="true" />
               </a>
             )}
           </For>
@@ -651,123 +395,36 @@ function MailOverviewView(props: {
   );
 
   return (
-    <AppWorkspace mobileSurface="flush" flat class="mail-focus-workspace" resizable={false} layoutState={() => OVERVIEW_LAYOUT}>
+    <AppWorkspace mobileSurface="flush" flat class="mail-focus-workspace">
       <h1 class="sr-only">Mail</h1>
-      <AppWorkspace.Sidebar label={messages().mailboxes} mobile="stacked" resizable={false}>
-        <AppWorkspace.SidebarDesktop>
-          <AppWorkspace.SidebarBody scrollPreserveKey={false}>
-            <AppWorkspace.SidebarSection title={messages().mailboxes} count={visibleMailboxItems().length}>
-              <For each={visibleMailboxItems()}>{mailboxRow}</For>
-            </AppWorkspace.SidebarSection>
-            <Show when={hiddenMailboxItems().length > 0}>
-              <AppWorkspace.SidebarSection
-                class="mail-overview-hidden-mailboxes"
-                title={messages().hiddenMailboxes}
-                count={hiddenMailboxItems().length}
-                collapsible
-                defaultOpen={false}
-              >
-                <For each={hiddenMailboxItems()}>{mailboxRow}</For>
-              </AppWorkspace.SidebarSection>
-            </Show>
-            <span class="sr-only" aria-live="polite">
-              {mailboxAnnouncement()}
-            </span>
-          </AppWorkspace.SidebarBody>
-          <AppWorkspace.SidebarFooter>
-            <AppWorkspace.SidebarItem
-              icon="ti ti-mail-plus"
-              disabled={createMailbox.loading()}
-              title={messages().newMailbox}
-              onClick={() => createMailbox.mutate()}
-            >
-              {createMailbox.loading() ? messages().creatingMailbox : messages().newMailbox}
-            </AppWorkspace.SidebarItem>
-            <AppWorkspace.SidebarItem
-              icon="ti ti-trash"
-              title={messages().recentlyDeletedMailboxes}
-              onClick={() => setDeletedOpen((open) => !open)}
-            >
-              <AppWorkspace.SidebarItemLabel>{messages().recentlyDeletedMailboxes}</AppWorkspace.SidebarItemLabel>
-              <AppWorkspace.SidebarItemMeta>
-                <i class={deletedOpen() ? "ti ti-chevron-up" : "ti ti-chevron-down"} aria-hidden="true" />
-              </AppWorkspace.SidebarItemMeta>
-            </AppWorkspace.SidebarItem>
-            <Show when={deletedOpen()}>
-              <div id="mail-deleted-mailboxes" class="mail-focus-deleted" role="group" aria-label={messages().recentlyDeletedMailboxes}>
-                <Show when={deletedResults.error()}>
-                  {(error) => (
-                    <Placeholder
-                      state="error"
-                      title={messages().failedLoadDeletedMailboxes}
-                      description={error().message}
-                      action={
-                        <Button variant="secondary" size="sm" onClick={() => void deletedResults.refresh()}>
-                          {messages().retry}
-                        </Button>
-                      }
-                    />
-                  )}
-                </Show>
-                <Show when={!deletedResults.error() && deletedMailboxes().length === 0}>
-                  <Placeholder
-                    state={deletedResults.loading() ? "loading" : "empty"}
-                    title={deletedResults.loading() ? messages().loadingDeletedMailboxes : messages().noDeletedMailboxes}
-                  />
-                </Show>
-                <For each={deletedMailboxes()}>
-                  {(mailbox) => (
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      loading={restoreMailbox.loading()}
-                      loadingLabel={messages().restoringMailbox({ name: mailbox.name })}
-                      onClick={() => restoreMailbox.mutate(mailbox.id)}
-                    >
-                      <i class="ti ti-restore" aria-hidden="true" /> {messages().restoreNamedMailbox({ name: mailbox.name })}
-                    </Button>
-                  )}
-                </For>
-                <Show when={deletedResults.hasMore()}>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    loading={deletedResults.loadingMore()}
-                    onClick={() => void deletedResults.loadMore()}
-                  >
-                    {messages().loadMore}
-                  </Button>
-                </Show>
-              </div>
-            </Show>
-          </AppWorkspace.SidebarFooter>
-        </AppWorkspace.SidebarDesktop>
-      </AppWorkspace.Sidebar>
+      <MailSidebar
+        currentUserEmail={props.currentUserEmail}
+        contactDirectory={props.contactDirectory}
+        mailboxes={props.mailboxes}
+        preferences={mailboxPreferences}
+        counts={mailboxCounts()}
+        canCreate
+        open={null}
+        mobile="stacked"
+        onMailboxHidden={(mailboxId) => {
+          if (selection()?.mailboxId !== mailboxId) return;
+          setSelection(null);
+          updateSelectionUrl(null);
+        }}
+      />
+      <AppWorkspace.Head
+        views={<ViewTabs label={messages().focusView} items={focusTabs()} current={view()} />}
+        primary={{ label: messages().compose, icon: "ti ti-pencil", href: "/app/mail/compose" }}
+      />
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="mail-focus-main" width="content" aria-busy={focusResults().loading() || focusResults().refreshing()}>
+        <AppWorkspace.Main
+          class="mail-focus-main"
+          width="content"
+          minWidth={MAIL_FOCUS_MAIN_MIN}
+          aria-busy={focusResults().loading() || focusResults().refreshing()}
+        >
           <div class="mail-overview-page">
-            <PanelHeader
-              as="h2"
-              size="lg"
-              title={messages().focus}
-              subtitle={focusDescription()}
-              actions={
-                <ButtonLink href="/app/mail/compose" class="mail-compose-action">
-                  <i class="ti ti-pencil" aria-hidden="true" /> {messages().compose}
-                </ButtonLink>
-              }
-            />
-            <div class="mail-overview-toolbar">
-              <SegmentedControl<MailFocusView>
-                class="mail-overview-views"
-                size="sm"
-                ariaLabel={messages().focusView}
-                value={view}
-                onValueChange={selectView}
-                options={focusViewOptions()}
-              />
-            </div>
-            <Paper class="mail-overview-list">{focusPanel()}</Paper>
+            <div class="mail-overview-list">{focusPanel()}</div>
           </div>
         </AppWorkspace.Main>
 

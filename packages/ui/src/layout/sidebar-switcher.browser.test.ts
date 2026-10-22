@@ -395,12 +395,16 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
               return {
                 height: element.getBoundingClientRect().height,
                 line: Number.parseFloat(getComputedStyle(name).lineHeight),
-                clamped: name.scrollHeight > name.clientHeight,
+                clamped: name.scrollHeight > name.clientHeight || name.scrollWidth > name.clientWidth,
+                textOverflow: getComputedStyle(name).textOverflow,
+                mask: getComputedStyle(name).maskImage,
               };
             });
-            // Two name lines are reserved for every name; a long one ends with an ellipsis after them, or after one beside a fact.
+            // Two name lines are reserved for every name; a long one fades out after them, or after one beside a fact.
             expect(size.height).toBe(2 * size.line);
             expect(size.clamped).toBe(long);
+            expect(size.textOverflow).not.toBe("ellipsis");
+            expect(size.mask).toContain("linear-gradient");
             expect(await page.locator(trigger).getAttribute("title")).toBe(long ? fullName : "Work");
             expect(await page.locator(trigger).getAttribute("aria-label")).toBe(long ? fullName : "Work");
             const before = await geometry(page);
@@ -517,6 +521,42 @@ describe("AppWorkspace.SidebarSwitcher in the browser", () => {
         const button = await page.locator(trigger).boundingBox();
         const bounds = await page.locator(panel).boundingBox();
         expect(bounds!.x).toBeGreaterThanOrEqual(button!.x + button!.width);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "a collapsed sidebar in a host narrower than 64 rem opens the panel below its expanded trigger",
+    async () => {
+      const page = await load(1366, "collapsed=1");
+      try {
+        await page.locator("#app").evaluate((app) => {
+          app.style.container = "k2b-app-area / inline-size";
+          app.style.width = "860px";
+        });
+        await page.locator("[data-app-workspace-sidebar-toggle]").click();
+        await prime(page);
+        await page.locator(trigger).click();
+        await page.locator(panel).waitFor({ state: "visible" });
+        const button = await page.locator(trigger).boundingBox();
+        const bounds = await page.locator(panel).boundingBox();
+        expect(bounds!.y).toBeGreaterThanOrEqual(button!.y + button!.height);
+        expect(bounds!.width).toBeGreaterThanOrEqual(button!.width);
+        // Widening the host turns the overlay back into the rail; the open panel follows its trigger.
+        await page.locator("#app").evaluate((app) => {
+          app.style.width = "1100px";
+        });
+        await page.waitForFunction(
+          ([triggerSelector, panelSelector]) => {
+            const button = document.querySelector(triggerSelector)!.getBoundingClientRect();
+            const panel = document.querySelector(panelSelector)!.getBoundingClientRect();
+            return panel.width > 0 && panel.left >= button.right;
+          },
+          [trigger, panel] as const,
+        );
       } finally {
         await page.close();
       }

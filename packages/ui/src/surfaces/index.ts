@@ -1,5 +1,7 @@
-export type { AvatarProps, AvatarSize } from "./Avatar";
+export type { AvatarProps, AvatarRing, AvatarShape, AvatarSize } from "./Avatar";
 export { Avatar } from "./Avatar";
+export type { AvatarStackPerson, AvatarStackProps } from "./AvatarStack";
+export { AvatarStack } from "./AvatarStack";
 export type { DescriptionListItem, DescriptionListProps } from "./DescriptionList";
 export { DescriptionList } from "./DescriptionList";
 export type { LinkCardColor, LinkCardProps } from "./LinkCard";
@@ -24,6 +26,7 @@ export type { ProgressRingProps, ProgressRingTone } from "./ProgressRing";
 export { ProgressRing } from "./ProgressRing";
 export type { ResourceCardProps, ResourceCardState } from "./ResourceCard";
 export { ResourceCard } from "./ResourceCard";
+export { Skeleton, type SkeletonProps } from "./Skeleton";
 export type { StatCellAccent, StatCellProps, StatCellTone } from "./StatCell";
 export { StatCell } from "./StatCell";
 export type {

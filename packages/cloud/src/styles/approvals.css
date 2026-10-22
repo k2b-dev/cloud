@@ -366,6 +366,12 @@
   overflow-wrap: anywhere;
 }
 
+.k2b-ui .cloud-approval-band__reason {
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
 .k2b-ui .cloud-approval-band__text .cloud-approval__origin {
   margin: 0;
 }

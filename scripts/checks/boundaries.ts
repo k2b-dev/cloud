@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { packageIds } from "../workspace";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { appIds, packageIds } from "../workspace";
 import { isTestFile, listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
@@ -127,6 +127,37 @@ const checkUiPackageBoundaries = (workspaceRoot: string): Finding[] => {
   return findings;
 };
 
+/**
+ * The platform never depends on an application's package or source tree at
+ * runtime. Tests may import an application's migrations to set up a database.
+ */
+const checkCloudApplicationImports = (workspaceRoot: string): Finding[] => {
+  const findings: Finding[] = [];
+  const packagesRoot = resolve(workspaceRoot, "packages");
+  const applications = new Set(appIds(workspaceRoot));
+  for (const directory of ["src", "scripts"]) {
+    for (const file of listFiles(join(packagesRoot, "cloud", directory), sourceFilePattern)) {
+      if (isTestFile(file)) continue;
+      const source = readFileSync(file, "utf8");
+      for (const { specifier, index } of extractSpecifiers(source)) {
+        const target = specifier.startsWith(".")
+          ? resolve(dirname(file), specifier)
+          : isAbsolute(specifier)
+            ? specifier
+            : resolve(workspaceRoot, specifier);
+        const packageName = relative(packagesRoot, target).split(/[\\/]/)[0];
+        if (!specifier.startsWith("@k2b/cloud-app-") && !applications.has(packageName ?? "")) continue;
+        findings.push({
+          file,
+          line: lineFromIndex(source, index),
+          message: `The Cloud platform must not import application packages or sources (${specifier}).`,
+        });
+      }
+    }
+  }
+  return findings;
+};
+
 /** contracts/shared must stay app-agnostic. */
 const checkContractsSharedDrift = (workspaceRoot: string): Finding[] => {
   const sharedFile = join(workspaceRoot, "packages", "cloud", "src", "contracts", "shared.ts");
@@ -248,6 +279,7 @@ export const rule: Rule = {
     return [
       ...checkAppsBoundaries(workspaceRoot, appNames),
       ...checkUiPackageBoundaries(workspaceRoot),
+      ...checkCloudApplicationImports(workspaceRoot),
       ...checkContractsSharedDrift(workspaceRoot),
       ...checkCliOutputModes(workspaceRoot, appNames),
       ...checkActorUsage(workspaceRoot, appNames),

@@ -54,6 +54,9 @@ export const AuthResponseSchema = z.object({
   user: UserSchema,
 });
 
+/** Password-change sign-in result; retry ending other sign-ins when signOutOthersFailed is true. */
+export const PasswordChangeAuthResponseSchema = AuthResponseSchema.extend({ signOutOthersFailed: z.boolean() });
+
 export const VerifyPasskeyAuthenticationSchema = z.object({
   response: z.unknown(),
   acceptedAgb: z.literal(true).optional(),

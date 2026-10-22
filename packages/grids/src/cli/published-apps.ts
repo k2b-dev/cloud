@@ -18,6 +18,7 @@ const segment = (value: string) => {
 const path = (args: { app: string; page?: string; block?: string }, tail: string[] = []) =>
   `/apps/runtime/${[requirePublicId(args.app, "App"), ...[args.page, args.block].filter((value): value is string => value !== undefined), ...tail].map(segment).join("/")}`;
 
+// Published projections need no Base access; canonical readers do, so added permalinks would return 404.
 export const publishedAppCommands = [
   command("apps runtime read", {
     summary: "Discover an authorized published page, its data, forms and available actions",

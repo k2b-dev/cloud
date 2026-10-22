@@ -18,6 +18,7 @@ import { notebooksService } from "@/service";
 import { ssr } from "../../../config";
 import { requestedPresentationMode, withPresentationMode } from "../../../lib/presentation-url";
 import { parseSidebarFilter } from "../../../lib/sidebar-filter";
+import { notebooksPageMessages } from "../../messages";
 import { buildAttachmentsUrl } from "../../params";
 import AttachmentsOverview from "../_components/attachments-overview/AttachmentsOverview.island";
 import RememberNotebook from "../_components/RememberNotebook.island";
@@ -37,6 +38,7 @@ const parsePage = (raw: string | undefined): number => {
 
 export default ssr<AuthContext>(async (c) => {
   const t = notebookWorkspaceMessages.resolve([getLocale(c)]).t;
+  const printHint = notebooksPageMessages.resolve([getLocale(c)]).t.printHint;
   const user = expectUserBackedActor(c);
   const notebookShortId = c.req.param("id")!;
   const search = (c.req.query("search") ?? "").trim();
@@ -114,6 +116,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout
+      printHint={printHint}
       c={c}
       fullPage
       title={[
@@ -126,7 +129,7 @@ export default ssr<AuthContext>(async (c) => {
       <RememberNotebook notebookId={notebook.shortId} />
       <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
         <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
-        <NotebookSidebar ctx={ctx} />
+        <NotebookSidebar ctx={ctx} current="attachments" graphBack={c.req.path + new URL(c.req.url).search} />
         <AppWorkspace.Content>
           <AppWorkspace.Main class="flex-col p-[var(--ui-space-shell)]" scroll={false}>
             {/* Search bar across the full content width. The breadcrumb already

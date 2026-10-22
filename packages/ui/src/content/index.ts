@@ -41,7 +41,7 @@ export type {
   ChartExplorerSnapshot,
 } from "./chart-explorer";
 export { createChartExplorer } from "./chart-explorer";
-export type { ChartDatumRef, ChartSelection, ChartTooltip, ChartTooltipFormatter } from "./chart-inspection";
+export type { ChartDatumRef, ChartSelection, ChartTooltip, ChartTooltipFormatter } from "./chart-inspection-core";
 export type { ChartSnapshot } from "./chart-snapshot";
 export { prepareChartSnapshot } from "./chart-snapshot";
 export type {
@@ -51,6 +51,7 @@ export type {
   StateTimelineRow,
   StateTimelineState,
 } from "./chart-state-timeline";
+export { highlightSql } from "./code-highlight";
 export { type CollectionSelection, createCollectionSelection, type SelectionModifiers } from "./collection-selection";
 export type {
   DataTableColumn,
@@ -70,6 +71,7 @@ export { DocCode, DocConceptGrid, DocInlineCode, DocLead, DocNote, DocPage, DocR
 export { FileBrowserPanel, type FileBrowserPanelProps, type FileSource, openFileBrowser } from "./FileBrowser";
 export { FileGrid, type FileGridProps } from "./FileGrid";
 export { default as FileTree, type FileTreeActions, type FileTreeEntry, type FileTreeProps } from "./FileTree";
+export { type FileType, FileTypeIcon, type FileTypeIconProps, fileTypeOf } from "./FileTypeIcon";
 export {
   canPreviewFile,
   default as FileView,
@@ -90,6 +92,9 @@ export type { LightboxAction, LightboxImage } from "./Lightbox";
 export { default as Lightbox } from "./Lightbox";
 export type { LogTableEntry } from "./LogEntriesTable";
 export { default as LogEntriesTable } from "./LogEntriesTable";
+export { MapAttribution } from "./MapAttribution";
+export { MapView } from "./MapView";
+export { MapViewFrame } from "./MapViewFrame";
 export { default as MarkdownView, type MarkdownRenderOptions, type MarkdownViewProps, renderSafeMarkdown } from "./MarkdownView";
 export type {
   MessageGroupEntry,
@@ -107,6 +112,22 @@ export type {
   MessageSystemRowProps,
 } from "./MessageRow";
 export { MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
+export { type MapPaletteColors, type MapTheme, mapPalette } from "./map-palette";
+export { type MapStyleOptions, mapAttribution, mapStyle } from "./map-style";
+export type {
+  MapViewArea,
+  MapViewFit,
+  MapViewFrameProps,
+  MapViewLine,
+  MapViewLineTone,
+  MapViewMarker,
+  MapViewOwnLocation,
+  MapViewPoint,
+  MapViewProps,
+  MapViewStyle,
+  MapViewStyleSource,
+  MapViewTone,
+} from "./map-view-types";
 export {
   MARKDOWN_CALLOUT_CLASSES,
   MARKDOWN_CALLOUT_ICON_ATTRIBUTES,
@@ -134,6 +155,14 @@ export type { PdfPreviewProps, PdfPreviewRequest } from "./PdfPreview";
 export { default as PdfPreview } from "./PdfPreview";
 export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
+export { ReactionBar, type ReactionBarItem, type ReactionBarProps } from "./ReactionBar";
+export type {
+  ReferenceChipObjectProps,
+  ReferenceChipPersonProps,
+  ReferenceChipProps,
+  ReferenceChipTimeProps,
+} from "./ReferenceChip";
+export { REFERENCE_CHIP_MAX_CHARACTERS, ReferenceChip, truncateMiddle } from "./ReferenceChip";
 export type { StepsProps } from "./Steps";
 export { Steps } from "./Steps";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";

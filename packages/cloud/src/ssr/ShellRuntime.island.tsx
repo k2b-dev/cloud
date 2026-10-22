@@ -1,18 +1,24 @@
 import type { HelpDocumentManifest } from "@k2b/cloud/shared";
+import { installPageSwap } from "@k2b/ssr/nav";
 import {
   followPageTrail,
   installAppWorkspaceController,
+  installInputModeController,
   installPageTitleController,
+  keyboardPlatform,
   serializeAppWorkspaceLayoutState,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, onCleanup, onMount } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { isServer } from "solid-js/web";
 import { appWorkspaceCookieName, readAppWorkspaceLayoutCookie } from "../_internal/app-workspace-state";
 import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
 import { navigationSearchItems } from "../browser/navigation-search";
+import { openPanel, type PanelRequest } from "../browser/panel";
 import { importOnDemand } from "../browser/reload";
 import { registerGlobalSearchHost } from "../browser/search-bridge";
+import { attachShellFocusControls, readShellFocus, SHELL_FOCUS_CHANGE_EVENT, toggleShellFocus } from "../browser/shell-focus";
 import {
   ANNOUNCEMENTS_COOKIE,
   ANNOUNCEMENTS_COOKIE_MAX_AGE_SECONDS,
@@ -26,9 +32,12 @@ import { LayoutHelpDocuments } from "./layout-help-registry";
 import { installPageTrailRuntime } from "./page-trail-runtime";
 import { platformMessages } from "./platform-messages";
 import { readShellData } from "./shell-data";
+import { shellShortcuts } from "./shell-shortcuts";
 import { syncTimezoneCookie } from "./timezone-cookie";
 
 export type ShellRuntimeProps = {
+  /** This page has an authorized panel slot. */
+  panel?: boolean;
   /** Layout pages outside focus mode: keep the current app's workspace layout in its cookie. */
   workspace?: { appId?: string };
   /** Layout pages: page titles, the way up (Alt+Up) and its per-tab memory. */
@@ -37,6 +46,8 @@ export type ShellRuntimeProps = {
   help?: { documents: readonly HelpDocumentManifest[]; pageBase: string };
   /** Layout pages outside focus mode: the search host, Cmd/Ctrl+K, the Help command (Shift+/) and command shortcuts. */
   commands?: { searchResources: boolean };
+  /** Signed-in Layout pages: the sidebar buttons, Cmd/Ctrl+\ and the left-edge drag hide and show the app bar and the app's navigation. */
+  focus?: boolean;
   /** Signed-in pages: refresh this browser's push endpoint. */
   push?: boolean;
   /** Announcements the person has not seen yet; a dialog shows them once. */
@@ -49,10 +60,13 @@ export type ShellRuntimeProps = {
 const searchItems = () => {
   const data = readShellData();
   if (!data) return [];
-  const apps = Object.entries(data.searchLinks).flatMap(([id, searchLinks]) => {
-    const app = data.apps.find((candidate) => candidate.id === id);
-    return app ? [{ id, name: app.label, icon: app.iconClass, searchLinks }] : [];
-  });
+  const apps = data.apps.map((app) => ({
+    id: app.id,
+    name: app.label,
+    icon: app.iconClass,
+    nav: { href: app.href },
+    searchLinks: data.searchLinks[app.id],
+  }));
   return navigationSearchItems(
     apps,
     apps.map((app) => app.id),
@@ -60,14 +74,71 @@ const searchItems = () => {
 };
 
 export default function ShellRuntime(props: ShellRuntimeProps) {
+  if (!isServer && document.querySelector(".cloud-app-canvas[data-nav-shell]")) onCleanup(installPageSwap());
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   onMount(() => syncTimezoneCookie(true));
+  onMount(() => onCleanup(installInputModeController()));
+
+  const togglePanel = () => {
+    window.dispatchEvent(new CustomEvent<PanelRequest>("cloud.panel.request", { detail: { action: "toggle" } }));
+  };
+  if (props.panel) {
+    onMount(() => {
+      let stopped = false;
+      let dispose: (() => void) | undefined;
+      const load = async (request?: PanelRequest) => {
+        const panel = await importOnDemand(() => import("../browser/panel-slot"));
+        if (!panel || stopped) return;
+        dispose ??= panel.installPanelSlot();
+        if (request) panel.handlePanelRequest(request);
+      };
+      const request = (event: CustomEvent<PanelRequest>) => {
+        const detail = event.detail;
+        if (detail.action === "open") {
+          if (detail.accepted || !readShellData()?.panel?.providers.some((provider) => provider.id === detail.provider)) return;
+          detail.accepted = true;
+        }
+        void load(event.detail);
+      };
+      const key = (event: KeyboardEvent) => {
+        const apple = keyboardPlatform() === "apple";
+        if (
+          event.defaultPrevented ||
+          event.isComposing ||
+          event.repeat ||
+          event.altKey ||
+          event.shiftKey ||
+          event.key.toLowerCase() !== "j" ||
+          event.metaKey !== apple ||
+          event.ctrlKey !== !apple
+        )
+          return;
+        event.preventDefault();
+        togglePanel();
+      };
+      // The panel controller loads lazily; it reads this mark to recheck consent after a restore it did not see.
+      const restored = (event: PageTransitionEvent) => {
+        if (event.persisted) document.documentElement.setAttribute("data-cloud-page-restored", "");
+      };
+      window.addEventListener("pageshow", restored);
+      window.addEventListener("cloud.panel.request", request);
+      if (!props.commands) window.addEventListener("keydown", key);
+      if (document.querySelector('.cloud-app-canvas[data-panel="open"]')) void load();
+      onCleanup(() => {
+        stopped = true;
+        dispose?.();
+        window.removeEventListener("pageshow", restored);
+        window.removeEventListener("cloud.panel.request", request);
+        window.removeEventListener("keydown", key);
+      });
+    });
+  }
 
   if (props.workspace) {
     onMount(() => {
       const appId = props.workspace?.appId;
-      onCleanup(
+      const install = () =>
         installAppWorkspaceController({
           readState: () => readAppWorkspaceLayoutCookie(document.cookie, appId),
           writeState: (state) => {
@@ -75,8 +146,18 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
             const secure = window.location.protocol === "https:" ? "; Secure" : "";
             document.cookie = `${appWorkspaceCookieName(appId)}=${serializeAppWorkspaceLayoutState(state)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
           },
-        }),
-      );
+        });
+      let dispose = install();
+      // The controller reads the saved layout once; a swapped page may carry sizes another tab saved since.
+      const swapped = () => {
+        dispose();
+        dispose = install();
+      };
+      window.addEventListener("ssr:nav-swapped", swapped);
+      onCleanup(() => {
+        window.removeEventListener("ssr:nav-swapped", swapped);
+        dispose();
+      });
     });
   }
   if (props.pageTrail) {
@@ -95,6 +176,38 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
       });
     });
   }
+  if (props.focus) {
+    const [hidden, setHidden] = createSignal(false);
+    const [available, setAvailable] = createSignal(false);
+    onMount(() => {
+      setHidden(readShellFocus());
+      const media = window.matchMedia("(min-width: 768px)");
+      const resize = () => setAvailable(media.matches);
+      const change = (event: Event) => setHidden((event as CustomEvent<{ hidden: boolean }>).detail.hidden);
+      const dispose = attachShellFocusControls();
+      resize();
+      media.addEventListener("change", resize);
+      window.addEventListener(SHELL_FOCUS_CHANGE_EVENT, change);
+      onCleanup(() => {
+        dispose();
+        media.removeEventListener("change", resize);
+        window.removeEventListener(SHELL_FOCUS_CHANGE_EVENT, change);
+      });
+    });
+    createEffect(() => {
+      if (!available()) return;
+      onCleanup(
+        registerContextAwareCommand({
+          id: "cloud.shell.focus",
+          title: hidden() ? t().showSidebar : t().hideSidebar,
+          description: t().sidebarCommandDescription,
+          icon: hidden() ? "ti ti-layout-sidebar-left-expand" : "ti ti-layout-sidebar-left-collapse",
+          shortcut: "mod+\\",
+          action: toggleShellFocus,
+        }),
+      );
+    });
+  }
   if (props.commands) {
     const host = createGlobalSearchHost(searchItems, props.commands.searchResources);
     onMount(() => onCleanup(registerGlobalSearchHost(host.open, host.dispose)));
@@ -107,31 +220,25 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
         ),
       ),
     );
-    createEffect(() =>
-      onCleanup(
-        registerContextAwareCommand({
-          id: "cloud.search",
-          title: t().openGlobalSearch,
-          description: t().globalSearchDescription,
-          icon: "ti ti-search",
-          shortcut: "mod+k",
-          action: { search: {} },
-        }),
-      ),
-    );
-    createEffect(() =>
-      onCleanup(
-        registerContextAwareCommand({
-          id: "cloud.help",
-          title: t().openShortcutHelp,
-          description: t().shortcutHelpDescription,
-          icon: "ti ti-help-circle",
-          shortcut: "shift+/",
-          // Returning the load keeps the Command busy until the dialog is open; a second press opens no second dialog.
-          action: () => importOnDemand(() => import("./LayoutHelp")).then((help) => help?.openLayoutHelpDialog()),
-        }),
-      ),
-    );
+    createEffect(() => {
+      for (const command of shellShortcuts(t(), { panel: props.panel })) {
+        onCleanup(
+          registerContextAwareCommand({
+            ...command,
+            action:
+              command.id === "cloud.panel"
+                ? togglePanel
+                : command.id === "cloud.search"
+                  ? { search: {} }
+                  : // Returning the load keeps the Command busy until the dialog is open; a second press opens no second dialog.
+                    () => {
+                      if (openPanel("core")) return;
+                      return importOnDemand(() => import("./LayoutHelp")).then((help) => help?.openLayoutHelpDialog());
+                    },
+          }),
+        );
+      }
+    });
   }
   onMount(() => {
     if (props.push) {

@@ -650,6 +650,46 @@
   }
 }
 
+/* MovedHint: a one-time note at the old place of a moved path. It floats in
+   the top layer beside its target, so opening or closing it moves nothing in
+   the page, and it appears without motion. */
+.k2b-ui [popover].k2b-moved-hint {
+  position: fixed;
+  inset: auto;
+  z-index: 100;
+  width: max-content;
+  max-width: min(20rem, calc(100vw - 1rem));
+  margin: 0;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  color: var(--k2b-text);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-float);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  white-space: normal;
+  transform: none;
+  transition: none;
+}
+
+.k2b-ui [popover].k2b-moved-hint:popover-open {
+  display: block;
+}
+
+.k2b-ui .k2b-moved-hint__text {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.k2b-ui .k2b-moved-hint__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem 0.5rem;
+  margin-top: 0.625rem;
+}
+
 .k2b-ui [popover].k2b-tooltip.k2b-chart__tooltip {
   white-space: normal;
   pointer-events: none;
@@ -1110,6 +1150,11 @@ html:has(.k2b-mobile-shell):not(:has(dialog:modal)) .k2b-ui [data-k2b-toast-cont
   }
 }
 
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-toast__progress:indeterminate {
+  background: color-mix(in srgb, var(--k2b-action-solid) 35%, var(--k2b-border));
+  animation: none;
+}
+
 /* Forced colours turn the track and the fill into the same Canvas, so the bar
    draws itself in system colours: an outlined track, a Highlight fill, and a
    still hatch while the total is unknown. */
@@ -1244,6 +1289,13 @@ html:has(.k2b-mobile-shell):not(:has(dialog:modal)) .k2b-ui [data-k2b-toast-cont
     background-image: none;
     -webkit-text-fill-color: currentColor;
   }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-inline-guidance[data-loading="true"] .k2b-inline-guidance__icon,
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-inline-guidance[data-loading="true"] .k2b-inline-guidance__content {
+  animation: none;
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
 }
 
 /* These containers clip their content, so focus rings inside them are drawn

@@ -1,55 +1,50 @@
 import type { AiChatTaskView as AssistantChatTask, AiChatTaskOccurrenceView as AssistantChatTaskOccurrence } from "@k2b/cloud/ai";
+import { chatTaskNeedsNewTime, chatTaskReasonSentence } from "@k2b/cloud/ai/browser";
 import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
 import { query, timed } from "@k2b/stdlib/solid";
-import { Button, Dropdown, MarkdownView, NoticeCard, Placeholder, prompts, StatusBadge, Tabs, toast, useLocale } from "@k2b/ui";
+import { Button, Disclosure, Dropdown, MarkdownView, NoticeCard, Placeholder, prompts, StatusBadge, Tabs, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { taskTab, workspaceSelectionHref } from "../artifacts/workspace-state";
 import { type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
+import { assistantTaskTitle, formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-copy";
 
 const request = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(`/api/ai${path}`, init);
   const body = await response.json().catch(() => null);
-  if (!response.ok || !body) throw new Error(body?.message || assistantBrowserText("Scheduled task request failed"));
+  if (!response.ok || !body) throw new Error(body?.message || assistantBrowserText("Routine request failed"));
   return body;
 };
-export const assistantTaskTitle = (task: AssistantChatTask) => task.prompt.split(/\n|:\s/u)[0]!.slice(0, 80);
 export const openAssistantTask = (task: AssistantChatTask) =>
   navigateTo(workspaceSelectionHref(assistantConversationHref("/app/assistant", task.chatId), taskTab(task.id, assistantTaskTitle(task))));
 export const occurrencePresentation = (state: AssistantChatTaskOccurrence["state"], text: (value: string) => string) => {
   if (state === "completed") return { label: text("Completed"), tone: "ok" as const };
   if (state === "failed") return { label: text("Failed"), tone: "error" as const };
   if (state === "running") return { label: text("Running"), tone: "running" as const };
+  if (state === "stopped") return { label: text("Stopped"), tone: "neutral" as const };
   return { label: text("Queued"), tone: "neutral" as const };
 };
-export const formatAssistantTaskSchedule = (task: AssistantChatTask, locale = "en"): string => {
-  if (task.schedule.kind === "once") return locale.startsWith("de") ? "Einmalig" : "One-time";
-  const [minute, hour, day, month, weekday] = task.schedule.cron.split(" ");
-  const de = locale.startsWith("de");
-  if (/^\d+$/.test(minute ?? "") && /^\d+$/.test(hour ?? "") && day === "*" && month === "*") {
-    const time = `${hour!.padStart(2, "0")}:${minute!.padStart(2, "0")}`;
-    const weekdays = de
-      ? ["Sonntags", "Montags", "Dienstags", "Mittwochs", "Donnerstags", "Freitags", "Samstags", "Sonntags"]
-      : ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"];
-    const label =
-      weekday === "*"
-        ? de
-          ? "Täglich"
-          : "Daily"
-        : weekday === "1-5"
-          ? de
-            ? "Montag–Freitag"
-            : "Monday–Friday"
-          : /^\d$/.test(weekday ?? "")
-            ? weekdays[Number(weekday)]
-            : null;
-    if (label) return `${de ? (weekday === "*" ? "Täglich" : "Immer " + label.toLowerCase()) : label} ${time}`;
-  }
-  return de ? "Wiederkehrend" : "Recurring";
-};
+
+/** The routine's state as its chip says it: who acts next. */
+const taskStateLabel = (task: AssistantChatTask, text: (value: string) => string): string =>
+  text(
+    task.state === "needs_attention"
+      ? "Needs you"
+      : task.state === "paused"
+        ? "Paused"
+        : task.state === "completed"
+          ? "Completed"
+          : "Scheduled",
+  );
+/** Why the routine stopped, in the reader's words; `null` while it runs as planned. */
+const taskReasonSentence = (task: AssistantChatTask, locale: string): string | null =>
+  task.reason ? chatTaskReasonSentence(task.reason, { locale, timeZone: task.timezone }) : null;
+
+/** Core deletes finished runs 90 days after they end (`AI_CHAT_TASK_RUN_RETENTION_DAYS`). */
+const RUN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 
 const useTaskClock = () => {
   const [now, setNow] = createSignal(new Date());
@@ -104,7 +99,7 @@ export function AssistantTasksView(props: {
       fallback={
         <Placeholder
           state={tasks.error() ? "error" : "loading"}
-          title={text(tasks.error() ? "Could not load tasks" : "Loading tasks")}
+          title={text(tasks.error() ? "Could not load routines" : "Loading routines")}
           description={tasks.error()?.message}
         />
       }
@@ -113,9 +108,7 @@ export function AssistantTasksView(props: {
         <div class="flex flex-col gap-2">
           <Show
             when={items().length}
-            fallback={
-              <Placeholder title={text("No scheduled tasks")} description={text("Ask in the chat for a reminder or a recurring task.")} />
-            }
+            fallback={<Placeholder title={text("No routines")} description={text("Ask in the chat for a reminder or a routine.")} />}
           >
             <For each={items()}>
               {(task) => (
@@ -134,17 +127,13 @@ export function AssistantTasksView(props: {
                       </span>
                       <span
                         class="text-xs font-normal"
-                        classList={{ "text-secondary": !task.lastError, "text-amber-700 dark:text-amber-300": Boolean(task.lastError) }}
+                        classList={{
+                          "text-secondary": task.state !== "needs_attention",
+                          "text-amber-700 dark:text-amber-300": task.state === "needs_attention",
+                        }}
                       >
-                        {text(
-                          task.lastError || task.state === "needs_attention"
-                            ? "Needs attention"
-                            : task.state === "paused"
-                              ? "Paused"
-                              : task.state === "completed"
-                                ? "Completed"
-                                : "Scheduled",
-                        )}
+                        {/* Paused by you is said by the chip word alone; every other reason gets its sentence. */}
+                        {task.reason && task.reason.code !== "paused" ? taskReasonSentence(task, locale()) : taskStateLabel(task, text)}
                       </span>
                     </span>
                     <i class="ti ti-chevron-right ml-auto shrink-0 text-dimmed" aria-hidden="true" />
@@ -153,7 +142,7 @@ export function AssistantTasksView(props: {
               )}
             </For>
           </Show>
-          <p class="mt-3 text-xs text-secondary">{text("Plan new tasks and make changes in the chat.")}</p>
+          <p class="mt-3 text-xs text-secondary">{text("Set up new routines and make changes in the chat.")}</p>
         </div>
       )}
     </Show>
@@ -206,33 +195,53 @@ export function AssistantTaskDetail(props: {
       });
       if (name === "run") {
         setTab("result");
-        toast.success(text("Task queued. The result will appear here and in the chat when it is ready."), {
-          title: text("Scheduled task"),
+        toast.success(text("Run queued. The result will appear here and in the chat when it is ready."), {
+          title: text("Routine"),
         });
       }
       if (name === "delete") setDeleted(true);
       else await detail.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : text("Could not update task"));
+      setError(e instanceof Error ? e.message : text("Could not update routine"));
     } finally {
       setBusy(null);
     }
   };
   return (
-    <Show when={!deleted()} fallback={<Placeholder title={text("Task deleted")} />}>
+    <Show when={!deleted()} fallback={<Placeholder title={text("Routine deleted")} />}>
       <Show
         when={detail.data()}
         fallback={
           <Placeholder
             state={detail.error() ? "error" : "loading"}
-            title={text(detail.error() ? "Task unavailable" : "Loading tasks")}
+            title={text(detail.error() ? "Routine unavailable" : "Loading routines")}
             description={detail.error()?.message}
           />
         }
       >
         {(value) => {
           const task = () => value().task,
-            latest = () => value().occurrences[0];
+            latest = () => value().occurrences[0],
+            // A routine that stopped says why; an active one whose last run failed says that too.
+            reasonNotice = () => {
+              const current = task();
+              const failedRun = latest()?.state === "failed" ? latest() : undefined;
+              const reason =
+                current.reason ?? (failedRun ? { code: "failed" as const, at: failedRun.completedAt ?? failedRun.createdAt } : null);
+              if (!reason) return null;
+              const attention = current.state === "needs_attention" || (!current.reason && Boolean(failedRun));
+              return {
+                sentence: chatTaskReasonSentence(reason, { locale: locale(), timeZone: current.timezone }),
+                attention,
+                failed: reason.code === "failed",
+                technical: attention ? (current.lastError ?? failedRun?.error ?? null) : null,
+              };
+            },
+            // An older task may have run before the retention window; "yet" would be wrong then.
+            noRuns = () =>
+              text(
+                Date.parse(task().createdAt) <= now().getTime() - RUN_RETENTION_MS ? "No runs in the last 90 days" : "No occurrences yet",
+              );
           return (
             <div class="assistant-task-detail">
               <div class="assistant-task-detail__body">
@@ -245,10 +254,8 @@ export function AssistantTaskDetail(props: {
                         <Show when={task().state !== "active"}>
                           <StatusBadge
                             variant="chip"
-                            tone="neutral"
-                            label={text(
-                              task().state === "paused" ? "Paused" : task().state === "completed" ? "Completed" : "Needs attention",
-                            )}
+                            tone={task().state === "needs_attention" ? "warning" : "neutral"}
+                            label={taskStateLabel(task(), text)}
                           />
                         </Show>
                       }
@@ -260,20 +267,42 @@ export function AssistantTaskDetail(props: {
                     </span>
                   </div>
                 </div>
-                <Show when={task().lastError || latest()?.state === "failed"}>
-                  <NoticeCard
-                    tone="warning"
-                    title={text("Run needs attention")}
-                    detail={text("Review the result before retrying. The task may have completed some steps.")}
-                  />
-                  <Button variant="secondary" size="sm" onClick={() => props.onEdit(task(), true)}>
-                    {text("Resolve in chat")}
-                  </Button>
+                <Show when={reasonNotice()}>
+                  {(notice) => (
+                    <div class="flex flex-col gap-1">
+                      <NoticeCard
+                        class="assistant-task-detail__reason"
+                        tone={notice().attention ? "warning" : "neutral"}
+                        title={notice().sentence}
+                        detail={
+                          notice().failed
+                            ? text("Review the result before retrying. The routine may have completed some steps.")
+                            : undefined
+                        }
+                      >
+                        <Show when={notice().attention}>
+                          <div>
+                            <Button variant="secondary" size="sm" onClick={() => props.onEdit(task(), true)}>
+                              {text("Fix in chat")}
+                            </Button>
+                          </div>
+                        </Show>
+                      </NoticeCard>
+                      {/* The raw error is for whoever debugs the run; the sentence above is what happened. */}
+                      <Show when={notice().technical}>
+                        {(technical) => (
+                          <Disclosure class="assistant-task-detail__technical" surface="plain" summary={text("Technical details")}>
+                            <p class="whitespace-pre-wrap break-words font-mono">{technical()}</p>
+                          </Disclosure>
+                        )}
+                      </Show>
+                    </div>
+                  )}
                 </Show>
 
                 <Tabs
                   variant="pill"
-                  ariaLabel={text("Scheduled task")}
+                  ariaLabel={text("Routine")}
                   value={tab}
                   onValueChange={setTab}
                   options={[
@@ -283,7 +312,7 @@ export function AssistantTaskDetail(props: {
                   ]}
                 />
                 <Show when={tab() === "result"}>
-                  <Show when={latest()} fallback={<Placeholder title={text("No occurrences yet")} />}>
+                  <Show when={latest()} fallback={<Placeholder title={noRuns()} />}>
                     {(run) => (
                       <>
                         <div class="flex items-center justify-between gap-2 text-xs text-secondary">
@@ -301,7 +330,7 @@ export function AssistantTaskDetail(props: {
                   </Show>
                 </Show>
                 <Show when={tab() === "history"}>
-                  <Show when={value().occurrences.length} fallback={<Placeholder title={text("No occurrences yet")} />}>
+                  <Show when={value().occurrences.length} fallback={<Placeholder title={noRuns()} />}>
                     <For each={value().occurrences}>
                       {(run) => (
                         <Button
@@ -344,7 +373,7 @@ export function AssistantTaskDetail(props: {
                   </p>
                 </Show>
                 <Show when={error()}>
-                  {(message) => <NoticeCard tone="danger" title={text("Task action failed")} detail={message()} />}
+                  {(message) => <NoticeCard tone="danger" title={text("Routine action failed")} detail={message()} />}
                 </Show>
               </div>
               <div class="assistant-task-detail__actions">
@@ -353,9 +382,9 @@ export function AssistantTaskDetail(props: {
                 </Button>
                 <Show
                   when={
+                    // A one-time routine past its time gets a new time in the chat instead of a Resume that cannot run.
                     task().state === "active" ||
-                    task().state === "paused" ||
-                    (task().state === "needs_attention" && task().schedule.kind === "cron")
+                    ((task().state === "paused" || task().state === "needs_attention") && !chatTaskNeedsNewTime(task(), now()))
                   }
                 >
                   <Button

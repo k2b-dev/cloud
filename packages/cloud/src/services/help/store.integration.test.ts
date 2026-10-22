@@ -1,5 +1,6 @@
 // Set HELP_TEST_BM25=1 only with pg_textsearch installed and preloaded.
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { SQL } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { createDisposableDatabase, databaseSuite } from "../../../../../scripts/fixtures/test-infra";
@@ -83,6 +84,24 @@ suite("Postgres Help publication and retrieval", () => {
   let db: SQL;
   let disposable: Awaited<ReturnType<typeof createDisposableDatabase>>;
   let published = corpus();
+  const legacyDocuments = published.corpus.documents.map(({ kind, needs, next, related, ...document }) => document);
+  const legacyTranslations = Object.fromEntries(
+    Object.entries(published.corpus.documentsByLocale).map(([locale, documents]) => [
+      locale,
+      documents.map(({ kind, needs, next, related, ...document }) => document),
+    ]),
+  );
+  const legacyHash = createHash("sha256")
+    .update(
+      JSON.stringify({
+        revision: 1,
+        appId: published.corpus.appId,
+        baseLocale: published.corpus.baseLocale,
+        documents: legacyDocuments,
+        documentsByLocale: legacyTranslations,
+      }),
+    )
+    .digest("hex");
   let active: AppRegistryEntry[];
   const resetApp = () => {
     active = [
@@ -103,6 +122,21 @@ suite("Postgres Help publication and retrieval", () => {
   beforeAll(async () => {
     disposable = await createDisposableDatabase("help");
     db = new SQL(disposable.url, { max: 5 });
+    await db`CREATE SCHEMA help`.simple();
+    await db`CREATE TABLE help.corpora (
+      app_id text NOT NULL, manifest_hash text NOT NULL, base_locale text NOT NULL,
+      last_seen_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (app_id, manifest_hash)
+    )`.simple();
+    await db`CREATE TABLE help.documents (
+      app_id text NOT NULL, manifest_hash text NOT NULL, locale text NOT NULL, document_id text NOT NULL,
+      title text NOT NULL, description text, icon text, sort_order integer NOT NULL,
+      markdown text NOT NULL, search_text text NOT NULL, search_config text NOT NULL, search_document tsvector NOT NULL,
+      PRIMARY KEY (app_id, manifest_hash, locale, document_id),
+      FOREIGN KEY (app_id, manifest_hash) REFERENCES help.corpora ON DELETE CASCADE
+    )`.simple();
+    await db`INSERT INTO help.corpora(app_id, manifest_hash, base_locale) VALUES ('help-integration', ${legacyHash}, 'en')`;
+    await db`INSERT INTO help.documents(app_id, manifest_hash, locale, document_id, title, sort_order, markdown, search_text, search_config, search_document)
+      VALUES ('help-integration', ${legacyHash}, 'en', 'permissions', 'Permissions', 100, 'Legacy body', 'Legacy body', 'english', to_tsvector('english', 'Legacy body'))`;
     await migrateHelp(db);
     await migrateHelp(db);
     await registerHelp(published.corpus, db);
@@ -114,6 +148,132 @@ suite("Postgres Help publication and retrieval", () => {
     await disposable.drop();
   });
 
+  test("idempotently upgrades the old table and publishes revision two next to revision one", async () => {
+    const columns = await db<{ column_name: string }[]>`SELECT column_name FROM information_schema.columns
+      WHERE table_schema='help' AND table_name='documents'
+        AND column_name IN ('kind', 'needs', 'next_id', 'related') ORDER BY column_name`;
+    expect(columns.map((column) => column.column_name)).toEqual(["kind", "needs", "next_id", "related"]);
+    const [old] =
+      await db`SELECT kind, needs, next_id, related FROM help.documents WHERE app_id='help-integration' AND manifest_hash=${legacyHash}`;
+    expect(old).toMatchObject({ kind: "task", needs: null, next_id: null, related: [] });
+    expect(published.corpus.manifestHash).not.toBe(legacyHash);
+    const rows = await db<{ manifest_hash: string }[]>`SELECT manifest_hash FROM help.corpora WHERE app_id='help-integration'`;
+    expect(rows.map((row) => row.manifest_hash).sort()).toEqual([legacyHash, published.corpus.manifestHash].sort());
+  });
+  test("migrating an upgraded table does not wait for Help readers", async () => {
+    const migrationDb = new SQL(disposable.url, { max: 1 });
+    try {
+      await migrationDb`SET statement_timeout = '1s'`.simple();
+      // Of the migration's statements only ALTER TABLE conflicts with a reader; a waiting ALTER queues every later reader.
+      await db.begin(async (tx) => {
+        await tx`LOCK TABLE help.documents IN ACCESS SHARE MODE`.simple();
+        await migrateHelp(migrationDb);
+        expect((await tx`SELECT 1 FROM help.documents LIMIT 1`).length).toBe(1);
+      });
+    } finally {
+      await migrationDb.close();
+    }
+  });
+  test("metadata persists per locale and reader links resolve only current visible localized targets in bounded queries", async () => {
+    const linked = compileHelp({
+      appId: "help-integration",
+      definition: defineHelp({
+        baseLocale: "en",
+        documents: {
+          en: [
+            source(
+              "linked",
+              "Linked",
+              ":kbd[mod+k]\n\n[remote](help:help-links-visible/remote#section) [hidden](help:help-links-hidden/private) [missing](help:help-links-visible/missing)",
+            ).replace(
+              "title: Linked",
+              "title: Linked\nkind: start\nneeds: edit\nnext: target\nrelated: [target, help-links-visible/remote, help-links-hidden/private, help-links-visible/missing]",
+            ),
+            source("target", "Target", "Target body"),
+          ],
+          de: [source("linked", "Verknüpft", "[Ziel](help:target)"), source("target", "Ziel", "Zieltext")],
+        },
+      }),
+    });
+    const remote = compileHelp({
+      appId: "help-links-visible",
+      definition: defineHelp({
+        baseLocale: "en",
+        documents: { en: [source("remote", "Remote", "Remote body")], de: [source("remote", "Entfernt", "Ferner Text")] },
+      }),
+    });
+    const privateHelp = compileHelp({
+      appId: "help-links-hidden",
+      definition: defineHelp({ documents: [source("private", "Private", "Secret title")] }),
+    });
+    await registerHelp(linked.corpus, db);
+    await registerHelp(remote.corpus, db);
+    await registerHelp(privateHelp.corpus, db);
+    active[0]!.help = linked.summary;
+    active.push(
+      {
+        ...active[0]!,
+        id: "help-links-visible",
+        name: "Visible",
+        presentation: { baseLocale: "en", translations: { de: { name: "Sichtbar" } } },
+        appearance: { accent: "#123456" },
+        help: remote.summary,
+      },
+      {
+        ...active[0]!,
+        id: "help-links-hidden",
+        name: "Hidden",
+        help: privateHelp.summary,
+        nav: { href: "/admin", section: "hidden", requiresRoles: ["admin"] },
+      },
+    );
+    try {
+      const rows =
+        await db`SELECT locale, kind, needs, next_id, related FROM help.documents WHERE app_id='help-integration' AND manifest_hash=${linked.corpus.manifestHash} AND document_id='linked' ORDER BY locale`;
+      expect(rows).toHaveLength(2);
+      for (const row of rows)
+        expect(row).toMatchObject({
+          kind: "start",
+          needs: "edit",
+          next_id: "target",
+          related: ["target", "help-links-visible/remote", "help-links-hidden/private", "help-links-visible/missing"],
+        });
+      // One registry read for the article's app, one for the apps its links point to, and two queries.
+      let registryReads = 0;
+      const boundedReader = createHelpReader("de-CH", actor, {
+        db,
+        getApp: async (id) => {
+          registryReads += 1;
+          return active.find((app) => app.id === id) ?? null;
+        },
+        listApps: async () => {
+          registryReads += 1;
+          return active;
+        },
+      });
+      const queries = spyOn(db, "unsafe");
+      let article: Awaited<ReturnType<typeof boundedReader.read>> | undefined;
+      try {
+        article = await boundedReader.read({ appId: "help-integration", documentId: "linked" });
+        expect(registryReads).toBe(2);
+        expect(queries.mock.calls).toHaveLength(2);
+        expect(queries.mock.calls[1]?.[0]).not.toContain(", d.markdown");
+      } finally {
+        queries.mockRestore();
+      }
+      expect(article).toMatchObject({ locale: "de", kind: "start", needs: "edit", next: "target" });
+      expect(article?.links["help-integration/target"]?.title).toBe("Ziel");
+      expect(article?.links["help-links-visible/remote"]).toMatchObject({ title: "Entfernt", appName: "Sichtbar", accent: "#123456" });
+      expect(Object.keys(article?.links ?? {}).sort()).toEqual(["help-integration/target", "help-links-visible/remote"]);
+      active.find((app) => app.id === "help-links-visible")!.help = { ...remote.summary, manifestHash: "replaced" };
+      expect(
+        (await reader("de").read({ appId: "help-integration", documentId: "linked" }))?.links["help-links-visible/remote"],
+      ).toBeUndefined();
+    } finally {
+      resetApp();
+      await db`DELETE FROM help.corpora WHERE app_id IN ('help-links-visible', 'help-links-hidden')`;
+    }
+  });
   test("registers once under concurrent starts and keeps only small discovery data", async () => {
     await Promise.all(Array.from({ length: 8 }, () => registerHelp(published.corpus, db)));
     const [row] =

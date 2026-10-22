@@ -11,8 +11,10 @@ import {
   automaticReplyPreviewSchema,
   type ComposeFormattingWarning,
   cancelScheduledSendInputSchema,
+  completeConversationsSchema,
   composeFormattingWarningSchema,
   composePreviewSchema,
+  conversationCompletionResultSchema,
   conversationTriageInputSchema,
   conversationTriageUndoInputSchema,
   createAutomaticReplyConfigurationSchema,
@@ -194,6 +196,7 @@ describe("scheduled send contracts", () => {
       kind: "send",
       draftId: "Draft1",
       expectedDraftRevision: 1,
+      expectedContentHash: "a".repeat(64),
       senderIdentityId: "Ident1",
       idempotencyKey: "00000000-0000-4000-8000-000000000003",
     };
@@ -1016,5 +1019,37 @@ describe("conversation action undo contracts", () => {
     expect(conversationTriageUndoInputSchema.safeParse({ commandIds: [] }).success).toBe(false);
     expect(conversationTriageUndoInputSchema.safeParse({ commandIds: ["cmd123"] }).success).toBe(false);
     expect(conversationTriageUndoInputSchema.safeParse({ commandIds: [id], extra: true }).success).toBe(false);
+  });
+});
+
+describe("batch conversation completion contracts", () => {
+  test("accepts bounded unique IDs and done or open, without revisions", () => {
+    const conversationIds = Array.from({ length: 50 }, (_, index) => `Cv${String(index).padStart(4, "0")}`);
+    for (const completion of ["done", "open"] as const) {
+      expect(completeConversationsSchema.parse({ conversationIds, completion })).toEqual({ conversationIds, completion });
+    }
+    for (const input of [
+      { conversationIds: [], completion: "done" },
+      { conversationIds: [...conversationIds, "Cv9999"], completion: "done" },
+      { conversationIds: ["Convo1", "Convo1"], completion: "done" },
+      { conversationIds: ["invalid-id"], completion: "done" },
+      { conversationIds: ["Convo1"], completion: "waiting" },
+      { conversationIds: ["Convo1"], completion: "done", expectedRevision: 1 },
+    ])
+      expect(completeConversationsSchema.safeParse(input).success).toBeFalse();
+  });
+  test("requires resulting state and revision only on successful items", () => {
+    expect(
+      conversationCompletionResultSchema.safeParse({
+        completion: "open",
+        results: [
+          { conversationId: "Convo1", status: "ok", workStatus: "waiting", revision: 2 },
+          { conversationId: "Convo2", status: "not_found" },
+        ],
+      }).success,
+    ).toBeTrue();
+    expect(
+      conversationCompletionResultSchema.safeParse({ completion: "done", results: [{ conversationId: "Convo1", status: "ok" }] }).success,
+    ).toBeFalse();
   });
 });

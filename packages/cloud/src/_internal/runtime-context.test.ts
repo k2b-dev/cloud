@@ -140,3 +140,15 @@ it("copies platform permissions into runtime metadata", () => {
   expect(runtime.apps[0]?.platformPermissions).not.toBe(app.platformPermissions);
   expect(buildRuntimeFromRegistry([entry()]).apps[0]?.platformPermissions).toBeUndefined();
 });
+
+it("maps a panel and its translated label without sharing role arrays", () => {
+  const app = entry();
+  app.panel = { href: "/app/example/panel", label: "Example", icon: "ti ti-box", requiresRoles: ["user"] };
+  app.presentation = { baseLocale: "en", translations: { de: { panelLabel: "Beispiel" } } };
+  const projected = buildRuntimeFromRegistry([app]).apps[0];
+  expect(projected?.panel).toEqual(app.panel);
+  expect(projected?.panel).not.toBe(app.panel);
+  expect(projected?.panel?.requiresRoles).not.toBe(app.panel.requiresRoles);
+  expect(projected?.presentation?.translations.de?.panelLabel).toBe("Beispiel");
+  expect(buildRuntimeFromRegistry([entry()]).apps[0]?.panel).toBeUndefined();
+});

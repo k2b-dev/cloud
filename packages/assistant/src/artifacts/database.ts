@@ -1,8 +1,12 @@
 import { hasRole } from "@k2b/cloud/contracts";
+import { createAllowedNetworkFetch } from "@k2b/cloud/services";
+import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
+import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { createRsqlClient, type RsqlResult } from "@k2b/rsql";
 import { SQL, sql } from "bun";
 import { z } from "zod";
 import { app } from "../config";
+import { appEnv } from "../env";
 import { LIMITS } from "./contracts";
 import { DatabaseRequest, DatabaseSettings } from "./database-contracts";
 import { databaseConfigLock } from "./database-lock";
@@ -21,6 +25,8 @@ import { safeQuery } from "./database-sql";
 import { CHECK_LIMITS } from "./html/check-contracts";
 import { CloudError } from "./runtime/errors";
 import { type ArtifactIdentity, requireArtifact, user } from "./service";
+
+export const rsqlAllowlist = () => parseNetworkAllowlistEnv("ASSISTANT_RSQL_ALLOWED_TARGETS", appEnv.ASSISTANT_RSQL_ALLOWED_TARGETS);
 
 export class DatabaseError extends Error {
   constructor(
@@ -50,15 +56,25 @@ function connection(c: { url: string; token: string }, signal?: AbortSignal, str
         const deadline = new AbortController();
         const timer = streaming ? setTimeout(() => deadline.abort(), 15000) : undefined;
         const timeout = streaming ? deadline.signal : AbortSignal.timeout(15000);
+        const signals = [timeout];
+        if (signal) signals.push(signal);
+        if (init?.signal) signals.push(init.signal);
+        if (input instanceof Request) signals.push(input.signal);
         let response: Response;
         try {
-          response = await fetch(input, {
+          response = await createAllowedNetworkFetch(rsqlAllowlist())(input, {
             ...init,
             redirect: "error",
-            signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+            signal: AbortSignal.any(signals),
           });
         } catch (error) {
           if (signal?.aborted) throw error;
+          if (error instanceof NetworkTargetBlockedError)
+            throw new DatabaseError(
+              "DB_TARGET_BLOCKED",
+              502,
+              "The rsql server address is on an internal network. An operator can allow it with ASSISTANT_RSQL_ALLOWED_TARGETS.",
+            );
           throw new DatabaseError(timeout.aborted ? "DB_TIMEOUT" : "DB_UNREACHABLE", 502);
         } finally {
           clearTimeout(timer);
@@ -76,7 +92,7 @@ function connection(c: { url: string; token: string }, signal?: AbortSignal, str
         );
         return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
       },
-      { preconnect: fetch.preconnect },
+      { preconnect: () => {} },
     ),
   });
 }
@@ -348,8 +364,10 @@ export const artifactDatabase = {
       }
       if (next.url || token) result(await connection({ url: next.url, token }).namespaces.list({ limit: 1 }));
       if (testOnly) return { connected: true };
-      await app.settings.set("assistant.rsql_url", next.url);
-      if (next.token !== undefined) await app.settings.set("assistant.rsql_api_token", next.token);
+      // complete value from explicit admin input; nothing is merged over a read (#1303)
+      await app.settings.set("assistant.rsql_url", next.url, { replaceUnreadable: true });
+      // complete value from explicit admin input; nothing is merged over a read (#1303)
+      if (next.token !== undefined) await app.settings.set("assistant.rsql_api_token", next.token, { replaceUnreadable: true });
       return { url: next.url, tokenSet: Boolean(token) };
     });
   },

@@ -12,6 +12,7 @@ import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { User } from "../contracts/shared";
 import type { LayoutAnnouncementsState } from "../server/middleware/settings";
 import type { HelpDocumentManifest } from "../shared/help";
+import { registerPageSwap } from "./page-swap";
 import type { RuntimeContext } from "./runtime";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-shell-budget-"));
@@ -39,6 +40,7 @@ const apps: RuntimeAppMeta[] = Array.from({ length: 12 }, (_, index) => ({
   description: "Manage projects, documents and daily work in your team.",
   routes: [`/app/app-${index}`, `/admin/app-${index}`],
   nav: { href: `/app/app-${index}`, section: index < 8 ? "primary" : "more", requiresAuth: false },
+  ...(index < 2 ? { panel: { href: `/app/app-${index}/panel`, label: `Panel ${index}`, icon: "ti ti-box" } } : {}),
   appearance: { accent: "#2563eb" },
   searchLinks: Array.from({ length: index < 6 ? 3 : 2 }, (_, link) => ({
     label: `Search destination ${index}-${link}`,
@@ -101,6 +103,7 @@ const app = defineApp({
 });
 const server = new Hono<Environment>()
   .use("*", async (c, next) => {
+    if (c.req.query("swap") === "true") registerPageSwap(c, "fixture-build");
     c.set("runtime", { apps });
     if (c.req.query("signed") === "true") c.set("user", { ...person, roles: [...person.roles, "admin"] });
     c.set("settings", { app: { name: "Cloud" } });
@@ -135,6 +138,7 @@ const decodedProps = (html: string) =>
 for (const path of [
   "/admin/app-0?signed=true",
   "/app/app-0?signed=true",
+  "/app/app-0?signed=true&swap=true",
   "/app/app-0",
   "/minimal",
   "/minimal?preferences=false",

@@ -4,6 +4,7 @@ title: Fix problems in Spaces
 icon: ti ti-lifebuoy
 description: Find missing Spaces or items, fix unexpected views and assignment problems, and repair calendar exports and Mail invitations.
 order: 140
+kind: troubleshoot
 ---
 
 ## Fix common problems {icon="lifebuoy"}
@@ -12,7 +13,7 @@ order: 140
 - **A Space is missing from the overview:** Check that you still have access to the Space. A Space that is shared through a group can disappear when your group membership changes.
 - **An item is missing:** Clear the search and the filter chips. Then check the current view. A calendar-only view can hide a task without a date.
 - **Kanban shows the wrong column:** Kanban groups by the selected grouping field, usually the status. Open the item and correct that field. Do not change unrelated filters.
-- **An assignee cannot update work:** **View** access is not enough to edit items. The person or one of their groups needs **Edit** or **Manage** access.
+- **An assignee cannot update work:** **View** access is not enough to edit items. The person or one of their groups needs **Edit** or **Manage** access. A service account needs its own **Edit** or **Manage** access and a key that can write. Assigning a task does not give access.
 - **A completed item still appears:** Check the active filters and the grouping. Some views include completed work on purpose.
 - **A task cannot be completed:** Check **Blocked by** in the **Planning** block of the task. Open blockers show a lock. Complete or remove every open blocker first. Completed blockers stay listed for context until you remove them.
 - **A calendar subscription is stale:** Calendar clients refresh subscriptions on their own schedule. Check that the client uses the current export URL. If needed, regenerate the URL in Spaces and replace the old subscription.
@@ -25,8 +26,8 @@ order: 140
 
 :::steps
 1. Return to the Space from the Spaces overview.
-2. In the Space sidebar, choose **List**. It shows the items without Kanban columns or calendar periods.
-3. Clear the search and the filter chips.
+2. Choose **List** in the tabs in the page header.
+3. If search or filters are active, choose **Reset** in the page header.
 4. Open the missing item from another known view or from global search.
 5. Apply the filters again, one at a time.
 :::

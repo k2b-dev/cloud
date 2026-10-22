@@ -5,7 +5,7 @@ section: Operations
 order: 1110
 description: Develop a built-in application inside the Cloud monorepo.
 tags: [development, monorepo, docker]
-updated: 2026-10-11
+updated: 2026-10-17
 ---
 
 # Monorepo development
@@ -28,7 +28,7 @@ Open `http://localhost:3000`.
 The local administrator login is `/auth/login?method=admin` with token
 `dev-admin`.
 
-`bun run dev` starts Postgres, Valkey, a second Valkey for integration tests, a persistent single-node NATS JetStream server, Geo, Filegate, and Gotenberg in the
+`bun run dev` starts Postgres, Valkey, a second Valkey for integration tests, a persistent single-node NATS JetStream server, Geo, Filegate, Gotenberg, and ClickHouse in the
 background. It then stays in the foreground and runs the gateway, Gateway Ops,
 Core, Dashboard, Accounts, Assistant, and the mobile app shell (`app-pwa`).
 
@@ -56,7 +56,7 @@ available for quick restarts. Stop the infrastructure explicitly with
 The development stack publishes every port on `127.0.0.1` only. Other machines
 cannot reach it; for remote access, use an SSH tunnel or a reverse proxy.
 
-If another Postgres, Valkey, or NATS already uses its default port on the same
+If another Postgres, Valkey, NATS, or ClickHouse already uses its default port on the same
 host, move the host port before `bun run dev`. Set the variables in your shell
 or in the checkout's `.env`, which Compose reads:
 
@@ -65,9 +65,10 @@ CLOUD_DEV_POSTGRES_PORT=55432
 CLOUD_DEV_VALKEY_PORT=56379
 CLOUD_DEV_TEST_VALKEY_PORT=56380
 CLOUD_DEV_NATS_PORT=54222
+CLOUD_DEV_CLICKHOUSE_PORT=58123
 ```
 
-The defaults are `5432`, `6379`, `6380`, and `4222`. Containers still talk to each
+The defaults are `5432`, `6379`, `6380`, `4222`, and `8123`. Containers still talk to each
 other on the default ports, so only host-side clients change: use the new ports
 in `DATABASE_URL`, `REDIS_URL`, `NATS_SERVERS`, and the `CLOUD_TEST_*` URLs.
 
@@ -102,6 +103,47 @@ service workers only over HTTPS. To try the app on a phone:
 3. Use the same address on the computer and on the phone. Pair the phone from
    `/me/app` on the computer, or open `/pwa/` on the phone to install the app
    first.
+
+## Connect Pulse to development ClickHouse
+
+`compose.yml` runs ClickHouse 26.9.19.9 with its own
+`pulse_clickhouse_data` volume. `ensureInfra()` prepares `.local/clickhouse/`
+with mode `0700` and creates `credentials.env` (admin credentials) and
+`pulse_service.password` once, both mode `0600`. Existing values are never
+overwritten or printed. To prepare just these files, use
+`bun scripts/dev-clickhouse.ts` (`--help` explains it).
+
+Once the stack and Pulse are running and the workspace CLI is signed in as a
+Cloud admin, run the setup once. The client inherits `CLICKHOUSE_USER` and
+`CLICKHOUSE_PASSWORD` inside the container, so the admin password is absent
+from shell arguments and host output:
+
+```bash
+set -o pipefail
+bun run dev:cld -- pulse admin store setup-sql --password-file .local/clickhouse/pulse_service.password |
+  docker compose -f compose.yml exec -T clickhouse clickhouse-client --multiquery
+bun run dev:cld -- pulse admin store set --url http://clickhouse:8123 --password-file .local/clickhouse/pulse_service.password
+bun run dev:cld -- pulse admin store check
+```
+
+The address saved by Pulse uses the container network. Host-side integration
+tests use loopback instead. Load the local admin credentials into an admin URL
+without printing them (leave shell tracing off):
+
+```bash
+set +x
+set -a
+. ./.local/clickhouse/credentials.env
+set +a
+export CLOUD_TEST_CLICKHOUSE_URL="http://${CLICKHOUSE_USER}:${CLICKHOUSE_PASSWORD}@127.0.0.1:${CLOUD_DEV_CLICKHOUSE_PORT:-8123}"
+unset CLICKHOUSE_USER CLICKHOUSE_PASSWORD CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
+bun run test --integration --filter packages/pulse
+unset CLOUD_TEST_CLICKHOUSE_URL
+```
+
+The fixture uses `pulsetest_<8 hex>_` per process, not the saved `pulse_`
+connection. It removes only that namespace's databases and access objects.
+Connecting is optional in this release; existing Pulse features stay on Postgres.
 
 ## Test Filegate locally
 
@@ -389,7 +431,8 @@ see [What CI runs](/en/docs/contributing/testing#what-ci-runs).
 
 `bun run check` runs the repository rules under `scripts/checks/` (dependencies,
 import boundaries, package cycles, service API contracts, localization,
-capability presentation, CSS architecture, the application set, Help writing,
+capability presentation, CSS architecture, access editor mounting
+(`access-editor-mounts`), the application set, Help writing,
 formatting) and every package typecheck.
 A new rule is one module under `scripts/checks/`.
 
@@ -544,3 +587,12 @@ entries. Imported dependencies still participate in the selected app's bundle.
 
 An SSR dependency update requires rebuilding affected application images;
 restarting source-mounted containers alone keeps their old installed dependency.
+
+## App launcher in global search
+
+The shell now adds app entries from each request's authorized navigation
+catalog, including Administration for administrators. Application aliases reuse
+`searchLinks` at `nav.href`; there is no new environment setting, service or
+data migration. Deploy the shared Cloud package and application declarations
+together through the normal image release. Destination routes continue to
+enforce their own authorization. See [Universal search](/en/docs/platform/search).

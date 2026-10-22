@@ -3,6 +3,7 @@ import { mutation } from "@k2b/stdlib/solid";
 import { Button, ButtonLink, Chat, isStructuredDataValue, MarkdownView, SplitButton, StructuredDataPreview, useLocale } from "@k2b/ui";
 import { createSignal, createUniqueId, For, type JSX, Match, Show, Switch, untrack } from "solid-js";
 import { capabilityApprovalReason, capabilityApprovalReasonLabel } from "../../_internal/capability-sentences";
+import { capabilityReviewView } from "../../capabilities/reviews";
 import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
@@ -31,8 +32,10 @@ import {
 } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
+import { ToolActionView } from "./tool-action";
 import { AiToolActivity } from "./tool-disclosure";
 import { isFailedTool } from "./tool-groups";
+import type { AiTurnActionState } from "./turn-layout";
 import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEditorBlock, CloudTextEditorResultBlock } from "./visual-tools";
 import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock, WebsiteReceipts, websiteReceipts } from "./web-tools";
 
@@ -199,6 +202,7 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
   const locale = useLocale();
   const timeZone = useReaderTimeZone();
   const t = () => aiChatMessages(locale());
+  const review = () => (props.block.approval?.review ? capabilityReviewView(props.block.approval.review, { timeZone }) : undefined);
   const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
   const pending = () => props.block.status === "awaiting_approval";
   const actionDisabled = () => actions.actionDisabled?.() ?? false;
@@ -229,7 +233,7 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
   // The model's own reason, labelled as such, only where Cloud offered it; it adds to the app's sentence and never replaces it.
   const reason = () => (props.block.presentation?.approvalReason ? capabilityApprovalReason(props.block.args) : null);
   const description = () => {
-    const reviewMessage = props.block.approval?.review?.message.trim();
+    const reviewMessage = review()?.message.trim();
     if (reviewMessage) return reviewMessage;
     // An app Action's approval text repeats its heading and reason for text-only readers; the card shows them itself.
     if (capability()) return null;
@@ -252,10 +256,9 @@ export function ApprovalBlockView(props: { turnId: string; block: ToolBlock; onD
         const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
         return match ? { label: match[1], value: match[2] } : { value: line };
       });
-  const inlineReviewDetails = () =>
-    (props.block.approval?.review?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");
-  const blockReviewDetails = () => (props.block.approval?.review?.details ?? []).filter((detail) => detail.display === "block");
-  const reviewLinks = () => props.block.approval?.review?.links ?? [];
+  const inlineReviewDetails = () => (review()?.details ?? []).filter((detail) => (detail.display ?? "inline") === "inline");
+  const blockReviewDetails = () => (review()?.details ?? []).filter((detail) => detail.display === "block");
+  const reviewLinks = () => review()?.links ?? [];
   const reviewLinkTitle = (rel: "open" | "edit" | "status" | "preview" | "download") =>
     ({
       open: t().openIn({ app: ownerName() }),
@@ -545,20 +548,6 @@ function CapabilityToolView(props: { block: ToolBlock }) {
   );
 }
 
-function RejectedToolView(props: { block: ToolBlock }) {
-  const locale = useLocale();
-  const timeZone = useReaderTimeZone();
-  const presentation = () => props.block.presentation;
-  const title = () => toolSubject(props.block, locale(), timeZone) ?? presentation()?.title ?? displayToolName(props.block.name, locale());
-  return (
-    <Chat.Activity
-      icon={aiToolIcon(props.block.name, presentation()?.appIcon)}
-      label={toolOutcome(props.block, "rejected", locale(), timeZone) ?? aiChatMessages(locale()).toolRejected({ title: title() })}
-      accent={presentation()?.appAccent}
-    />
-  );
-}
-
 export function SurveyToolView(props: { turnId: string; block: ToolBlock; active?: boolean }) {
   const actions = useAiChatActions();
   const locale = useLocale();
@@ -670,6 +659,15 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
   const actions = useAiChatActions();
   const locale = useLocale();
   const status = () => props.block.status;
+  // The same states as place 4 of a turn: open, then running, done, rejected, failed, or not run.
+  const actionState = (): AiTurnActionState | "open" | undefined => {
+    if (status() === "awaiting_approval") return "open";
+    if (status() === "rejected") return "rejected";
+    const action = props.block.presentation?.kind === "capability" && props.block.presentation.capabilityKind === "action";
+    if (!action) return undefined;
+    if (status() === "running" || status() === "awaiting_client") return props.active === false ? "not_run" : "running";
+    return isFailedTool(props.block) ? "failed" : "done";
+  };
   const fetchError = () =>
     props.block.name === "fetch_file" && props.block.isError ? fetchFileErrorPresentation(props.block.result, locale()) : undefined;
   return (
@@ -688,12 +686,8 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
           />
         }
       >
-        <Match when={status() === "awaiting_approval"}>
-          <ApprovalBlockView turnId={props.turnId} block={props.block} />
-        </Match>
-        <Match when={status() === "rejected"}>
-          <RejectedToolView block={props.block} />
-        </Match>
+        {/* A question, and every outcome of an app Action, is one card v4 element. */}
+        <Match when={actionState()}>{(state) => <ToolActionView block={props.block} turnId={props.turnId} state={state()} />}</Match>
         <Match when={props.block.presentation?.kind === "capability"}>
           <CapabilityToolView block={props.block} />
         </Match>

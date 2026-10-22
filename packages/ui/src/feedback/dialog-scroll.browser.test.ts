@@ -170,7 +170,12 @@ const open = async (options: Parameters<Browser["newPage"]>[0], variant: string)
   await page.evaluate((name) => (window as unknown as { openVariant: Record<string, () => void> }).openVariant[name]!(), variant);
   await page.locator("dialog[open] [data-end]").waitFor({ state: "attached" });
   // The bottom sheet slides in; measure where it rests.
-  await page.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .filter((animation) => animation.timeline === document.timeline)
+      .every((animation) => animation.playState !== "running"),
+  );
   return page;
 };
 

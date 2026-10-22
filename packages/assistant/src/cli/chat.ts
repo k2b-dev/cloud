@@ -12,10 +12,12 @@ import type {
   AiUserPrefs,
 } from "@k2b/cloud/ai";
 import { guessAiMediaType } from "@k2b/cloud/ai/browser";
-import { arg, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
+import { pendingActionQuestion, printPendingActionContent } from "./action-question";
 import { buildAssistantChatDiagnostic } from "./diagnostics";
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
 import { streamAssistantTurn } from "./stream";
+import { terminalSafeText } from "./terminal";
 import { type ConversationDetail, conversationPath, resolveConversation, submitAndMaybeWatch } from "./turn";
 
 type FullConversationDetail = ConversationDetail & {
@@ -86,9 +88,10 @@ export const assistantChatCommands = [
       );
       printRows(
         ctx,
-        chats,
+        chats.map((chat) => ({ ...chat, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: chat.shortId }) })),
         chats.map((chat) => ({
           id: chat.id,
+          permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: chat.shortId }),
           title: chat.title,
           status: chat.isDone ? "done" : chat.runStatus,
           unread: chat.unreadCompletion ? "yes" : "",
@@ -104,7 +107,13 @@ export const assistantChatCommands = [
     args: { chat: arg.required({ valueLabel: "chat-id" }) },
     async run({ ctx, args }) {
       const detail = await readApi<FullConversationDetail>(ctx, conversationPath(args.chat));
-      printValue(ctx, detail);
+      printValue(ctx, {
+        ...detail,
+        conversation: {
+          ...detail.conversation,
+          permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: detail.conversation.shortId }),
+        },
+      });
     },
   }),
   command("chats diagnose", {
@@ -120,7 +129,11 @@ export const assistantChatCommands = [
     flags: { title: flag.string(), project: flag.string({ description: "Attach the chat to a Project ID" }) },
     async run({ ctx, flags }) {
       const chat = await resolveConversation(ctx, { title: flags.title, projectId: flags.project });
-      printValue(ctx, chat, `${chat.id}\t${chat.title}`);
+      printValue(
+        ctx,
+        { ...chat, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: chat.shortId }) },
+        `${chat.id}\t${chat.title}`,
+      );
     },
   }),
   command("chats update", {
@@ -138,7 +151,11 @@ export const assistantChatCommands = [
           ...(flags.description !== undefined ? { description: flags.description } : {}),
         }),
       );
-      printValue(ctx, updated, `${updated.id}\t${updated.title}`);
+      printValue(
+        ctx,
+        { ...updated, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: updated.shortId }) },
+        `${updated.id}\t${updated.title}`,
+      );
     },
   }),
   ...(["pin", "unpin", "archive", "restore", "mark-read"] as const).map((action) =>
@@ -159,6 +176,15 @@ export const assistantChatCommands = [
         if (action === "archive") requireConfirmation((flags as { yes: boolean }).yes, "Archiving a chat");
         const method = action === "unpin" ? "DELETE" : "POST";
         const route = action === "mark-read" ? "viewed" : action;
+        if (action === "pin" || action === "unpin" || action === "restore") {
+          const chat = await readApi<AiConversation>(ctx, conversationPath(args.chat, `/${route}`), { method });
+          printValue(
+            ctx,
+            { ...chat, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: chat.shortId }) },
+            `${action}: ${args.chat}`,
+          );
+          return;
+        }
         const result = await readApi<unknown>(ctx, conversationPath(args.chat, `/${route}`), { method });
         printValue(ctx, result, `${action}: ${args.chat}`);
       },
@@ -174,7 +200,7 @@ export const assistantChatCommands = [
           conversationPath(args.chat, "/done"),
           jsonRequest("PUT", { done: action === "done" }),
         );
-        printValue(ctx, result);
+        printValue(ctx, { ...result, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: result.shortId }) });
       },
     }),
   ),
@@ -228,6 +254,9 @@ export const assistantChatCommands = [
     },
   }),
 ] as const;
+
+/** One shell word that stands for exactly `value`. */
+const shellArgument = (value: string): string => (/^[A-Za-z0-9_.:@%+=,/-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`);
 
 export const assistantManagementCommands = [
   command("messages list", {
@@ -379,7 +408,14 @@ export const assistantManagementCommands = [
         conversationPath(args.chat, `/messages/${encodeURIComponent(args.messageId)}/fork`),
         jsonRequest("POST", flags.title ? { title: flags.title } : {}),
       );
-      printValue(ctx, fork, `${fork.conversation.id}\t${fork.conversation.title}`);
+      printValue(
+        ctx,
+        {
+          ...fork,
+          conversation: { ...fork.conversation, permalink: cloudResourceUrl(ctx, { type: "core.ai.chat", id: fork.conversation.shortId }) },
+        },
+        `${fork.conversation.id}\t${fork.conversation.title}`,
+      );
     },
   }),
   command("turns watch", {
@@ -436,6 +472,30 @@ export const assistantManagementCommands = [
         ctx,
         conversationPath(args.chat, `/pending-actions/${encodeURIComponent(args.turn)}`),
       );
+      if (ctx.options.output === "text" && actions.length) {
+        actions.forEach((action, index) => {
+          if (index) ctx.print("");
+          if (action.type === "approval_request") {
+            // IDs come from the server and a model's tool call; quoted, a copied command can never run anything else.
+            // The same Cloud and profile as this listing, so a copied command decides this question and no other.
+            const cloud = ["--profile", ctx.options.profile, "--server", ctx.options.server].map(shellArgument).join(" ");
+            const target = [action.conversationId, action.turnId, action.callId].map(shellArgument).join(" ");
+            for (const line of pendingActionQuestion(ctx, action, {
+              approve: `cld ${cloud} assistant actions approve -- ${target}`,
+              reject: `cld ${cloud} assistant actions reject -- ${target}`,
+            }).lines)
+              ctx.print(line);
+          } else {
+            ctx.table(
+              [{ call: action.callId, type: action.type, name: action.name, detail: action.mode }].map((row) =>
+                Object.fromEntries(Object.entries(row).map(([key, value]) => [key, terminalSafeText(value)])),
+              ),
+              [{ key: "call" }, { key: "type" }, { key: "name" }, { key: "detail" }],
+            );
+          }
+        });
+        return;
+      }
       printRows(
         ctx,
         actions,
@@ -455,6 +515,24 @@ export const assistantManagementCommands = [
         })),
         [{ key: "call" }, { key: "type" }, { key: "name" }, { key: "detail" }],
       );
+    },
+  }),
+  command("actions content", {
+    summary: "Read one pending call's complete reviewed proposal",
+    args: {
+      chat: arg.required({ valueLabel: "chat-id" }),
+      turn: arg.required({ valueLabel: "turn-id" }),
+      call: arg.required({ valueLabel: "call-id" }),
+    },
+    async run({ ctx, args }) {
+      const actions = await readApi<AiPendingTurnAction[]>(
+        ctx,
+        conversationPath(args.chat, `/pending-actions/${encodeURIComponent(args.turn)}`),
+      );
+      const action = actions.find((entry) => entry.callId === args.call);
+      if (!action || action.type !== "approval_request") throw new Error("The pending question is no longer available.");
+      for (const line of pendingActionQuestion(ctx, action).lines) ctx.print(line);
+      await printPendingActionContent(ctx, action);
     },
   }),
   ...(["approve", "reject"] as const).map((action) =>

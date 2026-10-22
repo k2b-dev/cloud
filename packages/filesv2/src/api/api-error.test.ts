@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { FilegateError } from "@k2b/filegate";
 import { FilesError } from "../service";
 import { apiError, describeError } from "./api-error";
+import { errorMessage } from "./messages";
 
 test("each failing step keeps its own code: template, storage, coordination, and Cloud defects", () => {
   expect(apiError(new FilesError("template_missing", 503))).toEqual({ code: "template_missing", status: 503 });
@@ -12,6 +13,11 @@ test("each failing step keeps its own code: template, storage, coordination, and
   expect(apiError(new FilegateError(403, "permission_denied", ""))).toEqual({ code: "forbidden", status: 403 });
   expect(apiError(new Error("Asset path escapes src/assets: templates/empty.odt"))).toEqual({ code: "internal", status: 500 });
   expect(apiError(new TypeError("fetch failed"))).toEqual({ code: "internal", status: 500 });
+});
+
+test("storage deadlines are unavailable while other aborts remain internal", () => {
+  expect(apiError(new DOMException("The operation timed out.", "TimeoutError"))).toEqual({ code: "unavailable", status: 503 });
+  expect(apiError(new DOMException("The operation was aborted.", "AbortError"))).toEqual({ code: "internal", status: 500 });
 });
 
 test("the log entry names the underlying cause", () => {
@@ -27,4 +33,14 @@ test("the log entry names the underlying cause", () => {
     status: 502,
     filegateCode: "http_error",
   });
+});
+
+test("unreadable configuration keeps its conflict code and status", () => {
+  expect(apiError(new FilesError("configuration_unreadable", 409))).toEqual({ code: "configuration_unreadable", status: 409 });
+});
+
+test.each(["activity_scope_missing", "activity_scope_mismatch"])("%s is an internal failure with generic localized feedback", (code) => {
+  expect(apiError(new FilesError(code, 500))).toEqual({ code, status: 500 });
+  expect(errorMessage(code, "en")).toBe("Files could not complete this operation. Try again.");
+  expect(errorMessage(code, "de")).toBe("Dateien konnte diese Aktion nicht abschließen. Versuche es erneut.");
 });

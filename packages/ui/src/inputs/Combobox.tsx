@@ -1,4 +1,4 @@
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createEffect, createSignal, For, type JSX, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabledChoiceIndex } from "./choice";
@@ -8,6 +8,7 @@ import { useSelectMessages } from "./select-messages";
 
 export type ComboboxOption = { id: string; label: string; description?: string; icon?: string };
 export type ComboboxProps = FieldProps & {
+  readOnly?: boolean;
   query?: MaybeAccessor<string>;
   onQueryChange?: (query: string) => void;
   placeholder?: string;
@@ -41,7 +42,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
     // 150ms keeps typing responsive without hammering the loader.
     () => props.debounceMs ?? 150,
   );
-  const popover = createChoicePopover(() => Boolean(props.disabled));
+  const popover = createChoicePopover(() => Boolean(props.disabled || props.readOnly));
   const options = loader.options;
   const focusedOption = () => options()[focusedIndex()];
   const focus = (index: number) => {
@@ -51,7 +52,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
   /** `eager` loads the currently controlled query on open; typing supplies its
    *  own query, so opening from `onInput` skips the duplicate request. */
   const open = (eager = true) => {
-    if (props.disabled || popover.open()) return;
+    if (props.disabled || props.readOnly || popover.open()) return;
     popover.show();
     if (eager) loader.load(query(), true);
     focus(-1);
@@ -65,20 +66,31 @@ export function Combobox(props: ComboboxProps): JSX.Element {
     popover.hide();
     reset();
   };
+  createEffect(() => {
+    if (props.readOnly) {
+      popover.hide();
+      loader.cancel();
+      setFocusedIndex(-1);
+    }
+  });
   const select = (option: ChoiceOption<string>) => {
+    if (props.disabled || props.readOnly) return;
     popover.hide();
     props.onSelect({ id: option.value, label: option.label, description: option.description, icon: option.icon });
     reset();
     inputRef?.focus();
   };
   const onKeyDown = (event: KeyboardEvent) => {
+    if (props.disabled || props.readOnly) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!popover.open()) open();
       else focus(nextEnabledChoiceIndex(options(), focusedIndex(), event.key === "ArrowDown" ? 1 : -1));
-    } else if (event.key === "Enter" && popover.open() && options()[focusedIndex()]) {
+    } else if (event.key === "Enter" && popover.open()) {
+      // While the results are open, Enter belongs to them: it never submits an enclosing form, even with no option active.
       event.preventDefault();
-      select(options()[focusedIndex()]!);
+      const option = options()[focusedIndex()];
+      if (option) select(option);
     } else if ((event.key === "Escape" || event.key === "Tab") && popover.open()) {
       // Escape is only ours while the list is open; otherwise it has to reach an
       // enclosing dialog or drawer.
@@ -110,6 +122,8 @@ export function Combobox(props: ComboboxProps): JSX.Element {
             value={query()}
             placeholder={props.placeholder ?? messages().search}
             disabled={props.disabled}
+            readOnly={props.readOnly}
+            aria-readonly={props.readOnly ? "true" : undefined}
             role="combobox"
             aria-autocomplete="list"
             aria-expanded={popover.open()}
@@ -118,6 +132,10 @@ export function Combobox(props: ComboboxProps): JSX.Element {
             {...fieldControlAria(meta, props)}
             onClick={() => open()}
             onInput={(event) => {
+              if (props.disabled || props.readOnly) {
+                event.currentTarget.value = query();
+                return;
+              }
               setQuery(event.currentTarget.value);
               open(false);
               loader.load(event.currentTarget.value);

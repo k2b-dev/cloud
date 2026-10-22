@@ -785,20 +785,43 @@ const incomingAutomationBackfillCandidateSql = (input: IncomingAutomationBackfil
     AND (
       remote_ref.id::text IN (
         SELECT latest.remote_message_ref_id FROM (
-          SELECT DISTINCT ON (event.context #>> '{preconditions,message,remoteMessageRefId}')
-            event.context #>> '{preconditions,message,remoteMessageRefId}' AS remote_message_ref_id,
-            run.state,
-            run.finished_at
-          FROM workflows.event_delivery delivery
-          JOIN workflows.event event ON event.id = delivery.event_id
-          LEFT JOIN workflows.run run
-            ON run.event_id = event.id AND run.workflow_id = delivery.workflow_id AND run.parent_run_id IS NULL
-          WHERE delivery.workflow_id = ${input.workflowId}::uuid
-            AND delivery.workflow_version_id = ${input.workflowVersionId}::uuid
-            AND event.app_id = ${MAIL_WORKFLOW_APP_ID}
-            AND event.scope_id = ${input.mailboxId}
-            AND event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
-          ORDER BY event.context #>> '{preconditions,message,remoteMessageRefId}', event.created_at DESC, event.id DESC
+          SELECT DISTINCT ON (remote_message_ref_id)
+            remote_message_ref_id, state, finished_at
+          FROM (
+            SELECT
+              event.context #>> '{preconditions,message,remoteMessageRefId}' AS remote_message_ref_id,
+              run.state,
+              run.finished_at,
+              event.created_at AS event_created_at,
+              event.id AS event_id
+            FROM workflows.event_delivery delivery
+            JOIN workflows.event event ON event.id = delivery.event_id
+            LEFT JOIN workflows.run run
+              ON run.event_id = event.id AND run.workflow_id = delivery.workflow_id AND run.parent_run_id IS NULL
+            WHERE delivery.workflow_id = ${input.workflowId}::uuid
+              AND delivery.workflow_version_id = ${input.workflowVersionId}::uuid
+              AND event.app_id = ${MAIL_WORKFLOW_APP_ID}
+              AND event.scope_id = ${input.mailboxId}
+              AND event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
+            UNION ALL
+            -- After 30 days retention empties event context and deletes deliveries; runs keep their own context.
+            SELECT
+              run.context #>> '{preconditions,message,remoteMessageRefId}' AS remote_message_ref_id,
+              run.state,
+              run.finished_at,
+              event.created_at AS event_created_at,
+              event.id AS event_id
+            FROM workflows.run run
+            JOIN workflows.event event ON event.id = run.event_id
+            WHERE event.payload_expired_at IS NOT NULL
+              AND run.workflow_id = ${input.workflowId}::uuid
+              AND run.workflow_version_id = ${input.workflowVersionId}::uuid
+              AND run.parent_run_id IS NULL
+              AND event.app_id = ${MAIL_WORKFLOW_APP_ID}
+              AND event.scope_id = ${input.mailboxId}
+              AND event.type = ${MAIL_WORKFLOW_EVENT.messageReceived}
+          ) attempts
+          ORDER BY remote_message_ref_id, event_created_at DESC, event_id DESC
         ) latest
         WHERE latest.state IN ('failed', 'canceled') AND latest.finished_at <= ${input.cutoffAt}
       )
@@ -843,6 +866,7 @@ const getIncomingAutomationBackfillPump = lazySync((sync) =>
           db: tx,
         });
         if (!snapshot) return;
+        // Oversized events propagate so the pump records Failed with lastError.
         await emitWorkflowEvent(
           {
             appId: MAIL_WORKFLOW_APP_ID,

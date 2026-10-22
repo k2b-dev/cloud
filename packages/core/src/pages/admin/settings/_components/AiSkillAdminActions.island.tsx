@@ -85,7 +85,6 @@ const PermissionDialogBody = (props: Props) => {
       <Show when={!entries.loading()} fallback={<Placeholder state="loading" title={t().loadingSkillAccess} />}>
         <Show
           when={entries.data()}
-          keyed
           fallback={
             <Placeholder
               state="error"
@@ -101,7 +100,7 @@ const PermissionDialogBody = (props: Props) => {
         >
           {(currentEntries) => (
             <PermissionEditor
-              initialEntries={currentEntries}
+              initialEntries={currentEntries()}
               canEdit
               allowPublic={false}
               allowServiceAccounts

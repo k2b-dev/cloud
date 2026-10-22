@@ -5,7 +5,7 @@ section: Platform services
 order: 560
 description: Project focused application Queries into the shared Cloud search.
 tags: [search, capabilities, authorization]
-updated: 2026-10-11
+updated: 2026-10-19
 ---
 
 # Universal search
@@ -23,6 +23,44 @@ unauthorized search.
 
 Read [App capabilities](/en/docs/platform/capabilities) first for the shared
 Type, Query, schema, result, registry, and authorization rules.
+
+## Open applications
+
+Global search also opens applications from the navigation catalog visible to
+the current user. Type the localized app name, then press Enter or click the
+result marked **App**. Administration appears only for administrators. Hidden,
+unavailable and internal applications are not added. An empty global search
+keeps its existing start state.
+
+An application's `nav.href` supplies its destination. To add alternate names,
+declare a `searchLinks` entry at that exact href and put the aliases in
+`keywords`:
+
+```ts
+nav: { href: "/tools", section: "more" },
+searchLinks: [
+  { label: "Tools", href: "/tools", keywords: ["utilities", "werkzeuge"] },
+],
+```
+
+Cloud merges that entry into the app result, so the destination appears once.
+The localized app name supplies the displayed title and the application icon
+supplies its icon. Keywords can include terms in multiple languages. Localize
+the entry's label through the existing search-link presentation catalog.
+
+Exact app names and aliases rank before word starts, substrings and conservative
+whole-name typo matches. Ranking takes the best matching name or alias; adding
+more keywords does not add scores. Global typo matching requires at least four
+characters, at least 80% similarity and no more than one edit (two from eight
+characters). Descriptions do not participate in app matching. Distant or short
+fuzzy matches are omitted so unrelated app entries do not crowd out content.
+Matching app and page links appear immediately before streamed resources;
+arriving resources preserve their position and keyboard selection.
+
+App launchers belong only to global navigation. Application, resource and tag
+contexts retain their existing behavior. Launchers are not resources, never
+appear in resource pickers or `/api/search`, and grant no access to their
+destination routes.
 
 ## Add static page links
 
@@ -43,7 +81,7 @@ searchLinks: [
 These links appear only in the global search dialog, above the resource
 results: they are matched in the browser and show at once, so application
 results that arrive later never push them down. Cloud includes them when the app is visible in the user's navigation
-catalog. The browser matches every search word against the label, description, and keywords,
+catalog. For static pages, the browser matches every search word against the label, description, and keywords,
 ignoring case, after at least two characters. An explicit application context also shows
 its static links for an empty query and uses fuzzy matching. Resource contexts
 and tag searches omit static links.
@@ -438,7 +476,18 @@ supports tag filters, and returns the resource view after the user selects
 a result and confirms with **Add**. Store the
 structured `ref`; treat its title, preview, and links as presentation data.
 Set `requireReader` when the consumer must resolve the selected resource later,
-as AI Project references do.
+as AI Project references do. Set `resourceType` to list only resources whose
+`ref.type` matches that type, for example `"spaces.space"`. This filters picker
+results in the browser; the consumer still authorizes the chosen resource.
+
+Pass `scope: { appId, tag?, label, icon? }` to narrow the search on the server
+to one app and, optionally, one of its search tags. The removable chip shows
+`label` and `icon`; `scope` takes precedence over `initialAppId`.
+Pass `query` to prefill the search text. An app scope starts searching at once,
+even with empty text. Server filtering by app and tag happens before the
+per-app result limit, so other resource kinds do not crowd out matching
+results as they can with the browser-only `resourceType` filter.
+`requireReader` still applies within the scope.
 
 ```ts
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
@@ -464,13 +513,146 @@ catalog without calling providers. The picker owns this platform-specific
 discovery UI; `@k2b/ui` remains independent of Cloud applications and resource
 contracts.
 
+### Insert resources from a composer
+
+Every app's search tags appear under **Insert** in a composer's slash menu
+once someone types their word. The translated title names the row; the tag,
+aliases, title, and app name are search words. Translate tag titles in
+`presentation.translations` under `searchTags`. Write aliases in German and
+English, for example `"tabelle"` and `"table"`, because aliases are not translated.
+
+Name a tag that stands for one kind of resource after that Resource Type's
+local ID, for example the tag `note` for `notebooks.note` and `contact` for
+`contacts.contact`. A narrowed slash list such as `/notiz q3` then also lists
+the person's recently sent references of that type above its search row.
+References of other types appear only in unscoped search. Assistant maps its
+own `studio-app` tag to `assistant.artifact`. Tags that filter rather than
+name a type, such as `urgent`, never match. Spaces' `task` tag finds
+`spaces.item` resources, so recent tasks appear only in unscoped search.
+
+Use `cloudInsertMenu` from `@k2b/cloud/browser/composer-insert` to build the
+rows, scopes, and fallback for `Chat.Composer`. Enter opens the resource picker
+narrowed on the server to the app and tag, with `requireReader: true`. Tab
+narrows the slash list. A selection returns `{ mention }` for the token's place;
+cancelling keeps `/…`. Supply `mention` to build the reference your draft stores,
+and `excludeRefs` to omit resources already in it.
+
+`createCloudComposerCatalog()` gives one composer its tags and Commands from a
+catalog load shared by every composer on the page. Call `catalog.ready(query, search, locale)`
+at the start of each `searchCommands` run. The first run of a menu opening,
+identified by `search.opening`, starts the load, so no keystroke sends a request.
+A successful load stays cached for the page; a failed one is retried at the next
+opening and keeps the previous tags. Only typed text outside a scope waits for
+the load, so a tag word does not settle as **Nothing found** before its tag
+arrives. The overview and scoped searches do not wait, and after a failed load
+no search waits again. Each catalog page has a 15-second deadline.
+
+The catalog leaves out the tags of apps that declare no resource reader,
+because a picker with `requireReader: true` can show none of their results.
+An app without a reader can still contribute Commands.
+
+`catalog.commands()` contains localized Commands that accept an empty input,
+belong to apps in the person's navigation, and belong to a different app than
+the composer. `catalog.state()` starts as `"loading"`, becomes `"ready"` after
+success or `"failed"` after failure. A new opening after failure starts one
+fresh shared load and returns to `"loading"`.
+
+Use `cloudCommandMenu` from the same import to build **Open in apps** rows.
+Pass its `pending` to the last section: three placeholders reserve its end in
+the overview, one while searching. The failed catalog offers a persistent
+retry row that starts another opening. The row's `before(draft, signal, follow)` must save
+`draft.value` and `draft.mentions`, which already leave out `/…`, together with
+the attachments, through your revisioned draft path. Read `returnTo()` after
+saving, so a newly created chat can supply its path. The signal comes from the
+composer and aborts when the opening ends without leaving the page: the person
+closed the list, or opening failed. The token is then still on screen, so save
+the live draft again. If `before` creates a chat that the composer then shows,
+call `follow()` right before creating it; otherwise any chat change cancels the
+opening. Preserve later edits once that signal aborts.
+
+`openComposerCommand(command, { before, returnTo, signal, locale })` provides
+the same save-then-open behavior for a custom row. A rejected `before()` reaches
+the composer status line and opens nothing. An invalid return path throws. If
+Command resolution fails, the row shows the app's unavailability only when the
+app cannot be reached; otherwise it shows the resolver's message. It stays open
+in either case. If the Command code cannot load, the row keeps the token and
+the reload notice offers a reload. `signal()` is read after saving: once it
+aborts, for example because the person left the chat, the row ends without
+opening anything. After navigation, the target app owns error feedback and
+chooses whether to use `returnTo`.
+
+```tsx
+import { cloudCommandMenu, cloudInsertMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
+import { Chat, type ChatCommandDraft, type ChatMention, useLocale } from "@k2b/ui";
+import { createMemo, createSignal } from "solid-js";
+
+export function ResourceComposer(props: {
+  saveDraft: (draft: ChatCommandDraft) => Promise<void>;
+  returnTo: () => string | undefined;
+}) {
+  const locale = useLocale();
+  const [text, setText] = createSignal("");
+  const [mentions, setMentions] = createSignal<readonly ChatMention[]>([]);
+  const catalog = createCloudComposerCatalog();
+  const menu = createMemo(() =>
+    cloudInsertMenu({
+      locale: locale(),
+      tags: catalog.tags(),
+      section: "insert",
+      mention: (item) => ({ id: `resource:${item.ref.type}:${item.ref.id}`, name: item.title, data: item.ref }),
+    }),
+  );
+  const apps = createMemo(() => cloudCommandMenu({
+    locale: locale(), commands: catalog.commands(), state: catalog.state(), section: "apps",
+    before: props.saveDraft, returnTo: props.returnTo,
+  }));
+  return (
+    <Chat.Composer
+      value={text()}
+      onValueChange={setText}
+      mentions={mentions()}
+      onMentionsChange={setMentions}
+      commandSections={[
+        { id: "insert", label: "Insert" },
+        { id: "apps", label: "Open in apps", pending: apps().pending },
+      ]}
+      commands={[menu().insert, ...menu().tags, ...apps().commands]}
+      commandScopes={menu().scopes}
+      commandFallback={menu().fallback}
+      searchCommands={async (query, _signal, search) => {
+        // Starts this opening's catalog load; typed text outside a scope waits for it.
+        await catalog.ready(query, search, locale());
+        return [];
+      }}
+      onSubmit={(input) => {
+        console.log(input.text, input.mentions);
+      }}
+    />
+  );
+}
+```
+
+Compose these rows and scopes with your own commands. Pass their scope words as
+`reservedWords` so a catalog tag cannot claim them. `reason` disables the insert,
+tag, and fallback rows with a visible explanation, such as a full message.
+Use `ownReaders` only for a resource type your composer reads itself, for
+example `{ "assistant:studio-app": "assistant.app" }`, and add that tag to
+`tags` yourself when its app has no reader. That tag's picker then lists only
+this type, also without a Cloud reader, even after the person removes the scope
+chip. A word that two tags share narrows to neither, so it
+does not become a scope word.
+The example stores the reference in `attachment.data`; adapt that value to your
+application's draft format and persist the submitted mentions.
+
 ## Actions in the global palette
 
 The global search also discovers [Commands](/en/docs/platform/capabilities#open-an-interactive-flow-with-commands).
 Click **Actions** or type `>` to browse them. Ordinary text searches show
 matching actions after resource and page results. Only Commands whose input
-schema accepts `{}` appear globally; other Commands remain callable with
-explicit input. Resource pickers never show or execute Commands.
+schema accepts `{}` and whose app is in the person's navigation appear globally.
+The palette keeps the current app's Commands. Navigation is discoverability,
+never authorization: the target page still checks access. Other Commands remain
+callable with explicit input. Resource pickers never show or execute Commands.
 
 Register useful actions for the currently visible resource from its island:
 

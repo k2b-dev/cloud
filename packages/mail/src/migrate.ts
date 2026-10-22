@@ -2,7 +2,7 @@
  * Mail owns everything in the `mail` schema. `src/schema.sql` is its baseline:
  * a fresh installation runs that file once inside one transaction and records
  * version 1 (`baseline`) in `mail.schema_migrations`. Objects added after the
- * baseline live in `applyAdditions` below.
+ * baseline live in `applyAdditions` below or the background index builders.
  *
  * The historical 1..126 migration chain was collapsed into that baseline before
  * Mail was first deployed; a developer machine that still holds the old chain
@@ -61,6 +61,46 @@ const applyBaseline = async (tx: SqlClient): Promise<void> => {
  * older Mail image, which records no version for them, still starts on it.
  */
 const applyAdditions = async (tx: SqlClient): Promise<void> => {
+  await tx`CREATE TABLE IF NOT EXISTS mail.mailbox_logo_versions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    content bytea NOT NULL CHECK (octet_length(content) BETWEEN 1 AND 102400),
+    content_type text NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg')),
+    pixel_width integer NOT NULL CHECK (pixel_width BETWEEN 1 AND 1200),
+    pixel_height integer NOT NULL CHECK (pixel_height BETWEEN 1 AND 400),
+    display_width integer NOT NULL CHECK (display_width BETWEEN 1 AND 600),
+    alt_text text NOT NULL CHECK (char_length(alt_text) BETWEEN 1 AND 200),
+    sha256 text NOT NULL CHECK (sha256 ~ '^[a-f0-9]{64}$'),
+    created_by_actor_kind text NOT NULL CHECK (created_by_actor_kind IN ('user', 'service_account')),
+    created_by_actor_id uuid NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+)`.simple();
+  await tx`CREATE INDEX IF NOT EXISTS mailbox_logo_versions_mailbox_idx ON mail.mailbox_logo_versions (mailbox_id)`.simple();
+  await tx`ALTER TABLE mail.mailboxes ADD COLUMN IF NOT EXISTS logo_version_id uuid REFERENCES mail.mailbox_logo_versions(id)`.simple();
+  await tx`ALTER TABLE mail.outbox_submissions ADD COLUMN IF NOT EXISTS inline_logo_version_id uuid REFERENCES mail.mailbox_logo_versions(id) ON DELETE SET NULL`.simple();
+  await tx`CREATE INDEX IF NOT EXISTS outbox_inline_logo_version_idx ON mail.outbox_submissions (inline_logo_version_id) WHERE inline_logo_version_id IS NOT NULL`.simple();
+
+  await tx`CREATE INDEX IF NOT EXISTS outbox_submissions_draft_idx ON mail.outbox_submissions (draft_id, created_at DESC)`.simple();
+
+  // NULL = no status decision since Mail linked the message; true = a decision covers it and its
+  // hydration keeps the status; false = a later decision released it. Moving the message to another
+  // conversation resets it to NULL.
+  await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS status_covered boolean`.simple();
+  // The conversation revision this message's hydration produced, so a workflow that the message
+  // triggered can tell that change apart from others. Moving the message clears it too.
+  await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS hydrated_revision bigint`.simple();
+  // The transaction that linked the message to this conversation. Add the default separately so
+  // existing links stay NULL (linked before this column) without a table rewrite.
+  await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS linked_xid xid8`.simple();
+  await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN linked_xid SET DEFAULT pg_current_xact_id()`.simple();
+  // Order links within one transaction; keep existing rows NULL without rewriting the table.
+  // Migrations and runtime use the same role, which owns this sequence and can call nextval.
+  // The workflow status fence needs CACHE 1 and no setval rewind: a cached block would hand a
+  // later link of the view's own transaction a value at or below the sequence the view read.
+  await tx`CREATE SEQUENCE IF NOT EXISTS mail.conversation_link_seq AS bigint CACHE 1`.simple();
+  await tx`ALTER TABLE mail.conversation_messages ADD COLUMN IF NOT EXISTS link_seq bigint`.simple();
+  await tx`ALTER SEQUENCE mail.conversation_link_seq OWNED BY mail.conversation_messages.link_seq`.simple();
+  await tx`ALTER TABLE mail.conversation_messages ALTER COLUMN link_seq SET DEFAULT nextval('mail.conversation_link_seq')`.simple();
   await tx`ALTER TABLE mail.drafts ADD COLUMN IF NOT EXISTS signature_template_id uuid
     REFERENCES mail.compose_templates(id) ON DELETE SET NULL`.simple();
   await tx`
@@ -143,6 +183,7 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
     $$
   `.simple();
   await addCommandQueuePosition(tx);
+  await addCommandUndoRequests(tx);
   await addSenderVerificationCommands(tx);
   await addConversationAssignees(tx);
   await addAssignedOnlyMailboxAccess(tx);
@@ -181,6 +222,30 @@ const applyAdditions = async (tx: SqlClient): Promise<void> => {
       WHERE state <> 'completed'
     `.simple();
   }
+};
+
+/** Accepted Undo requests survive the client and wait for the original move's destination copy. */
+const addCommandUndoRequests = async (tx: SqlClient): Promise<void> => {
+  await tx`
+    CREATE TABLE IF NOT EXISTS mail.command_undo_requests (
+      command_id uuid PRIMARY KEY REFERENCES mail.commands(id) ON DELETE CASCADE,
+      requested_at timestamptz NOT NULL DEFAULT now(),
+      attempted_at timestamptz,
+      credential_scopes text[],
+      credential_id uuid,
+      credential_expires_at timestamptz,
+      audit_actor jsonb NOT NULL,
+      request_id text,
+      -- NULL while the original command, destination copy, or transport is still pending.
+      outcome text CONSTRAINT command_undo_requests_outcome_check CHECK (outcome IN ('reversed', 'not_applied', 'unavailable')),
+      inverse_command_id uuid REFERENCES mail.commands(id) ON DELETE SET NULL,
+      CONSTRAINT command_undo_requests_inverse_check CHECK (inverse_command_id IS NULL OR outcome = 'reversed')
+    )
+  `.simple();
+  await tx`
+    CREATE INDEX IF NOT EXISTS command_undo_requests_pending_idx
+    ON mail.command_undo_requests (attempted_at NULLS FIRST, requested_at, command_id) WHERE outcome IS NULL
+  `.simple();
 };
 
 /**
@@ -379,13 +444,87 @@ export const migrate = async (): Promise<void> => {
 };
 
 /**
- * One Mail process builds at a time: a second build on the same table deadlocks with the first, and
- * Postgres cancels one of them. The lease is renewed while the build runs.
+ * One Mail process builds any index at a time: concurrent expression/partial index builds can
+ * wait on each other's snapshots, and Postgres cancels one of them. The lease is renewed while
+ * the build runs.
  */
-const BM25_INDEX_LEASE_MS = 60_000;
-const searchIndexBuildMutex = lazySync((sync) =>
-  sync.mutex({ id: "mail:search-index-build", ttlMs: BM25_INDEX_LEASE_MS, retry: { maxAttempts: 1 } }),
-);
+const INDEX_BUILD_LEASE_MS = 60_000;
+const indexBuildMutex = lazySync((sync) => sync.mutex({ id: "mail:index-build", ttlMs: INDEX_BUILD_LEASE_MS, retry: { maxAttempts: 1 } }));
+
+const readCommandTargetIndexState = async () => {
+  const [state] = await sql<{ present: boolean; valid: boolean; building: boolean }[]>`
+    SELECT to_regclass('mail.commands_message_target_idx') IS NOT NULL AS present,
+      EXISTS (
+        SELECT 1 FROM pg_index
+        WHERE indexrelid = to_regclass('mail.commands_message_target_idx')
+          AND indisvalid AND indisready AND indislive
+      ) AS valid,
+      EXISTS (
+        SELECT 1 FROM pg_stat_progress_create_index progress
+        WHERE progress.datname = current_database()
+          AND (progress.relid = to_regclass('mail.commands') OR progress.relid IS NULL)
+      ) AS building
+  `.simple();
+  return state ?? { present: false, valid: false, building: false };
+};
+
+const dropCommandTargetIndex = async (): Promise<void> => {
+  await sql`DROP INDEX CONCURRENTLY IF EXISTS mail.commands_message_target_idx`.simple();
+};
+
+/**
+ * Builds the per-message command index after migration, without blocking command writes or startup.
+ * Lookups use the older index until this one is valid. The shared Mail index lease serializes builds;
+ * interrupted builds are replaced on the next start. Each database step is one statement without
+ * session state, so transaction pooling is safe. Never throws.
+ */
+export const buildCommandTargetIndex = async (): Promise<"ready" | "busy" | "built" | "failed"> => {
+  try {
+    if ((await readCommandTargetIndexState()).valid) return "ready";
+    const mutex = indexBuildMutex();
+    const lease = await mutex.acquire({ resource: "mail-indexes" });
+    if (!lease) return "busy";
+    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
+    renewal.unref();
+    try {
+      const before = await readCommandTargetIndexState();
+      if (before.valid) return "ready";
+      if (before.building) return "busy";
+      // IF NOT EXISTS would keep an invalid index left by an interrupted build.
+      if (before.present) await dropCommandTargetIndex();
+      log.info("Building the per-message command index");
+      const startedAt = performance.now();
+      try {
+        await sql`
+          CREATE INDEX CONCURRENTLY IF NOT EXISTS commands_message_target_idx
+          ON mail.commands USING btree (mailbox_id, ((target ->> 'remoteMessageRefId'::text)), kind)
+          WHERE (target ? 'remoteMessageRefId'::text)
+        `.simple();
+      } catch (error) {
+        const after = await readCommandTargetIndexState();
+        if (after.valid) return "ready";
+        if (after.building) return "busy";
+        log.warn("Per-message command index was not built; lookups use the older index until the next start", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await dropCommandTargetIndex();
+        return "failed";
+      }
+      // IF NOT EXISTS may have skipped an index that another process was still building.
+      if (!(await readCommandTargetIndexState()).valid) return "busy";
+      log.info("Built the per-message command index", { durationMs: Math.round(performance.now() - startedAt) });
+      return "built";
+    } finally {
+      clearInterval(renewal);
+      await mutex.release(lease).catch(() => false);
+    }
+  } catch (error) {
+    log.warn("Per-message command index is unavailable; lookups use the older index", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return "failed";
+  }
+};
 
 /**
  * The index behind BM25 ranking. Its expression is the text that search ranks, subject twice and
@@ -445,10 +584,10 @@ export const buildOptionalSearchIndex = async (): Promise<"unavailable" | "ready
     const before = await readBm25IndexState();
     if (!before.installed) return "unavailable";
     if (before.valid) return "ready";
-    const mutex = searchIndexBuildMutex();
-    const lease = await mutex.acquire({ resource: "message-contents-bm25" });
+    const mutex = indexBuildMutex();
+    const lease = await mutex.acquire({ resource: "mail-indexes" });
     if (!lease) return "busy";
-    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), BM25_INDEX_LEASE_MS / 3);
+    const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), INDEX_BUILD_LEASE_MS / 3);
     renewal.unref();
     try {
       return await buildBm25Index();

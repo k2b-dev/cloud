@@ -1,8 +1,9 @@
-import { type AuthContext, auth, rateLimit } from "@k2b/cloud/server";
+import { type AuthContext, auth, middleware, rateLimit } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
 import { FilegateError } from "@k2b/filegate";
 import { Hono } from "hono";
 import { ssr } from "../config";
+import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
 import adminPage from "./admin";
 import filesPage from "./page";
@@ -11,11 +12,21 @@ import { publicInboxPage, publicSharePage } from "./public-pages";
 import { filesUrl } from "./urls";
 
 export default new Hono<AuthContext>()
+  .use("/app/filesv2/*", (c, next) => {
+    // Editor launches embed a private WOPI token or download lease beside the stored filename.
+    if (c.req.query("view") === "edit" && c.req.query("file")) return middleware.noTransform()(c, next);
+    return next();
+  })
+  .use("/admin/filesv2/*", (c, next) => {
+    // Share owners cannot read other owners' private notes in the administrative share list.
+    if (c.req.query("view") === "shares") return middleware.noTransform()(c, next);
+    return next();
+  })
   .get("/app/filesv2", auth.requireRole("user", ssr.access), ...filesPage)
   .get("/app/filesv2/ref/:id", auth.requireRole("user", ssr.access), async (c) => {
     try {
       // A stable ref opens wherever the file is now; a path ref where it was named.
-      const { base, entry } = await filesService.entryById(c.get("actor"), c.req.param("id"));
+      const { base, entry } = await filesService.entryById(requestCall(c), c.req.param("id"));
       const path = entry.directory ? entry.path : entry.path.split("/").slice(0, -1).join("/");
       return c.redirect(filesUrl(base.id, path, undefined, entry.directory ? undefined : entry.path));
     } catch (error) {
@@ -27,6 +38,8 @@ export default new Hono<AuthContext>()
   // Each open streams a stored file, bounded like the Files API.
   .use("/app/filesv2/pdf/*", rateLimit())
   .route("/", pdfPage)
+  // A share's public note sits next to file names that writers of the shared folder choose without holding the link.
+  .use("/share/filesv2/*", middleware.noTransform())
   .get("/share/filesv2/s/:token", auth.requireRole("*"), ...publicSharePage)
   .get("/share/filesv2/inbox/:token", auth.requireRole("*"), ...publicInboxPage)
   .get("/admin/filesv2", auth.requireRole("admin", ssr.access), ...adminPage)

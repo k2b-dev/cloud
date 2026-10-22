@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { cloudAiChartTable } from "../chart-block";
+import { cloudAiChartSchema } from "../default-tool-contracts";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-block-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -49,6 +51,26 @@ describe("chart chat block", () => {
     expect(html).toMatch(/k2b-chart-explorer__viewport[^>]*height:\s*18rem/);
     // Every mark names its exact value for assistive technology and tooltips.
     expect(html).toContain("<title>Jan · Value: 1,200</title>");
+  });
+
+  test("uses the shared tooltip label and currency format in German", () => {
+    const input = cloudAiChartSchema().parse({
+      kind: "bar",
+      title: "Umsatz",
+      data: [{ label: "Jan", value: 1200 }],
+      tooltip: { label: "Umsatz", format: { style: "currency", currency: "EUR" } },
+    });
+    const html = render(input, { locale: "de" });
+    const table = cloudAiChartTable(input, "de");
+    expect(table.columns).toEqual([
+      { id: "label", label: "Kategorie", numeric: false },
+      { id: "value", label: "Umsatz", numeric: true },
+    ]);
+    expect(table.rows[0]?.cells).toEqual({ label: "Jan", value: "1.200,00\u00a0€" });
+    expect(html).toContain("<title>Jan · Umsatz: 1.200,00\u00a0€</title>");
+    expect(html).toContain("Daten kopieren");
+    // The table mounts when selected; SSR exposes its formatted row through the mark's accessible title.
+    expect(html).not.toContain("Jan · Wert:");
   });
 
   test("speaks the reader's language", () => {

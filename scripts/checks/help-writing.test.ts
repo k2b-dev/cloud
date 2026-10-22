@@ -13,7 +13,9 @@ const glossary = [
 const terms = parseGlossary(glossary);
 
 const check = (path: string, lines: string[]) =>
-  checkHelpSource(path, lines.join("\n"), terms).map((finding) => `${finding.line} ${finding.key.split(" | ").slice(1).join(" ")}`);
+  checkHelpSource(path, lines.join("\n"), terms)
+    .filter((finding) => !finding.key.includes(" | frontmatter | "))
+    .map((finding) => `${finding.line} ${finding.key.split(" | ").slice(1).join(" ")}`);
 
 test("reads the avoid columns of every glossary table and ignores other tables", () => {
   expect(
@@ -143,6 +145,12 @@ test("uses the German terms in German articles and respects capitalized terms", 
   ).toEqual(["1 term Berechtigung*", "1 term klick*", "2 term Rechte"]);
 });
 
+test("a product name that starts with an avoided prefix is not the avoided word", () => {
+  expect(check("packages/demo/src/help/documents/en/demo.help.md", ["Connect ClickHouse first. Clicking the row opens it."])).toEqual([
+    "1 term click*",
+  ]);
+});
+
 const workspace = async (help: string, baseline?: string[]) => {
   const root = await mkdtemp(join(tmpdir(), "cloud-help-writing-"));
   const files: Record<string, string> = {
@@ -165,7 +173,13 @@ const article = "packages/demo/src/help/documents/en/demo.help.md";
 const baselinePath = "scripts/checks/help-writing.baseline";
 
 test("baselined findings pass, new findings fail, and the baseline only shrinks", async () => {
-  const known = [`${article} | term | permissions`, `${article} | term | permissions`, `${article} | term | click*`];
+  const known = [
+    `${article} | frontmatter | kind`,
+    `${article} | frontmatter | icon`,
+    `${article} | term | permissions`,
+    `${article} | term | permissions`,
+    `${article} | term | click*`,
+  ];
   const { root, run } = await workspace("Check permissions.\nCheck permissions.\nClick here.\n", known);
   try {
     expect(await run()).toEqual([]);
@@ -180,6 +194,8 @@ test("baselined findings pass, new findings fail, and the baseline only shrinks"
     expect(await run()).toEqual([baselinePath, baselinePath]);
     expect(await run(true)).toEqual([]);
     expect((await readFile(join(root, baselinePath), "utf8")).split("\n").filter((line) => line.startsWith("packages/"))).toEqual([
+      `${article} | frontmatter | icon`,
+      `${article} | frontmatter | kind`,
       `${article} | term | permissions`,
     ]);
   } finally {
@@ -190,8 +206,42 @@ test("baselined findings pass, new findings fail, and the baseline only shrinks"
 test("without a baseline every finding fails", async () => {
   const { root, run } = await workspace("Check permissions.\n");
   try {
-    expect(await run()).toEqual([`${article}:1`]);
+    expect(await run()).toEqual([`${article}:1`, `${article}:1`, `${article}:1`]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("steps blocks allow seven top-level steps and flag eight", () => {
+  const block = (count: number) =>
+    ":::steps\n" +
+    Array.from(
+      { length: count },
+      (_, index) => `${index + 1}. Choose the next item with enough words to identify it.\n   - Nested detail.\n`,
+    ).join("") +
+    ":::";
+  const stepFindings = (source: string) => checkHelpSource(article, source, []).filter((finding) => finding.key.includes(" | steps | "));
+  expect(stepFindings(block(7))).toEqual([]);
+  expect(stepFindings(block(8))).toMatchObject([
+    {
+      key: `${article} | steps | Choose the next item with enough words to`,
+      message: "Steps block has 8 steps (at most 7). Split the task or move details into :::details.",
+    },
+  ]);
+  expect(stepFindings("```md\n" + block(8) + "\n```")).toEqual([]);
+  expect(
+    stepFindings(
+      block(8).replace("Choose the next item with enough words to identify it.", "Choose it. Check the selected item before saving."),
+    )[0]?.key,
+  ).toBe(`${article} | steps | Choose it. Check the selected item before saving.`);
+});
+
+test("only base-locale articles require kind and icon", () => {
+  const source = "---\nid: demo\ntitle: Demo\n---\nBody";
+  expect(checkHelpSource(article, source, []).map((finding) => finding.key)).toEqual([
+    `${article} | frontmatter | kind`,
+    `${article} | frontmatter | icon`,
+  ]);
+  expect(checkHelpSource(article.replace("/en/", "/de/"), source, [])).toEqual([]);
+  expect(checkHelpSource(article, source.replace("title: Demo", "title: Demo\nkind: task\nicon: ti ti-eye"), [])).toEqual([]);
 });

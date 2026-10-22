@@ -1,9 +1,10 @@
 # TabBar
 
 `TabBar` is the bottom navigation between a phone app's top-level pages: up to
-five native links with an icon above each label. It is flat and opaque on the
-page canvas, without a rule above it and without badges. The content's scroll
-fade marks its edge while more content continues below.
+five native links with an icon above each label. The default bar is flat and
+opaque on the page canvas, without a rule above it and without badges. The content's scroll
+fade marks its edge while more content continues below. Use `variant="floating"`
+for a rounded bar placed above content by its host.
 
 ## Import
 
@@ -34,11 +35,11 @@ const items: TabBarItem[] = [
   title, such as a Start tab whose page is titled with the app's name.
 - At most five items render; further items are left out. Put the rest behind a
   destination such as Start or More that lists every page.
-- The items share the width equally. Long labels end with an ellipsis, so keep
+- The items share the width equally. Long labels fade out, so keep
   them to one short word.
 
 The bar is a set of links, not a tab widget: each item loads a page. The server
-marks the current item, so the bar never changes after hydration.
+marks the current item, so the bar stays the same when the component mounts.
 
 A tap switches tabs at the first touch, as on a native tab bar: the item takes
 the current item's colour, and the shell shows the item's page frame with its
@@ -48,6 +49,32 @@ A second tap on the item does not start the load over. Pressed and loading
 change only colour and opacity, so nothing moves. The page frame and the
 ignored repeat tap come from the shell in the browser; see
 [MobileShell](/en/ui/layout/mobile-shell#runtime).
+
+## Floating variant
+
+`variant="bar"` is the default and keeps the flat bar, including its bottom
+safe-area padding. The phone app uses this default.
+
+`variant="floating"` renders a 62 px bar with 26 px corners, 6 px padding,
+and 50 px items with 20 px corners. The selected item has its own surface.
+The host owns placement, spacing from safe areas, and enough content and
+scroll padding to keep the last row and focused controls above the bar.
+The floating variant adds no safe-area padding of its own.
+
+Set these custom properties on the bar or an ancestor to match its host:
+
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `--k2b-tab-bar-background` | `--k2b-surface-elevated` | Bar background, including a gradient |
+| `--k2b-tab-bar-selected-background` | `--k2b-surface` | Selected item's background |
+| `--k2b-tab-bar-color` | `--k2b-text-secondary` | Icons and labels of the other items |
+| `--k2b-tab-bar-selected-color` | `--k2b-action` | Selected item's icon and label |
+
+```tsx
+<div class="p-3">
+  <TabBar variant="floating" label="App" items={items} />
+</div>
+```
 
 ## Accessibility
 
@@ -59,7 +86,7 @@ decorative; the visible label is the accessible name. Each item is at least
 ## Runtime
 
 `TabBar` is plain server-rendered markup with native links and needs no
-hydration. Each link carries its page's title as `data-k2b-title`. The page
+browser code. Each link carries its page's title as `data-k2b-title`. The page
 frame and the loading state need a mounted `MobileShell` or
 `observeMobileShell()`; without either, the links still work, with the
 pressed colour only.

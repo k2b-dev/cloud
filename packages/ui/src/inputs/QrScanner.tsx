@@ -1,6 +1,7 @@
 import { timed } from "@k2b/stdlib/solid";
 import type QrScannerEngine from "qr-scanner";
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { prefersReducedMotion } from "../motion";
 import { useQrMessages } from "./qr-messages";
 
 /**
@@ -163,7 +164,7 @@ export function QrScanner(props: QrScannerProps): JSX.Element {
         const motion = matchMedia("(prefers-reduced-motion: reduce)");
         const applyMotion = () => {
           for (const animation of scanner?.$overlay?.getAnimations({ subtree: true }) ?? []) {
-            if (motion.matches) animation.pause();
+            if (prefersReducedMotion()) animation.pause();
             else animation.play();
           }
         };

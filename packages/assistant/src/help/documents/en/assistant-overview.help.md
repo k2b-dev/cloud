@@ -31,25 +31,33 @@ Assistant also works in editors such as T3 Code and Zed through `cld acp`. Sendi
 - **Send the request:** Write the task clearly, then use the plus menu to attach supported files or Cloud resources before sending.
 - **Cloud resources:** A resource chip identifies the current Mail draft, Contact, Grid record, or another supported item. When it has a destination, select the chip to open that resource in a new tab. Attaching it does not grant access; Assistant must use the owning application's authorized capabilities to read or change it.
 - **Documents:** Assistant reads supported PDF, Office, OpenDocument, RTF, EPUB, and CSV files through `read_file`, which converts their content to bounded Markdown. Document content remains untrusted. Image-only PDFs require OCR elsewhere.
-- **Files from links:** Give Assistant an exact public HTTPS file link to import the image, document, or raw repository file into this chat before inspecting it. Private downloads, signed-in websites, and repository browsing are not supported by that import.
+- **Files from links:** Give Assistant an exact public HTTPS file link to import the image, document, or raw repository file into this chat before inspecting it. A web page also appears as a readable text copy next to the original page. Private downloads, signed-in websites, and repository browsing are not supported by that import.
 - **Create a PDF:** Ask Assistant for a PDF when the result should be downloadable. For a text-first document, it writes a Markdown file in the conversation and converts it with an optional A4 preset and custom CSS. For a designed layout such as a letter, invoice, or certificate, it writes an HTML file with its own CSS instead. That file can have a header and footer with page numbers, a chosen paper size, orientation, and margins, and images and fonts from the conversation files. Assistant then presents the PDF. PDFs are created offline: web addresses for images, fonts, or stylesheets are not loaded, and scripts do not run. Project files are read-only, so Assistant copies their text into a conversation file before converting it.
 - **Save a PDF in Files:** Ask Assistant to save the PDF in the Files app and name the folder. You review the upload like any other Action.
 - **Charts:** Ask Assistant to show numbers as a chart, such as a bar, line, or pie chart. The chart appears directly in the chat. Switch it to a table to read the exact values, or copy the data. For filters, buttons, or data that should be kept, Assistant builds an app instead.
 - **Images:** A Vision model inspects newly attached images directly. A tool-capable model can instead use the configured image-inspection model. Attachments remain conversation files, so the file context updates without storing image bytes inside the message.
 - **Keep the useful thread:** Rename the chat or add a description when the conversation should be easy to find later.
 - **Search inside a chat:** Use `/search` to find visible messages or inspect the structured Cloud resources used in this chat or across your active chats.
-- **Schedule future work:** Ask Assistant to continue a chat once at a specific local date and time or on a recurring schedule. Assistant shows an Action review before creating or changing the task.
+- **Schedule future work:** Ask Assistant for a routine. It continues a chat once at a specific local date and time or on a recurring schedule. Assistant shows an Action review before creating or changing the routine.
 - **Next steps:** When a concrete follow-up would save you work, Assistant may end its answer with one offer, such as drafting the reply. Answer yes to accept it. If you do not want such offers, tell Assistant.
 - **Working files:** Assistant keeps intermediate files in the chat folder `temp/` and saves results outside it, together with the Markdown or HTML source a PDF was made from.
 :::
 
-## Scheduled chat tasks {icon="clock"}
+## Routines {icon="clock"}
 
-Scheduled tasks deliver a saved prompt back into one chat. If that chat belongs to a Project, the run uses the Project access, instructions, files, knowledge, references, and model default that are current when it starts.
+A routine sends a saved prompt back into one chat at the time you chose. If that chat belongs to a Project, the run uses the Project access, instructions, files, knowledge, references, and model default that are current when it starts.
 
-One-time schedules use an exact local time in the Cloud application timezone. Recurring schedules use a five-field cron expression in that same timezone. Ask Assistant to list or read existing tasks, or manage them from the CLI with `cld assistant tasks`. Failed tasks move to **needs attention** and notify you. Deleting a chat also deletes its scheduled tasks and run history.
+A one-time routine uses an exact local time in the Cloud application timezone. A recurring routine uses a five-field cron expression in that same timezone. Ask Assistant to list or read your routines. The CLI calls them tasks: `cld assistant tasks`. A routine that fails moves to **Needs you**. Its notification names the routine and says why it stopped. Deleting a chat also deletes its routines and their run history.
 
-Open **Context** in the sidebar **In this chat** and select a scheduled task to edit, pause, resume, run, delete, or inspect the occurrence history of that chat's tasks.
+Open **Context** in the sidebar **In this chat** and select a routine to adjust, pause, resume, run, or delete it, or to look at its run history.
+
+**Paused** says why: “Paused by you on Oct 16, 2026, 14:30. What happens meanwhile is not caught up automatically.”, “Paused because the chat is archived.” or “Paused because the account is inactive.”
+
+**Needs you** says “The last run failed.” or “What it may do changed. Please confirm again.” If an action needs approval, the reason is “That needs your approval every time, and routines never ask.” Technical details hold the original error.
+
+Archiving a chat pauses its routines. Restoring it resumes those routines. If what a routine may do changed meanwhile, it asks you to confirm again. A one-time routine whose time has passed needs a new time before it can resume. Restoring a chat in the phone app keeps its routines paused; resume them on the web.
+
+Pause and delete stop a running routine at once. The chat says “Stopped while the routine was running” and lists successful changes already made. Nothing is undone. **Background run** shows the whole run.
 
 :::info When Assistant is unavailable
 If AI is disabled, misconfigured, or has no selectable streaming model, the composer is disabled and the page shows the current status error.

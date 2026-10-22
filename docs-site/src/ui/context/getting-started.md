@@ -101,11 +101,15 @@ Override tokens on your scoped root. Components derive focus, selection, and act
 <main class="k2b-ui product-ui">...</main>
 ```
 
-Most themes only need the font and accent stack. Override semantic tokens such as `--k2b-action`, `--k2b-surface`, `--k2b-text`, or `--k2b-border` when a specific role needs different treatment. See [Theme and styles](./surfaces/utilities) for theme roles and overrides.
+Most themes only need the font and accent stack. Override semantic tokens such as `--k2b-action`, `--k2b-surface`, `--k2b-text`, `--k2b-text-secondary`, `--k2b-text-muted`, or `--k2b-border` when a specific role needs different treatment. See [Ink hierarchy](./surfaces/utilities#ink-hierarchy) for text roles and contrast floors, and [Theme and styles](./surfaces/utilities) for other theme roles and overrides.
+
+Selection has its own optional host hooks, so a host can give selected rows,
+views, and filters its own color while controls stay in the action color. See
+[Colors and selection](./surfaces/color).
 
 ## Solid and SSR
 
-Import components directly from `@k2b/ui`. Package conditions select the SSR build on the server and the interactive build in the browser. State remains controlled by your application and continues seamlessly during hydration:
+Import components directly from `@k2b/ui`. Package conditions select the SSR build on the server and the interactive build in the browser. State remains controlled by your application:
 
 ```tsx
 import { createSignal } from "solid-js";
@@ -122,6 +126,8 @@ export function ProjectSections() {
   );
 }
 ```
+
+Components that change state require browser code: an island, a client component, or a page that a hydrating framework hydrates. A component mounts when it first renders in the browser; Solid's `onMount` runs right after that render. Render the same markup from the same initial values on the server and in the browser. Depending on the host, the browser hydrates the server HTML or replaces it with a new render, so do not rely on state that exists only in the server HTML, such as text typed before mount.
 
 ## Set the render locale
 
@@ -152,6 +158,13 @@ Reference types use `JSX.Element` for Solid content and `MaybeAccessor<T>` for
 `items={items()}` to plain array props. Optional props use `?`. Omission means
 no extra behavior unless a default is stated. Native attributes pass through
 only where the component explicitly inherits them.
+
+### Pending states keep the control
+
+While a change saves, keep the same control in the same place and size.
+Disable it or mark it loading; never swap it for a badge, text, or placeholder.
+Only the changed item shows progress. Keyboard focus stays with the control, or returns
+to it when the change ends.
 
 ### Shared field props
 
@@ -221,13 +234,14 @@ optional action or its wrapper:
 </li>
 ```
 
-As soon as any pointer can hover, including a mouse on a tablet, the action
-stays hidden until its item is hovered or keyboard-focused, or until a menu it
-opened is open. Touch-only screens always show it. Hiding changes only the
-opacity, so nothing moves. Do not nest progressive rows, and do not build the
-same rule from `(hover: hover)`, `(hover: none)`, `(pointer: fine)`, or
-Tailwind's `hover:` and `group-hover:` variants: they describe only the
-primary pointer, which stays the finger on a tablet with a mouse.
+Touch input keeps actions visible. Mouse or trackpad input hides them until
+the row is hovered, focused, or has an open menu; shared components also keep
+current-row actions visible where supported. Before input, `any-hover`
+supplies the default: hovering pointers hide actions at rest, touch-only
+screens show them. Only opacity changes, so nothing moves. Do not nest
+progressive rows. See [Input mode](/en/ui/input-mode) to start the controller
+and write custom rules. Primary-pointer queries and Tailwind's `hover:` or
+`group-hover:` variants miss a tablet's secondary mouse.
 
 ## Choose a control
 

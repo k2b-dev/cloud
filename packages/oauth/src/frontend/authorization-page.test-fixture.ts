@@ -64,37 +64,51 @@ const appSession: MiddlewareHandler<AuthContext> = async (c, next) => {
   await next();
 };
 
-const confirmPage = ssr<AuthContext>(
-  async (c) => () =>
-    createComponent(AuthorizationPage, {
-      c,
-      title: oauthMessages.resolve([getLocale(c)]).t.deviceTitle,
-      get children() {
-        return createComponent(DeviceApproval, {
-          view: { kind: "confirm", request: sample.request, code: sample.code, client: sample.cli, scopes: [...sample.scopes] },
-        });
-      },
-    }),
-);
+/** The sign-in that returns to the page; the real pages build it the same way. */
+const reauthenticateHref = (path: string) => `/auth/login?${new URLSearchParams({ redirectTo: `${path}&reauthenticate=1` })}`;
 
-const consentPage = ssr<AuthContext>(
-  async (c) => () =>
-    createComponent(AuthorizationPage, {
-      c,
-      title: oauthMessages.resolve([getLocale(c)]).t.authorizeApplication,
-      get children() {
-        return createComponent(ConsentDecision, {
-          view: {
-            request: sample.request,
-            client: sample.dynamic,
-            resource: "https://cloud.example/api/mcp/v1",
-            redirectHost: "localhost:53682",
-            scopes: ["read", "write", "offline_access"],
-          },
-        });
-      },
-    }),
-);
+const confirmPage = (reauthenticate: boolean) =>
+  ssr<AuthContext>(
+    async (c) => () =>
+      createComponent(AuthorizationPage, {
+        c,
+        title: oauthMessages.resolve([getLocale(c)]).t.deviceTitle,
+        get children() {
+          return createComponent(DeviceApproval, {
+            view: {
+              kind: "confirm",
+              reauthenticateHref: reauthenticate ? reauthenticateHref(`/oauth/device?user_code=${sample.code}`) : null,
+              request: sample.request,
+              code: sample.code,
+              client: sample.cli,
+              scopes: [...sample.scopes],
+            },
+          });
+        },
+      }),
+  );
+
+const consentPage = (client: "dynamic" | "cli", reauthenticate: boolean) =>
+  ssr<AuthContext>(
+    async (c) => () =>
+      createComponent(AuthorizationPage, {
+        c,
+        title: oauthMessages.resolve([getLocale(c)]).t.authorizeApplication,
+        get children() {
+          return createComponent(ConsentDecision, {
+            view: {
+              request: sample.request,
+              firstParty: client === "cli",
+              reauthenticateHref: reauthenticate ? reauthenticateHref(`/oauth/consent?request=${sample.request}`) : null,
+              client: sample[client],
+              resource: client === "cli" ? null : "https://cloud.example/api/mcp/v1",
+              redirectHost: client === "cli" ? "127.0.0.1:53682" : "localhost:53682",
+              scopes: client === "cli" ? [...sample.scopes] : ["read", "write", "offline_access"],
+            },
+          });
+        },
+      }),
+  );
 
 const pages = new Hono<AuthContext>()
   .use("*", signedIn)
@@ -102,14 +116,20 @@ const pages = new Hono<AuthContext>()
   .get("/oauth/device", ...devicePage)
   .get("/fixture/app-session/oauth/device", ...devicePage)
   .get("/oauth/error", ...errorPage)
-  .get("/fixture/device-confirm", ...confirmPage)
-  .get("/fixture/consent", ...consentPage);
+  .get("/fixture/device-confirm", ...confirmPage(false))
+  .get("/fixture/device-confirm-reauthenticate", ...confirmPage(true))
+  .get("/fixture/consent", ...consentPage("dynamic", false))
+  .get("/fixture/consent-cli", ...consentPage("cli", false))
+  .get("/fixture/consent-reauthenticate", ...consentPage("dynamic", true));
 
 /** Every authorization state by name, as the path a browser would open. */
 export const authorizationStates = {
   entry: "/oauth/device",
   confirm: "/fixture/device-confirm",
+  confirmReauthenticate: "/fixture/device-confirm-reauthenticate",
   consent: "/fixture/consent",
+  consentCli: "/fixture/consent-cli",
+  consentReauthenticate: "/fixture/consent-reauthenticate",
   approved: "/oauth/device?result=approved",
   denied: "/oauth/device?result=denied",
   expired: "/oauth/device?result=expired",

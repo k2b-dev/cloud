@@ -333,7 +333,8 @@ describe("MessageRow rich content", () => {
 
       expect(html).toContain('class="k2b-message-row__bubble" data-deleted=""');
       expect(textOf(html)).toBe(`NB Nora Brandt 09:31 ${words.deleted} ${words.reply} ${words.last}`);
-      for (const part of ["__quote", "__marker", "__edited", "__media", "__files", "__slot", "__reactions", "__text"])
+      expect(html).not.toContain("k2b-reaction-bar");
+      for (const part of ["__quote", "__marker", "__edited", "__media", "__files", "__slot", "__text"])
         expect(html).not.toContain(`k2b-message-row${part}`);
     });
 
@@ -350,14 +351,15 @@ describe("MessageRow rich content", () => {
         locale,
       );
 
-      expect(html).toMatch(new RegExp(`class="k2b-message-row__reactions" role="group" aria-label="${words.reactions}"`));
-      expect(html).toContain(`aria-pressed="true" aria-label="${words.one}" title="Nora" data-own=""`);
+      expect(html).toMatch(new RegExp(`class="k2b-reaction-bar" role="group" aria-label="${words.reactions}"`));
+      expect(html).toMatch(new RegExp(`aria-pressed="true" aria-label="${words.one}"[^>]*data-own=""`));
+      expect(html).not.toMatch(/<button[^>]*k2b-reaction-bar__chip[^>]*title=/);
       expect(html).toContain(`aria-pressed="false" aria-label="${words.many}"`);
       expect(html).toMatch(new RegExp(`<button[^>]*aria-label="${words.add}"`));
       // Pressed says which are the reader's own; the label stays the same.
       expect(html).not.toContain(words.ownOne);
       // Chips that do not fit scroll sideways behind a fade.
-      const list = (markup: string) => markup.match(/<div[^>]*k2b-message-row__reaction-list[^>]*>/)?.[0] ?? "";
+      const list = (markup: string) => markup.match(/<div[^>]*k2b-reaction-bar__scroll[^>]*>/)?.[0] ?? "";
       expect(list(html)).toContain('data-scroll-fade-axis="horizontal"');
       expect(list(html)).toContain('data-scroll-fade-mode="both"');
       expect(list(html)).not.toContain("tabindex");
@@ -373,13 +375,13 @@ describe("MessageRow rich content", () => {
         },
         locale,
       );
-      expect(readOnly).toContain(`<span class="k2b-message-row__reaction" role="img" aria-label="${words.one}"`);
+      expect(readOnly).toContain(`<span class="k2b-reaction-bar__chip" role="img" aria-label="${words.one}"`);
       expect(readOnly).toContain(`aria-label="${words.ownOne.replace("👍", "🎉")}"`);
       expect(readOnly).toContain(`aria-label="${words.ownMany}"`);
       expect(readOnly).not.toContain("aria-pressed");
       expect(list(readOnly)).toContain('tabindex="0"');
-      expect(row({ reactions: [], onAddReaction: () => {} }, locale)).toMatch(/class="k2b-message-row__reactions"[^>]*data-empty=""/);
-      expect(row({}, locale)).not.toContain("k2b-message-row__reactions");
+      expect(row({ reactions: [], onAddReaction: () => {} }, locale)).toMatch(/class="k2b-reaction-bar"[^>]*data-empty=""/);
+      expect(row({}, locale)).not.toContain("k2b-reaction-bar");
     });
 
     test(`opens a thread from a bar with people, count, and last reply (${locale})`, () => {
@@ -596,8 +598,8 @@ describe("MessageRow styles", () => {
   test("gives rich content fixed heights and reserved areas", () => {
     expect(declarations(".k2b-ui .k2b-message-row__thread").get("height")).toEqual(["1.75rem"]);
     expect(declarations(".k2b-ui .k2b-message-row__thread").get("white-space")).toEqual(["nowrap"]);
-    expect(declarations(".k2b-ui .k2b-message-row__reactions").get("height")).toEqual(["1.625rem"]);
-    expect(declarations(".k2b-ui .k2b-message-row__reaction-list").get("overflow-x")).toEqual(["auto"]);
+    expect(declarations('.k2b-ui .k2b-reaction-bar[data-overflow="scroll"]').get("height")).toEqual(["var(--k2b-reaction-height)"]);
+    expect(declarations(".k2b-ui .k2b-reaction-bar__scroll").get("overflow-x")).toEqual(["auto"]);
     expect(declarations(".k2b-ui .k2b-message-row__file").get("height")).toEqual(["2.75rem"]);
     expect(declarations(".k2b-ui .k2b-message-row__quote-text").get("-webkit-line-clamp")).toEqual(["2"]);
     // The image never sizes its area; it covers the area the row reserved.
@@ -606,11 +608,15 @@ describe("MessageRow styles", () => {
     expect(picture.get("object-fit")).toEqual(["cover"]);
     expect(declarations(".k2b-ui .k2b-message-row__media-item").get("aspect-ratio")).toEqual(["1"]);
     // An empty, reserved bar shows "Add reaction" by paint only, like the actions.
-    expect(declarations(".k2b-ui .k2b-message-row__reactions[data-empty] .k2b-message-row__react").get("opacity")).toEqual(["0"]);
+    expect(
+      declarations('.k2b-ui .k2b-message-row .k2b-reaction-bar[data-empty] .k2b-reaction-bar__add:not(:has([aria-expanded="true"]))').get(
+        "opacity",
+      ),
+    ).toEqual(["0"]);
     expect(
       [
         ...declarations(
-          ".k2b-ui .k2b-message-row:hover .k2b-message-row__reactions[data-empty] .k2b-message-row__react",
+          ".k2b-ui .k2b-message-row:hover .k2b-reaction-bar[data-empty] .k2b-reaction-bar__add",
           "@media (hover: hover)",
         ).keys(),
       ].sort(),
@@ -623,7 +629,9 @@ describe("MessageRow styles", () => {
     const text = declarations(".k2b-ui .k2b-message-row__receipt");
     expect(text.get("-webkit-line-clamp")).toEqual(["1"]);
     expect(text.get("white-space")).toEqual(["normal"]);
-    expect(declarations(".k2b-ui .k2b-message-row__reactions:has(> .k2b-message-row__react)").get("min-width")).toEqual(["2rem"]);
+    expect(declarations('.k2b-ui .k2b-reaction-bar[data-overflow="scroll"]:has(> .k2b-reaction-bar__add)').get("min-width")).toEqual([
+      "2rem",
+    ]);
   });
 
   test("gives compact controls the shared touch area without taking layout on fine pointers", () => {
@@ -633,7 +641,7 @@ describe("MessageRow styles", () => {
     );
     expect(area?.selector).toContain(".k2b-message-row__thread");
     expect(cssDeclarations(area!.body).get("inset")).toEqual(["min(0px, calc((100% - 2.75rem) / 2))"]);
-    const list = declarations(".k2b-ui .k2b-message-row__reaction-list", coarse);
+    const list = declarations(".k2b-ui .k2b-reaction-bar__scroll", coarse);
     expect(list.get("padding-block")).toEqual(["0.5625rem"]);
     expect(list.get("margin-block")).toEqual(["-0.5625rem"]);
     // Every rule that adds room for those areas applies to touch screens only.

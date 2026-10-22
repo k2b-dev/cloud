@@ -1,6 +1,8 @@
 import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
-import { logger, superviseRuntimeTask } from "@k2b/cloud/services";
+import { getGeoIp } from "@k2b/cloud/server/request-context";
+import { deviceOffersApproval, logger, superviseRuntimeTask } from "@k2b/cloud/services";
 import { migrateHelp, startHelpMaintenance } from "@k2b/cloud/services/help";
+import { outgoingMailAllowlist } from "@k2b/cloud/services/outgoing-mail/resolve-host";
 /**
  * Core-specific lifecycle helpers.
  * Migrations, background jobs — nothing generic here.
@@ -12,6 +14,7 @@ import { migrateCloudCapabilities, startCapabilityExecutionMaintenance } from "@
 import {
   browserNotifications,
   lifecycleJobs,
+  migrateGeo,
   migrateWeather,
   startMandateMaintenance,
   startNotificationRuntime,
@@ -21,6 +24,7 @@ import { appApproval } from "@k2b/cloud/services/app-approval";
 import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flows/deferred";
 import { initializeIdentityAuthority, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "@k2b/cloud/services/outgoing-mail/runtime";
+import { startWorkflowEventRetention } from "@k2b/cloud/workflows/store";
 import { aiChatTaskRuntime } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";
@@ -29,10 +33,13 @@ import { migrate as migrateAnnouncements } from "./migrate/core/announcements";
 import { migrate as migrateAppApproval } from "./migrate/core/app-approval";
 import { migrate as migrateAudit } from "./migrate/core/audit";
 import { migrate as migrateAuth } from "./migrate/core/auth";
+import { migrate as migrateDeviceTrust } from "./migrate/core/device-trust";
 import { migrate as migrateEvents } from "./migrate/core/events";
+import { migrate as migrateGeoIp } from "./migrate/core/geoip";
 import { migrate as migrateLogging } from "./migrate/core/logging";
 import { migrate as migrateNotifications } from "./migrate/core/notifications";
 import { migrate as migrateOutgoingMail } from "./migrate/core/outgoing-mail";
+import { migrate as migratePanelContextConsent } from "./migrate/core/panel-context-consent";
 import { migrate as migratePwa } from "./migrate/core/pwa";
 import { migrate as migrateRailPreferences } from "./migrate/core/rail-preferences";
 import { migrate as migrateRailShortcuts } from "./migrate/core/rail-shortcuts";
@@ -47,6 +54,7 @@ let stopHelpMaintenance: (() => Promise<void>) | undefined;
 let stopIdentityMaintenance: (() => void) | null = null;
 let stopMandateMaintenance: (() => void) | null = null;
 let stopCapabilityExecutionMaintenance: (() => void) | null = null;
+let stopWorkflowEventRetention: (() => void) | null = null;
 
 let appSkillsAbort: AbortController | null = null;
 let appSkillsTask: Promise<void> | null = null;
@@ -99,10 +107,13 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "auth", run: migrateAuth },
     { name: "help", run: migrateHelp },
     { name: "rail-preferences", run: migrateRailPreferences },
+    { name: "panel-context-consent", run: migratePanelContextConsent },
     { name: "rail-shortcuts", run: migrateRailShortcuts },
     { name: "app-approval", run: migrateAppApproval },
     { name: "pwa", run: migratePwa },
+    { name: "device-trust", run: migrateDeviceTrust },
     { name: "audit", run: migrateAudit },
+    { name: "geoip", run: migrateGeoIp },
     { name: "announcements", run: migrateAnnouncements },
     { name: "notifications", run: migrateNotifications },
     { name: "settings", run: migrateSettings },
@@ -111,6 +122,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "workflows", run: migrateWorkflows },
     { name: "events", run: migrateEvents },
     { name: "weather", run: migrateWeather },
+    { name: "geo", run: migrateGeo },
     { name: "capabilities", run: migrateCloudCapabilities },
     { name: "ai", run: migrateCloudAi },
   ];
@@ -125,6 +137,8 @@ export const startCoreServices = async (
   notificationSender: CoreNotificationSender,
   aiNotifications: ReturnType<typeof createAiNotificationService>,
 ): Promise<void> => {
+  void getGeoIp().refresh();
+  outgoingMailAllowlist();
   try {
     await initializeIdentityAuthority();
     stopHelpMaintenance = startHelpMaintenance();
@@ -132,13 +146,21 @@ export const startCoreServices = async (
     stopIdentityMaintenance = startIdentityKeyMaintenance();
     stopMandateMaintenance = startMandateMaintenance();
     stopCapabilityExecutionMaintenance = startCapabilityExecutionMaintenance();
+    stopWorkflowEventRetention = startWorkflowEventRetention();
     await browserNotifications.start();
     await aiNotifications.start();
     stopCloudAiRuntime = startAiRuntime({
       onApprovalRequested: async ({ approvalId }) => {
         const [notice] = await Promise.allSettled([
           aiNotifications.notifyApprovalWaiting(approvalId),
-          appApproval.wakeForAction(approvalId),
+          deviceOffersApproval(approvalId)
+            .then((offered) => (offered ? appApproval.wakeForAction(approvalId) : undefined))
+            .catch((error) => {
+              logger("core:app-approval").warn("App action push eligibility check failed", {
+                approvalId,
+                error: error instanceof Error ? error.message : "Eligibility unavailable",
+              });
+            }),
         ]);
         if (notice.status === "rejected") throw notice.reason;
       },
@@ -169,6 +191,8 @@ export const startCoreServices = async (
     stopMandateMaintenance = null;
     stopCapabilityExecutionMaintenance?.();
     stopCapabilityExecutionMaintenance = null;
+    stopWorkflowEventRetention?.();
+    stopWorkflowEventRetention = null;
     stopCloudAiRuntime?.();
     stopCloudAiRuntime = null;
     await Promise.allSettled([
@@ -200,6 +224,8 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     stopMandateMaintenance = null;
     stopCapabilityExecutionMaintenance?.();
     stopCapabilityExecutionMaintenance = null;
+    stopWorkflowEventRetention?.();
+    stopWorkflowEventRetention = null;
     await Promise.all([lifecycleJobs.stop(), appApprovalRuntime.stop()]);
   } finally {
     try {

@@ -94,10 +94,22 @@ const AttachmentsOverview = (props: Props) => {
     <Show
       when={items().length > 0}
       fallback={
+        // The empty view is the work area itself, like an empty notebook: no card inside the app card.
         props.searchQuery ? (
-          <Placeholder surface="paper" icon="ti ti-paperclip" description={t().noMatchingAttachments({ query: props.searchQuery })} />
+          <Placeholder
+            class="flex-1"
+            variant="panel"
+            icon="ti ti-paperclip"
+            description={t().noMatchingAttachments({ query: props.searchQuery })}
+          />
         ) : (
-          <Placeholder surface="paper" icon="ti ti-paperclip" title={t().noAttachments} description={t().noAttachmentsDescription} />
+          <Placeholder
+            class="flex-1"
+            variant="panel"
+            icon="ti ti-paperclip"
+            title={t().noAttachments}
+            description={t().noAttachmentsDescription}
+          />
         )
       }
     >

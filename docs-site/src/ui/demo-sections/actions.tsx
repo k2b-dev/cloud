@@ -1,11 +1,15 @@
 import {
+  activeDrag,
   Button,
   ButtonLink,
   ContextMenu,
   CopyButton,
   Disclosure,
+  DragSource,
   Dropdown,
+  DropTarget,
   FilterChip,
+  FilterToggle,
   GestureMenu,
   type GestureMenuItem,
   IconButton,
@@ -20,6 +24,7 @@ import {
   type SpotlightSearchResolver,
   Tabs,
   Toolbar,
+  useKeyboardDrag,
 } from "@k2b/ui";
 import { createSignal, For } from "solid-js";
 import { DemoCard } from "../DemoCard";
@@ -271,6 +276,113 @@ const MenusDemo = () => (
   </DemoCard>
 );
 
+const dragAndDropExample = `import { DragSource, DropTarget, GestureMenu, useKeyboardDrag } from "@k2b/ui";
+import { createSignal } from "solid-js";
+
+function MailRow() {
+  const pickUp = useKeyboardDrag();
+  const [last, setLast] = createSignal("Nothing yet");
+  let row!: HTMLDivElement;
+  const payload = { type: "mail.message", value: "message-42", label: "Message from Nora", icon: "ti ti-mail" };
+  const move = (target: string) => setLast(\`\${payload.label} → \${target}\`);
+  return <>
+    <DragSource payload={payload}>
+      <GestureMenu label={payload.label} items={[
+        { sectionLabel: "Move to", items: [
+          { label: "Archive", action: () => move("Archive") },
+          { label: "Later", action: () => move("Later") },
+        ] },
+        { label: "Move…", icon: "ti ti-arrows-move", action: () => pickUp(payload, row) },
+      ]}>
+        <div ref={row}>Nora · The draft is ready for review.</div>
+      </GestureMenu>
+    </DragSource>
+    <DropTarget accept={["mail.message"]} label="Archive" onDrop={() => move("Archive")}>Archive</DropTarget>
+    <DropTarget accept={["mail.message"]} label="Later" onDrop={() => move("Later")}>Later</DropTarget>
+    <p aria-live="polite">Last: {last()}</p>
+  </>;
+}
+`;
+
+const DragAndDropDemo = () => {
+  const [last, setLast] = createSignal("Nothing yet");
+  const pickUp = useKeyboardDrag();
+  const messages = [
+    { id: "draft", author: "Nora Weber", text: "The draft is ready for review.", time: "10:42" },
+    { id: "meeting", author: "Tobias Brandt", text: "Notes from our meeting.", time: "10:44" },
+    { id: "photos", author: "Mira Frank", text: "Here are the photos you asked for.", time: "11:02" },
+    { id: "invite", author: "Jonas Beck", text: "See you on Friday.", time: "11:15" },
+  ];
+  const move = (label: string, target: string) => setLast(`${label} → ${target}`);
+  return (
+    <DemoCard
+      id="drag-and-drop"
+      chip={[
+        { kind: "component", name: "DragSource", from: "@k2b/ui" },
+        { kind: "component", name: "DropTarget", from: "@k2b/ui" },
+      ]}
+      description="Drag a message to Archive or Later. On touch, hold first, then drag. Calendar takes only tasks. The menu lists the same destinations and an optional keyboard pick-up sequence."
+      code={dragAndDropExample}
+    >
+      <div class="ui-dnd-demo">
+        <div class="ui-dnd-demo__targets">
+          <For each={["Archive", "Later", "Calendar"]}>
+            {(target) => (
+              <DropTarget
+                accept={target === "Calendar" ? ["demo.task"] : ["demo.message"]}
+                label={target}
+                onDrop={(payload) => move(payload.label, target)}
+                class="ui-dnd-demo__target"
+              >
+                <i
+                  class={target === "Calendar" ? "ti ti-calendar" : target === "Later" ? "ti ti-clock" : "ti ti-archive"}
+                  aria-hidden="true"
+                />
+                {target}
+              </DropTarget>
+            )}
+          </For>
+        </div>
+        <div>
+          <For each={messages}>
+            {(message) => {
+              let row!: HTMLDivElement;
+              const payload = { type: "demo.message", value: message.id, label: `Message from ${message.author}`, icon: "ti ti-mail" };
+              return (
+                <DragSource payload={payload}>
+                  <GestureMenu
+                    label={payload.label}
+                    items={[
+                      {
+                        sectionLabel: "Move to",
+                        items: [
+                          { label: "Archive", action: () => move(payload.label, "Archive") },
+                          { label: "Later", action: () => move(payload.label, "Later") },
+                        ],
+                      },
+                      { label: "Move…", icon: "ti ti-arrows-move", action: () => pickUp(payload, row) },
+                    ]}
+                  >
+                    <div ref={row}>
+                      <MessageRow author={{ name: message.author }} text={message.text} time={message.time} groupStart />
+                    </div>
+                  </GestureMenu>
+                </DragSource>
+              );
+            }}
+          </For>
+        </div>
+        <p class="ui-dnd-demo__status" aria-live="polite">
+          Last: {last()}
+        </p>
+        <p class="ui-dnd-demo__status">
+          {activeDrag() ? "Drop on Archive or Later, or press Escape to cancel." : "The row menu moves a message without dragging."}
+        </p>
+      </div>
+    </DemoCard>
+  );
+};
+
 const gestureMessages = [
   { id: "nora", author: "Nora Weber", text: "Can you check the draft before noon?", time: "10:42" },
   { id: "tobias", author: "Tobias Brandt", text: "Sure, I will look at it right after the call.", time: "10:44" },
@@ -292,7 +404,7 @@ const GesturesDemo = () => {
     <DemoCard
       id="gestures"
       chip={{ kind: "component", name: "GestureMenu", from: "@k2b/ui" }}
-      description="On a phone, swipe a message right to reply, double-tap it to react, or press and hold it for the whole menu as a bottom sheet. With a mouse, double-click reacts and right-click opens the menu; Shift+F10 opens it from the keyboard."
+      description="Swipe a message right to reply or double-tap it to react. On a phone, press and hold for the whole menu as a bottom sheet. On a tablet, press and hold opens the menu at the finger. With a mouse, double-click reacts and right-click opens the menu; Shift+F10 opens it from the keyboard."
       code={`const items: GestureMenuItem[] = [
   { label: "Reply", icon: "ti ti-arrow-back-up", action: reply, gesture: "swipe-right" },
   { label: "React with 👍", icon: "ti ti-thumb-up", action: react, gesture: "double-tap" },
@@ -488,7 +600,94 @@ const ToolbarDemo = () => (
   </DemoCard>
 );
 
+const FloatingToolbarDemo = () => {
+  const [width, setWidth] = createSignal("1194");
+  const [lastAction, setLastAction] = createSignal("Select an action");
+  const widths: Record<string, number> = { "1194": 575, "834": 437, "694": 340 };
+  const actions = [
+    { label: "Reply", icon: "ti ti-arrow-back-up", priority: 2, keys: "r" },
+    { label: "Forward", icon: "ti ti-arrow-forward-up", priority: 7, keys: "f" },
+    { label: "Archive", icon: "ti ti-archive", priority: 1, keys: "e" },
+    { label: "Later", icon: "ti ti-clock", priority: 3, keys: "h" },
+    { label: "Move", icon: "ti ti-folder", priority: 4, keys: "v" },
+    { label: "Delete", icon: "ti ti-trash", priority: 6, keys: "delete" },
+    { label: "Assistant", icon: "ti ti-sparkles", priority: 5, keys: "mod+j" },
+  ];
+  return (
+    <DemoCard
+      id="toolbar-floating"
+      chip={{ kind: "component", name: "Toolbar", from: "@k2b/ui" }}
+      description="Selection actions stay at the column bottom. Switch viewport widths to move lower-priority actions into More; the message rows keep their full scroll space."
+      code={`const [width, setWidth] = createSignal("1194");
+const [lastAction, setLastAction] = createSignal("Select an action");
+const widths: Record<string, number> = { "1194": 575, "834": 437, "694": 340 };
+const actions = [
+  { label: "Reply", icon: "ti ti-arrow-back-up", priority: 2, keys: "r" },
+  { label: "Forward", icon: "ti ti-arrow-forward-up", priority: 7, keys: "f" },
+  { label: "Archive", icon: "ti ti-archive", priority: 1, keys: "e" },
+  { label: "Later", icon: "ti ti-clock", priority: 3, keys: "h" },
+  { label: "Move", icon: "ti ti-folder", priority: 4, keys: "v" },
+  { label: "Delete", icon: "ti ti-trash", priority: 6, keys: "delete" },
+  { label: "Assistant", icon: "ti ti-sparkles", priority: 5, keys: "mod+j" },
+];
+
+<SegmentedControl
+  ariaLabel="Viewport width"
+  value={width}
+  onValueChange={setWidth}
+  options={["1194", "834", "694"].map((value) => ({ value, label: value }))}
+/>
+<div style={{ display: "flex", "flex-direction": "column", width: \`\${widths[width()]}px\`, "max-width": "100%", height: "380px" }}>
+  <h3>Inbox</h3>
+  <div style={{ flex: "1", "min-height": "0", overflow: "auto" }}>
+    <For each={Array.from({ length: 30 }, (_, index) => index + 1)}>
+      {(row) => <div style={{ height: "44px", padding: "0.75rem" }}>Message {row}</div>}
+    </For>
+  </div>
+  <Toolbar label="Selection actions" variant="floating">
+    <Toolbar.Label>3 selected</Toolbar.Label>
+    <For each={actions.slice(0, 2)}>
+      {(action) => <Toolbar.Action {...action} onClick={() => setLastAction(action.label)} />}
+    </For>
+    <Toolbar.Separator />
+    <For each={actions.slice(2)}>
+      {(action) => <Toolbar.Action {...action} onClick={() => setLastAction(action.label)} />}
+    </For>
+    <Toolbar.Separator />
+    <Toolbar.Action label="Done" icon="ti ti-check" keys="escape" onClick={() => setLastAction("Done")} />
+  </Toolbar>
+</div>
+<output aria-live="polite">{lastAction()}</output>`}
+    >
+      <SegmentedControl
+        ariaLabel="Viewport width"
+        value={width}
+        onValueChange={setWidth}
+        options={["1194", "834", "694"].map((value) => ({ value, label: value }))}
+      />
+      <div style={{ display: "flex", "flex-direction": "column", width: `${widths[width()]}px`, "max-width": "100%", height: "380px" }}>
+        <h3>Inbox</h3>
+        <div style={{ flex: "1", "min-height": "0", overflow: "auto" }}>
+          <For each={Array.from({ length: 30 }, (_, index) => index + 1)}>
+            {(row) => <div style={{ height: "44px", padding: "0.75rem" }}>Message {row}</div>}
+          </For>
+        </div>
+        <Toolbar label="Selection actions" variant="floating">
+          <Toolbar.Label>3 selected</Toolbar.Label>
+          <For each={actions.slice(0, 2)}>{(action) => <Toolbar.Action {...action} onClick={() => setLastAction(action.label)} />}</For>
+          <Toolbar.Separator />
+          <For each={actions.slice(2)}>{(action) => <Toolbar.Action {...action} onClick={() => setLastAction(action.label)} />}</For>
+          <Toolbar.Separator />
+          <Toolbar.Action label="Done" icon="ti ti-check" keys="escape" onClick={() => setLastAction("Done")} />
+        </Toolbar>
+      </div>
+      <output aria-live="polite">{lastAction()}</output>
+    </DemoCard>
+  );
+};
+
 export const FilterDemo = () => {
+  const [onlyMine, setOnlyMine] = createSignal(false);
   const [clearValue, setClearValue] = createSignal<string[]>(["open", "ui"]);
   const [resetValue, setResetValue] = createSignal<string[]>(["done"]);
   const [viewValue, setViewValue] = createSignal<string[]>(["open", "sort:newest"]);
@@ -532,7 +731,16 @@ export const FilterDemo = () => {
       id="filters"
       chip={{ kind: "component", name: "FilterChip", from: "@k2b/ui" }}
       description="Clear mode shows the selected count; a non-empty baseline hides the count and offers Reset when the selection differs. A row section sets a short single choice side by side."
-      code={`<FilterChip
+      code={`const [onlyMine, setOnlyMine] = createSignal(false);
+
+<FilterToggle
+  label="Only mine"
+  icon="ti ti-user"
+  active={onlyMine()}
+  onClick={() => setOnlyMine(!onlyMine())}
+/>
+
+<FilterChip
   label="Clear mode"
   icon="ti ti-filter"
   value={clearValue()}
@@ -573,6 +781,7 @@ export const FilterDemo = () => {
 />`}
     >
       <div class="ui-demo-row">
+        <FilterToggle label="Only mine" icon="ti ti-user" active={onlyMine()} onClick={() => setOnlyMine(!onlyMine())} />
         <FilterChip
           label="Clear mode"
           icon="ti ti-filter"
@@ -711,6 +920,11 @@ const demos: DemoSection = {
       <MenusDemo />
     </DemoGrid>
   ),
+  "drag-and-drop": () => (
+    <DemoGrid columns="one">
+      <DragAndDropDemo />
+    </DemoGrid>
+  ),
   gestures: () => (
     <DemoGrid columns="one">
       <GesturesDemo />
@@ -739,6 +953,7 @@ const demos: DemoSection = {
   toolbar: () => (
     <DemoGrid columns="one">
       <ToolbarDemo />
+      <FloatingToolbarDemo />
     </DemoGrid>
   ),
   spotlight: () => (

@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
+import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
+import { appColors } from "@k2b/cloud/ssr/app-color";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 import type { MailConversationPreview } from "../../contracts";
 import type { MailFolderView } from "../../service/messages";
 import type { MailListHarnessOptions } from "./MailConversationList.browser-harness";
@@ -176,9 +178,11 @@ const load = async (
     sidebarCollapsed?: boolean;
     folderOnlyHints?: MailFolderView[];
     reader?: boolean;
+    requestUrl?: string;
     items?: MailListItem[];
     toolbarActions?: MailListHarnessOptions["toolbarActions"];
     deletedOnServer?: boolean;
+    plainText?: string;
     /** Serves this stylesheet in place of the compiled one. */
     css?: string;
   } = {},
@@ -212,8 +216,10 @@ const load = async (
     sidebarCollapsed: options.sidebarCollapsed,
     folderOnlyHints: options.folderOnlyHints,
     reader: options.reader,
+    requestUrl: options.requestUrl,
     toolbarActions: options.toolbarActions,
     deletedOnServer: options.deletedOnServer,
+    plainText: options.plainText,
   } satisfies MailListHarnessOptions);
   await page.clock.pauseAt(NOW + 60_000);
   return Object.assign(page, { errors, requests });
@@ -356,6 +362,48 @@ describe("Mail quick look", () => {
     }
   }, 30_000);
 
+  test("focus retries an aborted prefetch while another card is pinned open", async () => {
+    const page = await load();
+    let releaseResponse = () => {};
+    const heldResponse = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
+    let attempts = 0;
+    try {
+      await page.route(`**${previewPath("Cv0003")}`, async (route) => {
+        attempts += 1;
+        if (attempts === 1) await heldResponse;
+        await route.fulfill({ json: previewFor("Cv0003") });
+      });
+      await page.focus(linkOf("Cv0002"));
+      await page.keyboard.press("Space");
+      await settle(page);
+      expect(await shown(page)).toBe("Room booking 2");
+      await pointAt(page, row("Cv0003"));
+      await page.clock.runFor(81);
+      await requested(page, previewPath("Cv0003"), 1);
+      expect(await shown(page)).toBe("Room booking 2");
+      await away(page);
+      await abortReported(page, previewPath("Cv0003"));
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0003"))).toEqual([
+        { path: previewPath("Cv0003"), aborted: true },
+      ]);
+      releaseResponse();
+      // No new pointer stay or Space: the shared controller follows focus.
+      await page.focus(linkOf("Cv0003"));
+      await page.clock.runFor(91);
+      expect(await shown(page)).toBe("Room booking 3");
+      await requested(page, previewPath("Cv0003"), 2);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0003"))).toHaveLength(2);
+      await settle(page);
+      expect(await page.locator(`${card} .mail-quick-look__text`).innerText()).toContain("thanks.");
+      expect(page.errors).toEqual([]);
+    } finally {
+      releaseResponse();
+      await close(page);
+    }
+  }, 30_000);
+
   test("swaps rows after 90 ms at the same size and serves a row again from the cache", async () => {
     const page = await load();
     try {
@@ -363,15 +411,16 @@ describe("Mail quick look", () => {
       await page.clock.runFor(201);
       await settle(page);
       const first = (await box(page, card))!;
-      await pointAt(page, row("Cv0005"));
+      // A row with room below it for the whole card, so the card starts at the row (rows are three or four lines).
+      await pointAt(page, row("Cv0004"));
       await page.clock.runFor(89);
       expect(await shown(page)).toBe("Room booking 2");
       await page.clock.runFor(2);
-      expect(await shown(page)).toBe("Room booking 5");
+      expect(await shown(page)).toBe("Room booking 4");
       await settle(page);
       const second = (await box(page, card))!;
       expect([second.width, second.height]).toEqual([first.width, first.height]);
-      expect(Math.round(second.top)).toBe(Math.round((await box(page, row("Cv0005")))!.top));
+      expect(Math.round(second.top)).toBe(Math.round((await box(page, row("Cv0004")))!.top));
 
       await pointAt(page, row("Cv0002"));
       await page.clock.runFor(91);
@@ -575,6 +624,22 @@ describe("Mail quick look", () => {
     }
   }, 30_000);
 
+  test("tag chips that shorten long names keep every full name in their tooltip", async () => {
+    const page = await load();
+    try {
+      // The quick look's clock is paused, so wait for the row itself rather than for settled animations.
+      await page.locator(`${row("Cv0000")} .mail-row-tags`).waitFor();
+      await pointAt(page, `${row("Cv0000")} .mail-row-tags`);
+      await page.clock.runFor(1000);
+      // The hovered group's tooltip shows; the "+1" tooltip with the same names stays hidden.
+      const tip = page.locator('[role="tooltip"]:visible').filter({ hasText: "Event, Offer, Accounting, Members" });
+      await tip.waitFor({ state: "visible" });
+      expect(await tip.count()).toBe(1);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
   test("shows no card and starts no request in selection mode, where a click selects", async () => {
     const page = await load({ selectionMode: true });
     try {
@@ -590,16 +655,43 @@ describe("Mail quick look", () => {
   test("says when the newest message's body is still synchronizing", async () => {
     const page = await load({ locale: "de" });
     try {
+      // Complete the prefetch before the 200 ms opening callback. A slow response
+      // would hide a second load behind the loader's in-flight deduplication.
+      await page.evaluate(() => {
+        const fetch = window.fetch.bind(window);
+        window.fetch = Object.assign(async (...args: Parameters<typeof fetch>) => {
+          const response = await fetch(...args);
+          if (response.url.endsWith("/Cv0007/preview")) {
+            const json = response.json.bind(response);
+            response.json = async () => {
+              const data = await json();
+              document.body.dataset.previewParsed = "true";
+              return data;
+            };
+          }
+          return response;
+        }, fetch);
+      });
       await pointAt(page, row("Cv0007"));
-      await page.clock.runFor(201);
+      await page.clock.runFor(81);
+      await page.waitForFunction(() => document.body.dataset.previewParsed === "true");
+      await page.clock.runFor(120);
       await settle(page);
       expect(await page.locator(`${card} .mail-quick-look__text`).innerText()).toBe("Der Nachrichteninhalt wird noch synchronisiert");
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(1);
+      const target = (await box(page, row("Cv0007")))!;
+      await page.mouse.move(target.left + target.width * 0.6, target.top + target.height / 2);
+      await hovered(page, row("Cv0007"));
+      await page.clock.runFor(81);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(1);
       // A body that was still synchronizing is asked for again on the next rest instead of staying cached.
       await away(page);
       await page.clock.runFor(400);
       await pointAt(page, row("Cv0007"));
       await page.clock.runFor(81);
       await requested(page, previewPath("Cv0007"), 2);
+      await page.clock.runFor(120);
+      await settle(page);
       expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(2);
     } finally {
       await close(page);
@@ -624,6 +716,86 @@ describe("Mail quick look", () => {
       expect((await requests(page)).filter((request) => request.path === previewPath("Cv0002"))).toHaveLength(2);
     } finally {
       previewDelay = 0;
+      await close(page);
+    }
+  }, 30_000);
+
+  test("an explicit keyboard reopening retries a syncing preview while the pointer stays on the row", async () => {
+    const page = await load();
+    try {
+      await page.locator(row("Cv0007")).waitFor({ state: "visible" });
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(201);
+      await settle(page);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(1);
+      await page.locator(linkOf("Cv0007")).focus();
+      await page.keyboard.press("Space");
+      expect(await shown(page)).toBeNull();
+      await page.keyboard.press("Space");
+      await settle(page);
+      await requested(page, previewPath("Cv0007"), 2);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(2);
+      expect(await shown(page)).toBe("Room booking 7");
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("returning from the still-open card starts one new attempt for a syncing preview", async () => {
+    const page = await load();
+    try {
+      await page.locator(row("Cv0007")).waitFor({ state: "visible" });
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(201);
+      await settle(page);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(1);
+      await pointAt(page, card);
+      await page.clock.runFor(400);
+      expect(await shown(page)).toBe("Room booking 7");
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(81);
+      await requested(page, previewPath("Cv0007"), 2);
+      await settle(page);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(2);
+      await page.clock.runFor(200);
+      expect((await requests(page)).filter((request) => request.path === previewPath("Cv0007"))).toHaveLength(2);
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("a denied preview stays unavailable for the current stay and can retry on a new stay", async () => {
+    const page = await load();
+    let attempts = 0;
+    try {
+      await page.route(`**${previewPath("Cv0007")}`, (route) => {
+        attempts += 1;
+        return attempts === 1
+          ? route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "Forbidden" }) })
+          : route.fulfill({ json: previewFor("Cv0007") });
+      });
+      const denied = page.waitForResponse((response) => response.url().endsWith(previewPath("Cv0007")));
+      await page.locator(row("Cv0007")).waitFor({ state: "visible" });
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(81);
+      await (await denied).finished();
+      await page.clock.runFor(120);
+      await settle(page);
+      expect(await page.locator(`${card} .mail-quick-look__text`).innerText()).toBe(
+        "Preview unavailable. Open the conversation to read it.",
+      );
+      expect(attempts).toBe(1);
+      await away(page);
+      await page.clock.runFor(400);
+      await pointAt(page, row("Cv0007"));
+      await page.clock.runFor(201);
+      await settle(page);
+      expect(attempts).toBe(2);
+      expect(await page.locator(`${card} .mail-quick-look__text`).innerText()).toBe("Body is still synchronizing");
+      expect(page.errors).toEqual([]);
+    } finally {
       await close(page);
     }
   }, 30_000);
@@ -1019,10 +1191,10 @@ describe("Mail row actions", () => {
       let page: Awaited<ReturnType<typeof load>>;
       let rest: Awaited<ReturnType<typeof state>>;
       /** Cv0001 has the matched attachment's download link besides its menu; Cv0002 only its menu. */
-      const expectRows = (visible: string | null) =>
+      const expectRows = (visible: string | null, hidesAtRest = hides) =>
         state(page).then((rows) => {
           for (const [index, row] of rows.entries()) {
-            const actions = !hides || row.id === visible ? 1 : 0;
+            const actions = !hidesAtRest || row.id === visible ? 1 : 0;
             expect(row.time, row.id).toBe(1 - actions);
             expect(row.actions, row.id).toEqual(Array(row.id === "Cv0001" ? 2 : 1).fill(actions));
             // Only opacity changes; nothing in the rows moves.
@@ -1070,6 +1242,26 @@ describe("Mail row actions", () => {
         await blur(page);
         await expectRows(null);
         expect(page.errors).toEqual([]);
+      }, 30_000);
+
+      test("follows the recorded input mode: touch shows the actions in place of the time, trackpad on hover", async () => {
+        const mode = (value: string | null) =>
+          page.evaluate((value) => {
+            if (value) document.documentElement.setAttribute("data-k2b-input", value);
+            else document.documentElement.removeAttribute("data-k2b-input");
+          }, value);
+        try {
+          await mode("touch");
+          await expectRows(null, false);
+          await mode("trackpad");
+          await expectRows(null, true);
+          await pointAt(page, row("Cv0001"));
+          await expectRows("Cv0001", true);
+          await away(page);
+        } finally {
+          await mode(null);
+        }
+        await expectRows(null);
       }, 30_000);
     });
   }
@@ -1157,3 +1349,274 @@ describe("Mail rows that an action takes out of the list", () => {
     }
   }, 30_000);
 });
+
+describe("Mail search returns to the view it started from", () => {
+  for (const [device, context] of [
+    ["desktop", { viewport: { width: 1366, height: 900 } }],
+    ["phone", { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }],
+  ] satisfies [string, BrowserContextOptions][]) {
+    for (const method of ["button", "Backspace", "Escape"]) {
+      test(`${device}: clear with ${method} restores the view without moving the search field`, async () => {
+        const origin = "/app/mail/Box001?view=needs_action";
+        const page = await load({ context, requestUrl: origin });
+        try {
+          // The field's frame: the input inside it makes room for the clear button, the frame must not move.
+          const selector = 'form[role="search"] .k2b-input-shell';
+          const field = page.locator('input[name="q"]');
+          const before = await box(page, selector);
+          await field.click();
+          await page.keyboard.type("invoice");
+          await page.clock.runFor(350);
+          expect(await page.evaluate(() => location.search)).toBe("?searchFrom=view%3Dneeds_action&q=invoice");
+          expect(await box(page, selector)).toEqual(before);
+          if (method === "button") await page.locator('form[role="search"] button[aria-label="Clear"]').click();
+          else if (method === "Backspace") {
+            await field.press("ControlOrMeta+a");
+            await page.keyboard.press("Backspace");
+          } else await page.keyboard.press("Escape");
+          await page.clock.runFor(350);
+          expect(await page.evaluate(() => location.pathname + location.search)).toBe(origin);
+          expect(await field.inputValue()).toBe("");
+          expect(await box(page, selector)).toEqual(before);
+          expect(page.errors).toEqual([]);
+        } finally {
+          await close(page);
+        }
+      }, 30_000);
+    }
+  }
+});
+
+describe("Mail conversation printing", () => {
+  /** The newest message replies with quoted text to an earlier one, whose header keeps a tinted surface. */
+  const plainText = "Thanks, see below.\n\n> Earlier question about the invoice\n> with a second line";
+  /** What the reader prints: the subject, every message header, and every plain text body. */
+  const printed = {
+    subject: "[data-mail-print-root] h1",
+    sender: "[data-mail-print-root] [data-mail-message-header] .font-semibold",
+    date: "[data-mail-print-root] [data-mail-message-header] time",
+    body: "[data-mail-print-root] [data-mail-message-id] pre:not(details pre)",
+    quote: "[data-mail-print-root] [data-mail-message-id] details pre",
+  };
+  type Ink = { shown: boolean; ink: number[]; paper: number[] };
+  /**
+   * Every printed part: whether it takes part in the rendering, its text color, and the surface behind it, both as
+   * red, green, and blue. The surface counts as printed, as with the browser's "Background graphics" option.
+   */
+  const inks = (page: Page) =>
+    page.evaluate((selectors) => {
+      const canvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
+      // The canvas resolves every CSS color syntax, oklch() included, to sRGB, and lays it over white paper.
+      const onPaper = (...colors: string[]) => {
+        canvas.fillStyle = "white";
+        canvas.fillRect(0, 0, 1, 1);
+        for (const color of colors) {
+          canvas.fillStyle = color;
+          canvas.fillRect(0, 0, 1, 1);
+        }
+        return [...canvas.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+      };
+      const surfaces = (element: Element) => {
+        const colors: string[] = [];
+        for (let current: Element | null = element; current; current = current.parentElement) {
+          colors.unshift(getComputedStyle(current).backgroundColor);
+        }
+        return colors;
+      };
+      return Object.fromEntries(
+        Object.entries(selectors).map(([part, selector]) => [
+          part,
+          [...document.querySelectorAll(selector)].map((element) => ({
+            shown: element.checkVisibility({ visibilityProperty: true }),
+            ink: onPaper(getComputedStyle(element).color),
+            paper: onPaper(...surfaces(element)),
+          })),
+        ]),
+      ) as Record<keyof typeof printed, Ink[]>;
+    }, printed);
+  const luminance = (color: number[]) => {
+    const [red, green, blue] = color.map((channel) => {
+      const value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    }) as [number, number, number];
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+  /** WCAG contrast of the text against the surface it prints on. */
+  const contrast = ({ ink, paper }: Ink) => {
+    const [light, dark] = [luminance(ink), luminance(paper)].sort((a, b) => b - a) as [number, number];
+    return (light + 0.05) / (dark + 0.05);
+  };
+  /** The labels of the quoted-text toggle that a reader of the paper would see. */
+  const quoteLabels = (page: Page) =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("[data-mail-print-root] details summary .inline-grid > span")]
+        .filter((label) => label.checkVisibility({ visibilityProperty: true }))
+        .map((label) => label.textContent),
+    );
+  const open = async (theme: "light" | "dark") => {
+    const page = await load({ reader: true, theme, selectedConversationId: "Cv0001", plainText });
+    await page.waitForSelector(printed.body);
+    return page;
+  };
+  /** Prints through the conversation's Print action, as a person does, up to the browser's print dialog. */
+  const print = async (page: Page) => {
+    await page.evaluate(() => {
+      window.print = () => document.body.setAttribute("data-printed", "");
+    });
+    await page.getByRole("button", { name: "More conversation actions" }).click();
+    await page.getByRole("menuitem", { name: "Print conversation" }).click();
+    // The reader opens every message, then asks for the dialog two frames later.
+    await page.clock.runFor(100);
+    await page.waitForSelector("body.mail-printing-conversation[data-printed]", { state: "attached" });
+    await page.emulateMedia({ media: "print" });
+  };
+
+  test("prints a dark conversation as dark text on white paper, with its sender rows and one quote label", async () => {
+    const page = await open("dark");
+    try {
+      // The print rules change nothing on screen.
+      const screen = await inks(page);
+      await page.evaluate(() => document.body.classList.add("mail-printing-conversation"));
+      expect(await inks(page)).toEqual(screen);
+      await page.evaluate(() => document.body.classList.remove("mail-printing-conversation"));
+
+      await print(page);
+      const paper = await inks(page);
+      expect(paper.sender).toHaveLength(2);
+      expect(paper.body).toHaveLength(2);
+      for (const part of ["subject", "sender", "date", "body"] as const) {
+        for (const [index, printedPart] of paper[part].entries()) {
+          expect({ part, index, shown: printedPart.shown }).toEqual({ part, index, shown: true });
+          expect(contrast(printedPart)).toBeGreaterThanOrEqual(7);
+          // Dark text on light paper, never light text on a dark surface.
+          expect(luminance(printedPart.paper)).toBeGreaterThan(luminance(printedPart.ink));
+        }
+      }
+      expect(await quoteLabels(page)).toEqual(["Show quoted text"]);
+
+      // Quoted text the person opened prints too, under its one current label.
+      await page.evaluate(() => {
+        document.querySelector<HTMLDetailsElement>("[data-mail-print-root] details")!.open = true;
+      });
+      expect(await quoteLabels(page)).toEqual(["Hide quoted text"]);
+      const [quote] = (await inks(page)).quote;
+      expect(quote?.shown).toBe(true);
+      expect(contrast(quote!)).toBeGreaterThanOrEqual(7);
+      expect(page.errors).toEqual([]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test("prints a light conversation in the colors it shows", async () => {
+    const page = await open("light");
+    try {
+      await print(page);
+      const paper = await inks(page);
+      await page.emulateMedia({ media: "screen" });
+      // The same open conversation on screen: the print rules only add the message headers to the paper.
+      const screen = await inks(page);
+      expect(paper).toEqual({
+        ...screen,
+        sender: screen.sender.map((sender) => ({ ...sender, shown: true })),
+        date: screen.date.map((date) => ({ ...date, shown: true })),
+      });
+      expect(paper.sender).toHaveLength(2);
+      // The secondary date stays lighter than the sender's name.
+      expect(paper.date[0]!.ink).not.toEqual(paper.sender[0]!.ink);
+      expect(await quoteLabels(page)).toEqual(["Show quoted text"]);
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+});
+
+const rgb = (hex: string) => `rgb(${[1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16)).join(", ")})`;
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`Mail open and checked rows use the app fill without moving at ${viewport.width}px`, async () => {
+    const page = await load({ context: { viewport, reducedMotion: "reduce" }, selectionMode: true });
+    try {
+      // Keep dates fixed while letting settled() observe real animation frames.
+      await page.clock.resume();
+      await page.clock.setFixedTime(NOW + 60_000);
+      await page.evaluate((style) => {
+        const root = document.querySelector<HTMLElement>("#root")!;
+        root.classList.add("app-accent-scope");
+        root.style.cssText += `;${style}`;
+      }, appAccentStyle("#0f766e")!);
+      for (const theme of ["light", "dark"] as const) {
+        await page.evaluate((theme) => {
+          document.documentElement.className = theme;
+          window.setMailActive(null);
+          window.setMailChecked([]);
+        }, theme);
+        await settled(page);
+        const before = [await box(page, row("Cv0000")), await box(page, row("Cv0001"))];
+        await page.evaluate(() => {
+          window.setMailActive("Cv0000");
+          window.setMailChecked(["Cv0001"]);
+          const scope = document.querySelector("#root")!;
+          for (const percent of [11, 16]) {
+            const old = document.createElement("span");
+            old.id = `old-${percent}`;
+            old.setAttribute("style", `background:color-mix(in srgb,var(--app-accent) ${percent}%,var(--ui-surface))`);
+            scope.append(old);
+          }
+        });
+        await settled(page);
+        const fills = await page.evaluate(() => ({
+          active: getComputedStyle(document.querySelector(".mail-list-entry-active")!).backgroundColor,
+          checked: getComputedStyle(document.querySelector(".mail-list-entry-selected")!).backgroundColor,
+          old: [11, 16].map((percent) => getComputedStyle(document.getElementById(`old-${percent}`)!).backgroundColor),
+        }));
+        for (const [index, fill] of [fills.active, fills.checked].entries()) {
+          expect(fill, `${theme} ${index}`).toBe(rgb(appColors("#0f766e")[theme].selected));
+          expect(fill).not.toBe(fills.old[index]);
+        }
+        await settled(page);
+        expect([await box(page, row("Cv0000")), await box(page, row("Cv0001"))]).toEqual(before);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+
+  test(`Mail quick-look summary stays flat with unchanged padding and card height at ${viewport.width}px`, async () => {
+    const page = await load({ context: { viewport, reducedMotion: "reduce" } });
+    try {
+      await page.clock.resume();
+      await page.clock.setFixedTime(NOW + 60_000);
+      await page.evaluate(
+        ({ style, item, preview }) => {
+          const root = document.querySelector<HTMLElement>("#root")!;
+          root.classList.add("app-accent-scope");
+          root.style.cssText += `;${style}`;
+          window.mountMailQuickLook(item, preview);
+        },
+        { style: appAccentStyle("#0f766e")!, item: items[0]!, preview: previews.Cv0000! },
+      );
+      for (const theme of ["light", "dark"] as const) {
+        await page.evaluate((theme) => {
+          document.documentElement.className = theme;
+        }, theme);
+        await settled(page);
+        const summary = await page.locator("#summary-card .mail-quick-look__summary").evaluate((element) => {
+          const style = getComputedStyle(element);
+          return {
+            background: style.backgroundColor,
+            shadow: style.boxShadow,
+            padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+          };
+        });
+        expect(summary).toEqual({ background: "rgba(0, 0, 0, 0)", shadow: "none", padding: ["7px", "10px", "7px", "10px"] });
+        await settled(page);
+        expect((await box(page, "#summary-card"))!.height).toBe(20 * 16);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}

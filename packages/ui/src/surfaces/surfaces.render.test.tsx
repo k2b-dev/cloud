@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { splitTopLevel } from "../styles/css-contract-test-helpers";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-surfaces-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -17,12 +18,14 @@ const { LinkCard } = await import("./LinkCard");
 const { NotFoundState } = await import("./NotFoundState");
 const { NoticeCard } = await import("./NoticeCard");
 const { Paper } = await import("./Paper");
+const { LocaleProvider } = await import("../intl/locale");
 const { default: Placeholder } = await import("./Placeholder");
 const { ProgressBar } = await import("./ProgressBar");
 const { ProgressRing } = await import("./ProgressRing");
 const { StatCell } = await import("./StatCell");
 const { StatGrid } = await import("./StatGrid");
 const { StatusBadge } = await import("./StatusBadge");
+const { Skeleton } = await import("./Skeleton");
 const { Tag } = await import("./Tag");
 
 const stylesDir = resolve(import.meta.dir, "../styles");
@@ -42,16 +45,19 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
   });
 
   test("renders a quiet padding-free paper with opt-in elevation and interaction", () => {
-    const section = renderToString(() => (
-      <Paper as="section" class="project-summary">
-        Summary
-      </Paper>
-    ));
-    const link = renderToString(() => (
-      <Paper as="a" href="/projects" elevated interactive aria-label="Projects">
-        Open
-      </Paper>
-    ));
+    const section = renderToString(() =>
+      createComponent(Paper<"section">, { as: "section", class: "project-summary", children: "Summary" }),
+    );
+    const link = renderToString(() =>
+      createComponent(Paper<"a">, {
+        as: "a",
+        href: "/projects",
+        elevated: true,
+        interactive: true,
+        "aria-label": "Projects",
+        children: "Open",
+      }),
+    );
     const rule = parityCss.match(/\.k2b-ui \.k2b-paper \{[^}]*\}/)?.[0] ?? "";
 
     expect(section).toContain("<section");
@@ -175,6 +181,25 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(link).not.toContain("k2b-link-card__meta");
   });
 
+  test("renders Avatar rings on images and initials while preserving caller styles", () => {
+    for (const src of [undefined, "/ada.webp"]) {
+      const render = (props: Partial<Parameters<typeof Avatar>[0]> = {}) =>
+        renderToString(() => createComponent(Avatar, { name: "Ada Lovelace", src, ...props }));
+      const success = render({ ring: "success" });
+      expect(success).toContain(src ? "<img " : "<span ");
+      expect(success).toContain('data-ring="success"');
+      expect(render()).not.toContain("data-ring");
+
+      for (const style of [undefined, "opacity:0.5", { opacity: 0.5 }]) {
+        const color = render({ ring: { color: "#123456" }, style });
+        expect(color).toContain(src ? "<img " : "<span ");
+        expect(color).toContain('data-ring="color"');
+        expect(color).toContain("--k2b-avatar-ring:#123456");
+        if (style !== undefined) expect(color).toContain("opacity:0.5");
+      }
+    }
+  });
+
   test("enhanced LinkCard navigation preserves the document anchor markup", () => {
     const props = {
       href: "/storage",
@@ -294,7 +319,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(error).toContain("Try again.");
   });
 
-  test("keeps placeholder icons free of decorative frames", () => {
+  test("leaves placeholder chip decoration to the shared icon tile", () => {
     const iconDeclarations = [...parityCss.matchAll(/[^{}]*\.k2b-placeholder__icon[^{}]*\{([^}]*)\}/g)].map((match) => match[1] ?? "");
 
     expect(iconDeclarations.length).toBeGreaterThan(0);
@@ -458,10 +483,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
       const rule = parityCss.match(new RegExp(`\\.k2b-ui \\${selector} \\{[^}]*\\}`))?.[0] ?? "";
       expect(rule).not.toContain("box-shadow:");
     }
-    // Link cards retain a neutral tile; dashboard widgets keep their header
-    // glyph directly on the surface to avoid nested chrome.
-    expect(parityCss).toMatch(/\.k2b-link-card__icon \{[^}]*background: var\(--k2b-surface-muted\)/);
-    expect(parityCss).toMatch(/\.k2b-widget__icon \{[^}]*background: transparent/);
+    // Link cards and widget headers leave the chip fill to the shared icon tile.
+    expect(parityCss).not.toMatch(/\.k2b-link-card__icon \{[^}]*background:/);
+    expect(parityCss).not.toMatch(/\.k2b-widget__icon \{[^}]*background:/);
     // `.state-placeholder[data-variant="panel"]` is 13rem/1.5rem, not 14rem/2rem.
     expect(parityCss).toContain('.k2b-placeholder[data-variant="panel"] { min-height: 13rem;');
     // A muted StatGrid tints the frame, never the cells.
@@ -482,8 +506,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     for (const file of stylesheets.filter((name) => ownedSelectorFiles.has(name))) {
       const css = readFileSync(resolve(stylesDir, file), "utf8");
       for (const rule of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
-        const selectors = (rule[1]?.replace(/\/\*[\s\S]*?\*\//g, "") ?? "")
-          .split(",")
+        const selectors = splitTopLevel(rule[1]?.replace(/\/\*[\s\S]*?\*\//g, "") ?? "", ",")
           .map((raw) => raw.split(/\s+/).filter(Boolean).join(" "))
           .filter(Boolean);
         for (const selector of selectors) {
@@ -511,7 +534,7 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
       for (const rule of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
         const selectors = rule[1]?.replace(/\/\*[\s\S]*?\*\//g, "").trim() ?? "";
         if (!selectors || selectors.startsWith("@")) continue;
-        for (const raw of selectors.split(",")) {
+        for (const raw of splitTopLevel(selectors, ",")) {
           const scoped = raw.split(/\s+/).filter(Boolean).join(" ").replace(themePrefix, "");
           // `.k2b-data-panel > .k2b-placeholder` is composition: the container's
           // stylesheet owns it. Only rules headed by one of our own components
@@ -549,4 +572,53 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
 
     expect(foreign).toEqual([]);
   });
+});
+
+test("empty, no results, and no access remain quiet, with chips only on stacked placeholders", () => {
+  for (const [state, icon] of [
+    ["empty", undefined],
+    ["no-results", "ti ti-search-off"],
+    ["no-access", "ti ti-lock"],
+  ] as const) {
+    const html = renderToString(() => createComponent(Placeholder, { state }));
+    expect(html).toContain(`data-state="${state}"`);
+    expect(html).not.toContain("role=");
+    expect(html).not.toContain("aria-live");
+    if (icon) {
+      expect(html).toContain(icon);
+      expect(html).toContain("k2b-icon-tile");
+    } else expect(html).not.toContain("k2b-placeholder__icon");
+    const inline = renderToString(() => createComponent(Placeholder, { state, variant: "inline", icon: "ti ti-inbox" }));
+    expect(inline).not.toContain("k2b-icon-tile");
+  }
+});
+
+test("load errors append a localized Try again button after the owner's action", () => {
+  for (const [locale, label] of [
+    ["en", "Try again"],
+    ["de", "Erneut versuchen"],
+  ]) {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: locale!,
+        get children() {
+          return createComponent(Placeholder, { state: "error", action: "Other recovery", onRetry: () => {} });
+        },
+      }),
+    );
+    expect(html).toContain(label!);
+    expect(html).toContain('type="button"');
+    expect(html).toContain('data-size="sm"');
+    expect(html).toContain('data-variant="secondary"');
+    expect(html.indexOf("Other recovery")).toBeLessThan(html.indexOf(label!));
+  }
+  const idle = renderToString(() => createComponent(Placeholder, { onRetry: () => {} }));
+  expect(idle).not.toContain("Try again");
+});
+
+test("Skeleton only renders caller-sized decorative geometry", () => {
+  const html = renderToString(() => createComponent(Skeleton, { class: "h-10 w-full" }));
+  expect(html).toContain('class="k2b-skeleton h-10 w-full"');
+  expect(html).toContain('aria-hidden="true"');
+  expect(html).not.toMatch(/role=|aria-live|tabindex|button/);
 });

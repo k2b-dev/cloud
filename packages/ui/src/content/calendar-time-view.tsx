@@ -34,7 +34,7 @@ import {
   wakeMinutes,
 } from "./calendar-days";
 import { useCalendarMessages } from "./calendar-messages";
-import { startCalendarPointerSession } from "./calendar-pointer";
+import { afterPointerRelease, startCalendarPointerSession } from "./calendar-pointer";
 import {
   type CalendarOwner,
   type CalendarStop,
@@ -118,9 +118,6 @@ export const eventAccent = (event: Pick<CalendarEvent, "color" | "colorHex">): s
 
 /** Minimum minutes an overlap counts for a band, about the height of its title. */
 const LANE_MINUTES = 20;
-
-export const reducedMotion = () =>
-  typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Swallows the click a browser sends right after a gesture ends, never the next one. */
 export const swallowNextClick = () => {
@@ -562,9 +559,12 @@ export const createTimeView = (props: TimeViewProps) => {
         }),
       onCommit: (next) => {
         const anchor = document.querySelector<HTMLElement>(".k2b-calendar-ghost[data-live]")?.getBoundingClientRect() ?? body.element;
-        endGesture();
         swallowNextClick();
-        openQuickCreate(key, next.start, next.end, anchor);
+        // The ghost stays until the quick create replaces it, so the slot never blinks.
+        afterPointerRelease(() => {
+          endGesture();
+          openQuickCreate(key, next.start, next.end, anchor);
+        });
       },
       onCancel: endGesture,
     });

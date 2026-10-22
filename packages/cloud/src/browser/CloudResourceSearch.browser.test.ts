@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import type { SearchItem, SearchStreamLine } from "../api/search/schemas";
 
 // Whether rows that arrive later move the ones already shown depends on real layout, so this runs in a browser
@@ -160,6 +160,74 @@ const waitForRows = (page: Page, count: number) =>
 const waitForText = (page: Page, text: string) => page.locator("dialog").getByText(text, { exact: false }).first().waitFor();
 
 describe("streamed search in a browser", () => {
+  test("a picked resource uses the opener app's fill without moving, while keyboard activity keeps the platform fill", async () => {
+    answer = async (_url, write) => {
+      write({ type: "start", query: "plan", apps, providers: ["files"] });
+      write(line("files", [result("files", "Plan 2027.pdf", "Planning"), result("files", "Project plan.docx", "Drafts")]));
+    };
+    const { page, close } = await open(views[0]!, "/?picker&accent=%230f766e");
+    try {
+      await page.keyboard.type("plan");
+      await waitForRows(page, 2);
+      const firstRow = page.locator(".cloud-resource-search__result").first();
+      const before = await firstRow.boundingBox();
+      expect(before).not.toBeNull();
+      await page.keyboard.press("Enter");
+      const picked = page.locator(".cloud-resource-search__result.is-selected");
+      await picked.waitFor();
+      expect(await picked.boundingBox()).toEqual(before);
+      await page.keyboard.press("ArrowDown");
+      const active = page.locator(".cloud-resource-search__result.is-active:not(.is-selected)");
+      await active.waitFor();
+      const colors = await picked.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.cssText = "position:absolute;visibility:hidden;background:var(--ui-app-selected)";
+        document.body.append(probe);
+        const appFill = getComputedStyle(probe).backgroundColor;
+        // Outside the body scope, the probe reads the `:root` default.
+        document.documentElement.append(probe);
+        const defaultFill = getComputedStyle(probe).backgroundColor;
+        document.body.append(probe);
+        probe.style.background = "var(--k2b-selected)";
+        const platformFill = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { pickedFill: getComputedStyle(element).backgroundColor, appFill, defaultFill, platformFill };
+      });
+      expect(colors.pickedFill).toBe(colors.appFill);
+      expect(colors.pickedFill).not.toBe(colors.defaultFill);
+      expect(colors.pickedFill).not.toBe(colors.platformFill);
+      expect(await active.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(colors.platformFill);
+      expect(await picked.boundingBox()).toEqual(before);
+    } finally {
+      await close();
+    }
+  }, 30_000);
+
+  test("a phone shows the picker as a full-screen sheet and keeps global search floating", async () => {
+    for (const [path, sheet] of [
+      ["/?picker", true],
+      ["/", false],
+    ] as const) {
+      const { page, close } = await open(views[1]!, path);
+      try {
+        const { left, top, width, bottom } = await page.locator("dialog").evaluate((dialog) => {
+          const rect = dialog.getBoundingClientRect();
+          return { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), bottom: Math.round(rect.bottom) };
+        });
+        if (sheet) {
+          expect([left, width]).toEqual([0, 390]);
+          expect(top).toBeLessThanOrEqual(12);
+          expect(bottom).toBe(844);
+        } else {
+          expect(left).toBeGreaterThan(0);
+          expect(bottom).toBeLessThan(844);
+        }
+      } finally {
+        await close();
+      }
+    }
+  }, 30_000);
+
   test("shows each app as it answers, appends slower apps below, and moves nothing already shown", async () => {
     for (const view of views) {
       const files = gate();
@@ -191,6 +259,7 @@ describe("streamed search in a browser", () => {
         await waitForText(page, "Mail is still searching…");
         const first = await layout(page);
         // The status line sits below the results.
+        await settled(page);
         const statusTop = await page.locator(".cloud-resource-search__status").evaluate((element) => element.getBoundingClientRect().top);
         expect(statusTop).toBeGreaterThanOrEqual(first.rows[2]![1]! + first.rows[2]![3]!);
         await page.keyboard.press("ArrowDown");
@@ -288,4 +357,105 @@ describe("streamed search in a browser", () => {
       }
     }
   }, 30_000);
+});
+
+for (const lang of ["en", "de"]) {
+  test(`app launcher uses localized shell names, aliases and normal/new-tab navigation (${lang})`, async () => {
+    searches.length = 0;
+    const view = await open(views[0]!, `/?launcher&public&admin&lang=${lang}`);
+    const { page } = view;
+    try {
+      expect(await page.locator('[role="option"]').count()).toBe(0);
+      const input = page.locator('input[role="combobox"]');
+      await input.fill("admin");
+      await waitForRows(page, 1);
+      const option = page.getByRole("option");
+      expect(await option.innerText()).toContain(lang === "de" ? "Administration" : "Admin");
+      expect(await option.locator("small").innerText()).toBe("App");
+      expect(await option.locator("i").getAttribute("class")).toBe("ti ti-settings");
+      for (const modifier of ["Control", "Meta"]) {
+        const popup = page.waitForEvent("popup");
+        await input.press(`${modifier}+Enter`);
+        const tab = await popup;
+        await tab.waitForURL("**/admin");
+        await tab.close();
+        expect(await input.inputValue()).toBe("admin");
+        expect(await option.getAttribute("aria-selected")).toBe("true");
+      }
+      const popup = page.waitForEvent("popup");
+      await option.click({ modifiers: ["Control"] });
+      const tab = await popup;
+      await tab.waitForURL("**/admin");
+      await tab.close();
+      await input.fill("utilities");
+      await waitForRows(page, 1);
+      expect(await option.innerText()).toContain(lang === "de" ? "Werkzeuge" : "Tools");
+      expect(await option.locator("small").innerText()).toBe("App");
+      expect(searches).toHaveLength(0);
+      await input.press("Enter");
+      await page.waitForURL("**/tools");
+    } finally {
+      await view.close();
+    }
+
+    const admin = await open(views[0]!, `/?launcher&public&admin&lang=${lang}&q=admin`);
+    try {
+      await waitForRows(admin.page, 1);
+      await admin.page.getByRole("option").click();
+      await admin.page.waitForURL("**/admin");
+    } finally {
+      await admin.close();
+    }
+    const publicView = await open(views[1]!, `/?launcher&public&lang=${lang}&q=admin`);
+    try {
+      await publicView.page
+        .getByText(lang === "de" ? "Keine Treffer. Versuche einen anderen Suchbegriff." : "No matches. Try another search term.")
+        .waitFor();
+      expect(await publicView.page.getByRole("option").count()).toBe(0);
+      await publicView.page.locator('input[role="combobox"]').fill("werkzege");
+      await waitForRows(publicView.page, 1);
+      await publicView.page.keyboard.press("Escape");
+      await publicView.page.locator("dialog").waitFor({ state: "detached" });
+    } finally {
+      await publicView.close();
+    }
+  });
+}
+
+test("launcher and chosen resources keep their positions and selection while providers stream", async () => {
+  const first = gate();
+  const second = gate();
+  answer = async (_url, write) => {
+    write({ type: "start", query: "utilities", apps, providers: ["mail", "files"] });
+    await first.opened;
+    write(line("mail", [result("mail", "Utilities invoice", "Invented mail content")]));
+    await second.opened;
+    write(line("files", [result("files", "Utilities guide", "Invented file content")]));
+  };
+  const view = await open(views[0]!, "/?launcher&q=utilities");
+  try {
+    await waitForRows(view.page, 1);
+    const launcher = view.page.getByRole("option").first();
+    const before = await launcher.boundingBox();
+    expect(await launcher.getAttribute("aria-selected")).toBe("true");
+    first.open();
+    await waitForRows(view.page, 2);
+    expect(await launcher.boundingBox()).toEqual(before);
+    expect(await launcher.getAttribute("aria-selected")).toBe("true");
+    await view.page.keyboard.press("ArrowDown");
+    const resource = view.page.getByRole("option").nth(1);
+    await view.page.getByRole("option", { selected: true }).filter({ hasText: "Utilities invoice" }).waitFor();
+    const resourceBefore = await resource.boundingBox();
+    second.open();
+    await waitForRows(view.page, 3);
+    expect(await resource.boundingBox()).toEqual(resourceBefore);
+    expect(await resource.getAttribute("aria-selected")).toBe("true");
+    expect(await resource.innerText()).toContain("Utilities invoice");
+    await view.page.keyboard.press("Enter");
+    await view.page.waitForURL("**/app/mail");
+  } finally {
+    first.open();
+    second.open();
+    await view.close();
+  }
 });

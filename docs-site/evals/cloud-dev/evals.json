@@ -237,6 +237,31 @@
         "Delivery is idempotent through the row ID, keeps per-item order, and decides which ERP answers are final instead of retrying them forever.",
         "Verification covers a private or internal link address and a failed delivery that is retried."
       ]
+    },
+    {
+      "id": 21,
+      "prompt": "Check whether our inventory application follows Cloud's conventions and report what is wrong.",
+      "expected_output": "Reads the conventions catalog and audit procedure, checks applicable rules, records evidence by convention ID, and reports findings grouped by root cause.",
+      "files": [],
+      "expectations": [
+        "Reads Conventions for Cloud applications and its audit page through the documentation MCP.",
+        "Runs the named checks and tests or substitutes their manual equivalents.",
+        "Records findings with ID, location, severity, observed vs. expected, reproduction, and fix.",
+        "Groups findings by root cause.",
+        "Does not report rules that do not apply to the application."
+      ]
+    },
+    {
+      "id": 22,
+      "prompt": "Our Cloud app hides its Back button and offers a full-width reading option at a 64 rem viewport. Beside Cloud's panel, a 1440 px window leaves only 952 px for the app and the sidebar becomes an overlay. Fix the app chrome and its command availability without a special case for this app.",
+      "expected_output": "Reads the workspace host contract, uses named k2b-app-area container queries for app chrome, follows the nearest host's content width in JavaScript, and verifies host-only resize and first-frame consistency.",
+      "files": [],
+      "expectations": [
+        "Sidebar-dependent app chrome follows @container k2b-app-area rather than viewport media queries.",
+        "JavaScript availability uses watchAppHostWidth from @k2b/ui for the nearest named host and calls its stop function on cleanup.",
+        "The 48 rem phone split and pointer capability rules keep their viewport semantics.",
+        "Verification compares a narrow host in a wide window with a window as wide as the host and checks host-only resize."
+      ]
     }
   ]
 }

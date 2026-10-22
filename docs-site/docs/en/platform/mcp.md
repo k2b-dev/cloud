@@ -5,7 +5,7 @@ section: Platform services
 order: 565
 description: Connect MCP clients to live Cloud capabilities and registered app Help.
 tags: [mcp, capabilities, help, oauth, agents]
-updated: 2026-10-09
+updated: 2026-10-20
 ---
 
 # Cloud MCP server
@@ -32,9 +32,25 @@ as the Layout: a service account without a user sees no Help, and Help of an
 application the user may not see neither lists nor reads.
 
 Capability Types remain resource identities in result `refs`; Cloud does not
-invent one MCP tool per Type. Pass a returned `{ type, id }` ref unchanged to
-`cloud__resource__read`. The tool resolves the Type's current declared reader
-from the live manifest and rechecks app authorization during the Query.
+invent one MCP tool per Type. Pass a returned ref unchanged to
+`cloud__resource__read`, including its optional `title`, `preview`, `icon` and
+`href`; the tool reads only `type` and `id`. It resolves the Type's current
+declared reader from the live manifest and rechecks app authorization during
+the Query.
+
+Successful capability results retain provider data and root-relative semantic
+links. MCP adds absolute `refs[].href` permalinks using `app.url`, and advertises
+that optional consumer field in each capability tool's output schema so MCP
+clients can validate structured responses. Providers do not add `href` to refs.
+If the added links would push a result over the size bound, MCP returns the
+result without them.
+Action results with a valid receipt start `content` with the receipt as plain
+text, including people's addresses. The JSON text block and resource links
+follow it; `structuredContent` stays unchanged. Receipt text uses the request
+language and the operator's time zone (UTC if unavailable). If the extra text
+would exceed the result size limit, MCP omits it and keeps the result.
+Queries and errors keep their existing content.
+See [Resource links](/en/docs/platform/capabilities#resource-links).
 
 ## Follow the server instructions
 
@@ -120,10 +136,10 @@ Every refresh repeats the exact MCP `resource`. Scope reductions are durable,
 and Cloud rechecks the current account and client access before rotating the
 grant.
 
-OAuth access tokens expire after one hour. Disconnecting an MCP client revokes
-its refresh grant, but an access token already issued to that client can remain
-valid until that expiry. The owning app continues to enforce current domain
-authorization on every tool call.
+OAuth access tokens expire after at most one hour and never after the login
+ends. Disconnecting an MCP client revokes its refresh grant, but an access token
+already issued to that client can remain valid until that expiry. The owning
+app continues to enforce current domain authorization on every tool call.
 
 Personal Cloud API keys are an alternative for clients that
 cannot use browser OAuth. Send the key only in the bearer header:

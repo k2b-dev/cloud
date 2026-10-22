@@ -23,6 +23,19 @@ const switchByLabel = (root: HTMLElement, label: string) =>
     .find((element) => element.textContent?.trim() === label)
     ?.querySelector<HTMLInputElement>('input[role="switch"]');
 
+// The settings dialog mounts outside the app, as Cloud's dialogs do: an element inside an app host of `width`
+// decides. happy-dom reflects inline dimensions in computed styles.
+const appHost = (width: number) => {
+  document.documentElement.style.fontSize = "16px";
+  const app = document.createElement("div");
+  app.style.containerName = "k2b-app-area";
+  app.style.boxSizing = "content-box";
+  app.style.width = `${width}px`;
+  const anchor = app.appendChild(document.createElement("div"));
+  document.body.append(app);
+  return () => anchor;
+};
+
 describe("personal view preferences", () => {
   if (isServer) {
     test.skip("runs with browser export conditions", () => {});
@@ -36,7 +49,10 @@ describe("personal view preferences", () => {
     let notified = 0;
     const onPreference = () => notified++;
     window.addEventListener(FULL_WIDTH_PREFERENCE_EVENT, onPreference);
-    const dispose = render(() => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} />, dom.root);
+    const dispose = render(
+      () => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} host={appHost(1192)} />,
+      dom.root,
+    );
     try {
       const toggle = switchByLabel(dom.root, "Full width");
       expect(toggle).toBeDefined();
@@ -57,6 +73,30 @@ describe("personal view preferences", () => {
     }
   });
 
+  // Beside Cloud's panel a 1440 px window leaves a 952 px app, where "Full width" changes nothing.
+  test("full width shows only from a 64 rem app host, not by the window", async () => {
+    for (const [width, shown] of [
+      [952, false],
+      [1023.75, false],
+      [1024, true],
+    ] as const) {
+      const dom = createDomTestHarness();
+      dom.window.happyDOM.setWindowSize({ width: 1440, height: 900 });
+      const { FeaturesSection } = await import("./FeaturesSection");
+      const dispose = render(
+        () => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} host={appHost(width)} />,
+        dom.root,
+      );
+      try {
+        expect(switchByLabel(dom.root, "Full width") !== undefined, `${width}px host`).toBe(shown);
+        expect(switchByLabel(dom.root, "Tab moves focus instead of indenting")).toBeDefined();
+      } finally {
+        dispose();
+        dom.cleanup();
+      }
+    }
+  });
+
   test("saves in this browser and tells an open editor to apply it", async () => {
     const dom = createDomTestHarness();
     const { FeaturesSection } = await import("./FeaturesSection");
@@ -64,7 +104,10 @@ describe("personal view preferences", () => {
     let notified = 0;
     const onPreference = () => notified++;
     window.addEventListener(TAB_KEY_PREFERENCE_EVENT, onPreference);
-    const dispose = render(() => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} />, dom.root);
+    const dispose = render(
+      () => <FeaturesSection notebook={notebook} isAdmin={false} onNotebookChange={() => undefined} host={appHost(1192)} />,
+      dom.root,
+    );
 
     try {
       const toggle = switchByLabel(dom.root, "Tab moves focus instead of indenting");

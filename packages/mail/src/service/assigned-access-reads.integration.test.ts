@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Readable } from "node:stream";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { type Result, unwrap } from "@k2b/stdlib";
 import { sql } from "bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
@@ -380,9 +381,27 @@ suite("assigned-only Mail reads fail closed across services, HTTP and capabiliti
     await sql`INSERT INTO mail.conversation_keeps (conversation_id, mailbox_id, kept_by_kind, kept_by_id)
       VALUES (${c3.id}::uuid, ${mailboxId}::uuid, 'user', ${owner.id}::uuid)`;
     reminder1 = reminder.id;
-    tokenA = unwrap(await serviceAccountCredentials.createUserApiToken({ user: readerA, name: `A ${suffix}` })).token;
-    tokenB = unwrap(await serviceAccountCredentials.createUserApiToken({ user: writerB, name: `B ${suffix}` })).token;
-    tokenR = unwrap(await serviceAccountCredentials.createUserApiToken({ user: readerR, name: `R ${suffix}` })).token;
+    tokenA = unwrap(
+      await serviceAccountCredentials.createUserApiToken({
+        user: readerA,
+        browserSignIn: await createTestBrowserSignIn(readerA.id),
+        name: `A ${suffix}`,
+      }),
+    ).token;
+    tokenB = unwrap(
+      await serviceAccountCredentials.createUserApiToken({
+        user: writerB,
+        browserSignIn: await createTestBrowserSignIn(writerB.id),
+        name: `B ${suffix}`,
+      }),
+    ).token;
+    tokenR = unwrap(
+      await serviceAccountCredentials.createUserApiToken({
+        user: readerR,
+        browserSignIn: await createTestBrowserSignIn(readerR.id),
+        name: `R ${suffix}`,
+      }),
+    ).token;
   });
 
   afterAll(async () => {

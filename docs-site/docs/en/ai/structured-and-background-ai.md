@@ -5,7 +5,7 @@ section: AI
 order: 1060
 description: Run validated model tasks outside an interactive chat request.
 tags: [ai, structured-output, background]
-updated: 2026-10-08
+updated: 2026-10-18
 ---
 
 # Structured and background AI
@@ -130,6 +130,28 @@ performance, user activity, quality feedback, and background failures over
 
 Do not silently turn a failed AI result into application truth. Decide whether
 the caller should retry, skip the optional enrichment, or surface the error.
+
+## Keep routine run history for 90 days
+
+The Assistant calls scheduled chat tasks routines in its interface, help, and
+notifications, while the API, capability IDs (`core.ai.task.*`), routes, tables,
+and CLI (`cld assistant tasks`) keep `task`.
+
+Core deletes a routine's finished run (completed or failed) 90 days
+after it finished, together with its background turn, tool calls, and run
+transcript. Queued and running runs stay, as does the result message the run
+delivered into its chat. A finished run also stays while its turn is still active.
+The run holding a one-off routine's scheduled time keeps its row, even after
+completion, until the routine gets a new time or is deleted, so that time never
+runs twice; its background turn and transcript still expire after 90 days.
+Memory learning runs that used an expired turn as evidence stay without it.
+If the routine was deleted, its runs' background turns, tool calls, and transcripts
+expire on the same 90-day clock, measured from when each turn finished.
+
+This window is fixed, not configurable. Core removes up to 100 runs per minute
+on the routine recovery tick. See
+[Assistant routines](/en/docs/ai/chat-runtime-and-streaming#assistant-routines)
+for the execution and access rules.
 
 ## Add AI to an application workflow
 
@@ -335,3 +357,108 @@ requestedModelId)` for Assistant model grants and `resolveAiModel` with
 through `resolveModel`. Supply only verified server-side identities, not IDs from
 the calculation's input. The calculations receive only the supplied prompt and
 input, with no tools or implicit conversation context.
+
+## Routine Action reviews
+
+Before each change, a routine checks its mandate first, then calls the app's
+review for every Action with `approval: "rememberable"`. An Action that needs
+approval and is not rememberable never runs in a routine, regardless of the
+review. This includes background Code Mode. A rememberable Action runs only
+when that review returns an `approvalScope`. A missing review, a review error,
+or a result without the scope refuses the call and the app's `run` never
+executes. The review only narrows a mandate; it never grants access or widens
+the routine's authority.
+
+The model gets a short `NEEDS_APPROVAL` error telling it to stop and explain
+what was missing in one sentence. The run fails and the routine becomes
+`needs_attention` with reason `needs_approval` and the action name, even if the
+model completes its reply normally. One-time routines need a new time rather
+than becoming completed. Queries and Actions with `approval: "none"` keep their
+mandate checks and skip this review gate.
+
+Core's routine hosts share the platform-owned `authorizeBackgroundAction` and
+`AiBackgroundApprovalRequiredError` exports from `@k2b/cloud/ai`. The gate records
+the first refused action on the turn; hosts cannot replace a refusal with a
+later successful model reply.
+
+## Routine names and stop reasons
+
+A routine can have a short `title` in the user's language, up to 80 characters.
+Its `name` uses that title, then the chat title, then the first prompt line
+(up to 80 characters). Lists, action reviews and notifications use this name.
+
+A stopped routine has one `reason_code` and a `reason_at` timestamp. The code
+determines its state. A database CHECK enforces this relation.
+
+| Code | State | English sentence |
+| --- | --- | --- |
+| `paused` | `paused` | Paused by you on {time}. What happens meanwhile is not caught up automatically. |
+| `chat_archived` | `paused` | Paused because the chat is archived. |
+| `owner_inactive` | `paused` | Paused because the account is inactive. |
+| `failed` | `needs_attention` | The last run failed. |
+| `rights_changed` | `needs_attention` | What it may do changed. Please confirm again. |
+| `needs_approval` | `needs_attention` | Tried to {action}. That needs your approval every time, and routines never ask. |
+
+For `needs_approval`, `reason_action` stores the first refused Action's title
+in the routine's locale. Dialogs, chat lines, and notifications include it in
+the sentence; without an action, only the second sentence appears. English
+lowercases an initial title-case word ("Create task" becomes "Tried to create
+task."); German titles and acronym starts stay unchanged. Other reason codes
+clear `reason_action`, and readers ignore it beside any other code. The pause time uses `reason_at`, the reader's locale and
+the routine's timezone. `chatTaskReasonSentence` from `@k2b/cloud/ai` renders
+these sentences in English and German. Browser code imports it from
+`@k2b/cloud/ai/browser`.
+
+Raw errors remain technical details. They are not the reason sentence.
+A failed run keeps its last model response when available and adds reason
+metadata. Without a response, the chat line uses the reason sentence.
+
+A needs-attention notification has the title **“{name}” needs you** and the
+reason sentence as its body. Paused routines do not send this notification.
+The key `routine:{task uuid}:{code}:{reason_at epoch ms}` permits one notice
+per routine and reason until the state changes. Recovery uses the newest
+failed occurrence after the notification definition was registered. It also
+recognizes legacy `occurrence:{id}` keys, so an upgrade does not resend them.
+
+Creation stores the request locale on the routine. Runs, delivered chat lines
+and notifications use that locale, then the instance setting `app.locale`,
+then `en`. Existing routines get the locale of the newest personal chat turn
+at or before creation, else the newest personal chat turn in that chat.
+Background turns do not supply this value. This backfill runs only when the
+locale column is first added. Cloud has no stored per-user locale setting.
+
+Archiving a chat through the AI routes pauses its active routines with
+`chat_archived`. Admission checks what a routine may do before it checks the
+archive, so a routine whose mandate was paused or changed keeps `paused` or
+`rights_changed` instead. Admission also pauses a routine whose chat was
+archived another way. Restoring the chat resumes only routines paused with
+`chat_archived`, and only when their mandate revision is still the one the
+archive paused. Otherwise they need attention with `rights_changed`. A
+routine that stays paused after the restore, because it is a one-time routine
+past its time or because an app session restored the chat, changes to
+`paused`, so it no longer names an archive that has ended. App sessions never
+resume background authority. If the restore's routine step fails, the routine
+recovery relabels those routines `paused` after five minutes; it never resumes
+them, so the person resumes them by hand.
+
+A one-time routine resumes only before its time. Once its time has passed, a
+run at that time already happened or was stopped, so it needs a new time
+first.
+
+Pause and delete request an immediate abort of a running turn. The occurrence
+ends as `stopped`. The chat receives one line:
+
+> Stopped while the routine was running. Already done: {list}. Nothing was undone.
+
+With no write call it can name, the line leaves the list out:
+
+> Stopped while the routine was running. Nothing was undone.
+
+It does not claim that nothing changed, because a call without wording can
+still have changed something. The list comes from stored successful calls that
+the chat words as changes: app Actions with their done sentence, or their title
+when the Action has none, and Cloud tools with a done sentence. It never comes
+from the model's prose. Reads, failed calls and rejected calls are excluded. The line's metadata stores the stop cause and the done list.
+Deleting the routine does not delete this receipt. Recovery can deliver the
+line once from a terminal deleted-routine turn completed within the last day.
+It does not deliver into an archived chat.

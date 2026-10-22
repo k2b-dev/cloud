@@ -89,14 +89,15 @@ export const RecurrenceSchema = z.object({
 export type Recurrence = z.infer<typeof RecurrenceSchema>;
 
 export const SpaceItemAssigneeSchema = z.object({
-  id: UuidSchema.describe("User UUID"),
-  displayName: z.string().describe("User display name"),
-  avatarHash: z.string().nullable().describe("User avatar hash"),
+  id: UuidSchema.describe("User or service account UUID"),
+  kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+  displayName: z.string().describe("Person display name or service account name"),
+  avatarHash: z.string().nullable().describe("User avatar hash; null for service accounts"),
 });
 export type SpaceItemAssignee = z.infer<typeof SpaceItemAssigneeSchema>;
 
 export const SpaceAssignableUserSchema = SpaceItemAssigneeSchema.extend({
-  uid: z.string().describe("Username"),
+  uid: z.string().describe("Username, or the account name of a service account"),
   description: z.string().optional().describe("Short source hint for the picker"),
 });
 export type SpaceAssignableUser = z.infer<typeof SpaceAssignableUserSchema>;
@@ -110,6 +111,45 @@ export const SpaceItemClaimSchema = z.object({
 });
 export type SpaceItemClaim = z.infer<typeof SpaceItemClaimSchema>;
 
+// The detail panel shows every chip in wrapping rows at 26 px; keep card payloads small too.
+export const MAX_ITEM_REACTION_EMOJI = 20;
+const RGI_EMOJI = /^\p{RGI_Emoji}$/v;
+/** A refinement, not a pattern: JSON Schema drops the `v` flag, so a published pattern would reject every emoji. */
+export const ReactionEmojiSchema = z
+  .string()
+  .min(1)
+  .refine((value) => RGI_EMOJI.test(value), "Expected one fully-qualified RGI emoji")
+  .describe("Exactly one fully-qualified RGI emoji, including any skin tone or presentation selector");
+export const SpaceItemReactionSchema = z.object({
+  emoji: ReactionEmojiSchema,
+  count: z.number().int().min(1),
+  own: z.boolean(),
+  people: z
+    .array(
+      z.object({
+        kind: z.enum(["user", "service_account"]),
+        id: UuidSchema,
+        displayName: z.string(),
+      }),
+    )
+    .max(3),
+});
+export type SpaceItemReaction = z.infer<typeof SpaceItemReactionSchema>;
+export const SpaceItemReactionsResponseSchema = z.object({
+  reactions: z.array(SpaceItemReactionSchema).max(MAX_ITEM_REACTION_EMOJI),
+});
+
+/**
+ * A calendar date stays a date at every transport boundary; only timed deadlines are instants. The date-time member
+ * comes first so a reader that takes the first format of the union formats both forms (a date stays a date).
+ */
+export const DeadlineInputSchema = z
+  .union([z.string().datetime({ offset: true }), z.iso.date()])
+  .describe("Task deadline: a real calendar date YYYY-MM-DD for an all-day deadline (default), or an ISO date-time for a timed deadline");
+export const DeadlineAllDaySchema = z
+  .boolean()
+  .describe("True only when deadline is a date-only all-day deadline; false when timed or absent");
+
 export const SpaceItemSchema = z.object({
   id: ResourceShortIdSchema.describe("Item ID"),
   spaceId: ResourceShortIdSchema.describe("Parent space ID"),
@@ -121,7 +161,8 @@ export const SpaceItemSchema = z.object({
   startsAt: z.string().nullable().describe("Event start time (ISO)"),
   endsAt: z.string().nullable().describe("Event end time (ISO)"),
   allDay: z.boolean().default(false).describe("Whether the item is an all-day event"),
-  deadline: z.string().nullable().describe("Todo deadline (ISO)"),
+  deadline: DeadlineInputSchema.nullable(),
+  deadlineAllDay: DeadlineAllDaySchema,
   estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().describe("Estimated task duration in minutes"),
   activeBlockerCount: z.number().int().nonnegative().describe("Number of incomplete tasks that currently block this task"),
   priority: PrioritySchema.nullable().describe("Item priority"),
@@ -134,8 +175,15 @@ export const SpaceItemSchema = z.object({
   createdAt: z.string().describe("Creation timestamp (ISO)"),
   updatedAt: z.string().describe("Last update timestamp (ISO)"),
   lastActivityAt: z.string().optional().describe("Most recent item, comment, or checklist activity timestamp (ISO)"),
+  reactions: z
+    .array(SpaceItemReactionSchema)
+    .max(MAX_ITEM_REACTION_EMOJI)
+    .optional()
+    .describe(
+      "Emoji reactions in first-reaction order, personalized for the reading account; absent in write responses, empty on generated occurrences",
+    ),
   // Optional relations (loaded on demand)
-  assignees: z.array(SpaceItemAssigneeSchema).optional().describe("Assigned users"),
+  assignees: z.array(SpaceItemAssigneeSchema).optional().describe("Assigned people or service accounts"),
   tags: z.array(SpaceTagSchema).optional().describe("Attached tags"),
   claim: SpaceItemClaimSchema.nullable().optional().describe("Active work claim and who holds it"),
 });
@@ -373,7 +421,9 @@ export const SpaceItemTemplateSchema = z.object({
   url: z.string().nullable().describe("Event URL"),
   allDay: z.boolean().describe("Whether a new event is all-day"),
   durationMinutes: EstimatedDurationMinutesSchema.nullable().describe("Event duration in minutes; 60 when unset"),
-  timeOfDay: TimeOfDaySchema.nullable().describe("Task due time or event start time; 17:00 for tasks and 09:00 for events when unset"),
+  timeOfDay: TimeOfDaySchema.nullable().describe(
+    "Optional task due time or event start time; unset means all-day for tasks and 09:00 for events",
+  ),
   dateRule: TemplateDateRuleSchema.describe("Which dates a new item proposes"),
   createdAt: z.string().describe("Creation timestamp (ISO)"),
   updatedAt: z.string().describe("Last update timestamp (ISO)"),
@@ -404,7 +454,8 @@ export const CalendarItemSchema = z.object({
   startsAt: z.string().nullable().describe("Event start time (ISO)"),
   endsAt: z.string().nullable().describe("Event end time (ISO)"),
   allDay: z.boolean().default(false).describe("Whether the item is an all-day event"),
-  deadline: z.string().nullable().describe("Todo deadline (ISO)"),
+  deadline: DeadlineInputSchema.nullable(),
+  deadlineAllDay: DeadlineAllDaySchema,
   priority: PrioritySchema.nullable().describe("Item priority"),
   recurrence: RecurrenceSchema.nullable().describe("Recurring event series data"),
   recurringEventId: ResourceShortIdSchema.nullable().describe("Parent recurring event ID for overrides"),
@@ -412,7 +463,7 @@ export const CalendarItemSchema = z.object({
   isRecurringInstance: z.boolean().optional().describe("Whether this calendar item is an expanded recurring instance"),
   tags: z.array(SpaceTagSchema).optional().describe("Attached tags"),
   columnId: ResourceShortIdSchema.describe("Current column ID; the column's color colors the item when it has no tag"),
-  assignees: z.array(SpaceItemAssigneeSchema).describe("Assigned users"),
+  assignees: z.array(SpaceItemAssigneeSchema).describe("Assigned people or service accounts"),
   activeBlockerCount: z
     .number()
     .int()
@@ -519,7 +570,7 @@ const ItemTemplateFieldsShape = {
   description: z.string().max(MAX_ITEM_DESCRIPTION_LENGTH).nullable().describe("Default description (markdown)"),
   priority: PrioritySchema.nullable().describe("Default priority"),
   tagIds: z.array(ResourceShortIdSchema).max(100).describe("Default tag IDs"),
-  assigneeIds: z.array(UuidSchema).max(100).describe("Default assignee user UUIDs with access to the Space"),
+  assigneeIds: z.array(UuidSchema).max(100).describe("Default assignee person or service account UUIDs with access to the Space"),
   assignCreator: z.boolean().describe("Also assign the person who creates the item"),
   checklist: z
     .array(z.string().trim().min(1).max(500))
@@ -530,7 +581,7 @@ const ItemTemplateFieldsShape = {
   url: z.string().url().max(2000).nullable().describe("Event URL (events only)"),
   allDay: z.boolean().describe("Whether a new event is all-day (events only)"),
   durationMinutes: EstimatedDurationMinutesSchema.nullable().describe("Event duration in minutes (events only)"),
-  timeOfDay: TimeOfDaySchema.nullable().describe("Task due time or event start time"),
+  timeOfDay: TimeOfDaySchema.nullable().describe("Optional task due time (unset means all-day) or event start time"),
   dateRule: TemplateDateRuleSchema.describe("Which dates a new item proposes"),
 };
 
@@ -635,7 +686,7 @@ export const ItemTemplateDraftSchema = z.object({
     assigneeIds: z.array(UuidSchema).describe("Default assignees that still have access to the Space"),
     assignCreator: z.boolean(),
     checklist: z.array(z.string()),
-    deadline: z.string().datetime().optional(),
+    deadline: DeadlineInputSchema.optional(),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
@@ -656,13 +707,13 @@ export const CreateItemSchema = z
     startsAt: z.string().datetime().optional().describe("Event start time (ISO)"),
     endsAt: z.string().datetime().optional().describe("Event end time (ISO)"),
     allDay: z.boolean().optional().describe("Whether the item is an all-day event"),
-    deadline: z.string().datetime().optional().describe("Todo deadline (ISO)"),
+    deadline: DeadlineInputSchema.optional().describe("Task deadline: YYYY-MM-DD (all-day) or ISO date-time (timed)"),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.optional().describe("Estimated task duration in minutes"),
     priority: PrioritySchema.optional().describe("Item priority"),
     recurrence: RecurrenceSchema.optional().describe("Recurring event series data"),
     recurringEventId: ResourceShortIdSchema.optional().describe("Parent recurring event ID for overrides"),
     recurrenceId: z.string().datetime().optional().describe("Original occurrence timestamp (ISO) for overrides"),
-    assigneeIds: z.array(UuidSchema).max(100).optional().describe("Assigned user UUIDs"),
+    assigneeIds: z.array(UuidSchema).max(100).optional().describe("Assigned person or service account UUIDs"),
     tagIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Tag IDs"),
     references: z
       .array(SpaceItemResourceReferenceInputSchema)
@@ -700,13 +751,17 @@ export const UpdateItemSchema = z
     startsAt: z.string().datetime().nullable().optional().describe("Event start time (ISO)"),
     endsAt: z.string().datetime().nullable().optional().describe("Event end time (ISO)"),
     allDay: z.boolean().optional().describe("Whether the item is an all-day event"),
-    deadline: z.string().datetime().nullable().optional().describe("Todo deadline (ISO)"),
+    deadline: DeadlineInputSchema.nullable().optional().describe("Task deadline: YYYY-MM-DD (all-day) or ISO date-time (timed)"),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().optional().describe("Estimated task duration in minutes"),
     priority: PrioritySchema.nullable().optional().describe("Item priority"),
     recurrence: RecurrenceSchema.nullable().optional().describe("Recurring event series data"),
     recurringEventId: ResourceShortIdSchema.nullable().optional().describe("Parent recurring event ID for overrides"),
     recurrenceId: z.string().datetime().nullable().optional().describe("Original occurrence timestamp (ISO) for overrides"),
-    assigneeIds: z.array(UuidSchema).max(100).optional().describe("Assigned user UUIDs"),
+    assigneeIds: z.array(UuidSchema).max(100).optional().describe("Assigned person or service account UUIDs"),
+    claimId: UuidSchema.optional().describe(
+      "Current worker claim ID; required when assigneeIds drops the account holding the claim, which ends it",
+    ),
+    force: z.boolean().optional().describe("Take over another actor's claim given as its exact claimId; any writer may"),
     tagIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Tag IDs"),
   })
   .refine((data) => !data.startsAt || !data.endsAt || new Date(data.endsAt) > new Date(data.startsAt), {

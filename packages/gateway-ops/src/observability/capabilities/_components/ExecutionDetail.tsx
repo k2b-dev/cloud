@@ -78,7 +78,11 @@ export default function ExecutionDetail(props: { executions: CapabilityExecution
                     term: t.actor,
                     description: execution.actorId ? (
                       <span class="break-all select-all">
-                        {execution.actorKind ?? "—"} · {execution.actorId}
+                        {execution.actorKind ?? "—"} ·{" "}
+                        {
+                          // principal-id-labels: The execution detail identifies the recorded actor by kind and ID.
+                          execution.actorId
+                        }
                       </span>
                     ) : (
                       "—"

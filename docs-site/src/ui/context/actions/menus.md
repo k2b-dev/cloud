@@ -19,7 +19,13 @@ user is editing:
 | Choose several values | `MultiSelectInput` |
 | Filter an existing result set | `FilterChip` |
 
+For rows that explain each choice or show unavailable reasons, use
+[RichSelect](../input/rich-select) instead of building select rows in a `Dropdown`.
+
 See [Select inputs](../input/select) for the controlled selection contracts.
+
+Use an item's optional `trailing` JSX for quiet information such as a view
+count. The link label stays the view name.
 
 ## Import
 
@@ -58,6 +64,17 @@ and 12rem minimum width. Trigger styling is configured separately.
 </Dropdown.Root>
 ```
 
+Set `phone="sheet"` on `Dropdown.Root` to open the same items in a bottom sheet
+below 48rem. The default `phone="menu"` keeps the menu beside its trigger.
+A controlled dropdown (`open` supplied) always stays a menu. Choices with
+`closeOnSelect: false` keep the sheet open, with reactive checked state, just
+as they do in the desktop menu. The inherited UI locale follows into the sheet.
+Like the menu, the sheet closes when the dropdown becomes disabled or unmounts.
+Other actions run after the sheet has left the history, so they may navigate
+or open a dialog. Set `immediate: true` on an action that needs the tap itself,
+such as a clipboard write or a download; it runs during the tap and must not
+navigate or open a dialog.
+
 ## Items and sections
 
 Both components accept `DropdownItem[]`. An item is one of:
@@ -69,6 +86,8 @@ Both components accept `DropdownItem[]`. An item is one of:
   for example for an in-app panel that also has its own address;
 - a radio or checkbox choice with `choice`, `checked`, and `action`;
 - a section with optional `sectionLabel` and nested actions or choices.
+
+A choice can also take `href`: a plain click, Enter, or Space runs its action, while modified clicks and middle-click can open the link in a new tab.
 
 A section with `layout: "row"` sets a few short radio choices side by side as
 one segmented row, such as a sort direction or a color mode. Give it a
@@ -86,7 +105,7 @@ for a form or richer workflow. Use `Select`, `MultiSelectInput`, `SelectChip`,
 or `FilterChip` when the interaction edits a value or filter.
 
 `Dropdown.Root` accepts `items`, `open`, `onOpenChange`, `position`, `align`,
-`width`, `class`, `menuClass`, `label`, `disabled`, and `onClose`.
+`width`, `class`, `menuClass`, `label`, `disabled`, `phone`, and `onClose`.
 `Dropdown.Trigger` owns the native button and its SSR-visible menu semantics.
 Use its normal button appearance by default. Set `appearance="plain"` only
 when a specialized component class owns the complete visual treatment.
@@ -129,7 +148,7 @@ something else:
 
 ```ts
 type DropdownActionBase = {
-  class?: string; disabled?: boolean; icon?: string; image?: string; label: string; ariaLabel?: string; description?: string;
+  class?: string; disabled?: boolean; icon?: string; image?: string; label: string; ariaLabel?: string; description?: string; trailing?: JSX.Element;
   variant?: "danger";
 };
 
@@ -137,6 +156,7 @@ type DropdownAction =
   | (DropdownActionBase & {
       action: () => void;
       closeOnSelect?: boolean;
+      immediate?: boolean;
       href?: never;
       external?: never;
     })
@@ -154,7 +174,7 @@ type DropdownAction =
 
 type DropdownChoice = DropdownActionBase & {
   action: () => void; checked: boolean | (() => boolean); choice: "checkbox" | "radio";
-  closeOnSelect?: boolean; color?: string;
+  href?: string; closeOnSelect?: boolean; color?: string;
 };
 
 type DropdownSection = {
@@ -169,7 +189,7 @@ type DropdownProps = {
   items: readonly DropdownItem[]; children: JSX.Element;
   position?: DropdownPosition | (() => DropdownPosition); variant?: "default" | "touch"; width?: string;
   class?: string; menuClass?: string; onClose?: () => void; open?: boolean;
-  onOpenChange?: (open: boolean) => void; disabled?: boolean; label?: string; align?: "start" | "end";
+  onOpenChange?: (open: boolean) => void; disabled?: boolean; label?: string; align?: "start" | "end"; phone?: "menu" | "sheet";
 };
 
 type ContextMenuProps = {
@@ -198,13 +218,13 @@ Interactive menus close synchronously; `@k2b/ui` does not inherit a host's
 generic `[popover]` exit transition. Animate decorative surfaces such as
 tooltips separately instead of delaying an action menu's dismissal.
 
-`ContextMenu` opens from the pointer context-menu event, the Context Menu key, or Shift+F10. From the keyboard it opens beside the focused element inside it, such as a row of a tree, and otherwise beside the wrapper. Pair it with a visible `Dropdown` when the same actions must remain discoverable without knowing the shortcut. For touch, [`GestureMenu`](../actions/gestures) adds swipe, double-tap, and long-press shortcuts to the same item model and opens the menu as a bottom sheet.
+`ContextMenu` opens from the pointer context-menu event, the Context Menu key, or Shift+F10. From the keyboard it opens beside the focused element inside it, such as a row of a tree, and otherwise beside the wrapper. Pair it with a visible `Dropdown` when the same actions must remain discoverable without knowing the shortcut. For touch, [`GestureMenu`](../actions/gestures) adds swipe, double-tap, and long-press shortcuts to the same item model and opens the menu as a bottom sheet on phones and at the finger from 48rem.
 
 Labels must describe the action without relying on their icons. External links open in a new tab with the appropriate relationship attributes.
 
 ## Runtime
 
-Both menus require hydrated browser code. `Dropdown` uses the native Popover API, measures the trigger and menu, and clamps every supported position to an eight-pixel viewport inset. It repositions on viewport resize and ancestor scrolling.
+Both menus require browser code. `Dropdown` uses the native Popover API, measures the trigger and menu, and clamps every supported position to an eight-pixel viewport inset. It repositions on viewport resize and ancestor scrolling.
 
 `ContextMenu` renders its menu through a Solid portal, clamps pointer and keyboard openings to the viewport, and closes on outside pointer input, a change of the viewport's size, or scrolling outside the menu. A resize event that leaves the viewport's size unchanged keeps it open. Closing with Escape restores focus to the element inside it that had focus as the menu opened, such as a row or a day of a composite widget, and otherwise to the wrapper.
 

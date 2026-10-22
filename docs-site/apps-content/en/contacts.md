@@ -5,7 +5,7 @@ section: Work
 order: 105
 description: Shared contact books with structured records, tags, notes, hierarchy, and access control.
 tags: [contacts, address-books, cli]
-updated: 2026-09-26
+updated: 2026-10-17
 ---
 
 # Contacts
@@ -47,6 +47,10 @@ another book removes relationships that cannot cross that boundary.
 Contacts owns records, hierarchy, import, export, and its application API.
 Cloud supplies identity and principals, resource access, resource-bound API
 keys, live application discovery, and shared Help and administration surfaces.
+
+Cloud administrators see a book in the Contacts app only with an access grant.
+**Administration → Contacts** lists every book and lets administrators change
+its access.
 
 ## Find detailed product help
 

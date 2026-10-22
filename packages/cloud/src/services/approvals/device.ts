@@ -1,3 +1,6 @@
+import { listApps } from "../../_internal/registry";
+import type { ActionCard } from "../../ai/chat/action-card";
+import { type ActionQuestionText, actionCardText, actionNoteLabel } from "../../ai/chat/action-text";
 import {
   APP_APPROVAL_LIMITS,
   type AppActionSummary,
@@ -5,9 +8,12 @@ import {
   appActionDigest,
   APP_ACTION_LIMITS as limits,
 } from "../../contracts/app-approval";
-import { CapabilityActionReviewSchema } from "../../contracts/capabilities";
 import { DEFAULT_LOCALE } from "../../server/locale";
+import { resolveAppIdentityPresentation } from "../../shared/app-presentation";
+import { get } from ".";
 import type { PendingApprovalRow } from "./list";
+import { listPending } from "./list";
+import { type ApprovalActionPolicy, loadApprovalActionPolicies, pendingApprovalCard } from "./question";
 
 const plain = (value: string): string =>
   value
@@ -21,10 +27,26 @@ const cut = (value: string, limit: number): string => {
   return points.length > limit ? `${points.slice(0, limit - 1).join("")}…` : value;
 };
 
+export { pendingApprovalCard };
+
+export const appApprovalText = (value: string, limit: number): string => cut(plain(value), limit);
+
+/**
+ * Incomplete sends must be decided with the complete review in the browser. Without the declared policy Cloud cannot
+ * rule out `sends`, so an incomplete question then stays in the browser too.
+ */
+export const appActionOffered = (view: AppActionView, question: ActionCard | ActionQuestionText, policy?: ApprovalActionPolicy): boolean =>
+  !(
+    view.truncated &&
+    (policy === null ||
+      ("reasonCode" in question ? question.reasonCode : question.reason.code) === "sends" ||
+      (policy && "ask" in policy && policy.ask === "sends"))
+  );
+
 /** A deterministic, plain-text snapshot; the digest binds the device's choice to everything it shows. */
 export const appActionView = async (
   row: PendingApprovalRow,
-  options: { issuer: string; appName: (appId: string, locale: string) => string },
+  options: { issuer: string; appName: (appId: string, locale: string) => string; policy?: ApprovalActionPolicy },
 ): Promise<AppActionView> => {
   let truncated = false;
   const text = (value: string, limit: number) => {
@@ -41,40 +63,20 @@ export const appActionView = async (
     // The snapshot, so renaming the chat does not change what the device signs.
     title: text(row.requesterTitle ?? "", limits.titleChars) || null,
   };
-  const lines = row.sentence.split(/\r?\n/).map(plain).filter(Boolean);
-  const first = lines[0] ?? plain(row.action);
-  const prefix = `${appName}: `;
-  const sentence = first.startsWith(prefix) && first.length > prefix.length ? first.slice(prefix.length) : first;
-  const review = CapabilityActionReviewSchema.safeParse(row.details);
-  let message: string | null;
+  const question = actionCardText(pendingApprovalCard(row, options.appName, options.policy));
+  truncated ||= question.incomplete;
   const details: AppActionView["details"] = [];
-  const detail = (label: string, value: string, format?: "date" | "date-time") => {
+  for (const field of question.rows) {
     if (details.length >= limits.details) {
       truncated = true;
-      return;
+      break;
     }
-    const cleanedLabel = text(label, limits.labelChars);
-    if (!cleanedLabel) return;
-    details.push({ label: cleanedLabel, value: text(value, limits.valueChars), ...(format ? { format } : {}) });
-  };
-  const messages: string[] = [];
-  const reviewLines = new Set<string>();
-  if (review.success) {
-    const cleaned = plain(review.data.message);
-    if (cleaned !== sentence) messages.push(cleaned);
-    reviewLines.add(cleaned);
-    for (const line of review.data.message.split(/\r?\n/)) reviewLines.add(plain(line));
-    for (const field of review.data.details ?? [])
-      detail(field.label, field.value, field.format === "date" || field.format === "date-time" ? field.format : undefined);
+    // The device protocol requires labels; a line an old review left unlabelled is shown as a note, not dropped.
+    const label = text(field.label, limits.labelChars) || text(actionNoteLabel(question.locale), limits.labelChars);
+    details.push({ label, value: text(field.value, limits.valueChars), ...(field.format ? { format: field.format } : {}) });
   }
-  for (const line of lines.slice(1)) {
-    if (reviewLines.has(line)) continue;
-    const match = /^([^:]{1,40}):\s+(.+)$/.exec(line);
-    if (match) detail(match[1]!, match[2]!);
-    else messages.push(line);
-  }
-  message = text(messages.join(" "), limits.messageChars) || null;
-  const boundedSentence = text(sentence, limits.sentenceChars);
+  const message = text(question.reason, limits.messageChars) || null;
+  const boundedSentence = text(question.question, limits.sentenceChars);
   const view: AppActionView = {
     actionId: row.id,
     app,
@@ -110,3 +112,21 @@ export const appActionSummary = (view: AppActionView): AppActionSummary => ({
   createdAt: view.createdAt,
   expiresAt: view.expiresAt,
 });
+
+/** Whether a pending approval can wake a device under the same mapping used by its inbox and detail view. */
+export const deviceOffersApproval = async (approvalId: string): Promise<boolean> => {
+  const request = await get(approvalId);
+  if (!request) return false;
+  const { items } = await listPending({ approverUserId: request.approverUserId, id: approvalId, limit: 1 });
+  const row = items[0];
+  if (!row) return false;
+  const apps = await listApps();
+  const appName = (id: string, locale: string) => {
+    const app = apps.find((entry) => entry.id === id);
+    return app ? resolveAppIdentityPresentation(app, locale).name : id;
+  };
+  const policy = (await loadApprovalActionPolicies([row]))(row);
+  // Offering does not sign a decision; the issuer has no effect on truncation or eligibility.
+  const view = await appActionView(row, { issuer: "", appName, policy });
+  return appActionOffered(view, pendingApprovalCard(row, appName, policy), policy);
+};

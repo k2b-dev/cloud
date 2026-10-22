@@ -1,6 +1,6 @@
 import { type BookReferences, renderNotebookBook } from "../lib/book-renderer";
-import { bookRendererMessages } from "../lib/book-renderer-messages";
-import { parseNotebookQueryBlocks, parseNotebookTocBlocks } from "../lib/query-blocks";
+import { bookRendererMessages, notebookBlockDiagnosticMessage } from "../lib/book-renderer-messages";
+import { parseNotebookQueryBlocks } from "../lib/query-blocks";
 import * as attachments from "./attachments";
 import { type NoteQueryResult, resolveNoteQuery } from "./note-query";
 import * as notebooks from "./notebooks";
@@ -33,10 +33,13 @@ export const resolveBookQueries = async (params: {
   boundNotebookId?: string | null;
   markdown: string;
   bypassAccess?: boolean;
+  /** Stops before the next query; a query without a result prints as unavailable. */
+  signal?: AbortSignal;
 }): Promise<Map<number, NoteQueryResult>> => {
   const queryResults = new Map<number, NoteQueryResult>();
   // The parser bounds blocks and each resolver bounds rows. Avoid database fan-out.
   for (const query of parseNotebookQueryBlocks(params.markdown).blocks) {
+    if (params.signal?.aborted) break;
     queryResults.set(
       query.line,
       await resolveNoteQuery({
@@ -57,12 +60,15 @@ export const resolveBookQueries = async (params: {
  * Titles of the notes whose headings this note links to, and the attachments it links to, both in the same
  * notebook. One query each, bounded by the distinct links in the note; the reader can already read the notebook.
  */
-export const resolveBookReferences = async (params: { notebookId: string; markdown: string }): Promise<BookReferences> => {
+export const resolveBookReferences = async (
+  params: { notebookId: string; markdown: string },
+  attachmentMetadata?: readonly attachments.Attachment[],
+): Promise<BookReferences> => {
   const headingNoteIds = [...params.markdown.matchAll(/note:\/\/([0-9a-zA-Z]{6})#/g)].map((match) => match[1]!);
   const attachmentIds = attachments.extractIds(params.markdown);
   const [titles, files] = await Promise.all([
     notes.titlesByShortIds({ notebookId: params.notebookId, shortIds: headingNoteIds }),
-    attachments.listByShortIds({ shortIds: attachmentIds, notebookId: params.notebookId }),
+    attachmentMetadata ?? attachments.listByShortIds({ shortIds: attachmentIds, notebookId: params.notebookId }),
   ]);
   return {
     notes: titles,
@@ -124,9 +130,10 @@ export const loadBookBlockPreview = async (params: {
     linkMode: params.markdown === undefined ? "readonly" : "write",
   });
   const t = bookRendererMessages.resolve([params.locale]).t;
-  const diagnostics = [...parseNotebookQueryBlocks(markdown).diagnostics, ...parseNotebookTocBlocks(markdown).diagnostics].map(
-    ({ line, code, path }) => ({ line, message: `${t.invalidBlock({ line })} ${path}: ${t[code]}` }),
-  );
+  const diagnostics = document.diagnostics.map((diagnostic) => ({
+    line: diagnostic.line,
+    message: `${t.invalidBlock({ line: diagnostic.line })} ${diagnostic.path}: ${notebookBlockDiagnosticMessage(diagnostic, params.locale)}`,
+  }));
   return {
     kind: "ok" as const,
     preview: {

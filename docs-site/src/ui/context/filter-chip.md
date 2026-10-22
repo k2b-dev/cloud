@@ -13,6 +13,8 @@ Keep frequently changed or required controls visible instead. Use `Select` for o
 ```tsx
 import {
   FilterChip,
+  FilterToggle,
+  type FilterToggleProps,
   type FilterChipSection,
 } from "@k2b/ui";
 ```
@@ -51,6 +53,7 @@ Changes are emitted immediately. This makes the component suitable for URL-backe
 | `disabled` | `boolean` | `false` | Disables the trigger and menu actions. |
 | `iconOnly` | `boolean` | `false` | Shows only the icon; the label stays the accessible name and appears as its tooltip. |
 | `variant` | `ButtonVariant` | none | Uses the standard button appearance, for example `input` beside a search field. Omit to keep the default filter field. |
+| `showValue` | `boolean` | `false` | An active chip names its first value instead of a count ("Tags: Customer"). Use it in `AppWorkspace.Head`. |
 
 ## Sections and options
 
@@ -74,6 +77,24 @@ Use section labels when the dropdown combines different filter dimensions. Icons
 
 The menu shows up to 32rem (and at most 80 % of the viewport height) before it scrolls, so several labelled sections stay visible at once.
 
+## Active values and surface
+
+The chip is a soft surface without a border. An active chip takes the
+selection fill, as described in [Colors and selection](/en/ui/surfaces/color).
+
+With `showValue`, an active chip names its first selected option in section
+order instead of a count: **Tags: Customer**, and with three selected values
+**Tags: Customer +2**. Pass only the filter's name as `label`, such as
+`"Tags"`. If that option has a color, a small dot appears before its name; the
+name always shows, so color is never the only signal. The chip grows with its
+value, so use `showValue` where the row may wrap, as in
+[the workspace head](/en/ui/layout/workspace#objects-on-the-left-views-in-the-head).
+There the chips share the view row while there is room, and `Head.filtered`
+shows one shared **Reset** beside them. The chip's own menu reset stays.
+
+Without `showValue`, an active chip keeps the count described below, so a
+toolbar built around a stable chip width keeps its geometry.
+
 ## Clear and reset
 
 Without `defaultValue`, an active filter shows its selected count and offers **Clear**. An empty `defaultValue={[]}` has the same clear/count behavior.
@@ -84,13 +105,13 @@ Reset emits `defaultValue` as it is, and Clear emits an empty selection. A row s
 
 ## Accessibility
 
-`label` is always the accessible name, including in `iconOnly` mode. Option labels must remain meaningful without relying on their icon or color.
+`label` is the accessible name, including in `iconOnly` mode. With `showValue`, an active chip's name also carries the value it shows. Option labels must remain meaningful without relying on their icon or color.
 
 The options are menu items: on touch devices each option is at least 44 px (2.75rem) tall, as described in [menus](/en/ui/actions/menus#touch-menus).
 
 ## Runtime
 
-`FilterChip` is interactive and must run in hydrated Solid client code. The parent page can remain server rendered.
+`FilterChip` is interactive and requires browser code. The parent page can remain server rendered.
 
 ## Example
 
@@ -122,4 +143,47 @@ const sections: FilterChipSection[] = [
   value={filters()}
   onValueChange={setFilters}
 />;
+```
+
+## FilterToggle
+
+Use `FilterToggle` for one on/off filter, such as **Service accounts** or
+**Only mine**. The parent owns `active` and updates the URL or filter state.
+It looks like a `FilterChip`, and an active toggle has the same selection fill.
+Selection changes only color and background, so neighboring chips stay in place.
+
+Pass `href` to render a native link that works without JavaScript. The active
+link carries `aria-current="true"`. Without `href`, it renders a button with
+`aria-pressed`; use `onClick` to update the controlled state. A disabled toggle
+renders a disabled button even when `href` is supplied.
+
+```tsx
+const [onlyMine, setOnlyMine] = createSignal(false);
+
+<FilterToggle
+  label="Only mine"
+  icon="ti ti-user"
+  active={onlyMine()}
+  onClick={() => setOnlyMine(!onlyMine())}
+/>;
+
+<FilterToggle
+  label="Service accounts"
+  icon="ti ti-user-key"
+  active={showServiceAccounts}
+  href={serviceAccountsToggleUrl}
+/>;
+```
+
+```ts
+type FilterToggleProps = {
+  label: JSX.Element;
+  icon: string;
+  active: boolean;
+  href?: string;
+  onClick?: (event: MouseEvent) => void;
+  title?: string;
+  disabled?: boolean;
+  class?: string;
+};
 ```

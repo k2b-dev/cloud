@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { collectConversationResourceObservations, isConversationResourceCursor } from "./resource-refs";
+import { ok } from "@k2b/stdlib";
+import { z } from "zod";
+import { compileCapabilities } from "../_internal/capabilities";
+import { cloudResourceHref, defineCapabilities } from "../contracts/capabilities";
+import { addCloudResourceHrefs, collectConversationResourceObservations, isConversationResourceCursor } from "./resource-refs";
 
 describe("collectConversationResourceObservations", () => {
   test("collects and deduplicates only structured resource refs", () => {
@@ -72,4 +76,87 @@ test("validates opaque resource cursors before they reach PostgreSQL", () => {
     ),
   ).toBe(false);
   expect(isConversationResourceCursor("not-json", "conversation")).toBe(false);
+});
+
+test("observations accept only validated hrefs and otherwise keep strict reference parsing", () => {
+  expect(
+    collectConversationResourceObservations({
+      refs: [
+        { type: "mail.draft", id: "one", title: "Draft", href: "/open/mail.draft/~one" },
+        { type: "mail.draft", id: "two", href: "https://foreign.example" },
+        { type: "mail.draft", id: "three", href: "//foreign.example" },
+        { type: "mail.draft", id: "four", href: "/open/mail.draft/~four", extra: true },
+      ],
+    }),
+  ).toEqual([{ ref: { type: "mail.draft", id: "one" }, title: "Draft", href: "/open/mail.draft/~one" }]);
+});
+
+test("enriches only top-level refs with live readers, preserving existing hrefs and all data", () => {
+  const manifest = compileCapabilities(
+    "demo",
+    defineCapabilities({
+      protocolVersion: 2,
+      types: { item: { title: "Item", description: "An item.", reader: "read" }, other: { title: "Other", description: "No reader." } },
+      queries: {
+        read: {
+          title: "Read",
+          description: "Read an item.",
+          input: z.object({ id: z.string().describe("Stable resource id.") }).strict(),
+          data: z.unknown(),
+          openWorld: false,
+          run: async () => ok({ data: {} }),
+        },
+      },
+    }),
+  ).manifest;
+  const apps = [{ appId: "demo", manifest }];
+  const data = { refs: [{ type: "demo.item", id: "nested" }] };
+  const view = {
+    ref: { type: "demo.item", id: "view" },
+    title: "View",
+    preview: "",
+    icon: "ti ti-box",
+    links: [{ rel: "open", href: "/view" }],
+  };
+  const existing = { type: "demo.item", id: "existing", href: "/existing" };
+  const noReader = { type: "demo.other", id: "other" };
+  const offline = { type: "offline.item", id: "offline" };
+  const malformed = { type: "demo.item", id: "bad", extra: true };
+  const illFormed = { type: "demo.item", id: "\ud800" };
+  // A maximum-length id stays linked even when URL encoding expands it.
+  const overlong = { type: "demo.item", id: "ü".repeat(512) };
+  const result = {
+    data,
+    refs: [{ type: "demo.item", id: "a/b", title: "Item" }, existing, noReader, offline, malformed, overlong, illFormed],
+    view,
+  };
+  const enriched: unknown = addCloudResourceHrefs(result, apps);
+  expect(enriched).toEqual({
+    ...result,
+    refs: [
+      { type: "demo.item", id: "a/b", title: "Item", href: "/open/demo.item/~a%2Fb" },
+      existing,
+      noReader,
+      offline,
+      malformed,
+      { ...overlong, href: cloudResourceHref(overlong) },
+      illFormed,
+    ],
+  });
+  const absolute: unknown = addCloudResourceHrefs(result, apps, "https://cloud.example");
+  expect(absolute).toEqual({
+    ...result,
+    refs: [
+      { type: "demo.item", id: "a/b", title: "Item", href: "https://cloud.example/open/demo.item/~a%2Fb" },
+      existing,
+      noReader,
+      offline,
+      malformed,
+      { ...overlong, href: new URL(cloudResourceHref(overlong), "https://cloud.example").href },
+      illFormed,
+    ],
+  });
+  expect(result.refs[0]).not.toHaveProperty("href");
+  expect(addCloudResourceHrefs(view, apps)).toBe(view);
+  expect(addCloudResourceHrefs(result, [])).toEqual(result);
 });

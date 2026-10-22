@@ -3,16 +3,22 @@ import { z } from "zod";
 import {
   CreateItemTemplateSchema,
   CreateTaskChecklistEntrySchema,
+  DeadlineAllDaySchema,
   DeadlineFilterSchema,
+  DeadlineInputSchema,
   EstimatedDurationMinutesSchema,
   ItemTemplateKindSchema,
   LocalDateSchema,
+  MAX_ITEM_REACTION_EMOJI,
   MAX_ITEM_TEMPLATES_PER_KIND,
   MAX_TASK_ATTACHMENTS,
   MAX_TASK_CHECKLIST_ENTRIES,
   PrioritySchema,
+  ReactionEmojiSchema,
   ResourceShortIdSchema,
   SpaceItemAttachmentSchema,
+  SpaceItemReactionSchema,
+  SpaceItemReactionsResponseSchema,
   SpaceItemResourceReferenceInputSchema,
   SpaceItemResourceReferenceSchema,
   SpaceTaskChecklistEntrySchema,
@@ -33,7 +39,13 @@ import {
   MAX_PREPARED_EVENT_INVITATION_CALENDAR_LENGTH,
   SpacesMailDestinationSchema,
 } from "./integration";
-import { CompletionInputSchema } from "./work-contracts";
+import { hasEscapedLineBreak } from "./lib/escaped-line-break";
+import { CompletionInputSchema, ProgressTaskSchema } from "./work-contracts";
+
+const markdownInput = <Schema extends z.ZodType<string | null | undefined>>(schema: Schema) =>
+  schema.refine((text) => typeof text !== "string" || !hasEscapedLineBreak(text), {
+    message: 'Contains "\\n" as two characters; send real line breaks, and put code or paths in backticks.',
+  });
 
 const TimestampSchema = z.string().datetime({ offset: true });
 const NullableTextSchema = z.string().nullable();
@@ -195,13 +207,22 @@ export const SpaceBrowseDataSchema = z
   .max(100);
 export const SpaceReadInputSchema = z.object({ id: SpaceIdSchema }).strict();
 
-const ItemAssigneeDataSchema = z.object({ id: UuidSchema, displayName: z.string().min(1).max(200) }).strict();
+const ItemAssigneeDataSchema = z
+  .object({
+    id: UuidSchema,
+    kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+    displayName: z.string().min(1).max(200),
+  })
+  .strict();
 const ItemTagDataSchema = z
   .object({ id: ResourceShortIdSchema, name: z.string().min(1).max(100), color: z.string().min(1).max(100) })
   .strict();
 const ItemAttachmentDataSchema = SpaceItemAttachmentSchema.extend({
   links: z.array(CapabilitySemanticLinkSchema).min(1).max(2),
 }).strict();
+
+export const ReactionInputSchema = z.object({ itemId: ItemIdSchema, emoji: ReactionEmojiSchema }).strict();
+export const ReactionDataSchema = SpaceItemReactionsResponseSchema;
 
 const ItemBaseDataShape = {
   id: ResourceShortIdSchema,
@@ -215,6 +236,7 @@ const ItemBaseDataShape = {
   assignees: z.array(ItemAssigneeDataSchema).max(100),
   tags: z.array(ItemTagDataSchema).max(100),
   relationsTruncated: z.boolean(),
+  reactions: SpaceItemReactionsResponseSchema.shape.reactions.optional(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
 };
@@ -223,7 +245,8 @@ export const TaskDataSchema = z
   .object({
     kind: z.literal("task"),
     ...ItemBaseDataShape,
-    deadline: TimestampSchema.nullable(),
+    deadline: DeadlineInputSchema.nullable(),
+    deadlineAllDay: DeadlineAllDaySchema,
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable(),
     activeBlockerCount: z.number().int().nonnegative(),
     priority: PrioritySchema.nullable(),
@@ -276,10 +299,25 @@ const ItemListBaseDataShape = {
   descriptionPreview: z.string().max(1000).nullable(),
   descriptionTruncated: z.boolean(),
   completedAt: TimestampSchema.nullable(),
-  assignees: z.array(z.object({ id: UuidSchema, displayName: z.string().min(1).max(100) }).strict()).max(3),
+  assignees: z
+    .array(
+      z
+        .object({
+          id: UuidSchema,
+          kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+          displayName: z.string().min(1).max(100),
+        })
+        .strict(),
+    )
+    .max(3),
   assigneeCount: z.number().int().nonnegative().describe("Total number of assignees; assignees may contain fewer entries."),
   tags: z.array(z.object({ id: ResourceShortIdSchema, name: z.string().min(1).max(50), color: z.string().min(1).max(20) }).strict()).max(3),
   relationsTruncated: z.boolean(),
+  reactions: z
+    .array(SpaceItemReactionSchema.pick({ emoji: true, count: true, own: true }).strict())
+    .max(MAX_ITEM_REACTION_EMOJI)
+    .optional()
+    .describe("Reaction counts in first-reaction order; item.read names the people. relationsTruncated marks a shortened list."),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
   links: ResourceLinksSchema,
@@ -288,7 +326,8 @@ export const TaskListItemDataSchema = z
   .object({
     kind: z.literal("task"),
     ...ItemListBaseDataShape,
-    deadline: TimestampSchema.nullable(),
+    deadline: DeadlineInputSchema.nullable(),
+    deadlineAllDay: DeadlineAllDaySchema,
     overdue: z.boolean().describe("True only for an open task whose deadline is before today in the configured application timezone."),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable(),
     activeBlockerCount: z.number().int().nonnegative(),
@@ -321,7 +360,7 @@ const ItemListBaseShape = {
   priority: z.array(PrioritySchema).max(4).optional().describe("Optional priority filter."),
   columnIds: ResourceIdListSchema.optional().describe("Optional column IDs returned by Read space."),
   tagIds: ResourceIdListSchema.optional().describe("Optional tag IDs returned by Read space."),
-  assigneeIds: UserIdListSchema.optional().describe("Optional user UUIDs returned by List assignable Space members."),
+  assigneeIds: UserIdListSchema.optional().describe("Optional person or service account UUIDs returned by List assignable Space members."),
   assignedTo: z
     .enum(["all", "assigned", "me", "unassigned"])
     .default("all")
@@ -354,19 +393,28 @@ export const SpaceAssigneeListInputSchema = z
   })
   .strict();
 export const SpaceAssigneeDataSchema = z
-  .object({ id: UuidSchema, displayName: z.string().min(1).max(200), description: z.string().max(300) })
+  .object({
+    id: UuidSchema,
+    kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+    displayName: z.string().min(1).max(200),
+    description: z.string().max(300),
+  })
   .strict();
 export const SpaceAssigneeListDataSchema = z.array(SpaceAssigneeDataSchema).max(100);
 
 const ItemRelationInputShape = {
-  assigneeIds: UserIdListSchema.optional().describe("Complete replacement set of user UUIDs returned by List assignable Space members."),
+  assigneeIds: UserIdListSchema.optional().describe(
+    "Complete replacement set of person or service account UUIDs returned by List assignable Space members. Dropping the account holding an active claim is refused; release it first with task.release.",
+  ),
   tagIds: ResourceIdListSchema.optional().describe("Complete replacement set of tag IDs returned by Read space."),
 };
 
 const TaskFieldsInputShape = {
   title: z.string().trim().min(1).max(200).optional().describe("Optional task title."),
-  description: z.string().max(5000).nullable().optional().describe("Optional task description; null clears it."),
-  deadline: TimestampSchema.nullable().optional().describe("Optional task deadline; null clears it."),
+  description: markdownInput(z.string().max(5000).nullable().optional().describe("Optional task description; null clears it.")),
+  deadline: DeadlineInputSchema.nullable()
+    .optional()
+    .describe("Task deadline: YYYY-MM-DD (all-day) or ISO date-time (timed); null clears it."),
   estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().optional().describe("Optional estimate in minutes; null clears it."),
   priority: PrioritySchema.nullable().optional().describe("Optional task priority; null clears it."),
 };
@@ -398,7 +446,7 @@ const TemplateSummaryDataShape = {
   name: z.string().min(1).max(100),
   dateRule: TemplateDateRuleSchema,
   timeOfDay: TimeOfDaySchema.nullable(),
-  rule: z.string().max(200).describe("The date rule as people read it, e.g. Wed or Thu · 17:00."),
+  rule: z.string().max(200).describe("The date rule as people read it, e.g. Wed or Thu · all day."),
   proposals: z.array(LocalDateSchema).max(3).describe("Next proposed local dates in timeZone, earliest first."),
   timeZone: z.string().max(100),
 };
@@ -421,8 +469,14 @@ export const TemplateDataSchema = z
     durationMinutes: EstimatedDurationMinutesSchema.nullable(),
   })
   .strict();
-export const TemplateCreateInputSchema = CreateItemTemplateSchema.safeExtend({ spaceId: SpaceIdSchema });
-export const TemplateUpdateInputSchema = UpdateItemTemplateSchema.safeExtend({ templateId: TemplateIdSchema });
+export const TemplateCreateInputSchema = CreateItemTemplateSchema.safeExtend({
+  spaceId: SpaceIdSchema,
+  description: markdownInput(CreateItemTemplateSchema.shape.description),
+});
+export const TemplateUpdateInputSchema = UpdateItemTemplateSchema.safeExtend({
+  templateId: TemplateIdSchema,
+  description: markdownInput(UpdateItemTemplateSchema.shape.description),
+});
 export const TemplateDeleteInputSchema = z.object({ templateId: TemplateIdSchema }).strict();
 export const TemplateDeleteDataSchema = z.object({ templateId: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
 
@@ -439,11 +493,11 @@ export const TaskCreateInputSchema = z
     spaceId: SpaceIdSchema,
     columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
     title: z.string().trim().min(1).max(200).optional().describe("Task title; required unless the template has one."),
-    description: z.string().max(5000).optional().describe("Optional task description."),
-    deadline: TimestampSchema.optional().describe("Optional task deadline."),
+    description: markdownInput(z.string().max(5000).optional().describe("Optional task description.")),
+    deadline: DeadlineInputSchema.optional(),
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.optional().describe("Optional estimate in minutes."),
     priority: PrioritySchema.optional().describe("Optional task priority."),
-    assigneeIds: UserIdListSchema.optional().describe("Optional assignee user UUIDs from this Space."),
+    assigneeIds: UserIdListSchema.optional().describe("Optional assignee person or service account UUIDs from this Space."),
     tagIds: ResourceIdListSchema.optional().describe("Optional tag IDs from this Space."),
     references: z.array(ItemResourceReferenceInputSchema).max(10).optional().describe("Cloud resources linked to the new task."),
     ...TemplateUseInputShape,
@@ -469,7 +523,7 @@ export const TaskUpdateInputSchema = z
 
 const EventFieldsInputShape = {
   title: z.string().trim().min(1).max(200).optional().describe("Optional event title."),
-  description: z.string().max(5000).nullable().optional().describe("Optional event description; null clears it."),
+  description: markdownInput(z.string().max(5000).nullable().optional().describe("Optional event description; null clears it.")),
   location: z.string().max(500).nullable().optional().describe("Optional event location; null clears it."),
   url: z.string().url().max(2000).nullable().optional().describe("Optional event URL; null clears it."),
   startsAt: TimestampSchema.optional().describe("Replacement event start; provide together with endsAt."),
@@ -486,14 +540,14 @@ export const EventCreateInputSchema = z
     spaceId: SpaceIdSchema,
     columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
     title: z.string().trim().min(1).max(200).optional().describe("Event title; required unless the template has one."),
-    description: z.string().max(5000).optional().describe("Optional event description."),
+    description: markdownInput(z.string().max(5000).optional().describe("Optional event description.")),
     location: z.string().max(500).optional().describe("Optional event location."),
     url: z.string().url().max(2000).optional().describe("Optional event URL."),
     startsAt: TimestampSchema.optional().describe("Event start timestamp; required unless a template sets the time."),
     endsAt: TimestampSchema.optional().describe("Event end timestamp after startsAt; give it together with startsAt."),
     allDay: z.boolean().optional().describe("Whether the event uses all-day presentation."),
     recurrence: RecurrenceDataSchema.optional().describe("Optional recurrence series."),
-    assigneeIds: UserIdListSchema.optional().describe("Optional assignee user UUIDs from this Space."),
+    assigneeIds: UserIdListSchema.optional().describe("Optional assignee person or service account UUIDs from this Space."),
     tagIds: ResourceIdListSchema.optional().describe("Optional tag IDs from this Space."),
     references: z.array(ItemResourceReferenceInputSchema).max(10).optional().describe("Cloud resources linked to the new event."),
     ...TemplateUseInputShape,
@@ -530,7 +584,14 @@ export const EventUpdateInputSchema = z
   })
   .refine(validTimeRange, { message: "End time must be after start time", path: ["endsAt"] });
 
-export const TaskSetCompletedInputSchema = CompletionInputSchema.safeExtend({ itemId: ItemIdSchema }).strict();
+export const TaskProgressInputSchema = ProgressTaskSchema.extend({
+  itemId: ItemIdSchema,
+  content: markdownInput(ProgressTaskSchema.shape.content),
+});
+export const TaskSetCompletedInputSchema = CompletionInputSchema.safeExtend({
+  itemId: ItemIdSchema,
+  result: markdownInput(CompletionInputSchema.shape.result),
+}).strict();
 export const ItemDeleteInputSchema = z.object({ itemId: ItemIdSchema }).strict();
 export const ItemDeleteDataSchema = z.object({ itemId: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
 
@@ -571,13 +632,13 @@ export const CommentCreateInputSchema = z
   .object({
     itemId: ItemIdSchema,
     recurrenceId: TimestampSchema.optional().describe("Optional recurring occurrence timestamp."),
-    content: z.string().trim().min(1).max(5000).describe("Comment content."),
+    content: markdownInput(z.string().trim().min(1).max(5000).describe("Comment content.")),
   })
   .strict();
 export const CommentUpdateInputSchema = z
   .object({
     commentId: ResourceShortIdSchema.describe("Stable public ID of the current user's comment."),
-    content: z.string().trim().min(1).max(5000).describe("Replacement comment content."),
+    content: markdownInput(z.string().trim().min(1).max(5000).describe("Replacement comment content.")),
   })
   .strict();
 export const CommentDeleteInputSchema = z

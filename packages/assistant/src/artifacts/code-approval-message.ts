@@ -1,3 +1,4 @@
+import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import { text } from "@k2b/stdlib";
 import { type HttpReview, isWebsiteRead } from "./http-contracts";
 import { artifactMessages } from "./messages";
@@ -41,10 +42,11 @@ export function codeApprovalMessage(approval: CodeApproval, locale: string): str
       ...(approval.bodyTruncated ? [artifact.httpTruncated] : []),
     ].join("\n");
   }
-  const reviewed = approval.review
+  const review = approval.review ? capabilityReviewView(approval.review, { timeZone: "UTC" }) : null;
+  const reviewed = review
     ? [
-        approval.review.message,
-        ...(approval.review.details ?? []).map((detail) =>
+        review.message,
+        ...(review.details ?? []).map((detail) =>
           detail.display === "block" ? `${detail.label}:\n${detail.value}` : `${detail.label}: ${detail.value}`,
         ),
       ]

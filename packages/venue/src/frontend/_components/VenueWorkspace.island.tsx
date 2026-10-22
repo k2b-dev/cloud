@@ -24,6 +24,7 @@ import {
   StatGrid,
   toast,
   useLocale,
+  watchAppHostWidth,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import type { FeedbackEntry, ShiftAssignment, UpcomingSlot } from "../../contracts";
@@ -40,11 +41,11 @@ import {
   scheduleHref,
   slotSelectionId,
   type VenueCalendarView,
-  WIDE_VIEWPORT_QUERY,
 } from "../schedule-url";
 import { reconcileChangedSettings } from "../settings-contract";
 import { createVenueSwitcher } from "./venue-switcher";
 import { CalendarSubscriptionDialog } from "./venue-workspace/calendar-subscription";
+import { feedbackCountTooltip, feedbackRatingTooltip, formatFeedbackRating } from "./venue-workspace/feedback-chart-tooltips";
 import { openVenuePublicDisplayDialog } from "./venue-workspace/public-display";
 import { PublicPageEditor } from "./venue-workspace/public-page-editor";
 import { ProgressBar, SlotStateLabel, slotStaffingLabel, slotState } from "./venue-workspace/schedule";
@@ -166,8 +167,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     url.searchParams.set("page", "");
     return `${url.pathname}?${url.searchParams.toString()}`;
   };
-  const formatAverage = (value: number) =>
-    `${new Intl.NumberFormat(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value)}/5`;
+  const formatAverage = (value: number) => formatFeedbackRating(value, locale());
   const feedbackChartLabels = createMemo(() => feedbackBuckets().map((bucket) => formatDateKey(bucket.date, locale())));
   const feedbackCountData = createMemo(() =>
     feedbackBuckets().map((bucket, index) => ({ label: feedbackChartLabels()[index] ?? bucket.date, value: bucket.count })),
@@ -194,6 +194,10 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     };
   });
   const feedbackChartYAxis = { domain: [1, 5] as [number, number], ticks: 5, format: (value: number) => `${value}/5` };
+  const feedbackRatingChartTooltip = createMemo(() =>
+    feedbackRatingTooltip({ dayLabels: feedbackChartLabels(), label: t().averageRating, locale: locale() }),
+  );
+  const feedbackCountChartTooltip = createMemo(() => feedbackCountTooltip({ label: t().ratings, locale: locale() }));
   // Shift sign-up needs staff access and a Venue that takes sign-ups for its shifts; the server enforces both.
   const canJoinShifts = () => canWrite(venue()) && venue().signupMode !== "free";
   /** Midday of the first and last day the calendar grid shows (weeks start on Monday). */
@@ -376,7 +380,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     onRemove: (assignment: ShiftAssignment) => void removePerson(assignment),
   });
 
-  /** Below 1024 px the detail opens as a bottom sheet; dismissing it ends the selection. */
+  /** Below a 64 rem app host the detail opens as a bottom sheet; dismissing it ends the selection. */
   let sheet: AbortController | null = null;
   const openSheet = () => {
     if (sheet) return;
@@ -450,15 +454,14 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
     }
   };
 
+  let workspaceContent: HTMLDivElement | undefined;
   onMount(() => {
-    const wideMedia = window.matchMedia(WIDE_VIEWPORT_QUERY);
+    if (workspaceContent) onCleanup(watchAppHostWidth(workspaceContent, 64, setWide));
     const phoneMedia = window.matchMedia(PHONE_VIEWPORT_QUERY);
     const updateViewport = () => {
-      setWide(wideMedia.matches);
       setPhone(phoneMedia.matches);
     };
     updateViewport();
-    wideMedia.addEventListener("change", updateViewport);
     phoneMedia.addEventListener("change", updateViewport);
     // Back and Forward move only between selections and filters of this page; its data stays loaded.
     const stopPopState = listenPopState(({ url }) => {
@@ -466,7 +469,6 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       setGapsOnly(url.searchParams.get("gaps") === "1");
     });
     onCleanup(() => {
-      wideMedia.removeEventListener("change", updateViewport);
       phoneMedia.removeEventListener("change", updateViewport);
       stopPopState();
     });
@@ -588,7 +590,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
 
       <AppWorkspace.Content>
         <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scrollPreserveKey={`venue-main-${venue().id}`}>
-          <div class="flex-1">
+          <div ref={workspaceContent} class="flex-1">
             <div class="flex flex-col gap-2">
               <Show when={dashboardQuery.error()}>
                 <div class="paper flex items-center justify-between gap-3 p-3 text-sm">
@@ -887,6 +889,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                           series={[{ label: t().averageRating, data: feedbackChartData() }]}
                           xAxis={feedbackChartXAxis()}
                           yAxis={feedbackChartYAxis}
+                          tooltip={feedbackRatingChartTooltip()}
                         />
                       }
                     >
@@ -896,6 +899,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                         series={[{ label: t().averageRating, data: feedbackChartData() }]}
                         xAxis={feedbackChartXAxis()}
                         yAxis={feedbackChartYAxis}
+                        tooltip={feedbackRatingChartTooltip()}
                         smooth={false}
                       />
                     </Show>
@@ -907,6 +911,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                       class="min-h-0 flex-1"
                       data={feedbackCountData()}
                       yAxis={{ ticks: 3, format: (value) => (Number.isInteger(value) ? String(value) : "") }}
+                      tooltip={feedbackCountChartTooltip()}
                     />
                   </div>
 
@@ -980,7 +985,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                                     class={
                                       star <= entry.rating
                                         ? "ti ti-star text-sm text-amber-500 dark:text-amber-400"
-                                        : "ti ti-star text-sm text-zinc-300 dark:text-zinc-600"
+                                        : "ti ti-star text-sm text-dimmed"
                                     }
                                   />
                                 )}
@@ -1036,14 +1041,14 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
             </div>
           </div>
         </AppWorkspace.Main>
-        {/* From 1024 px the detail floats beside the calendar; below, CSS hides it and a bottom sheet shows the same detail. */}
+        {/* From a 64 rem app host the detail floats beside the calendar; below, CSS hides it and a bottom sheet shows the same detail. */}
         <AppWorkspace.Detail
           id="venue-shift-detail"
           onClose={clearSelection}
           open={selection() !== null && wide()}
           width="md"
           resizable={false}
-          class="max-lg:hidden!"
+          class="venue-shift-detail"
         >
           <Show when={selection()}>
             {(current) => <ShiftDetailPanel selection={current()} {...detailProps()} onClose={clearSelection} />}

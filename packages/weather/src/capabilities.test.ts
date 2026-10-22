@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  type CapabilityInvocationResult,
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
@@ -432,3 +433,22 @@ for (const [locale, admin] of [
     expect(unavailable.error.message).not.toContain("private body");
   });
 }
+
+test("every declared Type has a reader open-link case or an explicit reason", async () => {
+  spyOn(weatherService.location.saved, "get").mockResolvedValue(location);
+  const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+    location: {
+      reader: "location.read",
+      read: async () => weatherCapabilities.queries["location.read"].run({ id: locationId }, userContext),
+    },
+  };
+  expect(Object.keys(cases).sort()).toEqual(Object.keys(weatherCapabilities.types).sort());
+  for (const [typeId, type] of Object.entries(weatherCapabilities.types)) {
+    const fixture = cases[typeId];
+    if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
+    expect(fixture.reader).toBe(type.reader);
+    const result = await fixture.read();
+    if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+    assertResourceOpenLink(result.data);
+  }
+});

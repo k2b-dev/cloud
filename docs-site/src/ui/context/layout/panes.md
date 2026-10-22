@@ -6,7 +6,9 @@
 
 Use it for code editors, query explorers, dashboard editors, and other workspaces where users open, close, move, or split peer tools.
 
-Use `Tabs` for one fixed tab group. Use `AppWorkspace.MainPane` for a fixed list-and-reader layout.
+Use `Tabs` for one fixed tab group. Use `AppWorkspace.MainPane` for a fixed
+list-and-reader layout, with 12 px of space between regions. Their resize
+grips appear on hover, keyboard focus, or drag, without a separator line.
 
 ## Import
 
@@ -156,9 +158,9 @@ Start a focused tab move with Space or Enter, select a visible target with the a
 
 ## Runtime
 
-`Panes` is controlled interactive Solid code and must be hydrated. Its initial active contents can render on the server.
+`Panes` is controlled interactive Solid code and requires browser code. Its initial active contents can render on the server.
 
-Persist only `PanesLayout`. Runtime descriptors contain functions and stay in application code; they never cross the serialization boundary. Use the same deterministic initial layout during SSR and hydration.
+Persist only `PanesLayout`. Runtime descriptors contain functions and stay in application code; they never cross the serialization boundary. Use the same deterministic initial layout on the server and in the browser.
 
 ## Example
 

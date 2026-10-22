@@ -22,21 +22,34 @@ the same `content` element when the content itself has not changed; a new
 element replaces the old one.
 
 Use `leading` when an activity needs a host-owned visual such as a favicon. Use
-the optional `accent` only for source or application identity; `success` and
+the optional `accent` only for source or application identity; `success`, `warning`, and
 `danger` tones continue to own semantic state colors. Keep the rich activity
 body in the host so `Chat` remains independent from tool protocols.
 Activity labels use the normal font weight, and their description has the same
-size; hierarchy comes from color and indent. Use `ariaLabel` on an expandable
-activity whose visible text abbreviates, for example "Worked 3 minutes, 49
-steps" for "Worked 3 min · 49 steps".
+size; hierarchy comes from color and indent. Use `ariaLabel` only for the
+whole-row summary form when its visible text abbreviates, for example "Worked
+3 minutes, 49 steps" for "Worked 3 min · 49 steps".
 Set `busy` on an activity while work is running. It applies a quiet horizontal
-text-color-to-transparency shimmer to the activity icon and title; reduced-
-motion clients keep the text static. Streaming messages retain the minimal
-three-dot indicator. Applications should not add another spinner or visible
-generating label.
+text-color-to-transparency shimmer to the title and static icon. Without a
+semantic tone or `accent`, the busy icon uses `--k2b-ai-accent`, also with
+reduced motion. Spinning icons stay solid so they remain visible. Reduced-motion
+clients keep the text static. Streaming messages retain the minimal three-dot
+indicator. Applications should not add another generating label.
 Activity bodies are inset beneath their row by default. Set `bodyInset={false}`
 when the body is a peer list that should align with the activity row itself.
-An expandable row opens on a press anywhere in it, also while its label or
+On a chat timeline narrower than 48 rem or on a phone, labels wrap when the
+row has no description. Rows with descriptions keep one line and truncate the
+muted metadata first. Wide surfaces keep one line with an ellipsis. Set `wrap`
+when the whole label and description must remain visible at every width; the
+icon stays on the first line.
+
+Put one `Chat.Activity.Toggle` in the `label` when only a few words, such as
+"3 of 4 tasks", should open the body. The toggle is a button with its chevron
+right after the words. The rest of the row stays ordinary content, and chips
+keep their links. Pass `children` or `renderBody` for the body. Without a body,
+the toggle renders plain text. Use one toggle per row.
+Without a toggle, an expandable row uses `<details>` and `<summary>` and opens
+on a press anywhere in it, also while its label or
 trailing text re-renders, such as a ticking clock: presses land on the row, and
 only links, buttons, and other controls inside it stay their own targets. With
 a controlled `open`, the body renders as soon as the row opens, before the host
@@ -52,7 +65,7 @@ import { Chat, type ChatTimelineItem } from "@k2b/ui";
 
 `Chat.Composer` calls `onSubmit` with an `intent`, untrimmed text, generic attachments, and optional inline mentions. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft, attachments, and mentions; failures are passed to `onError`.
 
-Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
+Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu unless `addOpensCommands` opens the command list; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
 
 Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
@@ -81,7 +94,124 @@ scrollbar treatment.
 
 Pass `timeLabel` for visible localized timestamps and `createdAt` for the
 machine-readable `dateTime` value. `createdAt` alone intentionally renders no
-runtime-locale text, which keeps SSR and hydration stable.
+runtime-locale text, which keeps the server HTML and the browser render identical.
+
+## Questions and outcomes
+
+Use `Chat.Decision` for one question in a conversation. The host owns the answer,
+execution, expiry, and any policy change. Use verb-and-target answers such as
+"Send to Lea" and "Keep draft"; never offer "Approve all". Answers are at
+least 44 px high; on phones they share the row, and a long label wraps
+inside its button.
+
+The sentence, preview title, header rows, and answers share one left edge, with
+no separate column or card surface. Reason, preview line, outcome, and activity
+text start 24 px from that edge, after their icon. The sentence uses
+`--k2b-chat-decision-size`: 18 px, or 17 px when the chat timeline is narrower
+than 48 rem, at weight 400. Outside a timeline, the window sets this breakpoint.
+On narrow surfaces the answers grow to share the row.
+
+Use [ReferenceChip](/en/ui/content/label-chip#referencechip) for objects, places,
+people, and times inside the sentence. Chips show at most 40 user-perceived
+characters, cut in the middle, while retaining the full title as their accessible
+name and tooltip. Person chips show a name and avatar, never an address. Put
+addresses in `Chat.Preview.Header`. A gone object or place is struck through and
+has no link.
+
+Set `state` synchronously in each answer's `onSelect`, before awaiting work, so
+the question collapses immediately. `open` shows the question;
+`sending`, `decided`, and `expired` show the `outcome` slot. An answer given here focuses `Chat.Outcome` and
+announces its current sentence. An outcome action that reopens the question
+returns focus to the sentence and briefly highlights it. A host that cannot
+take an answer returns the question from `sending` to `open`; focus then goes
+back to the sentence as well. Changes from elsewhere do not move focus. To
+lead the person to an open question from elsewhere, such as a list of waiting
+questions, scroll to its `anchorId` and focus `.k2b-chat-decision__sentence`
+(`tabindex="-1"`): any focus that does not come from a press on the sentence
+itself briefly highlights it the same way. Handle rejected answer callbacks
+with `onAnswerError` and show a recoverable outcome.
+
+Pass `Chat.Outcome` only the lines this flow can reach. Every supplied line
+occupies the same grid cell, including hidden alternatives, so the longest line
+reserves the height. This keeps running-to-done transitions still without
+reserving space for unrelated outcomes. A part that arrives later, such as the
+time a call finished, needs its room from the start too: give the hidden line a
+stand-in of the same width, such as the widest time of the day, until the real
+value is known, so the line cannot wrap when it arrives. Only the current line is visible and
+accessible; inactive action links leave the tab order. `actions` under a line
+stay in the cell while the line is hidden, so a line with buttons reserves
+their row from the start. When a line's own action switches `current`, such
+as "Send again" to running, focus stays on the outcome instead of the hidden
+link. `running` sets `aria-busy` on the words only, never
+on an ancestor of the live region. Pass `onActionError` to receive an error a
+line's `action` throws or rejects with, and show a recoverable line. While an
+action's promise is pending, further presses are ignored. A polite
+live region starts empty in SSR and on initial history
+mount; it announces an answer given here and every subsequent `current` change,
+including detail, time, and action link text with spaces between them; buttons
+under the line are not announced.
+
+Use `unavailable` to disable confirm and remember while keeping decline enabled.
+Its reason replaces the original reason in the same described element. The
+optional quiet `remember` answer is host policy: the component neither stores
+consent nor widens permissions. On touch screens it is a full 44 px row, so a
+low tap on either answer never reaches it.
+
+Compose the actual content with `Chat.Preview`: header fields stand immediately
+before their values; `emphasis` identifies a Bcc label; `note` can say when a mail
+will be sent. `Excerpt` preserves line breaks and fades after about three lines.
+`ReadMore` should open the exact version being reviewed. When there is no such
+page, `ShowAll` shows the rest of an excerpt in place: give the `Excerpt` an
+`id`, pass it as `controls`, set `expanded` on show, and remove the button. The
+focus then moves to the text. Decide whether to offer it from the text itself,
+not from a measurement, so the server and the first browser frame agree, and
+set `expanded` on every text without a page that you do not offer it for, so an
+estimate that is too short never clips anything.
+`Lines` names a list of
+consequences, and `Line` can also stand alone for an attachment or warning.
+`People` shows overlapping decorative avatars followed by readable names.
+A preview inside an activity body uses 13 px, including metadata and warnings.
+Elsewhere it keeps 14.5 px.
+
+Use `Chat.Mark change="added"` for new words and `change="removed"` for removed
+words, or mark an entire preview line with its `mark` prop. Screen readers hear
+"new:" / "removed:" in English and "neu:" / "weg:" in German. Added marks use
+`--k2b-mark-accent`, which defaults to `--k2b-ai-accent`; a host may override it
+for the local context. Use `Chat.Activity tone="warning"` for a partial result
+or an answer whose outcome is not yet known. An activity `label` may be a
+sentence with `ReferenceChip`s, such as "Read [Week 42]". With
+`Chat.Activity.Toggle`, chips in an expandable row keep their `href`. In the
+whole-row summary form, give chips no `href` to avoid nested controls.
+
+```tsx typecheck
+import { Chat, ReferenceChip, type ChatDecisionState } from "@k2b/ui";
+import { createSignal } from "solid-js";
+
+export function MailQuestion() {
+  const [state, setState] = createSignal<ChatDecisionState>("open");
+  const [current, setCurrent] = createSignal("running");
+  return <Chat.Decision
+    state={state()}
+    sentence={<>Send the draft to <ReferenceChip kind="person" name="Lea Berg" />?</>}
+    reason={{ text: "You asked to check mail before sending." }}
+    preview={<Chat.Preview><Chat.Preview.Title>Workshop delivery</Chat.Preview.Title></Chat.Preview>}
+    confirm={{ label: "Send to Lea", onSelect: () => {
+      setCurrent("running");
+      setState("sending");
+      // Complete the host-owned operation, then set current and state.
+    } }}
+    decline={{ label: "Keep draft", onSelect: () => {
+      setCurrent("declined");
+      setState("decided");
+    } }}
+    outcome={<Chat.Outcome current={current()} lines={{
+      running: { tone: "running", text: "Sending the mail to Lea." },
+      done: { tone: "done", text: "Sent the mail to Lea.", time: "09:41" },
+      declined: { tone: "off", text: "Kept the draft.", detail: "You declined." },
+    }} />}
+  />;
+}
+```
 
 ## API reference
 
@@ -90,7 +220,7 @@ type ChatRole = "user" | "assistant" | "system" | "tool";
 
 type ChatMessageStatus = "pending" | "streaming" | "complete" | "error";
 
-type ChatActivityTone = "neutral" | "ai" | "success" | "danger";
+type ChatActivityTone = "neutral" | "ai" | "success" | "warning" | "danger";
 
 type ChatActionBase = {
   id: string; label: string; icon?: string; variant?: "danger"; disabled?: boolean; pressed?: boolean;
@@ -123,18 +253,99 @@ type ChatMention = { start: number; end: number; attachment: ChatAttachment };
 
 ```
 
+### Decision, outcome, preview, and marks
+
+`Chat.Decision`, `Chat.Outcome`, `Chat.Preview`, and `Chat.Mark` are members of
+`Chat`; import their types directly from `@k2b/ui`.
+
+```ts
+type ChatDecisionState = "open" | "sending" | "decided" | "expired";
+type ChatDecisionAnswer = {
+  label: string; icon?: string; onSelect: () => void | Promise<void>;
+};
+type ChatDecisionReason = {
+  text: JSX.Element; icon?: string; tone?: "neutral" | "danger" | "warning";
+};
+type ChatDecisionProps = {
+  state: ChatDecisionState; sentence: JSX.Element; reason: ChatDecisionReason;
+  preview?: JSX.Element;
+  confirm: ChatDecisionAnswer & { variant?: "ai" | "primary" | "danger" };
+  decline: ChatDecisionAnswer; remember?: ChatDecisionAnswer;
+  unavailable?: ChatDecisionReason; outcome?: JSX.Element;
+  onAnswerError?: (error: unknown) => void; anchorId?: string | number; class?: string;
+};
+type ChatOutcomeTone = "running" | "done" | "off" | "waiting" | "warning" | "error";
+type ChatOutcomeLine = {
+  tone: ChatOutcomeTone; text: JSX.Element; detail?: JSX.Element; time?: string;
+  icon?: string; action?: { label: string; onSelect: () => void | Promise<void> };
+  actions?: JSX.Element;
+};
+type ChatOutcomeProps = {
+  lines: Readonly<Record<string, ChatOutcomeLine>>; current: string;
+  onActionError?: (error: unknown) => void; anchorId?: string | number; class?: string;
+};
+type ChatPreviewPerson = { name?: string; address?: string };
+type ChatPreviewHeaderRow = {
+  label: string; people?: readonly ChatPreviewPerson[]; value?: JSX.Element; emphasis?: boolean;
+};
+type ChatPreviewProps = { children: JSX.Element; class?: string };
+type ChatPreviewHeaderProps = { rows: readonly ChatPreviewHeaderRow[]; note?: JSX.Element };
+type ChatPreviewTitleProps = { children: JSX.Element; meta?: JSX.Element };
+type ChatPreviewReadMoreProps = { href: string; children: JSX.Element; title?: string };
+type ChatPreviewLineProps = {
+  icon: string; accent?: string; tone?: "default" | "muted" | "warning";
+  mark?: "added" | "removed"; meta?: JSX.Element; children: JSX.Element;
+};
+type ChatPreviewPeopleProps = {
+  people: readonly { name: string; src?: string | null }[]; children: JSX.Element;
+};
+type ChatMarkProps = { change: "added" | "removed"; children: JSX.Element };
+```
+
+| Member | Props / behavior |
+| --- | --- |
+| `Chat.Decision` | `ChatDecisionProps`; confirm defaults to `ai`, decline to `subtle`, remember to `text`. Reason defaults to `neutral` and an info icon. |
+| `Chat.Outcome` | `ChatOutcomeProps`; tone chooses the default icon, `icon` overrides it. The root accepts programmatic focus with `tabindex=-1`. |
+| `Chat.Preview` | `ChatPreviewProps`; groups preview parts without a surface. |
+| `Chat.Preview.Header` | `ChatPreviewHeaderProps`; semantic description list with optional note. |
+| `Chat.Preview.Title` | `ChatPreviewTitleProps`; title with quiet trailing metadata. |
+| `Chat.Preview.Sentence` | `{ children: JSX.Element }`; a rule or instruction. |
+| `Chat.Preview.Excerpt` | `ChatPreviewExcerptProps`; fading text excerpt; `expanded` shows it whole and makes it focusable. |
+| `Chat.Preview.ReadMore` | `ChatPreviewReadMoreProps`; ordinary link to the reviewed version. |
+| `Chat.Preview.ShowAll` | `ChatPreviewShowAllProps`; quiet button that shows an excerpt whole in place and focuses it. |
+| `Chat.Preview.Lines` | `{ label?: string; children: JSX.Element }`; `ul` with an optional accessible name. |
+| `Chat.Preview.Line` | `ChatPreviewLineProps`; `li` inside Lines, otherwise `p`; accent colors its decorative icon. |
+| `Chat.Preview.People` | `ChatPreviewPeopleProps`; decorative avatars and host-supplied names. |
+| `Chat.Mark` | `ChatMarkProps`; semantic `mark` or `del` with a localized spoken prefix. |
+
 ### Commands and file selection
 
 ```ts
 type ChatCommandContext = {
   setValue: (value: string) => void; submit: () => void; focus: () => void;
+  openModelSelection: () => Promise<string | null>;
 };
 
+type ChatCommandResult = void | "cancelled" | { done: string } | { mention: ChatAttachment };
+type ChatCommandDraft = { value: string; mentions: readonly ChatMention[] };
+type ChatCommandOpenResult = void | "cancelled" | { failed: string };
+
 type ChatCommand = {
-  name: string; description: string; icon?: string; label?: string; disabled?: boolean;
-  action?: (context: ChatCommandContext) => void | Promise<void>;
+  id?: string; name: string; description: string; icon?: string; label?: string;
+  keywords?: readonly string[]; reason?: string; busyLabel?: string; disabled?: boolean;
+  section?: string; scope?: string; hiddenUntilSearch?: boolean; app?: string; recent?: boolean;
+  action?: (context: ChatCommandContext) => ChatCommandResult | Promise<ChatCommandResult>;
   mention?: ChatAttachment;
+  open?: (draft: ChatCommandDraft, signal: AbortSignal, follow: () => void) => Promise<ChatCommandOpenResult>;
+  selected?: boolean; searchAgain?: boolean; persistent?: boolean;
 };
+
+type ChatCommandSection = {
+  id: string; label: string; searched?: boolean; searchOnly?: boolean; overviewOnly?: boolean;
+  fixedWhileOpen?: boolean; pending?: boolean;
+};
+type ChatCommandScope = { id: string; title: string; words: readonly string[] };
+type ChatCommandSearch = { scope?: string; opening: number };
 
 type ChatFileSelection = {
   onSelect: (files: readonly File[]) => void | Promise<void>; onError?: (error: unknown) => void;
@@ -144,6 +355,182 @@ type ChatFileSelection = {
 type ChatPasteHandler = (event: ClipboardEvent & { currentTarget: HTMLTextAreaElement; target: Element }) => void;
 
 ```
+
+Use `open(draft, signal, follow)` for a row that saves before opening another application.
+`draft` contains the value without `/…` and the adjusted mentions. During the
+promise, editing waits, the token and list stay in place, and the row shows
+**Opening …** with a spinner (or `busyLabel`). A `void` result removes the token
+in one undo step. `"cancelled"` changes nothing. `{ failed }` keeps the list and
+draft unchanged and replaces the row description; choosing it again retries.
+A rejection keeps the token, closes the list, and shows the error message in
+the status line. Escape, a press outside, or moving the caret away closes the
+list and cancels the opening: `signal` aborts, editing returns at once, and
+the token stays; a later result changes nothing. A new `draftKey` cancels like
+Escape unless the opener called `follow()` right before changing it itself,
+such as to a chat it creates to save into. Then the next change moves the busy
+line to the status line, and Escape still cancels. Any further unannounced
+change cancels too. `signal` also aborts when the opening ends in `{ failed }`
+or a rejection, so the opener can save the draft with its token again; it stays
+quiet only on success.
+
+Set `ChatCommandSection.pending` while local rows are loading. Put this section
+last. Its heading spins and its end holds three placeholders in the overview,
+one while searching; **Nothing found** waits for it. When the rows arrive in the
+overview, the list keeps the height it had with the placeholders until the next
+keystroke and scrolls what does not fit, so no visible row moves. `persistent` keeps a row in every search of
+its section, after matching rows, so an explicit retry remains reachable.
+`searchAgain: true` starts a new opening and runs `searchCommands` again.
+
+Give `commandSections` in display order and each command a `section` id. The
+order stays fixed while searching. The overview keeps consumer row order;
+searching ranks rows inside each section. Commands without a known section
+appear at the end without a heading. Without `commandSections`, the list stays
+flat. Each `id` (defaulting to `name`) appears once among visible matches: the
+first section wins, then a matching static row wins over a server row in the
+same section. A static row without a match never hides a fresh server result.
+
+Search ignores case, accents and German umlauts (`ä=a`, `ß=ss`). Its ranking
+ladder is: title starts with query, title word starts with query, title contains
+query, keyword starts with query, `app` starts with query, description word
+starts with query (3+ characters), then one typo in a title word or keyword
+prefix (4+ characters). The title is `label ?? name`; when a label exists,
+`name` remains a search word alongside `keywords`. `app` is searchable and is
+not displayed. Equal ranks keep static rows first, then server rows, each in
+consumer order. Set `recent: true` on a row this person used recently: while
+searching, a matching recent row moves one step up the ladder and comes before
+rows of equal rank, so a recent row whose title contains the query comes
+before one whose title word starts with it, but after a title start. The
+overview keeps consumer order.
+
+`searchCommands(query, signal, { scope, opening })` runs after a 120 ms debounce. Fresh
+server results remain visible even without a local match, after matching rows.
+Retained results from an earlier query must match the new query; changing scope
+clears them. Marking follows the top row until an arrow key moves it, then
+stays on that entry while results arrive. Typing starts at the top again.
+Enter and Tab wait for fresh server rows; clicks may choose retained matching
+rows. Local matches remain available while loading.
+Server rows are requested again when the composer’s running state changes, so
+reasons that depend on it stay current.
+
+The `opening` number identifies one opening of the list. It stays the same
+while typing, narrowing, or moving with arrow keys. A new `/`, closing and
+reopening the list, or switching drafts starts another opening. Consumers can
+cache discovery per opening with their own cancellation controller; the search
+`signal` still belongs to one query.
+
+Set `searchAgain: true` for a retry row. Enter, Tab, and click preserve the
+current `/…`, query, and scope, run no action, and immediately search with a new
+opening. Current matching rows remain visible while loading.
+
+Use `matchesChatCommand(command, query)` from `@k2b/ui` to filter server rows
+with the same ranking rules. It returns true for an empty or whitespace query.
+Fresh server rows are never removed by the composer, so consumers own that
+filtering.
+
+Use `commandScopes` for first-word narrowing. Only a word followed by
+whitespace can resolve: an exact word wins if unique. Otherwise, with at least
+three letters, the scope with the shortest extension wins; a tie resolves to
+nothing. Both paths ignore case and accents. A resolved scope shows one group
+with `scope.title`, containing only server rows. The search callback receives
+the rest of the query and `{ scope: scope.id, opening }`; otherwise it receives
+the whole query and `{ scope: undefined, opening }`.
+
+Tab on a command with `scope` replaces the query after `/` with that scope's
+`words[0]` and a space, through normal undoable editing. Enter runs its action or
+inserts its mention; a scope-only row also narrows on Enter. An unavailable
+row keeps its reason and never narrows.
+
+An action may return `{ mention: attachment }` after a picker resolves. The
+reference replaces the original token at its position, using the same edit as
+a row's `mention`. Ctrl/⌘+Z restores `/…` in one step. Returning `"cancelled"`
+keeps the token. If the draft changed, or moved to another `draftKey`, while
+the picker was open, the composer inserts nothing and shows a visible
+explanation.
+
+Set `attachFiles: true` to use the composer's `fileSelection` from a slash row.
+Its `choose` function runs synchronously inside the key or click activation so
+the device's file dialog can open. The token leaves; resolving with `[]` brings
+it back if the draft is unchanged. The same `onSelect` handles selected files.
+A row with `reason` cannot open file selection.
+
+Use `commandFallback({ query, scope })` for a final row built immediately from
+the current search. Unscoped, it follows **Nothing found for “…”** when no rows
+match and does not count as a match. In a scope, it is the last row inside that
+group. Return `undefined` when no fallback applies. It participates in keyboard
+selection; adding a space after an unmatched unscoped query still closes the
+list. The overview has no fallback.
+
+Set `hiddenUntilSearch` for rows that do not apply to the current context.
+They are absent from the overview and appear with their reason when matched;
+scoped results do not hide them. A `searched` section shows a quiet heading
+spinner while loading. An empty section gets a heading and placeholder only
+before the first search settles for this slash token and scope, or when retained
+results still contain a row for that section. Other empty sections stay hidden
+while the next query loads. A resolved scope always keeps its title and shows a
+placeholder while loading without rows. Placeholders are skipped by arrow keys.
+A `searchOnly` section, such as
+files of the current chat, is absent from the overview, placeholder included,
+and appears while searching or narrowed. An `overviewOnly` section, such as
+recently used references, appears only in the overview; while searching or
+narrowed, the same entries can appear in their own sections as `recent` rows.
+
+Set `fixedWhileOpen` on a section whose local rows load in the background and
+that sits above others, such as recently used references at the top. Its rows
+are the ones it had when this `/` opened the list. A row that arrives while
+the list is open waits for the next `/`, so it never pushes a visible row
+down; a retry row's new opening does not count. Rows that go away still leave
+at once. Unlike `pending`, the section reserves no place: when its rows are
+not there yet, the list opens without it.
+
+A settled empty list says `Nothing found for “<query>”`. A scope with no search
+text uses the generic empty message. After an unmatched query settles, a
+trailing space closes the list for that `/` and leaves ordinary text. Resolving
+a scope keeps it open. `/ ` opens nothing, so `50 / 2` stays arithmetic.
+A separate polite screen-reader status announces the number of suggestions
+350 ms after the visible model settles, without repeating the same text for
+the same query. Action status and unavailable reasons use their own region.
+
+Each row shows a title and at most one description or reason beneath it. Both
+wrap; nothing is truncated. The title match is bold. Rows have no preview,
+badges, key hints, or `/name` suffix. Groups have labelled headings; arrow keys
+wrap across all rows and skip placeholders. Emoji suggestions keep their own
+markup and selection behavior.
+
+Set `selected: true` to show a trailing check mark and localized visually
+hidden “selected” text. This marks a chosen value independently of the row
+currently marked by the arrow keys.
+
+Command actions can call `await context.openModelSelection()` to open the
+composer's own model control. It resolves with the chosen model id after
+`onModelChange` runs, or `null` on Escape, outside close, or an unavailable
+control (including running, no models, no change callback, or `footerContent`
+replacing the footer). For the states your application knows, give the command
+a `reason`, or drop its action so Enter narrows to its `scope`; it never
+resolves `null` silently. The control stays
+usable while that command awaits a choice. Return `"cancelled"` on null
+to restore the token. The action's normal completion restores field focus.
+
+Set `reason` when a command is unavailable. It replaces the description and is
+associated with the option for screen readers. Enter, Tab, and click keep the
+list open, perform no action, and announce the reason. Legacy `disabled` still
+prevents selection and keeps the description.
+
+An action returning `"cancelled"` restores the exact `/…` token and mentions
+when the draft is unchanged. Rejections use the same restoration guard, and a
+restored draft leaves no undo step behind. The caret returns after the token
+and the list stays closed until the next edit.
+The persistent status line shows `busyLabel` while working, `{ done }` for
+about three seconds, and a failure message until the next edit, the next
+command, or a switch to another draft.
+Command failures are reported once there, without calling `onError`; only a
+failure that arrives after the composer unmounted goes to `onError`.
+The visible status hides while suggestions are open and takes no layout space.
+
+Only plain Enter or Tab chooses a command. Shift+Enter breaks the line,
+Shift+Tab moves focus back, and Ctrl/⌘+Enter sends even with suggestions open.
+Nothing chooses during IME composition. Escape closes suggestions for the
+current `/`, including while more text is typed into that token; a new `/`
+can open them again.
 
 ### Root and timeline
 
@@ -160,7 +547,7 @@ type ChatMessageItem = {
 };
 
 type ChatActivityItem = {
-  kind: "activity"; id: string; label: string; description?: string; icon?: string; leading?: JSX.Element;
+  kind: "activity"; id: string; label: JSX.Element; description?: string; icon?: string; leading?: JSX.Element;
   accent?: string; tone?: ChatActivityTone; busy?: boolean; trailing?: JSX.Element; defaultOpen?: boolean;
   anchorId?: string | number; content?: JSX.Element; class?: string;
 };
@@ -187,10 +574,11 @@ type ChatComposerProps = {
   runningSubmitIntent?: "steer" | "queue"; onStop?: () => void | Promise<void>;
   onError?: (error: unknown) => void; state?: ChatComposerState; attachments?: readonly ChatAttachment[];
   onAttachmentsChange?: (attachments: readonly ChatAttachment[]) => void; fileSelection?: ChatFileSelection;
-  onPaste?: ChatPasteHandler; menuActions?: readonly ChatAction[]; models?: readonly ChatModelOption[];
+  onPaste?: ChatPasteHandler; menuActions?: readonly ChatAction[]; addOpensCommands?: boolean; models?: readonly ChatModelOption[];
   selectedModelId?: string | null; onModelChange?: (modelId: string) => void;
   commands?: readonly ChatCommand[]; contextUsage?: ChatContextUsageData;
-  searchCommands?: (query: string, signal: AbortSignal) => Promise<readonly ChatCommand[]>;
+  commandSections?: readonly ChatCommandSection[]; commandScopes?: readonly ChatCommandScope[];
+  searchCommands?: (query: string, signal: AbortSignal, search: ChatCommandSearch) => Promise<readonly ChatCommand[]>;
   mentions?: readonly ChatMention[]; onMentionsChange?: (mentions: readonly ChatMention[]) => void;
   accessory?: JSX.Element; draftKey?: unknown;
   contextActions?: readonly ChatAction[]; contextPopupAction?: ChatAction; footerTools?: JSX.Element; modelDetails?: JSX.Element;
@@ -225,12 +613,17 @@ type ChatMessageProps = {
 };
 
 type ChatActivityProps = {
-  label: string; ariaLabel?: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
-  tone?: ChatActivityTone; busy?: boolean; trailing?: JSX.Element; open?: boolean;
+  label: JSX.Element; ariaLabel?: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
+  tone?: ChatActivityTone; busy?: boolean; wrap?: boolean; trailing?: JSX.Element; open?: boolean;
   onOpenChange?: (open: boolean) => void; defaultOpen?: boolean; bodyInset?: boolean;
-  anchorId?: string | number; children?: JSX.Element; class?: string;
+  anchorId?: string | number; children?: JSX.Element; renderBody?: () => JSX.Element; class?: string;
 };
+
+type ChatActivityToggleProps = { children: JSX.Element };
 ```
+
+`Chat.Activity.Toggle` takes `ChatActivityToggleProps`. Put it in an activity's
+`label` to open only that activity's body.
 
 `ChatRootProps` belongs to `Chat`, the other component props to `.Timeline`, `.Composer`, `.Message`, and `.Activity`. `ChatActionBase` is the common shape shown here; consumers import `ChatAction`. For usage data see [Context usage](/en/ui/ai/context-usage#api-reference).
 
@@ -246,7 +639,7 @@ User metadata appears on hover or keyboard focus and remains visible on devices 
 
 ## Runtime
 
-Initial messages render on the server. Editing, commands, scrolling, file selection, menus, model changes, and submission require hydration.
+Initial messages render on the server. Editing, commands, scrolling, file selection, menus, model changes, and submission require browser code.
 
 Raw files selected, dropped, or pasted are handed to
 `fileSelection.onSelect`. With `fileSelection.choose`, **Attach files** calls it
@@ -293,11 +686,14 @@ Feedback actions can set `pressedTone="success"` or `pressedTone="danger"` to
 mark their selected state with the semantic icon color and no persistent
 background. `pressed` continues to expose the toggle state to assistive technology.
 
-Activity rows keep their label and muted metadata on one line. Use `renderBody`
-for expensive diagnostic details: it is mounted only while the activity is open.
+Activity labels without descriptions wrap on narrow chat surfaces and phones.
+Rows with descriptions and wide surfaces keep one line with an ellipsis. Use
+`renderBody` for expensive
+diagnostic details: it is mounted only while the activity is open.
 Use a bounded, keyboard-focusable scrolling region for long input/output payloads.
-Busy activity uses the same text shimmer as inline guidance, with reduced-motion
-and forced-colors support. Waiting for user input is a separate state.
+Busy titles and static icons use the same text shimmer as inline guidance, with
+reduced-motion and forced-colors support. Spinning icons stay solid. Waiting for
+user input is a separate state.
 
 ## Working plans
 
@@ -373,18 +769,59 @@ circle: it keeps the trigger's box and is not interactive.
 ### Composer commands and mentions
 
 Use `commands` for local actions or reference choices, and `searchCommands(query,
-signal)` for asynchronous discovery. Commands match at the caret, including in
+signal, { scope })` for asynchronous discovery. Commands match at the caret, including in
 the middle of a draft. A long command name or description wraps in the
 suggestion list instead of ending in an ellipsis. A reference choice supplies `mention: ChatAttachment`;
 control its ranges with `mentions` and `onMentionsChange`. The submitted text is
 untrimmed so UTF-16 range offsets remain valid. A modified reference becomes
 plain text; undo/redo restores both text and reference identity.
 
+Set `addOpensCommands` to let **+** open the same list as `/`, with a search
+field on top. This works in both composer variants when `commands` or
+`searchCommands` is provided. The search field takes focus and owns the
+combobox attributes; the textarea keeps its text. Typing filters the same rows,
+and Tab on a scope row writes its narrowing word into the search field.
+Ctrl/⌘+Enter closes the list and sends, as it does from the textarea.
+The panel keeps its opening height while results change.
+
+A reference inserts at the textarea caret stored when **+** was pressed. If
+text was selected, it inserts at the selection's end and preserves that text.
+A space separates the name from a preceding non-whitespace character, and a
+space follows the name. Reference ranges cover only the name; undo restores
+text and reference identity in one step. If the draft becomes shorter while
+the list is open, insertion stays within its current length.
+
+Escape, **+** again, Back on a phone, or an outside press closes the list and
+restores the textarea's focus and selection. An outside press with any pointer
+type acts only to close the list; it does not activate anything underneath.
+Pressing the textarea closes the list and lets that press place the caret.
+Moving focus elsewhere, such as with Shift+Tab, closes without taking focus
+back. Changing `draftKey` closes the list too.
+
+With this option, `menuActions` are not shown. Offer those actions as command
+rows and file selection as a row with `attachFiles: true`. That row uses
+`fileSelection`, including its `choose` callback. Closing a picker without a
+choice restores the draft and the stored selection.
+
 Pass the task list through `accessory`. An empty conditional accessory reserves no
-row or spacing, including after hydration. Suggestions use that same location and
+row or spacing, including after mount. Suggestions use that same location and
 restore the task list without changing its open state. Without an accessory, they
 float above the composer, which does not move when they open or close. Set `draftKey` when
 switching conversations so undo cannot bring content from another chat back.
+
+On touch-only phones (narrow screens, or low screens in landscape), command
+suggestions form a column-wide sheet directly above and flush with the composer.
+Rows are at least 48px tall, with the name above the description. The sheet can
+grow up to the scroll container or visual viewport, minus the top safe area.
+A tap beside it closes only the list and reaches nothing beneath; the field
+keeps focus and the keyboard stays open. Back closes the list first through one
+same-URL history entry, removed on every other close path. A Back or Forward
+that only moves onto or off this entry does not reach application `popstate`
+listeners when the browser supports the Navigation API. Without it, only the
+synthetic Back on close is suppressed. Submitting on a touch-only device waits
+for the sheet's entry to leave before calling `onSubmit`, including when a tap
+on Send has already closed the list. With a mouse or trackpad, an outside click
+closes the list and then acts normally. Emoji suggestions keep their floating list.
 
 When changing a controlled draft outside the composer, use
 `reconcileChatMentions(before, after, mentions)` from `@k2b/ui` to update its
@@ -413,7 +850,9 @@ and shows the surface with a ring while it has focus; only its paint changes.
 Formatting, emoji, and the microphone sit inside the field at its end. Send is
 dimmed until there is something to send. With `fileSelection` alone, the
 attach button opens the file choice directly; with `menuActions`, it opens the
-add menu. The footer props of the assistant prompt (`models`, `modelDetails`,
+add menu. With `addOpensCommands` and commands available, **+** opens the
+command list and its search field instead; offer file selection as an
+`attachFiles` row. The footer props of the assistant prompt (`models`, `modelDetails`,
 `contextUsage`, `contextActions`, `contextPopupAction`, `footerTools`,
 `submitTools`, `footerContent`) have no place in this row and are not rendered.
 

@@ -25,7 +25,7 @@ export type AssistantClientTools = {
   run: (call: { name: string; args: unknown; callId: string }, signal: AbortSignal) => Promise<unknown>;
 };
 
-type PrintedBlock = { id?: string; text: string };
+type PrintedBlock = { id?: string; text: string; jsonLinks?: ReturnType<typeof createCloudLinkRewriter> };
 
 export type AssistantTurnOutput = {
   blocks: PrintedBlock[];
@@ -126,7 +126,42 @@ export const streamAssistantTurn = async (input: {
   };
 
   const emitJsonLine = (value: Record<string, unknown>) => {
-    if (ctx.options.output === "jsonl") ctx.jsonLine({ v: 1, conversationId, turnId: targetTurnId, ...value });
+    if (ctx.options.output !== "jsonl") return;
+    if (value.type === "turn_finished" || value.type === "needs_attention") {
+      for (const block of printedBlocks) {
+        const held = block.jsonLinks?.flush();
+        if (held) ctx.jsonLine({ v: 1, conversationId, turnId: targetTurnId, type: "text_delta", blockId: block.id, delta: held });
+      }
+    }
+    ctx.jsonLine({ v: 1, conversationId, turnId: targetTurnId, ...value });
+  };
+  const rewriteText = (text: string) => {
+    const links = createCloudLinkRewriter(ctx.options.server);
+    return links.push(text) + links.flush();
+  };
+  const rewriteMessages = (messages: AiStoredMessage[]): AiStoredMessage[] =>
+    messages.map((stored) => {
+      const message = stored.message;
+      if (message.role === "assistant")
+        return {
+          ...stored,
+          message: {
+            ...message,
+            content: message.content.map((part) => (part.type === "text" ? { ...part, text: rewriteText(part.text) } : part)),
+          },
+        };
+      if (message.role === "user")
+        return {
+          ...stored,
+          message: { ...message, content: message.content.map((part) => (typeof part === "string" ? rewriteText(part) : part)) },
+        };
+      return stored;
+    });
+  const emitJsonText = (block: PrintedBlock, text: string) => {
+    if (ctx.options.output !== "jsonl") return;
+    block.jsonLinks ??= createCloudLinkRewriter(ctx.options.server);
+    const delta = block.jsonLinks.push(text);
+    if (delta) emitJsonLine({ type: "text_delta", blockId: block.id, delta });
   };
   const append = (text: string, id?: string, jsonlDeltas = true) => {
     if (!text.trim()) return;
@@ -137,7 +172,7 @@ export const streamAssistantTurn = async (input: {
     if (id !== undefined) ids.set(id, block);
     emittedText += separator + text;
     if (ctx.options.output === "text") writeText(separator + text);
-    if (id !== undefined && jsonlDeltas) emitJsonLine({ type: "text_delta", blockId: id, delta: text });
+    if (id !== undefined && jsonlDeltas) emitJsonText(block, text);
   };
   const extend = (block: PrintedBlock, text: string, jsonlDeltas = true) => {
     const previous = norm(block.text);
@@ -147,7 +182,7 @@ export const streamAssistantTurn = async (input: {
     block.text = text;
     emittedText += suffix;
     if (ctx.options.output === "text") writeText(suffix);
-    if (block.id !== undefined && jsonlDeltas) emitJsonLine({ type: "text_delta", blockId: block.id, delta: suffix });
+    if (block.id !== undefined && jsonlDeltas) emitJsonText(block, suffix);
   };
   const emitLiveText = (id: string, text: string) => {
     const printed = ids.get(id);
@@ -216,7 +251,7 @@ export const streamAssistantTurn = async (input: {
         output.closed = true;
       }
     }
-    return result;
+    return { ...result, text: rewriteText(result.text), messages: rewriteMessages(result.messages) };
   };
 
   const handleToolBlock = async (block: Extract<AiTurnBlock, { kind: "tool" }>): Promise<AssistantTurnStreamResult | null> => {
@@ -388,7 +423,13 @@ export const streamAssistantTurn = async (input: {
             text: assistantText(messages),
             messages,
           } satisfies AssistantTurnStreamResult;
-          emitJsonLine({ type: "turn_finished", status: result.status, error: result.error, text: result.text, messages });
+          emitJsonLine({
+            type: "turn_finished",
+            status: result.status,
+            error: result.error,
+            text: rewriteText(result.text),
+            messages: rewriteMessages(messages),
+          });
           return result;
         }
       }
@@ -450,7 +491,13 @@ export const streamAssistantTurn = async (input: {
       text: assistantText(messages),
       messages,
     } satisfies AssistantTurnStreamResult;
-    emitJsonLine({ type: "turn_finished", status: result.status, error: result.error, text: result.text, messages });
+    emitJsonLine({
+      type: "turn_finished",
+      status: result.status,
+      error: result.error,
+      text: rewriteText(result.text),
+      messages: rewriteMessages(messages),
+    });
     return result;
   };
 
@@ -517,6 +564,7 @@ export const streamAssistantTurn = async (input: {
 
   const status = "aborted" as const;
   const result = { conversationId, turnId: targetTurnId, status, error: "Streaming interrupted.", text: emittedText, messages: [] };
-  if (isTerminalStatus(status)) emitJsonLine({ type: "turn_finished", status, error: result.error, text: result.text, messages: [] });
+  if (isTerminalStatus(status))
+    emitJsonLine({ type: "turn_finished", status, error: result.error, text: rewriteText(result.text), messages: [] });
   return finish(result);
 };

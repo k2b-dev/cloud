@@ -21,6 +21,12 @@ subtle frame shadow; it does not change the border, radius, or content spacing.
 `Paper` has no default padding. This lets the content owner choose its density
 without overriding the surface contract.
 
+Inside `AppWorkspace.Main`, empty, error, and loading placeholders draw no
+Paper box. Following the maintainer decision of 16 October 2026 (“weg damit”),
+new views in `Main` add no inset Paper frames either, and a `DataTable` there
+uses `surface="plain"`. Each application removes its existing frames in its own
+change. See [UI-22](/en/docs/conventions/frontend#visual-ui-ui).
+
 ## Import
 
 ```tsx
@@ -53,7 +59,7 @@ navigation and a shared button component for actions.
 ## Runtime
 
 `Paper` renders on the server and requires no browser state. An anchor works
-without hydration. Its appearance comes from `@k2b/ui/styles.css` below the
+without browser code. Its appearance comes from `@k2b/ui/styles.css` below the
 nearest `.k2b-ui` scope.
 
 `LinkCard`, `DataPanel`, `DataTable.Panel`, paper placeholders, statistics,

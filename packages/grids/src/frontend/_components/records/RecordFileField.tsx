@@ -285,7 +285,7 @@ export default function RecordFileField(props: {
               {(file) => (
                 <button
                   type="button"
-                  class="grids-record-file-thumbnail relative overflow-hidden rounded-[var(--ui-radius-control)] bg-[var(--k2b-surface-muted)] shadow-xs transition-[background-color,box-shadow] hover:bg-[var(--k2b-hover)] hover:shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)]"
+                  class="grids-record-file-thumbnail relative overflow-hidden rounded-[var(--ui-radius-control)] bg-[var(--k2b-surface-muted)] shadow-xs transition-colors hover:bg-[var(--k2b-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)]"
                   aria-label={t().previewNamed({ name: file.filename })}
                   onClick={() => void openRecordFilePreview(location(), file)}
                 >

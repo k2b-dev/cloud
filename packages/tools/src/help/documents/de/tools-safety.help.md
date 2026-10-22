@@ -14,6 +14,8 @@ order: 120
 - Der **Internet-Speedtest** tauscht Daten mit dem Cloud-Server aus, um die Verbindung zu messen.
 - Der **Webhook-Tester** erstellt Endpunkte auf dem Server und speichert den Anfrageverlauf, damit du eingehende Aufrufe später untersuchen kannst.
 
+Der Webhook-Tester sendet nur an öffentliche Internetadressen, lehnt lokale, private und andere reservierte Netzwerkadressen ab und folgt keinen Weiterleitungen.
+
 ## Sensible Werte schützen {icon="point"}
 
 :::warning Webhook-Protokolle

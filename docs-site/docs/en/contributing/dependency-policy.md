@@ -49,7 +49,6 @@ Each one exists for a reason and has a removal condition.
 | `nodemailer` | Pin the audited major shared by platform outgoing mail in `@k2b/cloud` and Mail. | All direct dependents use the catalog version. |
 | `fast-uri` | Pin the transitive of `ajv` (through `@modelcontextprotocol/sdk` and Filegate's OpenAPI parser) above the authority-injection and host-confusion advisories (GHSA-qw65-cvwx-89v3, GHSA-58mr-gqgx-xq4g). | The transitive dependents resolve to a patched release on their own. |
 | `nanoid` | Pin the 3.x line to a release above the predictable-ID advisory (GHSA-mwcw-c2x4-8c55) for dependents still on 3.x. | No dependency requires `nanoid@3`. |
-| `sharp` | One native build across the workspace; two versions would double the native download and install time. | All dependents share one range. |
 | `@xmldom/xmldom` | Pin above the multiple-root-element advisory (GHSA-crh6-fp67-6883) for XML consumers such as calendar and DATEV imports. | The transitive dependents resolve to a patched release. |
 | `svgo` | Pin the 3.x line used by icon and asset builds so a stray 2.x copy does not enter the tree. | All dependents share one range. |
 | `lodash-es` | Pin above the `_.template` code-injection advisory (GHSA-r5fr-rjxr-66jc). Mermaid 12 requires chevrotain `~11.1.2`, and chevrotain 11.1.2 with its `@chevrotain/*` packages pins `lodash-es` exactly at the vulnerable 4.17.23, so no in-range update reaches the fix. | The chevrotain release that mermaid resolves reaches a patched `lodash-es` on its own. |

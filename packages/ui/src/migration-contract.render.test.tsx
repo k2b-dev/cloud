@@ -11,8 +11,11 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
+const publicUi = await import("./index");
 const {
   AppOverview,
+  bottomSheetOptions,
+  bottomSheetAdaptiveOptions,
   createFormState,
   DataPanel,
   NotFoundState,
@@ -25,9 +28,19 @@ const {
   Placeholder,
   toast,
   Tooltip,
-} = await import("./index");
+} = publicUi;
 
 describe("@k2b/ui complete Cloud UI migrations", () => {
+  test("keeps transient history holders out of the public exports and dialogCore", () => {
+    expect(publicUi).not.toHaveProperty("holdDialogHistory");
+    expect(Object.keys(publicUi.dialogCore).sort()).toEqual(["close", "isOpen", "open"]);
+  });
+
+  test("exports both bottom sheet presentations from the public entry point", () => {
+    expect(bottomSheetOptions.panelClassName).toBe("k2b-dialog k2b-bottom-sheet-frame");
+    expect(bottomSheetAdaptiveOptions.panelClassName).toBe(`${bottomSheetOptions.panelClassName} is-adaptive`);
+  });
+
   test("renders the complete overview composition", () => {
     const html = renderToString(() =>
       createComponent(AppOverview, {

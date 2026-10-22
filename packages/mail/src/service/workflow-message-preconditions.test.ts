@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import type { WorkflowActionStep, WorkflowExecuteActionContext } from "@k2b/cloud/workflows/runtime";
+import { sql } from "bun";
 import type { RemoteMessagePrecondition } from "../contracts";
-import { mailWorkflowMessagePrecondition, projectMailWorkflowMessagePrecondition } from "./workflow-message-preconditions";
+import {
+  loadIncomingAutomationSiblingTransitions,
+  mailMessageStatePayloadTransitions,
+  mailWorkflowConversationLinkView,
+  mailWorkflowMessagePrecondition,
+  projectMailWorkflowMessagePrecondition,
+} from "./workflow-message-preconditions";
 import {
   applyMailMessageTransition,
   mailWorkflowMessageStateTransitions,
@@ -134,5 +142,178 @@ test("restored message aliases use the canonical target projection across action
     modseq: undefined,
     flags: ["seen"],
     keywords: [],
+  });
+});
+
+test("converts confirmed state payloads in provider operation order", () => {
+  expect(
+    mailMessageStatePayloadTransitions({
+      addFlags: ["seen", "answered"],
+      removeFlags: ["flagged"],
+      addKeywords: ["alpha", "beta"],
+      removeKeywords: ["review"],
+    }),
+  ).toEqual([
+    { field: "flags", add: true, value: "seen" },
+    { field: "flags", add: true, value: "answered" },
+    { field: "flags", add: false, value: "flagged" },
+    { field: "keywords", add: true, value: "alpha" },
+    { field: "keywords", add: true, value: "beta" },
+    { field: "keywords", add: false, value: "review" },
+  ]);
+});
+
+test("retains modseq without sibling writes and drops it only when a transition applies", () => {
+  const frozen: RemoteMessagePrecondition = { modseq: "42", flags: [], keywords: [] };
+  expect(
+    projectMailWorkflowMessagePrecondition(
+      frozen,
+      mailMessageStatePayloadTransitions({
+        addFlags: [],
+        removeFlags: [],
+        addKeywords: [],
+        removeKeywords: [],
+      }),
+    ),
+  ).toBe(frozen);
+  expect(
+    projectMailWorkflowMessagePrecondition(
+      frozen,
+      mailMessageStatePayloadTransitions({
+        addFlags: ["seen"],
+        removeFlags: [],
+        addKeywords: ["alpha"],
+        removeKeywords: [],
+      }),
+    ),
+  ).toEqual({ modseq: undefined, flags: ["seen"], keywords: ["alpha"] });
+  expect(frozen).toEqual({ modseq: "42", flags: [], keywords: [] });
+});
+
+describe("incoming automation sibling transition loading", () => {
+  const command = {
+    id: "00000000-0000-4000-8000-000000000001",
+    mailbox_id: "00000000-0000-4000-8000-000000000002",
+    actor_kind: "workflow",
+    actor_id: "00000000-0000-4000-8000-000000000003",
+    correlation_id: "00000000-0000-4000-8000-000000000004",
+    target: {
+      remoteMessageRefId: "00000000-0000-4000-8000-000000000005",
+      expectedRemoteState: { modseq: "1", flags: [], keywords: [] },
+    },
+  };
+
+  test("does not query for commands without a workflow UUID and frozen remote state", async () => {
+    const db = new Proxy(sql, {
+      apply: () => {
+        throw new Error("Unexpected SQL query");
+      },
+    });
+    for (const commands of [
+      [],
+      [{ ...command, actor_kind: "user" }],
+      [{ ...command, correlation_id: "not-a-run-id" }],
+      [{ ...command, correlation_id: null }],
+      [{ ...command, target: { remoteMessageRefId: command.target.remoteMessageRefId } }],
+      [{ ...command, target: { expectedRemoteState: command.target.expectedRemoteState } }],
+      [{ ...command, target: "invalid JSON" }],
+    ]) {
+      expect((await loadIncomingAutomationSiblingTransitions(db, commands)).size).toBe(0);
+    }
+  });
+
+  test("loads a whole command set once, keeps confirmation order, and ignores invalid payloads", async () => {
+    const second = { ...command, id: "00000000-0000-4000-8000-000000000006", target: JSON.stringify(command.target) };
+    let queries = 0;
+    const db = new Proxy(sql, {
+      apply: () => {
+        queries++;
+        return Promise.resolve([
+          { command_id: command.id, payload: { addFlags: ["seen"], removeFlags: [], addKeywords: [], removeKeywords: [] } },
+          { command_id: command.id, payload: "invalid JSON" },
+          { command_id: command.id, payload: { addFlags: ["unsupported"], removeFlags: [], addKeywords: [], removeKeywords: [] } },
+          { command_id: command.id, payload: { addFlags: [], removeFlags: ["seen"], addKeywords: ["alpha"], removeKeywords: [] } },
+          { command_id: second.id, payload: JSON.stringify({ addFlags: [], removeFlags: [], addKeywords: ["beta"], removeKeywords: [] }) },
+        ]);
+      },
+    });
+    const loaded = await loadIncomingAutomationSiblingTransitions(db, [command, second]);
+    expect(queries).toBe(1);
+    expect(loaded.get(command.id)).toEqual([
+      { field: "flags", add: true, value: "seen" },
+      { field: "flags", add: false, value: "seen" },
+      { field: "keywords", add: true, value: "alpha" },
+    ]);
+    expect(loaded.get(second.id)).toEqual([{ field: "keywords", add: true, value: "beta" }]);
+  });
+});
+
+describe("Mail workflow conversation link views", () => {
+  const conversationId = "00000000-0000-4000-8000-000000000001";
+  const valid = { snapshot: "10:20:11,15", xid: "19", seq: "42" };
+  const contextFor = (linkView: WorkflowJsonValue) => ({ preconditions: { conversation: { id: conversationId, revision: 1, linkView } } });
+
+  test("returns a valid view only for the matching internal conversation", () => {
+    for (const snapshot of ["10:20:", "10:20:11", "10:20:11,15"]) {
+      for (const xid of [null, "19", "9007199254740993"]) {
+        const linkView = { snapshot, xid, seq: "9007199254740994" };
+        expect(mailWorkflowConversationLinkView(contextFor(linkView), conversationId)).toEqual(linkView);
+        expect(mailWorkflowConversationLinkView(contextFor(linkView), "other-conversation")).toBeNull();
+      }
+    }
+    expect(mailWorkflowConversationLinkView(contextFor({ ...valid, seq: "0" }), conversationId)?.seq).toBe("0");
+  });
+
+  test("returns null for contexts captured without a complete link view", () => {
+    const incompleteViews: WorkflowJsonValue[] = [
+      null,
+      42,
+      "10:20:",
+      [],
+      {},
+      { snapshot: valid.snapshot, xid: null },
+      { snapshot: valid.snapshot, seq: "42" },
+      { xid: "19", seq: "42" },
+    ];
+    const contexts: (Record<string, WorkflowJsonValue> | undefined)[] = [
+      undefined,
+      {},
+      { preconditions: {} },
+      { preconditions: { conversation: null } },
+      { preconditions: { conversation: { id: conversationId, revision: 1 } } },
+      { preconditions: { conversation: { id: conversationId, linkSnapshot: valid.snapshot } } },
+      ...incompleteViews.map(contextFor),
+    ];
+    for (const context of contexts) {
+      expect(mailWorkflowConversationLinkView(context, conversationId)).toBeNull();
+    }
+  });
+
+  test("rejects malformed snapshot values", () => {
+    for (const snapshot of [
+      null,
+      42,
+      {},
+      [],
+      "",
+      "10:20",
+      "10:20:\n",
+      "-1:20:",
+      "10:20:11,",
+      "10:20:11,,15",
+      "10:20:11:15",
+      " 10:20:",
+      "10:20:sql",
+    ]) {
+      expect(mailWorkflowConversationLinkView(contextFor({ ...valid, snapshot }), conversationId)).toBeNull();
+    }
+  });
+
+  test("rejects malformed xids and link orders", () => {
+    for (const value of [42, {}, [], "", "-1", "1.5", "1e3", " 19", "19 ", "19\n", "sql"]) {
+      expect(mailWorkflowConversationLinkView(contextFor({ ...valid, xid: value }), conversationId)).toBeNull();
+      expect(mailWorkflowConversationLinkView(contextFor({ ...valid, seq: value }), conversationId)).toBeNull();
+    }
+    expect(mailWorkflowConversationLinkView(contextFor({ ...valid, seq: null }), conversationId)).toBeNull();
   });
 });

@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  chatCommandKey,
   conversationEnterAction,
   executeChatAction,
+  foldChatSearchText,
   isChatNearBottom,
   nextChatCommandIndex,
   reportChatFailure,
@@ -178,5 +180,15 @@ describe("conversation Enter", () => {
       expect(conversationEnterAction(key({ ctrlKey: true }), context)).toBe("send");
       expect(conversationEnterAction(key({ metaKey: true }), context)).toBe("send");
     }
+  });
+});
+
+describe("command discovery", () => {
+  test("folds case, accents, combining marks and German sharp s", () => {
+    expect(foldChatSearchText("ÄLTEREN Café Straße e\u0301")).toBe("alteren cafe strasse e");
+  });
+  test("uses the explicit stable key, defaulting to name", () => {
+    expect(chatCommandKey({ id: "stable", name: "compact", description: "" })).toBe("stable");
+    expect(chatCommandKey({ name: "compact", description: "" })).toBe("compact");
   });
 });

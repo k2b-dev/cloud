@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
+import { cameraExif, imageBytes, imageText, jpegSegment, tinyJpeg } from "../../../../scripts/fixtures/image-metadata";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { logoPng } from "../../test/mailbox-logo-fixtures";
 import {
   type ComposeFormattingWarning,
   type DraftEditableContent,
@@ -15,14 +17,17 @@ import { actorRefFromRequest, type MailRequestContext } from "./auth";
 import {
   archiveComposeTemplate,
   createComposeTemplate,
+  getMailboxComposeLogo,
   getMailboxComposeStyle,
   listComposeTemplates,
   previewComposeDraft,
+  removeMailboxComposeLogo,
   renderComposeDraft,
   renderComposeSnippet,
   renderComposeSuggestions,
   setComposeSignatureDefault,
   updateComposeTemplate,
+  updateMailboxComposeLogo,
   updateMailboxComposeStyle,
 } from "./compose-templates";
 import { acquireDraftLease, releaseDraftLease } from "./draft-leases";
@@ -35,6 +40,7 @@ import {
   restoreDraftRecoveryCopy,
   updateDraft,
 } from "./drafts";
+import { currentMailboxLogo, deleteUnusedMailboxLogoVersions, mailboxLogoSha256 } from "./mailbox-logos";
 import { createMailbox } from "./mailboxes";
 import { updateSenderIdentity } from "./sender-identities";
 
@@ -160,6 +166,174 @@ suite("mail compose templates", () => {
     }
     if (userIds.length) {
       await sql`DELETE FROM auth.users WHERE id IN (SELECT value::uuid FROM jsonb_array_elements_text(${userIds}::jsonb))`;
+    }
+  });
+
+  test("mailbox logo permissions, validation, previews and removal share the compose contract", async () => {
+    let logoSignature: { id: string; revision: number } | null = null;
+    try {
+      const bytes = logoPng();
+      const input = { content: bytes.toString("base64") };
+      const uploaded = await updateMailboxComposeLogo({ context: owner, mailboxId, input });
+      expect(uploaded).toMatchObject({
+        ok: true,
+        data: {
+          logo: {
+            contentType: "image/png",
+            pixelWidth: 1,
+            pixelHeight: 1,
+            displayWidth: 200,
+            altText: `Compose ${suffix}`,
+            byteLength: bytes.length,
+            dataUrl: `data:image/png;base64,${input.content}`,
+          },
+        },
+      });
+      expect(await getMailboxComposeLogo(owner, mailboxId)).toEqual(uploaded);
+      expect(await getMailboxComposeLogo(collaborator, mailboxId)).toEqual(uploaded);
+      for (const permission of ["write", "read"] as const) {
+        const accessId = accessIds[0];
+        if (!accessId) throw new Error("Missing collaborator grant");
+        const changed = await updateMailboxAccess({ context: owner, mailboxId, accessId, permission });
+        if (!changed.ok) throw new Error(changed.error.message);
+        try {
+          expect(await updateMailboxComposeLogo({ context: collaborator, mailboxId, input })).toMatchObject({
+            ok: false,
+            error: { status: 403 },
+          });
+          expect(await removeMailboxComposeLogo({ context: collaborator, mailboxId })).toMatchObject({ ok: false, error: { status: 403 } });
+          if (permission === "read")
+            expect(await getMailboxComposeLogo(collaborator, mailboxId)).toMatchObject({ ok: false, error: { status: 403 } });
+        } finally {
+          await updateMailboxAccess({ context: owner, mailboxId, accessId, permission: "write" });
+        }
+      }
+      for (const invalid of [
+        { content: "***=" },
+        { content: "YWJ" },
+        { content: "YR==" },
+        { content: "" },
+        { content: Buffer.alloc(102401).toString("base64") },
+        { content: logoPng(1201).toString("base64") },
+        { content: logoPng(1, 401).toString("base64") },
+        { content: Buffer.from("GIF89a").toString("base64") },
+        { ...input, displayWidth: 0 },
+        { ...input, displayWidth: 601 },
+        { ...input, altText: " " },
+        { ...input, altText: "a".repeat(201) },
+        { ...input, altText: "\nTeam" },
+        { ...input, altText: "Team\u007f" },
+      ])
+        expect(await updateMailboxComposeLogo({ context: owner, mailboxId, input: invalid })).toMatchObject({
+          ok: false,
+          error: { status: 400 },
+        });
+      const signature = await createComposeTemplate({
+        context: owner,
+        mailboxId,
+        input: { kind: "signature", scope: "mailbox", name: "Logo", shortcut: "logo", body: "Regards\n\n{{ mailbox.logo }}" },
+      });
+      if (!signature.ok) throw new Error(signature.error.message);
+      logoSignature = signature.data;
+      const draft: DraftEditableContentInput = {
+        senderIdentityId,
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: "Logo preview",
+        body: "Hello",
+        format: "markdown",
+        signatureTemplateId: signature.data.id,
+      };
+      const preview = await previewComposeDraft({ context: owner, mailboxId, input: { draft, conversationId: null } });
+      expect(preview.ok).toBe(true);
+      if (!preview.ok) throw new Error(preview.error.message);
+      expect(preview.data.html).toContain(`src="data:image/png;base64,${input.content}"`);
+      expect(preview.data.text).toContain(`Compose ${suffix}`);
+      expect(await removeMailboxComposeLogo({ context: owner, mailboxId })).toEqual({ ok: true, data: { logo: null } });
+      expect(await removeMailboxComposeLogo({ context: owner, mailboxId })).toEqual({ ok: true, data: { logo: null } });
+      expect(await getMailboxComposeLogo(owner, mailboxId)).toEqual({ ok: true, data: { logo: null } });
+      const empty = await previewComposeDraft({ context: owner, mailboxId, input: { draft, conversationId: null } });
+      expect(empty).toMatchObject({ ok: true, data: { formattingWarnings: [{ code: "missing_mailbox_logo" }] } });
+      if (empty.ok) {
+        expect(empty.data.html).not.toContain("<img");
+        expect(empty.data.html).not.toContain("MAILLOGO");
+        expect(empty.data.text).not.toContain("MAILLOGO");
+      }
+      expect(await sql`SELECT id FROM mail.mailbox_logo_versions WHERE mailbox_id = ${mailboxId}::uuid`).toHaveLength(0);
+    } finally {
+      try {
+        if (logoSignature)
+          expect(
+            await archiveComposeTemplate({
+              context: owner,
+              mailboxId,
+              templateId: logoSignature.id,
+              input: { expectedRevision: logoSignature.revision },
+            }),
+          ).toMatchObject({ ok: true });
+      } finally {
+        expect(await removeMailboxComposeLogo({ context: owner, mailboxId })).toMatchObject({ ok: true });
+      }
+    }
+  });
+
+  test("logo uploads store and describe stripped JPEG bytes without private EXIF or GPS", async () => {
+    const jpeg = await tinyJpeg();
+    // Orientation 1 needs no retained EXIF segment; all camera metadata must go.
+    const original = imageBytes(
+      jpeg.subarray(0, 2),
+      jpegSegment(0xe1, cameraExif(1)),
+      jpegSegment(0xfe, imageText("GPS private location")),
+      jpeg.subarray(2),
+    );
+    expect(Buffer.from(original).includes(Buffer.from("Exif"))).toBe(true);
+    expect(Buffer.from(original).includes(Buffer.from("GPS"))).toBe(true);
+    try {
+      const uploaded = await updateMailboxComposeLogo({
+        context: owner,
+        mailboxId,
+        input: { content: Buffer.from(original).toString("base64") },
+      });
+      expect(uploaded).toMatchObject({ ok: true });
+      if (!uploaded.ok) throw new Error(uploaded.error.message);
+      const stored = await currentMailboxLogo(sql, mailboxId, false);
+      if (!stored) throw new Error("Uploaded JPEG is missing");
+      expect(stored.content).toEqual(Buffer.from(jpeg));
+      for (const marker of ["Exif", "GPS", "Apple"]) expect(stored.content.includes(Buffer.from(marker))).toBe(false);
+      expect(stored.sha256).toBe(mailboxLogoSha256(jpeg));
+      expect(stored.sha256).not.toBe(mailboxLogoSha256(original));
+      expect(uploaded.data.logo).toMatchObject({
+        byteLength: jpeg.byteLength,
+        sha256: mailboxLogoSha256(jpeg),
+        dataUrl: `data:image/jpeg;base64,${Buffer.from(jpeg).toString("base64")}`,
+      });
+    } finally {
+      expect(await removeMailboxComposeLogo({ context: owner, mailboxId })).toMatchObject({ ok: true });
+    }
+  });
+
+  test("cleanup skips a logo locked by an in-flight send render", async () => {
+    try {
+      const input = { content: logoPng().toString("base64") };
+      const uploaded = await updateMailboxComposeLogo({ context: owner, mailboxId, input });
+      if (!uploaded.ok) throw new Error(uploaded.error.message);
+      let oldVersionId = "";
+      await sql.begin(async (tx) => {
+        const locked = await currentMailboxLogo(tx, mailboxId, true);
+        if (!locked) throw new Error("Logo missing before lock");
+        oldVersionId = locked.id;
+        expect(await updateMailboxComposeLogo({ context: owner, mailboxId, input: { ...input, displayWidth: 300 } })).toMatchObject({
+          ok: true,
+        });
+        expect(await deleteUnusedMailboxLogoVersions({ mailboxId, limit: 10 })).toBe(0);
+        expect(await tx`SELECT id FROM mail.mailbox_logo_versions WHERE id = ${oldVersionId}::uuid`).toHaveLength(1);
+      });
+      expect(await deleteUnusedMailboxLogoVersions({ mailboxId, limit: 10 })).toBe(1);
+      expect(await sql`SELECT id FROM mail.mailbox_logo_versions WHERE id = ${oldVersionId}::uuid`).toHaveLength(0);
+      expect(await removeMailboxComposeLogo({ context: owner, mailboxId })).toMatchObject({ ok: true });
+    } finally {
+      expect(await removeMailboxComposeLogo({ context: owner, mailboxId })).toMatchObject({ ok: true });
     }
   });
 
@@ -626,6 +800,56 @@ suite("mail compose templates", () => {
     expect(preview.data.formattingWarnings).toEqual([{ code: "unsupported_attribute", element: "span", attribute: "class" }]);
   });
 
+  test("preview and send preserve the same extra Markdown blank lines", async () => {
+    const draft: DraftEditableContentInput = {
+      senderIdentityId,
+      to: [{ name: null, address: "reader@example.test" }],
+      cc: [],
+      bcc: [],
+      subject: "Blank lines",
+      body: "Hello\n\n\n\nWorld",
+      format: "markdown",
+      signatureTemplateId: null,
+    };
+    const preview = await previewComposeDraft({ context: owner, mailboxId, input: { draft, conversationId: null } });
+    if (!preview.ok) throw new Error(preview.error.message);
+    const sent = await renderComposeDraft({
+      mailboxId,
+      draft,
+      actor: actorRefFromRequest(owner),
+      renderLiquid: true,
+      logoSource: "cid",
+    });
+    if (!sent.ok) throw new Error(sent.error.message);
+    expect(sent.data.html).toBe(preview.data.html);
+    expect(sent.data.html?.match(/class="mail-blank-line"/g)).toHaveLength(2);
+    expect(sent.data.text).toBe("Hello\n\n\n\nWorld");
+    expect(sent.data.text).toBe(preview.data.text);
+    expect(sent.data.logoUsed).toBe(false);
+  });
+
+  test("preview and send preserve the same Markdown dividers and dash underlines", async () => {
+    const draft: DraftEditableContentInput = {
+      senderIdentityId,
+      to: [{ name: null, address: "reader@example.test" }],
+      cc: [],
+      bcc: [],
+      subject: "Dividers",
+      body: "Hello\n\n---\n\nWorld\n\na\n---\nb",
+      format: "markdown",
+      signatureTemplateId: null,
+    };
+    const preview = await previewComposeDraft({ context: owner, mailboxId, input: { draft, conversationId: null } });
+    if (!preview.ok) throw new Error(preview.error.message);
+    const sent = await renderComposeDraft({ mailboxId, draft, actor: actorRefFromRequest(owner), renderLiquid: true, logoSource: "cid" });
+    if (!sent.ok) throw new Error(sent.error.message);
+    expect(sent.data.html).toBe(preview.data.html);
+    expect(sent.data.text).toBe(preview.data.text);
+    expect(sent.data.html?.match(/<hr\b/g)).toHaveLength(2);
+    expect(sent.data.html).not.toContain("<h2");
+    expect(sent.data.text).toBe(`Hello\n\n${"-".repeat(40)}\n\nWorld\n\na\n\n${"-".repeat(40)}\n\nb`);
+  });
+
   test("keeps rendering stored designs safe and available while saving stays strict", async () => {
     const customCss = String.raw`.mail-content { color: #123456; font-family: "\5FAE\8F6F\96C5\9ED1", sans-serif; }
 h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`;
@@ -651,10 +875,10 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
     for (const removed of ["\\", "5FAE", "image-set", "example.test"]) expect(preview.data.html).not.toContain(removed);
     expect(preview.data.formattingWarnings).toEqual([...designWarnings, { code: "unsupported_element", element: "small" }]);
     for (const renderLiquid of [true, false]) {
-      const rendered = await renderComposeDraft({ mailboxId, draft, actor: actorRefFromRequest(owner), renderLiquid });
+      const rendered = await renderComposeDraft({ mailboxId, draft, actor: actorRefFromRequest(owner), renderLiquid, logoSource: "data" });
       expect(rendered).toEqual({
         ok: true,
-        data: { html: preview.data.html, text: preview.data.text, formattingWarnings: designWarnings },
+        data: { logoUsed: false, inlineLogo: null, html: preview.data.html, text: preview.data.text, formattingWarnings: designWarnings },
       });
     }
     const capped = await previewComposeDraft({
@@ -720,10 +944,22 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       expect(preview.data.html).toContain("font-family:Arial");
       for (const value of ["#991abc", "Mailbox991"]) expect(preview.data.html).not.toContain(value);
       for (const renderLiquid of [true, false]) {
-        const rendered = await renderComposeDraft({ mailboxId, draft, actor: actorRefFromRequest(owner), renderLiquid });
+        const rendered = await renderComposeDraft({
+          mailboxId,
+          draft,
+          actor: actorRefFromRequest(owner),
+          renderLiquid,
+          logoSource: "data",
+        });
         expect(rendered).toEqual({
           ok: true,
-          data: { html: preview.data.html, text: preview.data.text, formattingWarnings: [{ code: "ignored_mailbox_css" }] },
+          data: {
+            logoUsed: false,
+            inlineLogo: null,
+            html: preview.data.html,
+            text: preview.data.text,
+            formattingWarnings: [{ code: "ignored_mailbox_css" }],
+          },
         });
       }
     } finally {
@@ -793,10 +1029,18 @@ h1 { background: image-set("https://example.test/a.png" 1x); font-size: 30px; }`
       expect(preview.data.html).toMatch(/<div class="mail-signature" style="[^"]*color:#52525b/);
       expect(preview.data.html).not.toContain("5FAE");
       expect(preview.data.formattingWarnings[0]).toEqual({ code: "ignored_mailbox_css", property: "font-family" });
-      const rendered = await renderComposeDraft({ mailboxId, draft, actor: actorRefFromRequest(owner), renderLiquid: true });
+      const rendered = await renderComposeDraft({
+        mailboxId,
+        draft,
+        actor: actorRefFromRequest(owner),
+        renderLiquid: true,
+        logoSource: "data",
+      });
       expect(rendered).toEqual({
         ok: true,
         data: {
+          logoUsed: false,
+          inlineLogo: null,
           html: preview.data.html,
           text: preview.data.text,
           formattingWarnings: [{ code: "ignored_mailbox_css", property: "font-family" }],

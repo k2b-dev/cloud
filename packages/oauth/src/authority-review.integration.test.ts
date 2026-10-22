@@ -33,6 +33,13 @@ const fixture = async () => {
   if (!client || !user) throw new Error("Missing OAuth fixture");
   return { userId: user.id, client };
 };
+const activeRefreshFamily = async (params: Omit<Parameters<typeof refreshTokens.reserve>[0], "authEpoch">) => {
+  const [user] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${params.userId}::uuid`;
+  if (!user) throw new Error("Missing test user");
+  const reserved = await refreshTokens.reserve({ ...params, authEpoch: Number(user.auth_epoch) });
+  await sql`UPDATE oauth.refresh_token_families SET status = 'active' WHERE id = ${reserved.familyId}::uuid`;
+  return reserved;
+};
 const waitForBlockedBy = async (pid: number) => {
   for (let attempt = 0; attempt < 500; attempt += 1) {
     const [row] = await sql<{ waiting: boolean }[]>`
@@ -77,7 +84,8 @@ suite("OAuth external review regressions", () => {
 
   test("transport failure releases an unclaimed attempt and fences late Core even after re-reservation", async () => {
     const { userId, client } = await fixture();
-    const token = await refreshTokens.create({
+    const token = await activeRefreshFamily({
+      expiresAt: new Date(Date.now() + refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
       userId,
       client,
       scopes: ["openid", "offline_access"],
@@ -105,7 +113,8 @@ suite("OAuth external review regressions", () => {
 
   test("Core claim wins concurrent release: lost response revokes the family without reissuance", async () => {
     const { userId, client } = await fixture();
-    const token = await refreshTokens.create({
+    const token = await activeRefreshFamily({
+      expiresAt: new Date(Date.now() + refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
       userId,
       client,
       scopes: ["openid", "offline_access"],
@@ -154,7 +163,8 @@ suite("OAuth external review regressions", () => {
 
   test("refresh reservation waits for the family without locking its token", async () => {
     const { userId, client } = await fixture();
-    const token = await refreshTokens.create({
+    const token = await activeRefreshFamily({
+      expiresAt: new Date(Date.now() + refreshTokens.DEFAULT_LOGIN_LIFETIME_SECONDS * 1000),
       userId,
       client,
       scopes: ["openid", "offline_access"],

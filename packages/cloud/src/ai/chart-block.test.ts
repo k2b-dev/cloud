@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { charts } from "@k2b/stdlib";
+import { type ChartDatum, charts } from "@k2b/stdlib";
+import { isChartDatum } from "@k2b/ui/chart-inspection";
 import { z } from "zod";
 import {
   chartDateTime,
@@ -11,6 +12,7 @@ import {
   cloudAiChartRenderOptions,
   cloudAiChartRows,
   cloudAiChartTable,
+  cloudAiChartTooltip,
   cloudAiChartXValueFormat,
   cloudAiNumberFormatters,
 } from "./chart-block";
@@ -34,6 +36,12 @@ const issues = (input: unknown) => {
   const result = CloudAiChartInputSchema.safeParse(input);
   return result.success ? [] : result.error.issues.map((issue) => issue.message);
 };
+const chartDatums = (svg: string): ChartDatum[] =>
+  [...svg.matchAll(/data-chart-datum="([^"]*)"/g)].map((match) => {
+    const datum: unknown = JSON.parse(match[1]!.replaceAll("&quot;", '"'));
+    if (!isChartDatum(datum)) throw new Error("Invalid chart datum");
+    return datum;
+  });
 
 describe("chart tool input", () => {
   test("accepts every cloud.chart() kind as plain data", () => {
@@ -767,4 +775,272 @@ test("function formats replace their own axes before measuring the padding", () 
   if (stat.kind !== "stat") throw new Error("Expected stat");
   expect(stat.format).toBe(y);
   expect(stat.deltaFormat).toBe(y);
+});
+
+describe("shared chart tooltip", () => {
+  const tooltip = { label: "Umsatz", format: { style: "currency", currency: "EUR" } };
+  test("names value and y columns before axis labels, including stat sparklines", () => {
+    for (const input of [
+      { kind: "bar", title: "B", data: [{ label: "Jan", value: 1200 }], yAxis: { label: "Axis", format: { decimals: 0 } } },
+      { kind: "pie", title: "P", data: [{ label: "Jan", value: 1200 }] },
+      { kind: "stat", title: "S", value: 1200, sparkline: [1200, 1500] },
+      ...["line", "scatter"].map((kind) => ({
+        kind,
+        title: "L",
+        series: [
+          {
+            data: [
+              { x: 1, y: 1200 },
+              { x: 2, y: 1500 },
+            ],
+          },
+        ],
+        yAxis: { label: "Axis" },
+      })),
+    ]) {
+      const table = cloudAiChartTable(parse({ ...input, tooltip }), "de");
+      const values = table.columns.filter((column) => column.id === "value" || column.id === "y");
+      expect(values.length).toBeGreaterThan(0);
+      for (const column of values) {
+        expect(column.label).toBe("Umsatz");
+        expect(table.rows.find((row) => row.values[column.id] === 1200)?.cells[column.id]).toBe("1.200,00\u00a0€");
+      }
+    }
+  });
+
+  test("appends the tooltip format unit and retains the kind's unit", () => {
+    const tooltip = { format: { unit: "kWh", decimals: 1 } };
+    for (const input of [
+      { kind: "bar", title: "B", data: [{ label: "A", value: 1.5 }] },
+      { kind: "gauge", title: "G", value: 1.5, unit: "used" },
+      { kind: "barGauge", title: "G", data: [{ label: "A", value: 1.5, min: 1, max: 5 }], unit: "used" },
+      { kind: "stat", title: "S", value: 1.5, delta: 1.5, sparkline: [1.5, 2], unit: "used" },
+    ]) {
+      const table = cloudAiChartTable(parse({ ...input, tooltip }), "de");
+      expect(table.rows[0]?.cells.value).toBe(`1,5 kWh${"unit" in input ? " used" : ""}`);
+      if (input.kind === "barGauge") expect(table.rows[0]?.cells).toMatchObject({ min: "1,0 kWh used", max: "5,0 kWh used" });
+      if (input.kind === "stat") {
+        expect(table.rows[0]?.cells.delta).toBe("+1,5 kWh");
+        expect(table.rows[1]?.cells).toEqual({ x: "1", y: "1,5 kWh" });
+      }
+    }
+  });
+
+  test("formats box summaries and bin bounds, keeping counts, shares and category cells", () => {
+    const tooltip = { label: "Measure", format: { decimals: 1, unit: "kg" } };
+    const box = cloudAiChartTable(parse({ kind: "boxplot", title: "B", data: [{ label: "A", values: [1, 1, 1, 1, 20] }], tooltip }), "de");
+    expect(box.rows[0]?.cells).toEqual({
+      label: "A",
+      count: "5",
+      q1: "1,0 kg",
+      q2: "1,0 kg",
+      q3: "1,0 kg",
+      whiskerLow: "1,0 kg",
+      whiskerHigh: "1,0 kg",
+    });
+    expect(box.rows[1]?.cells).toEqual({ label: "A", value: "20,0 kg" });
+    const histogram = cloudAiChartTable(parse({ kind: "histogram", title: "H", data: [1, 2, 3], bins: [1, 2, 4], tooltip }), "de");
+    expect(histogram.rows[0]?.cells).toEqual({ from: "1,0 kg", to: "2,0 kg", count: "1" });
+    const pie = cloudAiChartTable(parse({ kind: "pie", title: "P", data: [{ label: "A", value: 1 }], tooltip }), "de");
+    expect(pie.rows[0]?.cells).toEqual({ label: "A", value: "1,0 kg", percent: "100\u00a0%" });
+    const heat = cloudAiChartTable(parse({ kind: "heatmap", title: "H", data: [{ x: "A", y: "B", value: 1.5 }], tooltip }), "de");
+    expect(heat.rows[0]?.cells).toEqual({ x: "A", y: "B", value: "1,5 kg" });
+    expect(heat.columns.find((column) => column.id === "y")?.label).toBe("Y");
+  });
+
+  test("leaves render options, axis formats and drawn SVG unchanged", () => {
+    for (const input of [
+      { kind: "bar", title: "B", data: [{ label: "Jan", value: 1200 }], yAxis: { format: { decimals: 0 } }, showValues: true },
+      {
+        kind: "line",
+        title: "L",
+        series: [
+          {
+            data: [
+              { x: 1, y: 1200 },
+              { x: 2, y: 1500 },
+            ],
+          },
+        ],
+        yAxis: { label: "Axis" },
+      },
+    ]) {
+      const withTooltip = parse({ ...input, tooltip });
+      expect(withTooltip).toHaveProperty("tooltip", tooltip);
+      const before = cloudAiChartRenderOptions(parse(input), "de");
+      const after = cloudAiChartRenderOptions(withTooltip, "de");
+      // Format callbacks are allocated per call; compare their output as well as every plain-data option.
+      const comparable = (options: typeof before) =>
+        JSON.parse(JSON.stringify(options, (_key, value) => (typeof value === "function" ? [0, 1.5, 1200].map(value) : value)));
+      expect(comparable(after)).toEqual(comparable(before));
+      if (before.kind === "bar" && after.kind === "bar") expect(charts.bar(after)).toEqual(charts.bar(before));
+      else if (before.kind === "line" && after.kind === "line") expect(charts.line(after)).toEqual(charts.line(before));
+      else throw new Error("Expected matching chart kinds");
+    }
+  });
+
+  test("uses the first text column as title and the remaining columns as rows", () => {
+    const columns = [
+      { id: "label", label: "Category", numeric: false },
+      { id: "value", label: "Umsatz", numeric: true },
+      { id: "missing", label: "Other", numeric: true },
+    ];
+    const row = { key: "0:0", cells: { label: "Jan", value: "1.200,00\u00a0€" }, values: { label: "Jan", value: 1200 } };
+    expect(cloudAiChartTooltip(columns, row)).toEqual({
+      title: "Jan",
+      rows: [{ label: "Umsatz", value: "1.200,00\u00a0€" }],
+    });
+    expect(cloudAiChartTooltip(columns.slice(1), row)).toEqual({
+      title: undefined,
+      rows: [{ label: "Umsatz", value: "1.200,00\u00a0€" }],
+    });
+    expect(cloudAiChartTooltip(columns, { ...row, cells: { ...row.cells, missing: "" } })).toEqual({
+      title: "Jan",
+      rows: [
+        { label: "Umsatz", value: "1.200,00\u00a0€" },
+        { label: "Other", value: "" },
+      ],
+    });
+    expect(cloudAiChartTooltip([], row)).toEqual({ title: undefined, rows: [] });
+  });
+
+  test("stat sparkline tooltips omit the stat value and delta columns", () => {
+    const input = parse({ kind: "stat", title: "S", value: 5, delta: 1, sparkline: [1, 2, 3] });
+    const options = cloudAiChartRenderOptions(input, "de");
+    if (options.kind !== "stat") throw new Error("Expected stat");
+    const rows = cloudAiChartRows(input, "de");
+    const marks = chartDatums(charts.stat({ ...options, width: 480, height: 280, inspect: true }));
+    const added = marks.map((datum) => ({ datum, row: rows.add(datum) }));
+    const point = added.find(({ datum }) => datum.role === "point" && datum.index === 0);
+    if (!point) throw new Error("Missing sparkline point");
+    expect(cloudAiChartTooltip(rows.columns(), point.row)).toEqual({
+      title: undefined,
+      rows: [
+        { label: "#", value: "1" },
+        { label: "Wert", value: "1" },
+      ],
+    });
+    expect(rows.table()).toEqual(cloudAiChartTable(input, "de"));
+  });
+
+  test("boxplot outlier tooltips omit summary columns", () => {
+    const input = parse({ kind: "boxplot", title: "B", data: [{ label: "A", values: [1, 1, 1, 1, 20] }] });
+    const options = cloudAiChartRenderOptions(input, "de");
+    if (options.kind !== "boxplot") throw new Error("Expected boxplot");
+    const rows = cloudAiChartRows(input, "de");
+    const marks = chartDatums(charts.boxplot({ ...options, width: 480, height: 280, inspect: true }));
+    const added = marks.map((datum) => ({ datum, row: rows.add(datum) }));
+    const outlier = added.find(({ datum }) => datum.role === "outlier");
+    if (!outlier) throw new Error("Missing outlier");
+    expect(cloudAiChartTooltip(rows.columns(), outlier.row)).toEqual({ title: "A", rows: [{ label: "Wert", value: "20" }] });
+    expect(rows.table()).toEqual(cloudAiChartTable(input, "de"));
+  });
+});
+
+describe("function formats in chart rows", () => {
+  const datum: ChartDatum = {
+    index: 0,
+    role: "point",
+    anchor: [0, 0],
+    values: [
+      { key: "x", value: 1 },
+      { key: "y", value: 1200 },
+    ],
+  };
+  const input = parse({
+    kind: "line",
+    title: "Energy",
+    series: [
+      {
+        data: [
+          { x: 1, y: 1200 },
+          { x: 2, y: 900 },
+        ],
+      },
+    ],
+  });
+  const x = (v: number) => `day ${v}`;
+  const y = (v: number) => `${v} kWh`;
+  const value = (v: number) => `${v} units`;
+
+  test("uses x and y functions for table and tooltip cells, with value taking precedence", () => {
+    const rows = cloudAiChartRows(input, "de", { formats: { x, y } });
+    const row = rows.add(datum);
+    expect(row.cells).toEqual({ x: "day 1", y: "1200 kWh" });
+    expect(cloudAiChartTooltip(rows.columns(), row)).toEqual({
+      title: undefined,
+      rows: [
+        { label: "X", value: "day 1" },
+        { label: "Y", value: "1200 kWh" },
+      ],
+    });
+    expect(cloudAiChartRows(input, "de", { formats: { y, value } }).add(datum).cells.y).toBe("1200 units");
+    const bar = parse({ kind: "bar", title: "Energy", data: [{ label: "Jan", value: 1200 }] });
+    expect(
+      cloudAiChartRows(bar, "de", { formats: { y } }).add({ ...datum, role: "item", values: [{ key: "value", value: 1200 }] }).cells.value,
+    ).toBe("1200 kWh");
+  });
+
+  test("explicit tooltip format wins over functions without changing x cells", () => {
+    const rows = cloudAiChartRows({ ...input, tooltip: { format: { style: "currency", currency: "EUR" } } }, "de", {
+      formats: { x, y, value },
+    });
+    expect(rows.add(datum).cells).toEqual({ x: "day 1", y: "1.200,00\u00a0€" });
+  });
+
+  test("histogram bounds use x functions and counts follow the count axis", () => {
+    const input = parse({
+      kind: "histogram",
+      title: "Bins",
+      data: [1, 2, 3],
+      bins: [1, 2, 4],
+      tooltip: { format: { unit: "kg", decimals: 1 } },
+    });
+    const datum: ChartDatum = {
+      index: 0,
+      role: "bin",
+      anchor: [0, 0],
+      values: [
+        { key: "from", value: 1 },
+        { key: "to", value: 2 },
+        { key: "count", value: 1 },
+      ],
+    };
+    expect(cloudAiChartRows(input, "de", { formats: { x, y, value } }).add(datum).cells).toEqual({
+      from: "day 1",
+      to: "day 2",
+      count: "1 kWh",
+    });
+    expect(cloudAiChartRows(input, "de").add(datum).cells).toEqual({ from: "1,0 kg", to: "2,0 kg", count: "1" });
+  });
+
+  test("histogram y functions format counts without formatting bounds", () => {
+    const input = parse({ kind: "histogram", title: "Bins", data: [1, 1, 3], bins: [1, 2, 4] });
+    const options = cloudAiChartRenderOptions(input, "de");
+    if (options.kind !== "histogram") throw new Error("Expected histogram");
+    const datum = chartDatums(charts.histogram({ ...options, width: 480, height: 280, inspect: true })).find(
+      (datum) => datum.role === "bin" && datum.index === 0,
+    );
+    if (!datum) throw new Error("Missing histogram bin");
+    const y = (v: number) => `${v} Stk.`;
+    expect(cloudAiChartRows(input, "de", { formats: { y } }).add(datum).cells).toEqual({ from: "1", to: "2", count: "2 Stk." });
+    expect(cloudAiChartRows(input, "de", { formats: { x, y } }).add(datum).cells).toEqual({
+      from: "day 1",
+      to: "day 2",
+      count: "2 Stk.",
+    });
+    expect(cloudAiChartRows(input, "de", { formats: { y, value } }).add(datum).cells).toEqual({
+      from: "1 units",
+      to: "2 units",
+      count: "2 Stk.",
+    });
+  });
+
+  test("omitting function formats preserves declarative output", () => {
+    expect(cloudAiChartRows(input, "de", {}).add(datum)).toEqual(cloudAiChartRows(input, "de").add(datum));
+    const spark = parse({ kind: "sparkline", title: "Trend", data: [1, 2] });
+    expect(cloudAiChartRows(spark, "de").add(datum).cells.x).toBe("2");
+    // A sparkline's x is its position, never a formatted axis value.
+    expect(cloudAiChartRows(spark, "de", { formats: { x } }).add(datum).cells.x).toBe("2");
+  });
 });

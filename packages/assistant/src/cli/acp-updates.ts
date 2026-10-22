@@ -15,6 +15,7 @@ import {
   CloudAiTextEditorOutputSchema,
   parseAiTodoPlan,
 } from "@k2b/cloud/ai/browser";
+import { capabilityReviewView } from "@k2b/cloud/capabilities";
 import type { CloudCliTableColumn } from "@k2b/cloud/cli";
 import { resolveLocalPath } from "./local-paths";
 import { localToolTarget } from "./local-tool-target";
@@ -73,8 +74,10 @@ export const planEntries = (args: unknown): PlanEntry[] | undefined =>
     item.status === "cancelled" ? [] : [{ content: terminalSafeText(item.content), priority: "medium" as const, status: item.status }],
   );
 export const isConfirmApproval = (action: ApprovalAction): boolean => !(action.allowChat || action.allowAlways || action.website);
+export const requiresCloudApproval = (action: ApprovalAction): boolean =>
+  isConfirmApproval(action) || !!(action.review && "sentence" in action.review && (action.review.contentRef || action.review.content));
 export const approvalOptions = (action: ApprovalAction): PermissionOption[] =>
-  isConfirmApproval(action)
+  requiresCloudApproval(action)
     ? [
         { optionId: "cloud", name: "Confirm in Cloud", kind: "allow_once" },
         { optionId: "reject", name: "Reject", kind: "reject_once" },
@@ -88,8 +91,16 @@ export const approvalOptions = (action: ApprovalAction): PermissionOption[] =>
       ];
 export const approvalReviewText = (action: ApprovalAction, link: string): string =>
   [
-    action.review?.message ?? action.message ?? action.name,
-    ...(action.review?.details ?? []).map((detail) => `${terminalSafeText(detail.label)}: ${terminalSafeText(detail.value)}`),
+    (action.review
+      ? capabilityReviewView(action.review, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).message
+      : undefined) ??
+      action.message ??
+      action.name,
+    ...(
+      (action.review
+        ? capabilityReviewView(action.review, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }).details
+        : undefined) ?? []
+    ).map((detail) => `${terminalSafeText(detail.label)}: ${terminalSafeText(detail.value)}`),
     `Open in Cloud: ${link}`,
   ]
     .map(terminalSafeText)

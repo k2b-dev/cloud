@@ -26,13 +26,14 @@ import { INACTIVE_ITEM_DAYS } from "@/contracts";
 import { newShortId, withShortId, withShortIdRetry } from "../lib/short-id";
 import { descriptionPreview } from "../presentation/description-preview";
 import { CompletionInputSchema, type TaskWork } from "../work-contracts";
-import { buildSpacePrincipalCondition, mayReadAcrossSpaces } from "./access";
+import { buildSpacePrincipalCondition, mayReadAcrossSpaces, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "./access";
 import type { SpaceActivityIdentity } from "./activity";
 import * as activity from "./activity";
 import { publishDependentsChange } from "./item-dependencies";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
 import { publishSpaceChange, spacesLive } from "./live";
 import { rank } from "./rank";
+import { getReactionsByItemIds, type ReactionViewer } from "./reactions";
 import {
   CalendarReadLimitError,
   type ExpandedRecurringEvent,
@@ -83,6 +84,7 @@ type DbItem = {
   ends_at: Date | null;
   all_day: boolean;
   deadline: Date | null;
+  deadline_date: string | null;
   estimated_duration_minutes: number | null;
   priority: string | null;
   recurrence_rrule: string | null;
@@ -111,6 +113,7 @@ type DbCalendarItem = {
   ends_at: Date | null;
   all_day: boolean;
   deadline: Date | null;
+  deadline_date: string | null;
   priority: string | null;
   recurrence_rrule: string | null;
   recurrence_dtstart: Date | null;
@@ -129,6 +132,7 @@ type DbOverlapItem = {
 };
 
 type DbItemAssignee = {
+  kind: SpaceItemAssignee["kind"];
   item_id: string;
   id: string;
   display_name: string;
@@ -300,16 +304,18 @@ export const persistCalendarEvent = async (params: {
 
 const shiftIsoInstant = (value: string, milliseconds: number) => new Date(new Date(value).getTime() + milliseconds).toISOString();
 
-const replaceItemAssignees = async (db: SqlExecutor, itemId: string, userIds: string[]): Promise<void> => {
+const replaceItemAssignees = async (db: SqlExecutor, itemId: string, principals: AssigneePrincipal[]): Promise<void> => {
   await db`DELETE FROM spaces.item_assignees WHERE item_id = ${itemId}`;
-
-  for (const userId of userIds) {
-    await db`
-      INSERT INTO spaces.item_assignees (item_id, user_id)
-      VALUES (${itemId}, ${userId})
-      ON CONFLICT DO NOTHING
-    `;
-  }
+  if (principals.length === 0) return;
+  await db`
+    INSERT INTO spaces.item_assignees (item_id, user_id, service_account_id)
+    SELECT ${itemId}::uuid, id, NULL::uuid
+    FROM unnest(${toPgUuidArray(principals.filter((principal) => principal.kind === "user").map((principal) => principal.id))}::uuid[]) AS id
+    UNION ALL
+    SELECT ${itemId}::uuid, NULL::uuid, id
+    FROM unnest(${toPgUuidArray(principals.filter((principal) => principal.kind === "service_account").map((principal) => principal.id))}::uuid[]) AS id
+    ON CONFLICT DO NOTHING
+  `;
 };
 
 const replaceItemTags = async (db: SqlExecutor, itemId: string, tagIds: string[]): Promise<void> => {
@@ -324,8 +330,8 @@ const replaceItemTags = async (db: SqlExecutor, itemId: string, tagIds: string[]
   }
 };
 
-const listSpaceAccessIds = async (spaceId: string): Promise<string[]> => {
-  const rows = await sql<{ access_id: string }[]>`
+const listSpaceAccessIds = async (spaceId: string, db: SqlExecutor = sql): Promise<string[]> => {
+  const rows = await db<{ access_id: string }[]>`
     SELECT access_id
     FROM spaces.space_access
     WHERE space_id = ${spaceId}::uuid
@@ -340,51 +346,163 @@ const assignableUserDescription = (user: AccessUser): string => {
 
 const uniqueIds = (ids: string[] | undefined): string[] => [...new Set(ids ?? [])];
 
+/** Accounts need their own readable grant; public and authenticated access never make them assignable. */
+export const listServiceAccountsWithAccess = async (params: {
+  spaceId: string;
+  search?: string;
+  ids?: string[];
+  excludeIds?: string[];
+  limit?: number;
+  db?: SqlExecutor;
+}): Promise<SpaceAssignableUser[]> => {
+  if (params.ids?.length === 0) return [];
+  const db = params.db ?? sql;
+  const ids = uniqueIds(params.ids);
+  const excluded = uniqueIds(params.excludeIds);
+  const query = params.search?.trim().toLowerCase();
+  const pattern = query ? `%${query.replace(/[\\%_]/g, "\\$&")}%` : null;
+  // Match the people directory's existing query budget.
+  const limit = Math.min(Math.max(params.limit ?? (ids.length || 20), 1), 500);
+  const rows = await db<{ id: string; name: string; kind: "standalone" | "agent" | "resource_bound" }[]>`
+    SELECT account.id, account.name, account.kind
+    FROM auth.service_accounts account
+    WHERE EXISTS (
+        SELECT 1 FROM auth.access access
+        JOIN spaces.space_access space_access ON space_access.access_id = access.id
+        WHERE access.service_account_id = account.id AND space_access.space_id = ${params.spaceId}::uuid
+          AND access.permission IN ('read', 'write', 'admin')
+      )
+      AND account.status = 'active'
+      AND (
+        account.kind IN ('standalone', 'agent')
+        OR (account.kind = 'resource_bound' AND account.app_id = ${SPACES_APP_ID}
+          AND account.resource_type = ${SPACE_RESOURCE_TYPE} AND account.resource_id = ${params.spaceId})
+      )
+      AND (${params.ids === undefined} OR account.id = ANY(${toPgUuidArray(ids)}::uuid[]))
+      AND account.id <> ALL(${toPgUuidArray(excluded)}::uuid[])
+      AND (${pattern}::text IS NULL OR LOWER(account.name) LIKE ${pattern} ESCAPE '\\')
+    ORDER BY (${query ?? null}::text IS NOT NULL AND LOWER(account.name) = ${query ?? null}) DESC, account.name, account.id
+    LIMIT ${limit}
+  `;
+  return rows.map((row) => ({
+    kind: "service_account",
+    id: row.id,
+    displayName: row.name,
+    avatarHash: null,
+    uid: row.name,
+    description: `${row.kind === "agent" ? "agent" : row.kind === "resource_bound" ? "Space API key" : "service account"} · direct access`,
+  }));
+};
+
+/** Lists the requested kinds together, ordered by exact search match, lowercased display name, then ID before limiting. */
 export const listAssignableUsers = async (params: {
   spaceId: string;
   search?: string;
   excludeUserIds?: string[];
   limit?: number;
+  kind?: SpaceAssignableUser["kind"];
 }): Promise<SpaceAssignableUser[]> => {
-  const accessIds = await listSpaceAccessIds(params.spaceId);
-  const users = await listUsersWithAccess({
-    accessIds,
-    search: params.search,
-    excludeUserIds: params.excludeUserIds,
-    limit: params.limit,
-  });
-
-  return users.map((user) => ({
+  const limit = Math.min(Math.max(params.limit ?? 20, 1), 500);
+  const [users, accounts] = await Promise.all([
+    params.kind === "service_account"
+      ? []
+      : listSpaceAccessIds(params.spaceId).then((accessIds) =>
+          listUsersWithAccess({ accessIds, search: params.search, excludeUserIds: params.excludeUserIds, limit }),
+        ),
+    params.kind === "user"
+      ? []
+      : listServiceAccountsWithAccess({
+          spaceId: params.spaceId,
+          search: params.search,
+          excludeIds: params.excludeUserIds,
+          limit,
+        }),
+  ]);
+  const people: SpaceAssignableUser[] = users.map((user) => ({
+    kind: "user",
     id: user.id,
     displayName: user.displayName,
     avatarHash: user.avatarHash,
     uid: user.uid,
     description: assignableUserDescription(user),
   }));
+  const query = params.search?.trim().toLowerCase();
+  const exact = (entry: SpaceAssignableUser) =>
+    Boolean(query && (entry.displayName.toLowerCase() === query || entry.uid.toLowerCase() === query));
+  return [...new Map([...accounts, ...people].map((entry) => [entry.id, entry])).values()]
+    .sort((a, b) => {
+      const matchOrder = Number(exact(b)) - Number(exact(a));
+      if (matchOrder) return matchOrder;
+      const aName = a.displayName.toLowerCase();
+      const bName = b.displayName.toLowerCase();
+      return aName < bName ? -1 : aName > bName ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    })
+    .slice(0, limit);
 };
 
-/** The given users that currently have access to the Space, in their given order. */
-export const filterAssigneeIdsWithAccess = async (spaceId: string, assigneeIds: string[]): Promise<string[]> => {
+type AssigneePrincipal = Pick<SpaceItemAssignee, "kind" | "id">;
+
+/** Principal-aware eligibility for filters, validation, template reads and replacement resolution. */
+export const listAssigneePrincipalsWithAccess = async (
+  spaceId: string,
+  assigneeIds: string[],
+  db: SqlExecutor = sql,
+): Promise<AssigneePrincipal[]> => {
   const ids = uniqueIds(assigneeIds);
   if (ids.length === 0) return [];
-  const users = await listUsersWithAccess({ accessIds: await listSpaceAccessIds(spaceId), userIds: ids, limit: ids.length });
-  const valid = new Set(users.map((user) => user.id));
-  return ids.filter((id) => valid.has(id));
+  const [users, accounts] = await Promise.all([
+    listUsersWithAccess({ accessIds: await listSpaceAccessIds(spaceId, db), userIds: ids, limit: ids.length, db }),
+    listServiceAccountsWithAccess({ spaceId, ids, limit: ids.length, db }),
+  ]);
+  return [
+    ...accounts.map((account): AssigneePrincipal => ({ kind: "service_account", id: account.id })),
+    ...users.map((user): AssigneePrincipal => ({ kind: "user", id: user.id })),
+  ];
 };
 
-export const validateAssigneeIdsInSpace = async (spaceId: string, assigneeIds: string[] | undefined): Promise<MutationResult<void>> => {
+/** The principals that currently have access to the Space, in their given order. */
+export const filterAssigneeIdsWithAccess = async (spaceId: string, assigneeIds: string[], db: SqlExecutor = sql): Promise<string[]> => {
+  const valid = new Set((await listAssigneePrincipalsWithAccess(spaceId, assigneeIds, db)).map((principal) => principal.id));
+  return uniqueIds(assigneeIds).filter((id) => valid.has(id));
+};
+
+/** Keeps current principals and resolves new validated IDs, preferring people over service accounts. */
+export const resolveAssigneePrincipals = async (
+  spaceId: string,
+  assigneeIds: string[],
+  db: SqlExecutor = sql,
+  current: AssigneePrincipal[] = [],
+): Promise<AssigneePrincipal[]> => {
   const ids = uniqueIds(assigneeIds);
-  if (ids.length === 0) return { ok: true, data: undefined };
-
-  const accessIds = await listSpaceAccessIds(spaceId);
-  const users = await listUsersWithAccess({
-    accessIds,
-    userIds: ids,
-    limit: ids.length,
+  const principals = new Map(current.map((principal) => [principal.id, principal]));
+  const eligible = await listAssigneePrincipalsWithAccess(
+    spaceId,
+    ids.filter((id) => !principals.has(id)),
+    db,
+  );
+  // People follow accounts in the eligibility result and take precedence for new IDs.
+  for (const principal of eligible) principals.set(principal.id, principal);
+  return ids.flatMap((id) => {
+    const principal = principals.get(id);
+    return principal ? [principal] : [];
   });
-  const validIds = new Set(users.map((user) => user.id));
-  const invalidCount = ids.filter((id) => !validIds.has(id)).length;
+};
 
+/** Caller holds the item row lock, shared with claim and assignee writes. */
+const readAssigneePrincipals = (itemId: string, db: SqlExecutor): Promise<AssigneePrincipal[]> => db<AssigneePrincipal[]>`
+  SELECT CASE WHEN user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind,
+    COALESCE(user_id, service_account_id) AS id
+  FROM spaces.item_assignees WHERE item_id = ${itemId}::uuid
+`;
+
+export const validateAssigneeIdsInSpace = async (
+  spaceId: string,
+  assigneeIds: string[] | undefined,
+  db: SqlExecutor = sql,
+): Promise<MutationResult<void>> => {
+  const ids = uniqueIds(assigneeIds);
+  const validIds = new Set(await filterAssigneeIdsWithAccess(spaceId, ids, db));
+  const invalidCount = ids.filter((id) => !validIds.has(id)).length;
   if (invalidCount > 0) {
     return {
       ok: false,
@@ -393,6 +511,22 @@ export const validateAssigneeIdsInSpace = async (spaceId: string, assigneeIds: s
     };
   }
   return { ok: true, data: undefined };
+};
+
+/** Existing concrete assignees can stay without re-validation. */
+const validateAssigneeReplacementInSpace = async (
+  spaceId: string,
+  current: AssigneePrincipal[],
+  assigneeIds: string[] | undefined,
+  db: SqlExecutor,
+): Promise<MutationResult<void>> => {
+  if (assigneeIds === undefined) return { ok: true, data: undefined };
+  const keepIds = new Set(current.map((row) => row.id));
+  return validateAssigneeIdsInSpace(
+    spaceId,
+    assigneeIds.filter((id) => !keepIds.has(id)),
+    db,
+  );
 };
 
 const validateRecurrenceInput = async (
@@ -504,7 +638,8 @@ const mapToItem = (row: DbItem): SpaceItem => ({
   startsAt: row.starts_at?.toISOString() ?? null,
   endsAt: row.ends_at?.toISOString() ?? null,
   allDay: row.all_day,
-  deadline: row.deadline?.toISOString() ?? null,
+  deadline: row.deadline_date ?? row.deadline?.toISOString() ?? null,
+  deadlineAllDay: row.deadline_date != null,
   estimatedDurationMinutes: row.estimated_duration_minutes,
   activeBlockerCount: 0,
   priority: (row.priority as Priority) ?? null,
@@ -523,14 +658,16 @@ const mapToItem = (row: DbItem): SpaceItem => ({
  * Get assignees for an item
  */
 const getAssignees = async (itemId: string): Promise<SpaceItemAssignee[]> => {
-  const rows = await sql<{ id: string; display_name: string; avatar_hash: string | null }[]>`
-    SELECT u.id, u.display_name, u.avatar_hash
+  const rows = await sql<Omit<DbItemAssignee, "item_id">[]>`
+    SELECT COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+      CASE WHEN ia.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
     FROM spaces.item_assignees ia
-    JOIN auth.users u ON ia.user_id = u.id
+    LEFT JOIN auth.users u ON ia.user_id = u.id
+    LEFT JOIN auth.service_accounts sa ON ia.service_account_id = sa.id
     WHERE ia.item_id = ${itemId}
-    ORDER BY u.display_name
+    ORDER BY display_name, id
   `;
-  return rows.map((r) => ({ id: r.id, displayName: r.display_name, avatarHash: r.avatar_hash }));
+  return rows.map((r) => ({ kind: r.kind, id: r.id, displayName: r.display_name, avatarHash: r.avatar_hash }));
 };
 
 /**
@@ -555,17 +692,19 @@ const getTags = async (itemId: string): Promise<SpaceTag[]> => {
 const getAssigneesByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceItemAssignee[]>> => {
   if (itemIds.length === 0) return new Map();
   const rows = await sql<DbItemAssignee[]>`
-    SELECT ia.item_id, u.id, u.display_name, u.avatar_hash
+    SELECT ia.item_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+      CASE WHEN ia.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
     FROM spaces.item_assignees ia
-    JOIN auth.users u ON ia.user_id = u.id
+    LEFT JOIN auth.users u ON ia.user_id = u.id
+    LEFT JOIN auth.service_accounts sa ON ia.service_account_id = sa.id
     WHERE ia.item_id = ANY(${toPgUuidArray(itemIds)}::uuid[])
-    ORDER BY ia.item_id, u.display_name
+    ORDER BY ia.item_id, display_name, id
   `;
   const grouped = new Map<string, SpaceItemAssignee[]>();
   for (const row of rows) {
     grouped.set(row.item_id, [
       ...(grouped.get(row.item_id) ?? []),
-      { id: row.id, displayName: row.display_name, avatarHash: row.avatar_hash },
+      { kind: row.kind, id: row.id, displayName: row.display_name, avatarHash: row.avatar_hash },
     ]);
   }
   return grouped;
@@ -643,38 +782,56 @@ const getClaimsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceI
   );
 };
 
-const hydrateRelations = async (items: SpaceItem[]): Promise<SpaceItem[]> => {
+/** Reactions are attached only for a viewer, because their `own` state and people list are personal. */
+const hydrateRelations = async (items: SpaceItem[], viewer?: ReactionViewer): Promise<SpaceItem[]> => {
   if (items.length === 0) return items;
   const itemIds = items.map((item) => item.id);
-  const [assigneesByItemId, tagsByItemId, blockerCountsByItemId, lastActivityByItemId, claimsByItemId] = await Promise.all([
-    getAssigneesByItemIds(itemIds),
-    getTagsByItemIds(itemIds),
-    getActiveBlockerCountsByItemIds(itemIds),
-    getLastActivityByItemIds(itemIds),
-    getClaimsByItemIds(itemIds),
-  ]);
+  const [assigneesByItemId, tagsByItemId, blockerCountsByItemId, lastActivityByItemId, claimsByItemId, reactionsByItemId] =
+    await Promise.all([
+      getAssigneesByItemIds(itemIds),
+      getTagsByItemIds(itemIds),
+      getActiveBlockerCountsByItemIds(itemIds),
+      getLastActivityByItemIds(itemIds),
+      getClaimsByItemIds(itemIds),
+      viewer ? getReactionsByItemIds(itemIds, viewer) : null,
+    ]);
   for (const item of items) {
     item.assignees = assigneesByItemId.get(item.id) ?? [];
     item.tags = tagsByItemId.get(item.id) ?? [];
     item.activeBlockerCount = blockerCountsByItemId.get(item.id) ?? 0;
     item.lastActivityAt = lastActivityByItemId.get(item.id) ?? item.updatedAt;
     item.claim = claimsByItemId.get(item.id) ?? null;
+    if (reactionsByItemId) item.reactions = reactionsByItemId.get(item.id) ?? [];
   }
   return items;
 };
 
+const calendarSortTime = (item: CalendarItem, dateConfig?: DateContext): number => {
+  if (item.startsAt) return new Date(item.startsAt).getTime();
+  if (!item.deadline) return 0;
+  return new Date(
+    isDateOnly(item.deadline)
+      ? dates.zonedDateTimeToInstant(`${item.deadline}T00:00`, deadlineTimeZone(dateConfig), { disambiguation: "compatible" })
+      : item.deadline,
+  ).getTime();
+};
+const isDateOnly = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+const deadlineTimeZone = (dateConfig?: DateContext) => dateConfig?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+const deadlineDaySql = (timeZone: string) => sql`COALESCE(i.deadline_date, (i.deadline AT TIME ZONE ${timeZone})::date)`;
+const deadlineSortSql = (timeZone: string) => sql`COALESCE(i.deadline, i.deadline_date::timestamp AT TIME ZONE ${timeZone})`;
 const deadlineWindow = (dateConfig?: DateContext) => {
   const todayStart = dates.today(dateConfig);
   return {
     todayStart: todayStart.toISOString(),
     tomorrowStart: dates.addDays(todayStart, 1, dateConfig).toISOString(),
-    weekEnd: dates.addDays(todayStart, 7, dateConfig).toISOString(),
+    todayKey: dates.formatDateKey(todayStart, dateConfig),
+    weekEndKey: dates.formatDateKey(dates.addDays(todayStart, 7, dateConfig), dateConfig),
   };
 };
 
-/** isTaskOverdue in SQL, without the completion check that the status filter owns: a task, not an event, due before today. */
-const overdueMatch = (todayStart: string) =>
-  sql`((i.starts_at IS NULL OR i.ends_at IS NULL) AND i.deadline IS NOT NULL AND i.deadline < ${todayStart}::timestamptz)`;
+/** isTaskOverdue in SQL; completion is owned by the status filter. */
+const overdueMatch = (dateConfig?: DateContext) =>
+  sql`((i.starts_at IS NULL OR i.ends_at IS NULL) AND COALESCE(${deadlineDaySql(deadlineTimeZone(dateConfig))} < ${deadlineWindow(dateConfig).todayKey}::date, false))`;
 
 /**
  * Dashboard widget query: today's events and the next deadlines, across
@@ -699,6 +856,7 @@ export type DashboardItem = {
   startsAt: string | null;
   endsAt: string | null;
   deadline: string | null;
+  deadlineAllDay: boolean;
 };
 
 export const dashboardSnapshot = async (params: {
@@ -742,7 +900,7 @@ export const dashboardSnapshot = async (params: {
       COUNT(*) FILTER (
         WHERE i.completed_at IS NULL AND (
           (i.starts_at IS NOT NULL AND i.starts_at >= ${todayStart}::timestamptz AND i.starts_at < ${tomorrowStart}::timestamptz)
-          OR (i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz)
+          OR (${deadlineDaySql(deadlineTimeZone(params.dateConfig))} = ${deadlineWindow(params.dateConfig).todayKey}::date)
         )
       )::int AS today_count,
       COUNT(*) FILTER (
@@ -775,6 +933,7 @@ export const dashboardSnapshot = async (params: {
     starts_at: string | null;
     ends_at: string | null;
     deadline: string | null;
+    deadline_date: string | null;
   };
 
   // Today's events: starts_at within today's window OR deadline within today.
@@ -784,14 +943,14 @@ export const dashboardSnapshot = async (params: {
       : await sql<DbWidget[]>`
     SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
            i.title, i.priority,
-           i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline
+           i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline, i.deadline_date::text AS deadline_date
     FROM spaces.items i
     JOIN spaces.spaces s ON s.id = i.space_id
     WHERE i.completed_at IS NULL
       ${spaceFilter}
       AND (
         (i.starts_at IS NOT NULL AND i.starts_at >= ${todayStart}::timestamptz AND i.starts_at < ${tomorrowStart}::timestamptz)
-        OR (i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz)
+        OR (${deadlineDaySql(deadlineTimeZone(params.dateConfig))} = ${deadlineWindow(params.dateConfig).todayKey}::date)
       )
       AND EXISTS (
         SELECT 1 FROM spaces.space_access sa
@@ -800,7 +959,7 @@ export const dashboardSnapshot = async (params: {
           AND a.permission <> 'none'
           AND ${principalMatch}
       )
-    ORDER BY COALESCE(i.starts_at, i.deadline) ASC
+    ORDER BY COALESCE(i.starts_at, ${deadlineSortSql(deadlineTimeZone(params.dateConfig))}) ASC
     LIMIT 5
   `;
 
@@ -811,7 +970,7 @@ export const dashboardSnapshot = async (params: {
       : await sql<DbWidget[]>`
     SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
            i.title, i.priority,
-           i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline
+           i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline, i.deadline_date::text AS deadline_date
     FROM spaces.items i
     JOIN spaces.columns c ON c.id = i.column_id
     JOIN spaces.spaces s ON s.id = i.space_id
@@ -826,7 +985,7 @@ export const dashboardSnapshot = async (params: {
           AND a.permission <> 'none'
           AND ${principalMatch}
       )
-    ORDER BY i.deadline ASC NULLS LAST, i.created_at ASC
+    ORDER BY ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} ASC NULLS LAST, i.created_at ASC
     LIMIT ${params.todoLimit}
   `;
 
@@ -842,7 +1001,8 @@ export const dashboardSnapshot = async (params: {
     priority: r.priority,
     startsAt: r.starts_at,
     endsAt: r.ends_at,
-    deadline: r.deadline,
+    deadline: r.deadline_date ?? (r.deadline ? new Date(r.deadline).toISOString() : null),
+    deadlineAllDay: r.deadline_date != null,
   });
 
   return {
@@ -859,14 +1019,14 @@ export const dashboardSnapshot = async (params: {
 /**
  * List items for a space as a plain board snapshot.
  */
-export const list = async (params: { spaceId: string; includeCompleted?: boolean }): Promise<SpaceItem[]> => {
+export const list = async (params: { spaceId: string; includeCompleted?: boolean; viewer?: ReactionViewer }): Promise<SpaceItem[]> => {
   const { spaceId, includeCompleted = false } = params;
 
   let rows: DbItem[];
   if (includeCompleted) {
     rows = await sql<DbItem[]>`
       SELECT
-        i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline,
+        i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.deadline_date::text AS deadline_date,
         i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
         i.rank::text AS rank,
         i.completed_at, i.created_by, i.created_at, i.updated_at
@@ -878,7 +1038,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
   } else {
     rows = await sql<DbItem[]>`
       SELECT
-        i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline,
+        i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.deadline_date::text AS deadline_date,
         i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
         i.rank::text AS rank,
         i.completed_at, i.created_by, i.created_at, i.updated_at
@@ -889,7 +1049,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
     `;
   }
 
-  return hydrateRelations(rows.map(mapToItem));
+  return hydrateRelations(rows.map(mapToItem), params.viewer);
 };
 
 /**
@@ -899,6 +1059,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
 export const listFiltered = async (params: {
   spaceId: string;
   filter: ItemFilter;
+  viewer?: ReactionViewer;
   currentUserId?: string;
   dateConfig?: DateContext;
 }): Promise<ItemListResult> => {
@@ -949,10 +1110,9 @@ export const listFiltered = async (params: {
   }
 
   if (filter.overdue !== undefined) {
-    const { todayStart } = deadlineWindow(params.dateConfig);
     conditions = filter.overdue
-      ? sql`${conditions} AND ${overdueMatch(todayStart)}`
-      : sql`${conditions} AND NOT ${overdueMatch(todayStart)}`;
+      ? sql`${conditions} AND ${overdueMatch(params.dateConfig)}`
+      : sql`${conditions} AND NOT ${overdueMatch(params.dateConfig)}`;
   }
 
   // Status filter
@@ -987,19 +1147,16 @@ export const listFiltered = async (params: {
 
   // Deadline filter
   if (deadlineFilter === "overdue") {
-    const { todayStart } = deadlineWindow(params.dateConfig);
-    conditions = sql`${conditions} AND ${overdueMatch(todayStart)}`;
+    conditions = sql`${conditions} AND ${overdueMatch(params.dateConfig)}`;
   } else if (deadlineFilter === "today") {
-    const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
-    conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz`;
+    conditions = sql`${conditions} AND ${deadlineDaySql(deadlineTimeZone(params.dateConfig))} = ${deadlineWindow(params.dateConfig).todayKey}::date`;
   } else if (deadlineFilter === "week") {
-    const { todayStart, weekEnd } = deadlineWindow(params.dateConfig);
-    conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${weekEnd}::timestamptz`;
+    conditions = sql`${conditions} AND ${deadlineDaySql(deadlineTimeZone(params.dateConfig))} >= ${deadlineWindow(params.dateConfig).todayKey}::date AND ${deadlineDaySql(deadlineTimeZone(params.dateConfig))} < ${deadlineWindow(params.dateConfig).weekEndKey}::date`;
   } else if (deadlineFilter === "none") {
-    conditions = sql`${conditions} AND i.deadline IS NULL`;
+    conditions = sql`${conditions} AND (i.deadline IS NULL AND i.deadline_date IS NULL)`;
   }
   if (deadlineBefore) {
-    conditions = sql`${conditions} AND i.deadline IS NOT NULL AND i.deadline < ${deadlineBefore}::timestamptz`;
+    conditions = sql`${conditions} AND ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} < ${deadlineBefore}::timestamptz`;
   }
 
   // Tag filter (items that have ANY of the specified tags)
@@ -1010,11 +1167,12 @@ export const listFiltered = async (params: {
     )`;
   }
 
-  // Assignee filter (items assigned to ANY of the specified users)
+  // Assignee filter (items assigned to ANY of the specified principals)
   if (assigneeIds && assigneeIds.length > 0) {
     conditions = sql`${conditions} AND EXISTS (
       SELECT 1 FROM spaces.item_assignees ia
-      WHERE ia.item_id = i.id AND ia.user_id = ANY(${toPgUuidArray(assigneeIds)}::uuid[])
+      WHERE ia.item_id = i.id AND (ia.user_id = ANY(${toPgUuidArray(assigneeIds)}::uuid[])
+        OR ia.service_account_id = ANY(${toPgUuidArray(assigneeIds)}::uuid[]))
     )`;
   }
 
@@ -1053,8 +1211,8 @@ export const listFiltered = async (params: {
       break;
     case "deadline":
       orderClause = sortDesc
-        ? sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE i.deadline END DESC NULLS FIRST, i.rank ASC, i.id ASC`
-        : sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE i.deadline END ASC NULLS LAST, i.rank ASC, i.id ASC`;
+        ? sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} END DESC NULLS FIRST, i.rank ASC, i.id ASC`
+        : sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} END ASC NULLS LAST, i.rank ASC, i.id ASC`;
       break;
     case "created":
       orderClause = sortDesc ? sql`i.created_at DESC, i.id ASC` : sql`i.created_at ASC, i.id ASC`;
@@ -1089,8 +1247,8 @@ export const listFiltered = async (params: {
     case "deadline": {
       const timeZone = params.dateConfig?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
       const todayKey = dates.formatDateKey(dates.today(params.dateConfig), params.dateConfig);
-      const schedule = sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE i.deadline END`;
-      const dayKey = sql`to_char(${schedule} AT TIME ZONE ${timeZone}, 'YYYY-MM-DD')`;
+      const schedule = sql`CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN i.starts_at ELSE ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} END`;
+      const dayKey = sql`(CASE WHEN i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL THEN (i.starts_at AT TIME ZONE ${timeZone})::date ELSE ${deadlineDaySql(timeZone)} END)::text`;
       groupKey = sql`CASE
         WHEN ${schedule} IS NULL THEN 'none'
         WHEN ${dayKey} < ${todayKey} AND i.completed_at IS NULL THEN
@@ -1136,7 +1294,7 @@ export const listFiltered = async (params: {
   // Get items with pagination
   const rows = await sql<DbItem[]>`
     SELECT i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at,
-           i.all_day, i.deadline, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
+           i.all_day, i.deadline, i.deadline_date::text AS deadline_date, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
            i.rank::text AS rank,
            i.completed_at,
            i.created_by, i.created_at, i.updated_at
@@ -1152,7 +1310,7 @@ export const listFiltered = async (params: {
     ORDER BY ${groupBy === "tag" ? sortClause : orderClause}
   `;
 
-  const items = await hydrateRelations(rows.map(mapToItem));
+  const items = await hydrateRelations(rows.map(mapToItem), params.viewer);
 
   return {
     items,
@@ -1204,7 +1362,8 @@ const mapCalendarRow = (r: DbCalendarItem, tags: SpaceTag[], assignees: SpaceIte
   startsAt: r.starts_at?.toISOString() ?? null,
   endsAt: r.ends_at?.toISOString() ?? null,
   allDay: r.all_day,
-  deadline: r.deadline?.toISOString() ?? null,
+  deadline: r.deadline_date ?? r.deadline?.toISOString() ?? null,
+  deadlineAllDay: r.deadline_date != null,
   priority: (r.priority as Priority) ?? null,
   recurrence: mapRecurrence(r),
   recurringEventId: r.recurring_event_id,
@@ -1263,6 +1422,7 @@ const expandedToCalendarItem = (event: ExpandedRecurringEvent & { calendarItem?:
       endsAt: event.end ? new Date(event.end).toISOString() : null,
       allDay: event.allDay ?? false,
       deadline: null,
+      deadlineAllDay: false,
       priority: null,
       recurrence: null,
       recurringEventId: parent,
@@ -1337,13 +1497,13 @@ export const searchAcross = async (params: {
   const window = deadlineWindow(params.dateConfig);
   const deadlineMatch =
     params.deadlineFilter === "overdue"
-      ? overdueMatch(window.todayStart)
+      ? overdueMatch(params.dateConfig)
       : params.deadlineFilter === "today"
-        ? sql`i.deadline >= ${window.todayStart}::timestamptz AND i.deadline < ${window.tomorrowStart}::timestamptz`
+        ? sql`${deadlineDaySql(deadlineTimeZone(params.dateConfig))} = ${window.todayKey}::date`
         : params.deadlineFilter === "week"
-          ? sql`i.deadline >= ${window.todayStart}::timestamptz AND i.deadline < ${window.weekEnd}::timestamptz`
+          ? sql`${deadlineDaySql(deadlineTimeZone(params.dateConfig))} >= ${window.todayKey}::date AND ${deadlineDaySql(deadlineTimeZone(params.dateConfig))} < ${window.weekEndKey}::date`
           : params.deadlineFilter === "none"
-            ? sql`i.deadline IS NULL`
+            ? sql`(i.deadline IS NULL AND i.deadline_date IS NULL)`
             : sql`true`;
   const blockedMatch =
     params.blocked === undefined
@@ -1362,7 +1522,7 @@ export const searchAcross = async (params: {
   const rows = await sql<DbItemAcross[]>`
     SELECT
       i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at,
-      i.all_day, i.deadline, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
+      i.all_day, i.deadline, i.deadline_date::text AS deadline_date, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
       i.rank::text AS rank,
       i.completed_at,
       i.created_by, i.created_at, i.updated_at,
@@ -1420,7 +1580,7 @@ export const findByTitle = async (params: { spaceId: string; title: string; limi
     LIMIT ${params.limit}
   `;
 
-export const get = async (params: { id: string }): Promise<SpaceItem | null> => {
+export const get = async (params: { id: string; viewer?: ReactionViewer }): Promise<SpaceItem | null> => {
   const [row] = await sql<DbItem[]>`
     SELECT
       i.id,
@@ -1433,7 +1593,7 @@ export const get = async (params: { id: string }): Promise<SpaceItem | null> => 
       i.starts_at,
       i.ends_at,
       i.all_day,
-      i.deadline,
+      i.deadline, i.deadline_date::text AS deadline_date,
       i.estimated_duration_minutes,
       i.priority,
       i.recurrence_rrule,
@@ -1453,28 +1613,34 @@ export const get = async (params: { id: string }): Promise<SpaceItem | null> => 
   if (!row) return null;
 
   const item = mapToItem(row);
-  const [assignees, tags, blockerCounts, claims] = await Promise.all([
+  const [assignees, tags, blockerCounts, claims, reactions] = await Promise.all([
     getAssignees(item.id),
     getTags(item.id),
     getActiveBlockerCountsByItemIds([item.id]),
     getClaimsByItemIds([item.id]),
+    params.viewer ? getReactionsByItemIds([item.id], params.viewer) : null,
   ]);
   item.assignees = assignees;
   item.tags = tags;
   item.activeBlockerCount = blockerCounts.get(item.id) ?? 0;
   item.claim = claims.get(item.id) ?? null;
+  if (reactions) item.reactions = reactions.get(item.id) ?? [];
 
   return item;
 };
 
-export const getRecurringOverride = async (params: { recurringEventId: string; recurrenceId: string }): Promise<SpaceItem | null> => {
+export const getRecurringOverride = async (params: {
+  recurringEventId: string;
+  recurrenceId: string;
+  viewer?: ReactionViewer;
+}): Promise<SpaceItem | null> => {
   const [row] = await sql<{ id: string }[]>`
     SELECT id
     FROM spaces.items
     WHERE recurring_event_id = ${params.recurringEventId}
       AND recurrence_id = ${params.recurrenceId}::timestamptz
   `;
-  return row ? get({ id: row.id }) : null;
+  return row ? get({ id: row.id, viewer: params.viewer }) : null;
 };
 
 /**
@@ -1536,7 +1702,7 @@ export const create = async (params: {
       const shortId = newShortId();
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
-        id, short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, deadline,
+        id, short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, deadline, deadline_date,
         estimated_duration_minutes, all_day, priority, recurrence_rrule, recurrence_dtstart, recurrence_exdate,
         recurring_event_id, recurrence_id, rank, completed_at, created_by
       )
@@ -1550,7 +1716,8 @@ export const create = async (params: {
         ${data.url ?? null},
         ${data.startsAt ?? null},
         ${data.endsAt ?? null},
-        ${data.deadline ?? null},
+        ${data.deadline && !isDateOnly(data.deadline) ? data.deadline : null},
+        ${data.deadline && isDateOnly(data.deadline) ? data.deadline : null}::date,
         ${data.estimatedDurationMinutes ?? null},
         ${data.allDay ?? false},
         ${data.priority ?? null},
@@ -1572,7 +1739,16 @@ export const create = async (params: {
       if (!created) return null;
 
       if (assigneeIds !== undefined) {
-        await replaceItemAssignees(tx, created.id, assigneeIds);
+        await replaceItemAssignees(
+          tx,
+          created.id,
+          await resolveAssigneePrincipals(
+            spaceId,
+            assigneeIds,
+            tx,
+            data.assignCreator && createdBy ? [{ kind: "user", id: createdBy }] : [],
+          ),
+        );
       }
 
       for (const [index, label] of (data.checklist ?? []).entries()) {
@@ -1638,12 +1814,10 @@ export const update = async (params: {
   }
   const tagCheck = await validateTagIdsInSpace(existing.spaceId, data.tagIds);
   if (!tagCheck.ok) return tagCheck;
-  const assigneeCheck = await validateAssigneeIdsInSpace(existing.spaceId, data.assigneeIds);
-  if (!assigneeCheck.ok) return assigneeCheck;
 
   const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
     const [locked] = await tx<DbItem[]>`
-      SELECT id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline,
+      SELECT id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, deadline_date::text AS deadline_date,
         estimated_duration_minutes, priority, recurrence_rrule, recurrence_dtstart, recurrence_exdate,
         recurring_event_id, recurrence_id, rank::text AS rank, completed_at, created_by, created_at, updated_at
       FROM spaces.items
@@ -1651,6 +1825,24 @@ export const update = async (params: {
       FOR UPDATE
     `;
     if (!locked) return { ok: false, error: "Item not found", status: 404 };
+    const currentAssignees = data.assigneeIds === undefined ? [] : await readAssigneePrincipals(id, tx);
+    const assigneeCheck = await validateAssigneeReplacementInSpace(locked.space_id, currentAssignees, data.assigneeIds, tx);
+    if (!assigneeCheck.ok) return assigneeCheck;
+
+    // Claim writes also hold this row lock. Refuse stale assignee replacements before any write.
+    const { claim } = await taskWork.read(id, tx);
+    const nextAssignees =
+      data.assigneeIds === undefined ? undefined : await resolveAssigneePrincipals(locked.space_id, data.assigneeIds, tx, currentAssignees);
+    const dropsClaimHolder =
+      claim !== null &&
+      nextAssignees !== undefined &&
+      currentAssignees.some((principal) => principal.kind === claim.actor.kind && principal.id === claim.actor.id) &&
+      !nextAssignees.some((principal) => principal.kind === claim.actor.kind && principal.id === claim.actor.id);
+    let takenOver: Awaited<ReturnType<typeof taskWork.checkClaim>> | null = null;
+    if (dropsClaimHolder) {
+      takenOver = await taskWork.checkClaim(id, params.actor ?? systemActor, data.claimId, tx, data.force);
+      if (!takenOver.ok) return takenOver;
+    }
 
     const current = mapToItem(locked);
     const columnId = data.columnId ?? current.columnId;
@@ -1681,7 +1873,7 @@ export const update = async (params: {
         exdate: recurrence.exdate.map((value) => shiftIsoInstant(value, seriesShiftMilliseconds)),
       };
     }
-    if (!current.startsAt && !current.endsAt && (startsAt || endsAt) && (await taskWork.read(id, tx)).claim)
+    if (!current.startsAt && !current.endsAt && (startsAt || endsAt) && claim)
       return { ok: false, error: "Release the task claim before converting it to an event", status: 409 };
     if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
       return { ok: false, error: "End time must be after start time", status: 400 };
@@ -1730,7 +1922,8 @@ export const update = async (params: {
               starts_at = ${startsAt},
               ends_at = ${endsAt},
               all_day = ${allDay},
-              deadline = ${deadline},
+              deadline = ${deadline && !isDateOnly(deadline) ? deadline : null},
+              deadline_date = ${deadline && isDateOnly(deadline) ? deadline : null}::date,
               estimated_duration_minutes = ${estimatedDurationMinutes},
               priority = ${priority},
               recurrence_rrule = ${recurrenceDb.rrule},
@@ -1751,7 +1944,8 @@ export const update = async (params: {
               starts_at = ${startsAt},
               ends_at = ${endsAt},
               all_day = ${allDay},
-              deadline = ${deadline},
+              deadline = ${deadline && !isDateOnly(deadline) ? deadline : null},
+              deadline_date = ${deadline && isDateOnly(deadline) ? deadline : null}::date,
               estimated_duration_minutes = ${estimatedDurationMinutes},
               priority = ${priority},
               recurrence_rrule = ${recurrenceDb.rrule},
@@ -1766,8 +1960,14 @@ export const update = async (params: {
 
     if (!updated) return { ok: false, error: "Item not found", status: 404 };
 
-    if (data.assigneeIds !== undefined) {
-      await replaceItemAssignees(tx, id, data.assigneeIds);
+    if (nextAssignees !== undefined) {
+      if (dropsClaimHolder) await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
+      await replaceItemAssignees(tx, id, nextAssignees);
+      if (takenOver?.ok && takenOver.data)
+        await taskWork.recordTakeOver(
+          { spaceId: current.spaceId, itemId: id, itemTitle: current.title, actor: params.actor ?? systemActor, claim: takenOver.data },
+          tx,
+        );
     }
 
     if (data.tagIds !== undefined) {
@@ -1831,7 +2031,7 @@ export const splitRecurring = async (params: {
     sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
       const [source] = await tx<DbItem[]>`
       SELECT
-        id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, estimated_duration_minutes, priority,
+        id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, deadline_date::text AS deadline_date, estimated_duration_minutes, priority,
         recurrence_rrule, recurrence_dtstart, recurrence_exdate, recurring_event_id, recurrence_id, rank::text AS rank,
         completed_at, created_by, created_at, updated_at
       FROM spaces.items
@@ -1909,7 +2109,7 @@ export const splitRecurring = async (params: {
 
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
-        short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, estimated_duration_minutes, priority,
+        short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, deadline_date, estimated_duration_minutes, priority,
         recurrence_rrule, recurrence_dtstart, recurrence_exdate, recurring_event_id, recurrence_id, rank,
         completed_at, created_by
       )
@@ -1925,6 +2125,7 @@ export const splitRecurring = async (params: {
         ${params.data.endsAt}::timestamptz,
         ${params.data.allDay},
         deadline,
+        deadline_date,
         estimated_duration_minutes,
         priority,
         ${split.nextRrule},
@@ -1942,8 +2143,8 @@ export const splitRecurring = async (params: {
       if (!created) return { ok: false, error: "Failed to create split series", status: 500 };
 
       await tx`
-      INSERT INTO spaces.item_assignees (item_id, user_id)
-      SELECT ${created.id}, user_id
+      INSERT INTO spaces.item_assignees (item_id, user_id, service_account_id)
+      SELECT ${created.id}, user_id, service_account_id
       FROM spaces.item_assignees
       WHERE item_id = ${source.id}
       ON CONFLICT DO NOTHING
@@ -2382,6 +2583,8 @@ export const setAssignees = async (params: {
   id: string;
   userIds: string[];
   actor?: SpaceActivityIdentity;
+  claimId?: string;
+  force?: boolean;
 }): Promise<MutationResult<void>> => {
   const { id, userIds } = params;
 
@@ -2391,15 +2594,31 @@ export const setAssignees = async (params: {
     return { ok: false, error: "Item not found", status: 404 };
   }
 
-  const assigneeCheck = await validateAssigneeIdsInSpace(existing.spaceId, userIds);
-  if (!assigneeCheck.ok) return assigneeCheck;
-
   const result = await sql.begin(async (tx): Promise<MutationResult<void>> => {
     const [current] = await tx<{ space_id: string; title: string }[]>`
       SELECT space_id, title FROM spaces.items WHERE id = ${id} FOR UPDATE
     `;
     if (!current) return { ok: false, error: "Item not found", status: 404 };
-    await replaceItemAssignees(tx, id, userIds);
+    const currentAssignees = await readAssigneePrincipals(id, tx);
+    const assigneeCheck = await validateAssigneeReplacementInSpace(current.space_id, currentAssignees, userIds, tx);
+    if (!assigneeCheck.ok) return assigneeCheck;
+    const { claim } = await taskWork.read(id, tx);
+    const nextAssignees = await resolveAssigneePrincipals(current.space_id, userIds, tx, currentAssignees);
+    if (
+      claim &&
+      currentAssignees.some((principal) => principal.kind === claim.actor.kind && principal.id === claim.actor.id) &&
+      !nextAssignees.some((principal) => principal.kind === claim.actor.kind && principal.id === claim.actor.id)
+    ) {
+      const check = await taskWork.checkClaim(id, params.actor ?? systemActor, params.claimId, tx, params.force);
+      if (!check.ok) return check;
+      await taskWork.finish(id, undefined, undefined, params.actor ?? systemActor, tx);
+      if (check.data)
+        await taskWork.recordTakeOver(
+          { spaceId: current.space_id, itemId: id, itemTitle: current.title, actor: params.actor ?? systemActor, claim: check.data },
+          tx,
+        );
+    }
+    await replaceItemAssignees(tx, id, nextAssignees);
     await activity.record(
       {
         spaceId: current.space_id,
@@ -2470,7 +2689,7 @@ type CalendarAccessParams = {
 };
 
 const calendarTypeMatch = (type?: ItemType) => {
-  if (type === "task") return sql`(i.starts_at IS NULL OR i.ends_at IS NULL) AND i.deadline IS NOT NULL`;
+  if (type === "task") return sql`(i.starts_at IS NULL OR i.ends_at IS NULL) AND (i.deadline IS NOT NULL OR i.deadline_date IS NOT NULL)`;
   if (type === "event") return sql`i.starts_at IS NOT NULL AND i.ends_at IS NOT NULL`;
   return sql`true`;
 };
@@ -2547,7 +2766,7 @@ export const listCalendar = async (
         AND ${requestedSpaceMatch}
     )
     SELECT i.id, i.space_id, i.column_id, s.name as space_name, s.color as space_color,
-           i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.priority,
+           i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline, i.deadline_date::text AS deadline_date, i.priority,
            i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id
     FROM spaces.items i
     JOIN spaces.spaces s ON i.space_id = s.id
@@ -2586,9 +2805,9 @@ export const listCalendar = async (
             ) > ${from}::timestamptz)
           )
         )
-        OR (i.deadline IS NOT NULL AND i.deadline >= ${from}::timestamptz AND i.deadline < ${to}::timestamptz)
+        OR (${deadlineSortSql(deadlineTimeZone(params.dateConfig))} >= ${from}::timestamptz AND ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} < ${to}::timestamptz)
       )
-    ORDER BY COALESCE(i.starts_at, i.deadline), i.id
+    ORDER BY COALESCE(i.starts_at, ${deadlineSortSql(deadlineTimeZone(params.dateConfig))}), i.id
     LIMIT ${params.sourceLimit === undefined ? null : params.sourceLimit + 1}
   `;
 
@@ -2666,8 +2885,8 @@ export const listCalendar = async (
   });
 
   return [...regularItems, ...expanded].sort((a, b) => {
-    const aTime = new Date(a.startsAt ?? a.deadline ?? 0).getTime();
-    const bTime = new Date(b.startsAt ?? b.deadline ?? 0).getTime();
+    const aTime = calendarSortTime(a, params.dateConfig);
+    const bTime = calendarSortTime(b, params.dateConfig);
     return aTime - bTime;
   });
 };
@@ -2721,13 +2940,19 @@ export type TaskItem = {
   spaceColor: string;
   title: string;
   deadline: string | null;
+  deadlineAllDay: boolean;
   priority: Priority | null;
 };
 
 /**
  * List tasks assigned to a specific user (across all spaces they have access to)
  */
-export const listMyTasks = async (params: { userId: string; minPriority?: Priority; limit?: number }): Promise<TaskItem[]> => {
+export const listMyTasks = async (params: {
+  userId: string;
+  minPriority?: Priority;
+  limit?: number;
+  dateConfig?: DateContext;
+}): Promise<TaskItem[]> => {
   const { userId, minPriority, limit = 20 } = params;
   const principalMatch = buildSpacePrincipalCondition({ type: "user", userId });
 
@@ -2753,6 +2978,7 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
       space_color: string;
       title: string;
       deadline: Date | null;
+      deadline_date: string | null;
       priority: string | null;
     }[]
   >`
@@ -2765,7 +2991,7 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
         AND ${principalMatch}
     )
     SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name as space_name, s.color as space_color,
-           i.title, i.deadline, i.priority
+           i.title, i.deadline, i.deadline_date::text AS deadline_date, i.priority
     FROM spaces.items i
     JOIN spaces.spaces s ON i.space_id = s.id
     WHERE i.space_id IN (SELECT id FROM accessible_spaces)
@@ -2784,7 +3010,7 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
         WHEN 'low' THEN 4
         ELSE 5
       END,
-      i.deadline ASC NULLS LAST,
+      ${deadlineSortSql(deadlineTimeZone(params.dateConfig))} ASC NULLS LAST,
       i.created_at DESC
     LIMIT ${limit}
   `;
@@ -2797,7 +3023,8 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
     spaceName: r.space_name,
     spaceColor: r.space_color,
     title: r.title,
-    deadline: r.deadline?.toISOString() ?? null,
+    deadline: r.deadline_date ?? r.deadline?.toISOString() ?? null,
+    deadlineAllDay: r.deadline_date != null,
     priority: (r.priority as Priority) ?? null,
   }));
 };

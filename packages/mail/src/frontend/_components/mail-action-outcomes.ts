@@ -1,12 +1,6 @@
-import { MAX_COMMAND_OUTCOME_IDS } from "../../command-outcomes";
+import { MAIL_ACTION_OUTCOME_TTL_MS, MAX_COMMAND_OUTCOME_IDS } from "../../command-outcomes";
 import type { MailCommandOutcome } from "../../contracts";
 import type { MailActionId } from "./mail-actions";
-
-/**
- * How long the workspace follows queued commands. A command that was checked and still waits after
- * that has not failed; it waits for the mailbox, which the mailbox health shows.
- */
-export const MAIL_ACTION_OUTCOME_TTL_MS = 15 * 60_000;
 
 /** A command's state as the action request or the outcome request returned it. */
 export type MailActionCommand = Pick<MailCommandOutcome, "id" | "state"> & { code?: string | null };

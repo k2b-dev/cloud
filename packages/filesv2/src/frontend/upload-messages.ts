@@ -1,6 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import type { UploadAnnouncement, UploadStatus } from "./upload-batch";
+import { UploadTransferError } from "../upload-transfer";
+import type { UploadAnnouncement, UploadStatus, UploadWait } from "./upload-batch";
 
 const enFiles = (n: number) => (n === 1 ? "1 file" : `${n} files`);
 const deFiles = (n: number) => (n === 1 ? "1 Datei" : `${n} Dateien`);
@@ -14,6 +15,9 @@ const messages = i18n.define({
       percent: (value: number) => `${value}%`,
       uploadingTo: (target: string) => `Uploading to “${target}”`,
       uploading: "Uploading",
+      finishing: "Finishing…",
+      finishingStatus: "Finishing",
+      transferred: ({ sent, size }: { sent: string; size: string }) => `${sent} of ${size}`,
       uploadedTo: (target: string) => `Uploaded to “${target}”`,
       uploaded: "Upload complete",
       nothingUploaded: "Nothing uploaded",
@@ -46,6 +50,19 @@ const messages = i18n.define({
         })[status],
       failed: "Could not be uploaded",
       offline: "No connection",
+      stalled: "No response from the file server",
+      serverStalled: "No response from the server",
+      busy: "The file server is busy",
+      rateLimited: "Too many uploads in a short time",
+      waitingForNetwork: "Waiting for network",
+      wait: (wait: UploadWait) =>
+        ({
+          network: "Waiting for network",
+          stalled: "No response, trying again soon",
+          busy: "File server busy, trying again soon",
+          rate_limited: "Short pause after many uploads",
+          retrying: "Trying again",
+        })[wait],
       announce: (said: UploadAnnouncement | { kind: "failures"; count: number }): string => {
         switch (said.kind) {
           case "started":
@@ -60,6 +77,10 @@ const messages = i18n.define({
             return `${enFiles(said.count)} could not be uploaded.`;
           case "retrying":
             return said.count === 1 ? `Uploading ${said.name} again.` : `Uploading ${enFiles(said.count)} again.`;
+          case "offline":
+            return "Waiting for network. The upload continues by itself when the connection is back.";
+          case "online":
+            return "Connection is back. The upload continues.";
           case "finished":
             if (said.failed) return `Upload finished. ${said.done} of ${enFiles(said.count)} uploaded, ${said.failed} failed.`;
             return !said.count && said.skipped
@@ -74,6 +95,9 @@ const messages = i18n.define({
       percent: (value: number) => `${value} %`,
       uploadingTo: (target: string) => `Hochladen nach „${target}“`,
       uploading: "Hochladen",
+      finishing: "Wird abgeschlossen…",
+      finishingStatus: "Wird abgeschlossen",
+      transferred: ({ sent, size }: { sent: string; size: string }) => `${sent} von ${size}`,
       uploadedTo: (target: string) => `In „${target}“ hochgeladen`,
       uploaded: "Upload abgeschlossen",
       nothingUploaded: "Nichts hochgeladen",
@@ -106,6 +130,19 @@ const messages = i18n.define({
         })[status],
       failed: "Konnte nicht hochgeladen werden",
       offline: "Keine Verbindung",
+      stalled: "Keine Antwort vom Dateiserver",
+      serverStalled: "Keine Antwort vom Server",
+      busy: "Der Dateiserver ist ausgelastet",
+      rateLimited: "Zu viele Uploads in kurzer Zeit",
+      waitingForNetwork: "Wartet auf Netzwerk",
+      wait: (wait: UploadWait) =>
+        ({
+          network: "Wartet auf Netzwerk",
+          stalled: "Keine Antwort, gleich neuer Versuch",
+          busy: "Dateiserver ausgelastet, gleich neuer Versuch",
+          rate_limited: "Kurze Pause nach vielen Uploads",
+          retrying: "Neuer Versuch",
+        })[wait],
       announce: (said: UploadAnnouncement | { kind: "failures"; count: number }): string => {
         switch (said.kind) {
           case "started":
@@ -120,6 +157,10 @@ const messages = i18n.define({
             return `${deFiles(said.count)} konnten nicht hochgeladen werden.`;
           case "retrying":
             return said.count === 1 ? `${said.name} wird erneut hochgeladen.` : `${deFiles(said.count)} werden erneut hochgeladen.`;
+          case "offline":
+            return "Wartet auf Netzwerk. Der Upload geht von selbst weiter, sobald die Verbindung zurück ist.";
+          case "online":
+            return "Die Verbindung ist zurück. Der Upload geht weiter.";
           case "finished":
             if (said.failed) return `Upload beendet. ${said.done} von ${deFiles(said.count)} hochgeladen, ${said.failed} fehlgeschlagen.`;
             return !said.count && said.skipped
@@ -132,6 +173,19 @@ const messages = i18n.define({
     },
   },
 });
+
+export function uploadFailureReason(error: unknown, t: ReturnType<typeof messages.resolve>["t"]): string {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return t.offline;
+  if (error instanceof UploadTransferError) {
+    if (error.kind === "stalled") return error.origin === "cloud" ? t.serverStalled : t.stalled;
+    if (error.kind === "rate_limited") return t.rateLimited;
+    if (error.kind === "busy") return t.busy;
+    if (error.kind === "network") return t.offline;
+    return error.message || t.failed;
+  }
+  if (error instanceof DOMException && error.name === "TimeoutError") return t.serverStalled;
+  return error instanceof Error && error.message && error.message !== "path_conflict" ? error.message : t.failed;
+}
 
 export const useUploadMessages = () => {
   const locale = useLocale();

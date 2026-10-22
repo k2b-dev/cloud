@@ -11,9 +11,10 @@ import { fadeScrollMarginsExtension, fadeScrollPadding } from "../../lib/editor/
 import { listCommandsExtension } from "../../lib/editor/list-commands";
 import { notebookWorkspaceMessages } from "../messages";
 import { keepBookReadingPosition } from "./book/book-reading-position";
-import { FullWidthSection } from "./detail/FullWidthSection";
+import { ViewMenu } from "./detail/ViewMenu";
 import { keepReadingPosition } from "./editor/reading-position";
 import { followFullWidth } from "./full-width";
+import { FeaturesSection } from "./settings/FeaturesSection";
 import { parseFullWidth, readFullWidth } from "./settings/NotebookSettingsStore";
 
 const book = new URLSearchParams(location.search).get("mode") === "book";
@@ -44,7 +45,7 @@ function Harness() {
             editor.markdownExtension(),
             editor.searchTheme(),
             fadeScrollMarginsExtension(() => port),
-            editor.noteScrollerTheme,
+            editor.noteScroller,
             editor.customLightInit(),
             listCommandsExtension(),
             editor.tablesExtension("book01"),
@@ -93,7 +94,7 @@ function Harness() {
           <DetailPanel>
             <DetailPanel.Body>
               <nav>Ansichten</nav>
-              <FullWidthSection initial={initial} />
+              <ViewMenu mode="edit" notebookId="book01" noteId="note01" canEdit isRich onToggleRich={() => {}} fullWidth={initial} />
               <DetailPanel.Section title="Inhalt" icon="ti ti-list">
                 Einleitung und Planung
               </DetailPanel.Section>
@@ -164,11 +165,11 @@ const harness = {
   },
   anchor: () =>
     (book ? anchorBlock!.getBoundingClientRect().top : view!.coordsAtPos(anchorFrom, 1)!.top) - port!.getBoundingClientRect().top,
-  /** Capture the first frame that can paint after the native switch change. */
+  /** Capture the first frame that can paint after the menu choice click. */
   firstPaint: () =>
     new Promise<number>((resolve) => {
-      document.querySelector('input[role="switch"]')!.addEventListener(
-        "change",
+      document.querySelector('[role="menuitemcheckbox"]')!.addEventListener(
+        "click",
         () => {
           requestAnimationFrame(() => resolve(harness.anchor()));
         },
@@ -178,7 +179,7 @@ const harness = {
   panelRects: () => {
     const panel = document.querySelector(".k2b-detail-panel")!;
     const body = panel.querySelector(".k2b-detail-panel__body")!;
-    return [panel, ...body.children, panel.querySelector(".k2b-switch__track")!].map(rect);
+    return [panel, ...body.children, panel.querySelector(".notebook-view-menu__trigger")!].map(rect);
   },
   command: () => {
     const command = collectContextAwareCommands().find((command) => command.id === "notebooks.view.fullWidth");
@@ -191,6 +192,36 @@ const harness = {
   },
   stored: readFullWidth,
   setPanelOpen: (open: boolean) => setPanelOpen(open),
+  /** Renders the settings' personal preferences outside the app host, where Cloud's dialogs mount. */
+  preferences: () => {
+    const portal = document.body.appendChild(document.createElement("div"));
+    portal.className = "k2b-ui-portal";
+    render(
+      () => (
+        <LocaleProvider locale="de">
+          <FeaturesSection
+            notebook={{
+              id: "book01",
+              name: "Notizbuch",
+              description: "",
+              icon: "ti ti-notebook",
+              homepageNoteId: null,
+              defaultPresentationMode: "write",
+              noteDeletePermission: "write",
+              defaultNoteTitleTemplate: "",
+              createdBy: "user01",
+              createdAt: "2026-08-10T10:00:00.000Z",
+              updatedAt: "2026-08-10T10:00:00.000Z",
+            }}
+            isAdmin={false}
+            onNotebookChange={() => {}}
+            host={() => document.getElementById("root")!}
+          />
+        </LocaleProvider>
+      ),
+      portal,
+    );
+  },
 };
 export type FullWidthHarness = typeof harness;
 Object.assign(window, { harness });

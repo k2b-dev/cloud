@@ -81,7 +81,7 @@ Concept icons supplement visible titles and descriptions. Notes always include a
 
 ## Runtime
 
-The reading structure and highlighted code render on the server. Copy controls require hydration.
+The reading structure and highlighted code render on the server. Copy controls require browser code.
 
 These components do not load documents, build navigation, or sanitize arbitrary HTML.
 

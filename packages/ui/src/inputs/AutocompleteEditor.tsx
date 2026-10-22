@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import { isServer } from "solid-js/web";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import {
@@ -30,7 +31,12 @@ export type AutocompleteEditorProps = ValueFieldProps<string> & {
   name?: string;
   maxLength?: number;
   textareaRef?: (element: HTMLTextAreaElement) => void;
-  variant?: "default" | "paper";
+  variant?: "default" | "paper" | "embedded";
+  readOnly?: boolean;
+  /** Number logical lines; disables soft wrapping to keep the gutter aligned. */
+  lineNumbers?: boolean;
+  /** One-based line to mark in the gutter, for example a parser error. */
+  markedLine?: number;
 };
 
 type CompletionState = {
@@ -45,6 +51,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
   const meta = createFieldMeta(props.id);
   let textarea: HTMLTextAreaElement | undefined;
   let preview: HTMLDivElement | undefined;
+  let gutter: HTMLDivElement | undefined;
   let dropdown: HTMLDivElement | undefined;
   let currentAbort: AbortController | null = null;
   let currentTimer: ReturnType<typeof setTimeout> | null = null;
@@ -153,8 +160,14 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
     closeDropdown();
   };
 
+  createEffect(() => {
+    if (!props.readOnly) return;
+    completionBehavior.reset();
+    clearCompletion();
+  });
+
   const positionDropdown = (): void => {
-    if (!dropdown?.isConnected || !textarea?.isConnected) return;
+    if (props.readOnly || !dropdown?.isConnected || !textarea?.isConnected) return;
     const anchor = preview?.querySelector<HTMLElement>("[data-completion-anchor]");
     const rect = anchor?.getBoundingClientRect() ?? textarea.getBoundingClientRect();
     const maxHeight = 260;
@@ -181,6 +194,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
       : Boolean(error && typeof error === "object" && "name" in error && (error as { name: string }).name === "AbortError");
 
   const applySuggestionList = (context: QueryContext, suggestions: readonly Suggestion[]): void => {
+    if (props.readOnly) return;
     const currentText = localValue();
     const normalized = context.text.toLowerCase();
     const usable = suggestions.filter((suggestion) => {
@@ -219,11 +233,11 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
   const runAsync = async (context: QueryContext, promise: Promise<readonly Suggestion[]>, signal: AbortSignal): Promise<void> => {
     try {
       const suggestions = await promise;
-      if (signal.aborted) return;
+      if (signal.aborted || props.readOnly) return;
       setLoading(false);
       applySuggestionList(context, suggestions);
     } catch (error) {
-      if (signal.aborted || isAbortError(error)) return;
+      if (signal.aborted || props.readOnly || isAbortError(error)) return;
       setLoading(false);
       setCompletionError(error instanceof Error ? error.message : completionMessages().suggestionsCouldNotLoad);
       setDropdownOpen(true);
@@ -232,7 +246,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
   };
 
   const startResolution = (context: QueryContext, signal: AbortSignal): void => {
-    if (signal.aborted || !textarea) return;
+    if (signal.aborted || props.readOnly || !textarea) return;
     setCompletionError(null);
     setLoading(true);
     setDropdownOpen(true);
@@ -246,7 +260,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
         void runAsync(context, result.promise, signal);
       }
     } catch (error) {
-      if (signal.aborted || isAbortError(error)) return;
+      if (signal.aborted || props.readOnly || isAbortError(error)) return;
       setLoading(false);
       setCompletionError(error instanceof Error ? error.message : completionMessages().suggestionsCouldNotLoad);
       setDropdownOpen(true);
@@ -255,6 +269,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
   };
 
   const recomputeCompletion = (): void => {
+    if (props.readOnly) return clearCompletion();
     if (!textarea) return;
     const context = detectQuery(textarea, props.completions);
     if (!context) {
@@ -292,7 +307,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
   };
 
   const retryCompletion = (): void => {
-    if (!textarea) return;
+    if (props.readOnly || !textarea) return;
     const context = detectQuery(textarea, props.completions);
     if (!context) return clearCompletion();
     currentAbort?.abort();
@@ -305,7 +320,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
   const activateSuggestion = (index = state()?.selectedIndex ?? -1): boolean => {
     const current = state();
     const active = current?.suggestions[index];
-    if (!textarea || !current || !active) return false;
+    if (props.readOnly || !textarea || !current || !active) return false;
     if (!active.textEdit && active.text === current.context.text) {
       clearCompletion();
       return false;
@@ -353,6 +368,10 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
   });
 
   const onInput = (event: InputEvent & { currentTarget: HTMLTextAreaElement }): void => {
+    if (props.readOnly) {
+      event.currentTarget.value = localValue();
+      return;
+    }
     if (event.inputType.startsWith("insert") && completionBehavior.tryExpand(event.currentTarget, props.completions)) {
       return;
     }
@@ -363,6 +382,18 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
 
   const onKeyDown = (event: KeyboardEvent): void => {
     if (!textarea || event.isComposing) return;
+    if (props.readOnly) {
+      if (
+        event.key === "Enter" &&
+        props.onSubmit &&
+        ((props.singleLine && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) ||
+          (!props.singleLine && (event.metaKey || event.ctrlKey)))
+      ) {
+        event.preventDefault();
+        props.onSubmit();
+      }
+      return;
+    }
     if (
       (props.restoreExpansionOnBackspace ?? true) &&
       event.key === "Backspace" &&
@@ -432,21 +463,34 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
     >
       <div
         class="k2b-autocomplete"
+        data-line-numbers={props.lineNumbers ? "true" : undefined}
         data-overlay={useOverlay() ? "true" : undefined}
         data-single-line={props.singleLine ? "true" : undefined}
         data-fill={props.fill && !props.singleLine ? "true" : undefined}
         data-disabled={props.disabled ? "true" : undefined}
         data-invalid={error() ? "true" : undefined}
-        data-variant={props.variant === "paper" ? "paper" : undefined}
+        data-variant={props.variant === "paper" || props.variant === "embedded" ? props.variant : undefined}
         style={surfaceStyle()}
       >
         <div class="k2b-autocomplete__surface">
+          <Show when={props.lineNumbers}>
+            <div ref={gutter} class="k2b-autocomplete__gutter" aria-hidden="true">
+              <For each={localValue().split("\n")}>
+                {(_, index) => <div data-marked={props.markedLine === index() + 1 ? "true" : undefined}>{index() + 1}</div>}
+              </For>
+            </div>
+          </Show>
           <Show when={!localValue() && props.placeholder}>
             <div class="k2b-autocomplete__placeholder" aria-hidden="true">
               {props.placeholder}
             </div>
           </Show>
-          <div ref={preview} class="k2b-autocomplete__preview" aria-hidden="true" />
+          <div
+            ref={preview}
+            class="k2b-autocomplete__preview"
+            aria-hidden="true"
+            innerHTML={isServer ? renderWithOverlay(localValue(), props.highlight ?? plainTextHighlight, {}) : undefined}
+          />
           <textarea
             ref={(element) => {
               textarea = element;
@@ -456,9 +500,12 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
             name={props.name}
             class="k2b-autocomplete__input"
             onInput={onInput}
-            onChange={(event) => props.onValueCommit?.(event.currentTarget.value)}
+            onChange={(event) => {
+              if (!props.readOnly) props.onValueCommit?.(event.currentTarget.value);
+            }}
             onKeyDown={onKeyDown}
             onScroll={(event) => {
+              if (gutter) gutter.scrollTop = event.currentTarget.scrollTop;
               if (preview) {
                 preview.scrollTop = event.currentTarget.scrollTop;
                 preview.scrollLeft = event.currentTarget.scrollLeft;
@@ -474,16 +521,21 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
               clearCompletion();
             }}
             disabled={props.disabled}
+            readOnly={props.readOnly}
             required={props.required}
             spellcheck={props.spellcheck ?? false}
             maxLength={props.maxLength}
+            wrap={props.lineNumbers ? "off" : "soft"}
             rows={props.singleLine ? 1 : (props.lines ?? 3)}
             {...fieldControlAria(meta, props)}
             aria-haspopup="listbox"
             aria-autocomplete="list"
             aria-controls={dropdownOpen() ? listboxId : undefined}
             aria-activedescendant={dropdownOpen() && state() ? optionId(state()!.selectedIndex) : undefined}
-          />
+          >
+            {/* HTML consumes one leading newline in textarea content. */}
+            {isServer ? `\n${localValue()}` : undefined}
+          </textarea>
         </div>
         <Show when={state() || loading() || completionError()}>
           <div

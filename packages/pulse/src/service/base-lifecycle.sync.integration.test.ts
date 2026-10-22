@@ -1,79 +1,47 @@
 import { expect } from "bun:test";
 import { sql } from "bun";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
+import { cleanupFixtureBase, fixtureBase, fixtureStore, installFixtureStore } from "../store/base-store.test-fixture";
+import { createBaseLifecycle, startPulseBaseJobs, stopPulseBaseJobs, submitBaseLifecycleJob } from "./base-lifecycle";
 
-const syncTest = testFor("database", "nats");
-
+const syncTest = testFor("database", "nats", "clickhouse");
 syncTest(
-  "a coalesced deletion runs through NATS and keeps one observed span with its summary",
+  "coalesced recovery runs the lifecycle over NATS",
   async () => {
-    const { createSync } = await import("@k2b/sync");
-    const { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
-    const { observeSyncEvent } = await import("@k2b/cloud/services/logging/trace");
-    const { startPulseBaseJobs, submitBaseDeletionJob, stopPulseBaseDeletionJob, stopPulseBaseDataClearJob } = await import(
-      "./base-lifecycle"
-    );
-    const { newShortId } = await import("../lib/short-id");
-    const { initializeSchema } = await import("../schema");
-    await initializeSchema();
-    const connection = await connectTestNats({ ignoreClusterUpdates: true, name: "pulse-deletion-test" });
-    const namespace = testSyncNamespace("pulse-lifecycle");
-    const sync = createSync({ connection, namespace, application: "pulse", defaults: { replicas: 1 }, observe: observeSyncEvent });
-    const baseId = crypto.randomUUID();
-    const publicBaseId = newShortId();
+    await installFixtureStore();
+    const { createSync } = await import("@k2b/sync"),
+      { bindProcessSync, unbindProcessSync } = await import("@k2b/cloud");
+    const connection = await connectTestNats({ ignoreClusterUpdates: true });
+    const sync = createSync({
+      connection,
+      namespace: testSyncNamespace("pulse-lifecycle"),
+      application: "pulse",
+      defaults: { replicas: 1 },
+    });
+    const base = await fixtureBase();
     bindProcessSync(sync);
     try {
-      await sql`INSERT INTO pulse.bases (id, short_id, name, deletion_started_at) VALUES (${baseId}::uuid, ${publicBaseId}, 'Sync lifecycle test', now())`;
-      // Queue duplicate recovery submissions before starting either worker.
-      await submitBaseDeletionJob(baseId, publicBaseId);
-      await submitBaseDeletionJob(baseId, publicBaseId);
-      await startPulseBaseJobs();
-      const deadline = Date.now() + 20_000;
-      let complete = false;
-      while (Date.now() < deadline) {
-        const [state] = await sql<Array<{ exists: boolean; spans: number; summarized: number }>>`
-        SELECT EXISTS (SELECT 1 FROM pulse.bases WHERE id = ${baseId}::uuid) AS exists,
-          COUNT(*)::int AS spans,
-          COUNT(*) FILTER (WHERE summary->>'done' = 'true')::int AS summarized
-        FROM logging.trace_spans
-        WHERE source = 'pulse:base-delete' AND attributes->>'cloud.pulse.base_id' = ${publicBaseId}
-      `;
-        if (state && !state.exists && state.summarized > 0) {
-          expect(state.spans).toBe(1);
-          expect(state.summarized).toBe(1);
-          complete = true;
+      await submitBaseLifecycleJob(base.id, base.shortId);
+      await submitBaseLifecycleJob(base.id, base.shortId);
+      await startPulseBaseJobs(createBaseLifecycle(fixtureStore()));
+      const end = Date.now() + 20000;
+      let done = false;
+      while (Date.now() < end) {
+        const rows = await sql`SELECT state FROM pulse.base_stores WHERE base_id=${base.id}::uuid`;
+        if (rows[0]?.state === "active") {
+          done = true;
           break;
         }
         await Bun.sleep(50);
       }
-      expect(complete).toBe(true);
+      expect(done).toBe(true);
     } finally {
-      await stopPulseBaseDeletionJob();
-      await stopPulseBaseDataClearJob();
-      await sync.drain({ timeoutMs: 5_000 });
+      await stopPulseBaseJobs();
+      await sync.drain({ timeoutMs: 5000 });
       unbindProcessSync();
-      try {
-        // JetStream is owned by Sync; resolve its client through that package.
-        const {
-          jetstreamManager,
-        }: {
-          jetstreamManager(client: typeof connection): Promise<{
-            streams: {
-              list(): AsyncIterable<{ config: { name: string; metadata?: Record<string, string> } }>;
-              delete(name: string): Promise<boolean>;
-            };
-          }>;
-        } = await import(Bun.resolveSync("@nats-io/jetstream", new URL(".", import.meta.resolve("@k2b/sync")).pathname));
-        const manager = await jetstreamManager(connection);
-        for await (const stream of manager.streams.list()) {
-          if (stream.config.metadata?.["sync.namespace"] === namespace) await manager.streams.delete(stream.config.name);
-        }
-      } finally {
-        await connection.drain();
-        await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
-        await sql`DELETE FROM logging.trace_spans WHERE source = 'pulse:base-delete' AND attributes->>'cloud.pulse.base_id' = ${publicBaseId}`;
-      }
+      await connection.drain();
+      await cleanupFixtureBase(base);
     }
   },
-  30_000,
+  60_000,
 );

@@ -1,14 +1,21 @@
 import type { MapViewport } from "@k2b/stdlib";
 import { charts } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
-import { createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show, splitProps, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
 import { IconButton } from "../actions/Button";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import type { ChartCursor } from "./chart-cursor";
-import { type ChartDatumRef, type ChartSelection, type ChartTooltipFormatter, createChartInspection } from "./chart-inspection";
+import { createChartInspection } from "./chart-inspection";
+import {
+  type ChartDatumRef,
+  type ChartKind,
+  type ChartSelection,
+  type ChartTooltipFormatter,
+  closeChartInspectionOnOutside,
+} from "./chart-inspection-core";
 import { lineGapsSvg } from "./chart-line-gaps";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
 import { useChartMessages } from "./chart-messages";
@@ -45,9 +52,9 @@ import { useViewportMessages } from "./viewport-messages";
  * **Why so thin.** The props are a discriminated union over each
  * stdlib chart function — `kind: "line"` brings in exactly the params
  * `charts.line` expects, `kind: "bar"` brings in `charts.bar`'s, etc.
- * Options stay aligned with stdlib without renaming. Shared interactive
- * layers add bounded pan / zoom controls to maps and state timelines, plus
- * renderer-owned inspection, tooltips and optional selection for all chart kinds.
+ * Options stay aligned with stdlib without renaming. Every chart provides
+ * renderer-owned inspection, tooltips and optional selection by default.
+ * `interactive` adds bounded pan / zoom and reset controls to maps and state timelines.
  * If stdlib gains a new option, it's automatically available at every
  * callsite.
  *
@@ -70,7 +77,7 @@ import { useViewportMessages } from "./viewport-messages";
  */
 
 /** All chart kinds shipped by `stdlib.charts`. */
-export type ChartKind = keyof typeof charts;
+export type { ChartKind } from "./chart-inspection-core";
 
 export type ChartLabels = Partial<{
   empty: string;
@@ -98,10 +105,16 @@ export type ChartProps = {
     class?: string;
     style?: JSX.CSSProperties | string;
     labels?: ChartLabels;
+    /**
+     * Navigation for maps and state timelines: pan, zoom and reset controls.
+     * Arrows pan; Alt+arrows inspect. Every chart shows tooltips and keyboard
+     * inspection without this prop.
+     */
     interactive?: boolean;
     onSelect?: (selection: ChartSelection) => void;
     /** Controlled highlight; indices belong to this exact input snapshot. */
     selected?: ChartDatumRef | null;
+    /** Customize the always-on tooltip with a title and labeled text rows. */
     tooltip?: ChartTooltipFormatter;
     /** Optional shared X cursor for line charts. */
     cursor?: ChartCursor;
@@ -111,7 +124,13 @@ export type ChartProps = {
         zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
       }
     : {}) &
-    (K extends "line" ? { /** Largest connected X distance; positive, finite, without area/errorBand fills. */ maxGap?: number } : {}) &
+    (K extends "line"
+      ? {
+          /** Largest connected X distance; positive, finite, without area/errorBand fills. */ maxGap?: number;
+          /** Wrap the legend above the plot inside the caller's total chart height. Requires legend=true. */
+          legendPlacement?: "top-start";
+        }
+      : {}) &
     (K extends "stateTimeline" ? StateTimelineChartOptions : Omit<Parameters<(typeof charts)[K]>[0], "width" | "height" | "inspect">);
 }[ChartKind];
 
@@ -119,7 +138,7 @@ export type ChartProps = {
 export type ChartRenderOptions = {
   [K in ChartKind]: Omit<
     Extract<ChartProps, { kind: K }>,
-    "class" | "style" | "labels" | "interactive" | "onSelect" | "selected" | "tooltip" | "cursor"
+    "class" | "style" | "labels" | "interactive" | "onSelect" | "selected" | "tooltip" | "cursor" | "legendPlacement"
   >;
 }[ChartKind];
 
@@ -155,8 +174,13 @@ export const renderChartSvg = (
     tooltip: _tooltip,
     cursor: _cursor,
     zoomFocus: _zoomFocus,
+    legendPlacement: _legendPlacement,
     ...opts
-  } = props as ChartProps & { interactive?: boolean; zoomFocus?: Pick<MapViewport, "latitude" | "longitude"> };
+  } = props as ChartProps & {
+    legendPlacement?: "top-start";
+    interactive?: boolean;
+    zoomFocus?: Pick<MapViewport, "latitude" | "longitude">;
+  };
   if (kind === "stateTimeline") {
     return responsiveChartSvg(
       renderStateTimelineSvg({
@@ -164,17 +188,18 @@ export const renderChartSvg = (
         width,
         height,
         viewport: timelineViewport,
-        interactive: props.interactive,
+        interactive: true,
       }),
     );
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let svg = (charts[kind] as (o: unknown) => string)({
     ...(opts as any),
+    ...(props.kind === "line" && props.legend && props.legendPlacement === "top-start" ? { legend: false } : {}),
     ...(kind === "map" ? { viewport: DEFAULT_MAP_VIEWPORT } : {}),
     width,
     height,
-    inspect: props.interactive === true || (props.kind === "line" && props.maxGap !== undefined),
+    inspect: true,
   });
   if (props.kind === "line" && props.maxGap !== undefined) {
     if (props.area || props.errorBand) throw new Error("Chart maxGap does not support area or errorBand fills");
@@ -224,6 +249,8 @@ const Chart = (props: ChartProps): JSX.Element => {
     width: 480,
     height: chartRenderHeight(props),
   });
+  const topLegend = () => props.kind === "line" && props.legend === true && props.legendPlacement === "top-start";
+  const legendSeries = () => (props.kind === "line" ? props.series : []);
   const dimensions = () => containerRef?.getBoundingClientRect() ?? size();
   const initialMapViewport = props.kind === "map" ? normalizeMapViewport(props.viewport) : DEFAULT_MAP_VIEWPORT;
   const [mapViewport, setMapViewport] = createSignal<MapViewport>(initialMapViewport);
@@ -256,10 +283,29 @@ const Chart = (props: ChartProps): JSX.Element => {
 
   const interactiveMap = () => props.kind === "map" && props.interactive === true;
   const interactiveTimeline = () => props.kind === "stateTimeline" && props.interactive === true;
-  const interactiveLine = () => props.kind === "line" && props.interactive === true;
-  const interactive = () => props.interactive === true;
   const draggable = () => interactiveMap() || interactiveTimeline();
   const labels = () => props.labels ?? {};
+  const accessibleName = () => {
+    const override =
+      props.kind === "map"
+        ? labels().interactiveMap
+        : props.kind === "stateTimeline"
+          ? labels().interactiveTimeline
+          : props.kind === "line"
+            ? labels().interactiveLine
+            : labels().interactiveChart;
+    const title = "title" in props && typeof props.title === "string" && props.title.trim() ? props.title : undefined;
+    const valueLabel = (props.kind === "stat" || props.kind === "gauge") && props.label?.trim() ? props.label : undefined;
+    const fallback =
+      props.kind === "map"
+        ? chartMessages().interactiveMap
+        : props.kind === "stateTimeline"
+          ? chartMessages().interactiveTimeline
+          : props.kind === "line"
+            ? chartMessages().interactiveLineChart
+            : chartMessages().interactiveChart;
+    return override ?? title ?? valueLabel ?? fallback;
+  };
   const timelineFullDomain = (): StateTimelineDomain =>
     props.kind === "stateTimeline" ? stateTimelineDomain(props.rows, props.domain) : [0, 1];
 
@@ -466,7 +512,7 @@ const Chart = (props: ChartProps): JSX.Element => {
     tooltip: () => chartTooltipRef,
     anchor: () => lineAnchorRef,
     kind: () => props.kind,
-    enabled: interactive,
+    enabled: () => !isEmpty(props),
     select: (selection) => props.onSelect?.(selection),
     format: (selection) => {
       if (props.tooltip) return props.tooltip(selection);
@@ -523,21 +569,13 @@ const Chart = (props: ChartProps): JSX.Element => {
 
   onMount(() => {
     if (!containerRef) return;
-    const outside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !containerRef?.contains(event.target)) closeChartTooltip();
-    };
-    window.addEventListener("pointerdown", outside);
-    const scroll = (event: Event) => {
-      if (event.target instanceof Node && chartTooltipRef?.contains(event.target)) return;
-      closeChartTooltip();
-    };
-    window.addEventListener("scroll", scroll, true);
-    window.addEventListener("resize", closeChartTooltip);
-    onCleanup(() => {
-      window.removeEventListener("pointerdown", outside);
-      window.removeEventListener("scroll", scroll, true);
-      window.removeEventListener("resize", closeChartTooltip);
-    });
+    onCleanup(
+      closeChartInspectionOnOutside({
+        container: () => containerRef,
+        tooltip: () => chartTooltipRef,
+        close: closeChartTooltip,
+      }),
+    );
   });
 
   const chartStyle = () =>
@@ -569,24 +607,15 @@ const Chart = (props: ChartProps): JSX.Element => {
         ref={containerRef}
         class={`k2b-chart ${props.class ?? ""}`}
         data-chart-kind={props.kind}
+        data-legend-placement={topLegend() ? "top-start" : undefined}
         data-drag={draggable() ? (dragging() ? "active" : "idle") : undefined}
-        data-crosshair={!draggable() && interactiveLine() ? "true" : undefined}
-        data-interactive={interactive() ? "true" : undefined}
+        data-crosshair={!draggable() && props.kind === "line" ? "true" : undefined}
+        data-interactive="true"
         style={chartStyle()}
         role="group"
-        aria-label={
-          interactiveMap()
-            ? (labels().interactiveMap ?? chartMessages().interactiveMap)
-            : interactiveTimeline()
-              ? (labels().interactiveTimeline ?? chartMessages().interactiveTimeline)
-              : interactiveLine()
-                ? (labels().interactiveLine ?? chartMessages().interactiveLineChart)
-                : interactive()
-                  ? (labels().interactiveChart ?? chartMessages().interactiveChart)
-                  : undefined
-        }
-        aria-description={interactive() ? chartMessages().interactiveChart : undefined}
-        tabIndex={interactive() ? 0 : undefined}
+        aria-label={accessibleName()}
+        aria-description={accessibleName() !== chartMessages().interactiveChart ? chartMessages().interactiveChart : undefined}
+        tabIndex={0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={stopDragging}
@@ -598,6 +627,27 @@ const Chart = (props: ChartProps): JSX.Element => {
         onWheel={handleWheel}
         onKeyDown={handleKeyDown}
       >
+        <Show when={topLegend()}>
+          <div class="k2b-chart__legend" role="group" aria-label={chartMessages().chartLegend} tabIndex={0}>
+            <For each={legendSeries()}>
+              {(series, index) => (
+                <span class="k2b-chart__legend-item">
+                  {/* Use the renderer's actual series classes/defaults, including consumer palette overrides. */}
+                  <svg
+                    class={`stdlib-chart k2b-chart__legend-swatch ${props.kind === "line" ? (props.className ?? "") : ""}`}
+                    viewBox="0 0 10 10"
+                    width="10"
+                    height="10"
+                    aria-hidden="true"
+                  >
+                    <rect x="1" y="1" width="8" height="8" rx="2" class={`stdlib-chart-series-${index() % 8}`} />
+                  </svg>
+                  <span>{series.label && series.label.length > 0 ? series.label : `Series ${index() + 1}`}</span>
+                </span>
+              )}
+            </For>
+          </div>
+        </Show>
         <div
           class="k2b-chart__svg"
           data-stretch={!preservesAspectRatio(props.kind) ? "true" : undefined}
@@ -608,17 +658,15 @@ const Chart = (props: ChartProps): JSX.Element => {
           }}
           innerHTML={isServer ? selectedChartSvg(svgMarkup(), props.selected) : svgMarkup()}
         />
-        <Show when={interactive()}>
-          <span ref={lineAnchorRef} class="k2b-chart__anchor" aria-hidden="true" />
-          <span
-            id={chartTooltipId}
-            ref={chartTooltipRef}
-            role="tooltip"
-            popover="manual"
-            data-instant="true"
-            class="k2b-tooltip k2b-chart__tooltip"
-          />
-        </Show>
+        <span ref={lineAnchorRef} class="k2b-chart__anchor" aria-hidden="true" />
+        <span
+          id={chartTooltipId}
+          ref={chartTooltipRef}
+          role="tooltip"
+          popover="manual"
+          data-instant="true"
+          class="k2b-tooltip k2b-chart__tooltip"
+        />
         <Show when={draggable()}>
           <div class="k2b-chart__controls">
             {control(labels().zoomIn ?? viewportMessages().zoomIn, "+", "ti-plus", () => zoom(1))}

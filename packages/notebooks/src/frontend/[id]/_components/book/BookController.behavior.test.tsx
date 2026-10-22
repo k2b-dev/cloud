@@ -51,7 +51,7 @@ describe("Book controller", () => {
       <a id="write" href="/app/notebooks/book01/notes/note01?mode=write">Write</a>
       <a id="notebook-root" href="/app/notebooks/book01?mode=book">Notebook home</a>
       <div id="notebook-book-history-warning" hidden>Incomplete history</div>
-      <article id="notebook-book-content" tabindex="-1"><h1 id="heading">First</h1></article><div id="controller"></div></div></div>`;
+      <article id="notebook-book-content" tabindex="-1" data-print-region><h1 id="heading">First</h1></article><div id="controller"></div></div></div>`;
     const requests: Array<{ href: string; path: string; signal: AbortSignal | null | undefined; resolve: (value: Response) => void }> = [];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(
@@ -136,7 +136,9 @@ describe("Book controller", () => {
       app.requests[1]!.resolve(Response.json({ ...snapshot("note03", "Newest"), historyIncomplete: true }));
       await flush();
       expect(app.article.textContent).toBe("Newest");
+      expect(app.article.hasAttribute("data-print-region")).toBe(true);
       expect(app.dom.root.querySelector<HTMLElement>("#notebook-book-history-warning")!.hidden).toBe(false);
+      expect(app.dom.root.querySelector("#notebook-book-history-warning")!.hasAttribute("data-print-region")).toBe(true);
       expect(location.pathname).toEndWith("/note03");
       expect(document.activeElement).toBe(app.article);
       app.requests[0]!.resolve(Response.json(snapshot("note02", "Obsolete")));
@@ -393,6 +395,7 @@ describe("Book controller", () => {
         app.requests[0]!.resolve(Response.json({ message: "Unavailable" }, { status }));
         await flush();
         expect(app.article.textContent).toBe("");
+        expect(app.article.hasAttribute("data-print-region")).toBe(false);
         expect(fallback).toHaveBeenCalledWith("http://localhost/app/notebooks/book01/notes/note02?mode=book");
       } finally {
         fallback.mockRestore();

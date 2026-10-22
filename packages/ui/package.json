@@ -1,6 +1,6 @@
 {
   "name": "@k2b/ui",
-  "version": "0.24.0",
+  "version": "0.31.0",
   "description": "Production-ready components for SolidJS applications.",
   "repository": {
     "type": "git",
@@ -26,10 +26,17 @@
     "./styles.css": "./dist/styles.css",
     "./fonts/plex.css": "./dist/plex.css",
     "./icons/tabler.css": "./dist/tabler.css",
-    "./package.json": "./package.json"
+    "./chart-inspection": {
+      "types": "./dist/types/chart-inspection.d.ts",
+      "browser": "./dist/browser/chart-inspection.js",
+      "default": "./dist/browser/chart-inspection.js"
+    },
+    "./package.json": "./package.json",
+    "./map-glyphs/*": "./map-glyphs/*"
   },
   "files": [
     "dist",
+    "map-glyphs",
     "README.md"
   ],
   "scripts": {
@@ -37,7 +44,7 @@
     "check:declarations": "bun run scripts/check-declarations.ts",
     "fixture:build": "bun run build && NODE_ENV=production bun run fixture/scripts/build.ts",
     "fixture:typecheck": "tsc -p fixture/tsconfig.json --noEmit --pretty false",
-    "test": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' src scripts && bun run scripts/check-packed-consumer.ts",
+    "test": "bun run build && bun test --path-ignore-patterns '**/*.behavior.test.*' src scripts test/browser.browser.test.ts && bun run scripts/check-packed-consumer.ts",
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false && bun run check:declarations && bun run typecheck:dom",
     "typecheck:dom": "tsc -p test/tsconfig.json --noEmit --pretty false",
     "prepack": "bun run build"
@@ -45,19 +52,20 @@
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/ibm-plex-sans": "5.3.0",
-    "@k2b/stdlib": "0.29.0",
+    "@k2b/stdlib": "0.30.0",
     "@tabler/icons-webfont": "3.48.0",
+    "maplibre-gl": "6.14.0",
     "marked": "18.0.14",
     "qr-scanner": "1.4.2"
   },
   "peerDependencies": {
-    "@k2b/ssr": "^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0",
+    "@k2b/ssr": "^0.12.0 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0 || ^0.17.0 || ^0.18.0 || ^0.19.0 || ^0.20.0",
     "solid-js": "^1.9.10"
   },
   "devDependencies": {
     "@babel/core": "8.0.6",
     "@babel/preset-typescript": "8.0.1",
-    "@k2b/ssr": "0.15.1",
+    "@k2b/ssr": "0.19.0",
     "@types/babel__core": "7.20.5",
     "@types/bun": "1.4.2",
     "axe-core": "4.11.0",
@@ -66,12 +74,14 @@
     "emojibase-data": "17.0.0",
     "happy-dom": "20.14.5",
     "hono": "4.13.9",
-    "playwright": "1.63.0",
+    "playwright": "1.64.1",
     "seroval": "1.6.7",
-    "solid-js": "1.9.15",
+    "solid-js": "1.9.17",
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
-    "@typescript/typescript6": "6.0.2"
+    "@typescript/typescript6": "6.0.2",
+    "@maplibre/maplibre-gl-style-spec": "26.4.4",
+    "fontnik": "0.7.7"
   },
   "publishConfig": {
     "access": "public"

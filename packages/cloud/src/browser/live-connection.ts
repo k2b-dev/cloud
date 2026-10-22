@@ -10,6 +10,8 @@ export type LiveSubscriptionHandlers<T> = {
   apply: (events: { data: T; cursor: string }[]) => Promise<void>;
   /** Loads the canonical state again; events after it follow. */
   resync: () => Promise<void>;
+  /** Reports changes in whether the subscription is confirmed and has no pending work. Never called after `close()`. */
+  caughtUp?: (caughtUp: boolean) => void;
   /** The subscription ended because its resource is gone or no longer readable. */
   revoked?: (code: "not_found" | "access_denied") => void;
   /** Live updates stopped: the session ended, or `apply` or `resync` kept failing. Never called after `close()`. */
@@ -25,6 +27,7 @@ export type LiveConnection = {
 type Subscriber = {
   frame: () => unknown;
   confirmed: boolean;
+  report: () => void;
   receive: (message: LiveServerMessage) => void;
   end: () => void;
 };
@@ -56,7 +59,15 @@ const connect = (url: string, activity: "visible" | "always"): Shared => {
     onOpen: (controls) => {
       for (const subscriber of subscribers.values()) {
         subscriber.confirmed = false;
+        subscriber.report();
         controls.send(subscriber.frame());
+      }
+    },
+    onStatus: (status) => {
+      if (status === "open") return;
+      for (const subscriber of subscribers.values()) {
+        subscriber.confirmed = false;
+        subscriber.report();
       }
     },
     onMessage: (message) => {
@@ -96,7 +107,15 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
     let resyncAt: string | null = null;
     let ended = false;
     let running = false;
+    let caughtUp = false;
     const work: Work<T>[] = [];
+
+    const report = () => {
+      const next = !ended && subscriber.confirmed && !running && work.length === 0;
+      if (next === caughtUp) return;
+      caughtUp = next;
+      handlers.caughtUp?.(next);
+    };
 
     const attempt = async (run: () => Promise<void>): Promise<boolean> => {
       for (let tries = 0; ; tries++) {
@@ -122,6 +141,7 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
             cursor = item.cursor;
             continue;
           }
+          report();
           const applied = item.kind === "events" ? await attempt(() => handlers.apply(item.events)) : await attempt(handlers.resync);
           if (!applied) {
             // A closed subscription reports nothing: its owner ended it.
@@ -135,6 +155,7 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
         }
       } finally {
         running = false;
+        report();
       }
     };
 
@@ -153,6 +174,7 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
         return { t: "sub", id, channel, scope, ...(after ? { after } : {}) };
       },
       confirmed: false,
+      report,
       receive: (message) => {
         if (ended) return;
         if (message.t === "revoked") {
@@ -189,10 +211,12 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
       },
     };
 
-    const stop = () => {
+    const stop = (notify = true) => {
       if (ended) return;
       ended = true;
       work.length = 0;
+      if (notify) report();
+      else caughtUp = false;
       if (subscribers.get(id) !== subscriber) return;
       subscribers.delete(id);
       socket.send({ t: "unsub", id });
@@ -205,6 +229,6 @@ export const liveConnection = (url: string, options: { activity?: "visible" | "a
     subscribers.set(id, subscriber);
     if (subscribers.size === 1) socket.connect();
     else socket.send(subscriber.frame());
-    return { close: stop };
+    return { close: () => stop(false) };
   },
 });

@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag, paginationFlags } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag, paginationFlags, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type { PublicBase as Base, PublicField as Field, PublicTable as Table } from "../api/public-dto";
 import type { ControlledDestructionOverview, ControlledDestructionRun } from "../controlled-destruction-contracts";
 import type { PreservationHold, PreservationHoldsResponse } from "../preservation-hold-contracts";
@@ -88,7 +88,11 @@ export const baseCrudCommands = [
       const base = await resolveBase(ctx, args.base);
       const id = base.id;
       await ctx.setDefault(GRIDS_BASE_DEFAULT_KEY, id);
-      printJsonOrMessage(ctx, { base, defaultBase: id }, `Using Grids base ${base.name} (${id}).`);
+      printJsonOrMessage(
+        ctx,
+        { base: withCloudResourcePermalink(ctx, "grids.base", base), defaultBase: id },
+        `Using Grids base ${base.name} (${id}).`,
+      );
     },
   }),
   command("current", {
@@ -96,7 +100,7 @@ export const baseCrudCommands = [
     async run({ ctx }) {
       const base = await resolveBase(ctx, await requireDefaultBaseRef(ctx));
       const id = base.id;
-      printJsonOrMessage(ctx, { base, defaultBase: id }, `${base.name} (${id})`);
+      printJsonOrMessage(ctx, { base: withCloudResourcePermalink(ctx, "grids.base", base), defaultBase: id }, `${base.name} (${id})`);
     },
   }),
   command("bases ls", {
@@ -109,12 +113,17 @@ export const baseCrudCommands = [
       const perPage = flags.perPage ?? 100;
       const page = flags.page ?? 1;
       const payload = await listBases(ctx, { q: flags.q, limit: perPage, offset: (page - 1) * perPage });
-      printJsonOrTable(ctx, payload, baseRows(payload.items), [
-        { key: "id", label: "ID" },
-        { key: "name", label: "NAME" },
-        { key: "description", label: "DESCRIPTION" },
-        { key: "updatedAt", label: "UPDATED" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        { ...payload, items: payload.items.map((base) => withCloudResourcePermalink(ctx, "grids.base", base)) },
+        baseRows(payload.items).map((base) => withCloudResourcePermalink(ctx, "grids.base", base)),
+        [
+          { key: "id", label: "ID" },
+          { key: "name", label: "NAME" },
+          { key: "description", label: "DESCRIPTION" },
+          { key: "updatedAt", label: "UPDATED" },
+        ],
+      );
     },
   }),
   command("bases show", {
@@ -124,7 +133,7 @@ export const baseCrudCommands = [
     examples: ["cld grids bases show Bookshop --json"],
     async run({ ctx, args }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
-      if (!printCliStructured(ctx, base)) {
+      if (!printCliStructured(ctx, withCloudResourcePermalink(ctx, "grids.base", base))) {
         ctx.print(`${base.name} (${base.id})`);
         if (base.description) ctx.print(base.description);
         ctx.print(`id: ${base.id}`);
@@ -566,7 +575,11 @@ export const baseCrudCommands = [
       const base = await readApi<Base>(ctx, "/bases", jsonRequest("POST", { name: args.name, description: flags.description ?? null }));
       const id = base.id;
       if (flags.use) await ctx.setDefault(GRIDS_BASE_DEFAULT_KEY, id);
-      printJsonOrMessage(ctx, base, `Created ${base.name} (${id}).${flags.use ? " Using it as default." : ""}`);
+      printJsonOrMessage(
+        ctx,
+        withCloudResourcePermalink(ctx, "grids.base", base),
+        `Created ${base.name} (${id}).${flags.use ? " Using it as default." : ""} ${cloudResourceUrl(ctx, { type: "grids.base", id: base.id })}`,
+      );
     },
   }),
   command("bases set", {
@@ -586,7 +599,7 @@ export const baseCrudCommands = [
         description: flags.description,
       });
       const updated = await readApi<Base>(ctx, `/bases/${encodeURIComponent(base.id)}`, jsonRequest("PATCH", body));
-      printJsonOrMessage(ctx, updated, `Updated ${updated.name} (${updated.id}).`);
+      printJsonOrMessage(ctx, withCloudResourcePermalink(ctx, "grids.base", updated), `Updated ${updated.name} (${updated.id}).`);
     },
   }),
   command("bases rm", {
@@ -606,7 +619,7 @@ export const baseCrudCommands = [
     args: { base: arg.required({ description: "Base public id" }) },
     async run({ ctx, args }) {
       const restored = await readApi<Base>(ctx, `/bases/${encodeURIComponent(args.base)}/restore`, jsonRequest("POST"));
-      printJsonOrMessage(ctx, restored, `Restored ${restored.name} (${restored.id}).`);
+      printJsonOrMessage(ctx, withCloudResourcePermalink(ctx, "grids.base", restored), `Restored ${restored.name} (${restored.id}).`);
     },
   }),
 ];

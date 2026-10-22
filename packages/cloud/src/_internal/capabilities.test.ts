@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import {
@@ -923,6 +923,154 @@ describe("capability v1 compilation", () => {
     );
   });
 
+  describe("input union evolution", () => {
+    const manifest = (expression: z.ZodType) => {
+      const result = compileCapabilities(
+        "example",
+        defineCapabilities({
+          protocolVersion: 2,
+          queries: {
+            search: {
+              title: "Search",
+              description: "Search with an expression.",
+              openWorld: false,
+              input: z.object({ expression: z.string().describe("Search expression.") }).strict(),
+              data: z.object({}).strict(),
+              run: async () => ok({ data: {} }),
+            },
+          },
+        }),
+      ).manifest;
+      // Compare projected schemas independently of authoring descriptions and closed-input validation.
+      result.queries[0]!.inputSchema = z.toJSONSchema(z.object({ expression }).strict(), { io: "input" });
+      return result;
+    };
+    const tagged = (kind: string) => z.object({ kind: z.literal(kind), value: z.string().max(100) }).strict();
+    const first = tagged("first");
+    const second = tagged("second");
+    const third = tagged("third");
+    const issues = (previous: z.ZodType, next: z.ZodType) => capabilityManifestEvolutionIssues(manifest(previous), manifest(next));
+
+    test("preserves nested input branches when adding and reordering tags", () => {
+      const expression = (extended: boolean) => {
+        const leaf = extended ? z.discriminatedUnion("kind", [third, second, first]) : z.discriminatedUnion("kind", [first, second]);
+        const group = z.object({ kind: z.literal("group"), items: z.array(leaf).min(1).max(20) }).strict();
+        return extended ? z.union([third, group, second, first]) : z.union([first, second, group]);
+      };
+      expect(issues(expression(false), expression(true))).toEqual([]);
+      expect(issues(z.discriminatedUnion("kind", [first, second]), z.discriminatedUnion("kind", [second, first]))).toEqual([]);
+    });
+
+    test("allows anyOf additions without requiring disjoint branches", () => {
+      expect(issues(z.union([z.string().max(100), z.number()]), z.union([z.boolean(), z.number(), z.string().max(100)]))).toEqual([]);
+      expect(issues(z.union([first, second]), z.union([first, second, first.extend({ extra: z.string().optional() })]))).toEqual([]);
+    });
+
+    test("proves disjoint required enum tags", () => {
+      const multi = z.object({ kind: z.enum(["one", "two"]) }).strict();
+      const other = z.object({ kind: z.enum(["three", "four"]) }).strict();
+      expect(issues(z.discriminatedUnion("kind", [multi, second]), z.discriminatedUnion("kind", [other, second, multi]))).toEqual([]);
+    });
+
+    test("rejects removed branches and narrowed old constraints despite additions", () => {
+      const previous = z.discriminatedUnion("kind", [first, second]);
+      for (const next of [
+        z.discriminatedUnion("kind", [first, third]),
+        z.discriminatedUnion("kind", [first, second.extend({ value: z.string().max(10) }), third]),
+        z.discriminatedUnion("kind", [first, second.extend({ extra: z.string() }), third]),
+        z.discriminatedUnion("kind", [first, second.loose(), third]),
+      ])
+        expect(issues(previous, next)).not.toEqual([]);
+      expect(issues(z.union([first, second, third]), z.union([first, second]))).not.toEqual([]);
+    });
+
+    // General JSON Schema oneOf can contain variants that Zod's discriminatedUnion rejects.
+    const oneOf = (branches: z.ZodType[]) => {
+      const result = manifest(z.union(branches));
+      result.queries[0]!.inputSchema = {
+        type: "object",
+        properties: { expression: { oneOf: branches.map((branch) => z.toJSONSchema(branch, { io: "input" })) } },
+        required: ["expression"],
+        additionalProperties: false,
+      };
+      return result;
+    };
+
+    test("rejects overlapping, duplicate, optional and unknown oneOf discriminators", () => {
+      for (const added of [
+        first,
+        z.object({ kind: z.enum(["first", "third"]), value: z.string() }).strict(),
+        z.object({ kind: z.literal("third").optional(), value: z.string() }).strict(),
+        z.object({ kind: z.string(), value: z.string() }).strict(),
+      ])
+        expect(capabilityManifestEvolutionIssues(oneOf([first, second]), oneOf([first, second, added]))).not.toEqual([]);
+
+      const optional = z.object({ kind: z.literal("first").optional(), value: z.string() }).strict();
+      expect(capabilityManifestEvolutionIssues(oneOf([optional, second]), oneOf([optional, second, third]))).not.toEqual([]);
+      // Widening one existing variant may introduce an overlap even with no new branch.
+      const narrow = z.object({ kind: z.literal("same"), extra: z.string() }).strict();
+      const wide = narrow.partial({ extra: true });
+      const empty = z.object({ kind: z.literal("same") }).strict();
+      expect(capabilityManifestEvolutionIssues(oneOf([narrow, empty]), oneOf([wide, empty]))).not.toEqual([]);
+    });
+
+    test("does not confuse title or description fields with annotations", () => {
+      for (const name of ["title", "description"]) {
+        const withField = z.object({ kind: z.literal("same"), [name]: z.string() }).strict();
+        const withoutField = z.object({ kind: z.literal("same") }).strict();
+        const widened = withoutField.extend({ [name]: z.string().optional() });
+        expect(capabilityManifestEvolutionIssues(oneOf([withField, withoutField]), oneOf([withField, widened]))).not.toEqual([]);
+      }
+    });
+
+    test("rejects newly constrained optional properties in open variants", () => {
+      const open = z.object({ kind: z.literal("first") }).loose();
+      const narrowed = open.extend({ extra: z.string().optional() });
+      for (const [previous, next] of [
+        [z.union([open, second]), z.union([narrowed, second, third])],
+        [z.discriminatedUnion("kind", [open, second]), z.discriminatedUnion("kind", [narrowed, second, third])],
+      ] as const) {
+        expect(previous.safeParse({ kind: "first", extra: 42 }).success).toBe(true);
+        expect(next.safeParse({ kind: "first", extra: 42 }).success).toBe(false);
+        expect(issues(previous, next)).not.toEqual([]);
+      }
+    });
+
+    test("preserves literal object values and pattern-admitted properties", () => {
+      const withBranch = (branch: Record<string, unknown>) => {
+        const result = oneOf([first, second]);
+        result.queries[0]!.inputSchema = { type: "object", properties: { expression: { anyOf: [branch, { type: "string" }] } } };
+        return result;
+      };
+      for (const name of ["title", "description"]) {
+        expect(
+          capabilityManifestEvolutionIssues(withBranch({ enum: [{ [name]: "old" }] }), withBranch({ enum: [{ [name]: "new" }] })),
+        ).not.toEqual([]);
+      }
+      const patterned = { type: "object", properties: {}, additionalProperties: false, patternProperties: { "^extra$": {} } };
+      expect(
+        capabilityManifestEvolutionIssues(withBranch(patterned), withBranch({ ...patterned, properties: { extra: { type: "string" } } })),
+      ).not.toEqual([]);
+    });
+
+    test("keeps union-level constraints and output unions strict", () => {
+      const previous = oneOf([first, second]);
+      const changed = oneOf([first, second, third]);
+      changed.queries[0]!.inputSchema.additionalProperties = true;
+      expect(capabilityManifestEvolutionIssues(previous, changed)).not.toEqual([]);
+      for (const [oldUnion, newUnion] of [
+        [z.union([first, second]), z.union([first, second, third])],
+        [z.discriminatedUnion("kind", [first, second]), z.discriminatedUnion("kind", [first, second, third])],
+      ] as const) {
+        const next = manifest(newUnion);
+        const before = manifest(oldUnion);
+        before.queries[0]!.dataSchema = z.toJSONSchema(oldUnion);
+        next.queries[0]!.dataSchema = z.toJSONSchema(newUnion);
+        expect(capabilityManifestEvolutionIssues(before, next).some((issue) => issue.startsWith("Query search data"))).toBe(true);
+      }
+    });
+  });
+
   test("returns structured validation, schema, idempotency, and handler failures", async () => {
     const compiled = compileCapabilities("example", example());
     const query = compiled.manifest.queries[0]!;
@@ -1514,3 +1662,39 @@ test("search scope declarations survive localization and reject unsupported dire
   expect(accepted.ok).toBe(true);
   expect(invoked).toBe(true);
 });
+
+for (const kind of ["query", "action", "review"] as const) {
+  test(`an aborted invocation never starts application ${kind} code`, async () => {
+    const definitions = example();
+    const run = mock(definitions.queries!.get!.run);
+    const action = mock(definitions.actions!.rename!.run);
+    const review = mock(definitions.actions!.rename!.review!);
+    const compiled = compileCapabilities("example", {
+      ...definitions,
+      queries: { get: { ...definitions.queries!.get!, run } },
+      actions: { rename: { ...definitions.actions!.rename!, run: action, review } },
+    });
+    const signal = AbortSignal.abort();
+    const result =
+      kind === "review"
+        ? await reviewCompiledCapability({
+            compiled,
+            localId: "rename",
+            input: { id: "one", name: "Two" },
+            expectedSchemaHash: compiled.manifest.actions[0]!.schemaHash,
+            context: { ...context, signal },
+          })
+        : await invokeCompiledCapability({
+            compiled,
+            kind,
+            localId: kind === "query" ? "get" : "rename",
+            input: kind === "query" ? { id: "one" } : { id: "one", name: "Two" },
+            expectedSchemaHash: (kind === "query" ? compiled.manifest.queries[0] : compiled.manifest.actions[0])!.schemaHash,
+            context: { ...context, signal, ...(kind === "action" ? { idempotencyKey: "cancelled-action" } : {}) },
+          });
+    expect(result).toMatchObject({ ok: false, error: { code: "REQUEST_CANCELLED", status: 499 } });
+    expect(run).not.toHaveBeenCalled();
+    expect(action).not.toHaveBeenCalled();
+    expect(review).not.toHaveBeenCalled();
+  });
+}

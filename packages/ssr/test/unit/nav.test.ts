@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { renderToString } from "solid-js/web";
-import { captureScroll, currentPathWithQuery, Link, listenPopState, navigate, restoreScroll, startViewTransition } from "../../src/nav";
+import {
+  captureScroll,
+  currentPathWithQuery,
+  Link,
+  listenPopState,
+  navigate,
+  onBeforeLeave,
+  restoreScroll,
+  startViewTransition,
+} from "../../src/nav";
 
 const originalWindow = globalThis.window;
 const originalDocument = globalThis.document;
@@ -91,6 +100,18 @@ afterEach(() => {
 });
 
 describe("@k2b/ssr/nav", () => {
+  test("exports onBeforeLeave as a server-side no-op without creating a registry", () => {
+    expect(typeof window).toBe("undefined");
+    expect(typeof onBeforeLeave).toBe("function");
+    let asked = false;
+    const dispose = onBeforeLeave(() => {
+      asked = true;
+    });
+    expect(() => dispose()).not.toThrow();
+    expect(asked).toBe(false);
+    expect(Reflect.has(globalThis, Symbol.for("@k2b/ssr/nav-veto"))).toBe(false);
+  });
+
   test("renders Link as a real anchor during SSR", () => {
     const html = renderToString(() =>
       Link({

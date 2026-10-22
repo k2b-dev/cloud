@@ -2,6 +2,7 @@ import { AppWorkspace, NoticeCard, Placeholder, useLocale } from "@k2b/ui";
 import { katexStylesHref } from "../../../../lib/katex-assets";
 import { notebookWorkspaceMessages } from "../../messages";
 import WorkspaceEventBridge from "../sidebar/WorkspaceEventBridge.island";
+import BookCharts from "./BookCharts.island";
 import BookController from "./BookController.island";
 import BookMermaid from "./BookMermaid.island";
 import BookNavigator, { type BookNavigatorProps } from "./BookNavigator.island";
@@ -37,6 +38,7 @@ export default function BookSurface(props: BookSurfaceProps) {
           tree={props.tree}
           tags={props.tags}
           activeTag={props.activeTag}
+          currentHref={props.currentHref}
           canWrite={props.canWrite}
           locked={props.locked}
           navigationHidden={props.navigationHidden}
@@ -67,11 +69,17 @@ export default function BookSurface(props: BookSurfaceProps) {
                   }}
                 />
                 <WorkspaceEventBridge notebookId={props.notebookId} appUrl={props.appUrl} initialCursor={props.cursor} />
-                <div id="notebook-book-history-warning" hidden={!props.historyIncomplete} role="status">
+                <div
+                  id="notebook-book-history-warning"
+                  hidden={!props.historyIncomplete}
+                  role="status"
+                  data-print-region={props.historyIncomplete && props.html !== null ? "" : undefined}
+                >
                   <NoticeCard tone="warning" title={noteText().historyIncompleteTitle} detail={noteText().historyIncompleteDetail} />
                 </div>
                 {props.html !== null ? (
                   <article
+                    data-print-region=""
                     id="notebook-book-content"
                     aria-label={props.noteTitle ?? undefined}
                     tabIndex={-1}
@@ -84,6 +92,7 @@ export default function BookSurface(props: BookSurfaceProps) {
                   </article>
                 )}
                 <BookMermaid rootId="notebook-book-content" />
+                <BookCharts rootId="notebook-book-content" />
               </AppWorkspace.Main>
               <FloatingEditButton href={props.currentHref} mode="book" locked={props.locked} canWrite={props.canWrite} />
             </div>

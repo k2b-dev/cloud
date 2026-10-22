@@ -26,7 +26,7 @@ const [recent, setRecent] = createSignal([]);
 const [tone, setTone] = createSignal(0);
 window.state = { picked: [], completed: [], sent: [], recent, tone };
 
-render(
+const unmount = render(
   () =>
     createComponent(LocaleProvider, {
       locale: options.locale ?? "en",
@@ -77,6 +77,7 @@ render(
     }),
   document.getElementById("app"),
 );
+window.pickerFixture = { move: (anchor) => setOpen({ ...open(), anchor }), unmount };
 `;
 const build = await Bun.build({
   entrypoints: [entry],
@@ -88,6 +89,7 @@ const build = await Bun.build({
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the EmojiPicker fixture for the browser.");
 const script = await build.outputs[0]!.text();
 
+declare const pickerFixture: { move: (anchor: HTMLElement) => void; unmount: () => void };
 declare const state: { picked: string[]; completed: string[]; sent: string[]; recent: () => string[]; tone: () => number };
 declare const keyboard: { show: (top: number, height: number) => void };
 
@@ -174,7 +176,7 @@ describe(`EmojiPicker in ${browserName}`, () => {
     const button = page.getByRole("button", { name: "Insert emoji" });
     await button.focus();
     await page.keyboard.press("Enter");
-    await expect(search(page).evaluate((input) => input === document.activeElement)).resolves.toBe(true);
+    expect(await search(page).evaluate((input) => input === document.activeElement)).toBe(true);
     await page.locator(".k2b-emoji-picker__option").first().waitFor();
 
     // "Daumen" finds 👍 first, and Enter picks it into the composer, which keeps the focus.
@@ -244,7 +246,8 @@ describe(`EmojiPicker in ${browserName}`, () => {
     await page.keyboard.type("heart");
     expect(await parts(page)).toEqual(before);
     await page.keyboard.type("xyzzy");
-    expect(await page.getByRole("status").textContent()).toBe("No emoji found");
+    // The composer keeps its own (empty) command status region on the page, so read the picker's.
+    expect(await page.locator(".k2b-emoji-picker").getByRole("status").textContent()).toBe("No emoji found");
     expect(await parts(page)).toEqual(before);
     await page.getByRole("button", { name: "Skin tone" }).click();
     expect(await parts(page)).toEqual(before);
@@ -254,13 +257,16 @@ describe(`EmojiPicker in ${browserName}`, () => {
     const page = await open();
     const button = page.getByRole("button", { name: "Insert emoji" });
     await field(page).click();
+    const previousExpanded = await button.getAttribute("aria-expanded");
     await button.click();
+    expect(await button.getAttribute("aria-expanded")).toBe("true");
     const popover = page.locator(".k2b-emoji-picker-popover");
     await page.locator(".k2b-emoji-picker__option").first().waitFor();
     const [box, anchor] = await Promise.all([popover.boundingBox(), button.boundingBox()]);
     expect(box!.y + box!.height).toBeLessThanOrEqual(anchor!.y);
     await page.locator(".k2b-emoji-picker__option", { hasText: "😂" }).first().click();
     expect(await field(page).inputValue()).toBe("😂");
+    expect(await button.getAttribute("aria-expanded")).toBe(previousExpanded);
     expect(await popover.evaluate((element) => element.matches(":popover-open"))).toBe(false);
 
     await button.click();
@@ -268,6 +274,10 @@ describe(`EmojiPicker in ${browserName}`, () => {
     await button.click();
     await page.waitForTimeout(50);
     expect(await popover.evaluate((element) => element.matches(":popover-open"))).toBe(false);
+
+    expect(await button.getAttribute("aria-expanded")).toBe(previousExpanded);
+    // An explicit pre-existing value is restored too.
+    await button.evaluate((element) => element.setAttribute("aria-expanded", "false"));
 
     // A key press on the button closes it as well, although no click outside dismissed it first.
     await button.focus();
@@ -278,6 +288,28 @@ describe(`EmojiPicker in ${browserName}`, () => {
     await page.waitForTimeout(50);
     expect(await popover.evaluate((element) => element.matches(":popover-open"))).toBe(false);
     expect(await button.evaluate((element) => element === document.activeElement)).toBe(true);
+    expect(await button.getAttribute("aria-expanded")).toBe("false");
+  }, 30_000);
+
+  test("restores expanded attributes when moving anchors and unmounting", async () => {
+    const page = await open();
+    const button = page.getByRole("button", { name: "Insert emoji" });
+    const previousExpanded = await button.getAttribute("aria-expanded");
+    await button.click();
+    expect(await button.getAttribute("aria-expanded")).toBe("true");
+    await page.evaluate(() => {
+      const other = document.createElement("button");
+      other.id = "other-anchor";
+      other.textContent = "Other anchor";
+      other.setAttribute("aria-expanded", "false");
+      document.body.append(other);
+      pickerFixture.move(other);
+    });
+    expect(await button.getAttribute("aria-expanded")).toBe(previousExpanded);
+    expect(await page.locator("#other-anchor").getAttribute("aria-expanded")).toBe("true");
+    await page.evaluate(() => pickerFixture.unmount());
+    expect(await page.locator("#other-anchor").getAttribute("aria-expanded")).toBe("false");
+    expect(await page.locator(":popover-open").count()).toBe(0);
   }, 30_000);
 
   test("stays in the part of the page a phone's keyboard leaves visible", async () => {

@@ -14,16 +14,29 @@ export type ChoiceOption<T extends string = string> = {
 
 export type ChoiceOptionsLoader<T extends string = string> = (query: string, signal: AbortSignal) => Promise<readonly ChoiceOption<T>[]>;
 
-export const filterChoiceOptions = <T extends string>(options: readonly ChoiceOption<T>[], query: string): readonly ChoiceOption<T>[] => {
+/** Matches label, description, value, and optional extra keywords. */
+export const filterChoiceOptions = <
+  O extends Pick<ChoiceOption<string>, "label" | "description" | "value"> & { keywords?: readonly string[] },
+>(
+  options: readonly O[],
+  query: string,
+): readonly O[] => {
   const normalized = query.trim().toLocaleLowerCase();
   if (!normalized) return options;
   return options.filter((option) =>
-    [option.label, option.description, option.value].some((part) => part?.toLocaleLowerCase().includes(normalized)),
+    [option.label, option.description, option.value, ...(option.keywords ?? [])].some((part) =>
+      part?.toLocaleLowerCase().includes(normalized),
+    ),
   );
 };
 
-export const nextEnabledChoiceIndex = <T extends string>(
-  options: readonly ChoiceOption<T>[],
+/**
+ * Moves through the options and wraps at the ends, skipping `disabled` ones. A
+ * RichSelect row that cannot be chosen carries a `disabledReason` instead, so
+ * the arrow keys still reach it and its reason can be read.
+ */
+export const nextEnabledChoiceIndex = <O extends { label: string; disabled?: boolean }>(
+  options: readonly O[],
   current: number,
   direction: 1 | -1,
 ): number => {
@@ -142,21 +155,35 @@ const popoverIsOpen = (popover: HTMLElement | undefined): boolean => {
   }
 };
 
-export const placeChoicePopover = (trigger: HTMLElement, popover: HTMLElement): void => {
+export type ChoicePopoverPlacement = {
+  /**
+   * `trigger` (default) gives the popover the trigger's width; `own` keeps the
+   * width its stylesheet sets, such as a RichSelect with a preview.
+   */
+  width?: "trigger" | "own";
+  /** The side tried first. The popover flips when the other side has more room. */
+  side?: "below" | "above";
+};
+
+export const placeChoicePopover = (trigger: HTMLElement, popover: HTMLElement, placement: ChoicePopoverPlacement = {}): void => {
   const margin = 8;
   const gap = 4;
   const triggerRect = trigger.getBoundingClientRect();
   // Cloud sizes its dropdowns to the trigger exactly (`dialog.style.width =
   // rect.width`). Keep that so a narrow toolbar select does not open a wide
   // panel that no longer lines up with the control it belongs to.
-  const width = Math.min(triggerRect.width, window.innerWidth - margin * 2);
-  popover.style.width = `${width}px`;
+  const triggerWidth = Math.min(triggerRect.width, window.innerWidth - margin * 2);
+  if (placement.width !== "own") popover.style.width = `${triggerWidth}px`;
 
   const popoverRect = popover.getBoundingClientRect();
+  const width = placement.width === "own" ? popoverRect.width : triggerWidth;
   const left = Math.max(margin, Math.min(triggerRect.left, window.innerWidth - width - margin));
   const roomBelow = window.innerHeight - triggerRect.bottom - gap - margin;
   const roomAbove = triggerRect.top - gap - margin;
-  const opensAbove = popoverRect.height > roomBelow && roomAbove > roomBelow;
+  const opensAbove =
+    placement.side === "above"
+      ? popoverRect.height <= roomAbove || roomAbove > roomBelow
+      : popoverRect.height > roomBelow && roomAbove > roomBelow;
   const top = opensAbove
     ? Math.max(margin, triggerRect.top - popoverRect.height - gap)
     : Math.min(triggerRect.bottom + gap, window.innerHeight - popoverRect.height - margin);
@@ -165,7 +192,10 @@ export const placeChoicePopover = (trigger: HTMLElement, popover: HTMLElement): 
   popover.style.top = `${Math.max(margin, top)}px`;
 };
 
-export function createChoicePopover(disabled: () => boolean): {
+export function createChoicePopover(
+  disabled: () => boolean,
+  placement: () => ChoicePopoverPlacement = () => ({}),
+): {
   open: () => boolean;
   setTrigger: Setter<HTMLElement | undefined>;
   setPopover: Setter<HTMLElement | undefined>;
@@ -182,7 +212,7 @@ export function createChoicePopover(disabled: () => boolean): {
   const place = () => {
     const triggerElement = trigger();
     const popoverElement = popover();
-    if (triggerElement && popoverElement && open()) placeChoicePopover(triggerElement, popoverElement);
+    if (triggerElement && popoverElement && open()) placeChoicePopover(triggerElement, popoverElement, placement());
   };
 
   const show = () => {
@@ -219,7 +249,10 @@ export function createChoicePopover(disabled: () => boolean): {
         return;
       }
 
-      const options = popoverElement.querySelector<HTMLElement>(".k2b-choice-options");
+      // A popover with more than one scrolling region, such as a list beside a
+      // preview, marks them; the wheel scrolls the one under the pointer.
+      const options =
+        target?.closest<HTMLElement>("[data-choice-scroll]") ?? popoverElement.querySelector<HTMLElement>(".k2b-choice-options");
       if (!options || options.scrollHeight <= options.clientHeight) return;
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? options.clientHeight : 1;
       options.scrollTop += event.deltaY * unit;

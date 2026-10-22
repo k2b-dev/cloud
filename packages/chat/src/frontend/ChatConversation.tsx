@@ -33,12 +33,16 @@ export type ChatFeedItem = {
   status?: MessageRowStatus;
   /** Set on a failed send: sends it again with the same client ID. */
   retry?: () => void;
+  /** Set on a failed send: removes it, so the sends after it go out. */
+  discard?: () => void;
   /** Position and ID of a stored message; a send the history does not hold yet has neither. */
   seq?: number;
   messageId?: string;
 };
 
 export type ChatConversationProps = {
+  /** The chat's own commands at the end of the header, such as its info. */
+  actions?: JSX.Element;
   chatId: string;
   title: string;
   memberCount: number;
@@ -161,6 +165,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             </Button>
           )}
         </Show>
+        <div class="chat-conversation__actions">{props.actions}</div>
       </header>
       <VirtualFeed
         class="chat-conversation__feed"
@@ -213,7 +218,9 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               actions={
                 item.messageId
                   ? [{ id: "unread", label: t().markUnreadFromHere, icon: "ti ti-mail", onSelect: () => props.onMarkUnreadFrom(item) }]
-                  : undefined
+                  : item.discard
+                    ? [{ id: "discard", label: t().discardMessage, icon: "ti ti-trash", onSelect: item.discard }]
+                    : undefined
               }
             />
           )

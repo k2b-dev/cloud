@@ -137,7 +137,7 @@ field says so in the group's description. Provide a visible `label`, or set
 
 ## Runtime
 
-Drawing, typing, and `signatureToPng` require hydrated Solid client code.
+Drawing, typing, and `signatureToPng` require browser code.
 Server rendering shows a stored value, the empty pad, and the field contract.
 `parseSignature` is a pure function for the server and the browser.
 

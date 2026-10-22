@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-10-12
+updated: 2026-10-20
 ---
 
 # Tools and approvals
@@ -24,6 +24,11 @@ Applications can also restrict launched conversations through
 [`allowedTools`](/en/docs/ai/chat-runtime-and-streaming). The stored ceiling applies
 to later turns and forks as well as initial discovery. Action approval and domain
 permissions still apply to every permitted operation.
+
+Applications can declare [Action policies, per-call reviews, and receipts](/en/docs/platform/capabilities#describe-each-call-with-policy-and-typed-slots).
+In this release, silent policies keep the rememberable-approval behavior;
+asking policies ask every time. Upgrade Core, Assistant, and Capabilities
+before apps return the new shapes.
 
 ## Define a server tool
 
@@ -124,7 +129,8 @@ app Capability Actions use the fixed AI Core policy described below.
 The default is `once`.
 
 Remembered approval is scoped to the actor, tool, and declared approval scope.
-The person remembers it either for the current chat, the default, or always. A
+The browser offers remembering for the current chat where allowed. Earlier
+**Always approve** choices still apply until the next major release. A
 chat approval ends when the chat is deleted. Only use a shared scope when every
 call covered by it has the same consequence.
 
@@ -179,6 +185,16 @@ has that did not come from a code run. It shares the chart contract of
 Set exactly one of `kind` or `charts` at the tool's flat root, with `title` and
 optional `subtitle` (unit, period or source).
 
+In Studio and one-off HTML apps, `cloud.chart()` shows tooltips by default on
+hover, keyboard focus and tap, using the same text as chat charts and their data
+tables. Function formats also apply to tooltip values when `tooltip.format` is
+absent.
+
+Printed pages and PDFs (`cloud.pdf.render`, presentation PDF download and
+browser print) list the chart's values in a table below it, hidden on screen.
+The table is complete with no extra row limit; PDF size grows with the number
+of points.
+
 | Kind | Data and options |
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
@@ -200,6 +216,14 @@ fractions, decimals is 0..10, and unit is a suffix of at most 12 characters.
 Date x axes take `{date: "day" | "minute" | "second"}`. With `showValues` on
 bars, y ticks use the value format. Pie and donut slices show shares, so their
 format applies to the values in tooltips and the data table.
+
+Every chart kind accepts `tooltip: {label?, format?}`; groups do not. `label`
+names the numeric value or y column in the data table and tooltips, ahead of
+an axis label. `format` takes the number format above, without date
+formats, and overrides value cells and tooltips. Counts, shares, x values and
+axis ticks keep their own formats. For example,
+`tooltip: {label: "Umsatz", format: {style: "currency", currency: "EUR"}}`
+shows `1.200,00 €` for 1200 in German. A kind's `unit` remains appended.
 
 `references` holds at most 8 `{value, axis?, label?}` lines, defaulting to y.
 Only line, scatter and histogram accept x references. Reference values match
@@ -269,7 +293,9 @@ A saved stats view is `{view: "stats", title, subtitle?, items}`. Each item has
 optional number `format`, `sub`, finite `delta`, `better: "up" | "down"`, and
 `sparkline` (2..480 finite numbers, oldest first). Format and delta require a
 numeric value; better requires delta. Delta is in the value's units. The host
-chooses improvement colors from better; no direction or zero stays neutral.
+chooses improvement colors from better; no direction or zero stays neutral. The
+sparkline tooltip names each point after the item label and uses the item
+`format`.
 Titles are trimmed to 1..160 characters, subtitles to 1..300, and item labels,
 text values and sub to 1..80. Stats do not convert Dates.
 
@@ -395,8 +421,19 @@ authorization headers. Cloud resolves and pins a public network address,
 repeats that check for every bounded redirect, and enforces both declared and
 streamed byte limits. The result is an assistant-owned conversation file below
 `/imports`; inspect it with `read_file` or `view_image`, then use `present` when
-the user should receive the original file. The tool does not clone or browse a
-repository, authenticate to a website, or reach private network targets.
+the user should receive the original file. For an HTML page, Cloud also stores
+readable Markdown of the main content next to the raw file: title, headings,
+paragraphs, lists, tables, and absolute links, without scripts, styles, or
+navigation. The result returns this copy as `readable.path` and tells the model
+to read it first. The raw HTML stays unchanged. The copy uses the same bounds
+as other documents converted to Markdown: Cloud reads at most the first 20 MiB
+of the page and keeps the copy within 1 MiB, ending a longer copy with a
+truncation note. A page that needs more parser state than the conversion budget
+is converted up to that point and ends with the truncation note. If the copy cannot be stored
+(for example, because of the conversation quota), or the page has no readable
+text, the result contains only the raw file. Both copies are untrusted data.
+The tool does not clone or browse a repository, authenticate to a website, or
+reach private network targets.
 Download failures appear as a short category such as **File not found**,
 **Authorization required**, or **File server error**, followed by an actionable
 explanation; the activity disclosure retains the requested URL and full tool
@@ -449,7 +486,7 @@ Tool-capable personal chats keep three bounded discovery tools available:
   | `unknown` | No tool has this exact name, or it names an optional built-in that is off, such as `memory` while memory is disabled |
   | `skill` | The name is an Assistant Skill this turn can load; `load_skill` loads it, not `load_tools` |
   | `not_offered_in_turn` | The tool exists, but this turn's client or task does not provide it, or the turn offers no app operations |
-  | `not_allowed` | The conversation's fixed tool scope or task grants exclude it |
+  | `not_allowed` | The conversation's fixed tool scope or routine grants exclude it |
   | `app_offline` | The operation was loaded earlier, or the registry cannot be read, and its app is not in the live registry now |
 
   The model looks up an unknown name once with `search_tools`, loads a skill
@@ -458,13 +495,13 @@ Tool-capable personal chats keep three bounded discovery tools available:
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
 
-Background runs use the task's mandate policy and grants for `search_tools`,
+A routine (scheduled task) uses its mandate policy and grants for `search_tools`,
 `load_tools`, `list_apps`, and resource readers. Tools outside that scope stay
 unavailable even if the interactive chat loaded them earlier. When the scope
 allows no app operations, `search_tools` says so instead of reporting an outage.
 Fixed inputs are checked per call; a rejected call returns a tool error the
 model can recover from. Broken authority or required interaction still makes
-the task need attention; see [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-task).
+the routine need attention; see [Background mandates](/en/docs/identity/background-mandates#grant-capabilities-to-an-unattended-assistant-routine).
 
 A loaded built-in or app operation becomes an ordinary named tool on the next model turn.
 Cloud gives the model the operation's structure, required fields,
@@ -498,6 +535,10 @@ a provider-safe callable name when preparing a model request. Model message
 history stores each call under its provider-safe name, and the `call` field of
 a `load_tools` result carries that name. Code that reads stored tool calls
 accepts both the capability ID and the provider name.
+Cloud also describes each loaded capability's input in the schema subset every
+model provider accepts: a tuple reaches the model as a bounded array of its
+item schemas, an exclusive union (`oneOf`) as a plain union (`anyOf`), and the
+app still validates the exact input.
 When a result contains a semantic `open` or `edit` link, clients use
 that exact path instead of inferring a route from a resource ref.
 
@@ -517,8 +558,8 @@ AI Core treats capability operation kinds as the approval boundary:
 | Capability kind | AI Core behavior |
 | --- | --- |
 | Query | Execute without interactive approval |
-| Action without `approval` | Require fresh approval for that call; it cannot be granted to a scheduled task |
-| Action with `approval: "rememberable"` | Offer one-time approval, **Approve for this chat**, or **Always approve** for the app-owned review scope |
+| Action without `approval` | Require fresh approval for that call; it cannot be granted to a routine |
+| Action with `approval: "rememberable"` | Offer one-time approval or **Yes, and don't ask again in this chat** for the app-owned review scope |
 
 Capability manifests describe objective Action properties such as `openWorld`,
 `destructive`, idempotency, and the optional availability of a review. AI Core
@@ -530,13 +571,9 @@ presentation metadata. A review that returns no `approvalScope` for particular
 arguments makes that call ask every time, for example a copy into another
 storage base.
 
-For example, the single-file and atomic multi-file Assistant Skill reference
-Actions offer **Always approve** in the split-button menu after their
-full-content review. That choice applies to later writes through the same
-Action across all Skills the current user can edit. Every write still rechecks
-Skill access, validates the complete Markdown files, and enforces the expected
-revision. A multi-file write validates the whole batch first and advances the
-revision once; deleting a reference continues to require a fresh approval.
+The browser no longer offers **Always approve**. Choices made earlier still
+apply until the next major release. A remembered choice never bypasses current
+resource permissions or the Action's validation.
 
 This approval confirms the user's intent for one model-requested call. It is
 not application authorization. After approval, the owning app validates the
@@ -557,13 +594,37 @@ An Action may publish the fixed optional
 After the model requests such an Action, AI Core resolves the review with the
 current user and the same arguments before presenting the approval.
 
-The review is UI-only. Cloud renders its bounded message and details as escaped
-plain text, with same-origin links in the approval footer. It is never added to
-model context or returned as a tool result.
-The app name, icon, Action title, and risk treatment continue to come from the
-live registry and manifest. Once presented, the resolved review is stored with
-the pending action and active-turn snapshot; reconnecting or reopening the chat
-must render that same snapshot rather than recomputing or degrading it.
+The question shows one sentence with typed chips from the review, Cloud's
+reason line, the thing being changed, and two answers naming the deed and its
+target. Cloud derives the reason from the review's `ask` or declared policy;
+the model's `approvalReason` is no longer shown. Legacy reviews and Actions
+without a policy use `app_asks`. Legacy question text and every detail remain
+readable without treating the text as a new template.
+
+| Reason code | Why Cloud asks |
+| --- | --- |
+| `sends` | This leaves Cloud |
+| `deletes` | This cannot be brought back |
+| `cannot_undo` | This cannot be set back |
+| `involves_people` | This involves or notifies other people |
+| `changes_access` | Who can see this changes |
+| `keeps_working` | This keeps acting without the person |
+| `sensitive` | This concerns payments, invoices, addresses, or sign-in data |
+| `app_asks` | The app asks every time |
+
+When a review includes complete proposed content, **Read the complete proposal**
+opens the stored snapshot using the same renderer in the chat and approval
+page. Approval and remembering remain unavailable until that exact snapshot
+loads; a failed load offers retry. Opening the draft separately may show a newer
+version. The compact card, stream and list do not include the full body.
+The interactive CLI loads complete content before offering approval;
+`cld assistant actions content <chat> <turn> <call>` reads one pending proposal.
+Cloud Login retains its existing restriction on incomplete send questions.
+
+The review is display data, not model context or a tool result. Cloud stores it
+on the tool-call message before showing the question, including calls an earlier
+approval lets through. Reloads keep the same sentence, slots, and preview even
+after the app changes. Scheduled turns keep the review in their run transcript.
 Execution is different: after approval, AI Core resolves the review once more
 and runs the Action only when it equals the snapshot; otherwise it asks again.
 
@@ -577,13 +638,46 @@ an app-owned safety workflow. For example, a domain fingerprint or optimistic
 revision required by an Action remains part of the Action input and is enforced
 again by the owning app.
 
+### Read an Action outcome
+
+The same card keeps one outcome line:
+
+| Outcome | Meaning |
+| --- | --- |
+| Running | Cloud dispatched the call |
+| Done | The app returned success, or its check confirmed the effect; the receipt states only what is certain |
+| Rejected | The person declined |
+| Not run | Cloud or the app confirmed nothing happened |
+| Unknown | Cloud has no usable answer after dispatch |
+
+Only an app's answer about the request itself (a 4xx) proves that an Action did
+not happen. A lost response, a timeout, a cancellation, or a server-side failure
+after dispatch (`ACTION_OUTCOME_UNKNOWN`, `IDEMPOTENCY_UNCERTAIN`,
+`IDEMPOTENCY_IN_PROGRESS`, or any 5xx or 499) leaves the outcome unknown, and
+the model gets `ACTION_OUTCOME_UNKNOWN`. A failure before Cloud sent anything
+to the app, such as an unavailable registry, keeps its own code and reads as
+failed. A call that was still running when its turn ended without a stop is
+unknown too; when Cloud had sent it and its review has a check, **Check again**
+starts that check. When a new review supplies
+`check: { query, input }`, Cloud then runs that app's Query once. `done` shows the receipt and settles the call;
+`not_done` shows not run and tells the model to ask before trying again.
+`pending` keeps the unknown line. An unavailable or invalid check also keeps
+that line. **Check again** runs only the Query once per press for a pending or
+failed check, with the person's current access; concurrent presses conflict.
+It never repeats the Action. A result that check settles also reaches the
+Assistant in later turns, so it knows the call happened or did not. Without a
+check, the card can link the object but
+offers no repeat button. Background checks follow the same rules and never ask.
+
 ### Approvals from an editor
 
 [Assistant in editors](/en/docs/ai/editors) offers approval once or for the
 current chat for requests that can be remembered. An editor may approve these
 automatically. Actions that cannot be undone or reach other people, such as
 sending mail, deleting, sharing, or inviting, wait for confirmation in Cloud;
-the editor shows the link and can only reject them. Use `/approvals` in the
+the editor shows the link and can only reject them. Requests with complete
+proposed content also use **Confirm in Cloud**, where the full snapshot must
+load before approval. Use `/approvals` in the
 editor to revoke remembered choices.
 
 ## Handle approval in the UI
@@ -599,26 +693,28 @@ rules, and decision channels.
 The stream exposes pending actions. The shared controller provides:
 
 - `respondToApproval({ turnId, callId }, { approved, remember })`;
-- `submitFrontendToolResult({ turnId, callId }, result)`.
+- `submitFrontendToolResult({ turnId, callId }, result)`;
+- `checkAction({ turnId, callId })`, returning the latest outcome check.
 
-Show the tool name, requested inputs, and consequence before approval. The
-primary action uses a split button; its **Details** item toggles the complete
-validated arguments for technical verification. Do not require ordinary users
-to read that raw representation: every value needed for an informed decision
-belongs directly in the review card. Approving once stays the primary action.
-When the owning Action supplies a reusable scope, the menu offers
-**Approve for this chat** first and **Always approve** after it
-(`remember: "chat"` or `remember: "always"`). A pending approval carries
-`allowChat` and `allowAlways`; for a website it also carries `website`, the
-exact origin a chat approval would allow.
-When a Capability review is available, show it instead of making the user
-interpret opaque IDs in the raw arguments. Review details default to the
-compact `inline` presentation; `display: "block"` gives long plain-text values
-their own bounded section. Apps can mark canonical `YYYY-MM-DD` values as
-`date` and RFC 3339 instants as `date-time`; the shared UI renders them for the
-viewer without changing the persisted value. These hints never enable HTML or
-Markdown rendering, and semantic review links remain clickable same-origin
-links.
+Use the shared question card for the sentence, reason, preview, two answers,
+and outcome. Where remembering for this chat is allowed, show the quiet
+**Yes, and don't ask again in this chat** link (`remember: "chat"`). A chat
+choice ends when the chat is deleted. The API still accepts `remember: "always"`
+and applies earlier choices, but the browser no longer offers it. A pending
+approval retains `allowChat` and `allowAlways`; a website request also carries
+`website`, its exact origin.
+
+Wire `onCheckAction` to `checkAction` and propagate failures so the card can
+show recovery. Core serves
+`POST /api/ai/conversations/:conversationId/turns/:turnId/calls/:callId/check`
+for the conversation owner in a signed-in browser session; API keys and other
+clients get `403`. Unknown calls return `404`. Calls without a check, and a
+second press while one check runs, return `409`. The executor and a person's
+press claim the check with one conditional write, so only one runs at a time and
+a settled result is never replaced; a claim whose worker stopped goes stale after
+a minute and can be checked again. A settled check answers again
+with its stored result without running the Query, so a client whose response
+got lost can recover. The response is `{ state, receipt?, at }`.
 
 The owning app sets this policy in its manifest. Users and administrators
 cannot loosen it; a user can only remember an approval where the Action offers
@@ -626,7 +722,7 @@ it. Users can list and revoke the choices that apply everywhere under
 **Assistant settings > Approvals**, and those of one chat under
 **Secrets & approvals** in the chat's context panel
 (`GET /api/ai/approval-preferences?conversation=<chat>`). Revocation is
-ownership-scoped and takes effect on the next matching call. A scheduled task
+ownership-scoped and takes effect on the next matching call. A routine
 or mandate never uses a remembered approval; it runs only on its own grants.
 
 ### Allow a website for a chat
@@ -666,8 +762,8 @@ asking only if all of these hold:
 - the request has the exact same origin, so scheme, host, and port match;
 - it is GET or HEAD without a body, with only the headers above and no secret
   reference;
-- a person started the turn in a signed-in browser session, not a scheduled
-  task, a mandate, `cld`, an API key, or another delegated credential;
+- a person started the turn in a signed-in browser session, not a
+  routine, a mandate, `cld`, an API key, or another delegated credential;
 - the code is the chat's own code or a Studio app the person manages, never an
   app they only use or HTML presented in the chat.
 
@@ -708,8 +804,12 @@ address must match one of these as a whole; a host and path that only appear
 inside a longer address do not count. A message another chat sent counts as
 none of these. Any other address, such as one the model built from other data
 or found in a mail, shows an approval card with the full URL and the same
-website choice as an HTTP request. A refused read fetches nothing. A scheduled
-task cannot ask, so such a read fails there; its own prompt counts as the
+website choice as an HTTP request. Cloud tools use per-call reviews for their
+question and outcome wording, just like app Actions. A web read names the
+site in its question, keeps the full address in an Address preview row, and
+uses the `sends` reason with the explanations about address provenance and
+sending the full address to the website. A refused read fetches nothing. A routine
+cannot ask, so such a read fails there; its own prompt counts as the
 person's message.
 
 Links of a page read earlier count as supplied, so a page can offer the model

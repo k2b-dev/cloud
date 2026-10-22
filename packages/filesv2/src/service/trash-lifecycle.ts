@@ -1,17 +1,19 @@
 import type { RequestActor } from "@k2b/cloud/server";
-import { FilegateError, type Node, type RootClient, type TransferResult } from "@k2b/filegate";
+import { FilegateError, type Node, type TransferResult } from "@k2b/filegate";
 import { z } from "zod";
 import type { BaseSummary, EntryResult, TrashEntry } from "../contracts";
-import { withRootLock } from "../data/operations";
+import { rootLockWait, withRootLock } from "../data/operations";
 import { type TrashRow, trash } from "../data/trash";
+import { pendingMigration, type UserFilesCall } from "./activity";
 import { operationError, runFileBatch } from "./batches";
 import { FilesError } from "./errors";
 import { fileEntry } from "./file-entry";
+import type { FilesRoot } from "./filegate-facade";
 import { joinPath, relativePath, userPath } from "./paths";
 
 /** Request-authorized location. Rights checks remain in the owning service. */
 export type TrashLocation = {
-  root: Pick<RootClient, "stat" | "transfer" | "list">;
+  root: Pick<FilesRoot, "stat" | "transfer" | "list">;
   rootName: string;
   serverUrl: string;
   basePath: string;
@@ -45,7 +47,7 @@ function decode(value?: string): z.infer<typeof Cursor> | undefined {
     throw new FilesError("invalid_cursor");
   }
 }
-async function stat(root: Pick<RootClient, "stat">, path: string): Promise<Node | null> {
+async function stat(root: Pick<FilesRoot, "stat">, path: string): Promise<Node | null> {
   try {
     return await root.stat(path);
   } catch (error) {
@@ -91,9 +93,9 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
     )
       throw new FilesError("binding_changed", 409);
   };
-  async function locked<T>(root: string, run: () => Promise<T>): Promise<T> {
+  async function locked<T>(root: string, run: () => Promise<T>, wait?: AbortSignal): Promise<T> {
     try {
-      return await lock(root, run);
+      return await lock(root, run, wait);
     } catch (error) {
       if (error instanceof Error && error.message === "operation_busy") throw new FilesError("operation_busy", 409);
       throw error;
@@ -124,7 +126,9 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
         let receipt: TransferResult | undefined;
         let answered = false;
         try {
-          receipt = await current.root.transfer(sourceAbsolute, current.rootName, targetAbsolute, { move: true, onConflict: "error" });
+          receipt = await pendingMigration("trash.transfer", () =>
+            current.root.transfer(sourceAbsolute, current.rootName, targetAbsolute, { move: true, onConflict: "error" }),
+          );
           answered = true;
         } catch (error) {
           source = await stat(current.root, sourceAbsolute);
@@ -152,48 +156,55 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
     }
   }
   return {
-    async remove(actor: RequestActor, input: { baseId: string; paths: string[] }) {
+    async remove(call: UserFilesCall, input: { baseId: string; paths: string[] }) {
+      const actor = call.actor;
+      const wait = rootLockWait();
       return runFileBatch(
         input.paths,
         (path) => authorize(actor, input.baseId, path, "move"),
         async (prepared, path) => {
           // Reauthorize after batch preflight, immediately before this entry's effect.
-          return locked(prepared.rootName, async () => {
-            const source = await authorize(actor, input.baseId, path, "move");
-            sameLocation(prepared, source);
-            await source.ensureTrash();
-            let row = await store.pending(source.bindingId, source.relative);
-            if (!row) {
-              const id = crypto.randomUUID();
-              row = await store.create({
-                id,
-                base_id: source.bindingId,
-                user_id: source.userId,
-                root: source.rootName,
-                server_url: source.serverUrl,
-                original: source.relative,
-                trashed: `trash/${id}`,
-                directory: source.node.directory,
-                snapshot: source.node,
-                state: "pending",
-              });
-            }
-            await reconcile(source, row, true);
-            return recordEntry(row);
-          });
+          return locked(
+            prepared.rootName,
+            async () => {
+              const source = await authorize(actor, input.baseId, path, "move");
+              sameLocation(prepared, source);
+              await source.ensureTrash();
+              let row = await store.pending(source.bindingId, source.relative);
+              if (!row) {
+                const id = crypto.randomUUID();
+                row = await store.create({
+                  id,
+                  base_id: source.bindingId,
+                  user_id: source.userId,
+                  root: source.rootName,
+                  server_url: source.serverUrl,
+                  original: source.relative,
+                  trashed: `trash/${id}`,
+                  directory: source.node.directory,
+                  snapshot: source.node,
+                  state: "pending",
+                });
+              }
+              await reconcile(source, row, true);
+              return recordEntry(row);
+            },
+            wait,
+          );
         },
       );
     },
     async trash(
-      actor: RequestActor,
+      call: UserFilesCall,
       input: { baseId: string; after?: string },
     ): Promise<{ base: BaseSummary; entries: TrashEntry[]; next: string | null }> {
+      const actor = call.actor;
       const current = await authorize(actor, input.baseId, "", "read");
       const cursor = decode(input.after);
       const entries: TrashEntry[] = [];
       if (cursor?.phase !== "filesystem") {
         const rows = await store.list(current.bindingId, cursor?.phase === "records" ? cursor : undefined, PAGE_SIZE + 1);
-        if (rows.length === 0) return this.trash(actor, { ...input, after: encode({ phase: "filesystem" }) });
+        if (rows.length === 0) return this.trash(call, { ...input, after: encode({ phase: "filesystem" }) });
         for (const listed of rows.slice(0, PAGE_SIZE)) {
           let row = listed;
           if (row.root !== current.rootName || (row.server_url !== null && row.server_url !== current.serverUrl)) continue;
@@ -268,7 +279,8 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
      * One recoverable entry, for an approval review that must name what it restores. It applies the listing's
      * disclosure rules and only reads: nothing is reconciled or recorded.
      */
-    async trashEntry(actor: RequestActor, input: { baseId: string; id: string }): Promise<TrashEntry> {
+    async trashEntry(call: UserFilesCall, input: { baseId: string; id: string }): Promise<TrashEntry> {
+      const actor = call.actor;
       const current = await authorize(actor, input.baseId, "", "read");
       const listed = input.id.startsWith("fs:") ? filesystemPath(input.id) : null;
       const row = listed ? await store.at(current.bindingId, listed) : await store.get(input.id, current.bindingId);
@@ -296,70 +308,75 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
         state: "trashed",
       };
     },
-    async restoreTrash(actor: RequestActor, input: { baseId: string; id: string; path?: string }): Promise<EntryResult> {
+    async restoreTrash(call: UserFilesCall, input: { baseId: string; id: string; path?: string }): Promise<EntryResult> {
+      const actor = call.actor;
       const located = await authorize(actor, input.baseId, "", "read");
-      return locked(located.rootName, async () => {
-        const current = await authorize(actor, input.baseId, "", "read");
-        sameLocation(located, current);
-        let row = input.id.startsWith("fs:")
-          ? await store.at(current.bindingId, filesystemPath(input.id))
-          : await store.get(input.id, current.bindingId);
-        if (!row && input.id.startsWith("fs:")) {
-          const path = filesystemPath(input.id);
-          const node = await stat(current.root, joinPath(current.basePath, path));
-          // A stable filesystem ID must also recover a lost successful response.
-          // A newly created item at the same path receives a fresh journal entry.
-          if (!node) row = await store.at(current.bindingId, path, true);
-          if (!node && !row) throw new FilesError("not_found", 404);
-          if (node) {
-            await current.check(joinPath(current.basePath, path), node.directory ? 5 : 4);
-            if (!input.path) throw new FilesError("restore_destination_required");
-            userPath(input.path);
-            await authorize(actor, input.baseId, input.path, "write-parent");
-            row = await store.create({
-              id: crypto.randomUUID(),
-              base_id: current.bindingId,
-              user_id: current.userId,
-              root: current.rootName,
-              server_url: current.serverUrl,
-              original: null,
-              trashed: path,
-              directory: node.directory,
-              snapshot: node,
-              state: "trashed",
-            });
+      return locked(
+        located.rootName,
+        async () => {
+          const current = await authorize(actor, input.baseId, "", "read");
+          sameLocation(located, current);
+          let row = input.id.startsWith("fs:")
+            ? await store.at(current.bindingId, filesystemPath(input.id))
+            : await store.get(input.id, current.bindingId);
+          if (!row && input.id.startsWith("fs:")) {
+            const path = filesystemPath(input.id);
+            const node = await stat(current.root, joinPath(current.basePath, path));
+            // A stable filesystem ID must also recover a lost successful response.
+            // A newly created item at the same path receives a fresh journal entry.
+            if (!node) row = await store.at(current.bindingId, path, true);
+            if (!node && !row) throw new FilesError("not_found", 404);
+            if (node) {
+              await current.check(joinPath(current.basePath, path), node.directory ? 5 : 4);
+              if (!input.path) throw new FilesError("restore_destination_required");
+              userPath(input.path);
+              await authorize(actor, input.baseId, input.path, "write-parent");
+              row = await store.create({
+                id: crypto.randomUUID(),
+                base_id: current.bindingId,
+                user_id: current.userId,
+                root: current.rootName,
+                server_url: current.serverUrl,
+                original: null,
+                trashed: path,
+                directory: node.directory,
+                snapshot: node,
+                state: "trashed",
+              });
+            }
           }
-        }
-        if (!row || row.state === "gone") throw new FilesError("not_found", 404);
-        if (row.root !== current.rootName || (row.server_url !== null && row.server_url !== current.serverUrl))
-          throw new FilesError("binding_changed", 409);
-        if (row.state === "restored") {
-          if (!row.restore_path || !row.snapshot) throw new FilesError("not_found", 404);
-          const restored = await authorize(actor, input.baseId, row.restore_path, "read");
-          sameLocation(current, restored);
-          if (restored.bindingId !== current.bindingId || !sameTrashNode(row.snapshot, restored.node))
-            throw new FilesError("source_changed", 409);
-          return { base: restored.base, entry: fileEntry(restored.base, row.restore_path, restored.node) };
-        }
-        if (row.state === "pending") {
-          await reconcile(current, row, false);
-          if (row.state === "pending") throw new FilesError("operation_unresolved", 409);
-        }
-        const path = userPath(row.state === "restoring" ? row.restore_path! : (input.path ?? row.original ?? ""));
-        if (!path) throw new FilesError("restore_destination_required");
-        const destination = await authorize(actor, input.baseId, path, "write-parent");
-        sameLocation(current, destination);
-        if (row.state !== "restoring") {
-          const node = await current.root.stat(joinPath(current.basePath, row.trashed));
-          await current.check(joinPath(current.basePath, row.trashed), node.directory ? 5 : 4);
-          if (await stat(current.root, joinPath(current.basePath, path))) throw new FilesError("path_conflict", 409);
-          await store.restoring(row.id, path, node, current.serverUrl);
-          row = { ...row, state: "restoring", restore_path: path, snapshot: node, server_url: current.serverUrl };
-        }
-        const restored = await reconcile(current, row, true);
-        if (!restored) throw new FilesError("operation_unresolved", 409);
-        return { base: destination.base, entry: fileEntry(destination.base, path, restored) };
-      });
+          if (!row || row.state === "gone") throw new FilesError("not_found", 404);
+          if (row.root !== current.rootName || (row.server_url !== null && row.server_url !== current.serverUrl))
+            throw new FilesError("binding_changed", 409);
+          if (row.state === "restored") {
+            if (!row.restore_path || !row.snapshot) throw new FilesError("not_found", 404);
+            const restored = await authorize(actor, input.baseId, row.restore_path, "read");
+            sameLocation(current, restored);
+            if (restored.bindingId !== current.bindingId || !sameTrashNode(row.snapshot, restored.node))
+              throw new FilesError("source_changed", 409);
+            return { base: restored.base, entry: fileEntry(restored.base, row.restore_path, restored.node) };
+          }
+          if (row.state === "pending") {
+            await reconcile(current, row, false);
+            if (row.state === "pending") throw new FilesError("operation_unresolved", 409);
+          }
+          const path = userPath(row.state === "restoring" ? row.restore_path! : (input.path ?? row.original ?? ""));
+          if (!path) throw new FilesError("restore_destination_required");
+          const destination = await authorize(actor, input.baseId, path, "write-parent");
+          sameLocation(current, destination);
+          if (row.state !== "restoring") {
+            const node = await current.root.stat(joinPath(current.basePath, row.trashed));
+            await current.check(joinPath(current.basePath, row.trashed), node.directory ? 5 : 4);
+            if (await stat(current.root, joinPath(current.basePath, path))) throw new FilesError("path_conflict", 409);
+            await store.restoring(row.id, path, node, current.serverUrl);
+            row = { ...row, state: "restoring", restore_path: path, snapshot: node, server_url: current.serverUrl };
+          }
+          const restored = await reconcile(current, row, true);
+          if (!restored) throw new FilesError("operation_unresolved", 409);
+          return { base: destination.base, entry: fileEntry(destination.base, path, restored) };
+        },
+        rootLockWait(),
+      );
     },
   };
 }

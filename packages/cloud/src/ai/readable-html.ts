@@ -1,0 +1,1057 @@
+import type * as Htmlparser2 from "htmlparser2";
+
+// sanitize-html loads this ESM-only package with require(). A static import would also place it in the static ESM
+// graph, and Bun rejects that require() while the module is still linking ("require() async module"), depending
+// on which importer evaluates first. A plain require() keeps one synchronous path for both, and the bundler still
+// sees it and ships the package in the server bundle.
+const { Parser }: typeof Htmlparser2 = require("htmlparser2");
+
+const CHUNK_BYTES = 256 * 1024;
+// Bun 1.4.2 GC heap deltas, including decoded chunks: nested/flat floods ~52/57 B/item,
+// attributed images ~154 B/item. Reserve 256 B/item: 128 MiB / 256 = 524,288 items.
+// This leaves 384 MiB of the 512 MiB conversion allowance for the 20 MiB input,
+// up to 40 MiB of decoded text, runtime, transient allocations and rendering.
+const MAX_PARSER_ITEMS = (128 * 1024 * 1024) / 256;
+const TRUNCATED = "[Readable copy truncated at the file size limit.]";
+const NOTICE_BYTES = Buffer.byteLength(TRUNCATED) + 3;
+const headTags = new Set("title meta link style script noscript base template head".split(" "));
+const droppedTags = new Set(
+  "head script style noscript template svg math iframe object embed canvas video audio form button select textarea input dialog nav aside".split(
+    " ",
+  ),
+);
+const blocks = new Set(
+  "p div section article main li blockquote pre table tr dl dt dd figure figcaption address details summary hr".split(" "),
+);
+const inlineBoundaries = new Set("br ul ol td th".split(" "));
+const layoutBlocks = new Set("p div section article main ul ol li blockquote pre h1 h2 h3 h4 h5 h6 dl figure hr".split(" "));
+const renderedTags = new Set([...blocks, ...inlineBoundaries, ..."a img code h1 h2 h3 h4 h5 h6 caption thead tbody tfoot".split(" ")]);
+const retainedAttrs = new Map([
+  ["a", ["href"]],
+  ["img", ["src", "alt"]],
+  ["pre", ["class"]],
+  ["code", ["class"]],
+  ["ol", ["start"]],
+  ["td", ["colspan", "rowspan"]],
+  ["th", ["colspan", "rowspan"]],
+]);
+const emptyAttrs: Record<string, string> = {};
+const SKIP = 1;
+const TITLE = 2;
+const HEAD = 4;
+const EMIT = 8;
+const MAIN = 16;
+const REGION = 32;
+const MAIN_REGION = 64;
+const droppedRoles = new Set("navigation banner contentinfo complementary search dialog alertdialog".split(" "));
+// Bound replace()'s transient match storage even when a capture or attribute spans the whole input.
+const normalizeSpace = (text: string): string => {
+  if (text.length <= CHUNK_BYTES) return text.replace(/\s+/gu, " ");
+  const parts: string[] = [];
+  let space = false;
+  for (let offset = 0; offset < text.length; offset += CHUNK_BYTES) {
+    const part = text.slice(offset, offset + CHUNK_BYTES).replace(/\s+/gu, " ");
+    parts.push(space && part.startsWith(" ") ? part.slice(1) : part);
+    space = part.endsWith(" ");
+  }
+  return parts.join("");
+};
+const collapse = (text: string): string => normalizeSpace(text).trim();
+// Doubles a backslash run before a delimiter so it cannot consume the delimiter's escape. Matching whole runs
+// keeps the scan linear.
+const escapeRun =
+  (delimiters: string) =>
+  (match: string, offset: number, source: string): string =>
+    match[0] !== "\\" ? `\\${match}` : delimiters.includes(source[offset + match.length] || " ") ? match + match : match;
+const escapeLabel = (text: string): string => text.replace(/\\+|[[\]]/g, escapeRun("[]"));
+const language = (classes = ""): string => {
+  for (const [token] of classes.matchAll(/\S+/gu)) {
+    if (token.length <= 100 && /^(?:language|lang)-[\w+-]+$/.test(token)) return token.slice(token.indexOf("-") + 1);
+  }
+  return "";
+};
+const hidden = (attrs: Record<string, string>): boolean => {
+  if (!("hidden" in attrs || "aria-hidden" in attrs || "role" in attrs || "id" in attrs || "class" in attrs)) return false;
+  if ("hidden" in attrs || attrs["aria-hidden"]?.toLowerCase() === "true") return true;
+  for (const [role] of (attrs.role ?? "").matchAll(/\S+/gu)) {
+    if (role.length <= 100 && droppedRoles.has(role.toLowerCase())) return true;
+  }
+  for (const value of [attrs.id ?? "", attrs.class ?? ""]) {
+    for (const [token] of value.matchAll(/\S+/gu)) {
+      if (token.length > 100) continue;
+      if (
+        /^(cookie|cookies|consent|gdpr|cmp)([-_]?(banner|notice|bar|popup|modal|dialog|overlay|wall|layer|consent|container))?$/i.test(
+          token,
+        )
+      )
+        return true;
+      if (/cookie-banner|cookie-consent|consent-banner/i.test(token)) return true;
+    }
+  }
+  return false;
+};
+const charset = (value: string): string | undefined => {
+  for (const [parameter] of value.matchAll(/[^;]+/g)) {
+    const equals = parameter.indexOf("=");
+    if (equals < 0 || parameter.slice(0, equals).trim().toLowerCase() !== "charset") continue;
+    const label = parameter.slice(equals + 1).trim();
+    const quote = label[0];
+    return (quote === '"' || quote === "'") && label.endsWith(quote) ? label.slice(1, -1) : label;
+  }
+  return;
+};
+/** A byte order mark wins over header and meta declarations, as in the HTML encoding sniffing algorithm. */
+const bomCharset = (bytes: Uint8Array): string | undefined => {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return "utf-8";
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return "utf-16be";
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return "utf-16le";
+  return;
+};
+const decoderFor = (bytes: Uint8Array, contentType?: string): TextDecoder => {
+  let label = bomCharset(bytes) ?? charset(contentType ?? "");
+  if (!label) {
+    const prefix = new TextDecoder("windows-1252").decode(bytes.subarray(0, 1024));
+    const meta = new Parser({
+      onopentag(name, attrs) {
+        if (name !== "meta" || label) return;
+        label = attrs.charset || (attrs["http-equiv"]?.toLowerCase() === "content-type" ? charset(attrs.content ?? "") : undefined);
+      },
+    });
+    meta.end(prefix);
+  }
+  try {
+    return new TextDecoder(label || "utf-8");
+  } catch {
+    return new TextDecoder("utf-8");
+  }
+};
+
+const voidTags = new Set(
+  "area base basefont br col command embed frame hr img input isindex keygen link meta param source track wbr".split(" "),
+);
+// HTML special elements, except address/div/p/li/dd/dt and void elements. These
+// stop implied li/dd/dt closes; paragraph closes use button scope instead.
+const specialTags = new Set(
+  "applet article aside bgsound blockquote body button caption center colgroup details dir dl fieldset figcaption figure footer form frameset h1 h2 h3 h4 h5 h6 head header hgroup html iframe listing main marquee menu nav noembed noframes noscript object ol plaintext pre script search section select style summary table tbody td template textarea tfoot th thead title tr ul xmp".split(
+    " ",
+  ),
+);
+const buttonScopeTags = new Set("applet caption html table td th marquee object template button".split(" "));
+const tablePartCloses = new Map([
+  ["thead", ["thead", "tbody", "tfoot", "tr", "td", "th"]],
+  ["tbody", ["thead", "tbody", "tfoot", "tr", "td", "th"]],
+  ["tfoot", ["thead", "tbody", "tfoot", "tr", "td", "th"]],
+  ["tr", ["tr", "td", "th"]],
+  ["td", ["td", "th"]],
+  ["th", ["td", "th"]],
+]);
+const tableParts = new Set(tablePartCloses.keys());
+const impliedCloses = new Map<string, Set<string>>();
+for (const name of "address article aside blockquote details div dl fieldset figcaption figure footer form header hr main nav ol p pre section table ul".split(
+  " ",
+)) {
+  impliedCloses.set(name, new Set(["p"]));
+}
+for (const name of "h1 h2 h3 h4 h5 h6".split(" ")) impliedCloses.set(name, new Set("h1 h2 h3 h4 h5 h6 p".split(" ")));
+for (const name of "select input output button datalist textarea".split(" "))
+  impliedCloses.set(name, new Set("input option optgroup select button datalist textarea".split(" ")));
+for (const [name, closes] of [
+  ["tr", "tr th td"],
+  ["th", "th td"],
+  ["td", "thead th td"],
+  ["body", "head link script"],
+  ["a", "a"],
+  ["li", "li"],
+  ["option", "option"],
+  ["optgroup", "optgroup option"],
+  ["dd", "dd dt"],
+  ["dt", "dd dt"],
+  ["rt", "rt rp"],
+  ["rp", "rt rp"],
+  ["tbody", "thead tbody"],
+  ["tfoot", "thead tbody"],
+])
+  impliedCloses.set(name!, new Set(closes!.split(" ")));
+
+/** Parser's normal HTML stack uses unshift/shift and indexOf, quadratic at hostile depths.
+ * The supported void-element hook keeps that stack empty. We balance the flat events
+ * ourselves with push/pop and a last-open index per tag, including HTML implied closes.
+ * Raw-text handling, attributes and entity decoding still belong to htmlparser2.
+ */
+class FlatHtmlParser extends Parser {
+  private openName = "";
+  constructor(
+    onOpen: (name: string, attrs: Record<string, string>) => void,
+    onText: (text: string) => void,
+    private readonly onCloseName: (name: string) => void,
+    private readonly sourceSlice: (start: number, end: number) => string,
+    private readonly xml: boolean,
+  ) {
+    super(
+      { onopentag: onOpen, ontext: onText },
+      { decodeEntities: true, xmlMode: xml, lowerCaseTags: true, lowerCaseAttributeNames: true },
+    );
+  }
+  protected override isVoidElement(): boolean {
+    return true;
+  }
+  override onopentagname(start: number, end: number): void {
+    this.openName = this.sourceSlice(start, end).toLowerCase();
+    super.onopentagname(start, end);
+  }
+  override onselfclosingtag(end: number): void {
+    super.onselfclosingtag(end);
+    // HTML ignores a slash on ordinary tags, especially <script/> and <style/>.
+    // XHTML and foreign roots close immediately even though the library's own stack is empty.
+    // open() already closes void tags; closing br twice would add an extra break.
+    if ((this.xml || this.openName === "svg" || this.openName === "math") && !voidTags.has(this.openName)) this.onCloseName(this.openName);
+  }
+  override onclosetag(start: number, end: number): void {
+    this.endIndex = end;
+    this.onCloseName(this.sourceSlice(start, end).toLowerCase());
+    this.startIndex = end + 1;
+  }
+}
+
+type TagEvent = { kind: "open" | "close"; name: string; attrs: Record<string, string>; layout?: boolean };
+type Event = TagEvent | { kind: "text"; text: string };
+type Span = { start: number; end: number };
+
+// Entity decoding and input chunks can split '<' from the following tag-like text.
+const escapeText = (text: string, next?: Event): string =>
+  text.replace(/<(?=[a-z/!?])/gi, "\\<").replace(/<$/, next?.kind === "text" && /^[a-z/!?]/i.test(next.text) ? "\\<" : "<");
+
+/** One budget for parsing, span scans and all render calls. Synchronous parsing
+ * checks it between bounded input chunks; rendering checks it between events. */
+class WorkBudget {
+  private events = 0;
+  private characters = 0;
+  constructor(private readonly signal?: AbortSignal) {}
+  used(characters = 0): boolean {
+    this.events++;
+    this.characters += characters;
+    return this.events >= 4096 || this.characters >= CHUNK_BYTES;
+  }
+  async yield(): Promise<void> {
+    this.events = 0;
+    this.characters = 0;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    this.signal?.throwIfAborted();
+  }
+}
+
+const isPermalink = (text: string): boolean => text.length <= 4 && [...text].length <= 2 && !/[\p{L}\p{N}]/u.test(text);
+
+const linkable = (href: string | undefined, baseUrl: URL, image = false): boolean => {
+  if (!href || href.trim().startsWith("#")) return false;
+  try {
+    // Relative-reference validity depends on the base protocol, not its host or path.
+    const url = new URL(href, `${baseUrl.protocol}//x/`);
+    return url.protocol === "http:" || url.protocol === "https:" || (!image && url.protocol === "mailto:");
+  } catch {
+    return false;
+  }
+};
+
+const linkUrl = (href: string | undefined, baseUrl: URL, image = false): string | undefined => {
+  if (!href || href.trim().startsWith("#")) return;
+  try {
+    const url = new URL(href, baseUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:" && (image || url.protocol !== "mailto:")) return;
+    const value = url.toString();
+    const parts: string[] = [];
+    for (let offset = 0; offset < value.length; offset += CHUNK_BYTES) {
+      parts.push(
+        value.slice(offset, offset + CHUNK_BYTES).replace(/[() ]/g, (char) => (char === "(" ? "%28" : char === ")" ? "%29" : "%20")),
+      );
+    }
+    return parts.join("");
+  } catch {
+    return;
+  }
+};
+type BacktickRun = { longest: number; trailing: number };
+const countBackticks = (text: string, run: BacktickRun): void => {
+  for (const char of text) {
+    run.trailing = char === "`" ? run.trailing + 1 : 0;
+    run.longest = Math.max(run.longest, run.trailing);
+  }
+};
+const backticks = (run: BacktickRun, minimum: number, maxCharacters: number): string =>
+  "`".repeat(Math.min(maxCharacters, Math.max(minimum, run.longest + 1)));
+const cellSpan = (value: string | undefined, minimum: number, maximum: number): number => {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isNaN(parsed) || parsed < 0 ? 1 : Math.min(maximum, Math.max(minimum, parsed));
+};
+
+/** Render one inline span once. Placeholder delimiters avoid copying nested link text. */
+const renderInline = async (
+  events: Event[],
+  start: number,
+  end: number,
+  baseUrl: URL,
+  budget: WorkBudget,
+  maxBytes: number,
+): Promise<{ markdown: string; text: string; truncated: boolean }> => {
+  const parts: string[] = [];
+  const plain: string[] = [];
+  let pendingSpace = false;
+  let characters = 0;
+  let size = 0;
+  let truncated = false;
+  let link:
+    | {
+        index: number;
+        href?: string;
+        fragment: boolean;
+        characters: number;
+        plainIndex: number;
+        leadingSpace: boolean;
+        spaceBefore: boolean;
+        size: number;
+      }
+    | undefined;
+  let code: { depth: number; parts: string[]; ticks: BacktickRun } | undefined;
+  const fits = (bytes: number): boolean => {
+    if (size + bytes > maxBytes) {
+      truncated = true;
+      return false;
+    }
+    size += bytes;
+    return true;
+  };
+  const append = (value: string) => {
+    const space = pendingSpace && parts.length && !(link && characters === link.characters);
+    if (!fits(Buffer.byteLength(value) + (space ? 1 : 0))) return;
+    if (pendingSpace && parts.length) {
+      if (link && characters === link.characters) link.leadingSpace = true;
+      else parts.push(" ");
+    }
+    pendingSpace = false;
+    parts.push(value);
+  };
+  const text = (value: string, ticks?: BacktickRun, next?: Event) => {
+    const asCode = ticks !== undefined;
+    plain.push(value);
+    const normalized = normalizeSpace(asCode ? value : escapeText(value, next));
+    const content = normalized.trim();
+    if (content) {
+      if (normalized.startsWith(" ")) pendingSpace = true;
+      // Two touching code spans would read as one span with stray backticks.
+      if (asCode && parts.at(-1)?.endsWith("`")) pendingSpace = true;
+      const fence = ticks ? backticks(ticks, 1, Math.max(0, maxBytes - size) + 1) : "";
+      const pad = asCode && (content.startsWith("`") || content.endsWith("`")) ? " " : "";
+      const markdown = asCode ? `${fence}${pad}${content}${pad}${fence}` : content;
+      // Code spans bind tighter than link brackets, so their content stays verbatim inside a label.
+      append(link && !link.fragment && !asCode ? escapeLabel(markdown) : markdown);
+      characters += content.length;
+    }
+    if (normalized.endsWith(" ")) pendingSpace = true;
+  };
+  for (let index = start; index < end && !truncated; index++) {
+    const event = events[index]!;
+    if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
+    if (code) {
+      if (event.kind === "text") {
+        code.parts.push(event.text);
+        countBackticks(event.text, code.ticks);
+      } else if (event.kind === "open") {
+        code.depth++;
+        if (blocks.has(event.name) || event.name === "br") {
+          code.parts.push(" ");
+          code.ticks.trailing = 0;
+        }
+      } else if (--code.depth === 0) {
+        text(code.parts.join(""), code.ticks);
+        code = undefined;
+      }
+      continue;
+    }
+    if (event.kind === "text") {
+      text(event.text, undefined, index + 1 < end ? events[index + 1] : undefined);
+      continue;
+    }
+    const open = event.kind === "open";
+    if (event.name === "code" && open) code = { depth: 1, parts: [], ticks: { longest: 0, trailing: 0 } };
+    else if (event.name === "a") {
+      if (open && !link) {
+        const href = event.attrs.href;
+        const fragment = href?.trim().startsWith("#") ?? false;
+        if (fragment || linkable(href, baseUrl)) {
+          link = {
+            index: parts.length,
+            href,
+            fragment,
+            characters,
+            plainIndex: plain.length,
+            leadingSpace: pendingSpace,
+            spaceBefore: pendingSpace,
+            size,
+          };
+          pendingSpace = false;
+          parts.push("");
+        }
+      } else if (!open && link) {
+        if (link.fragment && isPermalink(collapse(plain.slice(link.plainIndex).join("")))) {
+          parts.length = link.index;
+          plain.length = link.plainIndex;
+          characters = link.characters;
+          size = link.size;
+          pendingSpace = link.spaceBefore;
+        } else if (characters > link.characters) {
+          const url = link.fragment ? undefined : linkUrl(link.href, baseUrl);
+          const prefix = (link.leadingSpace && link.index > 0 ? " " : "") + (url ? "[" : "");
+          const suffix = url ? `](${url})` : "";
+          if (fits(Buffer.byteLength(prefix) + Buffer.byteLength(suffix))) {
+            parts[link.index] = prefix;
+            if (suffix) parts.push(suffix);
+          }
+        } else pendingSpace ||= link.leadingSpace;
+        link = undefined;
+      }
+    } else if (event.name === "img" && open) {
+      const alt = collapse(event.attrs.alt ?? "");
+      if (!alt) continue;
+      const url = linkUrl(event.attrs.src, baseUrl, true);
+      if (url) {
+        append(`![${escapeLabel(escapeText(alt.slice(0, Math.max(0, maxBytes - size) + 1)))}](${url})`);
+        plain.push(alt);
+        characters += alt.length;
+      }
+    } else if (blocks.has(event.name) || inlineBoundaries.has(event.name)) {
+      pendingSpace = true;
+      plain.push(" ");
+    }
+  }
+  return { markdown: parts.join("").trim(), text: collapse(plain.join("")), truncated };
+};
+
+/** A flat stream of parser events; no DOM, recursive rendering, or ancestor walks. */
+export const htmlToReadableMarkdown = async (
+  bytes: Uint8Array,
+  /** `maxBytes` caps the Markdown; `maxInputBytes` (default `maxBytes`) caps the HTML that is read. */
+  options: { baseUrl: URL; contentType?: string; maxBytes: number; maxInputBytes?: number; signal?: AbortSignal },
+): Promise<string> => {
+  options.signal?.throwIfAborted();
+  const events: Event[] = [];
+  const budget = new WorkBudget(options.signal);
+  let baseUrl = options.baseUrl;
+  let hasBaseHref = false;
+  type Table = { event: TagEvent; cells: number };
+  const tables: Table[] = [];
+  // Flags and a shared table slot avoid separate optional fields on every element.
+  type Frame = { name: string; previous: number | undefined; flags: number; table: Table | undefined };
+  const stack: Frame[] = [];
+  const lastOpen = new Map<string, number>();
+  const specialIndices: number[] = [];
+  const buttonScopeIndices: number[] = [];
+  // Tag-name offsets increase monotonically. Keep decoded chunks without repeatedly
+  // concatenating them; even an oversized tag name spanning chunks is copied only once.
+  const chunks: { start: number; text: string }[] = [];
+  let decodedLength = 0;
+  let closeChunk = 0;
+  const sourceSlice = (start: number, end: number): string => {
+    while (closeChunk < chunks.length && chunks[closeChunk]!.start + chunks[closeChunk]!.text.length <= start) closeChunk++;
+    const parts: string[] = [];
+    for (let index = closeChunk; index < chunks.length && chunks[index]!.start < end; index++) {
+      const chunk = chunks[index]!;
+      parts.push(chunk.text.slice(Math.max(0, start - chunk.start), end - chunk.start));
+    }
+    return parts.join("");
+  };
+  const titleParts: string[] = [];
+  let skipDepth = 0;
+  let regionDepth = 0;
+  let mainDepth = 0;
+  let titleDepth = 0;
+  let main: Span | undefined;
+  let articles: Span | undefined;
+  let stateTruncated = false;
+  const retain = (count: number): boolean => {
+    if (events.length + stack.length + titleParts.length + count <= MAX_PARSER_ITEMS) return true;
+    stateTruncated = true;
+    parser.pause();
+    return false;
+  };
+  const closeTop = () => {
+    const frame = stack.pop();
+    if (!frame) return;
+    if (specialIndices.at(-1) === stack.length) specialIndices.pop();
+    if (buttonScopeIndices.at(-1) === stack.length) buttonScopeIndices.pop();
+    if (frame.previous === undefined) lastOpen.delete(frame.name);
+    else lastOpen.set(frame.name, frame.previous);
+    if (!(frame.flags & SKIP)) {
+      if (frame.table) {
+        if (frame.name === "table") tables.pop();
+        else frame.table.cells--;
+      }
+      if (frame.flags & EMIT) events.push({ kind: "close", name: frame.name, attrs: emptyAttrs });
+      if (frame.flags & MAIN && main) main.end = events.length;
+      if (frame.name === "article" && articles) articles.end = events.length;
+      if (frame.flags & MAIN_REGION) mainDepth--;
+      if (frame.flags & REGION) regionDepth--;
+    }
+    if (frame.flags & TITLE) titleDepth--;
+    if (frame.flags & SKIP) skipDepth--;
+  };
+  const closeHead = () => {
+    const index = lastOpen.get("head");
+    if (index !== undefined) while (stack.length > index) closeTop();
+  };
+  const open = (name: string, attrs: Record<string, string>) => {
+    // Template content is inert: it neither ends the head nor sets the document base.
+    const inert = lastOpen.has("template");
+    if (!headTags.has(name) && !inert) closeHead();
+    if (name === "base" && attrs.href !== undefined && !hasBaseHref && !inert) {
+      hasBaseHref = true;
+      try {
+        const resolved = new URL(attrs.href, options.baseUrl);
+        if (resolved.protocol === "http:" || resolved.protocol === "https:") baseUrl = resolved;
+      } catch {
+        // Ignore malformed document base URLs.
+      }
+    }
+    if (name === "form" && lastOpen.has(name)) return;
+    const closes = impliedCloses.get(name);
+    // Scope checks use only cached indices. Popping each frame once keeps even
+    // repeated unmatched item opens at hostile depths amortized linear.
+    if (name === "li") {
+      const li = lastOpen.get("li") ?? -1;
+      const stop = Math.max(specialIndices.at(-1) ?? -1, lastOpen.get("dd") ?? -1, lastOpen.get("dt") ?? -1);
+      if (li > stop) while (stack.length > li) closeTop();
+    } else if (name === "dd" || name === "dt") {
+      const target = Math.max(lastOpen.get("dd") ?? -1, lastOpen.get("dt") ?? -1);
+      const stop = Math.max(specialIndices.at(-1) ?? -1, lastOpen.get("li") ?? -1);
+      if (target > stop) while (stack.length > target) closeTop();
+    } else if (tableParts.has(name)) {
+      // A new row group, row or cell ends the open parts of the current table that it replaces, even when
+      // their end tags were omitted and other elements are still open inside them.
+      const table = lastOpen.get("table") ?? -1;
+      let target = Number.POSITIVE_INFINITY;
+      for (const part of tablePartCloses.get(name)!) {
+        const index = lastOpen.get(part) ?? -1;
+        if (index > table) target = Math.min(target, index);
+      }
+      if (target !== Number.POSITIVE_INFINITY) while (stack.length > target) closeTop();
+    }
+    if (closes?.has("p") || name === "li" || name === "dd" || name === "dt") {
+      const p = lastOpen.get("p") ?? -1;
+      if (p > (buttonScopeIndices.at(-1) ?? -1)) while (stack.length > p) closeTop();
+    }
+    while (stack.length && closes?.has(stack.at(-1)!.name)) closeTop();
+    const isHidden = hidden(attrs);
+    const title =
+      name === "title" &&
+      titleDepth === 0 &&
+      titleParts.length === 0 &&
+      !isHidden &&
+      (skipDepth === 0 || (((stack.at(-1)?.flags ?? 0) & HEAD) !== 0 && skipDepth === 1));
+    const skip =
+      skipDepth > 0 ||
+      name === "title" ||
+      droppedTags.has(name) ||
+      isHidden ||
+      ((name === "header" || name === "footer") && regionDepth === 0);
+    const isMain = name === "main" || /(?:^|\s)main(?:\s|$)/iu.test(attrs.role ?? "");
+    const region =
+      !skip && (isMain || name === "article" || name === "section" || /(?:^|\s)(?:article|region)(?:\s|$)/iu.test(attrs.role ?? ""));
+    const emit = !skip && renderedTags.has(name);
+    if (!retain(emit ? 2 : 1)) return;
+    const frame: Frame = {
+      name,
+      previous: lastOpen.get(name),
+      flags:
+        (skip ? SKIP : 0) |
+        (title ? TITLE : 0) |
+        (name === "head" && skipDepth === 0 && !isHidden ? HEAD : 0) |
+        (emit ? EMIT : 0) |
+        (region ? REGION : 0),
+      table: undefined,
+    };
+    if (title) titleDepth++;
+    if (skip) skipDepth++;
+    if (region) regionDepth++;
+    if (!skip) {
+      if (isMain) {
+        frame.flags |= MAIN_REGION;
+        if (!main && mainDepth === 0) {
+          frame.flags |= MAIN;
+          main = { start: events.length, end: events.length };
+        }
+        mainDepth++;
+      }
+      if (name === "article") {
+        const span = { start: events.length, end: events.length };
+        articles ??= span;
+      }
+      const table = tables.at(-1);
+      if (table?.cells && (name === "table" || layoutBlocks.has(name))) table.event.layout = true;
+      if (emit) {
+        let eventAttrs = emptyAttrs;
+        for (const key of retainedAttrs.get(name) ?? []) {
+          if (attrs[key] === undefined) continue;
+          if (eventAttrs === emptyAttrs) eventAttrs = {};
+          eventAttrs[key] = attrs[key];
+        }
+        const event: TagEvent = { kind: "open", name, attrs: eventAttrs };
+        if (name === "table") {
+          frame.table = { event, cells: 0 };
+          tables.push(frame.table);
+        } else if (table && (name === "td" || name === "th")) {
+          frame.table = table;
+          table.cells++;
+        }
+        events.push(event);
+      }
+    }
+    lastOpen.set(name, stack.length);
+    if (specialTags.has(name)) specialIndices.push(stack.length);
+    if (buttonScopeTags.has(name)) buttonScopeIndices.push(stack.length);
+    stack.push(frame);
+    if (voidTags.has(name)) closeTop();
+  };
+  const parser = new FlatHtmlParser(
+    open,
+    (text) => {
+      if (stack.at(-1)?.name === "head" && /\S/u.test(text)) closeHead();
+      if (titleDepth && retain(1)) titleParts.push(text);
+      else if (!skipDepth && retain(1)) events.push({ kind: "text", text });
+    },
+    (name) => {
+      const index = lastOpen.get(name);
+      if (index !== undefined) while (stack.length > index) closeTop();
+      else if (name === "br") open("br", emptyAttrs);
+      else if (name === "p") {
+        open("p", emptyAttrs);
+        closeTop();
+      }
+    },
+    sourceSlice,
+    options.contentType?.split(";", 1)[0]?.trim().toLowerCase() === "application/xhtml+xml",
+  );
+  const feed = (text: string) => {
+    chunks.push({ start: decodedLength, text });
+    decodedLength += text.length;
+    parser.write(text);
+  };
+  const length = Math.min(bytes.byteLength, options.maxInputBytes ?? options.maxBytes);
+  const decoder = decoderFor(bytes.subarray(0, length), options.contentType);
+  for (let offset = 0; offset < length && !stateTruncated; offset += CHUNK_BYTES) {
+    options.signal?.throwIfAborted();
+    feed(decoder.decode(bytes.subarray(offset, Math.min(offset + CHUNK_BYTES, length)), { stream: true }));
+    if (budget.used(Math.min(CHUNK_BYTES, length - offset))) await budget.yield();
+  }
+  options.signal?.throwIfAborted();
+  if (!stateTruncated) {
+    feed(decoder.decode());
+    parser.end();
+  }
+  // Closing a frame replaces it with at most one event, so finishing cannot exceed the budget.
+  while (stack.length) closeTop();
+  const hasText = async (span: Span): Promise<boolean> => {
+    for (let index = span.start; index < span.end; index++) {
+      const event = events[index]!;
+      if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
+      if (event.kind === "text" && /\S/u.test(event.text)) return true;
+      if (event.kind === "open" && event.name === "img" && collapse(event.attrs.alt ?? "") && linkable(event.attrs.src, baseUrl, true))
+        return true;
+    }
+    return false;
+  };
+  const whole = { start: 0, end: events.length };
+  const selected = main && (await hasText(main)) ? main : articles && (await hasText(articles)) ? articles : whole;
+  if (!(await hasText(selected))) return "";
+  const title = collapse(titleParts.join(""));
+  const heading = title && !(await hasRenderedH1(events, selected, baseUrl, budget)) ? title : "";
+  return render(events, selected, heading, { ...options, baseUrl, inputTruncated: stateTruncated || bytes.byteLength > length }, budget);
+};
+
+/** Scan the selected span once, following the render captures. An h1 inside
+ * code, a link or a data cell is inline content, not a rendered heading. */
+const hasRenderedH1 = async (events: Event[], span: Span, baseUrl: URL, budget: WorkBudget): Promise<boolean> => {
+  let headingDepth = 0;
+  let skipDepth = 0;
+  let codeDepth = 0;
+  let fragment: { depth: number; parts: string[] } | undefined;
+  for (let index = span.start; index < span.end; index++) {
+    const event = events[index]!;
+    if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
+    if (skipDepth) {
+      if (event.kind === "open") skipDepth++;
+      else if (event.kind === "close") skipDepth--;
+      continue;
+    }
+    if (headingDepth) {
+      if (event.kind === "open") headingDepth++;
+      else if (event.kind === "close") headingDepth--;
+      if (!codeDepth && event.kind === "open" && event.name === "a" && event.attrs.href?.trim().startsWith("#")) {
+        fragment = { depth: headingDepth, parts: [] };
+        continue;
+      }
+      let value = "";
+      if (event.kind === "text") value = event.text;
+      else if (codeDepth) codeDepth += event.kind === "open" ? 1 : -1;
+      else if (event.kind === "open" && event.name === "code") codeDepth = 1;
+      else if (
+        event.kind === "open" &&
+        event.name === "img" &&
+        /\S/u.test(event.attrs.alt ?? "") &&
+        linkable(event.attrs.src, baseUrl, true)
+      )
+        value = event.attrs.alt ?? "";
+      else if (blocks.has(event.name) || inlineBoundaries.has(event.name)) value = " ";
+      if (fragment) {
+        if (value) fragment.parts.push(value);
+        if (headingDepth < fragment.depth) {
+          const label = collapse(fragment.parts.join(""));
+          if (label && !isPermalink(label)) return true;
+          fragment = undefined;
+        }
+      } else if (/\S/u.test(value)) return true;
+    } else if (event.kind === "open") {
+      if (event.name === "h1") headingDepth = 1;
+      else if (
+        event.name === "pre" ||
+        event.name === "code" ||
+        event.name === "a" ||
+        /^h[2-6]$/.test(event.name) ||
+        (event.name === "table" && !event.layout)
+      )
+        skipDepth = 1;
+    }
+  }
+  return false;
+};
+
+const render = async (
+  events: Event[],
+  span: Span,
+  title: string,
+  options: { baseUrl: URL; maxBytes: number; signal?: AbortSignal; inputTruncated: boolean },
+  budget: WorkBudget,
+): Promise<string> => {
+  const parts: string[] = [];
+  let size = 0;
+  let truncated = false;
+  let limited = false;
+  let pendingBreak = 0;
+  let pendingSpace = false;
+  let lineStart = true;
+  let quoteDepth = 0;
+  let readable = false;
+  const lists: { ordered: boolean; next: number }[] = [];
+  const items: { marker: string; indent: string }[] = [];
+  let capture:
+    | { name: string; depth: number; parts: string[]; lang: string; firstCode: boolean; start: number; ticks: BacktickRun }
+    | undefined;
+  const tables: boolean[] = [];
+  let row: { cells: string[]; lastReserved: number } | undefined;
+  let table: { rows: string[][]; width: number; bytes: number; contentBytes: number } | undefined;
+  // Expiration row indexes avoid allocating or counting down one entry per spanned row.
+  const rowspans = new Map<number, number>();
+  let cellStart: number | undefined;
+  let colspan = 1;
+  let rowspan = 1;
+  let captionStart: number | undefined;
+  let tableRows = 0;
+  const remaining = () => Math.max(0, options.maxBytes - size - (table?.bytes ?? 0) - NOTICE_BYTES);
+  const append = (text: string) => {
+    if (!text || truncated) return;
+    const next = Buffer.byteLength(text);
+    if (size + next > options.maxBytes) {
+      // Retain at most one extra bounded piece; final byte clipping also reserves the notice.
+      const remaining = Math.max(0, options.maxBytes - size);
+      parts.push(text.slice(0, remaining));
+      truncated = true;
+      return;
+    }
+    parts.push(text);
+    size += next;
+  };
+  const boundary = (count = 2) => {
+    pendingBreak = Math.max(pendingBreak, count);
+    pendingSpace = false;
+  };
+  const write = (text: string, verbatim = false) => {
+    if (!text) return;
+    if (pendingBreak && parts.length) {
+      append("\n".repeat(pendingBreak));
+      lineStart = true;
+    }
+    pendingBreak = 0;
+    if (lineStart) {
+      const item = items.at(-1);
+      append("> ".repeat(Math.min(quoteDepth, 6)) + (item ? item.marker || item.indent : ""));
+      if (item) item.marker = "";
+    } else if (pendingSpace) append(" ");
+    pendingSpace = false;
+    // One extra character lets append() detect overflow and retain the truncation notice.
+    text = text.slice(0, Math.max(0, options.maxBytes - size) + 1);
+    const continuation = "> ".repeat(Math.min(quoteDepth, 6)) + (items.at(-1)?.indent ?? "");
+    append(
+      continuation && text.includes("\n")
+        ? text
+            .split("\n")
+            .map((line, index) => (index && line ? continuation + line : line))
+            .join("\n")
+        : text,
+    );
+    lineStart = verbatim ? text.endsWith("\n") : false;
+  };
+  const text = (value: string, next?: Event) => {
+    const normalized = normalizeSpace(escapeText(value, next));
+    const trimmed = normalized.trim();
+    if (trimmed) {
+      if (normalized.startsWith(" ") && !lineStart && !pendingBreak) pendingSpace = true;
+      write(trimmed);
+      readable = true;
+    }
+    if (normalized.endsWith(" ")) pendingSpace = true;
+  };
+  // Reserve the complete padded table, including the current row and separator.
+  // A wider cell charges all earlier rows in O(1); padding is materialized only on flush.
+  const cellCost = (bytes: number): number => {
+    if (!row || !table) return Infinity;
+    const width = Math.max(table.width, row.cells.length + 1);
+    const rows = table.rows.length + 1;
+    const item = items.at(-1);
+    const prefixBytes = Buffer.byteLength("> ".repeat(Math.min(quoteDepth, 6)) + (item?.indent ?? ""));
+    const leadingBytes = (parts.length ? pendingBreak : 0) + (item?.marker ? item.marker.length - item.indent.length : 0);
+    return table.contentBytes + bytes + rows * (3 * width + 2) + 6 * width + 2 + (rows + 1) * prefixBytes + leadingBytes - table.bytes;
+  };
+  const addCell = (markdown: string): boolean => {
+    if (!row || !table) return false;
+    const bytes = Buffer.byteLength(markdown);
+    const cost = cellCost(bytes);
+    if (cost > remaining()) {
+      limited = true;
+      return false;
+    }
+    row.cells.push(markdown);
+    table.width = Math.max(table.width, row.cells.length);
+    table.bytes += cost;
+    table.contentBytes += bytes;
+    return true;
+  };
+  const finishRow = () => {
+    if (!row) return;
+    while (!limited && row.cells.length <= row.lastReserved) addCell("");
+    if (row.cells.length) table?.rows.push(row.cells);
+    tableRows++;
+    row = undefined;
+  };
+  const flushTable = async () => {
+    finishRow();
+    const buffered = table;
+    table = undefined;
+    if (!buffered) return;
+    for (let index = 0; index < buffered.rows.length; index++) {
+      const cells = buffered.rows[index]!;
+      while (cells.length < buffered.width) cells.push("");
+      const markdown = `| ${cells.join(" | ")} |`;
+      if (budget.used(markdown.length)) await budget.yield();
+      write(markdown);
+      boundary(1);
+      if (index === 0) {
+        write(`| ${Array(buffered.width).fill("---").join(" | ")} |`);
+        boundary(1);
+      }
+    }
+  };
+  if (title) {
+    write(`# ${escapeText(title.slice(0, Math.max(0, options.maxBytes - size) + 1))}`);
+    boundary();
+  }
+  for (let index = span.start; index < span.end && !truncated && !limited; index++) {
+    const event = events[index]!;
+    if (budget.used(event.kind === "text" ? event.text.length : 0)) await budget.yield();
+    if (capture) {
+      if (event.kind === "text") {
+        capture.parts.push(event.text);
+        if (capture.name === "pre" || capture.name === "code") countBackticks(event.text, capture.ticks);
+      } else if (event.kind === "open") {
+        capture.depth++;
+        if (capture.name === "pre" && event.name === "code" && !capture.firstCode) {
+          capture.lang ||= language(event.attrs.class);
+          capture.firstCode = true;
+        }
+        if (capture.name === "pre" && event.name === "br") {
+          capture.parts.push("\n");
+          capture.ticks.trailing = 0;
+        } else if (capture.name !== "pre" && (blocks.has(event.name) || event.name === "br")) {
+          capture.parts.push(" ");
+          capture.ticks.trailing = 0;
+        }
+      } else if (--capture.depth === 0) {
+        const raw = capture.parts.join("");
+        const value = capture.name === "code" ? collapse(raw) : "";
+        if (capture.name === "pre") {
+          const fence = backticks(capture.ticks, 3, Math.max(0, options.maxBytes - size) + 1);
+          boundary();
+          write(`${fence}${capture.lang}\n${raw}${raw.endsWith("\n") ? "" : "\n"}${fence}`, true);
+          boundary();
+        } else if (capture.name === "code") {
+          const fence = backticks(capture.ticks, 1, Math.max(0, options.maxBytes - size) + 1);
+          const pad = value.startsWith("`") || value.endsWith("`") ? " " : "";
+          // Whitespace at the edges of the code separates it from the surrounding words; two touching code
+          // spans would read as one span with stray backticks.
+          if (value && (/^\s/u.test(raw) || (!pendingBreak && parts.at(-1)?.endsWith("`")))) pendingSpace = true;
+          if (value) write(`${fence}${pad}${value}${pad}${fence}`);
+          if (value && /\s$/u.test(raw)) pendingSpace = true;
+        } else {
+          const inline = await renderInline(
+            events,
+            capture.name === "a" ? capture.start : capture.start + 1,
+            capture.name === "a" ? index + 1 : index,
+            options.baseUrl,
+            budget,
+            Math.max(0, remaining() - (capture.name === "a" ? 0 : Number(capture.name[1]) + 1)),
+          );
+          if (inline.text) {
+            if (capture.name === "a" && /^\s/u.test(raw)) pendingSpace = true;
+            if (capture.name !== "a") boundary();
+            write(capture.name === "a" ? inline.markdown : `${"#".repeat(Number(capture.name[1]))} ${inline.markdown}`);
+            if (capture.name !== "a") boundary();
+          }
+          if (inline.text) readable = true;
+          if (capture.name === "a" && /\s$/u.test(raw)) pendingSpace = true;
+          limited ||= inline.truncated;
+        }
+        if ((capture.name === "pre" && /\S/u.test(raw)) || (capture.name === "code" && value)) readable = true;
+        capture = undefined;
+      }
+      continue;
+    }
+    if (event.kind === "text") {
+      if (tables.at(-1) !== false) text(event.text, index + 1 < span.end ? events[index + 1] : undefined);
+      continue;
+    }
+    const { name, attrs } = event;
+    const open = event.kind === "open";
+    if (name === "table") {
+      if (!open && tables.at(-1) === false) await flushTable();
+      boundary();
+      if (open) {
+        tables.push(event.layout ?? false);
+        if (!event.layout) {
+          tableRows = 0;
+          table = { rows: [], width: 0, bytes: 0, contentBytes: 0 };
+          rowspans.clear();
+          row = undefined;
+          cellStart = undefined;
+        }
+      } else tables.pop();
+      continue;
+    }
+    if (tables.at(-1) === false) {
+      if (name === "thead" || name === "tbody" || name === "tfoot") rowspans.clear();
+      else if (name === "caption") {
+        if (open) captionStart = index + 1;
+        else {
+          const inline = await renderInline(events, captionStart ?? index, index, options.baseUrl, budget, remaining());
+          if (inline.text) {
+            boundary();
+            write(inline.markdown);
+            boundary();
+            readable = true;
+          }
+          captionStart = undefined;
+          limited ||= inline.truncated;
+        }
+      } else if (name === "tr") {
+        if (open) {
+          row = { cells: [], lastReserved: -1 };
+          for (const [column, until] of rowspans) {
+            if (until <= tableRows) rowspans.delete(column);
+            else row.lastReserved = Math.max(row.lastReserved, column);
+          }
+        } else finishRow();
+      } else if (name === "td" || name === "th") {
+        if (open) {
+          cellStart = index + 1;
+          colspan = cellSpan(attrs.colspan, 1, 1000);
+          rowspan = cellSpan(attrs.rowspan, 0, 65534);
+        } else if (row) {
+          while (rowspans.has(row.cells.length) && !limited) addCell("");
+          if (limited) {
+            finishRow();
+            continue;
+          }
+          const inline = await renderInline(
+            events,
+            cellStart ?? index,
+            index,
+            options.baseUrl,
+            budget,
+            Math.max(0, remaining() - cellCost(0)),
+          );
+          for (let offset = 0; offset < colspan; offset++) {
+            const column = row.cells.length;
+            if (!addCell(offset === 0 ? inline.markdown.replace(/\\+|\|/g, escapeRun("|")) : "")) break;
+            if (rowspan !== 1) rowspans.set(column, rowspan === 0 ? Infinity : tableRows + rowspan);
+          }
+          if (inline.text) readable = true;
+          cellStart = undefined;
+          limited ||= inline.truncated;
+          if (limited) finishRow();
+        }
+      }
+      continue;
+    }
+    if (open && (name === "pre" || name === "code" || name === "a" || /^h[1-6]$/.test(name))) {
+      capture = {
+        name,
+        depth: 1,
+        parts: [],
+        lang: name === "pre" ? language(attrs.class) : "",
+        firstCode: false,
+        start: index,
+        ticks: { longest: 0, trailing: 0 },
+      };
+      continue;
+    }
+    if (name === "img" && open) {
+      const alt = collapse(attrs.alt ?? "");
+      if (!alt) continue;
+      const url = linkUrl(attrs.src, options.baseUrl, true);
+      if (url) {
+        write(`![${escapeLabel(escapeText(alt.slice(0, Math.max(0, options.maxBytes - size) + 1)))}](${url})`);
+        readable = true;
+      }
+    } else if (name === "ul" || name === "ol") {
+      boundary(1);
+      if (open) {
+        const start = attrs.start ?? "";
+        lists.push({ ordered: name === "ol", next: /^-?\d{1,6}$/.test(start) ? Number(start) : 1 });
+      } else lists.pop();
+    } else if (name === "li") {
+      boundary(1);
+      if (open) {
+        const list = lists.at(-1);
+        const indent = items[Math.min(items.length, 6) - 1]?.indent ?? "";
+        const marker = list?.ordered ? `${list.next++}. ` : "- ";
+        items.push({ marker: indent + marker, indent: indent + " ".repeat(marker.length) });
+      } else items.pop();
+    } else if (name === "blockquote") {
+      boundary();
+      quoteDepth = Math.max(0, quoteDepth + (open ? 1 : -1));
+    } else if (name === "br" && open) {
+      pendingBreak = Math.min(2, pendingBreak + 1);
+      pendingSpace = false;
+    } else if (name === "hr" && open) {
+      boundary();
+      write("---");
+      boundary();
+    } else if (blocks.has(name) || name === "td" || name === "th") boundary();
+  }
+  if (table) await flushTable();
+  options.signal?.throwIfAborted();
+  truncated ||= limited;
+  if (!readable && !truncated) return "";
+  const result = parts.join("").trim();
+  if (!truncated && !options.inputTruncated && Buffer.byteLength(result) + 1 <= options.maxBytes) return `${result}\n`;
+  // The notice itself is the minimum possible result when maxBytes is smaller than it.
+  const outputBudget = Math.max(0, options.maxBytes - NOTICE_BYTES);
+  const prefix = new TextDecoder().decode(Buffer.from(result).subarray(0, outputBudget), { stream: true }).trimEnd();
+  return `${prefix ? `${prefix}\n\n` : ""}${TRUNCATED}\n`;
+};

@@ -1,6 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
+import { createHash, X509Certificate } from "node:crypto";
 import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { join } from "node:path";
+import { caCertificate, foreignCertificate, localhostCertificate } from "./certificates.test-fixture";
 import {
   browserServer,
   caddyImage,
@@ -51,11 +53,11 @@ test("skipping certificate verification applies only to the exact local HTTPS or
   expect(localTls("http://localhost:4100/health", "http://localhost:4100")).toEqual({});
 });
 
-test("both engines use the catalog-matching noble image with a server in Caddy’s namespace", () => {
+test("the run-owned browser server accepts certificate pin launch args in Caddy’s namespace", () => {
   expect(browserServer("1.63.0", 4200)).toEqual({
     image: "mcr.microsoft.com/playwright:v1.63.0-noble",
     args: ["--init", "--ipc=host", "--user", "pwuser", "--workdir", "/home/pwuser"],
-    tail: ["npx", "-y", "playwright@1.63.0", "run-server", "--port", "4200", "--host", "0.0.0.0"],
+    tail: ["npx", "-y", "playwright@1.63.0", "run-server", "--unsafe", "--port", "4200", "--host", "0.0.0.0"],
     endpoint: "ws://127.0.0.1:4200/",
   });
 });
@@ -143,6 +145,7 @@ function stubCommands(reply: (args: string[]) => { output?: string; error?: stri
         "--no-env-file",
         "-e",
         "process.stdout.write(process.argv[1]);process.stderr.write(process.argv[2]);process.exit(Number(process.argv[3]))",
+        "--",
         output,
         error,
         error ? "1" : "0",
@@ -153,6 +156,80 @@ function stubCommands(reply: (args: string[]) => { output?: string; error?: stri
   const stub = spyOn(Bun, "spawn").mockImplementation(substitute);
   return { calls, restore: () => stub.mockRestore() };
 }
+
+test("the browser pin comes from the verified Caddy ID, never an unauthenticated TLS endpoint", async () => {
+  const runtime = new Runtime(4100, "image", new AbortController().signal);
+  runtime.containers.push(runtime.name("caddy"));
+  const id = "a".repeat(64);
+  const clock = spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-21T12:00:00Z"));
+  const stub = stubCommands((args) => ({
+    output:
+      args[1] === "container"
+        ? JSON.stringify({ Id: id, Config: { Image: caddyImage, Labels: { "cloud.perf.run": runtime.prefix } } })
+        : localhostCertificate,
+  }));
+  try {
+    const expected = createHash("sha256")
+      .update(new X509Certificate(localhostCertificate).publicKey.export({ type: "spki", format: "der" }))
+      .digest("base64");
+    expect(await runtime.browserSpki()).toBe(expected);
+    expect(stub.calls).toEqual([
+      ["docker", "container", "inspect", "--format", "{{json .}}", runtime.name("caddy")],
+      ["docker", "exec", id, "cat", "/data/caddy/certificates/local/localhost/localhost.crt"],
+    ]);
+  } finally {
+    stub.restore();
+    clock.mockRestore();
+  }
+});
+
+test("foreign or untracked certificate sources fail before reading any certificate", async () => {
+  for (const source of ["untracked", "foreign-run", "foreign-image", "invalid-id"]) {
+    const runtime = new Runtime(4100, "image", new AbortController().signal);
+    if (source !== "untracked") runtime.containers.push(runtime.name("caddy"));
+    const stub = stubCommands(() => ({
+      output: JSON.stringify({
+        Id: source === "invalid-id" ? "not-a-container-id" : "a".repeat(64),
+        Config: {
+          Image: source === "foreign-image" ? "foreign/image" : caddyImage,
+          Labels: { "cloud.perf.run": source === "foreign-run" ? "foreign" : runtime.prefix },
+        },
+      }),
+    }));
+    try {
+      await expect(runtime.browserSpki()).rejects.toThrow();
+      expect(stub.calls.some((args) => args[1] === "exec")).toBe(false);
+    } finally {
+      stub.restore();
+    }
+  }
+});
+
+test("wrong host, CA, malformed, and out-of-validity certificates cannot become browser pins", async () => {
+  for (const [pem, now, error] of [
+    [foreignCertificate, "2026-10-21T12:00:00Z", "localhost leaf"],
+    [caCertificate, "2026-10-21T12:00:00Z", "localhost leaf"],
+    ["not a certificate", "2026-10-21T12:00:00Z", ""],
+    [localhostCertificate, "2026-10-19T12:00:00Z", "validity period"],
+    [localhostCertificate, "2026-10-23T12:00:00Z", "validity period"],
+  ]) {
+    const runtime = new Runtime(4100, "image", new AbortController().signal);
+    runtime.containers.push(runtime.name("caddy"));
+    const clock = spyOn(Date, "now").mockReturnValue(Date.parse(now));
+    const stub = stubCommands((args) => ({
+      output:
+        args[1] === "container"
+          ? JSON.stringify({ Id: "a".repeat(64), Config: { Image: caddyImage, Labels: { "cloud.perf.run": runtime.prefix } } })
+          : pem,
+    }));
+    try {
+      await expect(runtime.browserSpki()).rejects.toThrow(error);
+    } finally {
+      stub.restore();
+      clock.mockRestore();
+    }
+  }
+});
 
 test("failed ownership inspection retains the attempted container and cleanup resolves its exact label", async () => {
   const runtime = new Runtime(4100, "image", new AbortController().signal);
@@ -293,5 +370,84 @@ test("an aborted run that created a container still cleans up its exact labelled
     expect(stub.calls).toContainEqual(["docker", "rm", "--force", "--volumes", runtime.name("browsers")]);
   } finally {
     stub.restore();
+  }
+});
+
+test("Mail service options preserve page defaults and publish only run-owned services on free loopback ports", async () => {
+  const { serviceOptions } = await import("./runtime");
+  for (const service of ["postgres", "valkey"] as const) expect(serviceOptions(service, {})).toEqual({ args: [], tail: [] });
+  expect(() => serviceOptions("postgres", { publish: ["postgres"] }, 3000)).toThrow();
+  expect(() => serviceOptions("postgres", { publish: ["postgres"] })).toThrow();
+  const { Server } = await import("node:net");
+  let nextPort = 3000;
+  const listen = spyOn(Server.prototype, "listen").mockImplementation(function (this: InstanceType<typeof Server>, ...args: unknown[]) {
+    const callback = args.find((value): value is () => void => typeof value === "function");
+    queueMicrotask(() => callback?.());
+    return this;
+  });
+  const address = spyOn(Server.prototype, "address").mockImplementation(() => ({ address: "127.0.0.1", family: "IPv4", port: nextPort++ }));
+  const close = spyOn(Server.prototype, "close").mockImplementation(function (
+    this: InstanceType<typeof Server>,
+    callback?: (err?: Error) => void,
+  ) {
+    callback?.();
+    return this;
+  });
+  const runtime = new Runtime(4100, "image", new AbortController().signal);
+  const stub = stubCommands(() => ({ output: runtime.prefix }));
+  const calls: Parameters<Runtime["container"]>[] = [];
+  const container = spyOn(runtime, "container").mockImplementation(async (...args) => {
+    calls.push(args);
+  });
+  const fetchStub = spyOn(globalThis, "fetch").mockImplementation(
+    async () => new Response(JSON.stringify({ routeTable: { routeCount: 3 } })),
+  );
+  try {
+    await runtime.start([]);
+    expect(calls.find((c) => c[0] === "postgres")?.slice(0, 4)).toEqual([
+      "postgres",
+      "postgres:17-alpine",
+      ["--volume", `${runtime.name("postgres-data")}:/var/lib/postgresql/data`],
+      [],
+    ]);
+    expect(calls.find((c) => c[0] === "nats")?.slice(0, 4)).toEqual([
+      "nats",
+      "nats:2.14.3-alpine",
+      ["--volume", `${join(repository, ".github/nats-ci.conf")}:/etc/nats.conf:ro`, "--volume", `${runtime.name("nats-data")}:/data`],
+      ["--config", "/etc/nats.conf"],
+    ]);
+    expect(calls.find((c) => c[0] === "valkey")?.slice(0, 4)).toEqual([
+      "valkey",
+      "valkey/valkey:8-alpine",
+      [],
+      ["valkey-server", "--save", "", "--appendonly", "no"],
+    ]);
+    expect(runtime.published).toEqual({});
+    calls.length = 0;
+    await runtime.start([], {
+      postgresArgs: ["-c", "shared_preload_libraries=pg_stat_statements,auto_explain", "-c", "track_io_timing=on"],
+      publish: ["postgres", "valkey"],
+    });
+    const postgres = calls.find((c) => c[0] === "postgres")!;
+    expect(postgres[2]).toEqual([
+      "--volume",
+      `${runtime.name("postgres-data")}:/var/lib/postgresql/data`,
+      "--publish",
+      `127.0.0.1:${runtime.published.postgres}:5432`,
+    ]);
+    expect(postgres[3]).toEqual(["postgres", "-c", "shared_preload_libraries=pg_stat_statements,auto_explain", "-c", "track_io_timing=on"]);
+    expect(calls.find((c) => c[0] === "valkey")?.[2]).toEqual(["--publish", `127.0.0.1:${runtime.published.valkey}:6379`]);
+    expect(calls.find((c) => c[0] === "nats")?.[2]).not.toContain("--publish");
+    expect(runtime.published.postgres).not.toBe(3000);
+    expect(runtime.published.valkey).not.toBe(3000);
+    expect(runtime.published.postgres).not.toBe(runtime.published.valkey);
+  } finally {
+    fetchStub.mockRestore();
+    container.mockRestore();
+    stub.restore();
+    listen.mockRestore();
+    address.mockRestore();
+    close.mockRestore();
+    await rm(runtime.directory, { recursive: true, force: true });
   }
 });

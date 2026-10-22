@@ -3,8 +3,9 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
-updated: 2026-10-11
+updated: 2026-10-19
 order: 30
+kind: task
 ---
 
 ## Start a message {icon="square-plus"}
@@ -12,6 +13,8 @@ order: 30
 Choose **Compose** for a new message. In a conversation, choose **Reply**, **Reply all**, **Forward**, or **Quote selection**. Mail first creates a shared draft and then opens its focused composer page. Mail keeps the purpose of the draft, so the final action button says **Send**, **Reply**, **Reply all**, or **Forward**.
 
 Choose a verified sender in **From**, add recipients, and enter a subject and body. **Cc/Bcc** shows the additional recipient fields. Recipients never see the Bcc list. Your own copy in Sent keeps it, so any mail client shows whom you blind-copied.
+
+While you type in **To**, **Cc**, or **Bcc**, Mail suggests contacts from the contact directory first. Then it suggests addresses this mailbox wrote to or received mail from. Mailbox suggestions also work without the Contacts app. A mail icon marks them. Use the arrow keys to highlight a suggestion and Enter to add it. People who see only assigned conversations get no mailbox suggestions.
 
 The composer is separate from the mailbox workspace. **Back to mailbox** saves the latest changes, releases the editing lease, and returns to the mailbox. **Open in new window** moves the same draft to its own browser window. It never creates a second draft.
 
@@ -25,12 +28,14 @@ The Assistant chat does not copy the message into a separate Mail draft and does
 
 When the Assistant asks to send this draft, a band above the draft shows the waiting request. Review the request there. You can approve or reject it without returning to the chat.
 
+The send question shows the sender, To, Cc and Bcc, attachments, delivery time, and Mail warnings. Choose **Read the complete proposal** to read the exact proposed message, including its signature and generated attachment descriptions. Approval becomes available after this snapshot loads. The draft link opens the current draft, which may have changed. If the sending content changes after your check, Mail stops and queues no message: open the draft, check it again and approve a new attempt. Mail does not retry automatically. A signature that changes with the current time may need editing first. After approval, “queued” or “scheduled” confirms the request, not delivery.
+
 ## Use Cloud Mail for email links {icon="link"}
 
 You can ask the current browser to use Cloud Mail for standard `mailto:` links:
 
 :::steps
-1. Open **Mailbox tools → Email link setup**.
+1. Open **… → Email link setup**.
 2. When the browser asks, confirm the prompt.
 :::
 
@@ -56,13 +61,13 @@ Open **Message options** and choose the format for the current draft:
 - **Plain text** has no Preview pane. A standalone message stays in one editor. A conversation draft shows **Write** and **History**.
 :::
 
-Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Plain text sends no HTML alternative. If the Preview cannot show the message, for example because it is too long, it says why and offers **Retry**. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
+Mail sends Markdown as readable HTML with the mailbox email design and a text alternative. Each extra blank line between paragraphs adds an empty line to the sent message, also in quotes; lists and code blocks keep their usual spacing. Plain text sends no HTML alternative. If the Preview cannot show the message, for example because it is too long, it says why and offers **Retry**. You can arrange the available panes. Mail keeps the layout compatible when another draft offers a different set of panes.
 
-Markdown can also contain simple HTML. Email keeps the elements `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` to `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul`, and the table elements. It removes other elements, such as `small`, but keeps their text. It also removes `class`, inline `style`, and most other attributes. Links can open web pages, email addresses (`mailto:`), and phone numbers, for example `[+49 731 000000](tel:+49731000000)`. Email does not show images or horizontal lines. It shows Markdown quotes with a line on the left. Code blocks keep their line breaks but not their language label. When Mail removes HTML or an image, the Preview lists it below the message. The Preview also lists values of the mailbox email design that email ignores. For a very long message, Mail uses the built-in design if the mailbox email design would make it too complex to render. The Preview says so, and the message still sends. To change the look of every message, a mailbox manager edits the mailbox email design. Inline styles cannot do this.
+Markdown can also contain simple HTML. Email keeps the elements `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` to `h3`, `hr`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul`, and the table elements. It removes other elements, such as `small`, but keeps their text. It also removes `class`, inline `style`, and most other attributes. Links can open web pages, email addresses (`mailto:`), and phone numbers, for example `[+49 731 000000](tel:+49731000000)`. Email removes images written directly into the body. A line with only `---`, `***`, or `___` becomes a divider, also directly below a line of text; Mail never turns that text into a heading. A signature can show the mailbox logo with `{{ mailbox.logo }}`. It shows Markdown quotes with a line on the left. Code blocks keep their line breaks but not their language label. When Mail removes HTML or an image, the Preview lists it below the message. The Preview also lists values of the mailbox email design that email ignores. For a very long message, Mail uses the built-in design if the mailbox email design would make it too complex to render. The Preview says so, and the message still sends. To change the look of every message, a mailbox manager edits the mailbox email design. Inline styles cannot do this.
 
 History loads only when you open it. Mail first expands the newest message. You can expand or collapse several messages independently, and Mail loads earlier summaries page by page. Mail loads a complete message only when you expand it. Links and attachments have the same security protection as in the conversation reader.
 
-Your default format is in **Settings → Writing → Compose format**. Changing the default does not change existing drafts.
+Your default format is in **… → Settings → Writing → Compose format**. Changing the default does not change existing drafts.
 
 ## Resume an existing conversation draft {icon="pencil"}
 
@@ -73,6 +78,8 @@ Mail saves the shared draft while you work. It also keeps a recovery journal in 
 Only the session that currently holds the editing lease can change the draft. Mail refuses saves, attachment changes, and discards from every other session, tab, agent, or CLI call, and it names the current editor. If nobody holds the lease, the next editor can change the draft again. Your own expired session therefore never blocks you.
 
 If another tab or person edits the draft, Mail names that session when possible. You can continue read-only or move editing to this tab on purpose. After the dialog closes, the composer keeps a quiet reminder.
+
+Mail resumes editing on its own after a hidden tab, sleep, or a slow response. It asks only when another tab, device, or person holds the draft.
 
 :::warning Take over makes the other editor read-only
 Choose **Take over** only when you want the other editor to lose editing.
@@ -109,6 +116,14 @@ The action bar at the bottom of the composer has a **Signature** button between 
 
 Signatures stay separate from the editable text. Preview and the sent message show the signature after your text. When you write above a quoted reply or a forwarded message, the signature goes between your text and that message. The copy in the provider's Drafts folder contains only your text, so add a signature yourself if you send the draft from another mail program. When you open an older draft that still has its signature in the text, Mail moves the signature into the signature choice.
 
+Put `{{ mailbox.logo }}` in a signature to show the mailbox logo in new messages, replies, and forwards. Preview shows it too. Mail sends it as an inline image, never a remote link. Plain text uses its alt text; snippets leave it empty. If no logo is uploaded, the placeholder stays empty and preview warns you. A queued or scheduled message keeps its original logo even after it is replaced or removed. The provider's Drafts copy has no signature or logo.
+
+Use `{{ mailbox.logo }}` on its own, without filters. A template containing it cannot use Liquid `capture` tags, even to capture unrelated text.
+
+Open **… → Settings → Writing → Logo** in the mailbox to upload or replace the logo, change its display width or alt text, or remove it after confirmation. These changes require **Manage** access. With **Edit** access, you see the logo and its values read only. Changing the width or alt text stores a new version with the same image.
+
+A mailbox administrator can also upload a PNG or JPEG with `cld mail compose logo set --file logo.png`. It can be at most 100 KiB and 1200×400 pixels. Display width defaults to 200 px and accepts 1–600 px with `--width`. Alt text defaults to the trimmed mailbox name; `--alt` accepts 1–200 characters without control characters.
+
 Type `/` in the body to search snippets only. Mail inserts the chosen snippet into the text, where you can edit or remove it.
 
 - **Snippet:** Inserts reusable text with its values already filled in. Values such as `{{ actor.email }}` appear as plain text. In Markdown messages, Mail adds a backslash only before characters that would change the formatting, for example `\*`.
@@ -125,6 +140,7 @@ Use these Liquid variables in your template:
 | `sender.display_name` | Display name of the sender identity, or its address when it has no name |
 | `sender.email` | From address of the sender identity |
 | `sender.reply_to` | Reply-To address of the sender identity; empty when not set |
+| `mailbox.logo` | The mailbox logo as an inline image in signatures; empty when the mailbox has no logo and in snippets |
 | `mailbox.name` | Mailbox name |
 | `mailbox.description` | Mailbox description; empty when not set |
 | `message.subject` | Subject of the draft |
@@ -144,11 +160,13 @@ To separate the addresses in `message.to` and `message.cc`, use `join`:
 
 Mail warns you before sending about placeholders that remain in the text and would be sent as written.
 
-With **Manage** access, you change templates and defaults in **Settings → Writing**. Choose **Edit design** there to open the mailbox CSS editor. Its preview updates from the current unsaved CSS. The Preview in the composer uses the same rendering as delivery.
+With **Manage** access, you change templates and defaults in **… → Settings → Writing**. Choose **Edit design** there to open the mailbox CSS editor. Its preview updates from the current unsaved CSS. The Preview in the composer uses the same rendering as delivery.
 
 ## Attach files {icon="paperclip"}
 
 Choose **Attach files** and choose one or more files, or drag files from your desktop onto the composer. The composer is highlighted while it can accept the drop. Upload progress and failures appear next to the draft attachments. You can retry or cancel an incomplete upload, and remove an attached file before sending.
+
+Apps that understand recipient context, such as an invoice app, show only matching files. Mail looks up the recipients in your contact apps and passes only matching contact references, not email addresses. If nothing matches, the app shows **No matching files for these recipients**. If Mail cannot reach your contact apps, the app shows an error with **Try again**. These references give no access to contacts or files.
 
 If the page reloaded or closed during an upload, the draft shows that file as **Upload not finished** when you open it again. Cancel it and attach the file again.
 
@@ -193,7 +211,7 @@ Mail never changes the original message and conversation, and nothing is sent im
 
 ## Send now, undo, or schedule delivery {icon="send"}
 
-Choose the main action button to queue delivery now. **Undo send window** in **Settings → Writing** can delay immediate delivery by 0 to 60 seconds. With a value above zero, Mail waits that many seconds and offers undo through **Scheduled**.
+Choose the main action button to queue delivery now. **Undo send window** in **… → Settings → Writing** can delay immediate delivery by 0 to 60 seconds. With a value above zero, Mail waits that many seconds and offers undo through **Scheduled**.
 
 To schedule delivery:
 

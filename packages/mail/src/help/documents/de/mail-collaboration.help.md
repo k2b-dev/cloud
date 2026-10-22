@@ -20,7 +20,7 @@ Der Lesebereich ordnet aussagekräftige Änderungen an Zusammenarbeit und Workfl
 - **Als erledigt markieren** ist der einzige Status der Nachverfolgung, den du von Hand setzt. Wähle ihn, wenn nichts mehr zu tun ist. Entferne ihn, um die Unterhaltung wieder zu öffnen. Mail leitet den nächsten Schritt dann aus der letzten bestätigten Nachricht ab.
 - **Später anzeigen** nimmt die Unterhaltung eine Zeit lang aus der aktiven Arbeit und behält ihren nächsten Schritt. Nutze es, wenn die nächste Prüfung von einem Zeitpunkt abhängt, nicht von einer anderen Person. Die Unterhaltung bleibt bis zum gewählten Zeitpunkt unter **Später**. Eine neue eingehende E-Mail zeigt sie sofort wieder.
 
-Neue eingehende E-Mails setzen jede Unterhaltung auf **Handlungsbedarf**. Eine bestätigte menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**, und eine neue Nachricht, die du schreibst, beginnt dort. Automatische Antworten, Weiterleitungen, Wiederholungen, fehlgeschlagene Sendungen und unklare Zustellungsergebnisse setzen keinen neuen nächsten Schritt.
+Neue eingehende E-Mails setzen jede Unterhaltung auf **Handlungsbedarf**. Wenn du eine Unterhaltung als **Erledigt** markierst oder eine Zeit für **Später anzeigen** setzt, gilt das auch für die Nachrichten, die Mail noch lädt. Eine Automatisierung, die **Erledigt** oder **Wartet auf Antwort** setzt, gilt nur für die Nachricht, die sie gestartet hat. Andere eingehende E-Mails setzen wieder **Handlungsbedarf**. Eine bestätigte menschliche Antwort oder Antwort an alle setzt sie auf **Wartet auf Antwort**, und eine neue Nachricht, die du schreibst, beginnt dort. Automatische Antworten, Weiterleitungen, Wiederholungen, fehlgeschlagene Sendungen und unklare Zustellungsergebnisse setzen keinen neuen nächsten Schritt.
 
 Verstehe **Erledigt** als Status des Teams, nicht als Archivierung der E-Mail. Markierst du eine Unterhaltung als erledigt oder öffnest du sie wieder, entfernt das sie auch aus **Später**.
 
@@ -38,7 +38,7 @@ Ist die Live-Anwesenheit verfügbar, zeigt **Aktive Mitwirkende** die Personen, 
 
 ## Zugriffsstufen verstehen {icon="shield-lock"}
 
-Zugriff auf das Postfach gibst du unter **Einstellungen → Zugriff**. Alle, die das Postfach ansehen können, sehen unter **Postfachdetails**, wer welchen Zugriff hat: die Schaltfläche (i) neben **Verfassen**. Personen mit Zugriff **Ansehen** sehen dort **Über dieses Postfach**. Gastkonten sehen dort nur ihren eigenen Zugriff und den Zugriff ihrer Gruppen.
+Zugriff auf das Postfach gibst du unter **… → Einstellungen → Zugriff**. Alle, die das Postfach ansehen können, sehen unter **Postfachdetails**, wer welchen Zugriff hat: **… → Postfachdetails** im Kopfbereich. Personen mit Zugriff **Ansehen** sehen dort **Über dieses Postfach**. Gastkonten sehen dort nur ihren eigenen Zugriff und den Zugriff ihrer Gruppen.
 
 | Zugriff | Was er erlaubt |
 | --- | --- |
@@ -52,7 +52,7 @@ Du gibst Zugriff mit dem normalen Zugriffseditor von Cloud an die unterstützten
 
 ## Zugriff nur auf zugewiesene Unterhaltungen geben {icon="user-check"}
 
-Wähle unter **Einstellungen → Zugriff** für eine Person oder Gruppe **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten**, wenn sie an ausgewählten Unterhaltungen arbeiten soll, ohne den Rest des Postfachs zu sehen. Beispiele sind eine freie Mitarbeiterin oder ein anderes Team. In einer Gruppe sieht jedes Mitglied die Unterhaltungen, die ihm zugewiesen sind.
+Wähle unter **… → Einstellungen → Zugriff** für eine Person oder Gruppe **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten**, wenn sie an ausgewählten Unterhaltungen arbeiten soll, ohne den Rest des Postfachs zu sehen. Beispiele sind eine freie Mitarbeiterin oder ein anderes Team. In einer Gruppe sieht jedes Mitglied die Unterhaltungen, die ihm zugewiesen sind.
 
 - Die Person sieht keine E-Mails, bis jemand mit Zugriff **Bearbeiten** oder **Verwalten** ihr eine Unterhaltung zuweist. Dann sieht sie diese Unterhaltung mit allen Nachrichten, auch mit Antworten, die später eintreffen. Sie sieht auch die Anhänge, Kommentare und Aktivität der Unterhaltung.
 - Die Ordnerliste zeigt nur die Ordner, in denen eine ihrer Unterhaltungen liegt. Jeder Zähler zählt nur ihre Unterhaltungen. Suche, **Mir zugewiesen**, die Mail-Übersicht, die Cloud-Suche, Assistant und `cld` verhalten sich genauso.

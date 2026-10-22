@@ -12,6 +12,7 @@ import {
   referencedContentIds,
   referencedRemoteImageIds,
   resolveMessageBodyFormat,
+  resolveMessageColors,
   splitPlainMessageSegments,
   splitPlainTextLinks,
   undoSendSecondsRemaining,
@@ -75,15 +76,24 @@ describe("mail message presentation", () => {
   });
 
   test("selects the preferred body format with deterministic fallback and per-message override", () => {
-    expect(resolveMessageBodyFormat("automatic", null, "light", true, true)).toBe("html");
-    expect(resolveMessageBodyFormat("automatic", null, "dark", true, true)).toBe("plain");
-    expect(resolveMessageBodyFormat("html", null, "dark", true, true)).toBe("html");
-    expect(resolveMessageBodyFormat("plain", null, "light", true, true)).toBe("plain");
-    expect(resolveMessageBodyFormat("automatic", "plain", "light", true, true)).toBe("plain");
-    expect(resolveMessageBodyFormat("automatic", "html", "dark", true, true)).toBe("html");
-    expect(resolveMessageBodyFormat("automatic", null, "light", false, true)).toBe("plain");
-    expect(resolveMessageBodyFormat("automatic", null, "dark", true, false)).toBe("html");
-    expect(resolveMessageBodyFormat("automatic", null, "dark", false, false)).toBeNull();
+    expect(resolveMessageBodyFormat("automatic", null, true, true)).toBe("html");
+    expect(resolveMessageBodyFormat("html", null, true, true)).toBe("html");
+    expect(resolveMessageBodyFormat("plain", null, true, true)).toBe("plain");
+    expect(resolveMessageBodyFormat("automatic", "plain", true, true)).toBe("plain");
+    expect(resolveMessageBodyFormat("plain", "html", true, true)).toBe("html");
+    expect(resolveMessageBodyFormat("automatic", null, false, true)).toBe("plain");
+    expect(resolveMessageBodyFormat("plain", null, true, false)).toBe("html");
+    expect(resolveMessageBodyFormat("automatic", "plain", true, false)).toBe("html");
+    expect(resolveMessageBodyFormat("automatic", "html", false, true)).toBe("plain");
+    expect(resolveMessageBodyFormat("automatic", null, false, false)).toBeNull();
+  });
+
+  test("adapts colors unless the reading preference or per-message override requests originals", () => {
+    expect(resolveMessageColors("automatic", null)).toBe("adapted");
+    expect(resolveMessageColors("plain", null)).toBe("adapted");
+    expect(resolveMessageColors("html", null)).toBe("original");
+    expect(resolveMessageColors("automatic", "original")).toBe("original");
+    expect(resolveMessageColors("html", "adapted")).toBe("adapted");
   });
 
   test("keeps normal sent delivery quiet and presents exceptional delivery states", () => {

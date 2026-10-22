@@ -125,7 +125,7 @@ Hover preserves each variant's color hierarchy. Pressing an immediate action add
 
 Use `SplitButton` when one immediate action has closely related alternatives. The main segment remains a native button; the icon-only segment opens the existing `DropdownItem` menu contract. `variant`, `size`, `disabled`, and `loading` apply to both segments. `menuLabel` is required as the secondary trigger's accessible name.
 
-Links use normal document navigation by default. Inside a hydrated SSR workspace, opt into the shared navigation contract explicitly:
+Links use normal document navigation by default. When the link renders in browser code, opt into the shared navigation contract explicitly:
 
 ```tsx
 <ButtonLink href="/items" navigation="enhanced" scroll="preserve" onNavigate={refreshWorkspace}>
@@ -170,7 +170,7 @@ follows anything in its row, such as another button or a field, does not extend
 backwards. The same applies when the button sits in up to two wrappers that
 follow other content: an island from `@k2b/ssr`, a `Dropdown`, a
 `Tooltip.Anchor`, or a `Toolbar.Group`. For example, header actions that each
-hydrate as their own island keep each other's edges. The gap before the button
+mount as their own island keep each other's edges. The gap before the button
 belongs to the control before it.
 
 Above and below, the tap area reaches 8 px past an `sm` button and 10 px past
@@ -195,7 +195,7 @@ button itself.
 
 ## Runtime
 
-Buttons render complete server HTML. Click and reactive loading behavior require hydration only when their state or handlers are client-owned.
+Buttons render complete server HTML. Click and reactive loading behavior require browser code only when their state or handlers are client-owned.
 
 For a selection with related actions (for example, an open file and file actions),
 provide `primaryItems` and `primaryMenuLabel` to make the primary segment a

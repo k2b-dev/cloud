@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-12
+updated: 2026-10-19
 ---
 
 # Chat interface
@@ -89,6 +89,7 @@ export function ItemChat(props: {
           onApproval: async (request, input) => {
             await chat.respondToApproval(request, input);
           },
+          onCheckAction: (request) => chat.checkAction(request),
           onFrontendToolResult: async (request, result) => {
             await chat.submitFrontendToolResult(request, result);
           },
@@ -111,7 +112,7 @@ The controller exposes:
 - messages, active turn, and stream status;
 - history and timeline loading;
 - send, steer, abort, retry, fork, and compaction;
-- approval and frontend-tool actions;
+- approval, outcome-check, and frontend-tool actions;
 - file URLs and file counts;
 - one error state for the active chat.
 
@@ -136,7 +137,7 @@ Opening a chat that is gone shows the same reason. Reopening or refreshing the
 chat, or acting in it, subscribes again; the error clears once the new stream
 connects.
 
-Lists, Sources, files, tasks, dictations, and Project context refresh through
+Lists, Sources, files, routines, dictations, and Project context refresh through
 [AI live updates](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates)
 on `/api/ai/live`, not through the conversation stream.
 
@@ -151,6 +152,10 @@ links the chip back to the owning application.
 Assistant also links every Cloud resource it mentions in an answer when the
 resource result or supplied context provides an exact open or edit URL. It
 never constructs a Cloud resource URL from an ID.
+
+A scheme-less answer link starting with `app/` or `open/` opens as the
+root-relative Cloud path (`/app/...`, `/open/...`), so a dropped leading slash
+still opens the resource; other links stay as written.
 
 The attachment does not copy resource contents into the draft and does not
 grant access. The model receives only the resource reference and presentation
@@ -267,9 +272,14 @@ order:
    the step saw, the image description or the answer to its prompt. With the
    host's `onOpenFile`, the thumbnail is a button that opens the file larger;
    its name is that action, and the alt text describes it. Without `fileUrl`
-   the step shows no thumbnail. The run history of a scheduled task passes the
-   file route of the task's chat, so its thumbnails, files and views load with
-   the viewer's access as in the chat.
+   the step shows no thumbnail. The run history of a routine passes the
+   file route of the routine's chat, so its thumbnails, files and views load with
+   the viewer's access as in the chat. Run details and run history are kept
+   for 90 days after the run finished. Afterwards the run's details show
+   **This run is no longer available**, and the result stays in the chat. A
+   one-off routine keeps its run, but its run history then shows **No run
+   history**. A routine older than 90 days without a newer run shows **No runs
+   in the last 90 days** instead of **No occurrences yet**.
 2. **Results.** Presented files and code views, `code_present` apps, charts, cards, and
    capability tables in the order they were made. A later result with the same
    target, the same file path for `present` or the same title for
@@ -359,46 +369,35 @@ order:
    message; its texts stay in the work line.
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
    receipts for capability actions and for every approval the user decided.
-   A pending approval is a calm card with a warning tint and no border: its
-   title says what will happen in the owning app's words, such as "Send email
-   to jana@example.com", with "Mail · Runs only after you approve it" below, then
-   the review text and fields, and Reject next to the action itself. When the
-   model gave a reason, it follows under its own label, such as "Why: Jana
-   asked for the offer."; it never replaces the app's sentence. The title wraps
-   instead of being cut off. On phones the fields stack under their labels and
-   the two buttons share the width; a long action name ends in an ellipsis on
-   its button rather than pushing the card wider, while the title above shows
-   it in full. When code asks for approval again, each new request is a new
-   card in the same place.
-   A receipt is one line in the reader's language, never the raw tool name.
-   Once the call has an outcome, the receipt ends with its time, such as
-   "· 10:42"; older history without a recorded time shows none. Pass the reader's
-   time zone, such as `timeZone: getTimeZone(c)` from the page, to
-   `createAiChatTimeline` so server-rendered history shows the same times as
-   the browser. Without it, times and dates in the chat use the browser's zone
-   and UTC on the server.
-   A Cloud action reads as the sentence its app declares for the outcome, such
-   as "Sent email to jana@example.com", else as the action's own summary with its
-   links. Without either, it names the call with the app's approval sentence
-   or with its title and up to two labelled fields, such as "Done: Send email ·
-   Recipients: jana@example.com". Cloud's own tools word themselves the same way:
-   "Approved: Run code" for an approved tool that is not a Cloud action,
-   "Running: Send email to jana@example.com" while it runs, "Did not send email to
-   jana@example.com" or "Rejected: Send email" after a rejection, "Failed: Send
-   email", and "Email to jana@example.com not sent · stopped" or "Not run: Send
-   email · stopped" when the turn ended before the call ran. An approval still
-   waiting when the turn ends reads the same, also for a tool that is not a
-   Cloud action, such as "Not run: Run code · stopped", or "Not run: Run code"
-   after a time limit or an expired wait. See
-   [Word Actions for people](/en/docs/platform/capabilities#word-actions-for-people)
-   for how an app declares these sentences. Once the server accepts a decision, the card turns
-   into its receipt in place, before the turn reports the call; later updates
-   change only the receipt's words. If the decision was made in that card,
-   focus stays on its place without scrolling. An approved call carries `approved: true` on its
-   tool block, live and in history, so its receipt survives a reload, also when
-   the turn ended before the call returned. A call whose approval still waited
-   when the turn ended carries `approved: false` in history. Links without a
-   title read "Open", "Edit", or "Download" in the reader's language.
+   The question and result use the same card: a sentence with typed chips,
+   Cloud's reason line, a preview of the thing, two answers naming the deed and
+   target, and one outcome line. The model's `approvalReason` is not shown.
+   Reasons come from the review or declared policy; legacy reviews and Actions
+   without a policy read `app_asks`. On phones the card wraps within the chat.
+   Where offered, the quiet **Yes, and don't ask again in this chat** link
+   remembers the reviewed scope. **Always approve** is no longer offered;
+   earlier choices still apply until the next major release.
+
+   Cloud stores the review with the tool call before asking, so reloads keep
+   the sentence, chips, and preview even after the app changes. Legacy reviews
+   keep their original question and details. The outcome is running, done,
+   rejected, not run, or unknown. A receipt states only what the app confirmed.
+   A pending approval at the end of a stopped turn reads as not run. A question
+   nobody answered before its turn ended reads as expired and offers **Ask
+   again**, which sends a visible message through `onContinueTurn`. An answer
+   that did not reach the server says so and offers **Answer again**.
+
+   After an unknown outcome, a review's `check` Query runs once. `done` and
+   `not_done` settle the card; `pending` and failed checks keep the unknown
+   line. **Check again** runs only this Query once per press, never the Action.
+   Without a check, there is no repeat button. Connect `onCheckAction` to the
+   controller's `checkAction`; propagate failures to the card. See
+   [Tools and approvals](/en/docs/ai/tools-and-approvals#read-an-action-outcome).
+
+   Outcome times use the reader's zone. Pass `timeZone: getTimeZone(c)` from
+   the page to `createAiChatTimeline` so history and the first browser render
+   agree. Old history without a time shows none. Links without titles read
+   "Open", "Edit", or "Download" in the reader's language.
 
 A turn without tool calls or compaction, such as a plain answer, a steering
 marker, or an answer with only reasoning, has no work line. Its texts form the
@@ -445,6 +444,8 @@ provider's own message never appears. A turn that failed before the model
 answered, or right after an accepted survey answer, shows the notice where its
 progress stood, under the same timeline id; this includes a request forwarded
 from another chat.
+A turn whose last step failed and that ends without an answer also fails and
+shows this notice.
 Screen readers hear the notice once when the turn they followed fails.
 
 When the failed turn is the chat's newest, no turn runs, and a new turn can
@@ -512,7 +513,7 @@ each web search with its query, and the Cloud items a tool call read, bundled
 per call, without stored previews), **Working files** (everything below
 `/temp/`, grouped by folder, with the storage used once it passes 70 % of the
 limit), and **Context** (Project, Skills the chat used, memories remembered
-from it, scheduled tasks, and Secrets). Sources, Working files, and Context
+from it, routines, and Secrets). Sources, Working files, and Context
 start collapsed; collapsed content is not rendered.
 
 The newest results stay on top: all results of the latest turn that delivered
@@ -590,26 +591,21 @@ wird wiederhergestellt**) without the shimmer. Earlier rows keep their place,
 and the next turn event removes the row while the model's output continues in
 the turn's places.
 
-Approval prompts span the available message column and lead with the owning
-application's name and icon. The primary control names the concrete action;
-review labels are emphasized and explanatory copy appears only when it adds
-information beyond that action name. Approval content stays on a neutral
-surface and the decision controls sit in a separate footer at the bottom-right.
-The action is a split button whose
-**Details** menu item renders validated arguments in a separate full-width
-structured-data panel below the prompt. Details are technical verification,
-not a substitute for consequence-critical review content in the card itself.
+Action cards span the message column. The sentence wraps and keeps its typed
+chips; the preview and two decision buttons stay within that width on phones.
+Every value needed to decide belongs in the review. Technical arguments, when
+available, are secondary to the reviewed consequence.
 
 ## Handle frontend tools
 
-Pass approval, frontend-tool, retry, continue, fork, message-feedback, and file
+Pass approval, outcome-check, frontend-tool, retry, continue, fork, message-feedback, and file
 handlers through `AiChatActionsProvider`. Rich Cloud blocks remain Cloud-owned JSX inside the
 generic timeline.
 
 Applications hosting code-triggered approvals can render the same public
 `AiTurnBlockView` from `@k2b/cloud/ai/ui`, inside `AiChatActionsProvider`.
-Provide an active tool block in `awaiting_approval` state with the server-reviewed
-message, details, and `allowAlways` value. Route `onApproval` back to the
+Provide an active tool block in `awaiting_approval` state with its stored `review`
+and pending approval metadata. Route `onApproval` back to the
 permission-aware server operation. This renderer does not authorize execution:
 the server must correlate the request to its user and resource, enforce current
 permissions, and reject changed or already-resolved requests. Repeat the review
@@ -660,7 +656,7 @@ runtime monitoring and production checks.
 Every turn with the default tool source offers the server-run code tools
 `code_run`, `code_action`, `code_inspect`, `code_stop`, `code_export`, and
 `code_present`, and `code_check`, whichever client submits it: the web app,
-`cld assistant` with or without `--detach`, an API client, or a scheduled task.
+`cld assistant` with or without `--detach`, an API client, or a routine.
 Cloud runs them in an Assistant-owned host, so they need no client.
 
 Only tools that a client must run wait for that client. A frontend handler alone
@@ -675,7 +671,7 @@ hint. The local client tools `local_bash`, `local_list`, `local_read`,
 `load_local_skill` also need a client that declares and handles them.
 See [local client tools](/en/docs/ai/tools-and-approvals#run-an-optional-tool-in-a-local-cli)
 for execution and approval boundaries. Detached CLI
-turns, API clients without a code host, and scheduled tasks never get `code_open` or
+turns, API clients without a code host, and routines never get `code_open` or
 `code_secret`. The other code tool names are still accepted in `clientToolIds`
 and have no effect. Unknown names are ignored so older clients keep working
 after a tool is retired. Turn and draft submissions accept at most 64 distinct
@@ -766,7 +762,7 @@ to, or focused for `press`.
 ```
 
 Both desktop (1280×800) and phone (390×844, touch) replay the steps, in opposite
-themes with the viewer's locale/time zone. Background checks use the task time
+themes with the viewer's locale/time zone. Background checks use the routine time
 zone and the default locale/light theme when no preferences are available.
 CLI checks use a light desktop theme and the service locale/time zone.
 For a saved app, each run uses a separate disposable copy
@@ -774,7 +770,7 @@ of the app database, shared KV/files and only the checking user's personal KV.
 Reads and writes use the normal services; real app data stays unchanged. A
 database above 1000 rows or 16 MiB uses schema only and reports a warning.
 Storage copies are limited to 250 MiB. In a background turn, checking a saved
-app with a connected database requires a task grant that allows `export` for
+app with a connected database requires a routine grant that allows `export` for
 that app; otherwise the start is refused with `BACKGROUND_ACCESS_DENIED`.
 One-off apps have no storage or database, as in their chat card: `cloud.kv`,
 `cloud.files` and `cloud.db` reject with `unavailable`.
@@ -859,7 +855,8 @@ The accessibility tree is limited to 4 KiB. Cancellation closes pages and remove
 copies; crashed hosts leave a durable cleanup marker for the service sweep
 and bounded, best-effort cleanup before each new check.
 
-CLI users run `cld assistant code check ID --chat CHAT`. For one-off files, omit
+CLI users run `cld assistant code check ID --chat CHAT`. CHAT is the chat ID
+shown in Assistant (the public short ID). For one-off files, omit
 ID and pass `{files}` through `--input-file` or stdin. Local Chromium runs the
 same check and saves screenshots/downloads as local files. Use `--out DIR` to
 choose the output directory; otherwise the command creates and prints a new
@@ -969,16 +966,16 @@ input still use `needs_attention`. Running-list filters include browser work.
 ### Inspect background results
 
 Delivered background results use ordinary assistant prose with
-`meta.scheduledTask` identifying the task and occurrence. The timeline displays a
+`meta.scheduledTask` identifying the routine and occurrence. The timeline displays a
 **Background run** control above the result. Hosts provide
 `AiChatActions.onOpenScheduledTaskRun(taskId, occurrenceId)` to open their
 permission-checked run detail view. Assistant shows the result, execution history,
-and controls for returning to the chat or managing the task.
+and controls for returning to the chat or managing the routine.
 
 ### Open chat content beside the conversation
 
 The context panel is the entry point for apps, files, images, sources, project
-knowledge, and scheduled tasks. Compact sections show a preview; View all opens
+knowledge, and routines. Compact sections show a preview; View all opens
 a searchable overview beside the conversation. Apps appear as cards with their
 name and optional description. The overview includes apps referenced by that
 conversation, rather than a global library.
@@ -997,7 +994,7 @@ The context column responds to the available width of the chat pane, including
 when a neighboring workspace is resized. Below 56rem it is hidden and the chat
 header exposes an Open (+) menu, even with no workspace tabs open. This menu and
 the workspace tab menu offer the same chat apps, files (including images and
-voice inputs), sources and references, project knowledge, and scheduled tasks
+voice inputs), sources and references, project knowledge, and routines
 when available. Hiding the column preserves its loaded context and the composer
 draft; it does not unmount the chat.
 
@@ -1085,6 +1082,8 @@ those choices in browser-local preferences, without modifying uploaded files.
 Studio resource URLs, tool inputs and references use six-character Cloud short
 IDs. UUIDs remain internal database keys and are rejected as public resource IDs.
 Existing resources receive short IDs during migration; no UUID URL alias exists.
+Assistant endpoints that take a chat also accept its short ID and check the same
+chat permissions for both forms.
 
 
 The chat's Studio section uses the canonical conversation resource index. Direct
@@ -1141,23 +1140,157 @@ tasks restore the plan automatically; switching chats resets the disclosure.
 
 ## Select commands and inline context
 
-Assistant recognizes `/` at a word boundary anywhere in the composer. Type a
-name, or narrow the suggestions with `/skill`, `/app`, `/file`, or `/project`
-followed by a search term. Select with the arrow keys and Enter or Tab; Escape
-closes the menu without changing the draft. URLs, paths, and code remain text.
-Suggestions temporarily replace the task list above the composer. Each result
-occupies one line; closing the menu restores the task list and its open state.
+Assistant recognizes `/` at a word boundary anywhere in the composer. **+**
+opens the same list with a search field on top, including on phones. Its
+sections stay in this order: **Recent**, **Insert**, **Skills**, **Files in this
+chat**, **This chat**, **Routines**, **Open in apps** (German: **Zuletzt** and
+**In Apps öffnen**).
+Files appear when searching or narrowing to files. Type a name, or narrow by
+typing one of these words followed by a space:
 
-`/compact`, `/fork`, and `/new` use the existing chat actions. Fork starts from
-the latest assistant response. Commands preserve the surrounding draft. Skills,
-Studio apps, and files insert highlighted references. Editing a reference's
+| List | German and English words |
+| --- | --- |
+| Skills | `skill`, `skills` |
+| Files in this chat | `datei`, `dateien`, `file`, `files` |
+| Projects | `projekt`, `projekte`, `project`, `projects` |
+| Studio apps | `app`, `apps`, `studio` |
+| Models | `model`, `models`, `modell`, `modelle` |
+| Routines | `routine`, `routinen` |
+
+**Open in apps** lists Commands that accept an empty input from other apps in
+your navigation. Choosing one saves this chat's draft with its references and
+attachments, then opens the app with a return link to the chat. A new or project
+composer creates the chat before saving. The target app decides whether to use
+the return link; returning restores the saved draft.
+
+While the catalog loads, placeholders stay at the end of the list. If loading
+fails, choose **Try again**. A save conflict or failure opens nothing and gives
+the reason in the composer status line. If the app cannot be reached, the menu
+stays open with an explanation on the row; choosing it again retries. After the
+page changes, the target app shows its own errors and checks access.
+
+The full words also list their category without a trailing space, including
+`/project` and `/projekt` for Projects.
+
+For example, `/skill invoice` searches Skills. Exact words win; from three
+letters, the shortest completion wins when unique. Move with the arrow keys
+and choose with plain Enter or Tab. Tab on a narrowing row writes its word;
+Enter runs its action, or narrows if it only offers a list. Shift+Enter adds a
+line, Shift+Tab moves focus back, and Ctrl/⌘+Enter sends. Escape closes the menu
+for this `/`, even if you keep typing. `/ ` opens nothing, so `50 / 2` stays
+arithmetic. An unmatched search shows its query; adding a space closes the menu
+and leaves the text. URLs, paths, and code remain text.
+
+Suggestions temporarily replace the task list; closing restores it and its open
+state. Matching previous results stay visible while the next search loads.
+Switching lists clears previous results. Screen readers announce the number
+of suggestions once the search settles.
+
+**Insert** (**Einfügen**) starts with **Insert from Cloud** and **Attach file**.
+Choose **+**, then **Attach file** to use the device and app file selection.
+**Insert from Cloud** (**Aus Cloud einfügen**) inserts a reference into the text
+at the caret stored when **+** was pressed. It replaces the former resource
+attachment from the **+** menu; the model receives the same resource.
+A space separates the reference from a preceding word. Search tags such as
+Notes appear here only while typing. In German, `/notiz q3` narrows
+the list to **Notizen aus Notebooks**; Enter opens Notes in the resource picker
+with `q3` already entered. `/app q` narrows to Studio apps from Assistant, even
+before the catalog loads.
+
+Cloud searches end with **Search Cloud for “…”**, or the corresponding search
+row for a tag scope. An unmatched `/xylo` shows **Nothing found for “xylo”** and
+that Cloud search row. The picker previews resources you can read. Choosing one
+inserts its name as a reference where `/…` was; Ctrl/⌘+Z restores the token in
+one step. Escape in the picker keeps `/…` and returns focus to the composer.
+From **+**, cancelling the picker restores the stored caret or selection.
+Escape, **+** again, Back on a phone, or a press outside closes the list;
+an outside press with any pointer type does not activate what lies beneath it.
+**Search this chat** is a row in **This chat** in the same list.
+References remain available while a response runs. File attachment waits for
+the response to finish. Cloud insert rows explain when the message has reached its
+16-item limit, counting attachments and inline references together. If the
+message fills up while the picker is open, the choice is not inserted, `/…`
+stays, and the composer shows the limit.
+
+**Recent** (**Zuletzt**) leads the list before you type. It shows up to four
+references you sent in your own Assistant messages, the ones you sent most
+often first, then the most recent. Each row names the item and one line with its
+kind and place, such as **Note · Sales**. Choosing one inserts the reference
+like any insert row. While you type, **Recent** is gone: matching recent
+references come first in **Insert**, recent Skills first in **Skills**, and
+`/notiz q3` lists matching recent notes above the row that searches Notes. Each
+entry appears once, so a Skill under **Recent** is not repeated under
+**Skills**. Without history, the list starts with **Insert**.
+
+The server checks each reference before it names it: up to eight of your
+latest different references are read again by their app as you, and anything
+you can no longer read, or whose app does not answer in time, is left out.
+Routine runs and messages from other chats do not count. Recent loads once
+when the composer appears. If you type `/` before it arrives, or the load
+fails, that list opens without **Recent** and nothing is added while it is
+open; the next `/` shows it, or asks again after a failure. A failed load shows
+no error, because nothing in the list depends on it. Actions are never sorted
+by your use. See
+[AI resources and access](/en/docs/ai/resources-and-access#recently-sent-references).
+
+The Skills overview shows the first four enabled Skills. If there are more,
+**All N Skills** narrows to the full Skill list with Enter or Tab. If the Skill
+list fails to load, **Skills could not be loaded** with **Try again** takes the
+place of the Skills; the other sections stay. Choosing it loads the list again.
+
+The **This chat** entries are **Choose model**, **Assign to project**,
+**Compact chat**, **Fork chat**, **Search this chat**, and **New chat**.
+Choose model opens the composer's model menu. Type `/model ` or `/modell ` to
+list models directly; a check marks the current model. Choosing another model
+applies it to this chat and confirms the choice. You can change models once the
+current response finishes. While you record a dictation, Choose model lists the
+models instead of opening the menu. Assign to project opens the Project list.
+The names `/compact`, `/fork`, and `/new` still find those actions. Compact chat
+summarizes older history to free up room. Fork chat starts from the latest
+assistant response and brings your draft along. New chat starts empty and keeps
+the previous chat in the list. Search this chat opens search scoped to this
+chat's messages and files. It is absent from the overview for an empty chat;
+searching for it explains why it is unavailable. Compact and Fork are absent
+from the overview until their prerequisites are met; searching finds them with
+a reason. While a response runs, they remain visible with a waiting reason. An unavailable command explains why. Selecting
+it leaves the menu open. Cancelling a command keeps `/…` in your unchanged
+draft; failures restore it too and show a message above the composer until the
+next edit or command.
+Commands preserve the surrounding draft. Skills, Studio apps, and files insert
+highlighted references. Editing a reference's
 label turns it into ordinary text; undo restores its identity. Saving and
 reopening a draft preserves references, including versioned conversation files.
 Project file references name a read-only path in the current Project.
 
+**Routines** offers **New routine** and your own routines.
+New routine inserts a reference to Assistant's scheduled-tasks Skill;
+send it with your request to describe what should happen and when. If you
+turned off that Skill, or it is unavailable to you, the row explains why and
+inserts nothing.
+
+Choosing an active routine runs it now. The composer shows a starting status while
+the request is pending and a running status only after the server accepts the
+run. The result arrives in the routine's chat. A failed request restores
+`/…` and explains the failure in plain words: the routine already runs, no longer
+exists, was started too often, or was not accepted. If the server is
+unreachable or gives no clear answer, the composer says it cannot tell whether
+the routine started. Choosing the routine again in the same browser tab, also after a
+reload, checks the earlier start instead of starting it a second time. If that
+run already finished, the status says so and points to the routine's chat. Paused routines say **Paused. Resume the routine first.**
+Routines that need attention explain that you must intervene before they can run.
+Selecting either sends no run request.
+
+Routines load once per menu opening. The overview shows up to five routines, newest
+first, after New routine. Searching or narrowing with `routine` or
+`routinen` shows all matching loaded routines, including paused routines and those
+that need attention; completed routines are excluded. If routine loading fails,
+**Routines could not be loaded** with **Try again** replaces the routine
+rows. Choosing it reloads the list and preserves `/…` while results load.
+
 Selecting a Project permanently assigns a previously unassigned chat. Future
-turns use that Project's instructions and files. Project results disappear once
-the chat belongs to a Project. A stale selection cannot replace an existing
+turns use that Project's instructions and files. Once the chat belongs to a
+Project, assignment leaves the overview. Searching for it explains the existing assignment; the narrowed Project list also shows
+why another Project cannot be chosen. A stale selection cannot replace an existing
 assignment, and assignment waits until active and queued work has finished.
 
 Projects can explicitly link Skills. Current members inherit read/use access,
@@ -1175,7 +1308,16 @@ error; the runtime does not silently ignore the selection. Mentioning an app
 never executes it or grants access.
 
 `Chat.Composer` accepts controlled `mentions` and `onMentionsChange`, asynchronous
-`searchCommands(query, signal)`, and an `accessory` for the shared task surface.
+`searchCommands(query, signal, { scope })`, and an `accessory` for the shared task surface.
+Application authors define fixed sections with `commandSections` and assign
+rows through `section`. Define narrowing words with `commandScopes` and give
+a row a `scope` to let Tab write its first word. Resolved scopes send only the
+remaining search text and the scope id to the callback. Use `hiddenUntilSearch`
+with `reason` for commands that do not apply, `keywords` for alternate names,
+and `app` for a searchable application name. Titles and one description or
+reason wrap without truncation; title matches appear in bold. See the
+[Chat component](/en/ui/ai/chat#commands-and-file-selection) for ranking and
+loading rules.
 Set `draftKey` to the conversation or draft identity to isolate undo history.
 A command can supply an action or a `mention` containing a `ChatAttachment`;
 its payload stays application-owned. Mention offsets use the untrimmed text's

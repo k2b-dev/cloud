@@ -5,6 +5,7 @@ import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Avatar,
+  AvatarStack,
   announce,
   Button,
   ButtonLink,
@@ -34,10 +35,9 @@ import type { ConversationDraftSummary } from "../../contracts";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "../../service/collaboration";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { ConversationLocalTags, LocalTag } from "../../service/local-tags";
-import type { MessageDetail } from "../../service/messages";
 import type { ConversationPresenceParticipant } from "../../service/presence";
 import type { ConversationReminder } from "../../service/reminders";
-import type { MailDetailErrors } from "../../service/workspace";
+import type { MailDetailErrors, MailWorkspaceMessage } from "../../service/workspace";
 import { readApiError } from "./api-response";
 import MailConversationContext from "./MailConversationContext";
 import MailRelatedConversations from "./MailRelatedConversations";
@@ -63,7 +63,8 @@ import {
 } from "./mail-details-reconciliation";
 import { createRetryToasts } from "./mail-feedback";
 
-const avatarSource = (userId: string | undefined, avatarHash: string | null): string | undefined =>
+// Local on purpose: `@k2b/cloud/account/ui` would pull Zod into the mailbox's first load (mailbox-first-load.test.ts).
+const cloudAvatarSource = (userId: string | null | undefined, avatarHash: string | null | undefined): string | undefined =>
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
 
 type InspectorTab = "headers" | "source";
@@ -85,13 +86,15 @@ export default function MailDetailsPanel(props: {
   initialCommentsCursor: string | null;
   assignableUsers: MailAssignableUser[];
   presence: ConversationPresenceParticipant[];
+  /** The viewer, listed last among the people here and never in the header's avatar stack. */
+  currentUserId?: string;
   activity: MailActivityEvent[];
   initialReminder: ConversationReminder | null;
   detailErrors: MailDetailErrors;
   conversationDrafts: ConversationDraftSummary[];
   conversationHref?: string;
   conversationSummary?: ConversationContentSummary | null;
-  messages: MessageDetail[];
+  messages: MailWorkspaceMessage[];
   subject: string;
   requestUrl: string;
   dateConfig: DateContext;
@@ -607,17 +610,36 @@ export default function MailDetailsPanel(props: {
           title={props.subject || t().noSubject}
           subtitle={addressList(latestMessage()?.from ?? []) || t().unknownSender}
           meta={
-            <StatusBadge
-              tone={state().workStatus === "done" ? "ok" : state().workStatus === "waiting" ? "neutral" : "warning"}
-              label={state().workStatus === "done" ? t().done : state().workStatus === "waiting" ? t().waitingForReply : t().needsAction}
-              icon={
-                state().workStatus === "done"
-                  ? "ti ti-circle-check"
-                  : state().workStatus === "waiting"
-                    ? "ti ti-hourglass"
-                    : "ti ti-message-reply"
-              }
-            />
+            <span class="mail-details-meta">
+              <Show when={props.presence.some((participant) => participant.userId !== props.currentUserId)}>
+                <AvatarStack
+                  people={props.presence.map((participant) => ({
+                    id: participant.userId,
+                    name: participant.displayName,
+                    src: cloudAvatarSource(participant.userId, participant.avatarHash),
+                    self: participant.userId === props.currentUserId,
+                    detailIcon: participant.mode === "composing" ? "ti ti-pencil" : "ti ti-eye",
+                    detail: participant.mode === "composing" ? t().composing : t().viewing,
+                  }))}
+                  title={t().activeCollaborators}
+                  label={`${t().activeCollaborators}: ${props.presence
+                    .filter((participant) => participant.userId !== props.currentUserId)
+                    .map((participant) => participant.displayName)
+                    .join(", ")}`}
+                />
+              </Show>
+              <StatusBadge
+                tone={state().workStatus === "done" ? "ok" : state().workStatus === "waiting" ? "neutral" : "warning"}
+                label={state().workStatus === "done" ? t().done : state().workStatus === "waiting" ? t().waitingForReply : t().needsAction}
+                icon={
+                  state().workStatus === "done"
+                    ? "ti ti-circle-check"
+                    : state().workStatus === "waiting"
+                      ? "ti ti-hourglass"
+                      : "ti ti-message-reply"
+                }
+              />
+            </span>
           }
           primaryActions={
             props.conversationHref ? (
@@ -628,7 +650,12 @@ export default function MailDetailsPanel(props: {
           }
           actions={
             <Tooltip.Anchor content={t().closeDetails}>
-              <IconButton type="button" class="lg:hidden" label={t().closeConversationDetails} onClick={props.onClose}>
+              <IconButton
+                type="button"
+                class="@min-[64rem]/k2b-app-area:hidden"
+                label={t().closeConversationDetails}
+                onClick={props.onClose}
+              >
                 <i class="ti ti-x" aria-hidden="true" />
               </IconButton>
             </Tooltip.Anchor>
@@ -679,7 +706,7 @@ export default function MailDetailsPanel(props: {
                   title={t().draftsAvailable({ count: props.conversationDrafts.length })}
                   icon="ti ti-file-pencil"
                   tone="accent"
-                  meta={props.conversationDrafts.length}
+                  count={props.conversationDrafts.length}
                 >
                   <DetailPanel.Action
                     href={mailDraftHref(props.mailboxId, draft().id, props.requestUrl)}
@@ -789,26 +816,6 @@ export default function MailDetailsPanel(props: {
           </DetailPanel.Group>
 
           <DetailPanel.Group label={t().conversationContext}>
-            <Show when={props.presence.length > 0}>
-              <section aria-label={t().activeCollaborators} class="bg-[var(--ui-surface)] p-3">
-                <div class="flex flex-col gap-2">
-                  <For each={props.presence}>
-                    {(participant) => (
-                      <div class="flex items-center gap-2">
-                        <Avatar name={participant.displayName} src={avatarSource(participant.userId, participant.avatarHash)} size="xs" />
-                        <span class="min-w-0 flex-1 truncate text-sm text-primary">{participant.displayName}</span>
-                        <StatusBadge
-                          tone={participant.mode === "composing" ? "running" : "neutral"}
-                          label={participant.mode === "composing" ? t().composing : t().viewing}
-                          icon={participant.mode === "composing" ? "ti ti-pencil" : "ti ti-eye"}
-                        />
-                      </div>
-                    )}
-                  </For>
-                </div>
-              </section>
-            </Show>
-
             <Show when={props.mailboxWide}>
               <MailConversationContext
                 subject={props.subject}
@@ -827,7 +834,7 @@ export default function MailDetailsPanel(props: {
             </Show>
 
             <Show when={attachments().length > 0}>
-              <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" tone="neutral" meta={attachments().length}>
+              <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" tone="neutral" count={attachments().length}>
                 <div class="flex flex-col gap-1">
                   <For each={attachments()}>
                     {(attachment) => {
@@ -875,7 +882,9 @@ export default function MailDetailsPanel(props: {
                           avatar={
                             <Avatar
                               name={comment.author.displayName}
-                              src={avatarSource(comment.author.kind === "user" ? comment.author.id : undefined, comment.author.avatarHash)}
+                              src={
+                                comment.author.kind === "user" ? cloudAvatarSource(comment.author.id, comment.author.avatarHash) : undefined
+                              }
                               icon={comment.author.kind === "workflow" ? "ti ti-route" : undefined}
                               size="xs"
                             />
@@ -940,11 +949,11 @@ export default function MailDetailsPanel(props: {
 
           <DetailPanel.Group label={t().conversationHistory}>
             <Show when={props.activity.length > 0}>
-              <DetailPanel.Section title={t().recentActivity} icon="ti ti-history" tone="neutral" meta={activityItems().length} collapsible>
-                <div class="flex flex-col gap-2">
+              <DetailPanel.Section title={t().recentActivity} icon="ti ti-history" tone="neutral" collapsible>
+                <div class="mail-activity-rows">
                   <For each={activityItems()}>
                     {(event) => (
-                      <div class="flex min-w-0 items-center gap-2 text-xs">
+                      <div class="mail-activity-row">
                         <i
                           class={`ti ${event.outcome === "failed" ? "ti-alert-circle text-red-500" : `${event.icon} text-dimmed`}`}
                           aria-hidden="true"
@@ -953,7 +962,11 @@ export default function MailDetailsPanel(props: {
                           <span class="font-medium text-primary">{event.actorLabel}</span> {event.label}
                           <Show when={event.count > 1}> ({event.count})</Show>
                         </span>
-                        <time class="shrink-0 text-xs text-dimmed" dateTime={event.createdAt}>
+                        <time
+                          class="shrink-0 text-xs text-dimmed"
+                          dateTime={event.createdAt}
+                          title={dates.formatDateTime(event.createdAt, props.dateConfig)}
+                        >
                           {dates.formatDateTimeRelative(event.createdAt, props.dateConfig)}
                         </time>
                       </div>

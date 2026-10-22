@@ -73,7 +73,7 @@ By default, the open action shows a temporary local copy of the document in a ne
 
 Pass `onDownload` to add a **Download** action. The caller owns the download, for example issuing a fresh attachment URL with the right file name; `disabled` also disables it.
 
-Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled or the browser has no inline PDF viewer, and shows the loading placeholder. The server and the page before hydration already render that loading state, without a render or retry action, while an `openHref` link works as a plain link. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
+Set `autoLoad` when mounting the preview already follows an explicit user action, such as opening a preview dialog. It requests the PDF once after browser mount, unless disabled or the browser has no inline PDF viewer, and shows the loading placeholder. The server HTML and the initial browser render already show that loading state, without a render or retry action, while an `openHref` link works as a plain link. It does not request during server rendering or automatically retry when `disabled` changes. The caller owns request cancellation, such as aborting a fetch when its dialog closes.
 
 An automatic preview shows one fixed document, such as a stored file. The open action opens the shown document without another request. The render action appears only while no document is shown and none is loading, for example when `disabled` kept the preview from starting, and never without an inline viewer, where the open action is also the retry after a failure. After a failed request, the render action moves into the error state as its retry, labeled with `buttonLabel` or **Retry**; beside `renderError` content, it stays in the toolbar and in place while it loads. Remount the preview to show a different document. Without `autoLoad`, both actions request the current document, so a preview of editable input stays current.
 
@@ -157,13 +157,13 @@ The lightbox uses a native dialog, labeled navigation controls, arrow keys, Esca
 
 ## Runtime
 
-`Lightbox` and `PdfPreview` require hydration. `Lightbox` calls `showModal()` after mount. `PdfPreview` creates and revokes browser object URLs after loading a preview. A late response after unmount cannot display a preview or retain an object URL.
+`Lightbox` and `PdfPreview` require browser code. `Lightbox` calls `showModal()` after mount. `PdfPreview` creates and revokes browser object URLs after loading a preview. A late response after unmount cannot display a preview or retain an object URL.
 
 The server may render their initial markup, but modal behavior, network requests, Blob URLs, and navigation controls run in the browser.
 
-`VideoPlayer` renders its frame and video element on the server, so the frame holds its size before hydration. Renewal, the keys, and the fallback need hydration.
+`VideoPlayer` renders its frame and video element on the server, so the frame holds its size before mount. Renewal, the keys, and the fallback require browser code.
 
-`ZoomPanViewport` renders at fit on the server; zoom, pan, and fullscreen need hydration. Mounting it in a separate Solid root, for example inside an editor widget, is supported: it falls back to the document locale.
+`ZoomPanViewport` renders at fit on the server; zoom, pan, and fullscreen require browser code. Mounting it in a separate Solid root, for example inside an editor widget, is supported: it falls back to the document locale.
 
 ## Example
 

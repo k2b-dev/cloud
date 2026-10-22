@@ -6,6 +6,8 @@ export type { CopyButtonProps, CopyButtonValue } from "./CopyButton";
 export { CopyButton } from "./CopyButton";
 export type { DisclosureProps } from "./Disclosure";
 export { Disclosure } from "./Disclosure";
+export type { DragPayload, DragSourceProps, DropTargetProps } from "./DragAndDrop";
+export { activeDrag, DragSource, DropTarget, useKeyboardDrag } from "./DragAndDrop";
 export type {
   DropdownAction,
   DropdownActionBase,
@@ -17,8 +19,8 @@ export type {
   DropdownTriggerProps,
 } from "./Dropdown";
 export { Dropdown, DropdownItem, dropdownPosition } from "./Dropdown";
-export type { FilterChipOption, FilterChipProps, FilterChipSection } from "./FilterChip";
-export { FilterChip } from "./FilterChip";
+export type { FilterChipOption, FilterChipProps, FilterChipSection, FilterToggleProps } from "./FilterChip";
+export { FilterChip, FilterToggle } from "./FilterChip";
 export type { GestureKind, GestureMenuAction, GestureMenuItem, GestureMenuProps, GestureMenuSection } from "./GestureMenu";
 export { GestureMenu } from "./GestureMenu";
 export type { RemoveButtonProps } from "./RemoveButton";
@@ -39,5 +41,7 @@ export {
 } from "./SpotlightSearch";
 export type { TabOption, TabsItemProps, TabsProps } from "./Tabs";
 export { Tabs } from "./Tabs";
-export type { ToolbarGroupProps, ToolbarProps, ToolbarSeparatorProps } from "./Toolbar";
+export type { ToolbarActionProps, ToolbarGroupProps, ToolbarLabelProps, ToolbarProps, ToolbarSeparatorProps } from "./Toolbar";
 export { Toolbar } from "./Toolbar";
+export type { ViewTab, ViewTabsProps } from "./ViewTabs";
+export { ViewTabs } from "./ViewTabs";

@@ -28,6 +28,7 @@ const task = (overrides: Partial<SpaceItem> = {}): SpaceItem => ({
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,
@@ -56,7 +57,7 @@ const renderRow = (item: SpaceItem, canWrite = true, locale = "en") =>
           tags: [],
           isSelected: false,
           baseUrl: "/app/spaces/Space1",
-          dateConfig: { timeZone: "Europe/Berlin" },
+          dateConfig: { timeZone: "Europe/Berlin", locale },
           canWrite,
           currentUserId: "33333333-3333-4333-8333-333333333333",
           isListed: () => true,
@@ -99,6 +100,59 @@ test.each([
   try {
     const html = renderRow(task({ deadline }));
     expect(html.includes("text-red-500")).toBe(overdue);
+  } finally {
+    setSystemTime();
+  }
+});
+
+test("shows the working assignee once, first, with one green ring", () => {
+  const mira = { id: "44444444-4444-4444-8444-444444444444", kind: "user" as const, displayName: "Mira Beck", avatarHash: null };
+  const html = renderRow(
+    task({
+      assignees: [
+        { id: "33333333-3333-4333-8333-333333333333", kind: "user" as const, displayName: "Valentin Kolb", avatarHash: null },
+        mira,
+      ],
+      claim: {
+        id: "55555555-5555-4555-8555-555555555555",
+        actor: { kind: "user", id: mira.id },
+        displayName: mira.displayName,
+        avatarHash: null,
+        claimedAt: "2026-10-02T07:12:00.000Z",
+      },
+    }),
+  );
+  expect(html.match(/data-ring="success"/g)).toHaveLength(1);
+  expect(html.match(/aria-label="Mira Beck is on it"/g)).toHaveLength(1);
+  expect(html).not.toContain('aria-label="Mira Beck avatar"');
+  expect(html.indexOf('aria-label="Mira Beck is on it"')).toBeLessThan(html.indexOf('aria-label="Valentin Kolb avatar"'));
+});
+
+test("shows a claim holder even when the task has no assignees", () => {
+  const html = renderRow(
+    task({
+      assignees: [],
+      claim: {
+        id: "55555555-5555-4555-8555-555555555555",
+        actor: { kind: "service_account", id: "44444444-4444-4444-8444-444444444444" },
+        displayName: "Task worker",
+        avatarHash: null,
+        claimedAt: "2026-10-02T07:12:00.000Z",
+      },
+    }),
+  );
+  expect(html.match(/data-ring="success"/g)).toHaveLength(1);
+  expect(html).toContain('aria-label="Task worker is on it"');
+});
+
+test("SSR renders a German all-day deadline as the same calendar day", () => {
+  setSystemTime(new Date("2025-10-24T12:00:00Z"));
+  try {
+    const item = task({ deadline: "2025-10-24", deadlineAllDay: true });
+    const html = renderRow(item, true, "de");
+    expect(html).toContain("Fr., 24. Okt.");
+    expect(html).not.toContain("17:00");
+    expect(renderRow(item, true, "de")).toBe(html);
   } finally {
     setSystemTime();
   }

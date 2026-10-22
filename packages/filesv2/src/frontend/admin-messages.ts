@@ -61,6 +61,11 @@ export const adminMessages = i18n.define({
       autoCreateHint: "Create homes and POSIX group directories when they are needed.",
       autoArchiveHint: "Archive directories of deleted local accounts or groups, and groups with POSIX disabled. Files remain recoverable.",
       freeipaManual: "FreeIPA directories are created and archived only through explicit administrative actions.",
+      history: "History",
+      historyRetention: "Keep history for",
+      historyRetentionHint: "Who changed which file or folder, and how. 30 to 3,650 days; older entries are deleted automatically.",
+      historyRetentionDays: "days",
+      historyRetentionInvalid: "Keep the history for 30 to 3,650 days.",
       loading: "Loading storage…",
       failed: "Storage could not be loaded",
       actionFailed: "The action could not be completed.",
@@ -116,6 +121,13 @@ export const adminMessages = i18n.define({
       capacity: "Capacity",
       versionBytes: "Version storage",
       saved: "Settings saved.",
+      configurationUnreadable: "The saved configuration cannot be read",
+      configurationUnreadableDetail:
+        "Files cannot decrypt or check its saved configuration, usually because it was saved with a different APP_SECRET. Files runs with the defaults shown here until you act. To replace the saved configuration, enter all values and the Filegate token again, then save. Or reset it to the defaults. Both change the configuration for every Files instance.",
+      resetConfiguration: "Reset configuration",
+      resetConfigurationConfirm:
+        "Delete the saved Files configuration and use the defaults? Storage areas stay off until you configure them again.",
+      resetConfigurationFailed: "The configuration could not be reset.",
       dirtyLeave: "Discard your unsaved settings before leaving this view?",
       emptyArchive: "No archived directories on this page.",
       noEntries: "No entries match this view.",
@@ -196,6 +208,12 @@ export const adminMessages = i18n.define({
       autoArchiveHint:
         "Verzeichnisse gelöschter lokaler Konten oder Gruppen sowie von Gruppen mit deaktiviertem POSIX archivieren. Die Dateien bleiben wiederherstellbar.",
       freeipaManual: "FreeIPA-Verzeichnisse werden ausschließlich durch ausdrückliche administrative Aktionen erstellt und archiviert.",
+      history: "Verlauf",
+      historyRetention: "Verlauf aufbewahren für",
+      historyRetentionHint:
+        "Wer welche Datei oder welchen Ordner wie geändert hat. 30 bis 3.650 Tage; ältere Einträge werden automatisch gelöscht.",
+      historyRetentionDays: "Tage",
+      historyRetentionInvalid: "Bewahre den Verlauf 30 bis 3.650 Tage auf.",
       loading: "Dateibereiche werden geladen…",
       failed: "Dateibereiche konnten nicht geladen werden",
       actionFailed: "Die Aktion konnte nicht ausgeführt werden.",
@@ -254,6 +272,13 @@ export const adminMessages = i18n.define({
       capacity: "Kapazität",
       versionBytes: "Versionsspeicher",
       saved: "Einstellungen gespeichert.",
+      configurationUnreadable: "Die gespeicherte Konfiguration ist nicht lesbar",
+      configurationUnreadableDetail:
+        "Dateien kann die gespeicherte Konfiguration nicht entschlüsseln oder prüfen, meist weil sie mit einem anderen APP_SECRET gespeichert wurde. Bis du handelst, läuft Dateien mit den hier gezeigten Standardwerten. Um die gespeicherte Konfiguration zu ersetzen, gib alle Werte und den Filegate-Token erneut ein und speichere. Oder setze sie auf die Standardwerte zurück. Beides ändert die Konfiguration für alle Dateien-Instanzen.",
+      resetConfiguration: "Konfiguration zurücksetzen",
+      resetConfigurationConfirm:
+        "Die gespeicherte Dateien-Konfiguration löschen und die Standardwerte nutzen? Die Dateibereiche bleiben aus, bis du sie neu konfigurierst.",
+      resetConfigurationFailed: "Die Konfiguration konnte nicht zurückgesetzt werden.",
       dirtyLeave: "Ungespeicherte Einstellungen vor dem Verlassen dieser Ansicht verwerfen?",
       emptyArchive: "Keine archivierten Verzeichnisse auf dieser Seite.",
       noEntries: "Keine Einträge für diese Ansicht.",

@@ -2,10 +2,12 @@ import { AppWorkspace, LocaleProvider, Navigation } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { apiClient } from "../../api/client";
-import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 import type { SenderIdentity } from "../../contracts";
 import { openMailboxDetailsDialog } from "./MailboxDetailsDialog";
+import { createMailboxMenu, MailboxMenuButton } from "./MailboxMenu";
 import MailSidebar from "./MailSidebar";
+import { mailboxMenuOptions, mailSidebarFixture, openMailboxFixture } from "./mail-sidebar.fixture";
+import { mailSidebarMessages } from "./mail-sidebar-messages";
 
 export type MailboxDetailsHarnessOptions = {
   locale: "en" | "de";
@@ -18,6 +20,7 @@ export type MailboxDetailsHarnessOptions = {
 declare global {
   interface Window {
     mountMailboxDetails: (options: MailboxDetailsHarnessOptions) => void;
+    setMailboxComposeStarting: (starting: boolean) => void;
     /** Each result of the details dialog, in order. */
     detailsResults: Array<string | null>;
   }
@@ -26,18 +29,6 @@ declare global {
 window.detailsResults = [];
 
 const mailbox = { id: "Box001", name: "Support", description: null, health: "active" as const, healthReason: null };
-const viewCounts = {
-  needs_action: 0,
-  mine: 0,
-  unassigned: 0,
-  waiting: 0,
-  done: 0,
-  snoozed: 0,
-  send_problems: 0,
-  recently_active: 0,
-  kept: 0,
-};
-const noop = () => {};
 
 window.mountMailboxDetails = (options) => {
   const host = document.getElementById("root");
@@ -45,6 +36,8 @@ window.mountMailboxDetails = (options) => {
   // Dialogs render outside the island and take the document's language, as in Cloud's pages.
   document.documentElement.lang = options.locale;
   const [detailsOpening, setDetailsOpening] = createSignal(false);
+  const [composeStarting, setComposeStarting] = createSignal(false);
+  window.setMailboxComposeStarting = setComposeStarting;
   const [menuReady, setMenuReady] = createSignal(false);
   // Like the mailbox workspace: load the details, then open the dialog complete.
   const openDetails = async () => {
@@ -67,37 +60,41 @@ window.mountMailboxDetails = (options) => {
       <LocaleProvider locale={options.locale}>
         <AppWorkspace mobileSurface="flush" class="mail-workspace">
           <MailSidebar
-            currentUserEmail={null}
-            contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
-            mailboxId={mailbox.id}
-            mailboxName={mailbox.name}
-            syncEnabled
-            needsConnection={false}
-            folders={[]}
-            localTags={[]}
-            savedViews={[]}
-            scheduledMode={false}
-            scheduledCount={0}
-            activeFolderId={null}
-            activeView={null}
-            activeSavedViewId={null}
-            activeTagId={null}
-            searchActive={false}
-            viewCounts={viewCounts}
-            canWrite={options.permission !== "read"}
-            canAdmin={options.permission === "admin"}
-            assignedOnly={false}
-            managementOpening={null}
-            settingsOpening={false}
-            detailsOpening={detailsOpening()}
-            onOpenDetails={() => void openDetails()}
-            onOpenHealth={noop}
-            onOpenSharedLinks={noop}
-            onOpenRemoteContent={noop}
-            onOpenSubscriptions={noop}
-            onOpenSettings={noop}
-            onMoveConversation={noop}
-            onNavigate={noop}
+            {...mailSidebarFixture()}
+            open={openMailboxFixture({
+              menu: createMailboxMenu(() =>
+                mailboxMenuOptions({
+                  canWrite: options.permission !== "read",
+                  canAdmin: options.permission === "admin",
+                  detailsOpening: detailsOpening(),
+                  onOpenDetails: () => void openDetails(),
+                }),
+              ),
+            })}
+          />
+          <AppWorkspace.Head
+            actions={
+              <MailboxMenuButton
+                menu={createMailboxMenu(() =>
+                  mailboxMenuOptions({
+                    canWrite: options.permission !== "read",
+                    canAdmin: options.permission === "admin",
+                    detailsOpening: detailsOpening(),
+                    onOpenDetails: () => void openDetails(),
+                  }),
+                )}
+                label={mailSidebarMessages.resolve([options.locale]).t.mailboxMenu({ name: "Support" })}
+              />
+            }
+            primary={
+              options.permission !== "read"
+                ? {
+                    label: options.locale === "de" ? "Verfassen" : "Compose",
+                    href: "/app/mail/compose?mailbox=Box001&autostart=1",
+                    icon: composeStarting() ? "ti ti-loader-2 animate-spin" : "ti ti-pencil",
+                  }
+                : undefined
+            }
           />
           <AppWorkspace.Content>
             <AppWorkspace.Main>

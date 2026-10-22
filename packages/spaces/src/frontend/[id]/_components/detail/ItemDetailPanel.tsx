@@ -37,6 +37,7 @@ import {
   type SpaceWormhole,
   type WormholeTransferResult,
 } from "@/contracts";
+import { deadlineDayKey, formatDeadline, isDateOnlyDeadline } from "@/presentation/deadline";
 import { summarizeRecurrence } from "@/presentation/recurrence";
 import { spaceCommandMessages } from "../../../../commands";
 import { shouldHandleDetailClick } from "../../../lib/detail";
@@ -50,13 +51,15 @@ import {
   ownClaimId,
   promptReleaseNote,
   releaseTask,
+  resolveAssigneeClaim,
   resolveCompletionClaim,
   resolveTransferClaim,
   takeOverTask,
 } from "../shared/claim/claim";
 import { setItemCompleted } from "../shared/completion";
 import { openEditItemDialog } from "../shared/editItem";
-import { deadlinePresets } from "../shared/item-form/date";
+import { DEADLINE_DEFAULT_TIME, deadlinePresets } from "../shared/item-form/date";
+import ItemReactions, { createReactionPicker } from "../shared/reactions/ItemReactions";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
 import {
   invalidateSpacesData,
@@ -132,7 +135,7 @@ function IconActionButton(props: { icon: string; title: string; onClick: () => v
   );
 }
 
-/** One people list: the claim holder leads, then the assignees, with add/remove functionality. */
+/** One assignee list, with the account working on the task first and marked as working. */
 function AssigneesSection(props: {
   spaceId: string;
   assignees: SpaceItemAssignee[];
@@ -167,10 +170,20 @@ function AssigneesSection(props: {
  * Item detail panel with inline editing.
  * All edits are saved immediately via API.
  */
+/** "today", "tomorrow", "in 3 days" for a date-only deadline, counted in whole days from today in the app timezone. */
+const daysAway = (deadline: string, dateConfig: DateContext | undefined, locale: string): string => {
+  const day = (key: string) => Date.UTC(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, Number(key.slice(8, 10)));
+  const today = deadlineDayKey(dates.today(dateConfig).toISOString(), dateConfig);
+  const days = Math.round((day(deadline) - day(today)) / 86_400_000);
+  const format = new Intl.RelativeTimeFormat(dateConfig?.locale ?? locale, { numeric: "auto" });
+  return Math.abs(days) < 7 ? format.format(days, "day") : format.format(Math.round(days / 7), "week");
+};
+
 export default function ItemDetailPanel(props: Props) {
   const locale = useLocale();
   const t = useSpaceMessages();
   const retryToast = createRetryToasts();
+  const reactionPicker = createReactionPicker();
   const priorityOptions = [
     { value: "urgent", label: t.urgent, icon: "ti ti-alert-circle", color: "#ef4444" },
     { value: "high", label: t.high, icon: "ti ti-arrow-up", color: "#f97316" },
@@ -419,6 +432,16 @@ export default function ItemDetailPanel(props: Props) {
     (tagIds) => ({ tagIds }),
   );
 
+  /**
+   * Removing the person who works on the task ends their claim: your own at once, someone else's after one
+   * confirmation. Declining changes nothing, and the answer belongs to the item the question named.
+   */
+  const updateAssignees = async (assigneeIds: string[]) => {
+    const itemId = props.item.id;
+    const claim = await resolveAssigneeClaim(props.item.claim, props.currentUserId, props.item.assignees ?? [], assigneeIds, t);
+    if (claim && props.item.id === itemId) await updateMutation.mutate({ assigneeIds, ...claim });
+  };
+
   type CompleteIntent = { itemId: string; completed: boolean } & ClaimFields;
   /**
    * Someone else's claim is taken over after one confirmation; declining changes nothing. The answer belongs to the
@@ -596,6 +619,7 @@ export default function ItemDetailPanel(props: Props) {
         columns: props.columns,
         tags: props.tags,
         dateConfig: props.dateConfig,
+        currentUserId: props.currentUserId,
       });
       if (saved) reconcileAfterWrite();
     } finally {
@@ -651,7 +675,7 @@ export default function ItemDetailPanel(props: Props) {
         },
       }),
     );
-    if (!props.item.assignees?.some((assignee) => assignee.id === props.currentUserId))
+    if (!props.item.assignees?.some((assignee) => assignee.kind === "user" && assignee.id === props.currentUserId))
       onCleanup(
         registerContextAwareCommand({
           scope: "selection",
@@ -678,7 +702,9 @@ export default function ItemDetailPanel(props: Props) {
           action: async () => {
             const result = await prompts.form({
               title: t.deadline,
-              fields: { deadline: { type: "datetime", label: t.deadline, default: props.item.deadline ?? undefined } },
+              fields: {
+                deadline: { type: "datetime", label: t.deadline, optionalTime: true, default: props.item.deadline ?? undefined },
+              },
             });
             if (result && props.item.id === itemId && canEditItem()) await updateMutation.mutate({ deadline: result.deadline || null });
           },
@@ -770,10 +796,16 @@ export default function ItemDetailPanel(props: Props) {
   const dueRow: DescriptionListItem = {
     term: t.due,
     get description() {
+      // A deadline without a time names its day and how many days away it is; a timed one keeps date, time and span.
       const due = (deadline: string) => (
         <span>
-          {dates.formatDateTime(deadline, props.dateConfig)}
-          <span class="text-dimmed"> · {dates.formatTimeSpan(deadline, props.dateConfig)}</span>
+          {isDateOnlyDeadline(deadline) ? formatDeadline(deadline, props.dateConfig) : dates.formatDateTime(deadline, props.dateConfig)}
+          <span class="text-dimmed">
+            {" · "}
+            {isDateOnlyDeadline(deadline)
+              ? daysAway(deadline, props.dateConfig, locale())
+              : dates.formatTimeSpan(deadline, props.dateConfig)}
+          </span>
         </span>
       );
       return canEditItem() ? (
@@ -785,6 +817,8 @@ export default function ItemDetailPanel(props: Props) {
           onValueChange={(deadline) => void deadlineEdit.update(deadline)}
           renderValue={due}
           presets={deadlinePresets(props.dateConfig)}
+          optionalTime
+          defaultTime={DEADLINE_DEFAULT_TIME}
           dateConfig={props.dateConfig}
           clearable
         />
@@ -1227,7 +1261,7 @@ export default function ItemDetailPanel(props: Props) {
                     claim={props.item.claim}
                     currentUserId={props.currentUserId}
                     dateConfig={props.dateConfig}
-                    onUpdate={(ids) => updateMutation.mutate({ assigneeIds: ids })}
+                    onUpdate={(ids) => void updateAssignees(ids)}
                     loading={isLoading()}
                     disabled={!canEditItem()}
                   />
@@ -1282,6 +1316,22 @@ export default function ItemDetailPanel(props: Props) {
             </DetailPanel.Group>
           </Show>
 
+          {/* The discussion starts with the item's reactions: no heading, no frame, every chip, and "Add reaction" at the end.
+              A generated occurrence of a series is no item of its own and has none. */}
+          <Show when={!isGeneratedOccurrence() && (canEditItem() || (props.item.reactions?.length ?? 0) > 0)}>
+            <ItemReactions
+              spaceId={props.spaceId}
+              itemId={props.item.id}
+              reactions={props.item.reactions}
+              canReact={canEditItem()}
+              picker={reactionPicker}
+              retryToast={retryToast}
+              density="default"
+              add="always"
+              class="spaces-item-reactions"
+            />
+          </Show>
+
           <Show when={props.canWrite || commentsPage().total > 0}>
             <CommentsSection
               spaceId={props.spaceId}
@@ -1317,6 +1367,7 @@ export default function ItemDetailPanel(props: Props) {
           </DetailPanel.Group>
         </DetailPanel.Body>
       </DetailPanel>
+      {reactionPicker.popover()}
     </div>
   );
 }

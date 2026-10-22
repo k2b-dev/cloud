@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { readdir } from "node:fs/promises";
 import {
   AI_WEBSITE_APPROVAL_TOOL,
@@ -19,13 +19,13 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities } from "@k2b/cloud/contracts";
 import { type AuthContext, accessRevision } from "@k2b/cloud/server";
 import { secrets } from "@k2b/cloud/services";
-import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
+import { approvalReviewDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
 import { z } from "zod";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
-import { databaseSuite, requireInfraUrl, testFor } from "../../../../scripts/fixtures/test-infra";
+import { databaseSuite, requireInfraUrl, testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { importRows } from "../../examples/accounting/import-rows";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { app } from "../config";
@@ -75,6 +75,20 @@ function checkConversation(conversationId: string, userId: string) {
 }
 
 databaseSuite()("Assistant artifacts in disposable Postgres", () => {
+  let originalTargets: string | undefined;
+  beforeEach(() => {
+    originalTargets = process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
+    process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = [
+      "127.0.0.1",
+      "localhost",
+      ...(testInfra.rsql ? [new URL(testInfra.rsql).hostname] : []),
+    ].join(",");
+  });
+  afterEach(() => {
+    if (originalTargets === undefined) delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
+    else process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = originalTargets;
+  });
+
   const owner = testIdentity("00000000-0000-4000-8000-000000000001");
   const reader = testIdentity("00000000-0000-4000-8000-000000000002");
   const editor = testIdentity("00000000-0000-4000-8000-000000000003");
@@ -107,9 +121,10 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
 
     await sql`CREATE TABLE ai.tool_calls(request_id text,conversation_id uuid,turn_id uuid,location text,call_id text,tool_name text,status text,started_at timestamptz,UNIQUE(turn_id,call_id))`;
     await sql`CREATE TABLE ai.tool_approval_preferences(id uuid DEFAULT gen_random_uuid(),actor_user_id uuid,tool_name text,approval_scope text,conversation_id uuid REFERENCES ai.conversations(id) ON DELETE CASCADE,created_at timestamptz DEFAULT now(),last_used_at timestamptz,expires_at timestamptz)`;
+    await sql`CREATE UNIQUE INDEX ai_tool_approval_preferences_reach ON ai.tool_approval_preferences(actor_user_id,tool_name,approval_scope,conversation_id) NULLS NOT DISTINCT`;
     await sql`CREATE SCHEMA auth`;
     await sql`CREATE TYPE auth.permission_level AS ENUM ('none','read','write','admin')`;
-    await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY, display_name text DEFAULT 'Test', uid text DEFAULT 'test', avatar_hash text)`;
+    await sql`CREATE TABLE auth.users(id uuid PRIMARY KEY, display_name text DEFAULT 'Test', uid text DEFAULT 'test', avatar_hash text, auth_epoch bigint NOT NULL DEFAULT 0)`;
     await sql`CREATE TABLE auth.groups(id uuid PRIMARY KEY,name text,provider text)`;
     await sql`CREATE TABLE auth.user_groups_v2(user_id uuid,group_id uuid)`;
     await sql`CREATE TABLE auth.group_groups_v2(parent_group_id uuid,child_group_id uuid)`;
@@ -1090,6 +1105,64 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     expect(await aiToolAudit.capabilityConversation(requestId, owner.user.id)).toBeNull();
   });
 
+  test("background script capabilities reuse one scoped review and never invoke or save refused calls", async () => {
+    const applet = await artifacts.create({ title: "Routine capability", source }, owner);
+    const manifest = compileCapabilityManifest(
+      "demo",
+      defineCapabilities({
+        protocolVersion: 2,
+        actions: {
+          write: {
+            title: "Write item",
+            description: "Write a test item",
+            input: z.object({}).strict(),
+            data: z.unknown(),
+            approval: "rememberable",
+            idempotency: "required",
+            destructive: false,
+            openWorld: false,
+            review: async () => ok({ message: "Write item?", approvalScope: "items:one" }),
+            run: async () => ok({ data: {} }),
+          },
+        },
+      }),
+    );
+    const catalog = spyOn(capabilityClient, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: { appId: "demo", appName: "Demo", appDescription: "", appIcon: "ti ti-app-window", manifest },
+    });
+    const authorize = spyOn(aiChatTasks, "authorizeCapability").mockResolvedValue();
+    const marker = spyOn(aiChatTasks, "markNeedsApproval").mockResolvedValue();
+    const review = spyOn(capabilityClient, "reviewCapabilityAction").mockResolvedValue({ ok: true, data: { message: "Write item?" } });
+    const invoke = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: { written: true } } });
+    const task = { turnId: crypto.randomUUID(), mandate: { id: crypto.randomUUID(), revision: 1 } };
+    const request = () => ({ id: crypto.randomUUID(), name: "demo.write", input: {}, artifactId: applet.id });
+    try {
+      const refused = request();
+      await expect(runtimeCapabilities.prepare(refused, owner, { locale: "en" }, task)).rejects.toMatchObject({ code: "NEEDS_APPROVAL" });
+      expect(invoke).not.toHaveBeenCalled();
+      expect(await sql`SELECT id FROM assistant.capability_calls WHERE id = ${refused.id}::uuid`).toHaveLength(0);
+      review.mockClear();
+      review.mockResolvedValue({ ok: true, data: { message: "Write item?", approvalScope: "items:one" } });
+      expect(await runtimeCapabilities.prepare(request(), owner, { locale: "en" }, task)).toMatchObject({ status: "completed" });
+      expect(review).toHaveBeenCalledTimes(1);
+      expect(invoke).toHaveBeenCalledTimes(1);
+      review.mockClear();
+      invoke.mockClear();
+      manifest.actions[0]!.approval = "none";
+      expect(await runtimeCapabilities.prepare(request(), owner, { locale: "en" }, task)).toMatchObject({ status: "completed" });
+      expect(review).not.toHaveBeenCalled();
+      expect(invoke).toHaveBeenCalledTimes(1);
+      expect(marker).toHaveBeenCalledTimes(1);
+    } finally {
+      catalog.mockRestore();
+      authorize.mockRestore();
+      marker.mockRestore();
+      review.mockRestore();
+      invoke.mockRestore();
+    }
+  });
+
   test("script capabilities require real approval, remember scopes and never execute twice", async () => {
     const applet = await artifacts.create({ title: "Capability app", source }, owner);
     const definitions = defineCapabilities({
@@ -1132,6 +1205,45 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       return (await approvals.get(call.approval_id))!;
     };
     try {
+      const typedReview = {
+        locale: "en",
+        sentence: { action: "Write item", running: "Writing item", done: "Wrote item", confirm: "Write item", decline: "Do not write" },
+        slots: {},
+        content: { kind: "page" as const, title: "Draft", body: `${"x".repeat(65_536)}\u0000\ud800END\udc00`, format: "plain" as const },
+      };
+      catalog.mockResolvedValueOnce({
+        ok: true,
+        data: {
+          appId: "demo",
+          appName: "Demo",
+          appDescription: "",
+          appIcon: "ti ti-app-window",
+          manifest: { ...manifest, policies: { write: { ask: "cannot_undo" } } },
+        },
+      });
+      review.mockResolvedValueOnce({ ok: true, data: typedReview });
+      const typed = request();
+      expect(await runtimeCapabilities.prepare(typed, owner, caller)).toMatchObject({
+        status: "approval",
+        review: { ...typedReview, ask: "cannot_undo" },
+      });
+      expect((await approvalFor(typed.id)).details).toEqual(typedReview);
+      expect((await approvalFor(typed.id)).reviewDigest).toBe(approvalReviewDigest(typedReview));
+      const [saved] = await sql<
+        { prepared: { review: string } }[]
+      >`SELECT prepared FROM assistant.capability_calls WHERE id=${typed.id}::uuid`;
+      expect(JSON.parse(saved!.prepared.review)).toEqual(typedReview);
+      await runtimeCapabilities.resolve(typed.id, { approved: false }, owner, caller);
+      // Positive resolution must decode the persisted review before comparing its digest.
+      const acceptedContent = request();
+      review.mockResolvedValueOnce({ ok: true, data: typedReview });
+      await runtimeCapabilities.prepare(acceptedContent, owner, caller);
+      review.mockResolvedValueOnce({ ok: true, data: typedReview });
+      expect(await runtimeCapabilities.resolve(acceptedContent.id, { approved: true }, owner, caller)).toMatchObject({
+        status: "completed",
+      });
+      expect(execute).toHaveBeenCalledTimes(1);
+      execute.mockClear();
       const denied = request();
       // The card gets the Action's wording in the caller's locale, as a chat call of the same Action would.
       expect(await runtimeCapabilities.prepare(denied, owner, caller)).toMatchObject({
@@ -1255,6 +1367,10 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(execute).toHaveBeenCalledTimes(1);
       expect(await approvalFor(approved.id)).toMatchObject({ status: "consumed", decidedVia: "web_session" });
       expect(execute.mock.calls[0]![0]).toMatchObject({ idempotencyKey: `code-${approved.id}`, input: { value: "one" } });
+      // The remembered approval's audit event joins the execution trail through the call ID.
+      expect(
+        await sql`SELECT action, request_id FROM audit.events WHERE action = 'ai.approval.remember' AND request_id = ${approved.id}`,
+      ).toHaveLength(1);
       expect(await runtimeCapabilities.resolve(approved.id, { approved: true }, owner, caller)).toEqual({
         status: "completed",
         result: { ok: true, data: { data: { written: true } } },
@@ -1643,6 +1759,21 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(execute).not.toHaveBeenCalled();
       conversation.mockResolvedValue(checkConversation(conversationId, owner.user.id));
       expect(await runtimeCapabilities.check(checkInput, owner, {})).toEqual({ data: { private: true } });
+      const byShortId = spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(
+        checkConversation(conversationId, owner.user.id),
+      );
+      try {
+        expect(await runtimeCapabilities.check({ ...checkInput, conversationId: "abc234" }, owner, {})).toEqual({
+          data: { private: true },
+        });
+      } finally {
+        byShortId.mockRestore();
+      }
+      // The call log keeps the internal chat UUID, whichever public form the client sent.
+      expect(
+        await sql<{ conversation_id: string }[]>`SELECT DISTINCT conversation_id FROM assistant.capability_calls
+          WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${resource.id}) AND conversation_id IS NOT NULL`,
+      ).toEqual([{ conversation_id: conversationId }]);
       execute.mockClear();
       conversation.mockRestore();
       const read = request("consent.read");
@@ -2533,6 +2664,33 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await artifactDatabase.status(resource.id, owner)).toMatchObject({ connected: true });
     } finally {
       settings.mockRestore();
+    }
+  });
+
+  test("rsql configure refuses internal targets until explicitly allowed", async () => {
+    const administrator = { ...stranger, actor: { kind: "user" as const, user: { ...stranger.user, roles: ["admin" as const] } } };
+    let received = 0;
+    const upstream = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => {
+        received++;
+        return Response.json({ data: [] });
+      },
+    });
+    try {
+      delete process.env.ASSISTANT_RSQL_ALLOWED_TARGETS;
+      await expect(
+        artifactDatabase.configure({ url: upstream.url.origin, token: "guard-fixture" }, administrator, true),
+      ).rejects.toMatchObject({ code: "DB_TARGET_BLOCKED", status: 502 });
+      expect(received).toBe(0);
+      process.env.ASSISTANT_RSQL_ALLOWED_TARGETS = "127.0.0.1";
+      expect(await artifactDatabase.configure({ url: upstream.url.origin, token: "guard-fixture" }, administrator, true)).toEqual({
+        connected: true,
+      });
+      expect(received).toBe(1);
+    } finally {
+      await upstream.stop(true);
     }
   });
 

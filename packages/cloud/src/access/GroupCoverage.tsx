@@ -68,12 +68,13 @@ const firstPage = (coverage: GroupCoverage) => coverage.members.pages()[0];
  * The members toggle beside the group name. Its label never changes, so
  * loading the members moves nothing in the row; the count leads the list.
  */
-export function GroupCoverageToggle(props: { coverage: GroupCoverage; groupName: string }) {
+export function GroupCoverageToggle(props: { coverage: GroupCoverage; groupName: string; disabled?: boolean }) {
   const locale = useLocale();
   const t = () => accessMessages.resolve([locale()]).t;
   return (
     <button
       type="button"
+      disabled={props.disabled}
       aria-expanded={props.coverage.open()}
       aria-controls={props.coverage.panelId}
       // The group name tells several group rows apart.

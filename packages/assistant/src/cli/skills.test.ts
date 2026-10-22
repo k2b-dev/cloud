@@ -110,7 +110,17 @@ test("skills list shows source, state, start mode and a one-line description", a
   await assistant.run(session.ctx);
   expect(session.requests).toEqual([{ path: "/api/ai/skills", method: "GET", body: undefined }]);
   expect(session.tables).toEqual([
-    [{ name: "weekly-status", id: "Sk2345", source: "App", enabled: "no", start: "selected", description: "Summarize recent work." }],
+    [
+      {
+        name: "weekly-status",
+        id: "Sk2345",
+        permalink: "https://cloud.example/open/core.ai.skill/~Sk2345",
+        source: "App",
+        enabled: "no",
+        start: "selected",
+        description: "Summarize recent work.",
+      },
+    ],
   ]);
   expect(assistant.help?.()).toContain("List Cloud Skills and move them to and from Agent Skills folders");
   const automatic = context(["skills", "list"], { ...fixture(), manualOnly: false });
@@ -138,8 +148,14 @@ test.each(["json", "jsonl"] as const)("skills list supports %s", async (output) 
   await assistant.run(session.ctx);
   expect(session.printed).toEqual([]);
   expect(session.values).toHaveLength(1);
-  if (output === "json") expect(session.values).toEqual([{ skills: [cloud] }]);
-  else expect(session.values[0]).toMatchObject({ name: cloud.name, start: "selected" });
+  if (output === "json")
+    expect(session.values).toEqual([{ skills: [{ ...cloud, permalink: "https://cloud.example/open/core.ai.skill/~Sk2345" }] }]);
+  else
+    expect(session.values[0]).toMatchObject({
+      name: cloud.name,
+      start: "selected",
+      permalink: "https://cloud.example/open/core.ai.skill/~Sk2345",
+    });
 });
 
 test("push creates a portable Skill, follows a folder symlink and reports bounded skipped paths", async () => {
@@ -326,7 +342,12 @@ test.each(["json", "jsonl"] as const)("push supports %s without text on stdout",
   await assistant.run(session.ctx);
   expect(session.printed).toEqual([]);
   expect(session.values).toEqual([
-    { action: "created", skill: { id: "Sk2345", name: "weekly-status", revision: 1 }, skipped: [], removedReferences: [] },
+    {
+      action: "created",
+      skill: { id: "Sk2345", permalink: "https://cloud.example/open/core.ai.skill/~Sk2345", name: "weekly-status", revision: 1 },
+      skipped: [],
+      removedReferences: [],
+    },
   ]);
 });
 
@@ -385,7 +406,11 @@ test.each(["json", "jsonl"] as const)("pull supports %s", async (output) => {
   await assistant.run(session.ctx);
   expect(session.printed).toEqual([]);
   expect(session.values).toEqual([
-    { skill: { id: "Sk2345", name: "weekly-status", revision: 3 }, dir: "target", files: ["SKILL.md", "references/style.md"] },
+    {
+      skill: { id: "Sk2345", permalink: "https://cloud.example/open/core.ai.skill/~Sk2345", name: "weekly-status", revision: 3 },
+      dir: "target",
+      files: ["SKILL.md", "references/style.md"],
+    },
   ]);
 });
 
@@ -398,7 +423,12 @@ test("pull then push is unchanged", async () => {
   await assistant.run(session.ctx);
   expect(session.requests.every((request) => request.method === "GET")).toBe(true);
   expect(session.values).toEqual([
-    { action: "unchanged", skill: { id: "Sk2345", name: cloud.name, revision: 3 }, skipped: [], removedReferences: [] },
+    {
+      action: "unchanged",
+      skill: { id: "Sk2345", permalink: "https://cloud.example/open/core.ai.skill/~Sk2345", name: cloud.name, revision: 3 },
+      skipped: [],
+      removedReferences: [],
+    },
   ]);
   expect((await readdir(`.agents/skills/${cloud.name}`)).toSorted()).toEqual(["SKILL.md", "references"]);
 });

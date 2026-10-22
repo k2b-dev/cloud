@@ -1,5 +1,5 @@
 import type { AccessSubject } from "@k2b/cloud/server";
-import { toPgTextArray } from "@k2b/cloud/services";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { draftVisibleTo, type MailboxAccess, mailboxAccessPrincipalCondition, messageVisibleTo } from "./access";
 
@@ -188,11 +188,11 @@ const loadMailboxGrant = async (command: StoredCommandAuthorization, db: SqlClie
   return grant?.permission ?? null;
 };
 
-export const commandStillAuthorized = async (
+const commandPrincipalAuthorization = async (
   command: StoredCommandAuthorization,
   permission: "write" | "admin",
   db: SqlClient = sql,
-): Promise<boolean> => {
+): Promise<boolean | MailboxAccess> => {
   if (command.access_subject_kind === "system") {
     if (command.actor_kind === "system") return true;
     if (command.actor_kind !== "workflow" || !command.actor_id) return false;
@@ -223,7 +223,6 @@ export const commandStillAuthorized = async (
     !command.access_subject_id ||
     !command.kind ||
     !conversationCommandKinds.has(command.kind) ||
-    !command.target ||
     (command.actor_kind !== "user" && command.actor_kind !== "service_account")
   )
     return false;
@@ -236,7 +235,63 @@ export const commandStillAuthorized = async (
       WHERE assigned.mailbox_id = ${command.mailbox_id}::uuid
         AND a.permission IN ('write', 'admin')
         AND ${mailboxAccessPrincipalCondition(subject)}
-    ) AND ${commandTargetVisibleTo({ scope: "assigned", permission: "write", userId: command.access_subject_id }, sql`${command.kind}`, sql`${typeof command.target === "string" ? JSON.parse(command.target) : command.target}::jsonb`, command.mailbox_id, sql`${command.id}::uuid`)} AS authorized
+    ) AS authorized
   `;
-  return grant?.authorized === true;
+  return grant?.authorized === true ? { scope: "assigned", permission: "write", userId: command.access_subject_id } : false;
 };
+
+/** Principal checks run once per principal; assigned target checks run once per principal group. */
+export const commandsStillAuthorized = async (
+  commands: StoredCommandAuthorization[],
+  permission: "write" | "admin",
+  db: SqlClient = sql,
+): Promise<Set<string>> => {
+  const principals = new Map<string, boolean | MailboxAccess>();
+  const targetGroups = new Map<string, { access: MailboxAccess; kind: string; mailboxId: string; ids: string[]; targets: string[] }>();
+  const authorized = new Set<string>();
+  for (const command of commands) {
+    const key = JSON.stringify([
+      command.mailbox_id,
+      command.kind,
+      command.actor_kind,
+      command.actor_id,
+      command.initiator_actor_kind,
+      command.initiator_actor_id,
+      command.access_subject_kind,
+      command.access_subject_id,
+      command.credential_id,
+      command.credential_scopes,
+      command.credential_expires_at,
+    ]);
+    let access = principals.get(key);
+    if (access === undefined) {
+      access = await commandPrincipalAuthorization(command, permission, db);
+      principals.set(key, access);
+    }
+    if (access === true) authorized.add(command.id);
+    else if (access && command.target) {
+      let group = targetGroups.get(key);
+      if (!group) {
+        group = { access, kind: command.kind, mailboxId: command.mailbox_id, ids: [], targets: [] };
+        targetGroups.set(key, group);
+      }
+      group.ids.push(command.id);
+      group.targets.push(typeof command.target === "string" ? command.target : JSON.stringify(command.target));
+    }
+  }
+  for (const { access, kind, mailboxId, ids, targets } of targetGroups.values()) {
+    const visible = await db<{ id: string }[]>`
+      SELECT entry.id
+      FROM unnest(${toPgUuidArray(ids)}::uuid[], ${toPgTextArray(targets)}::jsonb[]) AS entry(id, target)
+      WHERE ${commandTargetVisibleTo(access, sql`${kind}`, sql`entry.target`, mailboxId, sql`entry.id`)}
+    `;
+    for (const command of visible) authorized.add(command.id);
+  }
+  return authorized;
+};
+
+export const commandStillAuthorized = async (
+  command: StoredCommandAuthorization,
+  permission: "write" | "admin",
+  db: SqlClient = sql,
+): Promise<boolean> => (await commandsStillAuthorized([command], permission, db)).has(command.id);

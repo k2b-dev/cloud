@@ -17,6 +17,13 @@ export type TabBarProps = {
   label: string;
   /** Up to five destinations; further items are not rendered. Put the rest behind a "More" destination. */
   items: readonly TabBarItem[];
+  /**
+   * `bar` (the default) is flat on the page canvas and pads the bottom safe area. `floating` is a rounded bar that the
+   * host places above the content, away from the safe areas; its open item is a raised chip. The host may paint it
+   * with `--k2b-tab-bar-background`, color its items with `--k2b-tab-bar-color`, and color the open item with
+   * `--k2b-tab-bar-selected-background` and `--k2b-tab-bar-selected-color`.
+   */
+  variant?: "bar" | "floating";
   class?: string;
 };
 
@@ -30,7 +37,11 @@ const TAB_BAR_MAX_ITEMS = 5;
  */
 export function TabBar(props: TabBarProps): JSX.Element {
   return (
-    <nav class={props.class ? `k2b-tab-bar ${props.class}` : "k2b-tab-bar"} aria-label={props.label}>
+    <nav
+      class={props.class ? `k2b-tab-bar ${props.class}` : "k2b-tab-bar"}
+      aria-label={props.label}
+      data-variant={props.variant === "floating" ? "floating" : undefined}
+    >
       <ul>
         <For each={props.items.slice(0, TAB_BAR_MAX_ITEMS)}>
           {(item) => (
@@ -42,7 +53,7 @@ export function TabBar(props: TabBarProps): JSX.Element {
                 data-k2b-title={item.title ?? item.label}
               >
                 <i class={item.icon} aria-hidden="true" />
-                <span>{item.label}</span>
+                <span class="k2b-truncate-fade">{item.label}</span>
               </a>
             </li>
           )}

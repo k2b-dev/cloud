@@ -150,8 +150,12 @@ $$;
   second.
 
 Mail writes its updates this way, from a trigger on its activity log, with
-one update per conversation and transaction. The AI tables write Core's AI
-live updates this way, one for each user who reads the changed data, without
+one update per conversation and transaction. Changes without an activity row,
+such as sender identities and their verification, provider connections, and
+folder changes found by provider discovery, write a mailbox-wide update in their
+own transaction. These updates reach both mailbox-wide and assigned-only
+readers. The AI tables write Core's AI live updates this way, one for each user
+who reads the changed data, without
 a coalesce key, because each update names its own changed views. Grids writes the updates of
 record changes from the function that also records its own record events,
 with one update per record and table in a transaction.
@@ -309,6 +313,11 @@ answer from before that update releases nothing published after it.
 | `1011` | A check failed | reconnects with backoff |
 | `1012` | The replica stops | reconnects with backoff |
 | `1013` | The client reads too slowly (256 KiB waiting), or too many sockets or messages | reconnects with backoff |
+
+The `1013` close for a slow reader waits behind the frames already buffered.
+A client that does not read it within about 12 seconds loses the connection
+without a close code (`1006`); the browser client reconnects with backoff as
+for `1013`.
 
 A message from the tab is at most 16 KiB, and a socket holds at most 16
 subscriptions. At most 24 messages may wait, so a reconnect can send every

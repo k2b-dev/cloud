@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-10-08
+updated: 2026-10-20
 ---
 
 # Chat runtime and streaming
@@ -167,8 +167,9 @@ paths.
 The default tool source keeps discovery, Help, `fetch_file`, `read_file`,
 `calculate`, and `view_image` available. Configured `web_search` and
 `web_extract` are also always available together. `fetch_file` imports one
-exact public HTTPS source into the conversation; it does not browse
-repositories, authenticate to a website, or reach private network targets.
+exact public HTTPS source into the conversation, with a readable Markdown copy
+for web pages; it does not browse repositories, authenticate to a website, or
+reach private network targets.
 `calculate` stays loaded because, whenever a turn offers it, the system
 prompt requires it for every amount, sum, or other number the model derives
 itself. A conversation with a fixed tool scope that excludes it, or a model
@@ -182,11 +183,11 @@ host access, or network access beyond the explicit web tools. See
 The default tool source also offers the server-run Code Mode tools `code_run`,
 `code_action`, `code_inspect`, `code_stop`, `code_export`, `code_present`, and `code_check`
 in every turn, whichever client submits it, including API
-clients, `cld assistant --detach`, and scheduled tasks. They load on demand
+clients, `cld assistant --detach`, and routines (scheduled tasks). They load on demand
 and run JavaScript in an isolated Assistant-owned host. That code can call
 Cloud capabilities, databases, and external HTTPS endpoints with the user's
-permissions; each call keeps its normal approvals or, in a scheduled task, its
-task grants. See
+permissions; each call keeps its normal approvals or, in a routine, its
+routine grants. See
 [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode)
 and [Advertise connected client tools](/en/docs/ai/chat-interface#advertise-connected-client-tools).
 
@@ -217,10 +218,10 @@ complete or genuinely blocked. Retrieved emails, webpages, user files, Help,
 capability results, ordinary tool output, Project context, and memories remain
 data rather than instructions. Project instructions and the Project context
 manifest are copied into the durable turn configuration. Current Project access
-is checked again before execution; edits affect the next turn. The runtime still
-treats a provider `stop` as
-a completed turn; it does not infer unfinished work from model text or trigger
-language-dependent automatic retries.
+is checked again before execution; edits affect the next turn. The runtime normally
+treats a provider `stop` as a completed turn (see [Failed turns](#failed-turns)
+for an empty response after a failed tool call). It does not infer unfinished
+work from model text or trigger language-dependent automatic retries.
 
 ### Conversation titles
 
@@ -251,6 +252,7 @@ creating anything. The exact title `New chat` keeps automatic naming.
 | `/conversations/:id/messages/:messageId/feedback` | Set or remove private owner feedback for one Assistant message |
 | `/conversations/:id/resources` | List or filter structured Cloud refs observed in one conversation |
 | `/resources` | List or filter structured Cloud refs across the user's active conversations |
+| `/resources/recent` | Up to 8 recently sent Cloud refs of the user, each re-read with its app's reader for this user before any title is returned |
 | `/conversations/:id/turns` | Start, steer, or stop work |
 | `/conversations/:id/stream` | Receive the conversation event feed over SSE |
 | `/conversations/:id/files` | Manage conversation files |
@@ -291,7 +293,7 @@ it does not infer resource identity from prose.
 ## Runtime ownership
 
 Core mounts `/api/ai`, migrates the AI schema, and exclusively owns the
-conversation workers, maintenance, scheduled chat tasks, and durable
+conversation workers, maintenance, routines, and durable
 continuations. Applications must not start a second AI conversation runtime.
 They publish domain Capabilities, launch a personal conversation through
 `launchAssistant()`, or use `runAiStructured()` for bounded server/workflow AI.
@@ -392,7 +394,7 @@ event. The client then reconnects and continues from a fresh state snapshot.
 The controller folds the stream into one projection and exposes the
 active conversation's history, send, steer, abort, retry, fork, compaction,
 approval, and frontend-tool actions. Do not put conversation and Project lists,
-metadata, Sources, files, scheduled tasks, Project context, or access changes
+metadata, Sources, files, routines, Project context, or access changes
 into turn events. Those are durable server projections and refresh through
 [Realtime UI](/en/docs/frontend/realtime-ui).
 
@@ -469,6 +471,50 @@ during much activity reloads instead of replaying.
 Project context can be shared through normal Cloud access grants, but each
 conversation remains owned by its creator and only appears in that user's
 updates and queries.
+
+### List the person's open questions
+
+Use `listAiOpenQuestions` from `@k2b/cloud/ai` on the server to seed a personal
+chat overview. Resolve `ownerUserId` from the authenticated user; the read
+includes only that person's pending approvals in chats they own.
+
+```ts
+import { listAiOpenQuestions } from "@k2b/cloud/ai";
+import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
+
+const user = expectUserBackedActor(c);
+const questions = await listAiOpenQuestions({
+  ownerUserId: user.id,
+  locale: getLocale(c),
+  timeZone: getTimeZone(c),
+});
+```
+
+`AiOpenQuestions` contains at most 20 `items`, newest first, and a `count` of
+all matching questions. Each `AiOpenQuestion` carries the approval ID, chat
+short ID and current title, tool-block `anchor`, short plain text, app
+presentation, and ISO creation time. The short text uses the review's `short`
+template when provided, otherwise its action sentence, rendered like the card's
+chips: person names only, object and place titles without quotes, and formatted
+time labels. Legacy reviews and calls without a review keep the card's literal
+question text. Missing or unreadable tool blocks fall back to the first line of
+the request sentence and a tool anchor; one damaged question does not prevent
+the others from loading.
+
+`short` is limited to 160 Unicode code points and `conversationTitle` to 200.
+Truncated values end with `…`, included in the limit, without splitting a code
+point. These bounds also apply to legacy questions and fallback text.
+
+Assistant carries this read in its sidebar snapshot for both server rendering
+and subsequent reloads. Opening, resolving, or removing a question invalidates
+`conversation-list`, including when another question in the same turn remains
+open; browser tool calls do not. Reuse that invalidation to reload the
+snapshot; no separate polling or question endpoint is needed.
+
+In tests, `@k2b/cloud/ai/testing` provides demo questions:
+`aiQuestionFixtures(locale)` returns tool blocks with reviews, and
+`aiOpenQuestionFixture` presents one of them as this read would. The demo data
+may change in any release, so assert on what your host renders from it.
 
 ## Treat turns as asynchronous
 
@@ -559,19 +605,19 @@ audio, or transcripts in logs. Filter Logs by `ai:transcription` or `ai:dictatio
 dictation worker entries also include the dictation ID, model profile, attempt,
 and retry decision. Dictations are not workflow runs.
 
-### Scheduled chat tasks
+### Assistant routines
 
-A scheduled task belongs to one chat and runs as that chat's owner. Creating
+A routine belongs to one chat and runs as that chat's owner. Creating
 it stores a confirmed [mandate](/en/docs/identity/background-mandates) whose
-`grants` list names every capability the task may call. In a background run,
+`grants` list names every capability the routine may call. In a background run,
 every app capability needs a matching grant, Queries included, such as the
-reader Query behind a Project reference. A task without grants can use only
+reader Query behind a Project reference. A routine without grants can use only
 built-in tools such as chat files. Fixed input values must
 match exactly, and the owner's current access still applies to each call.
 
 A background run cannot ask for approval. Remembered approvals from the chat
 do not apply, and an operation that needs an approval or a browser fails the
-run, which moves the task to `needs_attention`. A display-only `clientView()`
+run, which moves the routine to `needs_attention`. A display-only `clientView()`
 tool such as `chart` needs neither: Cloud answers it, and the run's transcript
 shows it. Action grants are accepted only
 for Actions whose manifest declares `approval: "rememberable"` or `"none"`;
@@ -579,11 +625,15 @@ Actions that ask for every call cannot be scheduled. Before each run, Core
 checks that the owner is active, the chat is not archived, and the mandate is
 confirmed and unchanged.
 
+Finished routine runs and their run evidence expire after
+[90 days](/en/docs/ai/structured-and-background-ai#keep-routine-run-history-for-90-days);
+the result messages delivered into the chat stay.
+
 ### Scheduled Code Mode
 
 Scheduled turns can run Code Mode without a user tab. Core binds each call and
-capability callback to the persisted turn and its confirmed task mandate.
-Foreground activity in the same chat does not share the scheduled host. Task
+capability callback to the persisted turn and its confirmed routine mandate.
+Foreground activity in the same chat does not share the scheduled host. Routine
 revocation, expiry, revision changes and cancellation deny subsequent requests.
 The normal capability dispatcher still checks current user access, fixed inputs
 and action approval policy; remembered foreground approvals never authorize a
@@ -634,11 +684,14 @@ server-run code tools report it to the agent as a tool error. Host failures
 carry guidance to report them rather than rewrite otherwise valid application
 source or repeat unchanged calls.
 
-The execution host belongs to one Assistant process. Run this alpha with one
-Assistant replica: temporary JavaScript state is not transferred between replicas
-or recovered after a process restart. Durable call records prevent an uncertain
-operation from being replayed. A new run is required after host loss. Startup and
-health checks are bounded independently of the user's browser timers.
+The execution host and its approval waits belong to one Assistant process.
+Keep one Assistant replica for now: a poll or an approval that reaches another
+replica marks the call lost, and temporary JavaScript state is not transferred
+between replicas or recovered after a process restart. This limit belongs to
+the Code Mode host work in [#47](https://github.com/k2b-dev/cloud/issues/47).
+Durable call records prevent an uncertain operation from being replayed. A new run is required after
+host loss. Startup and health checks are bounded independently of the user's
+browser timers.
 
 Complete active-turn snapshots replace the observed block baseline when their
 attempt and sequence are current. Older snapshots cannot restore obsolete
@@ -702,6 +755,11 @@ A provider that stops an answer itself ends the turn as failed with
 `provider_stopped`: a gateway error, malformed call, content filter or refusal
 can cause this, and Cloud cannot tell them apart. Its tool calls are never
 executed, including on a later resume, so the chat offers **Continue**.
+A loop that ends normally but whose final response has no text and no tool call
+right after a round with a failed tool call fails with `tool_failed`;
+rejected approvals do not count as failures. Worker recovery restores this
+state from the latest stored assistant round, including repaired malformed
+calls. A later text answer still completes the turn.
 
 Each model `turn_start` has one `turn_end`, including errors and cancellation.
 `turn_end` carries the partial assistant message with `stopReason: "error"` or
@@ -719,6 +777,7 @@ stable and never translated; clients word it in their reader's language:
 | `code` | Meaning | A new message can continue |
 | --- | --- | --- |
 | `provider_stopped` | The provider ended the answer early, for example a gateway error, malformed tool call, content filter or refusal | yes |
+| `tool_failed` | A tool call failed and the model's next response ended without text or a tool call | yes |
 | `model_unavailable` | The model service failed or timed out, also after its retries | yes |
 | `quota_exhausted` | The user's AI usage limit for the period is used up, or its usage could not be measured | no |
 | `context_full` | The chat no longer fits the model, also after compaction | no |

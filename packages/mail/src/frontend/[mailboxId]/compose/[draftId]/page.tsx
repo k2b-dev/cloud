@@ -1,7 +1,6 @@
 import { type AuthContext, getDateConfig, getLocale, loadPendingApprovals } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
-import { requestContactDirectory } from "../../../../contact-directory-settings";
 import {
   calendarInvitations,
   composeTemplates,
@@ -12,6 +11,7 @@ import {
   mailboxes,
   senderIdentities,
 } from "../../../../service";
+import { requestContactDirectory } from "../../../../service/contact-directory";
 import MailComposerPage from "../../../_components/MailComposerPage.island";
 import { mailDraftReturnHref } from "../../../_components/mail-compose-route";
 import { readMailComposerPanesFromCookieHeader, reconcileMailComposerPanes } from "../../../_components/mail-composer-panes";
@@ -74,9 +74,11 @@ export default ssr<AuthContext>(async (c) => {
     draft.data.format,
     Boolean(draft.data.conversationId),
   );
+  const directory = await requestContactDirectory(c);
   return () => (
     <Layout
       c={c}
+      printHint={t.printHint}
       fullPage
       focusMode
       flushCanvas={popout}
@@ -84,6 +86,7 @@ export default ssr<AuthContext>(async (c) => {
     >
       <MailComposerPage
         mailboxId={mailboxShortId}
+        mailboxRecipientSuggestions={access.data.scope === "mailbox"}
         currentActor={currentActor}
         identities={publicData.identities}
         signatures={{ templates: publicData.signatures, personalDefaults: publicData.personalSignatureDefaults }}
@@ -102,7 +105,7 @@ export default ssr<AuthContext>(async (c) => {
         canManageMailbox={access.data.permission === "admin"}
         currentUserEmail={currentUserEmail}
         calendarIntegrationAvailable={calendarIntegrationAvailable}
-        contactDirectory={requestContactDirectory(c)}
+        contactDirectory={directory}
         approvals={{ link: draftLink, page: approvals }}
       />
     </Layout>

@@ -11,7 +11,7 @@ import { accounts } from "../services/accounts";
 import { approvals } from "../services/approvals";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import { serviceAccounts } from "../services/service-accounts";
-import { createTestSession } from "../services/session/session.test-fixture";
+import { createTestBrowserSignIn, createTestSession } from "../services/session/session.test-fixture";
 import { approvalRoutes } from "./approvals";
 
 const runtimeApps: RuntimeAppMeta[] = [
@@ -163,7 +163,11 @@ suiteFor(
       expect((await routes.request("/counts")).status).toBe(401);
       const user = await accounts.users.get({ id: owner.userId });
       if (!user) throw new Error("Missing fixture user");
-      const personal = await serviceAccountCredentials.createUserApiToken({ user, name: "Approval API" });
+      const personal = await serviceAccountCredentials.createUserApiToken({
+        browserSignIn: await createTestBrowserSignIn(user.id),
+        user,
+        name: "Approval API",
+      });
       if (!personal.ok) throw new Error(personal.error.message);
       const apiApproval = await owner.ask();
       const personalDecision = await routes.request(`/${apiApproval.id}/decision`, {

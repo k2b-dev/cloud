@@ -5,7 +5,7 @@ section: Identity and access
 order: 358
 description: Let durable app work call another application without storing a user's session or API key.
 tags: [identity, background, capabilities, mandates]
-updated: 2026-10-07
+updated: 2026-10-18
 ---
 
 # Background authority mandates
@@ -72,8 +72,8 @@ policy, or resume it with an interactive authority, reject such requests:
 `auth.rejectAppSession` on the route, or `isAppSessionActor(actor)` in a service
 or capability. Answer `403` with
 `{ "code": "FORBIDDEN", "message": "Use Cloud on the web for this." }`.
-Pausing and revoking stay allowed. `POST /api/me/mandates`, scheduled Assistant
-tasks, and Mail incoming automations with Spaces steps follow this rule.
+Pausing and revoking stay allowed. `POST /api/me/mandates`, Assistant routines
+(scheduled tasks), and Mail incoming automations with Spaces steps follow this rule.
 
 Built-in applications that share Postgres create the mandate and owning
 workload in one transaction. A separately deployed application that cannot
@@ -128,12 +128,12 @@ Only a current interactive subject or administrator can create, resume, or
 broaden a mandate. The owning workload may narrow, pause, or revoke it. A
 revoked mandate is terminal.
 
-## Grant capabilities to an unattended Assistant task
+## Grant capabilities to an unattended Assistant routine
 
-Assistant tasks use explicit `grants` in their mandate policy. Each grant pairs
+Assistant routines use explicit `grants` in their mandate policy. Each grant pairs
 one `appId`, local `capabilityId`, and `kind` (`query` or `action`) with optional
 fixed top-level inputs. The agent proposes the scope; the user reviews it when
-creating or updating the task. Capabilities need no additional metadata.
+creating or updating the routine. Capabilities need no additional metadata.
 
 ```json
 {
@@ -152,29 +152,39 @@ implicit parent-resource checks, or expressions. A notebook restriction cannot
 be inferred from a capability that only accepts a note ID.
 
 Background runs discover and load only capabilities their mandate policy and
-task grants can permit. Previously loaded tools outside that scope stay
+routine grants can permit. Previously loaded tools outside that scope stay
 unavailable. Discovery ignores fixed inputs; Core checks them on every call.
 If the mandate cannot be read, has changed, or its policy is invalid, the run
-stops before the model starts and the task needs attention.
+stops before the model starts and the routine needs attention.
 
 Core checks the current mandate revision, grant pair, fixed values, and live
-capability approval mode before every invocation. The target application still
-checks the user's current resource permissions. Only actions with `approval:
-"none"` or `approval: "rememberable"` can run unattended; actions requiring an
-approval every time remain unavailable even when listed in a grant. Remembered
-interactive approvals do not authorize background work.
+capability approval mode before every invocation. Only actions with `approval:
+"none"` or `approval: "rememberable"` can pass the routine mandate policy.
+Remembered interactive approvals do not authorize background work. The target
+application still checks the user's current resource permissions.
+
+Before each change, a routine run checks the mandate first, then calls the
+app's review for every Action with `approval: "rememberable"`. It runs the
+Action only when the review returns an `approvalScope`. An Action that needs
+approval and is not rememberable never runs in a routine, regardless of the
+review. A missing review, a review error, or a result without that scope
+refuses the call; the app's `run` is never invoked. The review only narrows the
+mandate and never grants access. The same rule applies to background Code Mode.
+
+The model receives a short `NEEDS_APPROVAL` error telling it to stop and say
+what was missing. Even if the model completes its reply, the routine becomes
+`needs_attention` with reason `needs_approval` and the action name in the
+routine's locale. A one-time routine needs a new time before it can run again.
 
 Changing grants updates the mandate revision, invalidating older runs' authority.
 The agent can inspect a failed run and propose revised grants in the normal chat;
-expanding the scope requires a new reviewed task update. A worker cannot grant
+expanding the scope requires a new reviewed routine update. A worker cannot grant
 itself more authority. A capability call rejected by the grants or fixed inputs
 returns a tool error so the model can continue with granted tools or explain
-what is missing. The task needs attention when its mandate is unavailable, paused, revoked, expired, or changed,
-when the target app rejects the sponsor with HTTP 401 or 403, when an action's
-outcome is unknown, or when approval or a browser is required. Scheduled
-turns also run the server-run Code Mode tools under the same task-scoped
-authority. Inside that code, a missing grant, revoked authority, or a call that
-needs an approval returns an error to the agent instead of failing the run; see
+what is missing. The routine also needs attention when its mandate is unavailable,
+paused, revoked, expired, or changed, when the target app rejects the sponsor
+with HTTP 401 or 403, or when an action's outcome is unknown. Scheduled turns
+run server Code Mode tools under the same routine-scoped authority; see
 [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming#scheduled-code-mode).
 
 ## Invoke from a worker
@@ -271,22 +281,22 @@ ordinary effect-time permission checks.
 An app workload credential cannot use the ordinary interactive capability
 route to bypass the mandate.
 
-## Scheduled Assistant runtime grants
+## Assistant routine runtime grants
 
-Scheduled tasks keep capability, HTTP, and RSQL access in the same mandate
+Routines keep capability, HTTP, and RSQL access in the same mandate
 `grants` list. Capability entries use `appId`, `capabilityId`, `kind`, and
 `fixedInput`. Code Mode entries use `kind: "http"` or `kind: "database"` and
 `fixedInput`: HTTP can fix an HTTPS origin, exact URL, and method; database
 access can fix a Studio app ID, operation, and table. Omitted fields are free
-for the task to choose. An empty object explicitly grants unrestricted inputs
+for the routine to choose. An empty object explicitly grants unrestricted inputs
 for that kind, within the runtime's existing limits and current resource access.
 
 Flat `cloud.db` operations `list`, `get`, `insert`, `update`, and `delete` match grants `rows.list`, `rows.get`, `rows.insert`, `rows.update`, and `rows.delete`; `query` matches `query`.
 
-The ordinary task approval describes these grants before they are saved.
+The ordinary routine approval describes these grants before they are saved.
 Runtime calls check the stored mandate revision and exact fixed values; HTTP
 checks again immediately before sending. Personal remembered approvals do not
-replace task grants. Expanding a grant needs a new interactive confirmation.
+replace routine grants. Expanding a grant needs a new interactive confirmation.
 Table-scoped grants do not authorize arbitrary SQL, export, or connection setup;
 those operations need a separate matching grant. See
 [Scheduled Code Mode](/en/docs/ai/chat-runtime-and-streaming) for examples.
@@ -312,7 +322,7 @@ instead of retrying blindly.
 Users can inspect their own mandates through the bounded
 `GET /api/me/mandates` listing. Administrators use
 `GET /api/admin/identity/mandates`; owning applications keep product-specific
-task and automation presentation in their own UI. Lifecycle and issuance audit
+routine and automation presentation in their own UI. Lifecycle and issuance audit
 records include subject and workload provenance, target application, operation,
 revision, and outcome, but never a JWT, app credential, policy body, or
 capability payload.

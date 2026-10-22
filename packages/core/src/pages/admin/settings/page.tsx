@@ -24,7 +24,7 @@ import {
   quotaReport,
 } from "@k2b/cloud/ai/admin";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { appApproval, coreSettings, linuxIdentities, settingsService } from "@k2b/cloud/services";
+import { appApproval, coreSettings, geoip, linuxIdentities, settingsService } from "@k2b/cloud/services";
 import { AiUsageQuerySchema } from "@k2b/cloud/shared";
 import { AdminLayout, getLocalizedRuntimeContext, getRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
 import { SettingsPage } from "@k2b/ui";
@@ -134,6 +134,13 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) 
       group: "gotenberg" as const,
     },
     {
+      id: "places",
+      title: t.placesSettings,
+      description: t.placesSettingsDescription,
+      icon: "ti ti-map-pin",
+      group: "geo" as const,
+    },
+    {
       id: "email-templates",
       title: t.emailTemplateSettings,
       description: t.emailTemplateSettingsDescription,
@@ -185,6 +192,7 @@ const buildEntries = async (group: string, locale: string): Promise<SettingField
     valueSource: item.valueSource,
     resetValueSource: item.resetValueSource,
     isCustom: item.isCustom,
+    unreadable: item.unreadable,
     group: item.group,
     options: item.options,
     min: item.min,
@@ -228,6 +236,9 @@ export default ssr<AuthContext>(async (c) => {
   const tab = availableTabs.find((item) => item.id === tabId)!;
   const documentationBase = await coreSettings.get<string>("app.documentation_url");
   const approvalState = tab.id === "user" ? approvalAvailability(await appApproval.config(false).catch(() => null)) : undefined;
+  // The block shows its own error with a retry when the status cannot be read; the page still renders.
+  const signInLocations =
+    tab.id === "user" ? { status: await geoip.status(c.get("user")).catch(() => null), actorId: c.get("user").id } : undefined;
   const operationsFreeIpaEnabled = tab.id === "account-operations" && (await coreSettings.get<boolean>("freeipa.enable"));
   const showAiJobsLink = hasDedicatedRuntimeRoute(getRuntimeContext(c).apps, "/admin/observability/jobs", "core");
 
@@ -359,6 +370,7 @@ export default ssr<AuthContext>(async (c) => {
             icon={tab.icon}
             entries={entries}
             approvalState={approvalState}
+            signInLocations={signInLocations}
             accountSection={tab.id === "registration" ? "registration" : tab.id === "user" ? "sign-in" : undefined}
             showTestPdfAction={tab.id === "pdf-rendering"}
             showTestFreeIpaAction={tab.id === "freeipa"}

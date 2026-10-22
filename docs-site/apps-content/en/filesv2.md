@@ -134,12 +134,141 @@ Uploads report progress in one toast and resolve name conflicts once per
 batch (replace existing or upload only new). Uploads, folder uploads and new
 files open a Filegate upload session per file: Cloud authorizes the target, the browser streams segments to the
 session lease and renews it through Cloud, and Cloud commits after re-checking
-the target. The client retains one upload ID for a retry, while Cloud records
-the bound destination, write options, and execution identity before issuing the
-session. Retrying that same upload recovers the existing session or its retained
-result instead of publishing a second file. Filegate retains terminal receipts
-for seven days; after that, a missing receipt remains an uncertain outcome.
-Existing names ask before being replaced.
+the target. Temporary failures (no connection, no answer, a busy server, rate
+limits, or other server errors) keep the session and its upload ID. Retrying the
+same unchanged file resumes from acknowledged segments. Cloud records the bound
+destination, write options, and execution identity before issuing the session.
+A lost commit answer keeps the ID so a retry can recover the retained result.
+Final failures, such as name or write conflicts, a closed or unknown session,
+a changed upload, or insufficient space, discard the failed upload and its ID.
+Files asks again whether to replace after a name or write conflict; an unknown
+upload record starts fresh on retry. Discarding an open, unpublished session
+requests an abort and removes its ID only after confirmation. An explicit
+cancel during an attempt also requests an abort before commit. Cancelling a wait stops retries and
+retains the session and key. Once commit has been sent, a lost or
+temporary answer keeps the ID and never triggers an abort, including cancellation.
+Only a definite name or write conflict at commit can abort that unpublished
+session. Filegate retains terminal receipts for seven days. Browser upload IDs
+expire locally 24 hours plus seven days after their last attempt and are pruned
+at the next upload.
+
+The working row in the upload panel shows the transferred bytes on its second
+line. After transfer, a commit still pending after one second shows
+**Finishing…** on that line; waits replace it there too, so the row never moves.
+Filegate commit calls have up to ten minutes; the Cloud request allows 240 s,
+and browser and CLI commit deadlines allow 255 s so Cloud or the gateway can
+answer first. A commit that outlasts the request budget is recovered by the
+automatic retry with the same upload ID. While that commit still holds the
+Filegate root ([filegate#6](https://github.com/k2b-dev/filegate/issues/6)),
+Filegate calls on the root can reach their 10 s deadline; Files answers such a
+deadline with `unavailable` (503), which upload clients retry like a busy file
+server. Filegate needs free space for a second copy while committing
+([filegate#9](https://github.com/k2b-dev/filegate/issues/9)).
+
+Every transfer request has a deadline sized for the slowest supported uplink of
+about 0.5 Mbit/s (64 KiB/s). These per-request deadlines remain the stall
+detector; the queue adds no inactivity timer. After automatic retries are
+exhausted, the file fails with its reason and the batch continues with the
+next file. Browser failures distinguish “No response from the server” for Cloud requests from
+“No response from the file server” for transfers. HTTP 408, 502, 503, and 504
+report a busy file server; HTTP 429 reports too many uploads in a short time.
+
+The workspace and public inbox use the same automatic wait policy. Every
+attempt reopens the same session with the same idempotency key and resumes
+from acknowledged segments:
+
+- When the browser is offline or Cloud cannot be reached, a network failure
+  pauses the current file; pending files stay pending. When the browser reports
+  a connection, probes wait 2 s, double their interval, and stop growing at
+  30 s. An online event or returning to a visible tab
+  while online starts a probe immediately. No probe timer runs while the
+  browser reports offline. There is no probe count limit; Cancel and the
+  Filegate session lifetime of 24 hours bound the wait. After expiry, the
+  session's start response is final.
+- A stalled or busy server gets five retries after 2, 5, 15, 30, and 60 s,
+  or a larger Retry-After. The row shows the reason while waiting and
+  “Trying again” during subsequent attempts until the file finishes. The
+  network wait ends when Cloud answers or progress arrives. A network failure
+  after Cloud answered (the file server cannot be reached) counts toward the
+  five retries.
+- HTTP 429 with Retry-After waits as requested without spending those five
+  retries, at most ten times per file. Without Retry-After, it counts as
+  busy. Retry-After above five minutes is not waited out automatically.
+- Other server errors and final errors are not retried automatically. A
+  manual **Try again** starts a fresh retry budget. A successful probe or
+  attempt does not reset the retry or rate-limit budget within a run.
+
+The Filegate SDK's short request retries run inside each attempt; the queue
+is the only additional retry layer. Cancel or leaving the workspace ends a
+wait immediately. The panel announces loss and return of the connection once
+per transition, rather than once per failed probe.
+
+## Create folders
+
+**New folder** accepts nested paths such as `A/B/C` and sibling names in the
+last segment, such as `Testdaten/Test1, Test2, Test3`. A typed comma offers the
+choice between separator and part of the name. The preview marks existing
+folders and invalid names before creation. Existing folders are reused, and
+one submission includes at most 100 folders, counting every folder in between.
+That is the bound every Files batch (move, copy, trash) already uses; it also
+bounds the depth, together with the 4096-character path limit.
+Each name is limited to 255 UTF-8 bytes; accented letters and emoji use more
+than one byte. A conflict or denied permission blocks creation and is shown
+next to the affected folder. While creation runs, the dialog cannot be dismissed.
+
+`POST /api/filesv2/bases/:baseId/directories/batch` accepts
+`{paths: string[], dryRun: boolean}`; `dryRun` defaults to false. Paths are
+base-relative, at most 4096 characters each, and the list contains 1–100 paths.
+Each segment is limited to 255 UTF-8 bytes, including children of planned folders.
+All paths are validated before any creation. Duplicates are removed and
+parents are processed before children, preserving input order at equal depth.
+The endpoint creates exactly the supplied paths; it does not add ancestors.
+Existing folders require read access and are reused without write access to
+their parent. Creating a missing folder requires a readable, writable parent
+and uses the same ownership as single-folder creation.
+
+The response is `{base, results}` with one `{path, state, entry?, error?,
+message?}` per unique path. States are `existing`, `created`, `planned`,
+`failed`, or `skipped`. A real run stops after the first failure; earlier
+creations remain and later paths are skipped. A dry run creates nothing and
+checks independent paths even after a failure. Descendants of planned folders
+are planned; descendants of failed or skipped folders are skipped. Errors keep
+stable codes, with localized messages on failed items. A dry run reserves
+nothing; access or storage may change before creation.
+`create_forbidden` means the parent can be read but does not allow folder creation.
+Filegate failures use the same error codes as single-folder creation.
+
+`cld filesv2 mkdir [-p] <folder>...` accepts several folders in one area.
+With `-p`, one batch includes all ancestors and reuses existing folders;
+`put --parents` uses the same endpoint. Without `-p`, folders are created
+individually in argument order and existing names fail. Both modes report
+created and unattempted folders on failure. Commas stay literal in CLI names;
+pass siblings as separate arguments or use shell expansion.
+
+## History
+
+Files records folder creation through the web, mobile app, API and CLI, other
+apps, and agents. Each created folder has its own entry; folders created in
+one batch share a batch ID. Planning a batch or finding an existing folder
+creates no entry.
+
+| State | Meaning |
+| --- | --- |
+| `pending` | The intent is saved; the outcome is not yet confirmed. |
+| `done` | Files has evidence that the operation completed. |
+| `failed` | Files has a certain refusal that made no change. |
+| `unclear` | The response is missing; the current folder cannot prove the outcome. |
+| `not_done` | Reserved for checks that can prove no change; unused for folder creation. |
+
+Files marks an operation done only with evidence. A folder that looks right
+could have been created by someone else. Later steps extend history to other
+changes.
+
+History is kept for 365 days by default. Administrators change this under
+**Settings → History → Keep history for**, from 30 to 3,650 days; the CLI and
+API use the `activityRetentionDays` configuration key. Pending entries are
+kept until their outcome is known. See
+[Files history](/en/docs/operations/files-history) for operators.
 
 ## Public shares
 
@@ -155,6 +284,19 @@ in Postgres. Neither the password nor the verifier appears in share responses.
 Unlock attempts are rate-limited. The browser receives an encrypted, share-scoped
 HttpOnly cookie; transfers retain their existing short lease lifetime.
 
+Inbox upload requests (start, lease, commit and abort) are limited to 120 per
+minute per client address across all upload links. Requests with unknown or
+invalid links count against the same budget. IPv6 clients count per /64
+network. NAT64, Teredo and 6to4 addresses count per embedded IPv4 address. A
+client that controls a larger IPv6 prefix gets one budget per /64. Each file
+needs about two requests. When the limit is reached, the uploader waits for the
+time in `Retry-After` and then continues on its own. Other public share
+requests keep their limit of 10 per minute per client address.
+
+For operators: guests behind one shared address share the upload budget. This
+includes NAT, VPN and one IPv6 /64 network, such as campus Wi-Fi. Under heavy
+shared use, 429 responses with `Retry-After` on upload routes are expected and
+are not an outage.
 
 A share is either a download bundle of entries or an upload inbox for one
 folder, always inside one base. Download shares show the current contents,
@@ -218,6 +360,10 @@ backend token stays on the server. Saved credentials are not returned to the
 browser. Settings changes remain a draft until saved. Discard returns to the
 saved configuration. Disabling an area does not delete its directories or
 assignments.
+
+**History → Keep history for** (`activityRetentionDays`) sets how long Files
+keeps its history: 365 days by default, 30 to 3,650 days allowed. A
+configuration saved before this setting existed uses the default.
 
 Filegate reports `managed` and `execution` independently for every root.
 **Managed** means that all content and namespace writes use Filegate; it enables
@@ -443,10 +589,17 @@ the configured backend address; the Filegate token never leaves the backend.
 Every save replaces the file in Filegate, and the root's versioning policy
 decides which saves become versions. On managed roots, saves bind a fresh
 revision and Filegate atomically rejects a changed destination at publication.
-Cloud serializes document publication, private upload commits, moves, and
-version restores with the existing database root lock, shared with trash and
-administrative lifecycle operations. Busy publications return a retryable error;
-no process-local lock or extra lease state is required. WOPI timestamp checks
+Cloud serializes publications (upload commits, renames, moves, version restores,
+and document saves) with the root lock, shared with trash and administrative
+lifecycle operations. Publications and trash removal and restore wait up to five
+seconds per request for a busy root lock before returning a retryable busy error.
+A move or removal of several entries shares that one wait. Administrative
+lifecycle operations and background maintenance still answer busy at once;
+trash listings do not wait for the lock. The upload queue automatically retries
+such a busy commit with backoff. Public inbox commits do not take this lock.
+Large upload commits hold both Filegate's root mutex and Cloud's root lock, so
+other changes in that storage wait or retry until
+[filegate#6](https://github.com/k2b-dev/filegate/issues/6) is fixed. WOPI timestamp checks
 retain microsecond precision. Collabora's explicit **Overwrite** choice remains
 supported, while changes during that save still conflict. Unmanaged roots also
 recheck timestamp and size before writing. External NFS writers do not participate
@@ -567,8 +720,19 @@ failed.
 Administrator commands use the same permissions as the UI. Configuration
 updates accept a complete JSON configuration through `--input-file` or
 `--stdin`. Omitted or empty `token` keeps the existing secret; a nonempty value
-replaces it. The read response contains only `tokenConfigured`. Inspect the
-inventory entry before assigning its existing directory with `admin adopt`.
+replaces it. The read response contains `tokenConfigured` and `unreadable`, never
+the token. If `unreadable` is `true`, the Files settings show a notice and both
+areas use disabled defaults. Restore the correct `APP_SECRET` to recover the
+saved configuration, or submit the complete configuration with a nonempty
+Filegate token to replace it. A save without a token fails with HTTP 409
+`configuration_unreadable` and preserves the saved row.
+
+**Reset configuration** in that notice, or
+`cld filesv2 admin configuration reset --yes`, removes the saved configuration
+and returns both areas to disabled defaults. The admin-only API is
+`DELETE /api/filesv2/admin/configuration`; it does not delete Filegate files.
+Inspect the inventory entry before assigning its existing directory with
+`admin adopt`.
 Use `cld filesv2 <command> --help` for the command's arguments.
 
 `admin directories retire` stops Files access and automatic recreation while
@@ -587,11 +751,14 @@ Rebuild and statistics commands affect the entire Filegate
 root, including paths outside the configured prefix.
 
 Uploads read bounded file segments from disk and send them directly to Filegate,
-with bounded retries and lease renewal. Cancellation requests an abort before
-commit. Retrying the same command with the unchanged local file and destination
-reuses the persisted upload identity within the receipt window. A lost commit
-response may already represent a published file; do not switch to a new upload
-identity to bypass an uncertain result.
+with bounded retries and lease renewal. Each transfer request has a deadline
+sized for about 0.5 Mbit/s (64 KiB/s). In text mode, `put` writes progress to
+stderr; it writes no progress with `--json` or `--jsonl`.
+Cancellation requests an abort before commit. Retrying the same command with
+the unchanged local file and destination reuses the persisted upload identity
+within the receipt window. A lost commit response may already represent a
+published file; do not switch to a new upload identity to bypass an uncertain
+result.
 
 ## Current scope
 

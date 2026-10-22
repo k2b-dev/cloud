@@ -4,9 +4,10 @@ title: Set up and manage a mailbox
 icon: ti ti-settings
 description: Manage transport, identities, folders, access, automation, and mailbox lifecycle.
 order: 50
+kind: task
 ---
 
-With **Manage** access to a mailbox, you control the provider connection and the Cloud rules around it. Open **Settings** from the mailbox navigation.
+With **Manage** access to a mailbox, you control the provider connection and the Cloud rules around it. Open **… → Settings** in the mailbox head.
 
 ## Know which settings are personal {icon="settings"}
 
@@ -18,15 +19,15 @@ Settings are grouped by purpose:
 - **General** is the first category that requires **Manage** access. It sets the shared identity and the sending safeguards.
 - **General**, **Accounts & identities**, **Calendar invitations**, **Folders**, **Access**, and **Danger zone** require **Manage** access.
 
-In **Settings → Calendar invitations**, choose one Space where you have **Edit** access as the suggested destination for imported invitations. Mail stores this preference for the whole mailbox. Spaces offers each person only destinations where they have **Edit** access.
+In **… → Settings → Calendar invitations**, choose one Space where you have **Edit** access as the suggested destination for imported invitations. Mail stores this preference for the whole mailbox. Spaces offers each person only destinations where they have **Edit** access.
 
 The setting does not import invitations automatically. Each invitation can go to another Space where you have **Edit** access. You can safely clear the selection. If someone deletes the Space or your access ends, Mail treats the default as not set.
 
-Operational status and public attachment links are separate from the settings. Open them from **Mailbox tools** in the mailbox navigation.
+Operational status and public attachment links are separate from the settings. Open them from the **…** menu in the mailbox head.
 
 ## Monitor and pause transport {icon="route"}
 
-**Mailbox tools → Mailbox health** shows the transport health, the connected account, folder discovery, synchronization, and the state of the search index.
+**… → Mailbox health** shows the transport health, the connected account, folder discovery, synchronization, and the state of the search index.
 
 - **Sync now** queues a mailbox synchronization. **Last successful sync** shows when the last one finished. **Sync now** is unavailable while the mailbox is paused, or while its account must first be connected, reconnected, or verified.
 - **Rediscover folders** refreshes folders and the remote namespace information.
@@ -38,7 +39,7 @@ Pausing stops operations. It does not hide anything. Existing mirrored mail and 
 
 ### Repair projections and failed work
 
-With **Manage** access, you can start background repairs in **Mailbox tools → Mailbox health → Advanced diagnostics and repairs**. Hydration retry, search rebuild, thread repair, folder rebuild, rediscovery, and synchronization are durable commands. Closing the dialog does not stop them. Before a command runs, Mail checks again that you still have **Manage** access.
+With **Manage** access, you can start background repairs in **… → Mailbox health → Advanced diagnostics and repairs**. Hydration retry, search rebuild, thread repair, folder rebuild, rediscovery, and synchronization are durable commands. Closing the dialog does not stop them. Before a command runs, Mail checks again that you still have **Manage** access.
 
 The action buttons show what you can do now. A turned-off action names the reason, such as paused synchronization, an inactive folder, or the same work already pending.
 
@@ -51,7 +52,7 @@ Cloud administrators can review the same redacted summary in **Admin → Mail**.
 
 ## Manage the provider connection {icon="user-cog"}
 
-**Settings → Accounts & identities → Connected account** contains the current credential for incoming and outgoing mail. Mail verifies both protocols before it stores a new or replacement credential.
+**… → Settings → Accounts & identities → Connected account** contains the current credential for incoming and outgoing mail. Mail verifies both protocols before it stores a new or replacement credential.
 
 :::steps
 1. Choose **Find settings** first.
@@ -71,7 +72,7 @@ When you remove the connection, the transport stops. Provider mail and the kept 
 
 ## Manage sending identities {icon="send"}
 
-**Settings → Accounts & identities → Sending identities** controls the sending contexts that collaborators can use. Use separate identities when the same address needs different defaults for roles such as private mail, university work, or a business.
+**… → Settings → Accounts & identities → Sending identities** controls the sending contexts that collaborators can use. Use separate identities when the same address needs different defaults for roles such as private mail, university work, or a business.
 
 The **Identity label** is visible only inside the mailbox. Recipients see the **Display name** and the **From address**. Each identity can also set:
 
@@ -96,7 +97,7 @@ Mail adds the default Cc and Bcc recipients when a person starts a new message, 
 
 New messages, replies, and forwards start with the sender's default signature, separate from the text. A personal default takes precedence over the mailbox default. Switching the sender in the composer switches to that sender's default signature.
 
-In **Settings → General**, you can list trusted internal email domains and choose when Mail warns about many recipients. Mail warns about external recipients only when at least one internal domain is set. These settings guide the final send review. They do not block legitimate delivery and do not change recipients automatically.
+In **… → Settings → General**, you can list trusted internal email domains and choose when Mail warns about many recipients. Mail warns about external recipients only when at least one internal domain is set. These settings guide the final send review. They do not block legitimate delivery and do not change recipients automatically.
 
 Priority and receipt requests are suggestions to other mail systems:
 
@@ -169,7 +170,7 @@ If the IMAP account shows shared folders or folders of other users, **Rediscover
 - combine folders with similar names from several accounts;
 - use the credential of another person if this connection loses access.
 
-Changes at the provider to namespaces, subscriptions, or access can make a folder unavailable or unclear. Check **Mailbox tools → Mailbox health**, fix the provider state if needed, then run **Rediscover folders**.
+Changes at the provider to namespaces, subscriptions, or access can make a folder unavailable or unclear. Check **… → Mailbox health**, fix the provider state if needed, then run **Rediscover folders**.
 
 When an unavailable folder is gone for good, choose **Remove from Mail** in its menu. After you confirm, Mail removes the unavailable folder and its unavailable subfolders from its folder list. Nothing is deleted at the provider, and mirrored messages and history stay. If the provider shows the folder again, the next rediscovery restores it automatically.
 
@@ -201,7 +202,7 @@ You need **Manage** access to the mailbox to create, list, or revoke a public at
 The public URL is disclosed only once, immediately after creation. Mail stores only a hash of its secret token and cannot show the same URL again.
 :::
 
-**Mailbox tools → Shared links** lists every link page by page, including older active links. There you can revoke access without deleting the original message or draft attachment.
+**… → Shared links** lists every link page by page, including older active links. There you can revoke access without deleting the original message or draft attachment.
 
 A link can have an optional password, expiry time, and maximum number of download sessions. Passwords are case-sensitive and can contain spaces. Range requests that resume one allowed download do not count as extra downloads. Revoked, expired, used-up, and invalid links fail without revealing attachment metadata. So does a link opened with a wrong password.
 
@@ -250,17 +251,21 @@ Each list offers only capabilities that match the contract for contact directori
 
 ## Configure signatures and email design {icon="pencil"}
 
-In **Settings → Writing**, create private or mailbox signatures and snippets. Set the mailbox default signature in **Accounts & identities → Sending identities**. A personal default of a collaborator in **Writing** comes first.
+In **… → Settings → Writing**, create private or mailbox signatures and snippets. Set the mailbox default signature in **Accounts & identities → Sending identities**. A personal default of a collaborator in **Writing** comes first.
 
 Markdown messages always get the built-in readable email design. **Email design** adds checked mailbox CSS for company branding. It does not replace the safe base design. Check the result in the **Preview** of the composer before you rely on a CSS change. The built-in design gives quotes a gray line on the left and code blocks a light background; change them with `blockquote { … }` or `pre { … }`. A `p { … }` rule also reaches quoted paragraphs; style those with `blockquote p { … }`.
 
 The mailbox CSS comes after the built-in design. Each of its rules wins over the built-in design for the elements it selects. For example, `a { color: #262626; }` changes the color of every link. Use `.mail-content` for the whole message, for example `.mail-content { font-size: 16px; }`. Use `.mail-signature` for the signature, for example `.mail-signature { color: #52525b; }`. Selectors can use the elements that email keeps and the `.mail-content` and `.mail-signature` classes. Other classes, IDs, pseudo-classes such as `:hover`, `@` rules, and `!important` are not accepted. Values cannot load images, for example with `url()` or `image-set()`, and cannot contain backslash escapes or `&`. A quoted value, such as a font name, must end on the same line and cannot contain the other kind of quote.
 
-Mail checks the CSS when you save it. If a saved design contains a value that a later Cloud version no longer accepts, the mailbox keeps sending. Mail leaves out only those values and keeps the rest of the design. If Mail cannot read the saved design at all, it uses the built-in design until the design is fixed. **Settings → Writing** shows which values are left out, and the composer **Preview** lists them below the message. Remove or replace them in the design. Saving still needs CSS that passes the check. For a very long message, Mail uses the built-in design if the mailbox design would make the message too complex to render. The composer **Preview** shows this.
+Mail checks the CSS when you save it. If a saved design contains a value that a later Cloud version no longer accepts, the mailbox keeps sending. Mail leaves out only those values and keeps the rest of the design. If Mail cannot read the saved design at all, it uses the built-in design until the design is fixed. **… → Settings → Writing** shows which values are left out, and the composer **Preview** lists them below the message. Remove or replace them in the design. Saving still needs CSS that passes the check. For a very long message, Mail uses the built-in design if the mailbox design would make the message too complex to render. The composer **Preview** shows this.
+
+Open **… → Settings → Writing → Logo** in the mailbox to upload or replace the logo, change its display width or alt text, or remove it after confirmation. These changes require **Manage** access. With **Edit** access, you see the logo and its values read only. Changing the width or alt text stores a new version with the same image.
+
+Mailbox administrators can also manage one signature logo with `cld mail compose logo get`, `cld mail compose logo set --file logo.png [--width 200] [--alt "Team"]`, and `cld mail compose logo remove --yes`. Upload PNG or JPEG only, at most 100 KiB and 1200×400 pixels. Display width is 1–600 px (default 200). Alt text defaults to the trimmed mailbox name and requires 1–200 characters without control characters. Signatures place the logo with `{{ mailbox.logo }}`; Mail sends it inline and previews show it. Without a logo, preview warns and leaves the placeholder empty. Queued and scheduled sends retain the original logo; provider Drafts copies have no signature or logo.
 
 ## Configure automatic responses and references {icon="settings"}
 
-Open **Mailbox tools → Automations**:
+Open **… → Automations**:
 
 :::steps
 1. **Overview** shows what is active and opens the exact setup task.
@@ -307,4 +312,4 @@ See [Mail workflow YAML reference](/app/mail/help/mail-workflows) for all suppor
 
 **Danger zone → Move to recently deleted** moves the mailbox into a deleted state that you can recover. Mail does not purge provider mail and kept Cloud data.
 
-Deleted mailboxes appear under **Recently deleted** on the Mail overview for people who can restore them. A restored mailbox starts paused. In **Mailbox tools → Mailbox health**, verify the connection, folder discovery, and health. Then choose **Resume mailbox**.
+Deleted mailboxes appear under **Recently deleted** on the Mail overview for people who can restore them. A restored mailbox starts paused. In **… → Mailbox health**, verify the connection, folder discovery, and health. Then choose **Resume mailbox**.

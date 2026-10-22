@@ -11,6 +11,7 @@ export type {
   AppWorkspaceContentProps,
   AppWorkspaceDetailProps,
   AppWorkspaceDetailWidth,
+  AppWorkspaceHeadProps,
   AppWorkspaceMainPaneProps,
   AppWorkspaceMainProps,
   AppWorkspaceNavTreeItemProps,
@@ -33,10 +34,12 @@ export type {
   AppWorkspaceSidebarProps,
   AppWorkspaceSidebarSectionProps,
   AppWorkspaceSidebarVisibility,
+  AppWorkspaceWidthShare,
 } from "./AppWorkspace";
-export { default as AppWorkspace } from "./AppWorkspace";
+export { appWorkspaceDetailElementId, default as AppWorkspace } from "./AppWorkspace";
+export { watchAppHostWidth } from "./app-host-width";
 export type { AppWorkspaceControllerOptions } from "./app-workspace-controller";
-export { installAppWorkspaceController } from "./app-workspace-controller";
+export { installAppWorkspaceController, parkWorkspaceDetailDrawers } from "./app-workspace-controller";
 export type {
   AppWorkspaceLayoutState,
   AppWorkspaceResizeKind,
@@ -68,7 +71,7 @@ export {
   serializeAppWorkspaceLayoutState,
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
-export { type BottomSheetProps, bottomSheetOptions, default as BottomSheet } from "./BottomSheet";
+export { type BottomSheetProps, bottomSheetAdaptiveOptions, bottomSheetOptions, default as BottomSheet } from "./BottomSheet";
 export type { DataPanelProps } from "./DataPanel";
 export { DataPanel } from "./DataPanel";
 export type {
@@ -164,6 +167,8 @@ export {
   removePanesItem,
   resizePanesSplit,
 } from "./panes-layout";
+export { default as ResizeSeparator, type ResizeSeparatorProps } from "./ResizeSeparator";
+export { attachResizeSeparator, type ResizeSeparatorOptions } from "./resize-separator";
 export type { ScrollAreaProps } from "./ScrollArea";
 export { default as ScrollArea } from "./ScrollArea";
 export type {
@@ -211,6 +216,5 @@ export {
 } from "./SidebarSwitcher";
 export type { TabBarItem, TabBarProps } from "./TabBar";
 export { default as TabBar } from "./TabBar";
-
 export type { TableOfContentsItem, TableOfContentsProps } from "./TableOfContents";
 export { TableOfContents } from "./TableOfContents";

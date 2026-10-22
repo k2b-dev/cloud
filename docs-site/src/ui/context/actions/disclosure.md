@@ -58,4 +58,4 @@ The component preserves native `details` and `summary` semantics and occupies on
 
 ## Runtime
 
-Native uncontrolled disclosure works without JavaScript; controlled synchronization requires hydration.
+Native uncontrolled disclosure works without JavaScript; controlled synchronization requires browser code.

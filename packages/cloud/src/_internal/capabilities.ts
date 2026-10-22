@@ -1,15 +1,20 @@
-import { createHash } from "node:crypto";
+import { capabilityMessages } from "../shared/capability-messages";
+import { capabilityHash, projectSchema, stableJsonValue } from "./capability-schemas";
+
+export { capabilityHash } from "./capability-schemas";
+
 import { isServiceError, type Result, type ServiceError } from "@k2b/stdlib";
 import { z } from "zod";
 import {
   CAPABILITY_ERROR_STATUSES,
   CAPABILITY_FRAMEWORK_ERROR_CODES,
   CAPABILITY_MAX_RESULT_BYTES,
+  CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
   CAPABILITY_PROTOCOL_VERSION,
   type CapabilityActionDefinition,
   type CapabilityActionManifest,
+  CapabilityActionPolicySchema,
   type CapabilityActionReviewResult,
-  CapabilityActionReviewSchema,
   type CapabilityActionSentences,
   type CapabilityCommandDefinition,
   type CapabilityCommandManifest,
@@ -33,12 +38,14 @@ import {
   type CapabilitySearchTagDefinition,
   type CapabilityStreamDefinition,
   type CapabilityUniversalSearchDefinition,
+  capabilityActionPolicy,
   capabilityResultSchema,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
 import { fileProviderIssues } from "../contracts/file-provider";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
+import { capabilityActionReceiptIssues, capabilityActionReviewIssues, capabilityQueryChecksActionOutcome } from "./capability-reviews";
 import {
   CAPABILITY_SENTENCE_KEYS,
   CAPABILITY_SENTENCE_MAX_CHARS,
@@ -94,6 +101,7 @@ const ACTION_FIELDS = {
   stream: true,
   idempotency: true,
   approval: true,
+  policy: true,
   review: true,
   run: true,
 } satisfies DefinedFields<CapabilityActionDefinition>;
@@ -187,7 +195,7 @@ const providerPayload = (code: string, message: string, details?: Record<string,
 /** Serializes one framework-owned provider response exactly once and enforces the public byte bound. */
 export const serializeCapabilityProviderResult = (
   result: CapabilityProviderResult,
-  options: { nonIdempotentAction?: boolean } = {},
+  options: { nonIdempotentAction?: boolean; review?: boolean } = {},
 ): { body: string; status: number } => {
   if (options.nonIdempotentAction && !result.ok && result.error.code === CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse) {
     const unknown = providerPayload(
@@ -200,7 +208,9 @@ export const serializeCapabilityProviderResult = (
   const payload = result.ok ? result.data : providerPayload(result.error.code, result.error.message, result.error.details);
   try {
     const body = JSON.stringify(payload);
-    if (new TextEncoder().encode(body).byteLength <= CAPABILITY_MAX_RESULT_BYTES) {
+    if (
+      new TextEncoder().encode(body).byteLength <= (options.review ? CAPABILITY_MAX_REVIEW_RESPONSE_BYTES : CAPABILITY_MAX_RESULT_BYTES)
+    ) {
       return { body, status: result.ok ? 200 : result.error.status };
     }
   } catch {
@@ -220,21 +230,6 @@ export const serializeCapabilityProviderResult = (
       );
   return { body: JSON.stringify(fallback), status: options.nonIdempotentAction ? 502 : 500 };
 };
-
-const stableJsonValue = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(stableJsonValue);
-  if (typeof value !== "object" || value === null) return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => [key, stableJsonValue(entry)]),
-  );
-};
-
-export const capabilityHash = (value: unknown): string =>
-  createHash("sha256")
-    .update(JSON.stringify(stableJsonValue(value)))
-    .digest("hex");
 
 const assertText = (value: string, label: string, max: number): void => {
   if (!value.trim()) throw new Error(`${label} is required`);
@@ -338,12 +333,12 @@ const compileOperationPresentation = (
   operation: CapabilityQueryManifest | CapabilityActionManifest | CapabilityCommandManifest,
   label: string,
   strict = true,
-): CapabilityOperationPresentationTranslation => {
+): CapabilityOperationPresentationTranslation & { keywords?: readonly string[] } => {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const translation = value as Record<string, unknown>;
   const allowed = new Set(
     "path" in operation
-      ? ["title", "description", "input"]
+      ? ["title", "description", "input", "keywords"]
       : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences"] : [])],
   );
   const extra = Object.keys(translation).find((key) => !allowed.has(key));
@@ -356,6 +351,10 @@ const compileOperationPresentation = (
     if (typeof translation.description !== "string") throw new Error(`${label}.description must be text`);
     assertText(translation.description, `${label}.description`, 1000);
   }
+  const keywords =
+    "path" in operation && translation.keywords !== undefined
+      ? CapabilityCommandManifestSchema.shape.keywords.parse(translation.keywords)
+      : undefined;
   let searchTags: CapabilityOperationPresentationTranslation["searchTags"];
   const universalSearch = "universalSearch" in operation ? operation.universalSearch : undefined;
   // A reader skips search-tag copy for an operation without Universal Search instead of losing its other copy.
@@ -398,6 +397,7 @@ const compileOperationPresentation = (
   return {
     ...(typeof translation.title === "string" ? { title: translation.title.trim() } : {}),
     ...(typeof translation.description === "string" ? { description: translation.description.trim() } : {}),
+    ...(keywords ? { keywords } : {}),
     ...(input ? { input } : {}),
     ...(data ? { data } : {}),
     ...(searchTags ? { searchTags } : {}),
@@ -515,17 +515,6 @@ export const compileCapabilityPresentation = (
     };
   }
   return { baseLocale, ...(sentences && Object.keys(sentences).length > 0 ? { sentences } : {}), translations };
-};
-
-const projectSchema = (schema: z.ZodType, label: string, io: "input" | "output"): JsonSchema => {
-  try {
-    const projected = z.toJSONSchema(schema, { io }) as JsonSchema;
-    z.fromJSONSchema(projected);
-    return projected;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`${label} is not JSON-Schema-round-trippable: ${message}`);
-  }
 };
 
 const assertPropertyDescriptions = (schema: unknown, label: string, path: readonly string[] = []): void => {
@@ -720,6 +709,20 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     const label = `Action ${localId}`;
     assertDefinedFields(definition, ACTION_FIELDS, label);
     assertDefinedStreamFields(definition.stream, label);
+    if (definition.policy !== undefined) {
+      const parsedPolicy = CapabilityActionPolicySchema.safeParse(definition.policy);
+      if (!parsedPolicy.success) throw new Error(`${label} has invalid policy: ${parsedPolicy.error.message}`);
+      if (definition.approval !== undefined) throw new Error(`${label} policy and approval are mutually exclusive`);
+      if (!definition.review) throw new Error(`${label} policy requires review()`);
+      if ("silent" in parsedPolicy.data && (definition.destructive || definition.openWorld))
+        throw new Error(`${label} destructive or open-world policy must ask`);
+      if (
+        "ask" in parsedPolicy.data &&
+        (parsedPolicy.data.ask === "sends" || parsedPolicy.data.ask === "deletes") &&
+        definition.idempotency !== "required"
+      )
+        throw new Error(`${label} sends or deletes policy requires idempotency: "required"`);
+    }
     // Declaration rule, documented in docs/platform/capabilities.md:
     // destructive means irreversible or externally visible. An irreversible or
     // open-world effect must always be reviewable and safely repeatable, and
@@ -767,7 +770,13 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
       destructive: definition.destructive,
       openWorld: definition.openWorld,
       idempotency: definition.idempotency,
-      ...(definition.approval ? { approval: definition.approval } : {}),
+      ...(definition.policy
+        ? "silent" in definition.policy
+          ? { approval: "rememberable" as const }
+          : {}
+        : definition.approval
+          ? { approval: definition.approval }
+          : {}),
       ...(definition.review ? { review: true as const } : {}),
     } satisfies CapabilityActionManifest;
     actions.set(localId, {
@@ -795,6 +804,9 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
       });
     });
 
+  const policies = Object.fromEntries(
+    [...actions].flatMap(([localId, action]) => (action.definition.policy ? [[localId, action.definition.policy]] : [])),
+  );
   const fileProvider = definitions.fileProvider;
   const manifestBase = {
     protocolVersion: CAPABILITY_PROTOCOL_VERSION,
@@ -803,6 +815,7 @@ export const compileCapabilities = (appId: string, definitions: CapabilityDefini
     queries: [...queries.values()].map((entry) => entry.manifest),
     actions: [...actions.values()].map((entry) => entry.manifest),
     commands,
+    ...(Object.keys(policies).length ? { policies } : {}),
     // Omitted when unused so manifests without a provider keep their earlier hash.
     ...(fileProvider
       ? { fileProvider: { list: fileProvider.list, read: fileProvider.read, ...(fileProvider.save ? { save: fileProvider.save } : {}) } }
@@ -954,6 +967,7 @@ export const resolveCapabilityManifestPresentation = (
               title: copy.title ?? operation.title,
               description: copy.description ?? operation.description,
               inputSchema: applySchemaPresentation(operation.inputSchema, copy.input),
+              keywords: copy.keywords ? [...copy.keywords] : operation.keywords,
             }
           : operation;
       }),
@@ -970,6 +984,7 @@ export const resolveCapabilityManifestPresentation = (
           : operation;
       }),
       ...(current.fileProvider ? { fileProvider: current.fileProvider } : {}),
+      ...(current.policies ? { policies: current.policies } : {}),
     };
     current = CapabilityManifestSchema.parse({ ...manifestBase, manifestHash: capabilityHash(manifestBase) });
   }
@@ -1080,7 +1095,48 @@ const schemaSemantics = (value: unknown): unknown => {
 const sameSchema = (left: unknown, right: unknown): boolean =>
   JSON.stringify(stableJsonValue(schemaSemantics(left))) === JSON.stringify(stableJsonValue(schemaSemantics(right)));
 
+const isSchemaObject = (value: unknown): value is JsonSchema => typeof value === "object" && value !== null && !Array.isArray(value);
+
+// Input recursion visits schema nodes explicitly. Never strip annotation names from
+// property maps or literal enum/const values when proving that old inputs survive.
+const inputConstraints = (schema: unknown): unknown =>
+  isSchemaObject(schema) ? Object.fromEntries(Object.entries(schema).filter(([key]) => key !== "title" && key !== "description")) : schema;
+const sameInputSchema = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(stableJsonValue(inputConstraints(left))) === JSON.stringify(stableJsonValue(inputConstraints(right)));
+
+/** Only finite scalar tags: object/array equality and general schema exclusion are outside this proof. */
+const discriminatorValues = (schema: unknown): unknown[] | undefined => {
+  if (!isSchemaObject(schema)) return;
+  const values = Object.hasOwn(schema, "const") ? [schema.const] : schema.enum;
+  if (
+    Array.isArray(values) &&
+    values.length > 0 &&
+    values.every(
+      (value) =>
+        value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)),
+    )
+  )
+    return values;
+};
+
+const disjointObjectBranches = (left: unknown, right: unknown): boolean => {
+  if (!isSchemaObject(left) || !isSchemaObject(right) || left.type !== "object" || right.type !== "object") return false;
+  const leftProperties = left.properties;
+  const rightProperties = right.properties;
+  const leftRequired = left.required;
+  const rightRequired = right.required;
+  if (!isSchemaObject(leftProperties) || !isSchemaObject(rightProperties) || !Array.isArray(leftRequired) || !Array.isArray(rightRequired))
+    return false;
+  return leftRequired.some((name) => {
+    if (typeof name !== "string" || !rightRequired.includes(name)) return false;
+    const leftValues = discriminatorValues(leftProperties[name]);
+    const rightValues = discriminatorValues(rightProperties[name]);
+    return Boolean(leftValues && rightValues && leftValues.every((value) => !rightValues.includes(value)));
+  });
+};
+
 const schemaEvolutionIssues = (previous: JsonSchema, next: JsonSchema, path: string, direction: "input" | "data"): string[] => {
+  const schemasMatch = direction === "input" ? sameInputSchema : sameSchema;
   for (const keyword of ["oneOf", "anyOf"] as const) {
     const previousBranches = previous[keyword];
     const nextBranches = next[keyword];
@@ -1089,9 +1145,25 @@ const schemaEvolutionIssues = (previous: JsonSchema, next: JsonSchema, path: str
     const nextRest = { ...next };
     delete previousRest[keyword];
     delete nextRest[keyword];
-    if (!sameSchema(previousRest, nextRest) || previousBranches.length !== nextBranches.length) {
-      return [`${path} changed`];
+    if (!schemasMatch(previousRest, nextRest)) return [`${path} changed`];
+    if (direction === "input") {
+      if (!previousBranches.every(isSchemaObject) || !nextBranches.every(isSchemaObject)) return [`${path} changed`];
+      if (nextBranches.length < previousBranches.length) return [`${path} changed`];
+      // anyOf is monotonic under branch additions. oneOf is not: a newly overlapping
+      // branch rejects previously valid input, even when the branch count stays the same.
+      if (
+        keyword === "oneOf" &&
+        !sameInputSchema(previousBranches, nextBranches) &&
+        !nextBranches.every((branch, index) => nextBranches.slice(index + 1).every((other) => disjointObjectBranches(branch, other)))
+      )
+        return [`${path} oneOf branches are not provably disjoint`];
+      return previousBranches.flatMap((branch, index) =>
+        nextBranches.some((candidate) => schemaEvolutionIssues(branch, candidate, path, direction).length === 0)
+          ? []
+          : [`${path} ${keyword}[${index}] was removed or narrowed`],
+      );
     }
+    if (previousBranches.length !== nextBranches.length) return [`${path} changed`];
     return previousBranches.flatMap((branch, index) =>
       schemaEvolutionIssues(branch as JsonSchema, nextBranches[index] as JsonSchema, `${path} ${keyword}[${index}]`, direction),
     );
@@ -1103,16 +1175,16 @@ const schemaEvolutionIssues = (previous: JsonSchema, next: JsonSchema, path: str
     const nextItems = nextRest.items;
     delete previousRest.items;
     delete nextRest.items;
-    const issues = sameSchema(previousRest, nextRest) ? [] : [`${path} constraints changed`];
+    const issues = schemasMatch(previousRest, nextRest) ? [] : [`${path} constraints changed`];
     if (previousItems && nextItems) {
       issues.push(...schemaEvolutionIssues(previousItems as JsonSchema, nextItems as JsonSchema, `${path} items`, direction));
-    } else if (!sameSchema(previousItems, nextItems)) {
+    } else if (!schemasMatch(previousItems, nextItems)) {
       issues.push(`${path} items changed`);
     }
     return issues;
   }
   if (previous.type !== "object" || next.type !== "object") {
-    return sameSchema(previous, next) ? [] : [`${path} changed`];
+    return schemasMatch(previous, next) ? [] : [`${path} changed`];
   }
   const issues: string[] = [];
   const previousRest = { ...previous };
@@ -1121,10 +1193,15 @@ const schemaEvolutionIssues = (previous: JsonSchema, next: JsonSchema, path: str
   delete previousRest.required;
   delete nextRest.properties;
   delete nextRest.required;
-  if (!sameSchema(previousRest, nextRest)) issues.push(`${path} constraints changed`);
+  if (!schemasMatch(previousRest, nextRest)) issues.push(`${path} constraints changed`);
 
   const previousProperties = (previous.properties ?? {}) as Record<string, JsonSchema>;
   const nextProperties = (next.properties ?? {}) as Record<string, JsonSchema>;
+  if (direction === "input" && (previous.additionalProperties !== false || previous.patternProperties !== undefined)) {
+    for (const name of Object.keys(nextProperties)) {
+      if (!Object.hasOwn(previousProperties, name)) issues.push(`${path}.${name} may constrain previously allowed additional input`);
+    }
+  }
   for (const [name, schema] of Object.entries(previousProperties)) {
     const nextSchema = nextProperties[name];
     if (!nextSchema) issues.push(`${path}.${name} was removed`);
@@ -1213,6 +1290,15 @@ const resultRefs = (result: unknown): Array<{ type: string; id: string }> => {
   }>;
 };
 
+const compiledReviewContext = (compiled: CompiledCapabilities, localId: string) => ({
+  policy: capabilityActionPolicy(compiled.manifest, localId),
+  approval: compiled.actions.get(localId)?.manifest.approval,
+  queries: compiled.manifest.queries,
+  validateQueryInput: (query: CapabilityQueryManifest, input: Record<string, unknown>) =>
+    compiled.queries.get(query.localId)?.definition.input.safeParse(input).success === true,
+  ...(compiled.presentation ? { locales: [compiled.presentation.baseLocale, ...Object.keys(compiled.presentation.translations)] } : {}),
+});
+
 export const validateCapabilityResult = (
   compiled: CompiledCapabilities,
   operation: CompiledCapabilityQuery | CompiledCapabilityAction,
@@ -1220,12 +1306,25 @@ export const validateCapabilityResult = (
   onInvalidResult?: (error: unknown) => void,
 ): Result<unknown, ServiceError> => {
   const parsed = operation.resultSchema.safeParse(result);
-  if (!parsed.success) {
+  const field = (value: unknown, key: string): unknown =>
+    value !== null && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+  const receipt = field(result, "receipt");
+  const links = field(result, "links");
+  const receiptIssues =
+    receipt === undefined
+      ? []
+      : "idempotency" in operation.manifest
+        ? capabilityActionReceiptIssues(receipt, links)
+        : ["Queries cannot return a receipt"];
+  const nestedReceipt = field(field(result, "data"), "receipt");
+  if (!("idempotency" in operation.manifest) && nestedReceipt !== undefined && capabilityQueryChecksActionOutcome(operation.manifest))
+    receiptIssues.push(...capabilityActionReceiptIssues(nestedReceipt, links));
+  if (!parsed.success || receiptIssues.length > 0) {
     try {
       onInvalidResult?.(
         new Error(
           `Capability ${operation.manifest.localId} returned data outside its registered schema: ${JSON.stringify(
-            parsed.error.issues.map(({ code, path, message }) => ({ code, path, message })),
+            parsed.success ? receiptIssues : parsed.error.issues.map(({ code, path, message }) => ({ code, path, message })),
           )}`,
         ),
       );
@@ -1268,6 +1367,15 @@ export const validateCapabilityResult = (
   }
   return { ok: true, data: parsed.data };
 };
+
+const cancelledInvocation = (locale: string) => ({
+  ok: false as const,
+  error: {
+    code: CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled,
+    message: capabilityMessages(locale).requestCancelled,
+    status: 499 as const,
+  },
+});
 
 export const invokeCompiledCapability = async (params: {
   compiled: CompiledCapabilities;
@@ -1370,6 +1478,9 @@ export const invokeCompiledCapability = async (params: {
     )
       return { ok: false, error: { code: "VALIDATION_FAILED", message: "Unsupported search scope", status: 400 } };
   }
+  // Preparation can finish after the forwarding request was cancelled. Never
+  // cross into application code for the first time with an aborted invocation.
+  if (context.signal.aborted) return cancelledInvocation(context.locale);
   try {
     const invoked = await operation.definition.run(input.data, context);
     if (!invoked.ok) {
@@ -1463,32 +1574,24 @@ export const reviewCompiledCapability = async (params: {
       },
     };
   }
+  if (params.context.signal.aborted) return cancelledInvocation(params.context.locale);
   try {
     const reviewed = await operation.definition.review(input.data, params.context);
     if (!reviewed.ok) {
       return normalizeProviderError(reviewed.error, "Capability review returned an invalid error", params.onUnexpectedError);
     }
-    const parsed = CapabilityActionReviewSchema.safeParse(reviewed.data);
-    // A rememberable Action may leave out its scope for arguments that should ask every time; any other Action has none.
-    const approvalScopeIsValid =
-      parsed.success && (operation.manifest.approval === "rememberable" || parsed.data.approvalScope === undefined);
-    if (!parsed.success || !approvalScopeIsValid) {
+    const issues = capabilityActionReviewIssues(reviewed.data, compiledReviewContext(params.compiled, params.localId));
+    if (issues.length > 0) {
       try {
         params.onUnexpectedError?.(
-          new Error(
-            parsed.success
-              ? `Capability ${operation.manifest.localId} review returned an approval scope inconsistent with its manifest`
-              : `Capability ${operation.manifest.localId} review returned data outside its registered schema: ${JSON.stringify(
-                  parsed.error.issues.map(({ code, path, message }) => ({ code, path, message })),
-                )}`,
-          ),
+          new Error(`Capability ${operation.manifest.localId} review returned an invalid result: ${issues.join("; ")}`),
         );
       } catch {
-        // Observability must not change the public failure contract.
+        /* Observability must not change the public failure contract. */
       }
     }
-    return parsed.success && approvalScopeIsValid
-      ? { ok: true, data: parsed.data }
+    return issues.length === 0
+      ? { ok: true, data: reviewed.data }
       : {
           ok: false,
           error: {

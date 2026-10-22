@@ -8,6 +8,8 @@ order: 120
 
 Die Kontaktbuch-Einstellungen steuern Name, Beschreibung, Tags, Zugriff, API-Schlüssel, Import, Export und Löschen eines Kontaktbuchs. Öffne sie mit der Einstellungsaktion neben einem Kontaktbuch in der Kontakte-Seitenleiste. Auf Mobilgeräten bleibt diese Aktion neben den Kontaktbüchern sichtbar, auf die du Zugriff **Verwalten** hast.
 
+Auch Cloud-Administratoren sehen ein Kontaktbuch in Kontakte nur mit Zugriff; **Administration → Kontakte** zeigt jedes Kontaktbuch und seinen Zugriff.
+
 ## Kontaktbuch-Einstellungen finden {icon="settings"}
 
 :::reference
@@ -25,3 +27,5 @@ Die Kontaktbuch-Einstellungen steuern Name, Beschreibung, Tags, Zugriff, API-Sch
 - **Bearbeiten:** Zusätzlich Kontakte anlegen und aktualisieren.
 - **Verwalten:** Zusätzlich die Einstellungen öffnen, das Kontaktbuch teilen, seine Tags bearbeiten, importieren, exportieren und das Kontaktbuch löschen.
 :::
+
+Ein Kontaktbuch behält immer mindestens eine Person, Gruppe oder einen Agenten mit Zugriff **Verwalten**; ein API-Schlüssel zählt nicht.

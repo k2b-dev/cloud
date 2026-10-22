@@ -567,6 +567,8 @@ CREATE INDEX commands_mailbox_attention_idx ON mail.commands USING btree (mailbo
 
 CREATE INDEX commands_mailbox_idx ON mail.commands USING btree (mailbox_id, created_at DESC, id DESC);
 
+CREATE INDEX commands_message_target_idx ON mail.commands USING btree (mailbox_id, ((target ->> 'remoteMessageRefId'::text)), kind) WHERE (target ? 'remoteMessageRefId'::text);
+
 CREATE INDEX commands_stale_execution_idx ON mail.commands USING btree (COALESCE(worker_heartbeat_at, started_at), id) WHERE (state = 'executing'::text);
 
 CREATE TRIGGER commands_touch_updated_at BEFORE UPDATE ON mail.commands FOR EACH ROW EXECUTE FUNCTION mail.touch_updated_at();
@@ -1755,6 +1757,8 @@ ALTER TABLE ONLY mail.outbox_submissions
 ALTER TABLE ONLY mail.outbox_submissions
     ADD CONSTRAINT outbox_submissions_pkey PRIMARY KEY (id);
 
+CREATE INDEX outbox_submissions_draft_idx ON mail.outbox_submissions (draft_id, created_at DESC);
+
 CREATE INDEX outbox_ready_idx ON mail.outbox_submissions USING btree (state, scheduled_at, id) WHERE (state = ANY (ARRAY['scheduled'::text, 'undo_window'::text, 'unknown'::text, 'sent_sync_pending'::text]));
 
 CREATE INDEX outbox_scheduled_view_idx ON mail.outbox_submissions USING btree (mailbox_id, requested_at, id) WHERE (state = ANY (ARRAY['scheduled'::text, 'undo_window'::text]));
@@ -2831,3 +2835,24 @@ ALTER TABLE ONLY mail.workflow_run_state
 -- ---------------------------------------------------------------------------
 
 INSERT INTO mail.security_settings (singleton) VALUES (true);
+
+-- Immutable mailbox signature logos ---------------------------------------
+
+CREATE TABLE mail.mailbox_logo_versions (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    mailbox_id uuid NOT NULL REFERENCES mail.mailboxes(id) ON DELETE CASCADE,
+    content bytea NOT NULL CHECK (octet_length(content) BETWEEN 1 AND 102400),
+    content_type text NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg')),
+    pixel_width integer NOT NULL CHECK (pixel_width BETWEEN 1 AND 1200),
+    pixel_height integer NOT NULL CHECK (pixel_height BETWEEN 1 AND 400),
+    display_width integer NOT NULL CHECK (display_width BETWEEN 1 AND 600),
+    alt_text text NOT NULL CHECK (char_length(alt_text) BETWEEN 1 AND 200),
+    sha256 text NOT NULL CHECK (sha256 ~ '^[a-f0-9]{64}$'),
+    created_by_actor_kind text NOT NULL CHECK (created_by_actor_kind IN ('user', 'service_account')),
+    created_by_actor_id uuid NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX mailbox_logo_versions_mailbox_idx ON mail.mailbox_logo_versions (mailbox_id);
+ALTER TABLE mail.mailboxes ADD COLUMN logo_version_id uuid REFERENCES mail.mailbox_logo_versions(id);
+ALTER TABLE mail.outbox_submissions ADD COLUMN inline_logo_version_id uuid REFERENCES mail.mailbox_logo_versions(id) ON DELETE SET NULL;
+CREATE INDEX outbox_inline_logo_version_idx ON mail.outbox_submissions (inline_logo_version_id) WHERE inline_logo_version_id IS NOT NULL;

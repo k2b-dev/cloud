@@ -31,8 +31,13 @@ cld capabilities action contacts create \
   automation expects a stream record.
 - Treat `VALIDATION_FAILED` details as recoverable input guidance. Refresh the
   catalog after `SCHEMA_MISMATCH`, `CAPABILITY_NOT_FOUND`, or `APP_UNAVAILABLE`.
-- `refs` are stable app-owned identities. `links` are root-relative Cloud URLs
-  for opening, editing, previewing, downloading, or checking status.
+- `refs` are stable app-owned identities. A ref that Cloud can open carries
+  `permalink`, an absolute link on the selected profile's server; share it with
+  the person. `read`, `query` and `action` also print `links[].href` as
+  absolute URLs, including links inside resource lists. Cloud checks access
+  when someone follows a link. If the catalog is unavailable, the command warns
+  and prints the result without some permalinks. Never build Cloud URLs
+  yourself.
 
 Capabilities do not bypass app authorization. Core authenticates the caller,
 then the owning app reconstructs the actor/access subject and checks current

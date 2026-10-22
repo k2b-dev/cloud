@@ -45,7 +45,6 @@ import {
   openAssistantKnowledgeSearch,
   openAssistantMarkdown,
 } from "./AssistantContextContent";
-import { assistantTaskTitle, formatAssistantTaskSchedule } from "./AssistantTasksDialog";
 import { assistantResourceTypeLabel } from "./assistant-context";
 import { type ChatSidebarCopy, chatSidebarMessages } from "./chat-sidebar-messages";
 import {
@@ -65,6 +64,7 @@ import {
   type WorkingGroup,
 } from "./chat-sidebar-model";
 import { formatDictationTimestamp } from "./dictation-files";
+import { assistantTaskTitle, formatAssistantTaskSchedule } from "./scheduled-task-format";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 /** Where a result came from in the chat: the message that holds its delivering call. */
@@ -182,14 +182,14 @@ function Disclosure(props: {
           <i class={`ti ${open() ? "ti-chevron-down" : "ti-chevron-right"} assistant-sidebar-group__chevron`} aria-hidden="true" />
           <Show when={props.icon}>{(icon) => <i class={`${icon()} assistant-sidebar-group__icon`} aria-hidden="true" />}</Show>
           <span class="assistant-sidebar-group__copy">
-            <span class="assistant-sidebar-group__title">
+            <span class="assistant-sidebar-group__title k2b-truncate-fade">
               {props.title}
               <Show when={props.count !== undefined}>
                 <span class="assistant-sidebar-count"> · {props.count}</span>
               </Show>
             </span>
             <Show when={props.description}>
-              <span class="assistant-sidebar-group__description">{props.description}</span>
+              <span class="assistant-sidebar-group__description k2b-truncate-fade">{props.description}</span>
             </Show>
           </span>
         </Button>
@@ -772,11 +772,10 @@ export function AssistantChatSidebarContent(props: {
               title={copy().results}
               icon="ti ti-sparkles"
               class="assistant-sidebar-results"
+              // No count while empty: the body already says there are no results yet.
+              count={snapshot().results.length || undefined}
               meta={
                 <span class="assistant-sidebar-meta">
-                  <Show when={snapshot().results.length}>
-                    <span class="assistant-sidebar-count">{snapshot().results.length}</span>
-                  </Show>
                   {/* Always rendered, so the heading keeps its height when new results wait. */}
                   <Button
                     size="xs"
@@ -847,11 +846,7 @@ export function AssistantChatSidebarContent(props: {
             </DetailPanel.Section>
 
             <Show when={yourFiles().count}>
-              <DetailPanel.Section
-                title={copy().yourFiles}
-                icon="ti ti-upload"
-                meta={<span class="assistant-sidebar-count">{yourFiles().count}</span>}
-              >
+              <DetailPanel.Section title={copy().yourFiles} icon="ti ti-upload" count={yourFiles().count}>
                 <For each={yourFiles().recent}>{(file) => <FileRow file={file} open={() => void openUpload(file)} />}</For>
                 <Show when={yourFiles().olderCount}>
                   <Disclosure
@@ -909,7 +904,7 @@ export function AssistantChatSidebarContent(props: {
                 onOpenChange={setWorkingOpen}
                 title={copy().workingFiles}
                 icon="ti ti-archive"
-                meta={<span class="assistant-sidebar-count">{working().count}</span>}
+                count={working().count}
                 description={[
                   working()
                     .kinds.slice(0, 3)
@@ -1230,7 +1225,7 @@ function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions
       onOpenChange={setOpen}
       title={copy().sources}
       icon="ti ti-world"
-      meta={<span class="assistant-sidebar-count">{props.snapshot.sourceCount}</span>}
+      count={props.snapshot.sourceCount}
     >
       <Show when={open()}>
         <Show
@@ -1620,7 +1615,7 @@ export function AssistantChatSidebarPanel(props: {
         }
       }}
     >
-      <DetailPanel class="assistant-context-sidebar__panel">
+      <DetailPanel surface="plain" class="assistant-context-sidebar__panel">
         <header class="assistant-context-sidebar__header">
           <h2
             id={headingId}
@@ -1728,7 +1723,7 @@ export const openAssistantChatSidebarSheet = async (props: {
             }
           />
           <BottomSheet.Body>
-            <DetailPanel class="assistant-context-sheet">
+            <DetailPanel surface="plain" class="assistant-context-sheet">
               <Show when={search.active()}>
                 <SidebarSearchField search={search} onClosed={() => undefined} />
               </Show>
@@ -1771,7 +1766,7 @@ export function AssistantChatSidebarTab(props: {
   const freeze = createReadingFreeze();
   return (
     <div class="assistant-context-tab" {...freeze.handlers}>
-      <DetailPanel>
+      <DetailPanel surface="plain">
         <div class="assistant-context-sidebar__header">
           <SidebarSearchField search={search} onClosed={() => undefined} />
         </div>

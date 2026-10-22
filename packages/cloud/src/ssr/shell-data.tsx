@@ -1,15 +1,21 @@
+import type { KeyboardPlatform } from "@k2b/ui";
 import { createContext, type JSX, useContext } from "solid-js";
 import type { AppSearchLink } from "../contracts/app";
+import type { PanelConsentSnapshot, PanelPageContext } from "../contracts/panel-context";
 import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { CloudThemePreference } from "../shared/theme";
 import type { AppLaunchpadLegalLink } from "./app-launchpad";
+import type { PanelProvider } from "./app-navigation";
 import type { RailApp } from "./rail-navigation";
 
 export type ShellData = {
+  panel?: { providers: PanelProvider[]; provider?: string; context: PanelPageContext | null; consent?: PanelConsentSnapshot };
   /** The authorized navigation catalog, sorted for the request locale: the rail, the app grid and the phone menu show it. */
   apps: RailApp[];
   /** Signed-in pages: the person's rail preferences. */
   rail?: RailSnapshot;
+  /** Signed-in pages: the start page that `/` opens, for the phone bar's Home. */
+  home?: string;
   legalLinks: AppLaunchpadLegalLink[];
   /** Signed-in pages: the person, for the profile menu and the phone menu's profile actions. */
   profile?: { name: string; avatarSrc?: string; appHref?: string };
@@ -20,17 +26,31 @@ export type ShellData = {
   searchLinks: Record<string, readonly AppSearchLink[]>;
   /** The current app, for links inside its Help. */
   appId?: string;
+  /** The reader's keyboard platform, resolved from the request User-Agent for server-rendered key caps. */
+  platform?: KeyboardPlatform;
+  /** "For this view" article ids, already filtered for the reader. */
+  help?: string[];
+  /** The current app's Help metadata could not be read for this request; Help offers a reload. */
+  helpFailed?: true;
 };
 
 const ShellDataContext = createContext<() => ShellData>();
 
-export function ShellDataProvider(props: { data: ShellData; children: JSX.Element }) {
+export function ShellDataProvider(props: { data: ShellData; skipScript?: boolean; children: JSX.Element }) {
   return (
     <ShellDataContext.Provider value={() => props.data}>
-      <script id="cloud-shell-data" type="application/json" innerHTML={JSON.stringify(props.data).replace(/</g, "\\u003c")} />
+      {/* Inline, not a component: an extra component would shift the hydration keys of every page. */}
+      {!props.skipScript && <script id="cloud-shell-data" type="application/json" innerHTML={shellDataJson(props.data)} />}
       {props.children}
     </ShellDataContext.Provider>
   );
+}
+
+const shellDataJson = (data: ShellData) => JSON.stringify(data).replace(/</g, "\\u003c");
+
+/** The shell data inside a swapped column, so each page brings its own with it. */
+export function ShellDataScript(props: { data: ShellData }) {
+  return <script id="cloud-shell-data" type="application/json" innerHTML={shellDataJson(props.data)} />;
 }
 
 export function readShellData(): ShellData | undefined {

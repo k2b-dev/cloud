@@ -102,10 +102,10 @@ export function RecordCardsView(props: {
               const highlighted = () => props.highlightedIds?.has(record.id);
               return (
                 <article
-                  class={`grids-record-card relative flex min-w-0 flex-col overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--k2b-surface-muted)] text-left transition-[background-color,box-shadow] ${
-                    props.onRecordClick ? "hover:bg-[var(--k2b-hover)] hover:shadow-xs" : ""
+                  class={`grids-record-card relative flex min-w-0 flex-col overflow-hidden rounded-[var(--ui-radius-surface)] bg-[var(--k2b-surface-muted)] text-left transition-colors ${
+                    props.onRecordClick ? "hover:bg-[var(--k2b-hover)]" : ""
                   } ${cardPaddingClass[size()]} ${
-                    selected() ? "bg-[var(--ui-selected)]" : ""
+                    selected() ? "bg-[var(--ui-app-selected)]" : ""
                   } ${highlighted() ? "bg-[var(--ui-active)]" : ""}`}
                   data-selected={selected() ? "true" : undefined}
                 >

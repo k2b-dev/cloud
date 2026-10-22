@@ -8,7 +8,9 @@ import {
   DescriptionList,
   DetailPanel,
   Dropdown,
+  Format,
   IconButton,
+  InlineGuidance,
   Placeholder,
   Tag,
   Tooltip,
@@ -24,6 +26,7 @@ import ContactFavoriteButton from "./ContactFavoriteButton";
 import ContactNotesSection from "./ContactNotesSection";
 import ContactOrgTreeView from "./ContactOrgTreeView";
 import ContactQuickEdit from "./ContactQuickEdit";
+import { announceContactOutcome } from "./contact-outcome";
 import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySource } from "./contact-query-source";
 import { contactFavoriteKey, listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresSelectedContactRefresh } from "./contacts-live";
@@ -50,13 +53,6 @@ type Props = {
   currentUserId: string;
   showEmpty?: boolean;
   initialFavoriteKeys: string[];
-};
-
-const formatBirthday = (value: string | null, locale: string) => {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(locale);
 };
 
 const formatAddress = (address: Contact["addresses"][number]) => {
@@ -289,6 +285,7 @@ export default function ContactDetailPanel(props: Props) {
   createEffect(() => {
     const current = contact();
     if (!current) return;
+    announceContactOutcome(current, t());
     const description = resolveContactName(current, t().unnamedContact);
     if (actions.canEdit())
       onCleanup(
@@ -390,6 +387,22 @@ export default function ContactDetailPanel(props: Props) {
               ]
             : []),
         ];
+        const orgTreeFeedback = (
+          <Show when={actions.orgTreeLoading() || actions.orgTreeError()}>
+            <div class="h-16 shrink-0 overflow-y-auto">
+              <Show when={actions.orgTreeError()} fallback={<InlineGuidance loading>{t().loadingOrganization}</InlineGuidance>}>
+                {(error) => (
+                  <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+                    {error().message}{" "}
+                    <Button variant="text" size="xs" onClick={() => void actions.retryOrgTree()}>
+                      {t().retry}
+                    </Button>
+                  </InlineGuidance>
+                )}
+              </Show>
+            </div>
+          </Show>
+        );
         return (
           <Show
             when={detailMode() === "tree" && actions.orgTree()}
@@ -617,7 +630,12 @@ export default function ContactDetailPanel(props: Props) {
                               ...(hasFormalName() && c().firstName ? [{ term: t().firstName, description: c().firstName }] : []),
                               ...(hasFormalName() && c().lastName ? [{ term: t().lastName, description: c().lastName }] : []),
                               ...(c().birthday
-                                ? [{ term: t().birthday, description: formatBirthday(c().birthday, locale()) ?? c().birthday }]
+                                ? [
+                                    {
+                                      term: t().birthday,
+                                      description: <Format.Date value={c().birthday} fallback={c().birthday ?? undefined} />,
+                                    },
+                                  ]
                                 : []),
                               ...(c().salutation ? [{ term: t().salutation, description: c().salutation }] : []),
                               ...(c().pronouns ? [{ term: t().pronouns, description: c().pronouns }] : []),
@@ -672,6 +690,7 @@ export default function ContactDetailPanel(props: Props) {
                           </>
                         }
                       >
+                        {orgTreeFeedback}
                         <div class="flex flex-col gap-1">
                           <Show when={c().parent}>
                             {(parent) => (

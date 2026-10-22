@@ -2,6 +2,7 @@ import {
   arg,
   type CliInputFlagValue,
   type CloudCliContext,
+  cloudResourceUrl,
   command,
   confirmFlag,
   createAccessCommands,
@@ -10,6 +11,7 @@ import {
   printRows as printJsonOrTable,
   printStructured,
   readCliInput,
+  withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import type {
@@ -18,6 +20,7 @@ import type {
   PublicSectionInput,
   PublicSectionPatch,
   PublicStatus,
+  ShiftAssignment,
   UpcomingSlot,
   Venue,
   VenueDashboard,
@@ -38,6 +41,24 @@ type VenueApiKeyCreateResponse = {
   credential: VenueApiKey;
   token: string;
 };
+
+/** The assignment reader returns only the caller's own sign-ups; the dashboard names the caller only in `myUpcomingShifts`. */
+const ownAssignmentPermalinks = (ctx: CloudCliContext, dashboard: VenueDashboard) => {
+  const callerUserIds = new Set(dashboard.myUpcomingShifts.map((assignment) => assignment.userId));
+  return (assignment: ShiftAssignment) =>
+    callerUserIds.has(assignment.userId) ? withCloudResourcePermalink(ctx, "venue.assignment", assignment) : assignment;
+};
+const withSlotPermalinks = (ctx: CloudCliContext, dashboard: VenueDashboard) => {
+  const link = ownAssignmentPermalinks(ctx, dashboard);
+  return dashboard.slots.map((slot) => ({ ...slot, assignments: slot.assignments.map(link) }));
+};
+const withDashboardPermalinks = (ctx: CloudCliContext, dashboard: VenueDashboard) => ({
+  ...dashboard,
+  venue: withCloudResourcePermalink(ctx, "venue.venue", dashboard.venue),
+  slots: withSlotPermalinks(ctx, dashboard),
+  assignments: dashboard.assignments.map(ownAssignmentPermalinks(ctx, dashboard)),
+  myUpcomingShifts: dashboard.myUpcomingShifts.map((assignment) => withCloudResourcePermalink(ctx, "venue.assignment", assignment)),
+});
 
 const VENUE_DEFAULT_KEY = "venue.venue";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -288,7 +309,7 @@ export default defineCliCommands({
       summary: "List accessible venues",
       async run({ ctx }) {
         const venues = await listVenues(ctx);
-        printJsonOrTable(ctx, { venues }, venueRows(venues), [
+        printJsonOrTable(ctx, { venues: venues.map((venue) => withCloudResourcePermalink(ctx, "venue.venue", venue)) }, venueRows(venues), [
           { key: "name" },
           { key: "slug" },
           { key: "permission" },
@@ -312,7 +333,7 @@ export default defineCliCommands({
       args: { venue: arg.optional({ valueLabel: "venue" }) },
       async run({ ctx, args }) {
         const dashboard = await loadDashboard(ctx, args.venue);
-        if (!printStructured(ctx, dashboard)) ctx.print(JSON.stringify(dashboard, null, 2));
+        if (!printStructured(ctx, withDashboardPermalinks(ctx, dashboard))) ctx.print(JSON.stringify(dashboard, null, 2));
       },
     }),
     command("status", {
@@ -355,7 +376,8 @@ export default defineCliCommands({
       },
       async run({ ctx, flags }) {
         const venue = await apiJson<Venue>(ctx, "POST", "/venues", buildVenueInput(undefined, flags));
-        if (!printStructured(ctx, venue)) ctx.print(`Created ${venue.name} (${venue.id})`);
+        if (!printStructured(ctx, withCloudResourcePermalink(ctx, "venue.venue", venue)))
+          ctx.print(`Created ${venue.name} (${venue.id}) ${cloudResourceUrl(ctx, { type: "venue.venue", id: venue.id })}`);
       },
     }),
     command("update", {
@@ -379,7 +401,8 @@ export default defineCliCommands({
       async run({ ctx, args, flags }) {
         const venue = await resolveVenueRef(ctx, args.venue);
         const result = await apiJson<Venue>(ctx, "PATCH", `/venues/${encode(venue.id)}`, buildVenueInput(venue, flags));
-        printMutationResult(ctx, result, `Updated ${result.name}`);
+        if (!printStructured(ctx, withCloudResourcePermalink(ctx, "venue.venue", result)))
+          printMutationResult(ctx, result, `Updated ${result.name}`);
       },
     }),
     command("delete", {
@@ -584,7 +607,7 @@ export default defineCliCommands({
       args: { venue: arg.optional({ valueLabel: "venue" }) },
       async run({ ctx, args }) {
         const dashboard = await loadDashboard(ctx, args.venue);
-        printJsonOrTable(ctx, { items: dashboard.slots }, slotRows(dashboard.slots), [
+        printJsonOrTable(ctx, { items: withSlotPermalinks(ctx, dashboard) }, slotRows(dashboard.slots), [
           { key: "date" },
           { key: "recurring" },
           { key: "title" },

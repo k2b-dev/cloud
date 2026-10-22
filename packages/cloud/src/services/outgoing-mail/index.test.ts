@@ -249,3 +249,47 @@ test("log filters bound and normalize search, app sets, recipients and timestamp
   expect(MailFilterSchema.safeParse({ until: "2026-10-09T10:00:00+02:00" }).success).toBe(true);
   expect(MailFilterSchema.safeParse({ recipient: "@example.org" }).success).toBe(false);
 });
+
+test("content validates identity, UUID and authenticated context before any lookup and hides infrastructure errors", async () => {
+  const { outgoingMailMessages } = await import("./messages");
+  const { buildProjectedUser } = await import("../session/user");
+  const context = {
+    actor: {
+      kind: "user" as const,
+      user: buildProjectedUser({ id: "14180000-0000-4000-8000-000000000001", uid: "reader", provider: "local", profile: "user" }),
+    },
+  };
+  const id = "14180000-0000-4000-8000-000000000002";
+  const read = spyOn(outgoingMailMessages, "appContent").mockResolvedValue({ purged: false, text: "", attachmentNames: [] });
+  try {
+    expect(await mail.content(id, context)).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
+    bindProcessApplicationId("reader");
+    expect(await mail.content(id, context)).toMatchObject({ ok: false, error: { code: "mail_not_declared" } });
+    clearProcessApplicationId();
+    bindProcessApplicationId("reader", ["mail:read"]);
+    for (const bad of ["not-a-uuid", "14180000-0000-4000-8000-000000000002' OR TRUE --"])
+      expect(await mail.content(bad, context)).toMatchObject({ ok: false, error: { code: "bad_input", status: 400 } });
+    for (const invalid of [
+      undefined,
+      {},
+      { actor: null },
+      { actor: { kind: "user", user: {} } },
+      { actor: { kind: "system" } },
+      { actor: { kind: "workload", appId: "reader" } },
+    ]) {
+      // JS callers and untrusted JSON must be rejected at runtime too.
+      // @ts-expect-error deliberately invalid context
+      expect(await mail.content(id, invalid)).toMatchObject({ ok: false, error: { code: "bad_input" } });
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(await mail.content(id, context)).toMatchObject({ ok: true });
+    expect(read).toHaveBeenCalledWith(id, "reader", true, context);
+    read.mockRejectedValue(new Error("private SQL connection secret"));
+    expect(await mail.content(id, context)).toEqual({
+      ok: false,
+      error: { code: "mail_unavailable", message: "Outgoing mail storage is unavailable.", status: 500 },
+    });
+  } finally {
+    read.mockRestore();
+  }
+});

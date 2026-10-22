@@ -4,8 +4,10 @@
  * third-party management lives in the accounts admin app.
  */
 
-import { err, fail, ok } from "@k2b/stdlib";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { sql } from "bun";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
+import { deleteCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
@@ -26,6 +28,7 @@ import {
   NotificationQuietSettingsSchema,
   RegisterBrowserNotificationEndpointSchema,
   ServiceAccountCredentialSchema,
+  SignOutOthersResponseSchema,
   UpdateAvatarResponseSchema,
   UpdateAvatarSchema,
   UpdateNotificationQuietSettingsSchema,
@@ -40,21 +43,28 @@ import {
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, auth, getLocale, getTimeZone, jsonResponse, rateLimit, requiresAuth, respond, v } from "../server";
 import { APP_SESSION_FORBIDDEN } from "../server/middleware/auth";
+import { noTransform } from "../server/middleware/no-transform";
 import {
   accountLifecycle,
   accountsAppService as accountsService,
   audit,
   browserNotifications,
+  logger,
   mandates,
   notifications,
   serviceAccountCredentials,
   webauthn,
 } from "../services";
 import { MandatePolicyV1Schema } from "../services/mandates";
+import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "../services/session/recent";
 import { coreSettings } from "../services/settings/api";
 
+import { lastingAccessApiMessages } from "./lasting-access-messages";
+import { createMePanelConsentRoutes } from "./me-panel-consent";
 import { createMeRailRoutes } from "./me-rail";
 import { createMeWebVitalsRoutes } from "./me-web-vitals";
+
+const log = logger("api:me");
 
 const toAccountsActor = (user: AuthContext["Variables"]["user"]) => ({
   userId: user.id,
@@ -67,19 +77,10 @@ const toAccountsActor = (user: AuthContext["Variables"]["user"]) => ({
 const webOnly = (c: Context) => c.json(APP_SESSION_FORBIDDEN, 403);
 
 /**
- * Guards the endpoints that manage how the account is authenticated: passkeys,
- * API keys, the password, and account deletion.
- *
- * `auth.requireUser()` is not enough for these. A personal API key acts as
- * its user, so it passes that check — and could then enrol a passkey, which is
- * a full account takeover, or mint further keys that outlive the revocation of
- * the one that was leaked. No scope in the vocabulary means "may add an
- * authenticator", so a credential must not reach these endpoints at all.
- *
- * A credential may still *read* its account's passkeys and keys; only the
- * mutations are gated. Browser sessions and user-issued OAuth access tokens
- * both resolve to a `user` actor and are unaffected. The mobile app's session
- * is rejected too: whatever it created would outlive removing the phone.
+ * Guards passkey and key removal, password changes, and account deletion.
+ * Browser sessions and user OAuth actors may perform these actions; personal
+ * API keys and mobile app sessions may not. Adding keys and sign-in methods
+ * requires a confirmed browser sign-in through the separate creation gate.
  */
 const requireDirectUserActor = createMiddleware<AuthContext>(async (c, next) => {
   if (c.get("actor")?.kind !== "user") {
@@ -94,6 +95,27 @@ const requireDirectUserActor = createMiddleware<AuthContext>(async (c, next) => 
   if (auth.isAppSession(c)) return webOnly(c);
   return next();
 });
+
+const requireBrowserSignIn = createMiddleware<AuthContext>(async (c, next) => {
+  if (!(await auth.browserSignIn(c))) {
+    return c.json(
+      { code: "BROWSER_SIGN_IN_REQUIRED", message: lastingAccessApiMessages.resolve([getLocale(c)]).t.browserSignInRequired },
+      403,
+    );
+  }
+  return next();
+});
+
+const lastingAccessMessage = (c: Context<AuthContext>, code: "REAUTHENTICATE" | "FORBIDDEN") => {
+  const { t } = lastingAccessApiMessages.resolve([getLocale(c)]);
+  return code === "REAUTHENTICATE" ? t.reauthenticate : t.forbidden;
+};
+
+/** The creation services fail with these codes only when the browser sign-in does not confirm the write. */
+const localizeLastingAccessResult = <T>(c: Context<AuthContext>, result: Result<T>): Result<T> =>
+  !result.ok && (result.error.code === "REAUTHENTICATE" || result.error.code === "FORBIDDEN")
+    ? fail({ ...result.error, message: lastingAccessMessage(c, result.error.code) })
+    : result;
 
 const ExtendAccountResponseSchema = z.object({
   message: z.string(),
@@ -194,11 +216,13 @@ const NotificationHistoryQuerySchema = z.object({
 });
 const mandateRoutes = createMeMandateRoutes();
 const app = new Hono<AuthContext>()
+  .use("/notifications/history/*", noTransform())
   .use(rateLimit())
   .use(auth.requireRole("authenticated"))
   .use(auth.requireUser())
   .route("/", mandateRoutes)
   .route("/", createMeRailRoutes())
+  .route("/", createMePanelConsentRoutes())
   .route("/", createMeWebVitalsRoutes())
 
   .get(
@@ -540,7 +564,7 @@ const app = new Hono<AuthContext>()
 
   .post(
     "/passkeys/registration/start",
-    requireDirectUserActor,
+    requireBrowserSignIn,
     describeRoute({
       tags: ["Me"],
       summary: "Start passkey registration",
@@ -549,15 +573,28 @@ const app = new Hono<AuthContext>()
       responses: {
         200: jsonResponse(z.unknown(), "Passkey registration options"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "Not permitted for API keys or other credentials"),
+        403: jsonResponse(ErrorResponseSchema, "Confirmed browser sign-in required (BROWSER_SIGN_IN_REQUIRED or REAUTHENTICATE)"),
       },
     }),
-    async (c) => respond(c, webauthn.beginRegistration({ user: c.get("user") })),
+    async (c) => {
+      const signIn = await auth.browserSignIn(c);
+      if (!signIn) throw new Error("Browser sign-in gate was not applied");
+      try {
+        await requireConfirmedBrowserSignIn(sql, signIn, (code) => {
+          throw new ConfirmedBrowserSignInError(code);
+        });
+      } catch (error) {
+        if (error instanceof ConfirmedBrowserSignInError)
+          return c.json({ code: error.code, message: lastingAccessMessage(c, error.code) }, 403);
+        throw error;
+      }
+      return respond(c, webauthn.beginRegistration({ user: c.get("user") }));
+    },
   )
 
   .post(
     "/passkeys/registration/verify",
-    requireDirectUserActor,
+    requireBrowserSignIn,
     describeRoute({
       tags: ["Me"],
       summary: "Verify passkey registration",
@@ -567,20 +604,26 @@ const app = new Hono<AuthContext>()
         201: jsonResponse(WebAuthnPasskeySchema, "Passkey created"),
         400: jsonResponse(ErrorResponseSchema, "Passkey registration failed"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "Not permitted for API keys or other credentials"),
+        403: jsonResponse(ErrorResponseSchema, "Confirmed browser sign-in required (BROWSER_SIGN_IN_REQUIRED or REAUTHENTICATE)"),
       },
     }),
     v("json", CreateWebAuthnPasskeySchema),
     async (c) =>
       respond(
         c,
-        () => {
+        async () => {
           const data = c.req.valid("json");
-          return webauthn.finishRegistration({
-            user: c.get("user"),
-            name: data.name,
-            response: data.response as never,
-          });
+          const browserSignIn = await auth.browserSignIn(c);
+          if (!browserSignIn) throw new Error("Browser sign-in gate was not applied");
+          return localizeLastingAccessResult(
+            c,
+            await webauthn.finishRegistration({
+              browserSignIn,
+              user: c.get("user"),
+              name: data.name,
+              response: data.response as never,
+            }),
+          );
         },
         201,
       ),
@@ -611,7 +654,7 @@ const app = new Hono<AuthContext>()
 
   .post(
     "/api-keys",
-    requireDirectUserActor,
+    requireBrowserSignIn,
     describeRoute({
       tags: ["Me"],
       summary: "Create current user API key",
@@ -622,7 +665,10 @@ const app = new Hono<AuthContext>()
         201: jsonResponse(CreateUserApiKeyResponseSchema, "API key created"),
         400: jsonResponse(ErrorResponseSchema, "Failed to create API key"),
         401: jsonResponse(ErrorResponseSchema, "Authentication required"),
-        403: jsonResponse(ErrorResponseSchema, "Credential not permitted or models-only API turned off"),
+        403: jsonResponse(
+          ErrorResponseSchema,
+          "Confirmed browser sign-in required (BROWSER_SIGN_IN_REQUIRED or REAUTHENTICATE), or models-only API turned off",
+        ),
       },
     }),
     v("json", CreateUserApiKeySchema),
@@ -638,12 +684,18 @@ const app = new Hono<AuthContext>()
                 "Models-only API keys are turned off. An administrator can turn on the OpenAI-compatible API in the AI settings.",
               ),
             );
-          return serviceAccountCredentials.createUserApiToken({
-            access: data.access,
-            user,
-            name: data.name,
-            expiresAt: data.expiresAt ?? null,
-          });
+          const browserSignIn = await auth.browserSignIn(c);
+          if (!browserSignIn) throw new Error("Browser sign-in gate was not applied");
+          return localizeLastingAccessResult(
+            c,
+            await serviceAccountCredentials.createUserApiToken({
+              browserSignIn,
+              access: data.access,
+              user,
+              name: data.name,
+              expiresAt: data.expiresAt ?? null,
+            }),
+          );
         },
         201,
       ),
@@ -700,25 +752,96 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Me"],
       summary: "Change current user password",
-      description: "Change the authenticated user's password. Requires the current password for verification.",
+      description:
+        "Change the authenticated user's password and end every other sign-in. Requires the current password. The current browser stays signed in with a new cookie and its original sign-in time. signInAgain is true when the caller must sign in again: this browser could not be kept, or the request did not come from a browser sign-in.",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(MessageResponseSchema, "Password changed"),
+        200: jsonResponse(SignOutOthersResponseSchema, "Password changed"),
         400: jsonResponse(ErrorResponseSchema, "Failed to change password"),
         401: jsonResponse(ErrorResponseSchema, "Current password is incorrect"),
+        500: jsonResponse(
+          ErrorResponseSchema,
+          "Password changed, but signing out other sign-ins failed (SIGN_OUT_OTHERS_FAILED). Retry POST /api/me/sign-ins/sign-out-others.",
+        ),
         403: jsonResponse(ErrorResponseSchema, "Not permitted for API keys or other credentials"),
       },
     }),
     v("json", ChangePasswordSchema),
     async (c) =>
       respond(c, async () => {
+        const keep = await auth.browserSignIn(c);
         const result = await accountsService.user.changeOwnPassword({
+          keep: keep && { sid: keep.sid, authEpoch: keep.authEpoch },
           user: c.get("user"),
           currentPassword: c.req.valid("json").currentPassword,
           newPassword: c.req.valid("json").newPassword,
         });
         if (!result.ok) return result;
-        return ok({ message: "Password changed successfully." });
+        if (result.data.kept) auth.session.setWebCookie(c, result.data.kept.token, result.data.kept.expiresAt);
+        const signInAgain = !result.data.kept;
+        if (keep && signInAgain) deleteCookie(c, "session_token", { path: "/" });
+        return ok({
+          message: signInAgain
+            ? keep
+              ? "Password changed. You are signed out everywhere, including this browser. Sign in again."
+              : "Password changed. You are signed out everywhere. Sign in again."
+            : "Password changed successfully.",
+          signInAgain,
+        });
+      }),
+  )
+
+  .post(
+    "/sign-ins/sign-out-others",
+    auth.rejectAppSession,
+    requireBrowserSignIn,
+    describeRoute({
+      tags: ["Me"],
+      summary: "Sign out every other sign-in",
+      description:
+        "End other sign-ins and rotate this browser's cookie while preserving its sign-in time and expiry; signInAgain is true if this browser could not be kept. Cloud Login phones stay paired. API keys, passkeys and mandates stay valid.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SignOutOthersResponseSchema, "Other sign-ins ended"),
+        401: jsonResponse(ErrorResponseSchema, "Authentication required"),
+        403: jsonResponse(
+          ErrorResponseSchema,
+          "Browser sign-in required (BROWSER_SIGN_IN_REQUIRED); mobile app sessions receive FORBIDDEN",
+        ),
+        500: jsonResponse(ErrorResponseSchema, "Signing out other sign-ins failed (SIGN_OUT_OTHERS_FAILED)"),
+      },
+    }),
+    async (c) =>
+      respond(c, async () => {
+        const signIn = await auth.browserSignIn(c);
+        if (!signIn) throw new Error("Browser sign-in gate was not applied");
+        try {
+          const { kept } = await auth.session.endOtherSignIns(c.get("user").id, {
+            keep: { sid: signIn.sid, authEpoch: signIn.authEpoch },
+            reason: "sign_out_others",
+          });
+          const user = c.get("user");
+          try {
+            await audit.record({
+              action: "auth.session.sign_out_others",
+              outcome: "allowed",
+              actor: toAccountsActor(user),
+              target: { type: "user", id: user.id, label: user.uid, provider: user.provider },
+              metadata: { keptThisBrowser: !!kept },
+            });
+          } catch {
+            log.warn("Other sign-ins ended, but recording the audit event failed", { userId: user.id });
+          }
+          if (kept) auth.session.setWebCookie(c, kept.token, kept.expiresAt);
+          const signInAgain = !kept;
+          if (signInAgain) deleteCookie(c, "session_token", { path: "/" });
+          return ok({
+            message: signInAgain ? "Other sign-ins ended. Sign in again in this browser." : "Other sign-ins ended.",
+            signInAgain,
+          });
+        } catch {
+          return fail({ code: "SIGN_OUT_OTHERS_FAILED", status: 500, message: "Signing out your other sign-ins did not work. Try again." });
+        }
       }),
   )
 

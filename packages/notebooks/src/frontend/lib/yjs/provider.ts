@@ -39,6 +39,8 @@ export type YjsProviderOptions = {
   onHistoryIncomplete?: () => void;
   /** Replay reached the live tail: the note is fully connected again. */
   onReady?: () => void;
+  /** Called when hasUnsentChanges() may have changed. */
+  onUnsentChange?: () => void;
 };
 
 const WS_TYPE = notebooksYjs.wsType;
@@ -99,6 +101,8 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   let replayReady = false;
   let localStateSent = false;
   let needsFullResync = false;
+  const unconfirmed = new Set<string>();
+  const pendingChanged = () => opts.onUnsentChange?.();
 
   const errorMessageByCode: Record<YjsErrorCode, string> = {
     LOGIN_REQUIRED: "Login required",
@@ -126,8 +130,13 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     return false;
   };
 
-  const sendSyncPublish = (data: Uint8Array): boolean =>
-    sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload: encoding.toBase64(data) });
+  const sendSyncPublish = (data: Uint8Array): boolean => {
+    const payload = encoding.toBase64(data);
+    if (!sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload })) return false;
+    unconfirmed.add(payload);
+    pendingChanged();
+    return true;
+  };
 
   const sendAwarenessPublish = (data: Uint8Array): boolean =>
     sendJson(WS_TYPE.awarenessPublish, { noteId: activeNoteId, payload: encoding.toBase64(data) });
@@ -149,14 +158,39 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   const sendLocalStateIfNeeded = () => {
     if (!replayReady || localStateSent) return;
     if (needsFullResync) {
+      unconfirmed.clear();
+      pendingChanged();
       const localState = Y.encodeStateAsUpdate(doc);
-      if (localState.length > 0 && !sendSyncPublish(localState)) {
-        needsFullResync = true;
-        return;
+      if (localState.length > 0 && !sendSyncPublish(localState)) return;
+    } else {
+      if (unconfirmed.size > 1) {
+        // Merge consecutive updates into groups that stay within the server limit (a merge is never
+        // larger than its parts); an update that alone exceeds the limit stays as it is.
+        const groups: string[][] = [];
+        let size = Number.POSITIVE_INFINITY;
+        for (const update of unconfirmed) {
+          if (size + update.length > notebooksYjs.maxSyncPayloadLength) {
+            groups.push([]);
+            size = 0;
+          }
+          groups.at(-1)!.push(update);
+          size += update.length;
+        }
+        unconfirmed.clear();
+        for (const group of groups) {
+          unconfirmed.add(group.length === 1 ? group[0]! : encoding.toBase64(Y.mergeUpdates(group.map(encoding.fromBase64))));
+        }
+        pendingChanged();
+      }
+      for (const payload of unconfirmed) {
+        if (!sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload })) return;
       }
     }
     localStateSent = true;
-    needsFullResync = false;
+    if (needsFullResync) {
+      needsFullResync = false;
+      pendingChanged();
+    }
   };
 
   const terminate = (error: YjsProviderError) => {
@@ -164,7 +198,6 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     isTerminated = true;
     replayReady = false;
     localStateSent = false;
-    needsFullResync = false;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
@@ -180,13 +213,17 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   };
 
   const onDocUpdate = (update: Uint8Array, origin: unknown) => {
-    if (isDisposed || isTerminated) return;
+    if (isDisposed) return;
     if (origin === "remote") return;
-    if (!replayReady) {
+    if (isTerminated || !replayReady) {
       needsFullResync = true;
+      pendingChanged();
       return;
     }
-    if (!sendSyncPublish(update)) needsFullResync = true;
+    if (!sendSyncPublish(update)) {
+      needsFullResync = true;
+      pendingChanged();
+    }
   };
 
   const onAwarenessUpdate = ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
@@ -334,10 +371,15 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   const handleReplayReadyMessage = (msg: ProviderMessage): boolean => {
     if (msg.type !== WS_TYPE.replayReady) return false;
     const payload = (msg.payload ?? {}) as { noteId?: unknown };
-    if (payload.noteId !== activeNoteId) return true;
+    // A socket can still deliver queued messages after a terminal error; the editor must stay stopped.
+    if (payload.noteId !== activeNoteId || isTerminated) return true;
     replayReady = true;
-    failedConnects = 0;
-    storageFailures = 0;
+    // Reading works again, but with edits still unsent only their echo proves that storage accepts writes,
+    // so backoff and storage budget keep counting until then.
+    if (!needsFullResync && unconfirmed.size === 0) {
+      failedConnects = 0;
+      storageFailures = 0;
+    }
     opts.onReady?.();
     sendLocalStateIfNeeded();
     return true;
@@ -373,6 +415,11 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     if (msg.type === WS_TYPE.syncPush && payload.historyIncomplete === true) opts.onHistoryIncomplete?.();
     for (const update of payload.updates) {
       if (typeof update.payload !== "string") continue;
+      if (msg.type === WS_TYPE.syncPush && unconfirmed.delete(update.payload)) {
+        failedConnects = 0;
+        storageFailures = 0;
+        pendingChanged();
+      }
       try {
         if (msg.type === WS_TYPE.syncPush) {
           Y.applyUpdate(doc, encoding.fromBase64(update.payload), "remote");
@@ -411,9 +458,11 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     workspaceEventQueue = Promise.resolve();
     const wsUrl = new URL("/api/notebooks/ws", resolveHttpBaseUrl(appUrl));
     wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-    ws = new WebSocket(wsUrl.href);
+    const socket = new WebSocket(wsUrl.href);
+    ws = socket;
 
-    ws.onopen = () => {
+    socket.onopen = () => {
+      if (ws !== socket) return;
       opts.onConnectionChange?.(true);
       replayReady = false;
       localStateSent = false;
@@ -421,11 +470,13 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       sendReplayRequest(lastCursor);
     };
 
-    ws.onmessage = (event) => {
+    socket.onmessage = (event) => {
+      if (ws !== socket) return;
       if (typeof event.data === "string") handleJsonMessage(event.data);
     };
 
-    ws.onclose = (event) => {
+    socket.onclose = (event) => {
+      if (ws !== socket) return;
       opts.onConnectionChange?.(false);
       replayReady = false;
       localStateSent = false;
@@ -446,7 +497,10 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       }
     };
 
-    ws.onerror = () => ws?.close();
+    socket.onerror = () => {
+      if (ws !== socket) return;
+      socket.close();
+    };
   };
 
   doc.on("update", onDocUpdate);
@@ -454,6 +508,25 @@ export function createYjsProvider(opts: YjsProviderOptions) {
 
   return {
     connect,
+    /** Retry a dropped connection immediately, without reviving terminal sessions. */
+    reconnectNow: (): void => {
+      if (isDisposed || isTerminated || (ws && ws.readyState <= WebSocket.OPEN)) return;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      failedConnects = 0;
+      connect();
+    },
+    /** Local edits the server has not echoed yet. */
+    hasUnsentChanges: (): boolean => needsFullResync || unconfirmed.size > 0,
+    /** Reconnect after a terminal error, used after the person signs in again. */
+    resume: (): void => {
+      if (!isTerminated || isDisposed) return;
+      isTerminated = false;
+      failedConnects = 0;
+      connect();
+    },
     dispose: () => {
       isDisposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);

@@ -5,10 +5,8 @@ import { createEffect, onCleanup, onMount } from "solid-js";
 import { ContactComposeInputSchema } from "../../commands";
 import { CONTACTS_CREATE_QUERY_KEYS, parseContactCreateSeed } from "../../integration";
 import { openContactCreateFlow, type WritableContactBook } from "./ContactCreateFlow";
+import { contactOutcomeHref } from "./contact-outcome";
 import { detailMessages } from "./detail-messages";
-
-const contactHref = (bookId: string, contactId: string): string =>
-  `/app/contacts/${encodeURIComponent(bookId)}?contact=${encodeURIComponent(contactId)}&contactBook=${encodeURIComponent(bookId)}`;
 
 const consumeCreateQuery = (url: URL): void => {
   for (const key of CONTACTS_CREATE_QUERY_KEYS) url.searchParams.delete(key);
@@ -34,7 +32,7 @@ export default function ContactCreateLauncher(props: { writableBooks: WritableCo
         chooseBook: !bookId,
         locale: locale(),
       });
-      if (result && active) navigateTo(contactHref(result.bookId, result.contact.id));
+      if (result && active) navigateTo(contactOutcomeHref(result.contact, "created"));
     } finally {
       pending = false;
     }
@@ -70,7 +68,7 @@ export default function ContactCreateLauncher(props: { writableBooks: WritableCo
       initialValues: { label: seed.name, email: seed.email },
       locale: locale(),
     }).then((result) => {
-      if (result) navigateTo(contactHref(result.bookId, result.contact.id));
+      if (result) navigateTo(contactOutcomeHref(result.contact, "created"));
     });
   });
 

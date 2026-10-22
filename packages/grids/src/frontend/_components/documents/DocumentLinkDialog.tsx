@@ -122,7 +122,7 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
                         tabIndex={expiresIn() === option.value ? 0 : -1}
                         class={`rounded-[var(--ui-radius-control)] border px-3 py-2 text-left transition-colors ${
                           expiresIn() === option.value
-                            ? "app-accent-border app-accent-text bg-[var(--ui-selected)]"
+                            ? "app-accent-border app-accent-text bg-[var(--ui-app-selected)]"
                             : "border-[var(--ui-border)] bg-[var(--ui-surface)] text-secondary hover:bg-[var(--ui-hover)] hover:text-primary"
                         }`}
                         onClick={() => setExpiresIn(option.value)}

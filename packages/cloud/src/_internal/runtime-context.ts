@@ -58,6 +58,7 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
             badge: e.nav.badge,
           }
         : undefined,
+      panel: e.panel ? { ...e.panel, requiresRoles: e.panel.requiresRoles ? [...e.panel.requiresRoles] : undefined } : undefined,
       help: e.help ? { ...e.help } : undefined,
       searchTags,
       searchHelp: searchQueries?.map((query) => query.description).join(" "),

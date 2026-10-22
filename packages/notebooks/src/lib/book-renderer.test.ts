@@ -1,13 +1,72 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { cloudAiChartTable } from "@k2b/cloud/ai/browser";
 import { markdown } from "@k2b/cloud/shared";
 import { renderMarkdownInfoBlock } from "@k2b/ui";
+import katex from "katex";
 import type { NoteQueryResult } from "../service/note-query";
 import { renderNotebookBook, sanitizeNotebookBookHtml } from "./book-renderer";
 import { bookRendererMessages } from "./book-renderer-messages";
+import * as chartBlocks from "./chart-blocks";
+import { notebookChartTableHtml, parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
+import { DOCUMENTED_IMAGE_FORMS } from "./markdown-image.fixtures";
 
 const render = (markdown: string, locale = "en", queryResults?: ReadonlyMap<number, NoteQueryResult>) =>
   renderNotebookBook({ markdown, notebookId: "ABC123", locale, queryResults });
 const sanitize = (html: string) => sanitizeNotebookBookHtml(html, (href) => href);
+
+describe("documented Book image forms", () => {
+  for (const fixture of DOCUMENTED_IMAGE_FORMS) {
+    test(fixture.name, () => {
+      const { html } = render(fixture.markdown);
+      const images = html.match(/<img\b[^>]*>/g) ?? [];
+      expect(images).toHaveLength(1);
+      const img = images[0]!;
+      const src = fixture.href.startsWith("attach://") ? "/api/notebooks/ABC123/attachments/GHI789/content?v=1" : fixture.href;
+      expect(img).toContain(`src="${src}"`);
+      expect(img).toContain(`alt="${fixture.alt}"`);
+      for (const attribute of ["width", "height", "title"] as const) {
+        if (fixture[attribute] === null) expect(img).not.toContain(` ${attribute}=`);
+        else expect(img).toContain(` ${attribute}="${fixture[attribute]}"`);
+      }
+      // A height alone needs an explicit height, because Book's image style otherwise keeps `height: auto`.
+      if (fixture.height !== null && fixture.width === null) expect(img).toContain(`style="height:${fixture.height}px"`);
+      else expect(img).not.toContain("style=");
+      for (const markdown of [fixture.markdown, `[${fixture.markdown}](https://example.test)`, `# ${fixture.markdown}`]) {
+        const print = renderNotebookBook({ markdown, notebookId: "ABC123", locale: "en", print: true });
+        // Content behind session URLs disappears in server-side exports: hand the service slots instead.
+        for (const unsafe of ['src="/', 'href="/', "/api/", "/app/", "attach://", "url(/"]) expect(print.html).not.toContain(unsafe);
+        expect(print.html).not.toContain("notebook-book-image-link");
+        expect(print.images).toHaveLength(1);
+        expect(print.images[0]).toMatchObject({
+          href: fixture.href,
+          alt: fixture.alt,
+          title: fixture.title,
+          width: fixture.width,
+          height: fixture.height,
+          omissionIndex: 0,
+        });
+        expect(print.html).toContain(print.images[0]!.token);
+        expect(print.omissions).toEqual([]);
+        if (markdown.startsWith("#")) expect(print.headings[0]).toMatchObject({ id: "heading-floor-plan", text: fixture.alt });
+      }
+      expect(render(fixture.markdown).images).toEqual([]);
+    });
+  }
+
+  test("a sized image inside a link keeps one outer link", () => {
+    const { html } = render("[![B](attach://GHI789 =64x)](https://example.test)");
+    expect(html.match(/<a\b/g)).toHaveLength(1);
+    expect(html.match(/<img\b/g)).toHaveLength(1);
+    expect(html).toMatch(/<a[^>]*href="https:\/\/example.test"[^>]*><img[^>]*width="64"[^>]*\/><\/a>/);
+  });
+
+  test("sized image titles are escaped and unsafe URLs show only escaped alt text", () => {
+    expect(render('![Plan](attach://GHI789 =400x "<floor> & ground")').html).toContain('title="&lt;floor&gt; &amp; ground"');
+    const unsafe = render('![<unsafe>](javascript:alert =400x "title")').html;
+    expect(unsafe).not.toContain("<img");
+    expect(unsafe).toContain("&lt;unsafe&gt;");
+  });
+});
 
 const result: NoteQueryResult = {
   columns: ["$title"],
@@ -648,4 +707,244 @@ describe("Notebook Book display ligatures", () => {
   test("other applications' shared Markdown output is unchanged", () => {
     expect(markdown.renderSync("a -> b (c) 2026 != x")).toBe("<p>a -&gt; b (c) 2026 != x</p>\n");
   });
+});
+
+const chartMarkdown = `:::chart
+type: bar
+title: Sales
+columns: [Month, Revenue]
+rows:
+  - [Jan, 12]
+  - [Feb, 18]
+x: Month
+y: Revenue
+:::`;
+
+test("document diagnostics reuse parsed blocks in query, toc, chart order", () => {
+  const { diagnostics } = renderNotebookBook({
+    markdown: ":::chart\ntype: stat\ntitle: Value\n:::\n\n:::toc\nmax-depth: 9\n:::\n\n:::query\nsource: secrets\n:::",
+    notebookId: "book01",
+    locale: "en",
+  });
+  expect(diagnostics).toEqual([
+    { code: "invalid-type", line: 11, path: "query.source" },
+    { code: "invalid-type", line: 7, path: "toc.max-depth" },
+    { code: "missing-key", line: 1, path: "chart.value" },
+  ]);
+});
+
+test("charts survive sanitizing in the document and per-line editor preview", () => {
+  const result = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "en" });
+  expect(result.html).toContain('<figure class="notebook-book-chart" data-kind="bar" data-chart="');
+  expect(result.html).toContain("<svg");
+  expect(result.html).toContain("<title>Jan · Revenue: 12</title>");
+  expect(result.html).not.toContain("NOTEBOOKBOOKSLOT");
+  expect(result.blocks).toHaveLength(1);
+  expect(result.blocks[0]?.line).toBe(1);
+  expect(result.blocks[0]?.html).toContain("<svg");
+});
+
+test("authored chart column labels stay escaped inside trusted SVG and print tables", () => {
+  const markdown = chartMarkdown.replaceAll("Revenue", "<img src=x onerror=alert(1)>");
+  const { html } = renderNotebookBook({ markdown, notebookId: "book01", locale: "en", print: true });
+  expect(html).toContain("<svg");
+  expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  expect(html).not.toContain("<img");
+});
+
+test("invalid charts show a localized diagnostic and the original source", () => {
+  const markdown = chartMarkdown.replace("y: Revenue", "y: Kosen");
+  const { html, blocks } = renderNotebookBook({ markdown, notebookId: "book01", locale: "en" });
+  expect(html).toContain('class="notebook-book-diagnostic"');
+  expect(html).toContain("Unknown column Kosen.");
+  expect(html).toContain(":::chart");
+  expect(html).not.toContain("<svg");
+  expect(blocks[0]?.html).toContain("Unknown column Kosen.");
+});
+
+test("print adds a data table after the chart figure", () => {
+  const { html } = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "en", print: true });
+  expect(html).toContain('</figure><div class="md-table-wrap"><table class="md-table">');
+  expect(html).toContain('<th scope="col">Revenue</th>');
+  expect(html).toContain('<span class="md-align-right">12</span>');
+});
+
+test("version source previews still draw charts from their own text", () => {
+  const { html } = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "en", querySource: true });
+  expect(html).toContain("<svg");
+  expect(html).not.toContain(":::chart");
+});
+
+test("Book and editor preserve chart payloads; print keeps only the drawing and shared data table", () => {
+  const parsed = parseNotebookChartBlocks(chartMarkdown).blocks[0]!.input;
+  const figure = renderNotebookChartFigure(parsed, "de")!;
+  const book = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "de" });
+  expect(book.html).toContain(figure);
+  expect(book.blocks[0]!.html).toBe(figure);
+  expect(figure).toContain('data-chart="');
+  expect(figure).toContain('<div class="notebook-book-chart__actions"></div>');
+  const print = renderNotebookBook({ markdown: chartMarkdown, notebookId: "book01", locale: "de", print: true });
+  expect(print.html).not.toContain('data-chart="');
+  expect(print.html).not.toContain("notebook-book-chart__actions");
+  expect(print.html).toContain("<svg");
+  expect(print.html).toContain(notebookChartTableHtml(cloudAiChartTable(parsed, "de")));
+  expect(print.html).toContain(">Jan</span>");
+  expect(print.html).toContain(">12</span>");
+});
+
+describe("typed PDF omissions", () => {
+  test("malformed data uses its handle or localized opener line without changing diagnostics", () => {
+    expect(render("@profile\n:::data\nowner: [nested]\n:::").omissions).toEqual([
+      { code: "invalid_block", kind: "data", label: "@profile" },
+    ]);
+    for (const locale of ["en", "de"]) {
+      const document = render("\n:::data\nmissing colon\n:::", locale);
+      expect(document.omissions).toEqual([{ code: "invalid_block", kind: "data", label: locale === "de" ? "Zeile 2" : "Line 2" }]);
+      expect(document.diagnostics).toEqual([]);
+    }
+  });
+
+  test("unavailable queries report missing results and result diagnostics", () => {
+    for (const queryResults of [
+      undefined,
+      new Map([[1, { ...result, diagnostics: [{ code: "unavailable" as const, line: 1, path: "source" }] }]]),
+    ]) {
+      expect(render(":::query\nsource: notes\n:::", "en", queryResults).omissions).toEqual([
+        { code: "not_rendered", kind: "query", label: "Line 1" },
+      ]);
+    }
+  });
+
+  test("chart drawing failure reports one omission after a successful parse", () => {
+    // Parsing already rejects known drawing failures. Exercise a later renderer failure separately.
+    const markdown = ":::chart\ntype: bar\ntitle: Sales\ncolumns: [Month, Revenue]\nrows:\n  - [Jan, 12]\nx: Month\ny: Revenue\n:::";
+    expect(parseNotebookChartBlocks(markdown).blocks).toHaveLength(1);
+    const figure = spyOn(chartBlocks, "renderNotebookChartFigure").mockReturnValue(null);
+    try {
+      const document = render(markdown);
+      expect(document.omissions).toEqual([{ code: "invalid_block", kind: "chart", label: "Line 1" }]);
+      expect(document.html).toContain("These values cannot be drawn as this chart.");
+    } finally {
+      figure.mockRestore();
+    }
+  });
+
+  test("one block omission per in-place diagnostic in both locales and print modes", () => {
+    // An unclosed block consumes the rest of a note, so vary the final unclosed kind.
+    const closed = [
+      ":::toc\nmax-depth: 42\n:::",
+      ":::query\nsource: nowhere\n:::",
+      "@bad\n:::data\nmissing colon\n:::",
+      ":::chart\ntype: nope\n:::",
+    ];
+    for (const locale of ["en", "de"]) {
+      for (const print of [false, true]) {
+        for (const unclosed of ["query", "toc", "data", "chart", "info"] as const) {
+          const markdown = [...closed, `:::${unclosed}\nmissing close`].join("\n\n");
+          const document = renderNotebookBook({ markdown, locale, notebookId: "ABC123", print });
+          const blocks = document.omissions.filter(({ kind }) => ["query", "toc", "data", "chart", "callout"].includes(kind));
+          expect(blocks.map(({ code, kind }) => [code, kind])).toEqual([
+            ["invalid_block", "toc"],
+            ["invalid_block", "query"],
+            ["invalid_block", "data"],
+            ["invalid_block", "chart"],
+            ["invalid_block", unclosed === "info" ? "callout" : unclosed],
+          ]);
+          expect(document.html.match(/class="notebook-book-diagnostic"/g)?.length).toBe(blocks.length);
+          expect(blocks[2]?.label).toBe("@bad");
+          expect(blocks.at(-1)?.label).toBe(`${locale === "de" ? "Zeile" : "Line"} 18`);
+        }
+      }
+    }
+  });
+
+  test("print reports images and Mermaid in order, using safe labels, once per rendered slot", () => {
+    const markdown = [
+      ":::info\n![**Map**](attach://ABC123) ![](attach://DEF456 =80x40)\n:::",
+      "# ![](https://user:pw@example.test/path.png?query=secret#fragment)",
+      "```mermaid\n\n graph TD\nA-->B\n```",
+      "![](not-a-url) ![](https://[bad) ![](attach://MISSING)",
+    ].join("\n\n");
+    const input = {
+      markdown,
+      notebookId: "ABC123",
+      locale: "en",
+      references: { attachments: new Map([["DEF456", { filename: "Floor plan.png", sizeBytes: 100 }]]) },
+    };
+    const document = renderNotebookBook({ ...input, print: true });
+    expect(document.omissions).toEqual([{ code: "not_rendered", kind: "diagram", label: "graph TD" }]);
+    expect(document.images).toHaveLength(6);
+    expect(document.images.map((image) => image.omissionIndex)).toEqual([0, 0, 0, 1, 1, 1]);
+    expect(document.images.map((image) => image.alt)).toEqual(["Map", "", "", "", "", ""]);
+    expect(document.html).not.toContain("OMISSION");
+    expect(renderNotebookBook(input).omissions).toEqual([]);
+  });
+
+  test("math and table formula errors follow rendered cell order, with source labels", () => {
+    const document = render('$\\frac{$\n\n| A | B | C |\n| --- | --- | --- |\n| =1/0 | $\\sqrt{$ | =NOPE("<&>") |');
+    expect(document.omissions).toEqual([
+      { code: "invalid_block", kind: "math", label: "\\frac{" },
+      { code: "invalid_block", kind: "formula", label: "=1/0" },
+      { code: "invalid_block", kind: "math", label: "\\sqrt{" },
+      { code: "invalid_block", kind: "formula", label: '=NOPE("<&>")' },
+    ]);
+    expect(document.html).toContain('class="katex-error"');
+    expect(document.html.match(/md-formula-error/g)).toHaveLength(2);
+  });
+
+  test("KaTeX catch fallback reports invalid math", () => {
+    const math = spyOn(katex, "renderToString").mockImplementation(() => {
+      throw new Error("render failed");
+    });
+    try {
+      expect(render("$x$").omissions).toEqual([{ code: "invalid_block", kind: "math", label: "x" }]);
+    } finally {
+      math.mockRestore();
+    }
+  });
+
+  test("clean notes, empty or truncated queries and source previews omit nothing", () => {
+    expect(render("# Guide\n\nText $x^2$ and a [link](note://DEF456).\n\n| A |\n| --- |\n| =1+2 |").omissions).toEqual([]);
+    const markdown = ":::query\nsource: notes\n:::";
+    for (const queryResult of [result, { ...result, items: [], total: 0, truncated: false }]) {
+      expect(render(markdown, "en", new Map([[1, queryResult]])).omissions).toEqual([]);
+    }
+    expect(renderNotebookBook({ markdown, notebookId: "ABC123", locale: "en", querySource: true }).omissions).toEqual([]);
+    // Invalid math in alt text is only a label; its KaTeX output never reaches the document.
+    expect(
+      renderNotebookBook({ markdown: "![ $\\frac{$ ](attach://ABC123)", notebookId: "ABC123", locale: "en", print: true }).omissions,
+    ).toEqual([]);
+  });
+});
+
+test("print resolves safe Cloud links after rendering without changing browser links or reference styling", () => {
+  const markdown = [
+    "[File](attach://PDF001) [Note](note://DEF456#r%C3%A9sum%C3%A9)",
+    "[Version](/api/notebooks/ABC123/attachments/PDF001/content?v=9&download=1)",
+    "[Escaped](/path?x=%22%3E&y=%26) [Web](https://example.org/path?q=a%2Fb#h)",
+    "[Bad](javascript:alert) [Protocol](//evil.test/path) [Slash](/%5Cevil.test)",
+    "[Own](#heading-guide) [Mail](mailto:reader@example.org)",
+    "# Guide",
+    "#Team/News",
+    "| Link |\n| --- |\n| [Table](note://DEF456) |",
+  ].join("\n\n");
+  const input = { markdown, notebookId: 'book/&"ä', locale: "en", publicOrigin: "https://public.example.test:8443" };
+  const browser = renderNotebookBook(input).html;
+  const print = renderNotebookBook({ ...input, print: true }).html;
+  const notebookPath = "/app/notebooks/book%2F%26%22%C3%A4";
+  expect(browser).toContain(`href="${notebookPath}/notes/DEF456?mode=book#heading-resume"`);
+  expect(browser).not.toContain(input.publicOrigin);
+  expect(print).toContain(`href="${input.publicOrigin}${notebookPath}/notes/DEF456?mode=book#heading-resume"`);
+  expect(print).toContain(`href="${input.publicOrigin}${notebookPath}/tags/team%2Fnews?mode=book"`);
+  expect(print).toContain('href="https://public.example.test:8443/api/notebooks/ABC123/attachments/PDF001/content?v=9&amp;download=1"');
+  expect(print).toContain('href="https://public.example.test:8443/path?x=%22%3E&amp;y=%26"');
+  expect(print).toContain('href="https://example.org/path?q=a%2Fb#h"');
+  expect(print).toContain('href="#heading-guide"');
+  expect(print).toContain('href="mailto:reader@example.org"');
+  expect(print).not.toContain('href="javascript:');
+  expect(print).not.toContain('href="//');
+  expect(print).not.toContain('href="https://evil.test');
+  expect(print).toContain('data-reference="heading"');
+  expect(print).toContain('data-reference="file"');
+  expect(print.match(/href="https:\/\/public.example.test:8443[^"]*notes\/DEF456/g)).toHaveLength(2);
 });

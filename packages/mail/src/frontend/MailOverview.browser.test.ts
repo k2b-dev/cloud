@@ -114,9 +114,28 @@ const load = async (context: BrowserContextOptions, options: MailOverviewHarness
   const page = await (await browser.newContext(context)).newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(() => {
+    const RealDate = Date;
+    const start = performance.now();
+    const epoch = RealDate.parse("2026-08-19T10:00:00.000Z");
+    class FixedDate extends RealDate {
+      constructor(value?: string | number) {
+        super(value ?? epoch + performance.now() - start);
+      }
+      static override now() {
+        return epoch + performance.now() - start;
+      }
+    }
+    window.Date = FixedDate as DateConstructor;
+  });
   await page.goto(server.url.href);
   await page.evaluate((harnessOptions) => window.mountMailOverview(harnessOptions), options);
   await page.waitForSelector(".mail-overview-list");
+  expect(
+    await page
+      .locator(".mail-overview-list")
+      .evaluate((element) => ({ tag: element.tagName, paper: element.classList.contains("k2b-paper") })),
+  ).toEqual({ tag: "DIV", paper: false });
   await page.evaluate(() => window.watchFocus());
   await fontsLoaded(page);
   return Object.assign(page, { errors });
@@ -149,7 +168,13 @@ const idle = async (page: Page) => {
   await page.waitForFunction(() => document.querySelector(".mail-focus-main")?.getAttribute("aria-busy") === "false");
   await fontsLoaded(page);
 };
-const choose = (page: Page, label: string) => page.locator('[role="radio"]', { hasText: label }).click();
+const choose = async (page: Page, label: string) => {
+  const views = page.getByRole("navigation", { name: "Mail focus view", exact: true });
+  const link = views.getByRole("link").filter({ hasText: label });
+  if (await link.isVisible()) return link.click();
+  await views.getByRole("button", { name: "More views", exact: true }).click();
+  await page.getByRole("menuitem").filter({ hasText: label }).click();
+};
 
 describe("Mail overview views", () => {
   for (const [name, context] of viewports) {
@@ -225,6 +250,29 @@ describe("Mail overview views", () => {
       }
     }, 30_000);
 
+    test(`keeps the loading rows' wait under reduced motion on a ${name}`, async () => {
+      // Reduced motion makes the fade instant, but the wait is a debounce: a fast read still shows nothing.
+      for (const source of ["os", "attribute"] as const) {
+        const page = await load(
+          { ...context, reducedMotion: source === "os" ? "reduce" : "no-preference" },
+          { initialView: "mine", initialFocusError: "Mail is restarting", initialFocus: null },
+        );
+        try {
+          if (source === "attribute") await page.evaluate(() => document.documentElement.setAttribute("data-k2b-motion", "reduced"));
+          await choose(page, "Unassigned");
+          await page.waitForSelector(".mail-focus-skeleton");
+          const appear = await page.evaluate(() => {
+            const style = getComputedStyle(document.querySelector(".mail-focus-skeleton > .mail-focus-row")!);
+            return { delay: style.animationDelay, duration: style.animationDuration, fill: style.animationFillMode };
+          });
+          expect(appear).toEqual({ delay: "0.3s", duration: "0s", fill: "both" });
+          expect(page.errors).toEqual([]);
+        } finally {
+          await close(page);
+        }
+      }
+    }, 30_000);
+
     test(`shows loading rows of the final size, never the empty state, while a view loads on a ${name}`, async () => {
       const page = await load(context, { initialView: "mine", initialFocusError: "Mail is restarting", initialFocus: null });
       try {
@@ -273,3 +321,44 @@ describe("Mail overview views", () => {
     }, 30_000);
   }
 });
+
+test("on a narrow phone a long mailbox name shortens and Waiting stays inside the row", async () => {
+  const waiting = {
+    ...item(1),
+    mailboxName: "Customer support for the 2027 summer festival and its partners",
+    workStatus: "waiting" as const,
+  };
+  const page = await load(
+    { viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true },
+    {
+      initialView: "all",
+      initialFocusError: null,
+      initialFocus: {
+        pages: {
+          mine: { items: [], nextCursor: null },
+          unassigned: { items: [], nextCursor: null },
+          waiting: { items: [waiting], nextCursor: null },
+          all: { items: [waiting], nextCursor: null },
+        },
+        counts,
+        mailboxCounts: [],
+      },
+    },
+  );
+  try {
+    await idle(page);
+    const boxes = await page.locator("a.mail-focus-row .mail-row-extra").evaluate((extra) => {
+      const box = (selector: string) => extra.querySelector(selector)!.getBoundingClientRect();
+      const name = extra.querySelector<HTMLElement>(".mail-row-mailbox-name")!;
+      return {
+        extra: extra.getBoundingClientRect().right,
+        waiting: box(".mail-row-waiting").right,
+        shortened: name.scrollWidth > name.clientWidth,
+      };
+    });
+    expect(boxes.shortened).toBe(true);
+    expect(boxes.waiting).toBeLessThanOrEqual(boxes.extra + 0.5);
+  } finally {
+    await close(page);
+  }
+}, 30_000);

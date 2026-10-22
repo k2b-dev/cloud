@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
@@ -72,7 +72,8 @@ describe("Notebooks overview", () => {
     expect(html).toContain('class="k2b-app-workspace notebooks-overview-workspace"');
     expect(html).toMatch(/class="k2b-app-workspace notebooks-overview-workspace"[^>]*data-flat="true"/);
     // Notebooks are object rows in a stacked-on-mobile sidebar, not a page tree.
-    expect(html).toMatch(/<aside[^>]*aria-label="Notebooks"[^>]*data-mobile="stacked"/);
+    expect(html).toMatch(/<nav[^>]*aria-label="Notebooks"[^>]*data-mobile="stacked"/);
+    expect(html).toContain('class="k2b-app-workspace__sidebar-all" aria-haspopup="dialog" aria-expanded="false"');
     expect(html).not.toContain("k2b-app-workspace__nav-tree");
     expect(html).toContain("--k2b-workspace-sidebar-width:304px");
     expect(html.match(/data-variant="object"/g)).toHaveLength(1);
@@ -114,4 +115,30 @@ describe("Notebooks overview", () => {
     expect(html).toContain("Product lösen");
     expect(html).not.toContain("New notebook");
   });
+});
+
+test("recent note icons use shared tiles with app ink and platform row focus", () => {
+  const html = renderOverview();
+  const row = html.match(/<a\b[^>]*class="[^"]*\bnotebooks-overview-note\b[^"]*"[^>]*>/)?.[0];
+  const icons = [...html.matchAll(/<span\b[^>]*class="[^"]*\bnotebooks-overview-note-icon\b[^"]*"[^>]*>/g)];
+  expect(row).toBeDefined();
+  expect(row?.match(/\bclass="([^"]*)"/)?.[1]?.split(/\s+/)).toContain("focus-ui");
+  expect(icons).toHaveLength(1);
+  for (const [icon] of icons) {
+    const classes = icon.match(/\bclass="([^"]*)"/)?.[1]?.split(/\s+/);
+    expect(classes).toContain("k2b-icon-tile");
+    expect(classes).toContain("app-accent-text");
+    expect(icon).not.toMatch(/\bstyle\s*=/);
+  }
+  expect(html).not.toMatch(/color-mix\([^;"}]*--app-accent/);
+  expect(html).not.toContain("bg-[var(--ui-selected)]");
+});
+
+test("recent note CSS leaves the chip and focus treatment to shared utilities", () => {
+  const css = readFileSync(new URL("../styles/app.css", import.meta.url), "utf8");
+  const rule = css.match(/(?:^|\n)\.notebooks-overview-note-icon\s*\{([^}]*)\}/)?.[1];
+  expect(rule).toBeDefined();
+  expect(rule).not.toMatch(/box-shadow|color-mix|border-radius|background/);
+  expect(css).not.toMatch(/\.dark\s+\.notebooks-overview-note-icon\b[^{}]*\{/);
+  expect(css).not.toMatch(/\.notebooks-overview-note:focus-visible\s*\{[^}]*--app-accent/);
 });

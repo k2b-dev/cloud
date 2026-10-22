@@ -3,6 +3,7 @@ import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { futureLibrary } from "../../test/future-capability-manifest";
 import { compileCapabilities } from "../_internal/capabilities";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import { defineCapabilities } from "../contracts/capabilities";
 import capabilitiesCliModule from "./capabilities";
 import type { CloudCliContext, CloudCliFlags } from "./index";
@@ -35,54 +36,74 @@ const createContext = (args: string[], flags: CloudCliFlags, fetch: CloudCliCont
 };
 
 describe("capabilities CLI", () => {
-  test("discovers and invokes a canonical resource reader across catalog pages", async () => {
-    const manifest = compileCapabilities(
-      "contacts",
-      defineCapabilities({
-        protocolVersion: 2,
-        types: { contact: { title: "Contact", description: "One contact.", reader: "contact.read" } },
-        queries: {
-          "contact.read": {
-            title: "Read contact",
-            description: "Read one contact.",
-            input: z.object({ id: z.string().describe("Stable contact id.") }).strict(),
-            data: z.object({ id: z.string() }).strict(),
-            openWorld: false,
-            run: async ({ id }) => ok({ data: { id } }),
-          },
-        },
-      }),
-    ).manifest;
-    const requests: Array<{ path: string; body?: unknown }> = [];
-    const { ctx, lines } = createContext(["read", "contacts.contact", "contact-1"], {}, async (path, init) => {
-      requests.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-      if (path.includes("cursor=")) {
-        return Response.json({
+  test.each(["json", "jsonl", "text"] as const)(
+    "discovers and invokes a canonical resource reader across catalog pages in %s",
+    async (output) => {
+      const manifest = compileCapabilities(
+        "contacts",
+        defineCapabilities({
           protocolVersion: 2,
-          apps: [
-            {
-              appId: "contacts",
-              appName: "Contacts",
-              appIcon: "ti ti-address-book",
-              appDescription: "Contacts",
-              manifest,
+          types: { contact: { title: "Contact", description: "One contact.", reader: "contact.read" } },
+          queries: {
+            "contact.read": {
+              title: "Read contact",
+              description: "Read one contact.",
+              input: z.object({ id: z.string().describe("Stable contact id.") }).strict(),
+              data: z.object({ id: z.string() }).strict(),
+              openWorld: false,
+              run: async ({ id }) => ok({ data: { id } }),
             },
+          },
+        }),
+      ).manifest;
+      const requests: Array<{ path: string; body?: unknown }> = [];
+      const { ctx, lines } = createContext(["read", "contacts.contact", "contact-1"], {}, async (path, init) => {
+        requests.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+        if (path.includes("cursor=")) {
+          return Response.json({
+            protocolVersion: 2,
+            apps: [
+              {
+                appId: "contacts",
+                appName: "Contacts",
+                appIcon: "ti ti-address-book",
+                appDescription: "Contacts",
+                manifest,
+              },
+            ],
+            page: { hasMore: false },
+          });
+        }
+        if (path.startsWith("/api/capabilities/v1/catalog")) {
+          return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: true, nextCursor: "before-contacts" } });
+        }
+        return Response.json({
+          data: { id: "contact-1" },
+          refs: [
+            { type: "contacts.contact", id: "contact-1" },
+            { type: "foreign.item", id: "one" },
           ],
-          page: { hasMore: false },
         });
-      }
-      if (path.startsWith("/api/capabilities/v1/catalog")) {
-        return Response.json({ protocolVersion: 2, apps: [], page: { hasMore: true, nextCursor: "before-contacts" } });
-      }
-      return Response.json({ data: { id: "contact-1" } });
-    });
-    await capabilitiesCliModule.run(ctx);
-    expect(requests.at(-1)).toEqual({
-      path: "/api/capabilities/v1/queries/contacts/contact.read",
-      body: { input: { id: "contact-1" } },
-    });
-    expect(lines).toEqual(['{"data":{"id":"contact-1"}}']);
-  });
+      });
+      ctx.options.output = output;
+      await capabilitiesCliModule.run(ctx);
+      expect(requests.findLast((request) => !request.path.includes("/catalog?"))).toEqual({
+        path: "/api/capabilities/v1/queries/contacts/contact.read",
+        body: { input: { id: "contact-1" } },
+      });
+      expect(JSON.parse(lines[0] ?? "")).toEqual({
+        data: { id: "contact-1" },
+        refs: [
+          {
+            type: "contacts.contact",
+            id: "contact-1",
+            permalink: "http://cloud.test/open/contacts.contact/~contact-1",
+          },
+          { type: "foreign.item", id: "one" },
+        ],
+      });
+    },
+  );
 
   test("fails closed for missing apps, Types without readers, and repeated catalog cursors", async () => {
     const missing = createContext(["read", "missing.item", "one"], {}, async () =>
@@ -122,10 +143,12 @@ describe("capabilities CLI", () => {
 
   test("invokes a query with strict JSON input", async () => {
     let request: { path: string; init?: RequestInit } | undefined;
+    const requests: string[] = [];
     const { ctx, lines } = createContext(
       ["query", "contacts", "search"],
       { input: '{"query":"Ada","tags":[],"limit":5}' },
       async (path, init) => {
+        requests.push(path);
         request = { path, init };
         return Response.json({ data: [] });
       },
@@ -134,6 +157,7 @@ describe("capabilities CLI", () => {
     expect(request?.path).toBe("/api/capabilities/v1/queries/contacts/search");
     expect(JSON.parse(String(request?.init?.body))).toEqual({ input: { query: "Ada", tags: [], limit: 5 } });
     expect(lines).toEqual(['{"data":[]}']);
+    expect(requests).toEqual(["/api/capabilities/v1/queries/contacts/search"]);
   });
 
   test("omits an idempotency key for actions that do not require one", async () => {
@@ -225,4 +249,121 @@ describe("capabilities CLI", () => {
     const invalidResult = createContext(["query", "contacts", "search"], { input: "{}" }, async () => Response.json({ value: [] }));
     await expect(capabilitiesCliModule.run(invalidResult.ctx)).rejects.toThrow();
   });
+});
+
+test.each(["query", "action"] as const)("%s emits absolute provider links and canonical permalinks for multiple refs", async (kind) => {
+  const manifest = compileCapabilities(
+    "demo",
+    defineCapabilities({
+      protocolVersion: 2,
+      types: { item: { title: "Item", description: "An item", reader: "read" } },
+      queries: {
+        read: {
+          title: "Read",
+          description: "Read an item",
+          input: z.object({ id: z.string().describe("Stable resource id") }).strict(),
+          data: z.unknown(),
+          openWorld: false,
+          run: () => ok({ data: {} }),
+        },
+      },
+    }),
+  ).manifest;
+  const { ctx, lines } = createContext([kind, "demo", "operation"], { input: "{}" }, async (path) =>
+    path.includes("/catalog?")
+      ? Response.json({
+          protocolVersion: 2,
+          apps: [{ appId: "demo", appName: "Demo", appIcon: "ti ti-box", appDescription: "Demo", manifest }],
+          page: { hasMore: false },
+        })
+      : Response.json({
+          data: [{ ref: { type: "demo.item", id: ".." }, links: [{ rel: "open", href: "/app/demo/one" }] }],
+          refs: [
+            { type: "demo.item", id: ".." },
+            { type: "demo.item", id: "two" },
+            { type: "demo.item", id: "\ud800" },
+          ],
+          links: [{ rel: "open", href: "/app/demo" }],
+        }),
+  );
+  await capabilitiesCliModule.run(ctx);
+  expect(JSON.parse(lines[0] ?? "")).toMatchObject({
+    data: [{ links: [{ rel: "open", href: "http://cloud.test/app/demo/one" }] }],
+    refs: [
+      { permalink: "http://cloud.test/open/demo.item/~.." },
+      { permalink: "http://cloud.test/open/demo.item/~two" },
+      { type: "demo.item", id: "\ud800" },
+    ],
+    links: [{ rel: "open", href: "http://cloud.test/app/demo" }],
+  });
+  expect(JSON.parse(lines[0] ?? "").refs[2]).toEqual({ type: "demo.item", id: "\ud800" });
+});
+
+test("catalog enrichment failure does not hide a successful action", async () => {
+  const { ctx, lines } = createContext(["action", "demo", "create"], { input: "{}" }, async (path) => {
+    if (path.includes("/catalog?")) throw new Error("Registry offline");
+    return Response.json({
+      data: { id: "one" },
+      refs: [{ type: "demo.item", id: "one" }],
+      links: [{ rel: "open", href: "/app/demo/one" }],
+    });
+  });
+  await capabilitiesCliModule.run(ctx);
+  expect(lines.slice(0, -1)).toEqual(["The capability catalog is unavailable; some resource permalinks could not be added."]);
+  expect(JSON.parse(lines.at(-1) ?? "")).toMatchObject({ data: { id: "one" }, links: [{ href: "http://cloud.test/app/demo/one" }] });
+});
+
+test("repeated catalog cursors warn once and preserve a successful result", async () => {
+  const requests: string[] = [];
+  const { ctx, lines } = createContext(["query", "demo", "read"], { input: "{}" }, async (path) => {
+    requests.push(path);
+    return Response.json(
+      path.includes("/catalog?")
+        ? { protocolVersion: 2, apps: [], page: { hasMore: true, nextCursor: "same" } }
+        : { data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }] },
+    );
+  });
+  await capabilitiesCliModule.run(ctx);
+  expect(requests).toHaveLength(3);
+  expect(lines).toEqual([
+    "The capability catalog is unavailable; some resource permalinks could not be added.",
+    JSON.stringify({ data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }] }),
+  ]);
+});
+
+test("read reuses its manifest when it covers every result ref", async () => {
+  const requests: string[] = [];
+  const { ctx, lines } = createContext(["read", "library.book", "b1"], {}, async (path) => {
+    requests.push(path);
+    return Response.json(
+      path.includes("/catalog?")
+        ? {
+            protocolVersion: 2,
+            apps: [
+              { appId: "library", appName: "Library", appIcon: "ti ti-books", appDescription: "Books", manifest: futureLibrary().manifest },
+            ],
+            page: { hasMore: true, nextCursor: "after-library" },
+          }
+        : { data: { id: "b1" }, refs: [{ type: "library.book", id: "b1" }] },
+    );
+  });
+  await capabilitiesCliModule.run(ctx);
+  expect(requests).toEqual(["/api/capabilities/v1/catalog?limit=25", "/api/capabilities/v1/queries/library/book.read"]);
+  expect(JSON.parse(lines[0] ?? "").refs).toEqual([
+    { type: "library.book", id: "b1", permalink: "http://cloud.test/open/library.book/~b1" },
+  ]);
+});
+
+test("generic CLI review returns the complete unsaved proposal without executing an Action", async () => {
+  const review = { ...reviewFixture(), content: { kind: "page", title: "Unsaved", body: "x".repeat(300_000), format: "plain" } };
+  const calls: string[] = [];
+  const { ctx, lines } = createContext(["review", "demo", "write"], { input: '{"body":"new"}' }, async (path, init) => {
+    calls.push(path);
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ input: { body: "new" } });
+    return Response.json(review);
+  });
+  await capabilitiesCliModule.run(ctx);
+  expect(calls).toEqual(["/api/capabilities/v1/actions/demo/write/review"]);
+  expect(lines.map((line) => JSON.parse(line))).toEqual([review]);
 });

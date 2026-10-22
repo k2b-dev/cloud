@@ -138,12 +138,21 @@ Contacts it lists, searches, and resolves its contact books and contacts, and
 creates or changes contacts with a `write` grant. In Mail it lists and works in
 the mailboxes it was granted; REST, capabilities, the CLI, and queued mailbox
 work all use the lower of its grant and its token's scopes, so a `write` grant
-with a `read`-only token only reads. In Pulse it lists and queries its bases
-and changes them with a `write` grant. In Venue it lists its venues and reads
+with a `read`-only token only reads. In Pulse it lists its bases, checks source
+health, and runs read-only SQL through `sql.run` with a `read` grant. The API,
+CLI, and capability use the same base access check. A query sees only its own
+base; querying two bases requires two calls. Listing saved queries needs read
+access; saving and deleting them needs write access. Changing base settings
+needs base admin access. By default, standalone and agent accounts
+with write or admin credential scope can also create a Pulse base and receive
+its admin grant. A delegated account can create a base for its person, who
+receives the admin grant. Cloud admins can restrict creation under
+Administration → Pulse → Bases; under "people only", every service account
+counts as an agent, delegated ones included. Resource-bound accounts cannot
+create bases. In Venue it lists its venues and reads
 their dashboards.
 In Spaces, Notebooks, Contacts, Pulse, and Venue, actions that belong to a
-person stay user-only: creating a Space, Notebook, contact book, Pulse base, or
-venue, creating and revoking API keys, managing Pulse source tokens, personal
+person stay user-only: creating a Space, Notebook, contact book, or venue, creating and revoking API keys, managing Pulse source tokens, personal
 views such as favorites and the Spaces work overview, editing or deleting
 comments (and, in Notebooks, writing comments), writing contact notes, and
 signing up for or cancelling Venue shifts. Managing access and listing API keys

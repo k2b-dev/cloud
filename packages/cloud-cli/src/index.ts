@@ -3,6 +3,7 @@ import { exec, execFile, spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { setTimeout as sleepWithSignal } from "node:timers/promises";
 import { promisify } from "node:util";
 import type {
   CloudCliClientCredentialsProfile,
@@ -34,19 +35,23 @@ import {
   readPluginLock,
   readServedPlugins,
   readStoredReference,
+  removeStoredPlugin,
   resolveShortNames,
+  storePlugin,
 } from "./plugin-store";
 import {
-  commitPlugin,
   isPackagePluginSource,
-  loadPlugin,
-  loadPlugins,
+  legacyPlugins,
+  type PackagePlugins,
   PluginError,
   type PluginInfo,
-  pluginIds,
+  packagesLockPath,
   pluginsDirectory,
+  readPackagePluginFile,
+  readPackagePlugins,
   removePlugin,
   stagePlugin,
+  writePackagePlugins,
 } from "./plugins";
 import { updateCli } from "./release";
 import {
@@ -76,9 +81,18 @@ type TokenProviderConfig = {
   };
 };
 
+type OAuthLogin = {
+  method: "browser" | "device" | "user";
+  user?: string;
+  ttl?: number;
+  scope?: string;
+};
+
 type OAuthSessionConfig = {
   accessToken: string;
   accessTokenExpiresAt: string;
+  loginExpiresAt?: string;
+  login?: OAuthLogin;
   refreshToken?: string;
   refreshTokenFd0?: {
     name: string;
@@ -150,6 +164,8 @@ const CONFIG_PATH = configPath();
 const TOKEN_TIMEOUT_MS = 10_000;
 const OAUTH_REQUEST_TIMEOUT_MS = 15_000;
 const OAUTH_REFRESH_SKEW_MS = 60_000;
+/** The longest login a Cloud issues (docs: identity/oauth, Login lifetime). */
+const MAX_LOGIN_LIFETIME_SECONDS = 90 * 24 * 60 * 60;
 const PROFILE_LOCK_TIMEOUT_MS = 15_000;
 const PROFILE_LOCK_STALE_MS = 60_000;
 const BOOLEAN_FLAGS = new Set(["json", "jsonl"]);
@@ -380,6 +396,32 @@ const joinUrl = (server: string, path: string): string => `${normalizeServer(ser
 
 const readTokenFile = async (path: string): Promise<string> => (await readFile(path, "utf8")).trim();
 
+/**
+ * Why a token reader failed, in plain words: not installed, a timeout, the first
+ * line of its stderr, or its exit code. Never its stdout or command line, which
+ * may carry the secret.
+ */
+const tokenReaderFailure = (error: unknown, reader: { en: string; de: string }): { en: string; de: string } => {
+  if (!(error instanceof Error)) return { en: String(error), de: String(error) };
+  const code = "code" in error ? error.code : undefined;
+  const seconds = TOKEN_TIMEOUT_MS / 1000;
+  if (code === "ENOENT") return { en: `${reader.en} is not installed`, de: `${reader.de} ist nicht installiert` };
+  if ("killed" in error && error.killed) {
+    return {
+      en: `${reader.en} did not answer within ${seconds} seconds`,
+      de: `${reader.de} hat nicht innerhalb von ${seconds} Sekunden geantwortet`,
+    };
+  }
+  const stderr = "stderr" in error && typeof error.stderr === "string" ? error.stderr : "";
+  const detail = stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (detail) return { en: detail, de: detail };
+  if (typeof code === "number") return { en: `${reader.en} ended with exit code ${code}`, de: `${reader.de} endete mit Exit-Code ${code}` };
+  return { en: `${reader.en} failed`, de: `${reader.de} ist fehlgeschlagen` };
+};
+
 const readFd0Token = async (name: string, scope: string | undefined): Promise<string> => {
   const args = ["get", name, "--raw"];
   if (scope) args.push("--scope", scope);
@@ -390,7 +432,12 @@ const readFd0Token = async (name: string, scope: string | undefined): Promise<st
     return token;
   } catch (error) {
     if (error instanceof CliError) throw error;
-    throw new CliError(`Failed to read token from fd0: ${error instanceof Error ? error.message : String(error)}`);
+    const reason = tokenReaderFailure(error, { en: "fd0", de: "fd0" });
+    throw new CliError(
+      `Cannot read the token from fd0 item "${name}": ${reason.en}`,
+      1,
+      `Token aus fd0-Eintrag "${name}" kann nicht gelesen werden: ${reason.de}`,
+    );
   }
 };
 
@@ -446,7 +493,12 @@ const readCommandToken = async (command: string): Promise<string> => {
     return token;
   } catch (error) {
     if (error instanceof CliError) throw error;
-    throw new CliError(`Failed to read token from command: ${error instanceof Error ? error.message : String(error)}`);
+    const reason = tokenReaderFailure(error, { en: "the token command", de: "der Token-Befehl" });
+    throw new CliError(
+      `Cannot read the token from the token command: ${reason.en}`,
+      1,
+      `Token aus dem Token-Befehl kann nicht gelesen werden: ${reason.de}`,
+    );
   }
 };
 
@@ -455,6 +507,7 @@ type OAuthTokenResponse = {
   token_type: "Bearer";
   expires_in: number;
   refresh_token?: string;
+  refresh_token_expires_in?: number;
   scope?: string;
   id_token?: unknown;
 };
@@ -475,6 +528,14 @@ const parseOAuthTokenResponse = (payload: unknown): OAuthTokenResponse => {
   if (token.scope !== undefined && typeof token.scope !== "string") {
     throw new CliError("OAuth server returned an invalid scope.");
   }
+  if (
+    token.refresh_token_expires_in !== undefined &&
+    (typeof token.refresh_token_expires_in !== "number" ||
+      !Number.isInteger(token.refresh_token_expires_in) ||
+      token.refresh_token_expires_in < 0)
+  ) {
+    throw new CliError("OAuth server returned an invalid refresh token lifetime.");
+  }
   return token as OAuthTokenResponse;
 };
 
@@ -485,7 +546,9 @@ const fetchOAuth = (url: string, init: RequestInit): Promise<Response> =>
   fetch(url, {
     ...init,
     redirect: "error",
-    signal: AbortSignal.timeout(OAUTH_REQUEST_TIMEOUT_MS),
+    signal: init.signal
+      ? AbortSignal.any([init.signal, AbortSignal.timeout(OAUTH_REQUEST_TIMEOUT_MS)])
+      : AbortSignal.timeout(OAUTH_REQUEST_TIMEOUT_MS),
   });
 
 type ResolvedAuth = {
@@ -500,6 +563,42 @@ type ResolvedCliOptions = CloudCliOptions & {
 const isOAuthAccessTokenFresh = (session: OAuthSessionConfig): boolean => {
   const expiresAt = Date.parse(session.accessTokenExpiresAt);
   return Number.isFinite(expiresAt) && expiresAt > Date.now() + OAUTH_REFRESH_SKEW_MS;
+};
+
+const formatLoginTtl = (ttl: number): string => {
+  for (const [unit, seconds] of [
+    ["d", 86400],
+    ["h", 3600],
+    ["m", 60],
+  ] as const) {
+    if (ttl % seconds === 0) return `${ttl / seconds}${unit}`;
+  }
+  return `${ttl}s`;
+};
+
+const loginCommand = (
+  profileName: string,
+  server: string,
+  login: OAuthLogin,
+  refreshTokenFd0?: OAuthSessionConfig["refreshTokenFd0"],
+): string => {
+  const args = ["cld", "login", profileName, "--server", server];
+  if (login.method === "user" && login.user) args.push("--user", login.user);
+  else if (login.method === "device") args.push("--device");
+  if (login.ttl !== undefined) args.push("--ttl", formatLoginTtl(login.ttl));
+  if (login.scope !== undefined) args.push("--scope", login.scope);
+  if (refreshTokenFd0) {
+    args.push("--fd0", refreshTokenFd0.name);
+    if (refreshTokenFd0.scope) args.push("--fd0-scope", refreshTokenFd0.scope);
+  }
+  return args.map((value) => (/^[A-Za-z0-9@%+=:,./_-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`)).join(" ");
+};
+
+const assertLoginNotExpired = (profileName: string, server: string, session: OAuthSessionConfig): void => {
+  if (session.loginExpiresAt && Date.parse(session.loginExpiresAt) <= Date.now()) {
+    const command = loginCommand(profileName, server, session.login ?? { method: "browser" }, session.refreshTokenFd0);
+    throw new CliError(`Login expired, sign in again: ${command}`, 1, `Login abgelaufen, melde dich neu an: ${command}`);
+  }
 };
 
 const readOAuthRefreshToken = async (session: OAuthSessionConfig): Promise<string> => {
@@ -550,8 +649,7 @@ const cleanupStaleProfileLock = async (lockPath: string): Promise<boolean> => {
   return true;
 };
 
-const withConfigLock = async <T>(run: () => Promise<T>): Promise<T> => {
-  const lockPath = configLockPath();
+const withDirectoryLock = async <T>(lockPath: string, run: () => Promise<T>): Promise<T> => {
   await mkdir(dirname(lockPath), { recursive: true, mode: 0o700 });
   const startedAt = Date.now();
 
@@ -564,7 +662,7 @@ const withConfigLock = async <T>(run: () => Promise<T>): Promise<T> => {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       if (await cleanupStaleProfileLock(lockPath)) continue;
       if (Date.now() - startedAt > PROFILE_LOCK_TIMEOUT_MS) {
-        throw new CliError("Timed out waiting for the Cloud CLI config lock.");
+        throw new CliError("Timed out waiting for the Cloud CLI lock.", 1, "Zeitüberschreitung beim Warten auf die Cloud-CLI-Sperre.");
       }
       await sleep(100);
     }
@@ -576,6 +674,8 @@ const withConfigLock = async <T>(run: () => Promise<T>): Promise<T> => {
     await rm(lockPath, { recursive: true, force: true });
   }
 };
+
+const withConfigLock = <T>(run: () => Promise<T>): Promise<T> => withDirectoryLock(configLockPath(), run);
 
 const revokeOAuthRefreshToken = async (server: string, refreshToken: string): Promise<void> => {
   const response = await fetchOAuth(joinUrl(server, "/oauth/revoke"), {
@@ -604,6 +704,7 @@ const refreshOAuthSession = async (profileName: string, server: string, force = 
     const profile = config.profiles?.[profileName];
     const session = profile?.oauth;
     if (!profile || !session) throw new CliError(`Profile "${profileName}" is not logged in with OAuth.`);
+    assertLoginNotExpired(profileName, server, session);
     if (!force && isOAuthAccessTokenFresh(session)) return session.accessToken;
 
     const refreshToken = await readOAuthRefreshToken(session);
@@ -785,6 +886,7 @@ const resolveAuth = async (
         `OAuth profile "${profileName}" is bound to ${profile.server ?? "an unknown server"}. Run \`cld login\` for ${server}.`,
       );
     }
+    assertLoginNotExpired(profileName, server, profile.oauth);
     const token = isOAuthAccessTokenFresh(profile.oauth) ? profile.oauth.accessToken : await refreshOAuthSession(profileName, server);
     return { token, refresh: () => refreshOAuthSession(profileName, server, true) };
   }
@@ -1194,8 +1296,8 @@ Usage:
   cld auth [status] [--profile <name>] [--json]
 
 Shows how a profile signs in (default: the current profile): its server, the
-kind of credential, when the OAuth access token expires, and where the refresh
-token or client secret is stored. It never prints a secret.
+kind of credential, when the OAuth access token and login expire, and where
+the refresh token or client secret is stored. It never prints a secret.
 `,
     `cld auth
 
@@ -1203,8 +1305,8 @@ Verwendung:
   cld auth [status] [--profile <Name>] [--json]
 
 Zeigt, wie sich ein Profil anmeldet (Standard: aktuelles Profil): seinen Server,
-die Art der Zugangsdaten, wann das OAuth-Access-Token abläuft und wo das
-Refresh-Token oder Client-Secret liegt. Ein Secret gibt es nie aus.
+die Art der Zugangsdaten, wann das OAuth-Access-Token und die Anmeldung ablaufen
+und wo das Refresh-Token oder Client-Secret liegt. Ein Secret gibt es nie aus.
 `,
   );
 
@@ -1245,6 +1347,10 @@ Options:
   --device              Sign in with a code instead of a local browser. Use this over SSH
                         or on any machine without a browser: open the printed URL on your
                         laptop or phone, sign in, and enter the code.
+  --user <name>         Sign in by confirming a code in Cloud Login on your phone;
+                        username or email. Cannot be combined with --device or --no-open.
+  --ttl <duration>      End the login after this time, for example 30m, 8h, 2d.
+                        The Cloud may shorten it; cld shows the actual end.
   --no-open             Print the login URL instead of offering to open a browser
   --scope <scopes>      OAuth scopes (default: ${DEFAULT_OAUTH_SCOPE})
   --fd0 [name]          Store the refresh token in fd0 (default name: cloud-<profile>-oauth-refresh-token)
@@ -1253,10 +1359,13 @@ Options:
   --no-plugins          Do not offer the Cloud's plugins after signing in
 
 After signing in, cld offers to install the plugins this Cloud serves.
+Without --ttl, a --user login lasts the Cloud's session length;
+browser and --device logins last 90 days.
 
 Examples:
   cld login --server https://cloud.example
   cld login portal --server https://cloud.example --device
+  cld login portal --server https://cloud.example --user alice --ttl 8h
 `,
     `cld login
 
@@ -1271,6 +1380,11 @@ Optionen:
   --device              Mit einem Code statt mit einem lokalen Browser anmelden. Für SSH
                         und Rechner ohne Browser: Öffne die angezeigte URL auf Laptop oder
                         Smartphone, melde dich an und gib den Code ein.
+  --user <Name>         Anmelden, indem du einen Code in Cloud Login auf deinem Smartphone
+                        bestätigst; Benutzername oder E-Mail. Nicht mit --device oder
+                        --no-open kombinierbar.
+  --ttl <Dauer>         Anmeldung nach dieser Zeit beenden, zum Beispiel 30m, 8h, 2d.
+                        Die Cloud kann sie verkürzen; cld zeigt das tatsächliche Ende.
   --no-open             Anmelde-URL ausgeben, statt das Öffnen eines Browsers anzubieten
   --scope <Scopes>      OAuth-Scopes (Standard: ${DEFAULT_OAUTH_SCOPE})
   --fd0 [Name]          Refresh-Token in fd0 speichern (Standardname: cloud-<Profil>-oauth-refresh-token)
@@ -1279,10 +1393,13 @@ Optionen:
   --no-plugins          Nach der Anmeldung keine Plugins der Cloud anbieten
 
 Nach der Anmeldung bietet cld an, die Plugins dieser Cloud zu installieren.
+Ohne --ttl gilt für --user die Sitzungslänge der Cloud;
+Anmeldungen im Browser und mit --device dauern 90 Tage.
 
 Beispiele:
   cld login --server https://cloud.example
   cld login portal --server https://cloud.example --device
+  cld login portal --server https://cloud.example --user alice --ttl 8h
 `,
   );
 
@@ -1426,12 +1543,18 @@ Usage:
 
 Every Cloud application serves its own commands as a plugin. \`install <name>\`
 downloads a plugin from the current profile's Cloud, checks the SHA-512 of every
-file, and locks that version for the profile. \`update\` fetches newer versions for
-the current profile, or for every profile with --all. \`list --all\` covers every
+file, and locks that version for the profile. \`update\` fetches newer versions of
+every plugin of the current profile (or the one --profile names); --all covers
+every profile, also with --profile. A profile that cannot sign in, for example
+with a locked fd0 vault, prints \`cld: <profile>: <reason>\`; the other profiles
+still update, and cld exits with 1. A release that ships the same files under a
+new version only refreshes the version label. \`list --all\` covers every
 profile. Profiles share identical plugin versions on disk.
 
 A local directory, a .tgz archive, or an npm: package installs a plugin for every
-profile, for development or for commands that no Cloud serves. Such a plugin runs
+profile, for development or for commands that no Cloud serves. Authors build these
+verified bundles with \`bun run node_modules/@k2b/cloud/scripts/cli-pack.ts\`. They
+carry references and use the same verified store as served plugins. A plugin runs
 inside cld with your Cloud credentials; install only plugins you trust.
 
 Plugin commands run as \`cld <name> ...\`. \`cld plugins run <name>\` always reaches the
@@ -1451,13 +1574,19 @@ Verwendung:
 
 Jede Cloud-Anwendung stellt ihre Befehle als Plugin bereit. \`install <Name>\` lädt
 ein Plugin von der Cloud des aktuellen Profils, prüft den SHA-512 jeder Datei und
-legt diese Version für das Profil fest. \`update\` holt neuere Versionen für das
-aktuelle Profil, mit --all für alle Profile. \`list --all\` zeigt alle Profile.
-Profile teilen sich identische Plugin-Versionen auf der Festplatte.
+legt diese Version für das Profil fest. \`update\` holt neuere Versionen aller Plugins
+des aktuellen Profils (oder des mit --profile genannten); --all umfasst alle Profile,
+auch mit --profile. Kann sich ein Profil nicht anmelden, etwa weil der fd0-Tresor
+gesperrt ist, meldet cld \`cld: <Profil>: <Grund>\`; die anderen Profile werden
+trotzdem aktualisiert, und cld endet mit 1. Eine neue Version mit denselben Dateien
+aktualisiert nur die Versionsangabe. \`list --all\` zeigt alle Profile. Profile
+teilen sich identische Plugin-Versionen auf der Festplatte.
 
 Ein lokales Verzeichnis, ein .tgz-Archiv oder ein npm:-Paket installiert ein Plugin
-für alle Profile, zum Entwickeln oder für Befehle, die keine Cloud bereitstellt. Ein
-solches Plugin läuft in cld mit deinen Cloud-Zugangsdaten; installiere nur Plugins,
+für alle Profile, zum Entwickeln oder für Befehle, die keine Cloud bereitstellt. Autoren
+bauen die geprüften Bundles mit \`bun run node_modules/@k2b/cloud/scripts/cli-pack.ts\`.
+Sie enthalten Referenzen und nutzen denselben geprüften Store wie Cloud-Plugins.
+Ein solches Plugin läuft in cld mit deinen Cloud-Zugangsdaten; installiere nur Plugins,
 denen du vertraust.
 
 Plugin-Befehle laufen als \`cld <Name> ...\`. \`cld plugins run <Name>\` erreicht das Plugin
@@ -1518,7 +1647,7 @@ const profileShortNames = async (config: CloudCliConfig, profileName: string) =>
   const served = readServedPlugins(config.profiles?.[profileName]?.servedPlugins);
   return resolveShortNames(lock, {
     builtIn: reservedNames,
-    modules: new Set([...Object.keys(lock), ...(await pluginIds())]),
+    modules: new Set(installedModules(config, profileName, await readPackagePlugins()).map((module) => module.name)),
     served: served === undefined ? undefined : new Set(served),
   });
 };
@@ -1560,49 +1689,74 @@ const pluginMetadata = (module: CloudCliModule) => ({
   ...(module.shortcuts !== undefined ? { shortcuts: { ...module.shortcuts } } : {}),
 });
 
-/** Digests any profile still locks; everything else in the store may go. */
-const lockedDigests = (config: CloudCliConfig): Set<string> =>
-  new Set(Object.keys(config.profiles ?? {}).flatMap((name) => Object.values(profileLock(config, name)).map((entry) => entry.digest)));
+/** One metadata resolver for the profile lock and global package records. */
+const installedModule = (config: CloudCliConfig, profile: string, packages: PackagePlugins, name: string) => {
+  const lock = profileLock(config, profile);
+  const locked = Object.hasOwn(lock, name) ? lock[name] : undefined;
+  if (locked) return { name, profile, version: locked.version, digest: locked.digest, summary: locked.summary, locked };
+  const record = Object.hasOwn(packages, name) ? packages[name] : undefined;
+  if (record) return { name, profile: "*", version: record.version, digest: record.digest, summary: record.summary, source: record.source };
+  return undefined;
+};
+const installedModules = (config: CloudCliConfig, profile: string, packages: PackagePlugins) =>
+  [...new Set([...Object.keys(profileLock(config, profile)), ...Object.keys(packages)])].flatMap((name) => {
+    const module = installedModule(config, profile, packages, name);
+    return module ? [module] : [];
+  });
+
+/** Every digest used by a profile or a package record must survive garbage collection. */
+const referencedDigests = async (config: CloudCliConfig): Promise<Set<string>> =>
+  new Set([
+    ...Object.keys(config.profiles ?? {}).flatMap((name) => Object.values(profileLock(config, name)).map((entry) => entry.digest)),
+    ...Object.values(await readPackagePlugins()).map((entry) => entry.digest),
+  ]);
 
 /**
- * Load an installed plugin: the one the profile locks, else a package plugin
- * installed for every profile. Undefined when neither exists.
+ * Sweep the shared store while holding the packages lock, so a package
+ * install from another config cannot place its bundle between the snapshot
+ * of package records and the sweep. Call it inside the config lock.
  */
-const loadInstalledModule = async (name: string, global: GlobalArgs): Promise<CloudCliModule | undefined> => {
-  const locked = await lockedPlugin(name, global);
-  const module = locked ? loadStoredPlugin(name, locked) : loadPlugin(name);
-  return module.catch((error) => pluginFailure(error, `Plugin "${name}" cannot run`, `Plugin "${name}" kann nicht ausgeführt werden`));
-};
+const collectUnusedPlugins = (config: CloudCliConfig): Promise<string[]> =>
+  withDirectoryLock(packagesLockPath(), async () => collectPluginGarbage(await referencedDigests(config)));
 
-/** The current profile's lock entry for `name`, if the profile installed it from its Cloud. */
-const lockedPlugin = async (name: string, global: GlobalArgs): Promise<LockedPlugin | undefined> => {
+const resolveInstalledModule = async (name: string, global: GlobalArgs) => {
   const config = await loadConfig();
-  const lock = profileLock(config, resolveProfileName(config, global.profile));
-  return Object.hasOwn(lock, name) ? lock[name] : undefined;
+  return installedModule(config, resolveProfileName(config, global.profile), await readPackagePlugins(), name);
 };
 
-/** `cld <module> reference [file]`: print a served plugin's skill reference. */
-const runReferenceCommand = async (name: string, locked: LockedPlugin, args: string[]): Promise<number> => {
+/** Load the active module from the shared store, never from legacy directories. */
+const loadInstalledModule = async (name: string, global: GlobalArgs): Promise<CloudCliModule | undefined> => {
+  const installed = await resolveInstalledModule(name, global);
+  if (!installed) return undefined;
+  return loadStoredPlugin(name, installed, undefined, installed.source).catch((error) =>
+    pluginFailure(error, `Plugin "${name}" cannot run`, `Plugin "${name}" kann nicht ausgeführt werden`),
+  );
+};
+
+/** `cld <module> reference [file]` works for every installed bundle. */
+const runReferenceCommand = async (name: string, installed: { digest: string; source?: string }, args: string[]): Promise<number> => {
   const [file, ...extra] = args;
-  if (extra.length > 0 || file?.startsWith("-")) {
+  if (extra.length > 0 || file?.startsWith("-"))
     throw new CliError(`Usage: cld ${name} reference [file]`, 1, `Verwendung: cld ${name} reference [Datei]`);
-  }
-  const markdown = await readStoredReference(name, locked, file).catch((error) =>
+  const markdown = await readStoredReference(name, installed, file, undefined, installed.source).catch((error) =>
     pluginFailure(error, `Cannot read the "${name}" reference`, `Referenz von "${name}" kann nicht gelesen werden`),
   );
   process.stdout.write(markdown);
   return 0;
 };
 
-/** Every installed module of every profile, for the generated skill table. */
-const skillRows = (config: CloudCliConfig): SkillModuleRow[] =>
-  Object.keys(config.profiles ?? {})
-    .sort()
-    .flatMap((profile) =>
-      Object.entries(profileLock(config, profile))
-        .filter(([name]) => !reservedNames.has(name))
-        .map(([name, locked]) => ({ profile, name, version: locked.version, digest: locked.digest })),
-    );
+/** Active profile modules plus one global row for each active package module. */
+const skillRows = async (config: CloudCliConfig): Promise<SkillModuleRow[]> => {
+  const packages = await readPackagePlugins();
+  const profiles = Object.keys(config.profiles ?? {}).sort();
+  const rows = new Map<string, SkillModuleRow>();
+  for (const profile of profiles.length ? profiles : [DEFAULT_PROFILE]) {
+    for (const module of installedModules(config, profile, packages)) {
+      if (!reservedNames.has(module.name)) rows.set(`${module.profile}/${module.name}`, module);
+    }
+  }
+  return [...rows.values()];
+};
 
 /**
  * Rewrite the skill in every configured target from `config`. Problems never
@@ -1612,7 +1766,7 @@ const syncSkills = async (config: CloudCliConfig, locale: string): Promise<strin
   const targets = config.skills?.targets ?? [];
   if (targets.length === 0) return [];
   try {
-    return await syncSkillTargets(targets, skillRows(config));
+    return await syncSkillTargets(targets, await skillRows(config));
   } catch (error) {
     printErrorLine(
       text(
@@ -1638,8 +1792,8 @@ Usage:
 
 cld writes the cloud-cli agent skill into every target directory: the core
 SKILL.md and references of this cld release, plus references/<module>/<version>/
-for every module a profile has installed, and a table in SKILL.md that maps each
-profile to its modules. The default target is ${DEFAULT_SKILL_TARGET}; add
+for every active installed module. The table in SKILL.md shows Profile (* for
+package plugins), Module, Version, Summary, and Start (the reference index). The default target is ${DEFAULT_SKILL_TARGET}; add
 ${CLAUDE_SKILL_TARGET} for Claude Code. Every change to the installed plugins and
 every \`cld update\` rewrites all targets; \`sync\` rewrites them now. When no
 target was ever chosen, \`sync\` and \`cld update\` ask once; --yes takes the
@@ -1655,8 +1809,8 @@ Verwendung:
 
 cld schreibt den cloud-cli-Agent-Skill in jedes Zielverzeichnis: SKILL.md und
 Referenzen dieses cld-Releases sowie references/<Modul>/<Version>/ für jedes
-Modul, das ein Profil installiert hat, und eine Tabelle in SKILL.md, die jedem
-Profil seine Module zuordnet. Standardziel ist ${DEFAULT_SKILL_TARGET}; für
+aktive installierte Modul. Die Tabelle in SKILL.md zeigt Profil (* für Paket-Plugins),
+Modul, Version, Zusammenfassung und Start (den Referenzindex). Standardziel ist ${DEFAULT_SKILL_TARGET}; für
 Claude Code kommt ${CLAUDE_SKILL_TARGET} hinzu. Jede Änderung an den installierten
 Plugins und jedes \`cld update\` schreibt alle Ziele neu; \`sync\` tut es sofort.
 Wurde nie ein Ziel gewählt, fragen \`sync\` und \`cld update\` einmal; --yes nimmt
@@ -1711,7 +1865,7 @@ const runSkillsCommand = async (args: string[], global: GlobalArgs): Promise<num
       printLine(text(locale, `Removed the cloud-cli skill from ${normalized}.`, `cloud-cli-Skill aus ${normalized} entfernt.`));
       return 0;
     }
-    const written = await syncSkillTargets([normalized], skillRows(config));
+    const written = await syncSkillTargets([normalized], await skillRows(config));
     printLine(text(locale, `Wrote the cloud-cli skill to ${written[0]}.`, `cloud-cli-Skill nach ${written[0]} geschrieben.`));
     return 0;
   }
@@ -1724,7 +1878,7 @@ const runSkillsCommand = async (args: string[], global: GlobalArgs): Promise<num
         `Kein Skill-Ziel konfiguriert. Führe zuerst \`cld skills add ${DEFAULT_SKILL_TARGET}\` aus.`,
       );
     }
-    const written = await syncSkillTargets(config.skills!.targets, skillRows(config));
+    const written = await syncSkillTargets(config.skills!.targets, await skillRows(config));
     if (output !== "text") printLine(JSON.stringify({ written }, null, output === "json" ? 2 : 0));
     else
       for (const path of written)
@@ -1809,15 +1963,17 @@ const pluginCloud = async (global: GlobalArgs, otherProfile?: string): Promise<P
   return { profile: options.profile, server: options.server, fetch: createContext([], {}, options).fetch };
 };
 
-type PluginChange = {
-  profile: string;
-  name: string;
-  app: string;
-  version: string;
-  previous?: string;
-  status: "installed" | "updated" | "unchanged" | "not served" | "failed";
-  message?: string;
-};
+type PluginChange =
+  | {
+      profile: string;
+      name: string;
+      app: string;
+      version: string;
+      previous?: string;
+      status: "installed" | "updated" | "unchanged" | "not served" | "failed";
+      message?: string;
+    }
+  | { profile: string; status: "failed"; message: string };
 
 /** Save the names the profile's Cloud serves now; never creates a profile. */
 const saveServedPlugins = async (profileName: string, plugins: readonly CloudCliPluginSummary[]): Promise<void> => {
@@ -1851,14 +2007,16 @@ const syncProfilePlugins = async (
   for (const name of names) {
     try {
       if (reservedNames.has(name)) throw new PluginError(`"${name}" is a built-in cld command`, "shadowed");
-      if (!current[name] && (await loadPlugin(name).catch(() => null))) {
+      if (!Object.hasOwn(current, name) && Object.hasOwn(await readPackagePlugins(), name)) {
         throw new PluginError(`a package plugin "${name}" is installed for every profile; run \`cld plugins remove ${name}\` first`);
       }
       const manifest = await fetchPluginManifest(cloud.fetch, name);
-      const previous = current[name];
+      const previous = Object.hasOwn(current, name) ? current[name] : undefined;
       if (previous?.digest === manifest.digest && (await hasStoredPlugin(manifest.digest))) {
         const metadata = pluginMetadata(await loadStoredPlugin(name, previous));
+        const labelChanged = previous.version !== manifest.version || previous.app !== manifest.app;
         if (
+          labelChanged ||
           previous.summary !== metadata.summary ||
           previous.alias !== metadata.alias ||
           JSON.stringify(previous.shortcuts) !== JSON.stringify(metadata.shortcuts)
@@ -1866,14 +2024,22 @@ const syncProfilePlugins = async (
           staged.push({
             name,
             incoming: null,
-            locked: { app: previous.app, version: previous.version, digest: previous.digest, ...metadata },
+            locked: { app: manifest.app, version: manifest.version, digest: previous.digest, ...metadata },
           });
         }
-        changes.push({ profile: cloud.profile, name, app: manifest.app, version: manifest.version, status: "unchanged" });
+        changes.push({
+          profile: cloud.profile,
+          name,
+          app: manifest.app,
+          version: manifest.version,
+          ...(labelChanged
+            ? { status: "updated", previous: previous.version, message: "version label refreshed; files unchanged" }
+            : { status: "unchanged" }),
+        });
         continue;
       }
       const download = (await hasStoredPlugin(manifest.digest))
-        ? { incoming: null, module: await loadStoredPlugin(name, { ...manifest, summary: "" }) }
+        ? { incoming: null, module: await loadStoredPlugin(name, manifest) }
         : await downloadPlugin(cloud.fetch, manifest);
       staged.push({
         name,
@@ -1920,7 +2086,7 @@ const syncProfilePlugins = async (
     };
     await saveConfig(config);
     if (staged.length > 0) {
-      await collectPluginGarbage(lockedDigests(config));
+      await collectUnusedPlugins(config);
       await syncSkills(config, locale);
     }
   });
@@ -1933,15 +2099,20 @@ const printPluginChanges = (changes: PluginChange[], output: GlobalArgs["output"
   else if (output === "json") printLine(JSON.stringify({ plugins: changes }, null, 2));
   else {
     for (const change of changes) {
+      if (!("name" in change)) {
+        printErrorLine(`cld: ${change.profile}: ${change.message}`);
+        continue;
+      }
       const label = `${change.name} ${change.version}`.trim();
+      const labelRefreshed = change.message === "version label refreshed; files unchanged";
       const line =
         change.status === "installed"
           ? text(locale, `Installed ${label} (profile "${change.profile}").`, `${label} installiert (Profil "${change.profile}").`)
           : change.status === "updated"
             ? text(
                 locale,
-                `Updated ${change.name} ${change.previous} → ${change.version} (profile "${change.profile}").`,
-                `${change.name} ${change.previous} → ${change.version} aktualisiert (Profil "${change.profile}").`,
+                `Updated ${change.name} ${change.previous} → ${change.version} (profile "${change.profile}")${labelRefreshed ? ": version label refreshed, files unchanged" : ""}.`,
+                `${change.name} ${change.previous} → ${change.version} aktualisiert (Profil "${change.profile}")${labelRefreshed ? ": nur die Versionsangabe, Dateien unverändert" : ""}.`,
               )
             : change.status === "unchanged"
               ? text(locale, `${label} is up to date (profile "${change.profile}").`, `${label} ist aktuell (Profil "${change.profile}").`)
@@ -1964,6 +2135,7 @@ type PluginRow = {
   available: string | null;
   status: string;
   source: string;
+  message?: string;
 };
 
 const listProfilePlugins = async (global: GlobalArgs, profileName: string, current: boolean): Promise<PluginRow[]> => {
@@ -1998,7 +2170,7 @@ const listProfilePlugins = async (global: GlobalArgs, profileName: string, curre
         ? "available"
         : !served
           ? "not served"
-          : digests.get(name) === locked.digest
+          : digests.get(name) === locked.digest && served.version === locked.version
             ? "ok"
             : "update available";
     return {
@@ -2023,6 +2195,11 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     const [, id, ...moduleArgs] = args;
     if (!id || id.startsWith("-")) {
       throw new CliError("Usage: cld plugins run <name> [args...]", 1, "Verwendung: cld plugins run <Name> [Argumente...]");
+    }
+    // `reference` is the host's command for every module, shadowed or not.
+    if (moduleArgs[0] === "reference") {
+      const installed = await resolveInstalledModule(id, global);
+      if (installed) return runReferenceCommand(id, installed, moduleArgs.slice(1));
     }
     const module = await loadInstalledModule(id, global);
     if (!module) throw new CliError(`Plugin "${id}" is not installed.`, 1, `Plugin "${id}" ist nicht installiert.`);
@@ -2053,7 +2230,19 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     const profileNames = all ? Object.keys(config.profiles ?? {}).sort() : [currentProfile];
     const rows: PluginRow[] = [];
     for (const profileName of profileNames) rows.push(...(await listProfilePlugins(global, profileName, profileName === currentProfile)));
-    const { plugins } = await loadPlugins(reservedNames);
+    const packages = await readPackagePlugins();
+    const plugins = await legacyPlugins();
+    for (const [id, record] of Object.entries(packages).sort(([a], [b]) => a.localeCompare(b))) {
+      const status = reservedNames.has(id) ? "shadowed" : (await hasStoredPlugin(record.digest)) ? "ok" : "error";
+      plugins.push({
+        id,
+        ...record,
+        status,
+        ...(status === "error"
+          ? { message: `Plugin "${id}" is missing from the plugin store. Reinstall with \`cld plugins install ${record.source}\`.` }
+          : {}),
+      });
+    }
     for (const plugin of plugins) {
       rows.push({
         profile: null,
@@ -2061,7 +2250,8 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         alias: null,
         shortcuts: {},
         inactive: [],
-        app: null,
+        app: plugin.package ?? null,
+        ...(plugin.message ? { message: plugin.message } : {}),
         installed: plugin.version ?? null,
         available: null,
         status: plugin.status,
@@ -2111,12 +2301,23 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     );
     try {
       const { manifest, source } = staged;
-      const label = `${manifest.package}@${manifest.version}`;
+      const id = manifest.name;
+      const label = `${manifest.app}@${manifest.version}`;
+      const references = manifest.files.filter((file) => file.path.startsWith("references/")).length;
+      const check = (config: CloudCliConfig) => {
+        if (reservedNames.has(id)) throw new PluginError(`plugin id "${id}" is reserved by a built-in cld command`, "shadowed");
+        const lockedBy = Object.keys(config.profiles ?? {}).filter((name) => Object.hasOwn(profileLock(config, name), id));
+        if (lockedBy.length)
+          throw new PluginError(
+            `profile "${lockedBy[0]}" already uses the Cloud's plugin "${id}"; run \`cld plugins remove ${id}\` there first`,
+          );
+      };
+      check(await loadConfig());
       printErrorLine(
         text(
           locale,
-          `Plugin ${label} from ${source} runs inside cld with your Cloud credentials.`,
-          `Plugin ${label} aus ${source} läuft in cld mit deinen Cloud-Zugangsdaten.`,
+          `Plugin ${label} from ${source} (module "${id}", ${references} reference files) runs inside cld with your Cloud credentials.`,
+          `Plugin ${label} aus ${source} (Modul "${id}", ${references} Referenzdateien) läuft in cld mit deinen Cloud-Zugangsdaten.`,
         ),
       );
       if (
@@ -2126,29 +2327,52 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         printErrorLine(text(locale, "Plugin installation cancelled.", "Plugin-Installation abgebrochen."));
         return 1;
       }
-      const config = await loadConfig();
-      const { id, replaced } = await commitPlugin(staged, reservedNames, pluginsDirectory(), (id) => {
-        const lockedBy = Object.keys(config.profiles ?? {}).filter((name) => profileLock(config, name)[id]);
-        if (lockedBy.length > 0) {
-          throw new PluginError(
-            `profile "${lockedBy[0]}" already uses the Cloud's plugin "${id}"; run \`cld plugins remove ${id}\` there first`,
-          );
-        }
-      }).catch((error) => pluginFailure(error, "Cannot install plugin", "Plugin kann nicht installiert werden"));
-      if (output !== "text") {
-        printJson({ id, package: manifest.package, version: manifest.version, source, replaced });
-      } else {
+      // Verify every file even when the store already holds this digest, so a
+      // broken package never installs just because an intact copy exists.
+      const download = await storePlugin(manifest, (file) => readPackagePluginFile(staged, file));
+      let replaced: boolean;
+      try {
+        replaced = await withConfigLock(() =>
+          withDirectoryLock(packagesLockPath(), async () => {
+            const config = await loadConfig();
+            check(config);
+            const packages = await readPackagePlugins();
+            const previous = Object.hasOwn(packages, id) ? packages[id] : undefined;
+            const replaced = Object.hasOwn(packages, id) || (await legacyPlugins()).some((plugin) => plugin.id === id);
+            await placePlugin(download.incoming, manifest.digest);
+            packages[id] = {
+              package: manifest.app,
+              version: manifest.version,
+              digest: manifest.digest,
+              summary: download.module.summary,
+              source,
+            };
+            await writePackagePlugins(packages);
+            await removePlugin(id);
+            if (previous && previous.digest !== manifest.digest && !(await referencedDigests(config)).has(previous.digest)) {
+              await removeStoredPlugin(previous.digest);
+            }
+            await syncSkills(config, locale);
+            return replaced;
+          }),
+        );
+      } finally {
+        await rm(download.incoming, { recursive: true, force: true });
+      }
+      if (output !== "text") printJson({ id, package: manifest.app, version: manifest.version, source, references, replaced });
+      else
         printLine(
           text(
             locale,
-            `${replaced ? "Replaced" : "Installed"} plugin "${id}" (${label}). Run \`cld ${id} help\`.`,
-            `Plugin "${id}" (${label}) ${replaced ? "ersetzt" : "installiert"}. Führe \`cld ${id} help\` aus.`,
+            `${replaced ? "Replaced" : "Installed"} plugin "${id}" (${label}, ${references} reference files). Run \`cld ${id} help\`.`,
+            `Plugin "${id}" (${label}, ${references} Referenzdateien) ${replaced ? "ersetzt" : "installiert"}. Führe \`cld ${id} help\` aus.`,
           ),
         );
-      }
       const latestConfig = await loadConfig();
       warnInactiveShortNames((await profileShortNames(latestConfig, resolveProfileName(latestConfig, global.profile))).inactive, locale);
       return 0;
+    } catch (error) {
+      return pluginFailure(error, "Cannot install plugin", "Plugin kann nicht installiert werden");
     } finally {
       await staged.cleanup();
     }
@@ -2172,7 +2396,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
           )
         )
           .map((plugin) => plugin.name)
-          .filter((name) => !lock[name] && !reservedNames.has(name))
+          .filter((name) => !Object.hasOwn(lock, name) && !reservedNames.has(name))
       : targets;
     if (names.length === 0) {
       await syncProfilePlugins(cloud, names, "install", locale);
@@ -2189,19 +2413,39 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     const profileNames = all ? Object.keys(config.profiles ?? {}).sort() : [currentProfile];
     const changes: PluginChange[] = [];
     for (const profileName of profileNames) {
-      const lock = profileLock(config, profileName);
-      const names = targets.length > 0 ? targets : Object.keys(lock).sort();
-      const missing = names.find((name) => !lock[name]);
-      if (missing) {
-        throw new CliError(
-          `Plugin "${missing}" is not installed for profile "${profileName}". Run \`cld plugins install ${missing}\`.`,
-          1,
-          `Plugin "${missing}" ist für Profil "${profileName}" nicht installiert. Führe \`cld plugins install ${missing}\` aus.`,
-        );
+      try {
+        const lock = profileLock(config, profileName);
+        const names = targets.length > 0 ? targets : Object.keys(lock).sort();
+        const missing = names.find((name) => !Object.hasOwn(lock, name));
+        if (missing) {
+          const packages = await readPackagePlugins();
+          const record = Object.hasOwn(packages, missing) ? packages[missing] : undefined;
+          if (record) {
+            // The recorded npm source pins the installed version; an update needs the latest one.
+            const source = record.source.startsWith("npm:") ? `npm:${record.package}` : record.source;
+            throw new CliError(
+              `Package plugins update by installing the new package again: \`cld plugins install ${source}\`.`,
+              1,
+              `Paket-Plugins werden durch erneutes Installieren des neuen Pakets aktualisiert: \`cld plugins install ${source}\`.`,
+            );
+          }
+          throw new CliError(
+            `Plugin "${missing}" is not installed for profile "${profileName}". Run \`cld plugins install ${missing}\`.`,
+            1,
+            `Plugin "${missing}" ist für Profil "${profileName}" nicht installiert. Führe \`cld plugins install ${missing}\` aus.`,
+          );
+        }
+        if (names.length === 0) continue;
+        const cloud = await pluginCloud(global, profileName === currentProfile ? undefined : profileName);
+        changes.push(...(await syncProfilePlugins(cloud, names, "update", locale)));
+      } catch (error) {
+        if (!all) throw error;
+        changes.push({
+          profile: profileName,
+          status: "failed",
+          message: error instanceof CliError ? error.localizedMessage(locale) : error instanceof Error ? error.message : String(error),
+        });
       }
-      if (names.length === 0) continue;
-      const cloud = await pluginCloud(global, profileName === currentProfile ? undefined : profileName);
-      changes.push(...(await syncProfilePlugins(cloud, names, "update", locale)));
     }
     if (changes.length === 0 && output === "text") {
       printLine(text(locale, "No plugins installed.", "Keine Plugins installiert."));
@@ -2214,7 +2458,7 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
     const name = targets[0]!;
     const config = await loadConfig();
     const profileName = resolveProfileName(config, global.profile);
-    if (profileLock(config, profileName)[name]) {
+    if (Object.hasOwn(profileLock(config, profileName), name)) {
       await withConfigLock(async () => {
         const latest = await loadConfig();
         const lock = profileLock(latest, profileName);
@@ -2222,11 +2466,25 @@ const runPluginsCommand = async (args: string[], global: GlobalArgs): Promise<nu
         latest.profiles ??= {};
         latest.profiles[profileName] = { ...latest.profiles[profileName], plugins: lock };
         await saveConfig(latest);
-        await collectPluginGarbage(lockedDigests(latest));
+        await collectUnusedPlugins(latest);
         await syncSkills(latest, global.locale);
       });
-    } else if (!(await removePlugin(name))) {
-      throw new CliError(`Plugin "${name}" is not installed.`, 1, `Plugin "${name}" ist nicht installiert.`);
+    } else {
+      await withConfigLock(() =>
+        withDirectoryLock(packagesLockPath(), async () => {
+          const latest = await loadConfig();
+          const packages = await readPackagePlugins();
+          const previous = Object.hasOwn(packages, name) ? packages[name] : undefined;
+          const legacy = await removePlugin(name);
+          if (!previous && !legacy) throw new CliError(`Plugin "${name}" is not installed.`, 1, `Plugin "${name}" ist nicht installiert.`);
+          if (previous) {
+            delete packages[name];
+            await writePackagePlugins(packages);
+            if (!(await referencedDigests(latest)).has(previous.digest)) await removeStoredPlugin(previous.digest);
+          }
+          await syncSkills(latest, locale);
+        }),
+      );
     }
     if (output !== "text") printJson({ id: name, removed: true });
     else printLine(text(locale, `Removed plugin "${name}".`, `Plugin "${name}" entfernt.`));
@@ -2301,7 +2559,7 @@ const removeProfile = async (args: string[], config: CloudCliConfig, global: Glo
     delete profiles[name];
     if (latest.currentProfile === name) delete latest.currentProfile;
     await saveConfig(latest);
-    await collectPluginGarbage(lockedDigests(latest));
+    await collectUnusedPlugins(latest);
     await syncSkills(latest, locale);
     return result;
   });
@@ -2614,7 +2872,11 @@ const waitForOAuthCode = async (
       const error = url.searchParams.get("error");
       if (error) {
         const message = url.searchParams.get("error_description") ?? error;
-        rejectCode(new CliError(message));
+        rejectCode(
+          error === "access_denied"
+            ? new CliError("Sign-in was denied in the browser.", 1, "Die Anmeldung wurde im Browser abgelehnt.")
+            : new CliError(message),
+        );
         return error === "access_denied"
           ? loginPageResponse("denied", { locale: pageLocale })
           : loginPageResponse("failed", { locale: pageLocale, detail: message });
@@ -2644,6 +2906,7 @@ const waitForOAuthCode = async (
   const url = authorizationUrl.toString();
 
   try {
+    printBrowserConfirmation(locale);
     printLine(text(locale, `Login URL:\n${url}`, `Anmelde-URL:\n${url}`));
     if (!open || envLacksLocalBrowser()) {
       printLine(
@@ -2707,15 +2970,31 @@ const oauthErrorCode = async (response: Response): Promise<{ error: string; desc
   };
 };
 
+const printBrowserConfirmation = (locale: string): void =>
+  printLine(
+    text(
+      locale,
+      "Confirm this sign-in in the browser. If your browser sign-in is older than 10 minutes, Cloud asks you to sign in again first.",
+      "Bestätige diese Anmeldung im Browser. Ist deine Anmeldung im Browser älter als 10 Minuten, fragt Cloud dich zuerst nach einer neuen Anmeldung.",
+    ),
+  );
+
+const confirmLoginAgain = (): CliError =>
+  new CliError(
+    "Run `cld login` again and confirm the sign-in in the browser.",
+    1,
+    "Führe `cld login` erneut aus und bestätige die Anmeldung im Browser.",
+  );
+
 /** RFC 8628: show a code, then poll until the person approves it in any browser. */
-const signInWithDeviceCode = async (server: string, scope: string, requestLocale?: string): Promise<OAuthTokenResponse> => {
+const signInWithDeviceCode = async (server: string, scope: string, requestLocale?: string, ttl?: number): Promise<OAuthTokenResponse> => {
   const locale = requestLocale ?? "en";
   const headers = new Headers({ "content-type": "application/x-www-form-urlencoded" });
   if (requestLocale) headers.set("accept-language", requestLocale);
   const started = await fetchOAuth(joinUrl(server, "/oauth/device_authorization"), {
     method: "POST",
     headers,
-    body: new URLSearchParams({ client_id: OAUTH_CLIENT_ID, scope }),
+    body: new URLSearchParams({ client_id: OAUTH_CLIENT_ID, scope, ...(ttl !== undefined ? { ttl: String(ttl) } : {}) }),
   });
   if (started.status === 404) {
     throw new CliError(
@@ -2734,6 +3013,7 @@ const signInWithDeviceCode = async (server: string, scope: string, requestLocale
   }
   const device = parseDeviceAuthorization(await readJson<unknown>(started));
 
+  printBrowserConfirmation(locale);
   printLine(
     text(
       locale,
@@ -2766,6 +3046,7 @@ const signInWithDeviceCode = async (server: string, scope: string, requestLocale
       throw new CliError("Sign-in was denied in the browser.", 1, "Die Anmeldung wurde im Browser abgelehnt.");
     }
     if (error === "expired_token") break;
+    if (error === "invalid_grant") throw confirmLoginAgain();
     throw new CliError(
       `Device sign-in failed: ${description ?? error}`,
       1,
@@ -2779,6 +3060,163 @@ const signInWithDeviceCode = async (server: string, scope: string, requestLocale
   );
 };
 
+const cloudLoginUnsupported = (deviceCommand: string): CliError =>
+  new CliError(
+    `This Cloud cannot send sign-ins to Cloud Login yet. Sign in with \`${deviceCommand}\` or in the browser.`,
+    1,
+    `Diese Cloud kann Anmeldungen noch nicht an Cloud Login senden. Melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+  );
+
+const readLoginDiscovery = async (server: string) => {
+  let reason = ["network error", "Netzwerkfehler"];
+  try {
+    const response = await fetchOAuth(joinUrl(server, "/.well-known/oauth-authorization-server"), {});
+    if (response.status === 404) return {};
+    reason = [`HTTP ${response.status}`, `HTTP ${response.status}`];
+    if (!response.ok) throw new Error();
+    reason = ["invalid JSON", "kein gültiges JSON"];
+    const payload: unknown = await response.json();
+    return (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
+  } catch {
+    throw new CliError(
+      `Could not read the Cloud's OAuth discovery document (${reason[0]}).`,
+      1,
+      `Das OAuth-Discovery-Dokument der Cloud konnte nicht gelesen werden (${reason[1]}).`,
+    );
+  }
+};
+
+type CloudLoginAuthorization = {
+  device_code: string;
+  comparison: string;
+  expires_in: number;
+  interval?: number;
+};
+
+const parseCloudLoginAuthorization = (payload: unknown): CloudLoginAuthorization => {
+  const value = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
+  if (
+    typeof value.device_code !== "string" ||
+    !value.device_code ||
+    typeof value.comparison !== "string" ||
+    !/^\d+$/.test(value.comparison) ||
+    typeof value.expires_in !== "number" ||
+    !Number.isFinite(value.expires_in) ||
+    !(value.expires_in > 0) ||
+    (value.interval !== undefined && (typeof value.interval !== "number" || !Number.isFinite(value.interval) || !(value.interval > 0)))
+  ) {
+    throw new CliError("OAuth server returned an invalid Cloud Login authorization.");
+  }
+  return value as CloudLoginAuthorization;
+};
+
+/** Send a comparison code to Cloud Login and wait for approval without disclosing account state. */
+const signInWithCloudLogin = async (
+  server: string,
+  scope: string,
+  user: string,
+  deviceCommand: string,
+  requestLocale?: string,
+  ttl?: number,
+): Promise<OAuthTokenResponse> => {
+  const locale = requestLocale ?? "en";
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  process.once("SIGINT", cancel);
+  try {
+    const headers = new Headers({ "content-type": "application/x-www-form-urlencoded" });
+    if (requestLocale) headers.set("accept-language", requestLocale);
+    const started = await fetchOAuth(joinUrl(server, "/oauth/device_authorization"), {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+      body: new URLSearchParams({
+        client_id: OAUTH_CLIENT_ID,
+        scope,
+        login_hint: user,
+        ...(ttl !== undefined ? { ttl: String(ttl) } : {}),
+      }),
+    });
+    if (started.status === 404) throw cloudLoginUnsupported(deviceCommand);
+    if (!started.ok) {
+      const { error } = await oauthErrorCode(started);
+      if (started.status === 503 || error === "temporarily_unavailable") {
+        throw new CliError(
+          `Cloud Login cannot take the sign-in right now. Try again later, or sign in with \`${deviceCommand}\` or in the browser.`,
+          1,
+          `Cloud Login kann die Anmeldung gerade nicht annehmen. Versuche es später erneut oder melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+        );
+      }
+      if (error === "invalid_scope") {
+        throw new CliError(
+          `Cloud Login cannot approve these scopes. Choose other scopes with --scope, or sign in with \`${deviceCommand}\` or in the browser.`,
+          1,
+          `Cloud Login kann diese Scopes nicht bestätigen. Wähle andere Scopes mit --scope oder melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+        );
+      }
+      if (error === "invalid_request") {
+        throw new CliError(
+          `This Cloud does not accept sign-ins through Cloud Login right now. Sign in with \`${deviceCommand}\` or in the browser.`,
+          1,
+          `Diese Cloud nimmt gerade keine Anmeldungen über Cloud Login an. Melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+        );
+      }
+      // Only the error code: a server description could reveal whether the account exists.
+      throw new CliError(
+        `Cloud Login sign-in could not start (${error}). Sign in with \`${deviceCommand}\` or in the browser.`,
+        1,
+        `Die Anmeldung über Cloud Login konnte nicht starten (${error}). Melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+      );
+    }
+    const device = parseCloudLoginAuthorization(await readJson<unknown>(started));
+    const comparison = device.comparison.replace(/(\d{3})(?=\d)/g, "$1 ");
+    printLine(text(locale, `Compare this code in Cloud Login: ${comparison}`, `Vergleiche diesen Code in Cloud Login: ${comparison}`));
+    printLine(text(locale, "Waiting for approval… (Ctrl+C cancels)", "Warte auf Bestätigung… (Strg+C bricht ab)"));
+
+    let intervalMs = (device.interval ?? 5) * 1_000;
+    const deadline = Date.now() + device.expires_in * 1_000;
+    while (Date.now() < deadline) {
+      await sleepWithSignal(Math.min(intervalMs, deadline - Date.now()), undefined, { signal: controller.signal });
+      if (Date.now() >= deadline) break;
+      const response = await fetchOAuth(joinUrl(server, "/oauth/token"), {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        signal: controller.signal,
+        body: new URLSearchParams({ grant_type: DEVICE_CODE_GRANT_TYPE, device_code: device.device_code, client_id: OAUTH_CLIENT_ID }),
+      });
+      if (response.ok) return await readOAuthTokenResponse(response);
+      const { error } = await oauthErrorCode(response);
+      if (error === "authorization_pending") continue;
+      if (error === "slow_down") {
+        intervalMs += 5_000;
+        continue;
+      }
+      if (error === "access_denied") {
+        throw new CliError("Sign-in was denied in Cloud Login.", 1, "Die Anmeldung wurde in Cloud Login abgelehnt.");
+      }
+      if (error === "expired_token") break;
+      throw new CliError(`Cloud Login sign-in failed: ${error}`, 1, `Die Anmeldung über Cloud Login ist fehlgeschlagen: ${error}`);
+    }
+    throw new CliError(
+      `No confirmation received. Is Cloud Login paired for this account? Sign in with \`${deviceCommand}\` or in the browser.`,
+      1,
+      `Keine Bestätigung erhalten. Ist Cloud Login für dieses Konto gekoppelt? Melde dich mit \`${deviceCommand}\` oder im Browser an.`,
+    );
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new CliError(
+        "Sign-in cancelled. A request that reached Cloud Login expires on its own within 5 minutes.",
+        130,
+        "Anmeldung abgebrochen. Eine Anfrage, die Cloud Login erreicht hat, läuft innerhalb von 5 Minuten von selbst ab.",
+      );
+    }
+    throw error;
+  } finally {
+    process.removeListener("SIGINT", cancel);
+    controller.abort();
+  }
+};
+
 /** Display name from the ID token the server just returned; only used for the greeting. */
 const signedInName = (idToken: unknown): string | null => {
   if (typeof idToken !== "string") return null;
@@ -2789,7 +3227,13 @@ const signedInName = (idToken: unknown): string | null => {
   return typeof name === "string" && name.trim() ? name.trim() : null;
 };
 
-const signInWithBrowser = async (server: string, scope: string, open: boolean, locale: string): Promise<OAuthTokenResponse> => {
+const signInWithBrowser = async (
+  server: string,
+  scope: string,
+  open: boolean,
+  locale: string,
+  ttl?: number,
+): Promise<OAuthTokenResponse> => {
   const verifier = randomBase64Url(32);
   const state = randomBase64Url(24);
 
@@ -2811,14 +3255,15 @@ const signInWithBrowser = async (server: string, scope: string, open: boolean, l
     code,
     redirect_uri: authorizationUrl.searchParams.get("redirect_uri") ?? "",
     code_verifier: verifier,
+    ...(ttl !== undefined ? { ttl: String(ttl) } : {}),
   });
-  return readOAuthTokenResponse(
-    await fetchOAuth(joinUrl(server, "/oauth/token"), {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body,
-    }),
-  );
+  const response = await fetchOAuth(joinUrl(server, "/oauth/token"), {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!response.ok && (await oauthErrorCode(response.clone())).error === "invalid_grant") throw confirmLoginAgain();
+  return readOAuthTokenResponse(response);
 };
 
 /** Store a fresh OAuth login in the profile, replacing and revoking the previous one. */
@@ -2829,8 +3274,10 @@ const storeOAuthLogin = async (params: {
   scope: string;
   fd0Name: string | undefined;
   fd0Scope: string | undefined;
+  login: OAuthLogin;
+  loginExpiresAt: string | undefined;
 }): Promise<void> => {
-  const { name, server: normalizedServer, token, scope, fd0Name, fd0Scope } = params;
+  const { name, server: normalizedServer, token, scope, fd0Name, fd0Scope, login, loginExpiresAt } = params;
   let persisted = false;
   try {
     await withConfigLock(async () => {
@@ -2851,6 +3298,8 @@ const storeOAuthLogin = async (params: {
         accessToken: token.access_token,
         accessTokenExpiresAt: new Date(Date.now() + token.expires_in * 1000).toISOString(),
         scope: token.scope ?? scope,
+        login,
+        ...(loginExpiresAt !== undefined ? { loginExpiresAt } : {}),
         ...(refreshTokenFd0 ? { refreshTokenFd0 } : {}),
       };
 
@@ -2910,6 +3359,21 @@ const storeOAuthLogin = async (params: {
   }
 };
 
+const parseLoginTtl = (value: string | undefined): number => {
+  const match = value?.match(/^(\d+)([smhd])?$/);
+  const unit = match?.[2];
+  const multiplier = unit === "d" ? 86400 : unit === "h" ? 3600 : unit === "m" ? 60 : 1;
+  const seconds = match ? Number(match[1]) * multiplier : 0;
+  if (!Number.isSafeInteger(seconds) || seconds <= 0 || seconds > 999_999_999_999_999) {
+    throw new CliError(
+      "Invalid --ttl. Use a positive integer in seconds or <n>s, <n>m, <n>h, <n>d (for example 90s, 30m, 8h, 2d), at most 15 digits of seconds.",
+      1,
+      "Ungültiges --ttl. Nutze eine positive ganze Zahl in Sekunden oder <n>s, <n>m, <n>h, <n>d (zum Beispiel 90s, 30m, 8h, 2d), höchstens 15 Stellen in Sekunden.",
+    );
+  }
+  return seconds;
+};
+
 const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<number> => {
   const [maybeName, ...rest] = args;
   const config = await loadConfig();
@@ -2919,7 +3383,33 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   if ("client-id" in parsed.flags) {
     throw new CliError('cld login always uses the first-party "cloud-cli" OAuth client; --client-id is not supported.');
   }
+  const user = takeStringFlag(parsed.flags, "user")?.trim();
+  if ("user" in parsed.flags) {
+    if (!user || user.length > 254) {
+      throw new CliError(
+        "--user needs a username or email with 1 to 254 characters.",
+        1,
+        "--user braucht einen Benutzernamen oder eine E-Mail-Adresse mit 1 bis 254 Zeichen.",
+      );
+    }
+    if (takeBooleanFlag(parsed.flags, "device", "no-open")) {
+      throw new CliError(
+        "--user cannot be combined with --device or --no-open.",
+        1,
+        "--user kann nicht mit --device oder --no-open kombiniert werden.",
+      );
+    }
+  }
+  const ttl = "ttl" in parsed.flags ? parseLoginTtl(takeStringFlag(parsed.flags, "ttl")) : undefined;
   const existing = config.profiles?.[name] ?? {};
+  // The agent's client credentials would win over the personal login and later overwrite it.
+  if (existing.clientCredentials) {
+    throw new CliError(
+      `Profile "${name}" holds an agent's client credentials. Run \`cld logout --profile ${name}\` first or choose another profile name.`,
+      1,
+      `Profil "${name}" enthält die Client-Zugangsdaten eines Agents. Führe zuerst \`cld logout --profile ${name}\` aus oder wähle einen anderen Profilnamen.`,
+    );
+  }
   const server = takeStringFlag(parsed.flags, "server") ?? global.server ?? envServer() ?? existing.server;
   if (!server) throw new CliError("Missing server. Run `cld login --server <url>`.");
 
@@ -2929,16 +3419,55 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
   const fd0Scope = takeStringFlag(parsed.flags, "fd0-scope") ?? global.fd0Scope;
   const normalizedServer = canonicalServer(server);
   const device = takeBooleanFlag(parsed.flags, "device");
+  const login: OAuthLogin = {
+    method: user ? "user" : device ? "device" : "browser",
+    ...(user ? { user } : {}),
+    ...(ttl !== undefined ? { ttl } : {}),
+    ...(scope !== DEFAULT_OAUTH_SCOPE ? { scope } : {}),
+  };
+  const deviceCommand = loginCommand(
+    name,
+    normalizedServer,
+    { ...login, method: "device" },
+    fd0Name ? { name: fd0Name, scope: fd0Scope } : undefined,
+  );
+  if (user || ttl !== undefined) {
+    const discovery = await readLoginDiscovery(normalizedServer);
+    if (ttl !== undefined && discovery.cloud_login_ttl_supported !== true) {
+      throw new CliError(
+        "This Cloud cannot limit a login with --ttl yet. Update Cloud, or sign in without --ttl.",
+        1,
+        "Diese Cloud kann eine Anmeldung noch nicht mit --ttl begrenzen. Aktualisiere Cloud oder melde dich ohne --ttl an.",
+      );
+    }
+    if (user && discovery.cloud_login_hint_supported !== true) throw cloudLoginUnsupported(deviceCommand);
+  }
 
-  const token = device
-    ? await signInWithDeviceCode(normalizedServer, scope, global.requestLocale)
-    : await signInWithBrowser(normalizedServer, scope, !takeBooleanFlag(parsed.flags, "no-open"), global.locale);
+  const token = user
+    ? await signInWithCloudLogin(normalizedServer, scope, user, deviceCommand, global.requestLocale, ttl)
+    : device
+      ? await signInWithDeviceCode(normalizedServer, scope, global.requestLocale, ttl)
+      : await signInWithBrowser(normalizedServer, scope, !takeBooleanFlag(parsed.flags, "no-open"), global.locale, ttl);
   const refreshToken = token.refresh_token;
   if (!refreshToken) throw new CliError("OAuth server did not issue a refresh token. Check the offline_access scope.");
 
-  await storeOAuthLogin({ name, server: normalizedServer, token: { ...token, refresh_token: refreshToken }, scope, fd0Name, fd0Scope });
+  // A Cloud that accepted ttl but omits the remaining lifetime still ends the login no later than ttl.
+  // No Cloud login outlives 90 days, which also keeps the date in range for any ttl.
+  const loginSeconds = token.refresh_token_expires_in ?? ttl;
+  const loginExpiresAt =
+    loginSeconds !== undefined ? new Date(Date.now() + Math.min(loginSeconds, MAX_LOGIN_LIFETIME_SECONDS) * 1000).toISOString() : undefined;
+  await storeOAuthLogin({
+    name,
+    server: normalizedServer,
+    token: { ...token, refresh_token: refreshToken },
+    scope,
+    fd0Name,
+    fd0Scope,
+    login,
+    loginExpiresAt,
+  });
 
-  const displayName = device ? signedInName(token.id_token) : null;
+  const displayName = device || user ? signedInName(token.id_token) : null;
   printLine(
     displayName
       ? text(global.locale, `✓ Signed in as ${displayName} (profile "${name}")`, `✓ Angemeldet als ${displayName} (Profil "${name}")`)
@@ -2948,6 +3477,9 @@ const runLoginCommand = async (args: string[], global: GlobalArgs): Promise<numb
           `Bei ${normalizedServer} als Profil "${name}" angemeldet.`,
         ),
   );
+  if ((user || ttl !== undefined) && loginExpiresAt) {
+    printLine(text(global.locale, `Login expires: ${loginExpiresAt}`, `Anmeldung läuft ab: ${loginExpiresAt}`));
+  }
   const yes = takeBooleanFlag(parsed.flags, "yes", "y");
   if (!takeBooleanFlag(parsed.flags, "no-plugins")) await offerCloudPlugins({ ...global, profile: name }, yes);
   const asked = await offerSkillTargets(global.locale, yes);
@@ -2969,7 +3501,7 @@ const offerCloudPlugins = async (global: GlobalArgs, yes: boolean): Promise<void
     const lock = profileLock(await loadConfig(), cloud.profile);
     const plugins = await fetchAvailablePlugins(cloud.fetch);
     await saveServedPlugins(cloud.profile, plugins);
-    const missing = plugins.map((plugin) => plugin.name).filter((name) => !lock[name] && !reservedNames.has(name));
+    const missing = plugins.map((plugin) => plugin.name).filter((name) => !Object.hasOwn(lock, name) && !reservedNames.has(name));
     if (missing.length === 0) return;
     const list = missing.join(", ");
     if (!yes) {
@@ -3087,6 +3619,7 @@ const runAuthCommand = async (args: string[], global: GlobalArgs): Promise<numbe
                 ? "token-command"
                 : "none",
     accessTokenExpiresAt: profile?.oauth?.accessTokenExpiresAt ?? null,
+    loginExpiresAt: profile?.oauth?.loginExpiresAt ?? null,
     refreshTokenStorage: profile?.oauth?.refreshTokenFd0 ? `fd0:${profile.oauth.refreshTokenFd0.name}` : profile?.oauth ? "config" : null,
     clientId: profile?.clientCredentials?.clientId ?? null,
     clientSecretStorage: profile?.clientCredentials
@@ -3103,6 +3636,13 @@ const runAuthCommand = async (args: string[], global: GlobalArgs): Promise<numbe
     printLine(`${text(global.locale, "Auth", "Authentifizierung")}: ${payload.kind}`);
     if (payload.accessTokenExpiresAt)
       printLine(`${text(global.locale, "Access token expires", "Access-Token läuft ab")}: ${payload.accessTokenExpiresAt}`);
+    if (payload.loginExpiresAt) {
+      const label =
+        Date.parse(payload.loginExpiresAt) <= Date.now()
+          ? text(global.locale, "Login expired", "Anmeldung abgelaufen")
+          : text(global.locale, "Login expires", "Anmeldung läuft ab");
+      printLine(`${label}: ${payload.loginExpiresAt}`);
+    }
     if (payload.refreshTokenStorage)
       printLine(`${text(global.locale, "Refresh token storage", "Speicherort des Refresh-Tokens")}: ${payload.refreshTokenStorage}`);
     if (payload.clientId) printLine(`${text(global.locale, "OAuth client", "OAuth-Client")}: ${payload.clientId}`);
@@ -3127,7 +3667,7 @@ type CoreCommand = {
 
 /** The built-in commands besides `help`. `main` answers a help request before a command reads or changes anything. */
 const coreCommands = new Map<string, CoreCommand>([
-  ["login", { help: loginHelp, run: runLoginCommand, valueFlags: ["server", "scope", "fd0", "fd0-scope"] }],
+  ["login", { help: loginHelp, run: runLoginCommand, valueFlags: ["server", "scope", "fd0", "fd0-scope", "user", "ttl"] }],
   ["logout", { help: logoutHelp, run: runLogoutCommand, valueFlags: ["profile", "p"] }],
   ["auth", { help: authHelp, run: runAuthCommand, valueFlags: ["profile", "p"] }],
   [
@@ -3169,19 +3709,17 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   const moduleArgs = global.help ? ["--help"] : commandArgs;
 
   if (!moduleName || moduleName === "help" || moduleName === "--help" || moduleName === "-h") {
-    const { modules: pluginModules, plugins } = await loadPlugins(reservedNames);
+    const plugins = await legacyPlugins();
     for (const plugin of plugins) if (plugin.status !== "ok") warnSkippedPlugin(plugin, global.locale);
     const config = await loadConfig();
     const profileName = resolveProfileName(config, global.profile);
     const shortNames = await profileShortNames(config, profileName);
     warnInactiveShortNames(shortNames.inactive, global.locale);
-    const served = Object.entries(profileLock(config, profileName))
-      .filter(([name]) => !reservedNames.has(name))
-      .map(([name, locked]) => ({ name, summary: locked.summary }));
+    const modules = installedModules(config, profileName, await readPackagePlugins()).filter((module) => !reservedNames.has(module.name));
     printLine(
       helpText(
         global.locale,
-        [...served, ...pluginModules].sort((left, right) => left.name.localeCompare(right.name)),
+        modules.sort((left, right) => left.name.localeCompare(right.name)),
         shortNames,
       ),
     );
@@ -3196,7 +3734,7 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
   }
 
   if (moduleArgs[0] === "reference" && !reservedNames.has(moduleName)) {
-    const locked = await lockedPlugin(moduleName, global);
+    const locked = await resolveInstalledModule(moduleName, global);
     if (locked) return runReferenceCommand(moduleName, locked, moduleArgs.slice(1));
   }
   const module = reservedNames.has(moduleName) ? undefined : await loadInstalledModule(moduleName, global);
@@ -3207,7 +3745,7 @@ export const main = async (argv = Bun.argv.slice(2)): Promise<number> => {
     const shortName = shortNames.active.get(moduleName);
     if (shortName) {
       const args = [...shortName.path, ...moduleArgs];
-      const locked = profileLock(config, profileName)[shortName.module];
+      const locked = installedModule(config, profileName, await readPackagePlugins(), shortName.module);
       if (shortName.path.length === 0 && args[0] === "reference" && locked) {
         return runReferenceCommand(shortName.module, locked, args.slice(1));
       }

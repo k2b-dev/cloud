@@ -48,7 +48,7 @@ const press = tag("Tag002", "Press", "#ec4899");
 const logistics = tag("Tag003", "Logistics", "#0ea5e9");
 const volunteers = tag("Tag004", "Volunteers", "#22c55e");
 const tags = [fair, logistics, press, volunteers];
-const person = (id: string, displayName: string): SpaceItemAssignee => ({ id, displayName, avatarHash: null });
+const person = (id: string, displayName: string): SpaceItemAssignee => ({ id, kind: "user", displayName, avatarHash: null });
 const robin = person("11111111-1111-4111-8111-111111111111", "Robin Example");
 const kim = person("22222222-2222-4222-8222-222222222222", "Kim Example");
 const alex = person("33333333-3333-4333-8333-333333333333", "Alex Doe");
@@ -66,6 +66,7 @@ const base = (id: string, title: string, patch: Partial<CalendarItem>): Calendar
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   priority: null,
   recurrence: null,
   recurringEventId: null,

@@ -6,6 +6,7 @@ import {
   IconButton,
   NoticeCard,
   NumberInput,
+  SegmentedControl,
   Select,
   TemplateEditor,
   TemplatePreview,
@@ -1261,21 +1262,13 @@ function HtmlTemplateConstraints(props: {
         </NoticeCard>
       </Show>
       <Show when={(preview()?.rows.length ?? 0) > 1}>
-        <div class="flex flex-wrap gap-1.5">
-          <For each={preview()?.rows}>
-            {(row) => (
-              <Button
-                variant={row.recordId === selectedRecordId() ? "primary" : "secondary"}
-                size="sm"
-                type="button"
-                aria-pressed={row.recordId === selectedRecordId()}
-                onClick={() => setSelectedRecordId(row.recordId)}
-              >
-                {row.recordId}
-              </Button>
-            )}
-          </For>
-        </div>
+        <SegmentedControl
+          size="sm"
+          ariaLabel={t().previewRecord}
+          options={(preview()?.rows ?? []).map((row) => ({ value: row.recordId, label: row.recordId }))}
+          value={() => selectedRecordId() ?? ""}
+          onValueChange={setSelectedRecordId}
+        />
       </Show>
       <Show when={!loading() && selected()}>
         {(row) => <TemplatePreview html={row().html} title={t().htmlPreviewTitle({ id: row().recordId })} class="min-h-64" />}

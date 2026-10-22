@@ -48,8 +48,8 @@ const server = new Hono<{ Variables: { runtime: RuntimeContext } }>()
     return app.ssr.error(c, 403, { layout: "pwa" });
   });
 
-/** Cache-busting stamps change on every start. */
-const stable = (html: string) => html.replace(/\?v=\d+/g, "?v=*").replace(/\/_ssr\/\d+/g, "/_ssr/*");
+/** Normalize the SSR version 0 used without island output. */
+const stable = (html: string) => html.replace(/\/_ssr\/\d+/g, "/_ssr/*");
 
 /** The web document as it was before app pages existed. It must never change through the app's head. */
 const WEB_DOCUMENT = `<!DOCTYPE html>
@@ -60,23 +60,23 @@ const WEB_DOCUMENT = `<!DOCTYPE html>
     <meta name="description" content="Cloud workspace">
     <meta name="theme-color" content="#09090b">
     <meta name="mobile-web-app-capable" content="yes">
-    <link rel="icon" href="/public/head-probe/favicon.svg?v=*">
+    <link rel="icon" href="/public/head-probe/favicon.svg">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
     <link rel="preload" href="/public/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-400-normal-3b646991d30055a9.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-500-normal-0717336fb31fcdcd.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="preload" href="/public/fonts/ibm-plex-sans-latin-600-normal-8960851d691c054e.woff2" as="font" type="font/woff2" crossorigin>
-    <link rel="stylesheet" href="/public/fonts.css?v=*">
-    <link rel="stylesheet" href="/public/tabler-icons.css?v=*">
-    <link rel="stylesheet" href="/public/head-probe/app.css?v=*">
-    <link rel="stylesheet" href="/public/global.css?v=*">
+    <link rel="stylesheet" href="/public/fonts.css">
+    <link rel="stylesheet" href="/public/tabler-icons.css">
+    <link rel="stylesheet" href="/public/head-probe/app.css">
+    <link rel="stylesheet" href="/public/global.css">
     <script>${themeBootstrapScript}</script>
   </head>
   <body class="k2b-ui" data-k2b-app-workspace-controller="global">
     body
   </body>
   <style>solid-client,solid-island{display:contents}</style>
-<script type="module">const p="/_ssr/*";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
+<script type="module" data-ssr-assets="/_ssr/*">const p="/_ssr/*";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
 ${"  "}
 </html>`;
 
@@ -102,7 +102,7 @@ describe("document head", () => {
       // `black-translucent` lays a blur band over the top edge on iOS 26.
       expect(html).not.toContain("apple-mobile-web-app-status-bar-style");
       // Fonts, styles and the theme bootstrap stay shared with the web.
-      expect(html).toContain('<link rel="stylesheet" href="/public/global.css?v=');
+      expect(html).toContain('<link rel="stylesheet" href="/public/global.css">');
       expect(html).toContain("<style data-cloud-css-layers>");
       // No cross-fade between app pages: it would swallow the next tap. Later than global.css, which turns it on.
       expect(html.indexOf("<style data-cloud-app-navigation>@view-transition{navigation:none}</style>")).toBeGreaterThan(

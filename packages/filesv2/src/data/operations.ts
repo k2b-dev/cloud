@@ -25,7 +25,16 @@ export type Operation = {
   created_at: Date;
   updated_at: Date;
 };
-export const withRootLock = <T>(root: string, run: () => Promise<T>) => withFilesLock(`root:${root}`, run);
+/** `wait` can shorten the wait (a shared request budget, a client abort) but never extend it past ROOT_LOCK_WAIT_MS. */
+export const withRootLock = <T>(root: string, run: () => Promise<T>, wait?: AbortSignal) =>
+  wait && !wait.aborted
+    ? withFilesLock(rootLocks(), `root:${root}`, run, AbortSignal.any([wait, rootLockWait()]))
+    : withFilesLock(filesLocks(), `root:${root}`, run);
+/**
+ * One wait budget per request. A caller that locks several entries creates one
+ * signal and passes it to every acquisition, waiting at most one budget in total.
+ */
+export const rootLockWait = () => AbortSignal.timeout(ROOT_LOCK_WAIT_MS);
 // Slow transfers must not occupy the domain query pool: reject overload before
 // the body is consumed instead of queueing unbounded request bodies.
 let activeUploads = 0;
@@ -33,7 +42,7 @@ export async function withUploadLock<T>(id: string, run: () => Promise<T>): Prom
   if (activeUploads >= 4) throw new Error("operation_busy");
   activeUploads++;
   try {
-    return await withFilesLock(`upload:${id}`, run);
+    return await withFilesLock(filesLocks(), `upload:${id}`, run);
   } finally {
     activeUploads--;
   }
@@ -45,12 +54,30 @@ export async function withUploadLock<T>(id: string, run: () => Promise<T>): Prom
  * every third of the TTL, so the operation itself (Filegate calls of up to ten
  * minutes, streamed uploads of any size) is not bounded by the TTL; only a
  * crashed holder keeps the root or file busy, and for at most the TTL.
+ * Acquisition defaults to a single attempt. User-facing publications opt into
+ * one shared bounded wait per request; background and listing paths do not wait.
+ * A longer holder (such as a large commit) still answers busy; browser and CLI
+ * upload queues retry busy with backoff.
+ * Capability upload locks deliberately do not wait: reject overload before
+ * consuming the request body.
  */
 export const FILES_LOCK_TTL_MS = 30_000;
+export const ROOT_LOCK_WAIT_MS = 5_000;
 const filesLocks = lazySync((sync) => sync.mutex({ id: "filesv2:operations", ttlMs: FILES_LOCK_TTL_MS, retry: { maxAttempts: 1 } }));
-async function withFilesLock<T>(resource: string, run: () => Promise<T>): Promise<T> {
-  const mutex = filesLocks();
-  const lock = await mutex.acquire({ resource });
+const rootLocks = lazySync((sync) =>
+  sync.mutex({
+    id: "filesv2:operations",
+    ttlMs: FILES_LOCK_TTL_MS,
+    retry: { maxAttempts: Number.MAX_SAFE_INTEGER, delayMs: 100 },
+  }),
+);
+async function withFilesLock<T>(
+  mutex: ReturnType<typeof filesLocks>,
+  resource: string,
+  run: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const lock = await mutex.acquire({ resource, signal });
   if (!lock) throw new Error("operation_busy");
   // A lost lease cannot abort `run` safely; Filegate preconditions and the
   // pending-operation rows are the second line of defense, so the loss is

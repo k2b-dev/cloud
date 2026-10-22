@@ -4,7 +4,10 @@ import type { DateContext } from "@k2b/stdlib";
 import {
   AppWorkspace,
   announce,
+  Button,
   Dropdown,
+  IconButton,
+  IconButtonLink,
   type MessageRowStatus,
   Placeholder,
   prompts,
@@ -15,13 +18,26 @@ import {
 import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
-import { type ConversationPageSchema, type ConversationSchema, type MessagePageSchema, readStart } from "../service/contracts";
+import {
+  type ConversationPageSchema,
+  type ConversationSchema,
+  MESSAGE_MAX_CODE_POINTS,
+  MessageBodySchema,
+  type MessagePageSchema,
+  readStart,
+} from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
+import { openAddPeopleDialog } from "./AddPeopleDialog";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
+import { openChatDetailsDialog } from "./ChatDetailsDialog";
+import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { createChatStore, type OpenChat } from "./chat-store";
+import { openLeaveChatDialog } from "./LeaveChatDialog";
+import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
+import { panelHref, parseRoute, type Route } from "./route";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Store = ReturnType<typeof createChatStore>;
@@ -35,16 +51,11 @@ export type ChatWorkspaceProps = {
   /** The chat in the address, also when the reader may not see it. */
   chatId: string | null;
   viewerId: string;
+  guest: boolean;
+  panel: "info" | null;
   dateConfig: DateContext;
   /** The server's clock, so relative day labels render the same on the server and in the browser. */
   now: string;
-};
-
-type Route = { chatId: string | null; messageId: string | null };
-
-const parseRoute = (url: URL): Route | null => {
-  const match = /^\/app\/chat(?:\/c\/([^/]+)(?:\/m\/([^/]+))?)?\/?$/.exec(url.pathname);
-  return match ? { chatId: match[1] ?? null, messageId: match[2] ?? null } : null;
 };
 
 const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>): OpenChat => {
@@ -54,6 +65,7 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>): OpenChat =>
     status: "live",
     conversation: open.conversation,
     messages: items,
+    membershipRev: 0,
     watermark: open.page.rev,
     seqHead: open.page.seqHead,
     hasOlder: (items[0]?.seq ?? 1) > 1,
@@ -69,12 +81,16 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>): OpenChat =>
 export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
-  const [route, setRoute] = createSignal<Route>({ chatId: props.chatId, messageId: props.open?.focus ?? null });
+  const [route, setRoute] = createSignal<Route>({ chatId: props.chatId, messageId: props.open?.focus ?? null, panel: props.panel });
+  const [panel, setPanel] = createSignal<"info" | null>(props.panel);
   const [rows, setRows] = createSignal<readonly Conversation[]>(props.sidebar.items);
   const [hasMore, setHasMore] = createSignal(props.sidebar.nextCursor !== null);
   const [chat, setChat] = createSignal<OpenChat | null>(props.open ? initialChat(props.open) : null);
   const [liveStopped, setLiveStopped] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
+  // The latest open whose snapshot is still loading; an older one that a newer navigation superseded no longer counts.
+  let openToken = 0;
+  let pendingOpen = 0;
   // The outbox changes its entries in place; this counts its changes so the history reads them again.
   const [sendsVersion, setSendsVersion] = createSignal(0);
   // The list keeps its order while messages arrive elsewhere; it sorts again on the reader's own actions.
@@ -82,9 +98,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [now, setNow] = createSignal(new Date(props.now));
   const drafts = new Map<string, string>();
   const [draft, setDraft] = createSignal("");
+  const draftError = createMemo(() => {
+    const body = draft();
+    if (!body.trim() || MessageBodySchema.safeParse(body).success) return undefined;
+    return body.includes("\u0000")
+      ? t().messageInvalidCharacters
+      : t().messageTooLong({ limit: MESSAGE_MAX_CODE_POINTS.toLocaleString(locale()) });
+  });
   // A stored message keeps the key of the send it came from, so its row is not replaced when it arrives.
   const sendKeys = new Map<string, string>();
   let store: Store | undefined;
+  // The same store as `store`, for the info panel, which renders before the store exists and loads once it does.
+  const [liveStore, setLiveStore] = createSignal<Store>();
+  const [localBumps, setLocalBumps] = createSignal(0);
   let outbox: Sends | undefined;
   let feed: VirtualFeedController | undefined;
 
@@ -175,13 +201,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             at: send.message?.createdAt ?? send.createdAt,
             own: true,
             status,
-            ...(status === "failed" ? { retry: () => outbox?.retry(send.clientId) } : {}),
+            ...(status === "failed" ? { retry: () => outbox?.retry(send.clientId), discard: () => outbox?.forget(send.clientId) } : {}),
           }),
         );
       }
     }
     return result;
   });
+  // A send that was not sent holds back the later ones of its chat until it is retried or discarded.
+  const waiting = () => {
+    const current = openChat();
+    sendsVersion();
+    return current ? outbox?.sends(current.id).find((send) => send.status !== "sent")?.status === "failed" : false;
+  };
   const focusKey = () => {
     const id = route().messageId;
     return id ? (sendKeys.get(id) ?? id) : null;
@@ -194,7 +226,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // leave it, so the mark is not read away at once.
   let reporter: { chatId: string; reporter: ReturnType<typeof createReadReporter> } | undefined;
   let paused = false;
-  const reading = () => document.visibilityState === "visible" && document.hasFocus();
+  let phone: MediaQueryList | undefined;
+  const reading = () =>
+    Boolean(phone) && document.visibilityState === "visible" && document.hasFocus() && !(panel() === "info" && phone?.matches);
   // Per chat, not per change of the open chat.
   const openId = createMemo(() => openChat()?.id ?? null);
   createEffect(
@@ -285,6 +319,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const previous = route().chatId;
     if (previous) drafts.set(previous, draft());
     setRoute(next);
+    setPanel(next.panel);
     setDraft(next.chatId ? (drafts.get(next.chatId) ?? "") : "");
     setNow(new Date());
     sortRows();
@@ -292,46 +327,144 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
   const open = async (next: Route): Promise<"applied" | "superseded" | "failed"> => {
     if (!store) return "failed";
+    if (pendingOpen === 0 && route().chatId === next.chatId && route().messageId === next.messageId && route().panel !== next.panel) {
+      setRoute(next);
+      setPanel(openChat() ? next.panel : null);
+      return "applied";
+    }
     if (!next.chatId) {
       const live = store;
+      // Closing the chat supersedes a pending open.
+      pendingOpen = 0;
+      setBusy(false);
       batch(() => {
         live.closeConversation();
         applyRoute(next);
       });
       return "applied";
     }
+    const token = ++openToken;
+    pendingOpen = token;
     setBusy(true);
     try {
       const result = await store.openChat(next.chatId, next.messageId ?? undefined);
       if (result.status === "superseded") return "superseded";
-      applyRoute({ chatId: next.chatId, messageId: result.status === "opened" ? next.messageId : null });
+      applyRoute({
+        chatId: next.chatId,
+        messageId: result.status === "opened" ? next.messageId : null,
+        panel: result.status === "opened" ? next.panel : null,
+      });
       return "applied";
     } catch {
       toast.error(t().openFailed);
       return "failed";
     } finally {
-      setBusy(false);
+      if (pendingOpen === token) {
+        pendingOpen = 0;
+        setBusy(false);
+      }
     }
   };
   const openFromList = async (id: string, navigation: LinkNavigateEvent) => {
     const fromList = route().chatId === null;
-    if ((await open({ chatId: id, messageId: null })) === "applied")
+    if ((await open({ chatId: id, messageId: null, panel: null })) === "applied")
       navigation.push(undefined, { scroll: "preserve", state: { chatFromList: fromList } });
   };
 
-  // A list opened before the chat is the previous history entry, so going back to it does not stack entries.
-  const openedFromList = () => {
+  // Info adds one entry above a chat opened from the list.
+  const listDepth = () => {
     const state: unknown = history.state;
-    return Boolean(state && typeof state === "object" && "chatFromList" in state && state.chatFromList === true);
+    if (!state || typeof state !== "object" || !("chatFromList" in state) || state.chatFromList !== true) return 0;
+    return "chatInfoFromChat" in state && state.chatInfoFromChat === true ? 2 : 1;
   };
   const backToList = async (navigation: LinkNavigateEvent) => {
-    if (openedFromList()) history.back();
-    else if ((await open({ chatId: null, messageId: null })) === "applied") navigation.push(undefined, { scroll: "preserve" });
+    const depth = listDepth();
+    if (depth > 0) history.go(-depth);
+    else if ((await open({ chatId: null, messageId: null, panel: null })) === "applied") navigation.push(undefined, { scroll: "preserve" });
+  };
+
+  const openInfo = (navigation?: LinkNavigateEvent) => {
+    if (pendingOpen !== 0) return;
+    const id = route().chatId;
+    if (!id || !openChat() || panel() === "info") return;
+    const messageId = route().messageId;
+    setPanel("info");
+    setRoute({ chatId: id, messageId, panel: "info" });
+    const options = { scroll: "preserve" as const, state: { chatFromList: listDepth() === 1, chatInfoFromChat: true } };
+    if (navigation) navigation.push(panelHref(id, "info", messageId), options);
+    else navigate(panelHref(id, "info", messageId), options);
+  };
+  const infoFromChat = () => {
+    const state: unknown = history.state;
+    return !!state && typeof state === "object" && "chatInfoFromChat" in state && state.chatInfoFromChat === true;
+  };
+  const closeInfo = (navigation?: LinkNavigateEvent) => {
+    if (pendingOpen !== 0) return;
+    const id = route().chatId;
+    if (!id || panel() === null) return;
+    if (infoFromChat()) {
+      history.back();
+      return;
+    }
+    const messageId = route().messageId;
+    setPanel(null);
+    setRoute({ chatId: id, messageId, panel: null });
+    if (navigation) navigation.push(panelHref(id, null, messageId), { scroll: "preserve" });
+    else navigate(panelHref(id, null, messageId), { scroll: "preserve" });
+  };
+
+  /** A chat the person just started, or chose among existing ones, opens in place like a chat from the list. */
+  const openChosen = async (id: string | undefined) => {
+    if (!id) return;
+    const fromList = route().chatId === null;
+    if ((await open({ chatId: id, messageId: null, panel: null })) === "applied")
+      navigate(panelHref(id, null), { scroll: "preserve", state: { chatFromList: fromList } });
+  };
+  const newChat = async () => {
+    if (!store) return;
+    await openChosen(
+      await openNewChatDialog({ store, guest: props.guest, viewerId: props.viewerId, dateConfig: props.dateConfig, locale: locale() }),
+    );
+  };
+  // The dialogs only offer what the viewer may do; the server decides every request again.
+  const addPeople = async () => {
+    const current = conversation();
+    if (!store || current?.permission !== "admin") return;
+    await openChosen(
+      await openAddPeopleDialog({
+        store,
+        conversation: current,
+        guest: props.guest,
+        viewerId: props.viewerId,
+        locale: locale(),
+        onAdded: () => setLocalBumps((revision) => revision + 1),
+      }),
+    );
+  };
+  const editDetails = () => {
+    const current = conversation();
+    if (store && current && current.permission !== "read") void openChatDetailsDialog({ store, conversation: current, locale: locale() });
+  };
+  const leaveChat = async () => {
+    const current = conversation();
+    if (!store || !current) return;
+    if (!(await openLeaveChatDialog({ store, conversation: current, viewerId: props.viewerId, locale: locale() }))) return;
+    // The chat now shows "No access"; its address drops the panel that went with it. Info opened from the chat goes
+    // back to the chat's own entry, so one Back press still leaves the chat.
+    if (route().chatId === current.id && infoFromChat()) {
+      history.back();
+      return;
+    }
+    setPanel(null);
+    if (route().chatId === current.id) {
+      setRoute({ chatId: current.id, messageId: null, panel: null });
+      navigate(panelHref(current.id, null), { replace: true, scroll: "preserve" });
+    }
   };
 
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
-    if (!current || !outbox || !text.trim()) return false;
+    if (!current || !outbox || !MessageBodySchema.safeParse(text).success) return false;
     if (current.hasNewer) await store?.loadLatest();
     outbox.send(current.id, text);
     feed?.scrollToEnd();
@@ -339,6 +472,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
 
   onMount(() => {
+    phone = window.matchMedia("(max-width: 47.999rem)");
     const live = createChatStore({
       viewerId: props.viewerId,
       cursor: props.cursor,
@@ -346,6 +480,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       ...(props.open ? { open: { conversation: props.open.conversation, page: props.open.page } } : {}),
     });
     store = live;
+    setLiveStore(live);
     const sync = () => {
       prune();
       // The reader's own message moves its chat to the top: that is the reader's action, not a move under the pointer.
@@ -355,6 +490,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (ownTop) sortRows();
       setHasMore(live.hasMoreSidebar);
       setChat(live.openConversation);
+      if (live.openConversation?.status === "no-access") setPanel(null);
       setLiveStopped(live.liveStatus === "stopped");
     };
     onCleanup(live.subscribe(sync));
@@ -362,6 +498,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
     const box = createChatSends({ post: createChatSendsApi() });
     outbox = box;
+    const leave = (event: BeforeUnloadEvent) => {
+      if (box.unsent()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", leave);
+    onCleanup(() => window.removeEventListener("beforeunload", leave));
     const failed = new Set<string>();
     onCleanup(
       box.subscribe(() => {
@@ -390,15 +534,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     onCleanup(
       layout.handleUp((href) => {
         if (new URL(href, location.href).pathname !== "/app/chat" || !route().chatId) return false;
-        if (openedFromList()) history.back();
-        else void open({ chatId: null, messageId: null }).then((result) => result === "applied" && navigate("/app/chat"));
+        const depth = listDepth();
+        if (depth > 0) history.go(-depth);
+        else void open({ chatId: null, messageId: null, panel: null }).then((result) => result === "applied" && navigate("/app/chat"));
         return true;
       }),
     );
     const activate = () => reporter?.reporter.activate();
+    createEffect(on(panel, activate));
+    phone.addEventListener("change", activate);
     document.addEventListener("visibilitychange", activate);
     window.addEventListener("focus", activate);
     onCleanup(() => {
+      phone?.removeEventListener("change", activate);
       document.removeEventListener("visibilitychange", activate);
       window.removeEventListener("focus", activate);
       reporter?.reporter.dispose();
@@ -434,6 +582,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       <AppWorkspace.Sidebar label={t().chats}>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">
+            <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+              {t().newChat}
+            </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
               <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}>
                 {list()}
@@ -451,6 +602,25 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 <Show when={conversation()}>
                   {(current) => (
                     <ChatConversation
+                      actions={
+                        <>
+                          <Show when={current().permission === "admin"}>
+                            <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
+                              <i class="ti ti-user-plus" aria-hidden="true" />
+                            </IconButton>
+                          </Show>
+                          <IconButtonLink
+                            label={t().chatInfo}
+                            href={panelHref(current().id, panel() === "info" ? null : "info", route().messageId)}
+                            navigation="enhanced"
+                            onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
+                            aria-expanded={panel() === "info"}
+                            aria-controls="k2b-workspace-detail-chat-info"
+                          >
+                            <i class="ti ti-info-circle" aria-hidden="true" />
+                          </IconButtonLink>
+                        </>
+                      }
                       chatId={current().id}
                       title={current().title}
                       memberCount={current().memberCount}
@@ -462,7 +632,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
                       focusKey={focusKey()}
                       canWrite={current().permission !== "read"}
-                      hint={current().permission === "read" ? t().readOnly : liveStopped() ? t().liveStopped : undefined}
+                      hint={
+                        current().permission === "read"
+                          ? t().readOnly
+                          : draftError()
+                            ? draftError()
+                            : liveStopped()
+                              ? t().liveStopped
+                              : waiting()
+                                ? t().messagesWaiting
+                                : undefined
+                      }
                       draft={draft()}
                       onDraftChange={setDraft}
                       onSend={send}
@@ -476,7 +656,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       markerKey={marker()}
                       onVisibleChange={reportVisible}
                       onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
-                      onEscape={markOpenRead}
+                      // With the info open, Esc closes it first; the workspace owns that.
+                      onEscape={() => panel() === null && markOpenRead()}
                     />
                   )}
                 </Show>
@@ -498,10 +679,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 icon="ti ti-messages"
                 title={t().noChatsTitle}
                 description={t().noChatsDescription}
+                action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
               />
             </Match>
             <Match when={true}>
               <nav class="chat-list-page" aria-label={t().chats}>
+                <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+                  {t().newChat}
+                </AppWorkspace.SidebarItem>
                 <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
                   {list()}
                 </AppWorkspace.SidebarSection>
@@ -518,6 +703,32 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             </Match>
           </Switch>
         </AppWorkspace.Main>
+        <AppWorkspace.Detail
+          id="chat-info"
+          phone="page"
+          width="md"
+          open={panel() === "info" && conversation() !== null}
+          onClose={() => closeInfo()}
+        >
+          {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
+          <Show when={openChat()?.id} keyed>
+            <Show when={conversation()}>
+              {(current) => (
+                <ChatInfoPanel
+                  conversation={current()}
+                  viewerId={props.viewerId}
+                  active={panel() === "info"}
+                  revision={(openChat()?.membershipRev ?? 0) + localBumps()}
+                  store={liveStore()}
+                  onClose={() => closeInfo()}
+                  onAddPeople={() => void addPeople()}
+                  onEditDetails={editDetails}
+                  onLeave={() => void leaveChat()}
+                />
+              )}
+            </Show>
+          </Show>
+        </AppWorkspace.Detail>
       </AppWorkspace.Content>
     </AppWorkspace>
   );

@@ -254,9 +254,11 @@ describe("Mail conversation detail panel", () => {
     expect(header).toContain('class="k2b-detail-panel__meta"');
     expect(header).toContain("Needs action");
     expect(header).toContain('aria-label="Close conversation details"');
-    expect(header).toContain("lg:hidden");
+    expect(header).toContain("@min-[64rem]/k2b-app-area:hidden");
     expect(html).toContain('class="k2b-detail-panel__group" role="group" aria-label="Workflow"');
-    expect(html).not.toContain(">Active collaborators<");
+    // People here sit in the header as one avatar stack beside the status; it opens the list.
+    expect(header).toContain('class="k2b-avatar-stack__trigger" aria-label="Active collaborators: Mara Klein"');
+    expect(header).toMatch(/<h3 id="[^"]+">Active collaborators<\/h3><span class="k2b-count-chip">1<\/span>/);
     expect(html).not.toContain("Here now");
     expect(html).toContain(">Tags<");
     expect(html).not.toContain("Next step");
@@ -267,12 +269,12 @@ describe("Mail conversation detail panel", () => {
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Conversation context"');
     expect(html).toContain('aria-label="Conversation history"');
-    expect(html).toContain('aria-label="Active collaborators" class="bg-[var(--ui-surface)] p-3"');
+    expect(html).not.toContain('aria-label="Active collaborators" class="bg-[var(--ui-surface)] p-3"');
     expect(html).toContain('aria-label="Contacts" class="bg-[var(--ui-surface)] p-3"');
     expect(html).toContain('aria-label="Spaces" class="space-y-1 bg-[var(--ui-surface)] p-3"');
     expect(html).toContain("Related mail");
     expect(html).toContain("No related mail");
-    expect(html.indexOf('aria-label="Active collaborators"')).toBeGreaterThan(html.indexOf('aria-label="Conversation context"'));
+
     expect(html.indexOf('aria-label="Active collaborators"')).toBeLessThan(html.indexOf('aria-label="Contacts"'));
     expect(html).not.toContain(">Contacts<");
     expect(html).not.toContain("border-t");
@@ -308,7 +310,7 @@ describe("Mail conversation detail panel", () => {
   test("omits deleted comments from the visible discussion", () => {
     const html = renderPanel({ initialComments: [comment, deletedComment] });
 
-    expect(html).toContain('class="k2b-discussion__count">1</span>');
+    expect(html).toContain('class="k2b-count-chip">1</span>');
     expect(html).toContain("Valentin Kolb");
     expect(html).not.toContain("Deleted Author");
     expect(html).not.toContain("Comment deleted");
@@ -352,7 +354,8 @@ describe("Mail conversation detail panel", () => {
     expect(html).toContain("Could not refresh tags and recent activity.");
     expect(html).toContain("Retry");
     expect(html).toContain('data-align="center"');
-    expect(html).toContain('class="k2b-discussion__count">0</span>');
+    // An empty discussion reads as one line, not a bare zero.
+    expect(html).toContain('class="k2b-detail-panel__none">None yet</span>');
     expect(html).not.toContain("No team notes yet.");
     expect(html).toContain("Loading contacts…");
     expect(html).not.toContain(">Attachments<");

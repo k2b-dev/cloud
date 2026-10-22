@@ -4,9 +4,10 @@ title: Automate responses and mailbox work
 icon: ti ti-automation
 description: Configure automatic replies, incoming-mail processing, and safe workflow activation.
 order: 60
+kind: task
 ---
 
-Open **Mailbox tools → Automations**. The full-width overview shows what is active and opens the exact setup that you choose. **Automatic replies** and **Incoming mail** cover common tasks. With **Manage** access, you also see **Activity** and **Workflows** under Advanced.
+Open **… → Automations**. The full-width overview shows what is active and opens the exact setup that you choose. **Automatic replies** and **Incoming mail** cover common tasks. With **Manage** access, you also see **Activity** and **Workflows** under Advanced.
 
 ## Choose the right automation tool {icon="route"}
 
@@ -45,6 +46,24 @@ AI results remain normal workflow outputs. **Use output** and **Add condition** 
 
 The editor turns off or leaves out additions that would exceed the limits for the flow, branches, nesting, or AI calls. You cannot remove a step that produces output while a later step still uses that output. When you rename an AI classification choice, Mail updates the conditions that use it. Before you delete a choice in use, remove or change those conditions.
 
+### Keep noise out of Needs action
+
+For newsletters, sign-in codes, or shipping updates, use one incoming automation:
+
+:::steps
+1. Add a condition for the sender or domain.
+2. Add **Mail action → Mark as read**.
+3. Add **Mail action → Set status → Done**.
+4. Add **Mail action → Move to folder** and choose the destination.
+:::
+
+Keep read before move in one automation; see **Several matching automations** below. The status step changes only Cloud state.
+For important mail, add no status step: incoming mail already sets **Needs action**.
+Adding **AI classify** starts with **Important** and **Routine** and an If branch.
+For **Important**, it uses **Set status → Needs action**; otherwise, **Set status → Done**.
+Add **Move to folder** to the **Routine** branch to file it too.
+An automation's **Done** or **Waiting for reply** covers only the message that started it, also when Mail loads that message later. Other incoming mail sets **Needs action** again.
+
 ### Know the guided definition contract
 
 The guided editor and the CLI use the same strict definition. Mail rejects unknown fields. A definition has `name`, `enabled`, `scope`, and `steps`. Its name accepts 1–120 characters. A new definition sets `enabled` to `false` by default.
@@ -69,7 +88,7 @@ The guided editor and the CLI use the same strict definition. Mail rejects unkno
 
 Mail generates canonical workflow YAML from the flow and shows it read-only in the editor. Steps run from top to bottom through the shared workflow runtime.
 
-- **Several matching automations:** The oldest automation decides where the message goes. A later automation skips its move, trash, or junk step instead of failing. Its other steps still run. When two automations change the same message on the provider, for example one marks it read and the other moves it, one of them can still fail. Put these changes in one automation.
+- **Several matching automations:** The oldest automation decides where the message goes. A later automation skips its move, trash, or junk step. Any matching automation also skips its Mark as read or keyword step if the message has left its folder or is being moved. Neither automation fails because of the other. Only incoming automations yield this way; a hand-written workflow's step fails instead. A read by one does not make the other's move fail. To make sure a message is both read and moved, put both steps in one automation.
 - **Failed step:** If a later step fails, the effects of earlier completed steps stay.
 - **Versions:** Editing the flow publishes a new unchangeable workflow version. Changing only the name or the active state does not duplicate identical source.
 - **Protected targets:** Destructive actions cannot target an identity of the mailbox, a configured internal domain, its subdomains, or an unsafe parent domain.
@@ -96,7 +115,7 @@ A generated text output has no effect until a later step uses it. Reply automati
 
 Spaces steps run with a delegation of the user who set up the automation, and that user can revoke it. Mail stores its token encrypted. It revokes the token when someone removes the last Spaces step or deletes the automation. Every run still checks the current Mail access and the current Spaces access. Linking updates an existing link or creates one, and event creation uses a durable idempotency key, so retries create no duplicate events. If someone revokes the delegated API key or removes the Space access, future runs fail instead of acting without that access.
 
-Use `set_status: done` to complete a conversation. Done is a local state and does not mark mail read. Unread counts follow the provider read flag, so add **Mark as read** when mail should also stop counting as unread. Use `needs_action` or `waiting` to open it again explicitly. A verified new incoming message already moves a completed conversation back to Needs action. A separate step that unmarks Done on incoming mail is therefore normally not needed.
+Unread counts follow the provider read flag. Done does not mark mail read, so the recipe in **Keep noise out of Needs action** adds **Mark as read**. Use `needs_action` or `waiting` to open a conversation again explicitly.
 
 For automation through `cld`, use `mail automation catalog` to find valid IDs. `mail automation create` and `mail automation update` accept the complete guided definition as JSON or YAML through `--definition-file` or `--definition-stdin`, including `scope` and the ordered `steps` tree. The CLI and the interface therefore behave the same, including output references and nested conditions. For an invalid definition, Mail names each affected field by its path, such as `scope.conditions.items`, with the reason.
 
@@ -118,7 +137,7 @@ Mail leaves messages in Sent, Drafts, Trash, and Junk where they are and does no
 ## Configure an automatic reply {icon="send"}
 
 :::steps
-1. Ask someone with **Manage** access to verify an identity and turn on **Automatic replies** for it. They do this in **Settings → Accounts & identities → Sending identities**.
+1. Ask someone with **Manage** access to verify an identity and turn on **Automatic replies** for it. They do this in **… → Settings → Accounts & identities → Sending identities**.
 2. Open **Automations → Automatic replies**.
 3. Choose **Add automatic reply**.
 4. Choose **Out of office**, **Office-hours acknowledgement**, **Reference acknowledgement**, or **Custom automatic reply**.
@@ -131,7 +150,7 @@ Mail leaves messages in Sent, Drafts, Trash, and Junk where they are and does no
 
 Subjects and messages are Liquid templates. Use the variables that you can copy in the editor, for example `{{ inputs.message.subject }}`. After a reference is assigned, `{{ reference.value }}` is also available. Mail rejects invalid syntax and unavailable variables before it saves the reply.
 
-Only one automatic reply can be on for a mailbox at a time. Turn off the active configuration before you turn on another one. By default, only people with **Manage** access can change automatic replies. They can allow people with **Edit** access in **Settings → Access → Automatic reply management access**.
+Only one automatic reply can be on for a mailbox at a time. Turn off the active configuration before you turn on another one. By default, only people with **Manage** access can change automatic replies. They can allow people with **Edit** access in **… → Settings → Access → Automatic reply management access**.
 
 Mail does not reply to messages that are unsafe for automatic responses. These include mailing-list mail, bulk mail, delivery status notifications, messages from the mailbox itself, and messages that explicitly suppress automatic replies. A suppressed reply stays part of the activity and run history. Mail does not silently turn it into a normal draft.
 

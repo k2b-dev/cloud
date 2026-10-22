@@ -229,7 +229,9 @@ try {
     { id: string }[]
   >`INSERT INTO auth.users (uid, provider, profile) VALUES ('benchmark-user', 'local', 'user') RETURNING id`;
   assert(user);
-  const login = new Hono().get("/", async (c) => c.json({ token: await session.create(c, user.id) }));
+  const login = new Hono().get("/", async (c) =>
+    c.json({ token: await session.create(c, user.id, { method: "password", notify: async () => {} }) }),
+  );
   const tokenFor = async () => {
     const response = await login.request("http://bench.test/");
     assert.equal(response.status, 200);

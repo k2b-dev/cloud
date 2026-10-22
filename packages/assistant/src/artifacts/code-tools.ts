@@ -1,6 +1,7 @@
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, AiFileWriteError, type CODE_SOURCE_TOOLS, createAiConversationArtifact } from "@k2b/cloud/ai";
 import { CAPABILITY_MAX_RESULT_BYTES } from "@k2b/cloud/contracts";
 import { accessRevision, resolveDisplayNames } from "@k2b/cloud/server";
+import { principalLabel } from "@k2b/cloud/shared";
 import { fail, ok, text } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
@@ -72,19 +73,21 @@ async function result<T>(
     if (error instanceof DatabaseError) {
       const t = artifactMessages.resolve([context.locale]).t;
       const message =
-        error.code === "DB_UNREACHABLE"
-          ? t.DB_UNREACHABLE
-          : error.code === "DB_TIMEOUT"
-            ? t.DB_TIMEOUT
-            : error.code === "DB_AUTH_FAILED"
-              ? t.DB_AUTH_FAILED
-              : error.code === "DB_NOT_CONFIGURED"
-                ? t.DB_NOT_CONFIGURED
-                : error.code === "DB_NOT_CONNECTED"
-                  ? t.DB_NOT_CONNECTED
-                  : error.code === "DB_RESULT_TOO_LARGE"
-                    ? t.DB_RESULT_TOO_LARGE
-                    : error.code;
+        error.code === "DB_TARGET_BLOCKED"
+          ? t.DB_TARGET_BLOCKED
+          : error.code === "DB_UNREACHABLE"
+            ? t.DB_UNREACHABLE
+            : error.code === "DB_TIMEOUT"
+              ? t.DB_TIMEOUT
+              : error.code === "DB_AUTH_FAILED"
+                ? t.DB_AUTH_FAILED
+                : error.code === "DB_NOT_CONFIGURED"
+                  ? t.DB_NOT_CONFIGURED
+                  : error.code === "DB_NOT_CONNECTED"
+                    ? t.DB_NOT_CONNECTED
+                    : error.code === "DB_RESULT_TOO_LARGE"
+                      ? t.DB_RESULT_TOO_LARGE
+                      : error.code;
       return fail({ code: error.code, status: error.status === 502 ? 500 : error.status, message });
     }
     if (error instanceof ArtifactError)
@@ -307,7 +310,7 @@ export const artifactCodeHandlers = {
           data: {
             message: [
               t.changeAccess({ app }),
-              `${t.recipient}: ${recipient!.displayName} — ${JSON.stringify(principal)}`,
+              `${t.recipient}: ${principalLabel(recipient!, context.locale)} — ${JSON.stringify(principal)}`,
               `${t.before}: ${previous ? level(previous.permission) : t.noAccess}`,
               `${t.after}: ${input.permission ? level(input.permission) : t.removeAccess}`,
               t.skillsUnchanged,

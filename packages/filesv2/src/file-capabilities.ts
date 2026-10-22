@@ -3,6 +3,7 @@ import {
   type CapabilityActionDefinition,
   type CapabilityExecutionContext,
   type CapabilityResult,
+  CapabilitySemanticLinkSchema,
   type CapabilityStream,
   FILE_PROVIDER_NAME_CONFLICT,
   type FileProviderEntry,
@@ -19,6 +20,7 @@ import { filesCapabilityMessages } from "./capability-messages";
 import { BrowseQuerySchema, CONTENT_STREAM_LIMIT, type FileEntry } from "./contracts";
 import { entryRef } from "./data/references";
 import { markdownRevision } from "./document-assets";
+import { capabilityCall } from "./files-call";
 import { baseLabel } from "./frontend/base-label";
 import { browserMessages } from "./frontend/browser-messages";
 import { filesUrl } from "./frontend/urls";
@@ -47,7 +49,7 @@ const Entry = z.object({
   revision: z.string().optional(),
 });
 const Ref = z.object({ type: z.literal("filesv2.entry"), id: z.string() });
-const Item = Entry.extend({ ref: Ref });
+const Item = Entry.extend({ ref: Ref, links: z.array(CapabilitySemanticLinkSchema).max(10) });
 const Result = z.object({ baseId: Base, entry: Item.optional(), uploadId: z.string().optional() });
 const readActor = (c: CapabilityExecutionContext) => {
   if (c.actor.kind !== "user") throw err.forbidden("Files require a signed-in user.");
@@ -79,11 +81,15 @@ async function saveDomain<T>(c: { locale: string }, run: () => Promise<T>): Prom
   }
 }
 type ListedEntry = z.infer<typeof Entry> & { resourceId?: string };
-const item = async (baseId: string, { resourceId, ...entry }: ListedEntry) => ({
-  ...entry,
-  revision: markdownRevision(entry),
-  ref: { type: "filesv2.entry" as const, id: await entryRef(baseId, { path: entry.path, resourceId }) },
-});
+const item = async (baseId: string, { resourceId, ...entry }: ListedEntry) => {
+  const id = await entryRef(baseId, { path: entry.path, resourceId });
+  return {
+    ...entry,
+    revision: markdownRevision(entry),
+    ref: { type: "filesv2.entry" as const, id },
+    links: openLink(`/app/filesv2/ref/${encodeURIComponent(id)}`, id),
+  };
+};
 /** Capability links hold at most 2,048 characters; a deep path opens through the entry's deep link instead. */
 const openLink = (href: string, id: string) => [
   { rel: "open" as const, href: href.length <= 2048 ? href : `/app/filesv2/ref/${encodeURIComponent(id)}` },
@@ -92,6 +98,7 @@ const result = async (baseId: string, entry: ListedEntry): Promise<CapabilityRes
   const listed = await item(baseId, entry);
   return {
     data: { baseId, entry: listed },
+    refs: [{ ...listed.ref, title: entry.name }],
     links: openLink(filesUrl(baseId, entry.directory ? entry.path : entry.path.split("/").slice(0, -1).join("/")), listed.ref.id),
   };
 };
@@ -115,7 +122,7 @@ const providerRoot = async (c: CapabilityExecutionContext, input: z.output<typeo
   const locale = c.locale ?? "en";
   const messages = browserMessages.resolve([locale]).t;
   const q = input.query?.trim().toLocaleLowerCase();
-  const available = await filesService.bases(readActor(c));
+  const available = await filesService.bases(capabilityCall(c));
   // An outage must not look like lost storage: fail the whole root, even beside usable bases, so consumers offer a retry.
   if (available.issues.some((issue) => issue.code === "unavailable") || available.items.some((base) => base.reason === "unavailable"))
     throw new FilesError("unavailable", 503);
@@ -151,6 +158,7 @@ const savedFile = async (baseId: string, entry: FileEntry): Promise<CapabilityRe
   const id = await entryRef(baseId, entry);
   return {
     data: { file: { id, name: entry.name, size: entry.size } },
+    refs: [{ type: "filesv2.entry", id, title: entry.name }],
     links: openLink(filesUrl(baseId, entry.path.split("/").slice(0, -1).join("/")), id),
   };
 };
@@ -164,17 +172,17 @@ const uploadStream = <T>(receipt: (baseId: string, entry: FileEntry) => Promise<
   write: async (s: CapabilityStream, body: ReadableStream<Uint8Array>, c: CapabilityExecutionContext) =>
     errors(c, async () => {
       const ref = uploadRef.parse(JSON.parse(s.id));
-      const saved = await filesService.capabilityUpload(readActor(c), ref, body, c.signal);
+      const saved = await filesService.capabilityUpload(capabilityCall(c), ref, body, c.signal);
       return receipt(ref.baseId, saved.entry);
     }),
   status: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
     errors(c, async () => {
       const ref = uploadRef.parse(JSON.parse(s.id));
-      const status = await filesService.capabilityUploadStatus(readActor(c), ref);
+      const status = await filesService.capabilityUploadStatus(capabilityCall(c), ref);
       return status.state === "completed" ? { state: "completed" as const, result: await receipt(ref.baseId, status.entry) } : status;
     }),
   abort: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
-    domain(c, () => filesService.abortUpload(readActor(c), uploadRef.parse(JSON.parse(s.id)))),
+    domain(c, () => filesService.abortUpload(capabilityCall(c), uploadRef.parse(JSON.parse(s.id)))),
 });
 const sourceRef = z.object({ id: z.string().max(512), revision: z.string().max(512) }).strict();
 const uuidKey = (key: string) => {
@@ -211,7 +219,7 @@ export const fileQueries = {
     openWorld: false,
     run: async (input: { after?: string }, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        const available = (await filesService.bases(readActor(c))).items
+        const available = (await filesService.bases(capabilityCall(c))).items
           .sort((a, b) => (a.id < b.id ? -1 : 1))
           .filter((i) => !input.after || i.id > input.after);
         const items = available.slice(0, 100);
@@ -226,7 +234,7 @@ export const fileQueries = {
     openWorld: false,
     run: async (input: z.infer<typeof BrowseQuerySchema> & { baseId: string }, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        const page = await filesService.list(readActor(c), input);
+        const page = await filesService.list(capabilityCall(c), input);
         return ok({
           data: {
             baseId: input.baseId,
@@ -245,7 +253,7 @@ export const fileQueries = {
     openWorld: false,
     run: async (input: z.infer<typeof BrowseQuerySchema> & { baseId: string; q: string }, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        const page = await filesService.search(readActor(c), { ...input, scope: "tree" });
+        const page = await filesService.search(capabilityCall(c), { ...input, scope: "tree" });
         return ok({
           data: {
             baseId: input.baseId,
@@ -277,7 +285,7 @@ export const fileQueries = {
     }),
     openWorld: false,
     run: async (input: { baseId: string; after?: string }, c: CapabilityExecutionContext) =>
-      domain(c, async () => ok({ data: await filesService.trash(readActor(c), input) })),
+      domain(c, async () => ok({ data: await filesService.trash(capabilityCall(c), input) })),
   },
   "content.read": {
     title: "Read file content",
@@ -291,12 +299,12 @@ export const fileQueries = {
       read: async (s: CapabilityStream, c: CapabilityExecutionContext) =>
         domain(c, async () => {
           const source = sourceRef.parse(JSON.parse(s.id));
-          return filesService.capabilityDownload(readActor(c), source, c.signal);
+          return filesService.capabilityDownload(capabilityCall(c), source, c.signal);
         }),
     },
     run: async (input: { id: string }, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        const file = await filesService.entryById(readActor(c), input.id);
+        const file = await filesService.entryById(capabilityCall(c), input.id);
         if (file.entry.directory) return fail(err.badInput(filesCapabilityMessages(c.locale).chooseFile));
         if (file.entry.size > CONTENT_STREAM_LIMIT) return fail(err.badInput(filesCapabilityMessages(c.locale).tooLarge));
         return ok({
@@ -327,7 +335,13 @@ export const fileQueries = {
     openWorld: false,
     run: async (input: { id: string }, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        return ok({ data: await filesService.downloadById(readActor(c), input.id) });
+        const file = await filesService.entryById(capabilityCall(c), input.id);
+        const id = await entryRef(file.base.id, file.entry);
+        return ok({
+          data: await filesService.downloadById(capabilityCall(c), input.id),
+          refs: [{ type: "filesv2.entry", id, title: file.entry.name }],
+          links: openLink(`/app/filesv2/ref/${encodeURIComponent(id)}`, id),
+        });
       }),
   },
   "provider.list": {
@@ -341,7 +355,7 @@ export const fileQueries = {
       domain(c, async () => {
         if (input.parent === undefined) return ok({ data: await providerRoot(c, input) });
         // A Filegate read may join folders and files on one page; half the limit keeps that page within it.
-        const page = await filesService.folder(readActor(c), {
+        const page = await filesService.folder(capabilityCall(c), {
           id: input.parent,
           q: input.query,
           after: input.cursor,
@@ -369,7 +383,7 @@ type Review = { message: string; details: { label: string; value: string }[]; ap
  * land under an active public download share, it would be published, and sharing asks every time.
  */
 const baseApprovalScope = async (c: CapabilityExecutionContext, baseId: string, path: string) =>
-  (await filesService.publiclyShared(readActor(c), baseId, path)) ? {} : { approvalScope: `base:${baseId}` };
+  (await filesService.publiclyShared(capabilityCall(c), baseId, path)) ? {} : { approvalScope: `base:${baseId}` };
 const parentOf = (path: string) => path.split("/").slice(0, -1).join("/");
 const nameOf = (path: string) => path.split("/").at(-1) ?? path;
 /** A review message holds at most 1,000 characters; names come from model input of up to 4,096. */
@@ -381,7 +395,7 @@ const REVIEW_NAME_CHARS = 200;
 const reviewText = async (c: CapabilityExecutionContext) => {
   const t = filesCapabilityMessages(c.locale);
   const browser = browserMessages.resolve([c.locale]).t;
-  const bases = await filesService.baseNames(readActor(c));
+  const bases = await filesService.baseNames(capabilityCall(c));
   const base = (id: string) => {
     const found = bases.find((candidate) => candidate.id === id);
     return found ? baseLabel(found, browser, c.locale) : id;
@@ -427,7 +441,7 @@ export const fileActions = {
     approval: "rememberable" as const,
     review: async (input: z.infer<typeof Upload>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        await filesService.list(readActor(c), { baseId: input.baseId, path: input.path.split("/").slice(0, -1).join("/") });
+        await filesService.list(capabilityCall(c), { baseId: input.baseId, path: input.path.split("/").slice(0, -1).join("/") });
         const r = await reviewText(c);
         const name = r.name(input.path);
         return ok({
@@ -445,7 +459,7 @@ export const fileActions = {
       domain(c, async () => {
         if (input.onConflict === "overwrite" && !input.expectedRevision)
           return fail(err.badInput(filesCapabilityMessages(c.locale).replaceNeedsRevision));
-        const session = await filesService.upload(readActor(c), {
+        const session = await filesService.upload(capabilityCall(c), {
           ...input,
           idempotencyKey: uuidKey(JSON.stringify(["filesv2.content.create", readActor(c).user.id, c.idempotencyKey!])),
         });
@@ -475,7 +489,7 @@ export const fileActions = {
     approval: "rememberable" as const,
     review: async (input: z.output<typeof FileProviderSaveInputSchema>, c: CapabilityExecutionContext) =>
       domain(c, async () => {
-        const folder = await filesService.folderLocation(readActor(c), input.parent);
+        const folder = await filesService.folderLocation(capabilityCall(c), input.parent);
         const r = await reviewText(c);
         return ok({
           message: r.t.saveFile({ name: input.name }),
@@ -491,8 +505,8 @@ export const fileActions = {
       saveDomain(c, async () => {
         if (input.size > CONTENT_STREAM_LIMIT) return fail(err.badInput(filesCapabilityMessages(c.locale).tooLarge));
         const actor = readActor(c);
-        const folder = await filesService.folderLocation(actor, input.parent);
-        const session = await filesService.upload(actor, {
+        const folder = await filesService.folderLocation(capabilityCall(c), input.parent);
+        const session = await filesService.upload(capabilityCall(c), {
           baseId: folder.baseId,
           path: joinName(folder.path, input.name),
           size: input.size,
@@ -524,7 +538,7 @@ export const fileActions = {
       ],
     }),
     async (input, c) => {
-      successfulEntry(c, await filesService.remove(readActor(c), { baseId: input.baseId, paths: [input.path] }));
+      successfulEntry(c, await filesService.remove(capabilityCall(c), { baseId: input.baseId, paths: [input.path] }));
       return { data: { baseId: input.baseId }, summary: filesCapabilityMessages(c.locale).movedToTrash };
     },
   ),
@@ -532,7 +546,7 @@ export const fileActions = {
     "Restore entry from trash",
     z.object({ baseId: Base, id: z.string().max(5500).describe("ID returned by trash.list."), path: Path.optional() }).strict(),
     async (input, r, c) => {
-      const entry = await filesService.trashEntry(readActor(c), input);
+      const entry = await filesService.trashEntry(capabilityCall(c), input);
       const destination = input.path ?? entry.original;
       // Without a known origin the restore itself would fail; say so before anyone approves it.
       if (destination === null) throw new FilesError("restore_destination_required", 400);
@@ -546,7 +560,7 @@ export const fileActions = {
       };
     },
     async (input, c) => {
-      const saved = await filesService.restoreTrash(readActor(c), input);
+      const saved = await filesService.restoreTrash(capabilityCall(c), input);
       return result(input.baseId, saved.entry);
     },
     "rememberable",
@@ -563,7 +577,7 @@ export const fileActions = {
       ...(await baseApprovalScope(c, input.baseId, input.path)),
     }),
     async (input, c) => {
-      const saved = await filesService.mkdir(readActor(c), input);
+      const saved = await filesService.mkdir(capabilityCall(c), input);
       return result(input.baseId, saved.entry);
     },
     "rememberable",
@@ -581,7 +595,7 @@ export const fileActions = {
       ...(await baseApprovalScope(c, input.baseId, joinName(parentOf(input.path), input.name))),
     }),
     async (input, c) => {
-      const saved = await filesService.rename(readActor(c), input);
+      const saved = await filesService.rename(capabilityCall(c), input);
       return result(input.baseId, saved.entry);
     },
     "rememberable",
@@ -601,7 +615,7 @@ export const fileActions = {
     async (input, c) =>
       result(
         input.baseId,
-        successfulEntry(c, await filesService.move(readActor(c), { baseId: input.baseId, paths: [input.path], folder: input.folder })),
+        successfulEntry(c, await filesService.move(capabilityCall(c), { baseId: input.baseId, paths: [input.path], folder: input.folder })),
       ),
     "rememberable",
   ),
@@ -624,7 +638,7 @@ export const fileActions = {
         input.targetBaseId,
         successfulEntry(
           c,
-          await filesService.copy(readActor(c), {
+          await filesService.copy(capabilityCall(c), {
             baseId: input.baseId,
             paths: [input.path],
             targetBaseId: input.targetBaseId,

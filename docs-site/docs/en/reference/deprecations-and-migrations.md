@@ -5,10 +5,289 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-13
+updated: 2026-10-21
 ---
 
 # Deprecations and migrations
+
+## Application mail content grants
+
+`mail.content(id, context)` adds audited plain-text and attachment-name reads.
+Existing grants stay at metadata, and `mail.list` still omits foreign bodies.
+Upgrade Core's additive schema before application libraries and admin clients.
+Older clients replace selected sources with metadata access; a Core code
+rollback alone does not revoke stored content grants. See the
+[upgrade and rollback sequence](/en/docs/operations/outgoing-mail#upgrade-and-rollback)
+for the required order and explicit downgrade.
+
+## Mail send requires a content fingerprint
+
+`mail.draft.send` now requires `expectedContentHash`. This is a breaking input
+change. Update HTTP, MCP, CLI and automation clients together with Mail.
+Read `draft.send.review` under the same actor and copy its returned
+`contentHash` into `expectedContentHash`, alongside the current draft revision
+and any required safety approval. Browser, Mail CLI and built-in workflows
+perform this preparation themselves. Built-in workflows resume already-issued
+send commands, including commands created before this upgrade, under their
+current execution authority and original inputs. Resuming an existing command
+does not render or approve a new message.
+
+The hash binds the effective text and HTML, sender, recipients, attachments and
+generated MIME parts. It grants neither permission nor consent. Mail renders
+once more in the final transaction and compares that exact snapshot before
+writing its outbox. A change returns `SEND_CONTENT_CHANGED` (HTTP 409), rolls
+back the command and outbox, and queues no message.
+
+Open the draft, check it again, read a fresh fingerprint and explicitly approve
+a new send attempt with a new idempotency key. There is no automatic retry or
+new approval. If a signature uses the current time and keeps changing, edit it
+before retrying. For an unknown network outcome, use the existing outcome check
+and retry identity instead of treating it as this confirmed conflict.
+
+## Pulse requires ClickHouse and starts empty
+
+Pulse now needs an operator-provided ClickHouse data store. Measurements go to
+one database per base; Postgres keeps control data. This update **deletes all
+existing Pulse data without confirmation**: bases, members and access entries,
+sources, source tokens, measurements, dashboards, and saved queries. There is
+no migration of that data. Other Cloud apps keep their data.
+
+The query DSL, dashboard DSL, explorer, signal catalog, resource browsing, and
+public dashboards are removed. SQL questions and new dashboards follow in the
+next releases. In a base, a notice replaces the removed views: **Dashboards and
+questions are coming back**, with **Go to sources**. Sources, ingest, and
+scrapes are available now.
+
+Before updating:
+
+1. Export or copy any configuration, dashboard definitions, or saved queries
+   you want to keep while the old version still runs. **There is no export
+   path for old measurements.** Back up the old Postgres database and keys if
+   you need to recover the old installation; that backup is not an import into
+   the new Pulse.
+2. Provide a dedicated, single-node ClickHouse 26.9 or newer instance with its
+   own volume. Prepare the setup script and service credentials as described
+   in [Provide ClickHouse for Pulse](/en/docs/operations/deployment-requirements#provide-clickhouse-for-pulse).
+   Connect it under **Administration → Pulse → Data store** on the updated
+   Pulse before resuming collection. An older Pulse without this setup page
+   cannot save the new connection in advance.
+3. Stop all old Pulse replicas before starting the new version. The startup
+   reset is automatic; replacing the image with an older one does not restore
+   deleted data. Recreate bases, members, sources, and tokens after setup, and
+   update each producer with its new credential.
+
+`PULSE_SCRAPE_ALLOWED_TARGETS` is removed. Cloud administrators allow internal
+scrape targets **per base** under **Administration → Pulse → Internal targets**
+(**Verwaltung → Pulse → Interne Ziele** in German), or with
+`cld pulse admin targets`. Transfer the intended exceptions to each recreated
+base; the old environment variable has no effect.
+
+The following CLI groups and commands are removed, without a current query replacement:
+
+- `cld pulse query` (including saved-query operations) and `cld pulse dashboards`
+  (including publishing and public links).
+- `cld pulse resources`, `cld pulse inventory`, `cld pulse fields`, and
+  `cld pulse capabilities`.
+- The top-level data commands `cld pulse overview`, `cld pulse metrics`,
+  `cld pulse states`, `cld pulse events`, and `cld pulse series`. There is no
+  `cld pulse signals` command to replace them.
+
+The removed capability IDs are `pulse.resource.search`, `pulse.resource.read`,
+`pulse.metric.search`, `pulse.field.search`, `pulse.query.compile`,
+`pulse.query.execute`, `pulse.saved_query.list`, `pulse.saved_query.read`, and
+`pulse.saved_query.execute`. Pulse's remaining capabilities find/read bases and
+sources; agents have no measurement-query capability until SQL arrives.
+Update scripts, scheduled tasks, and agents that call the removed operations.
+
+Refresh the Pulse CLI plugin for each profile with `cld plugins update pulse`.
+Token creation now requires `cld pulse source-tokens create --output-file <path>`:
+it creates a new file with mode `0600` and prints no token in any output mode.
+Moving a metrics endpoint to another origin removes its bearer token unless a
+replacement is supplied. Collectors can use an `Idempotency-Key` from the first
+attempt for safe batch retries; see [Pulse](/en/apps/pulse#send-a-batch-with-http-ingest).
+## Unknown principals and audiences have no English display name
+
+`resolveDisplayNames()` no longer invents English names. A deleted or unknown
+person, group, or service account and the `authenticated` and `public`
+audiences now come back without `displayName`, and the return type marks
+`displayName` as optional. Before, these entries read “Unknown User”,
+“All users (incl. guests)”, or “Public” in every language.
+
+Render principals with `principalLabel(entry, locale)` from
+`@k2b/cloud/access/ui` or `@k2b/cloud/shared`. It localizes audiences and
+missing principals and never falls back to an ID. Code that reads
+`entry.displayName` directly must handle the missing value; `PermissionEditor`
+and `PrincipalPicker` already do. See
+[Resource authorization](/en/docs/identity/authorization#show-names-instead-of-ids).
+
+## The Help panel reader moved to @k2b/cloud/ssr
+
+Replace the former import of `LayoutHelpPanel` or `Layout.HelpPanel`:
+
+```ts
+import { LayoutHelpPanel } from "@k2b/cloud/ssr/islands";
+```
+
+Use the server entry point instead:
+
+```ts
+import { LayoutHelpPanel, type LayoutHelpPanelProps } from "@k2b/cloud/ssr";
+```
+
+Render it in a server page, such as inside `PanelLayout`, never inside an
+island. The panel renders server HTML and mounts small islands for interaction.
+Applications that get Help in the panel through the automatic registration
+change nothing.
+
+## Confirm new personal access in a browser
+
+Creating personal API keys and passkeys now requires a browser sign-in from
+the last ten minutes. OAuth access tokens, API keys, background mandates, and
+mobile app sessions receive `403 BROWSER_SIGN_IN_REQUIRED` for those writes.
+An older browser sign-in receives `403 REAUTHENTICATE`.
+
+Automation that created personal API keys using an OAuth token or another API
+key must stop doing so. Create the key in **Developer → API keys**
+(`/me/developer`) after signing in again in the browser, then provide it to the
+integration through its credential store. Resource and standalone
+service-account keys keep their existing rules.
+
+The browser flow of `cld login` now always shows consent. New OAuth refresh families
+require recent browser confirmation; terminal Cloud Login approvals must match
+the exact grant. Existing refresh rotation stays unchanged. A **New access**
+notice tells the person about each new browser-confirmed OAuth sign-in.
+
+Deploy updated Core and OAuth together so their confirmation checks and schema
+agree: start Core first, then OAuth. OAuth adds the columns Core reads, so new
+OAuth sign-ins fail until updated OAuth has started. See
+[OAuth clients and flows](/en/docs/identity/oauth#confirm-new-access).
+
+## OAuth sign-ins end once on upgrade
+
+Every existing OAuth sign-in of a person ends once with this upgrade. Run
+`cld login` again and reconnect MCP clients and other applications.
+Client-credentials tokens are unaffected.
+
+Update applications built on `@k2b/cloud` to the released package so they enforce
+the live account-epoch check. Start updated Core and OAuth together: OAuth
+sign-ins and refreshes fail until both run the new release. During a rolling
+update, older application versions still accept access tokens of signed-out
+accounts until those tokens expire, at most one hour after issuance.
+
+After the upgrade, signing an account out everywhere also ends its OAuth
+sign-ins and rejects their access tokens at the next request. See
+[OAuth clients and flows](/en/docs/identity/oauth#validate-access-tokens).
+
+## Action policies and per-call reviews replace approval and catalog sentences
+
+Action `approval`, `CapabilityActionReview`, and `presentation.sentences`
+are deprecated and will be removed with the next major release. This release
+accepts both contracts. Follow the [application migration guide](/en/docs/platform/capabilities#migrate-an-application),
+and upgrade Core and the applications that call Actions before an app returns
+the new review or receipt shapes.
+
+The new review shape is `CapabilityActionCallReview` with
+`CapabilityActionCallReviewSchema`. `CapabilityActionReview` and
+`CapabilityActionReviewSchema` keep the old shape in this release; the next
+major release gives that name to the new shape. Because a review can now have
+either shape, `data` in `CapabilityActionReviewResult` and in review client
+results is `CapabilityActionReviewData`. Code that reads it narrows with
+`"sentence" in data` or parses it with the schema of the shape it expects.
+
+## Cloud administrators see only granted contact books in Contacts
+
+Cloud administrators and their user-delegated keys now need a grant to read or
+change a contact book inside Contacts. This affects the Contacts app, API, app
+tools and capabilities (including Mail recipient suggestions), `cld contacts`,
+and live updates that previously let administrators read books without a grant.
+
+Requests for a book without access return HTTP 403, `forbidden`, or `not_found`,
+depending on the operation. Lists and suggestions show only granted books.
+
+**Administration → Contacts** still lists every book, shows its summary, and
+opens its permission dialog. The administration endpoint
+`/api/contacts/admin/books/:bookId/access` keeps the same behavior.
+
+To keep using a book in the app, open **Administration → Contacts**, open the
+access dialog of the book from its row, and grant yourself access. API clients
+can grant access with `POST /api/contacts/admin/books/:bookId/access`. Then use
+the Contacts app with that grant.
+
+## Contacts requires finished short IDs
+
+Contacts creates `short_id` as a required column on books, contacts, tags, and
+notes. It no longer assigns missing short IDs at startup, so startup no longer
+does work that grows with data.
+
+Every Cloud release from v0.7.0 through v0.45.0 finished the short IDs on its
+first Contacts start. An installation that started Contacts on any of these
+releases needs no action. The minimum direct upgrade source for Contacts is an
+installation whose Contacts has started on Cloud v0.7.0 or later.
+
+A database that never finished its short IDs, such as one upgraded straight
+from the June 23, 2026 production baseline, is no longer a supported direct
+upgrade source. Contacts refuses to start, points to this section, and leaves
+the database unchanged. Start Contacts once on Cloud v0.45.0 until
+`/_cloud/ready` answers ready, then upgrade to the current release.
+
+## Help articles have kinds, next steps, key caps, and details
+
+Help frontmatter now accepts `kind`, `needs`, `next`, and `related`, and the
+article body accepts key caps, icon labels, and `:::details` blocks. Core adds
+four columns to `help.documents` for them. Update Core before applications that
+publish Help: until Core adds the columns, an updated application that
+publishes Help fails its first registration and does not start.
+
+Startup checks Help more strictly. An application with Help that passed before
+fails startup when an article:
+
+- uses `kind`, `needs`, `next`, or `related` in its frontmatter for something
+  else; Help no longer strips these keys;
+- has a line starting with `:::details`, `:::steps`, `:::reference`, or
+  `:::compare` directly after a text line, a details opener without a title or
+  closing `:::`, or details inside details;
+- has a `:kbd[...]` that does not name a key;
+- has a callout inside details;
+- has a `help:` target in a reference definition, autolink, image, HTML, or
+  callout title;
+- uses a Help link scheme other than lowercase `help:`, such as `HELP:`.
+
+Code spans and fenced code stay exempt. See
+[In-product Help](/en/docs/platform/help).
+
+## Package plugins ship as verified bundles
+
+Package plugins now use the same verified manifest, bundled module, references,
+and content-addressed store as plugins served by a Cloud application.
+`cld <module> reference [file]` works for both sources. Package modules appear
+with profile `*` in the generated agent skill table.
+
+Packages with the old `cld.apiVersion` and `cld.entry` format are refused.
+Existing `plugins/<id>/` directories are listed as `incompatible` and never
+loaded. There is no compatibility path.
+
+Authors re-pack from their package directory and republish the output:
+
+```sh
+bun run node_modules/@k2b/cloud/scripts/cli-pack.ts src/cli.ts --references references --out dist/plugin
+npm publish dist/plugin
+```
+
+The references directory needs `index.md`. The pack script writes
+`cld.manifest` in the output's `package.json`.
+
+Users install the new package with `cld plugins install <source>`. To remove an
+old installation, run `cld plugins remove <id>`. See
+[Application CLI modules](/en/docs/platform/cli-modules).
+
+## Mail reference number commands moved
+
+`reference` is reserved as the first argument of every `cld` module: it prints
+the module's skill references. Mail's reference number commands therefore
+moved from `cld mail reference …` to `cld mail reference-number config show`,
+`config set`, `list`, `ensure`, and `find`, with unchanged flags and output.
+`defineCliCommands()` now refuses a module that declares a top-level
+`reference` command.
 
 ## @k2b/ui Calendar month reads range
 
@@ -19,7 +298,7 @@ views with `dayHours` read `range`, and the month always paged. A host that
 passes `range` in every view gets the scrolling month after the upgrade. To
 keep the paged month, pass `range` only in the day and week views, for example
 `range={view === "day" || view === "week" ? range : undefined}`. See
-[Calendar](/en/ui/surfaces/calendar).
+[Calendar](/en/ui/content/calendar).
 
 ## Spaces scrolling calendars load days in blocks
 
@@ -805,16 +1084,20 @@ owner.
 
 ## Resources keep at least one manager
 
-Grids Bases, Pulse Bases, and Venues now refuse a grant change that would
-leave them without a manager. They answer `409` with code `LAST_MANAGER`;
-Venue used to answer a removal of its last admin with `400`. Grids also refuses
-a **None** grant for the same person, group, or account as the last manager.
+Grids Bases, Pulse Bases, Venues, and contact books now refuse a grant change
+that would leave them without a manager. They answer `409` with code
+`LAST_MANAGER`; Venue used to answer a removal of its last admin with `400`,
+and Contacts answered both a removal and a lowering of the last admin with
+`400`. API keys bound to the resource and user-delegated accounts do not count
+as managers. Grids also refuses a **None** grant for the same person, group, or
+account as the last manager.
 The administration routes follow the same rule; an administrator recovers a
-resource by granting a new manager first. Pulse and Venue now also check under
-the same lock that the person who makes the change still manages the resource.
+resource by granting a new manager first. Pulse, Venue, and Contacts now also
+check under the same lock that the person who makes the change still manages
+the resource.
 
-Contact books, Spaces, mailboxes, notebooks, Assistant projects and skills, and
-Studio artifacts keep their own older checks for now. They also refuse to
+Spaces, mailboxes, notebooks, Assistant projects and skills, and Studio
+artifacts keep their own older checks for now. They also refuse to
 remove the last admin, but they count every `admin` entry, including API keys
 bound to the resource, and answer with their own status and message, not
 `LAST_MANAGER`.
@@ -1831,8 +2114,9 @@ for preparation, startup order, verification, and rollback. The contract below
 defines what changes for sessions and OAuth clients.
 
 This is a coordinated hard cut, not a rolling compatibility release. All
-Cloud users must sign in again. Existing OAuth clients, refresh grants, API
-credentials, and background mandates retain their separate lifecycles.
+Cloud users must sign in again. OAuth client registrations and secrets, API
+keys, and background mandates are retained. OAuth sign-ins also
+[end once on upgrade](#oauth-sign-ins-end-once-on-upgrade).
 
 1. Back up PostgreSQL and the Core identity-key encryption key. Drain old Core
    and application replicas, including background workers, before migration.
@@ -1872,12 +2156,13 @@ Include every OAuth replica in the maintenance window. Configure the same
 `CLOUD_OAUTH_BROKER_SECRET` exclusively on Core and OAuth, start updated Core,
 then start updated OAuth. Its migration drops only the obsolete `oauth.keys` and
 `oauth.issuance_state` tables and the old code-audience compatibility trigger.
-Client registrations, client secrets, authorization codes and refresh families
-are retained. Existing code snapshots are backfilled where needed.
+Client registrations and client secrets are retained. Older authorization codes
+cannot be redeemed, and refresh families without an epoch are revoked; see
+[OAuth sign-ins end once on upgrade](#oauth-sign-ins-end-once-on-upgrade).
 
 Old OAuth access and ID tokens are no longer supported by the updated Cloud.
-Clients with a valid refresh grant can obtain Core-issued tokens; others need
-another authorization. No supported OAuth grant type, PKCE, dynamic
+Clients need another authorization to obtain Core-issued tokens. No supported
+OAuth grant type, PKCE, dynamic
 registration, consent or resource-binding feature is removed. Clients using
 discovery do not need a new client ID or secret. A client that manually pins
 signing keys must load Core's keys from the unchanged public JWKS URL. An
@@ -1950,6 +2235,8 @@ writers before starting updated services; no manual repair command is required.
 See [JSON metadata upgrade](/en/docs/operations/repair-jsonb-containers) for the
 preservation rules and optional diagnosis. The NATS, identity, and OAuth release
 prerequisites still apply independently.
+Contacts can no longer be upgraded directly from that baseline; follow the
+[Contacts short-ID upgrade path](/en/docs/reference/deprecations-and-migrations#contacts-requires-finished-short-ids).
 
 ## Notification email uses outgoing mail
 

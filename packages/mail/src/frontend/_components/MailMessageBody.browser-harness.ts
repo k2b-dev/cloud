@@ -14,7 +14,9 @@ export type MailMessageBodyTrace = {
 
 declare global {
   interface Window {
-    mountMailMessageBody: (props: Omit<MailMessageBodyProps, "onSelectionChange">) => void;
+    mountMailMessageBody: (
+      props: Omit<MailMessageBodyProps, "onSelectionChange" | "theme" | "colors"> & Partial<Pick<MailMessageBodyProps, "theme" | "colors">>,
+    ) => void;
     /** Applies a live update to the mounted message, as a reconciled snapshot does. */
     updateMailMessageBody: (props: Partial<Omit<MailMessageBodyProps, "onSelectionChange">>) => void;
     mailMessageBodyTrace: MailMessageBodyTrace;
@@ -27,7 +29,12 @@ window.mountMailMessageBody = (props) => {
   const started = performance.now();
   const trace: MailMessageBodyTrace = { loads: [], srcdocChanges: 0, heights: [], quoteToggles: 0 };
   window.mailMessageBodyTrace = trace;
-  const [current, setCurrent] = createStore<MailMessageBodyProps>({ ...props, onSelectionChange: () => {} });
+  const [current, setCurrent] = createStore<MailMessageBodyProps>({
+    theme: "light",
+    colors: "adapted",
+    ...props,
+    onSelectionChange: () => {},
+  });
   window.updateMailMessageBody = (update) => setCurrent(update);
   render(() => createComponent(MailMessageBody, current), host);
   const frame = host.querySelector("iframe");

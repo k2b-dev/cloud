@@ -122,6 +122,7 @@ const SELF_SERVICE_ACTION_LABELS = {
   "webauthn_credential.authenticate": "Passkey used",
   "auth.pwa.device.enroll": "App paired",
   "auth.pwa.device.revoke": "App removed",
+  "auth.session.sign_out_others": "Signed out everywhere else",
 } as const satisfies Record<string, string>;
 const SELF_SERVICE_ACTIONS = Object.keys(SELF_SERVICE_ACTION_LABELS);
 

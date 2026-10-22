@@ -5,7 +5,7 @@ section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-10-12
+updated: 2026-10-19
 ---
 
 # Islands
@@ -40,7 +40,8 @@ This has two consequences:
   island mounts: a value typed into an input, focus, a text selection, or a
   scroll position. Keep islands small so that they mount soon after the page
   appears. Do not rely on input made before mount; derive the island's initial
-  state from its props or the URL.
+  state from its props or the URL. `AppWorkspace.SidebarBody` restores its own
+  scroll offset again on mount.
 - The server and the browser must render the same markup from the same props.
   When they differ, the page moves as the island mounts. Do not read
   browser-only values such as the window width, `localStorage`, or the
@@ -101,6 +102,10 @@ An island may import:
 
 Do not import `@k2b/cloud/server`, `/services`, `/ssr`, or a domain
 service that imports Bun SQL.
+
+A window `message` listener (including `window.onmessage`) compares
+`event.source` with the window it expects before it acts, because any window
+(frame, popup, or opener) can post to the page.
 
 ## Keep the first load small
 
@@ -224,6 +229,17 @@ import { isServer } from "solid-js/web";
   />
 </div>;
 ```
+
+## Island lifetime
+
+An island lives until the document unloads or the framework disposes the content
+around it. Disposal runs every Solid `onCleanup` and effect cleanup, also when
+the island shows an error fallback. Use `onCleanup` to remove global listeners,
+clear timers, and release subscriptions.
+
+The wrapper dispatches a bubbling `ssr:island-dispose` event just before
+cleanup. Code that renders outside the wrapper, such as a portal, can close
+what the island opened. Disposal closes every open `@k2b/ui` dialog.
 
 ## Clean up with values from creation
 

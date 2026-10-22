@@ -5,7 +5,7 @@ section: Platform services
 order: 580
 description: Declare app-owned Markdown once for the shared Help UI, full-page Help, Assistant, and MCP.
 tags: [help, markdown, product, agents]
-updated: 2026-10-10
+updated: 2026-10-19
 ---
 
 # In-product Help
@@ -31,6 +31,29 @@ permission-sensitive data in an authorized Query or application route.
 | Stable article IDs and useful metadata | Layout Help and full-page Help |
 | Whether the content is safe for everyone who sees the app | Who can read Help, search, reads, and agent discovery |
 | Specialized embedded presentation, when needed | Publication lifecycle and derived routes |
+
+## Open Help beside the app
+
+On signed-in Layout pages, **Help**, `?` (Shift+/), and the `cloud.help`
+command open Core's Help provider in the shared [panel slot](/en/docs/platform/panels).
+Ctrl+J, or Cmd+J on Apple devices, toggles the slot. The rail and phone header
+Help buttons toggle Help: they close it when it is already open, or switch
+from another provider. The Help command opens or focuses it without closing it.
+
+Without a matching slot, Help opens as a dialog. This includes anonymous
+pages, `Layout panel={false}`, and pages from an application built against an
+older `@k2b/cloud`. On a phone, below 48 rem, that dialog is the shared bottom
+sheet at full height.
+
+Inside Help, `/` focuses search unless the reader is editing another field.
+Escape in a nonempty search field clears it first. Otherwise Escape closes the
+panel and returns focus to the opener. Articles of the current app open inside
+Help. **Open as page** opens the current article or start in the app window.
+Panel article navigation leaves the iframe address unchanged. Cross-app Help
+links also open in the app window.
+
+Without page context, Help shows Core's own start. An unknown or inaccessible
+app shows a neutral unavailable note without its name or article titles.
 
 ## Keep Help in one module
 
@@ -71,11 +94,13 @@ src/help/
         └── inventory-start.help.md
 ```
 
-The base locale is complete and owns the logical article IDs, icons, and order.
+The base locale is complete and owns article IDs and navigation metadata.
 A localized folder may contain only the translated articles available today.
 It owns their title, description, and Markdown body. Keep the same `id`; do not
 create language-specific IDs or duplicate Help registrations. Localized
-frontmatter may omit `icon` and `order`; if repeated, they must match the base.
+frontmatter may omit `icon`, `order`, `kind`, `needs`, `next`, and `related`;
+omitted fields inherit the base value. If repeated, they must match exactly,
+including the order of the `related` list.
 
 Cloud resolves each article through the exact requested locale, its BCP 47
 ancestors, then the base locale. For example, `de-CH` can use a `de-CH` article,
@@ -95,6 +120,7 @@ covers the voice of all product text and translation equivalence.
 ---
 id: inventory-start
 title: Start with Inventory
+kind: start
 icon: ti ti-package
 description: Create and update inventory items.
 order: 10
@@ -104,9 +130,9 @@ order: 10
 
 **First steps**
 
-## Create an item {icon="plus"}
+## Create an item
 
-Open Inventory and choose **New item**.
+Open Inventory and choose **New item**{icon="plus"}.
 ```
 
 | Field | Required | Contract |
@@ -116,30 +142,60 @@ Open Inventory and choose **New item**.
 | `order` | No | Integer; defaults to `100` |
 | `icon` | No | Tabler icon classes for the article |
 | `description` | No | Short search and overview text |
+| `kind` | No | `start`, `task`, `reference`, or `troubleshoot`; defaults to `task` |
+| `needs` | No | One glossary access level: `view`, `edit`, or `manage`; never an app-specific permission |
+| `next` | No | Same-app document ID for the next task; cannot point to itself |
+| `related` | No | Ordered list of `<id>` or `<app>/<id>` references; defaults to `[]`; no duplicates |
 
 The body must not be empty. Articles are sorted by `order`, then by title.
 
-Every level-two heading in a registered application article ends with icon
-metadata:
+Level-two headings need no icon metadata. An optional trailing
+`{icon="plus"}` is removed from the title and ignored by the reader.
+Heading IDs keep the same slugging rules and must be unique.
 
-```md
-## Create an item {icon="plus"}
-```
+### Name keys, labels, and menu paths
 
-Cloud removes the metadata from the visible title and uses it in article
-navigation. Heading IDs must be unique after slugging.
+These forms belong to Help Markdown. Ordinary content Markdown keeps its
+existing syntax.
+
+| Source | Reader |
+| --- | --- |
+| `:kbd[mod+k]` | Key caps for the reader's platform: Ctrl and K, or ⌘ and K on Mac |
+| `**Hide**{icon="eye-off"}` | A label chip with the control's icon; inline Markdown stays supported |
+| `**Space settings → Sharing**` | Two label chips joined by ›, with → for screen readers |
+| `**Space settings → Sharing**{icon="settings"}` | A menu path with the icon on its first chip |
+
+Icon names use lowercase letters, digits, and hyphens. Plain bold text stays
+bold. A shortcut must format to at least one key; invalid shortcuts fail
+startup. Code spans and fenced examples remain literal.
+
+### Link related guidance
+
+Use `[Share](help:inventory-sharing#invite)` for a same-app article and
+`[Reply](help:mail/mail-invitations#reply)` for another app. The reader resolves
+each target in its current published corpus and language, using the same app
+visibility rule as article reads. Resolved links use
+`/help/apps/<app>/<id>#section`. Unknown or invisible targets render only the
+link text and expose no target address. `next` and `related` use this same
+resolution; unresolved entries are omitted. Write `help:` links inline: a reference
+definition, autolink, image, or HTML attribute with a `help:` target fails
+startup. The scheme must be lowercase `help:`; spellings such as `HELP:` fail
+startup. Help syntax that remains unconverted in agent text also fails startup.
 
 ### Use guided blocks
 
-Help supports three guided blocks:
+Help supports these guided blocks:
 
 | Block | Use |
 | --- | --- |
 | `steps` | Ordered task |
 | `reference` | Compact facts or controls |
 | `compare` | Alternatives or differences |
+| `details Question` | Collapsed reasons or special cases; a title is required |
 
-The block contains normal Markdown:
+Start a guided block after a blank line, at the start of the document, or
+after another block. An opener directly after a text line fails startup. The
+block contains normal Markdown:
 
 ```md
 :::steps
@@ -148,6 +204,26 @@ The block contains normal Markdown:
 3. Choose **Create**.
 :::
 ```
+
+Keep the main task short. Put reasons and special cases in details:
+
+```md
+:::details What happens to existing items?
+Inventory keeps the items you already created.
+
+:::steps
+1. Open **Items**.
+2. Choose **Export**{icon="download"}.
+:::
+:::
+```
+
+Details start collapsed. Their full body remains searchable and is given in
+full to agents. They can contain steps, reference, and compare blocks and
+ordinary Markdown, but no other details. A callout inside details fails
+startup: a warning or note belongs where the reader sees it. An opener directly
+after a text line, without a title, without a closing `:::`, or with details
+inside fails startup.
 
 A paragraph containing only bold text becomes an eyebrow. Use it as a short
 label, not another heading.
@@ -251,9 +327,16 @@ Cloud already knows the owning application's ID and base path when it starts.
 `defineHelp()` validates the article shape and creates an immutable source
 declaration. Startup compiles the complete collection, rejects duplicate IDs,
 and calculates its manifest hash before the application advertises Help.
+Same-app IDs in `next`, `related`, and `help:` links must exist in the base
+locale. This includes references prefixed with the owning app ID. Validation
+names the locale, document, and bad reference; code examples are ignored.
+Cross-app references resolve for the reader at read time and do not prevent
+startup. Unknown extra frontmatter fields are stripped. Help reserves `kind`,
+`needs`, `next`, and `related`: an article that uses one of these keys for
+something else fails startup. Third-party articles with only `id`, `title`,
+`icon`, `description`, and `order` keep working.
 
-One Markdown article is limited to 128 KiB. The former 512 KiB limit on the
-combined collection no longer applies, and search text is retained for every
+One Markdown article is limited to 128 KiB. Search text is retained for every
 language. Invalid articles fail startup before the application advertises Help.
 
 Core creates the shared Help schema in Postgres during setup. Applications
@@ -325,6 +408,52 @@ not repeat that path in their Help declaration. Core owns search and article
 transport and the shared reader; the derived application routes forward to
 that reader while the application remains the content owner.
 
+The panel Help head shows the app tile and app name. Search stays in
+place when an article opens. The **⋯** menu offers **Copy as Markdown** and
+**Open as page**.
+
+The start lists guidance in this order:
+
+1. **For this view:** up to three articles named by the current page.
+2. **What do you want to do?:** `task` articles as tiles, sorted by `order`
+   (default `100`), then title. At most eight become tiles; the remaining tasks
+   follow as a list below them.
+3. **Get started**, **Look up**, and **Solve problems:** articles with
+   `kind: start`, `kind: reference`, and `kind: troubleshoot`, respectively. Each group uses the
+   same sorting; empty groups are absent. Missing `kind` means `task`.
+4. **Keyboard shortcuts:** **Everywhere**, **In &lt;App&gt;**, and **With a
+   selection**. Commands without a shortcut and empty groups are absent.
+
+The shell's Search, Help, and panel shortcuts appear on the server under
+**Everywhere**, in that order. The panel then follows the host page's live
+shortcuts; it does not use its own provider document's command registry.
+Commands scoped to a selection go under **With a selection**; other `cloud.*` commands go under **Everywhere**, and other
+commands go under **In &lt;App&gt;**. Key caps follow the reader's keyboard platform.
+
+Name two or three relevant articles on each main page with Layout's `help`
+prop:
+
+```tsx
+<Layout c={c} title="Inventory" help={["inventory-start", "inventory-access"]}>
+  <InventoryOverview />
+</Layout>
+```
+
+Layout sends these IDs through the panel context, including the first iframe
+URL, so **For this view** is present in the server frame. Core treats the
+context as a selector and filters it again against the reader's manifest.
+Live context changes update that section; another app or null clears it.
+
+These are IDs from the current app's Help declaration. Cloud keeps their
+declared order, removes duplicates, ignores IDs outside the reader's authorized
+manifest, and keeps at most three. Without a manifest, no page articles are
+shown. These articles also keep their place in the task tiles or kind groups,
+so the app's start stays consistent across pages.
+
+An app without Help articles shows a short note above the shortcuts. When
+Cloud could not read the app's Help metadata for the page, Help says so and
+offers **Reload**.
+
 Full-page Help renders in the owning application's frame. The rail marks that
 app, its canvas and accent apply, and the title row leads back to the app.
 Third-party applications use the same frame.
@@ -332,18 +461,27 @@ Third-party applications use the same frame.
 Links to another article or section of the same app's Help open inside the
 reader without reloading: `/app/<id>/help/<documentId>`,
 `/help/apps/<id>/<documentId>`, or `#section`. On the full page, the address
-updates and the browser's Back button returns to the previous article. Back to
-the topic list keeps the typed search, and an address with an unknown article
-shows the topic list. The phone menu or a dialog that closes does not move the
+updates and the browser's Back button returns to the previous article.
+Returning to the Help start keeps the typed search, and an address with an
+unknown article shows the Help start. The phone menu or a dialog that closes does not move the
 open article. Other links navigate normally.
 
-The reader adapts to its own width in a dialog, on the full page, or inside an
-application's embedded reader.
+An article starts with its head: the app path, title, and first paragraph as a
+short answer on the app's own canvas gradient (the same colours as the app
+background, without a border or shadow), and the article's icon in the flat
+shared icon tile. A narrow reader puts the tile before the title. One chip row
+shows “You need <level>” and the step count. A text table of contents stays at
+the side in a wide reader and becomes an “On this page”
+menu in a narrow reader. The article ends with one large “Next” tile and
+related articles in their app colour. Authors choose `next`; article order
+sorts the task tiles, remaining tasks, and kind groups on the Help start.
 
 SSR loads the current application's localized article metadata from Postgres.
-The browser receives this manifest and loads article bodies on demand. An
-agent uses bounded search and read operations; Cloud does not create one
-permanently loaded tool for every article.
+The browser receives this manifest. When the address names an article, on a
+full page or through the panel's `?topic=`, the server renders that article in
+the first frame; other articles load on demand. An agent uses bounded search
+and read operations; Cloud does not create one permanently loaded tool for
+every article.
 
 Every automatic surface uses the same request locale. Article responses and
 AI/MCP matches report each article's actual content locale. Browser article
@@ -393,6 +531,27 @@ server that runs the database must keep `pg_textsearch` preloaded.
 relevant sections when a query is supplied. An exact level-two heading selects
 that section. Full article reads in the UI and MCP resources still return the
 complete article.
+
+### Agent text and Copy as Markdown
+
+`read_help`, `cloud__help__read`, MCP resource reads, and the Help API's
+`markdown` field return portable agent text rather than the Markdown source.
+“Copy as Markdown” uses that same field. Search returns metadata only.
+
+| Source | Agent text |
+| --- | --- |
+| `:kbd[mod+k]` in English | `Ctrl+K (⌘K on Mac)` |
+| `:kbd[mod+k]` in German | `Strg+K (⌘K auf dem Mac)` |
+| `:kbd[enter]` | `Enter`: a key without a platform modifier reads by its name |
+| `**Hide**{icon="eye-off"}` | `**Hide**` |
+| `## Hide {icon="eye-off"}` | `## Hide` |
+| `:::details Question` … `:::` | `**Question**`, a blank line, and the full body |
+| `[text](help:mail/mail-invitations#reply)` | `[text](/help/apps/mail/mail-invitations#reply)` when visible; otherwise `text` |
+
+Other locales use English shortcut explanations. Code spans and fenced code
+stay verbatim. Steps, reference, compare, and callout directives remain as
+written. The 7,000-character tool-read limit applies after conversion; MCP
+resources and the Help API return the complete converted article.
 
 ## Who can read Help
 
@@ -455,6 +614,25 @@ manifest.
 Use the automatic Layout and full-page surfaces for ordinary application Help.
 Add a specialized consumer only when its surrounding workflow needs a distinct
 presentation.
+
+Core's provider document uses `LayoutHelpPanel` with `LayoutHelpPanelProps`
+from `@k2b/cloud/ssr`. Render it in a server page, such as inside `PanelLayout`,
+never inside an island. It renders the start and initial article as server HTML
+and mounts small islands for interaction. Search, menus, Markdown copy, and
+the client article reader load on demand.
+It receives the authorized documents, app identity and appearance, filtered
+view IDs, keyboard platform, and optional topic from the server. It reads no
+host shell data and follows context and shortcuts through the panel API.
+Application authors normally use the automatic registration above.
+
+Pass the result of `preloadLayoutHelpArticle(c, appId, documentId)` from
+`@k2b/cloud/ssr/help` as `initialArticle` alongside a manifest-validated
+`initialTopic` to `Layout.HelpPage` or `LayoutHelpPanel`. This renders the
+article in the first frame. If the helper returns `null`, omit the prop to load
+on demand.
+
+`Layout.HelpPage` with `embedded` renders no Help head: the host's own window
+names the reader and chooses its article. Its start keeps only the search.
 
 For server-rendered embedded readers, `preloadLayoutHelp(c, appId)` from
 `@k2b/cloud/ssr/help` loads the published, request-localized metadata. Reuse its

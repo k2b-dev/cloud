@@ -13,6 +13,7 @@ const entry: SettingFieldDef = {
   valueSource: "default",
   resetValueSource: "default",
   isCustom: false,
+  unreadable: false,
   group: "freeipa",
   options: [
     { value: "delete", label: "Delete account" },
@@ -31,4 +32,13 @@ describe("localizeSettingField", () => {
   test("preserves the server-provided English definition", () => {
     expect(localizeSettingField(entry, "en-US")).toBe(entry);
   });
+});
+
+test("PDF input budget and timeout copy describe the whole render request", () => {
+  const budget = localizeSettingField({ ...entry, key: "gotenberg.max_html_bytes", kind: "number", options: undefined }, "de");
+  expect(budget.label).toBe("Maximale Eingabegröße");
+  expect(budget.description).toBe("Maximale Größe einer Render-Anfrage: HTML, Kopf- und Fußzeile, Bilder und Schriften zusammen.");
+  const timeout = localizeSettingField({ ...entry, key: "gotenberg.timeout_ms", kind: "number", options: undefined }, "de");
+  expect(timeout.description).toContain("--api-timeout");
+  expect(timeout.description).toContain("Standard 30 s");
 });

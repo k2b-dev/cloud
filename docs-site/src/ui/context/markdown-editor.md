@@ -111,7 +111,7 @@ assistive technology.
 
 ## Runtime
 
-`MarkdownEditor` is interactive and must run in hydrated Solid client code. The surrounding page can remain server rendered.
+`MarkdownEditor` is interactive and requires browser code. The surrounding page can remain server rendered.
 
 ## Example
 

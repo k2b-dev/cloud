@@ -1,13 +1,18 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudCliContext, CloudCliFlags, CloudCliOutputMode } from "@k2b/cloud/cli";
 import { sha256 } from "@k2b/filegate/utils";
 import { hc } from "hono/client";
-import filesCli from "./cli";
-import type { BaseSummary, FileEntry } from "./contracts";
+import { type BaseSummary, type FileEntry, FolderBatchInputSchema, type FolderResult } from "./contracts";
 import { entryRefId, parseEntryRefId } from "./resource-ref";
+
+// Exercise the real retry budget without waiting for production backoff delays.
+const uploadRetry = await import("./upload-retry");
+mock.module("./upload-retry", () => ({ ...uploadRetry, UPLOAD_RETRY_DELAYS_MS: [1, 1, 1, 1, 1] }));
+const { default: filesCli } = await import("./cli");
+const originalFetch = globalThis.fetch;
 
 /**
  * Every user-level command against an in-memory Files API and Filegate. Cloud
@@ -47,6 +52,7 @@ let shares: { id: string; kind: string; title: string; state: string; password?:
 let favorites: Set<string>;
 let sessions: Map<string, { base: string; path: string; size: number; segments: Map<number, Uint8Array<ArrayBuffer>> }>;
 let requests: string[];
+let folderBatches: string[][];
 let transferHeaders: Headers[];
 const directories: string[] = [];
 
@@ -136,6 +142,27 @@ async function cloud(request: Request): Promise<Response> {
         .filter(([item]) => (path === "" || item.startsWith(`${path}/`)) && item.split("/").at(-1)!.includes(q))
         .map(([item, node]) => entryOf(item, node));
       return Response.json({ base: baseOf(base), path, query: q, scope: query.get("scope"), items, next: null });
+    }
+    case "POST /directories/batch": {
+      const parsed = FolderBatchInputSchema.safeParse(body);
+      if (!parsed.success) return fail(400, "invalid_selection");
+      folderBatches.push(parsed.data.paths);
+      const results: FolderResult[] = [];
+      for (const path of parsed.data.paths) {
+        if (results.some((item) => item.state === "failed")) results.push({ path, state: "skipped" });
+        else if (exists(base, path))
+          results.push(
+            isFolder(base, path)
+              ? { path, state: "existing", entry: result(base, path).entry }
+              : { path, state: "failed", error: "path_conflict" },
+          );
+        else if (!isFolder(base, parentOf(path))) results.push({ path, state: "failed", error: "not_found" });
+        else {
+          tree(base).set(path, { directory: true, bytes: new Uint8Array() });
+          results.push({ path, state: "created", entry: result(base, path).entry });
+        }
+      }
+      return Response.json({ base: baseOf(base), results });
     }
     case "POST /directories":
       if (!isFolder(base, parentOf(path))) return fail(404, "not_found");
@@ -341,6 +368,7 @@ beforeEach(() => {
   favorites = new Set();
   sessions = new Map();
   requests = [];
+  folderBatches = [];
   transferHeaders = [];
   server = Bun.serve({
     hostname: "127.0.0.1",
@@ -350,6 +378,8 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  globalThis.fetch = originalFetch;
+  mock.restore();
   server.stop(true);
   for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true });
 });
@@ -361,14 +391,14 @@ async function directory() {
 }
 
 /** Runs one command in process, as `cld` would after parsing global options. */
-async function cli(args: string[], flags: CloudCliFlags = {}, output: CloudCliOutputMode = "json") {
+async function cli(args: string[], flags: CloudCliFlags = {}, output: CloudCliOutputMode = "json", locale = "en") {
   const out: string[] = [];
   const err: string[] = [];
   const values: unknown[] = [];
   const ctx: CloudCliContext = {
     args,
     flags,
-    options: { profile: "test", server: server.url.href, token: TOKEN, output, locale: "en" },
+    options: { profile: "test", server: server.url.href, token: TOKEN, output, locale },
     getDefault: async () => undefined,
     setDefault: async () => undefined,
     createApiClient: ((basePath: string) =>
@@ -397,9 +427,9 @@ async function cli(args: string[], flags: CloudCliFlags = {}, output: CloudCliOu
   return { code: code ?? 0, out: out.join("\n"), err: err.join("\n"), json, values };
 }
 
-const failure = async (args: string[], flags: CloudCliFlags = {}) => {
+const failure = async (args: string[], flags: CloudCliFlags = {}, locale = "en") => {
   try {
-    await cli(args, flags);
+    await cli(args, flags, "json", locale);
   } catch (error) {
     return (error as Error).message;
   }
@@ -473,6 +503,8 @@ test("put and get round-trip text and binary files, never overwrite, and keep Cl
   const nested = await cli(["put", local, "team:/2026/Q3/report.txt"], { parents: true });
   expect(nested.json.entry.path).toBe("2026/Q3/report.txt");
   expect(tree(team.id).get("2026")?.directory).toBe(true);
+  expect(folderBatches).toEqual([["2026", "2026/Q3"]]);
+  expect(requests.filter((request) => request.includes("/directories"))).toEqual([`POST /bases/${team.id}/directories/batch`]);
 
   const cwd = process.cwd();
   process.chdir(dir);
@@ -511,23 +543,89 @@ test("put and get round-trip text and binary files, never overwrite, and keep Cl
 test("cat prints text, refuses binary content, and saves with --out", async () => {
   const printed = await cli(["cat", "me:/Documents/notes.txt"], {}, "text");
   expect(printed.out).toBe("hello notes\n");
+  requests = [];
   expect((await cli(["cat", "me:/Documents/notes.txt"])).json).toEqual({
     baseId: home.id,
     path: "Documents/notes.txt",
     bytes: 12,
     content: "hello notes\n",
+    permalink: `${server.url.origin}/open/filesv2.entry/~${entryRefId(home.id, "Documents/notes.txt")}`,
   });
+  expect(requests).toEqual(["GET /bases", `POST /bases/${home.id}/download`]);
   expect(await failure(["cat", "me:/Documents/binary.bin"])).toBe("This file is not text. Save it with --out or get.");
   const out = join(await directory(), "binary.bin");
   expect((await cli(["cat", "me:/Documents/binary.bin"], { out })).json).toEqual({ path: out, bytes: 3 });
   expect(await failure(["cat", "me:/Documents"])).toStartWith("400 not_file");
 });
 
+test("mkdir accepts several literal folder arguments and preserves single-folder output", async () => {
+  const created = await cli(["mkdir", "me:/One", "me:/Two,Three"]);
+  expect(created.json).toMatchObject({
+    base: home,
+    results: [
+      { path: "One", state: "created", entry: { path: "One" } },
+      { path: "Two,Three", state: "created", entry: { path: "Two,Three" } },
+    ],
+  });
+  expect(requests.filter((request) => request.endsWith("/directories"))).toHaveLength(2);
+  expect(folderBatches).toEqual([]);
+  const printed = await cli(["mkdir", "me:/Four", "me:/Five"], {}, "text");
+  expect(printed.out.split("\n")).toEqual(["Created\tme:/Four", "Created\tme:/Five"]);
+  expect((await cli(["mkdir", "me:/Six"])).json).toMatchObject({ base: home, entry: { path: "Six" } });
+});
+
+test("mkdir -p sends one deduplicated parent-first batch and prints the requested folders", async () => {
+  const created = await cli(["mkdir", "me:/New/A/Child", "me:/New/B", "me:/New/A"], { p: true });
+  expect(folderBatches).toEqual([["New", "New/A", "New/B", "New/A/Child"]]);
+  expect(requests.filter((request) => request.includes("/directories"))).toEqual([`POST /bases/${home.id}/directories/batch`]);
+  expect(created.json.results.map((item: FolderResult) => item.path)).toEqual(["New", "New/A", "New/B", "New/A/Child"]);
+  const printed = await cli(["mkdir", "me:/New/A", "me:/New/C"], { parents: true }, "text");
+  expect(printed.out.split("\n")).toEqual(["Exists\tme:/New/A", "Created\tme:/New/C"]);
+  expect((await cli(["mkdir", "me:/New/A/Child"], { parents: true })).json).toMatchObject({ base: home, entry: { path: "New/A/Child" } });
+});
+
+test("mkdir rejects mixed areas before creating anything", async () => {
+  const modes: CloudCliFlags[] = [{}, { parents: true }];
+  for (const flags of modes)
+    expect(await failure(["mkdir", "me:/One", "team:/Two"], flags)).toBe("All addresses must be in the same area.");
+  expect(requests.filter((request) => request.includes("/directories"))).toEqual([]);
+});
+
+test("mkdir failures name created and unattempted folders in both modes", async () => {
+  tree(home.id).set("root.txt", { directory: false, bytes: text("file") });
+  for (const [flags, first, last] of [
+    [{}, "One", "Later"],
+    [{ parents: true }, "Two", "After"],
+  ] as const) {
+    const message = await failure(["mkdir", `me:/${first}`, "me:/root.txt", `me:/${last}`], flags);
+    expect(message).toContain("root.txt");
+    expect(message).toContain(`Created: ${first}`);
+    expect(message).toContain(`Not attempted: ${last}`);
+    expect(tree(home.id).has(first)).toBe(true);
+    expect(tree(home.id).has(last)).toBe(false);
+  }
+});
+
+test("mkdir localizes partial outcomes and area errors in German", async () => {
+  tree(home.id).set("root.txt", { directory: false, bytes: text("file") });
+  const message = await failure(["mkdir", "me:/Neu", "me:/root.txt", "me:/Später"], { parents: true }, "de");
+  expect(message).toContain("Angelegt: Neu");
+  expect(message).toContain("Nicht versucht: Später");
+  expect(await failure(["mkdir", "me:/Noch", "team:/Andere"], {}, "de")).toBe("Alle Adressen müssen im selben Bereich liegen.");
+});
+
+test("mkdir -p leaves batches above the shared limit to the server's 400", async () => {
+  expect(await failure(["mkdir", `me:/${Array.from({ length: 101 }, (_, i) => `F${i}`).join("/")}`], { parents: true })).toStartWith(
+    "400 ",
+  );
+  expect(tree(home.id).has("F0")).toBe(false);
+});
+
 test("mkdir, mv, cp and rm follow shell semantics inside the area contract", async () => {
   expect(await failure(["mkdir", "me:/Projects/2026"])).toStartWith("404 ");
   expect((await cli(["mkdir", "me:/Projects/2026"], { parents: true })).json.entry.path).toBe("Projects/2026");
   expect((await cli(["mkdir", "me:/Projects/2026"], { p: true })).json.entry.path).toBe("Projects/2026");
-  expect(await failure(["mkdir", "me:/Documents/notes.txt"], { parents: true })).toStartWith("409 ");
+  expect(await failure(["mkdir", "me:/Documents/notes.txt"], { parents: true })).toContain("path_conflict");
   expect(await failure(["mkdir", "me:/Projects"])).toStartWith("409 path_conflict");
 
   const renamed = await cli(["mv", "me:/Documents/notes.txt", "me:/Documents/todo.txt"]);
@@ -627,4 +725,124 @@ test("favorites and edit-url use addresses; recent-style rows print addresses", 
   expect(url.json.url).toBe(
     `${server.url.origin}/app/filesv2?base=${encodeURIComponent(home.id)}&path=Documents&file=Documents%2Fnotes.txt&view=edit`,
   );
+});
+
+test.each(
+  [
+    { name: "put target resolution", route: "/api/filesv2/bases", command: "put", parents: false },
+    { name: "put parents", route: "/directories/batch", command: "put", parents: true },
+    { name: "mkdir parents", route: "/directories/batch", command: "mkdir", parents: true },
+    { name: "file ID resolution", route: "/entries/", command: "stat", parents: false },
+    { name: "put session opening", route: "/uploads", command: "put", parents: false },
+  ].flatMap((target) => [
+    { ...target, stall: "response" },
+    { ...target, stall: "body" },
+    { ...target, stall: "503 body" },
+  ]),
+)("$name has a localized Cloud deadline when the $stall stalls", async ({ route, command, parents, stall }) => {
+  const local = join(await directory(), "report.txt");
+  await writeFile(local, "report");
+  const nativeFetch = globalThis.fetch;
+  const nativeTimeout = AbortSignal.timeout;
+  const deadlines: number[] = [];
+  let stalledRequests = 0;
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    deadlines.push(ms);
+    return nativeTimeout(40);
+  });
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).pathname.includes(route)) {
+        stalledRequests++;
+        if (stall === "body" || stall === "503 body")
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode('{"items":'));
+                init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), { once: true });
+              },
+            }),
+            { status: stall === "503 body" ? 503 : 200, headers: { "content-type": "application/json" } },
+          );
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.throwIfAborted();
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+        });
+      }
+      return nativeFetch(input, init);
+    },
+    { preconnect: nativeFetch.preconnect },
+  );
+  try {
+    const args =
+      command === "put"
+        ? ["put", local, "me:/New/report.txt"]
+        : command === "mkdir"
+          ? ["mkdir", "me:/New/Child"]
+          : ["stat", entryRefId(home.id, "Documents/notes.txt")!];
+    const flags: CloudCliFlags = parents ? { parents: true } : {};
+    const started = performance.now();
+    expect(await failure(args, flags)).toBe("No response from Cloud within 60 seconds.");
+    expect(await failure(args, flags, "de")).toBe("Keine Antwort von Cloud innerhalb von 60 Sekunden.");
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(deadlines.every((ms) => ms === 60_000)).toBe(true);
+    expect(deadlines.length).toBeGreaterThanOrEqual(2);
+    expect(stalledRequests).toBe(route === "/uploads" ? 12 : 2);
+    expect(sessions.size).toBe(0);
+  } finally {
+    globalThis.fetch = nativeFetch;
+    timeout.mockRestore();
+  }
+});
+
+test.each(["text", "json", "jsonl"] as const)("put keeps stdout unchanged and reports phases only in text mode (%s)", async (output) => {
+  const local = join(await directory(), "report.txt");
+  await writeFile(local, "report");
+  const descriptor = Object.getOwnPropertyDescriptor(process.stderr, "isTTY");
+  try {
+    Object.defineProperty(process.stderr, "isTTY", { configurable: true, value: false });
+    const uploaded = await cli(["put", local, "me:/Documents/report.txt"], {}, output);
+    expect(uploaded.err).toBe(output === "text" ? "Uploading report.txt\nFinishing upload…\nUpload done." : "");
+    expect(uploaded.out).toBe(
+      output === "text"
+        ? `Uploaded: me:/Documents/report.txt (6 bytes) ${server.url.origin}/open/filesv2.entry/~${entryRefId(home.id, "Documents/report.txt")}`
+        : "",
+    );
+    if (output !== "text") expect(uploaded.json.entry.path).toBe("Documents/report.txt");
+  } finally {
+    if (descriptor) Object.defineProperty(process.stderr, "isTTY", descriptor);
+    else Reflect.deleteProperty(process.stderr, "isTTY");
+  }
+});
+
+test("a stalled put gives a plain error without lease details", async () => {
+  const local = join(await directory(), "report.txt");
+  await writeFile(local, "report");
+  const nativeFetch = globalThis.fetch;
+  const nativeTimeout = AbortSignal.timeout;
+  const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(Math.min(ms, 100)));
+  let attempts = 0;
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).pathname.startsWith("/transfer/")) {
+        attempts++;
+        return new Promise<Response>((_, reject) => {
+          init?.signal?.throwIfAborted();
+          init?.signal?.addEventListener("abort", () => reject(new TypeError(String(input))), { once: true });
+        });
+      }
+      return nativeFetch(input, init);
+    },
+    { preconnect: nativeFetch.preconnect },
+  );
+  try {
+    const message = await failure(["put", local, "me:/Documents/report.txt"]);
+    expect(message).toBe("No response from the file server.");
+    expect(message).not.toContain(LEASE);
+    expect(message).not.toContain(server.url.href);
+    expect(attempts).toBe(6);
+  } finally {
+    globalThis.fetch = nativeFetch;
+    timeout.mockRestore();
+  }
 });

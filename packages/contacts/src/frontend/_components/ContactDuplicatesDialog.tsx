@@ -1,5 +1,5 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, dialogCore, PanelDialog, Placeholder, panelDialogOptions, prompts, toast, useLocale } from "@k2b/ui";
+import { Button, dialogCore, InlineGuidance, PanelDialog, Placeholder, panelDialogOptions, prompts, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactDuplicateMatch } from "../../service";
@@ -17,6 +17,8 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
     if (reason === "phone") return t().reasonSamePhone;
     return t().reasonSameName;
   };
+  const [mergeError, setMergeError] = createSignal<string | null>(null);
+  const [mergeAnnouncement, setMergeAnnouncement] = createSignal("");
   const [changed, setChanged] = createSignal(false);
   const [reconcileError, setReconcileError] = createSignal<string | null>(null);
   const [reconciling, setReconciling] = createSignal(false);
@@ -37,7 +39,10 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
     setReconcileError(null);
     try {
       await matches.invalidate();
-      if (!disposed) setReconciling(false);
+      if (!disposed) {
+        setReconciling(false);
+        setMergeAnnouncement(t().contactsMerged);
+      }
     } catch {
       if (disposed) return;
       setReconciling(false);
@@ -67,10 +72,9 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
     },
     onSuccess: () => {
       setChanged(true);
-      toast.success(t().contactsMerged);
       void reconcile();
     },
-    onError: (error) => void prompts.error(error.message),
+    onError: (error) => setMergeError(error.message),
   });
   onCleanup(() => {
     disposed = true;
@@ -81,6 +85,8 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
   const keep = async (contact: Contact, duplicate: Contact) => {
     if (disposed || confirming() || mergeMutation.loading() || coverageBlocked()) return;
     setConfirming(true);
+    setMergeError(null);
+    setMergeAnnouncement("");
     try {
       const confirmed = await prompts.confirm(
         t().mergeConfirm({ keep: resolveContactName(contact), remove: resolveContactName(duplicate) }),
@@ -94,6 +100,8 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
         keepUpdatedAt: contact.updatedAt,
         removeUpdatedAt: duplicate.updatedAt,
       });
+    } catch (error) {
+      if (!disposed) setMergeError(error instanceof Error ? error.message : t().mergeContactsFailed);
     } finally {
       if (!disposed) setConfirming(false);
     }
@@ -106,17 +114,12 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
     <PanelDialog>
       <PanelDialog.Header title={t().reviewDuplicates} subtitle={t().reviewDuplicatesSubtitle} icon="ti ti-users-group" close={close} />
       <PanelDialog.Body>
-        <Show when={!matches.loading()} fallback={<Placeholder icon="ti ti-loader-2" title={t().checkingContacts} variant="panel" />}>
+        <Show when={!matches.loading()} fallback={<Placeholder state="loading" title={t().checkingContacts} variant="panel" />}>
           <Show
             when={!matches.error() || matches.data() !== undefined}
             fallback={
               <div class="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
-                <Placeholder
-                  icon="ti ti-alert-circle"
-                  title={t().couldNotCheckDuplicates}
-                  description={t().duplicatesErrorRecovery}
-                  variant="panel"
-                />
+                <Placeholder state="error" title={t().couldNotCheckDuplicates} description={t().duplicatesErrorRecovery} variant="panel" />
                 <Button variant="secondary" size="sm" onClick={() => void matches.refresh()}>
                   <i class="ti ti-refresh" /> {t().retry}
                 </Button>
@@ -169,19 +172,29 @@ function DuplicateReviewDialog(props: { bookId: string; close: (changed: boolean
           </Show>
         </Show>
         <Show when={reconciling()}>
-          <p class="text-xs text-dimmed" role="status">
-            {t().reloadingMatches}
-          </p>
+          <InlineGuidance loading>{t().reloadingMatches}</InlineGuidance>
         </Show>
         <Show when={reconcileError()}>
-          <div class="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300" role="status">
-            <span>{reconcileError()}</span>
-            <Button type="button" variant="secondary" size="xs" onClick={() => void reconcile()} disabled={reconciling()}>
+          <InlineGuidance tone="warning" icon="ti ti-alert-triangle" role="status">
+            {reconcileError()}{" "}
+            <Button type="button" variant="text" size="xs" onClick={() => void reconcile()} disabled={reconciling()}>
               {t().retryReload}
             </Button>
-          </div>
+          </InlineGuidance>
         </Show>
       </PanelDialog.Body>
+      <div class="h-16 shrink-0 overflow-y-auto px-4" tabindex={mergeError() ? 0 : undefined}>
+        <Show when={mergeError()}>
+          {(error) => (
+            <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+              {error()}
+            </InlineGuidance>
+          )}
+        </Show>
+        <span class="sr-only" role="status" aria-live="polite">
+          {mergeAnnouncement()}
+        </span>
+      </div>
       <PanelDialog.Footer>
         <span class="text-xs text-dimmed">{t().matchCount({ count: (matches.data() ?? []).length })}</span>
         <Button variant="secondary" size="sm" onClick={close} disabled={coverageBlocked()}>

@@ -57,5 +57,33 @@ export const NAMED_BLOCK_SCROLL_EVENT = "notebooks.namedBlocks.scrollTo";
  * that address, so read the address from `href`, not from `window.location`.
  */
 export const NOTE_SOFT_NAVIGATED_EVENT = "notebooks.note.softNavigated";
+/** Sidebar → editor: the filter replaced the shown note's address in place, so a cancelled Back restores this one. */
+export const SIDEBAR_FILTER_CHANGED_EVENT = "notebooks.sidebar.filterChanged";
 /** Editor → local workspace surfaces while the persisted projection catches up. */
 export const NOTE_TITLE_CHANGED_EVENT = "notebooks.note.titleChanged";
+
+/** Editor → panel: connection (after a 1 s offline grace) and latest confirmed save. */
+export const SYNC_STATE_EVENT = "notebooks.editor.syncState";
+/** `ended`: the session stopped for good (access or storage); the editor's recovery bar owns what comes next. */
+export type SyncStateEventDetail = { connected: boolean; lastSavedAt: string | null; ended?: boolean };
+/** Panel → editor: request current sync, active heading and presence locations on mount. */
+export const SYNC_STATE_REQUEST_EVENT = "notebooks.editor.syncStateRequest";
+export type SyncStateRequestEventDetail = undefined;
+/** Panel → editor: retry a dropped connection; terminal sync-ended states stay stopped. */
+export const RECONNECT_EVENT = "notebooks.editor.reconnect";
+export type ReconnectEventDetail = undefined;
+/** Editor or reading view → panel: section containing the top of the reading area. */
+export const ACTIVE_HEADING_EVENT = "notebooks.toc.activeHeading";
+export type ActiveHeadingEventDetail = { id: string | null };
+/** Editor → panel: remote users' cursor locations, keyed by user id. */
+export const PRESENCE_LOCATIONS_EVENT = "notebooks.presence.locations";
+export type PresenceLocationsEventDetail = Record<string, { writing: boolean; headingId: string | null; headingText: string | null }>;
+/** Panel → editor: center a remote cursor without moving the local selection. */
+export const JUMP_TO_PARTICIPANT_EVENT = "notebooks.editor.jumpToParticipant";
+export type JumpToParticipantEventDetail = { userId: string };
+/** Panel activity → comments: unfold the list if needed and bring this comment into view. */
+export const REVEAL_COMMENT_EVENT = "notebooks.comments.reveal";
+export type RevealCommentEventDetail = { commentId: string | null };
+/** Panel → note tree: duplicate this note with the same dialog as the tree's menu. */
+export const DUPLICATE_NOTE_EVENT = "notebooks.note.duplicate";
+export type DuplicateNoteEventDetail = { noteId: string };

@@ -1,138 +1,261 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { err, fail, ok } from "@k2b/cloud/server";
+import { expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { SQL, sql } from "bun";
-import { testInfra } from "../../../../scripts/fixtures/test-infra";
-import { newShortId } from "../lib/short-id";
-import { ingestBatch } from "./ingest-writer";
-import { runMetricsSourceScrape } from "./metrics-scraper";
-import { dueMetricsSources } from "./runtime";
+import { requireInfra, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { installIngestControlsFixture } from "./ingest-controls.test-fixture";
 
-const enabled = testInfra.database !== undefined;
-const postgresTest = enabled ? test : test.skip;
+if (testInfra.database && testInfra.valkey && testInfra.clickhouse) {
+  await requireInfra("database", "valkey", "clickhouse");
+  await installIngestControlsFixture();
+}
+const { createIngestWriter } = await import("./ingest-writer");
+const { runMetricsSourceScrape } = await import("./metrics-scraper");
+const { dueMetricsSources } = await import("./runtime");
+const { writeFixture } = await import("./write.test-fixture");
+const { getSource, updateSource, createSource } = await import("./source-management");
+const { encryptSecret } = await import("@k2b/cloud/services");
 
-let endpoint: ReturnType<typeof Bun.serve> | undefined;
-let baseId = "";
-let sourceId = "";
-
-beforeAll(async () => {
-  if (!enabled) return;
-  const { initializeSchema } = await import("../schema");
-  await initializeSchema();
-  endpoint = Bun.serve({
-    port: 0,
-    fetch: () => new Response("# TYPE scrape_probe gauge\nscrape_probe 1\n", { headers: { "content-type": "text/plain" } }),
-  });
-  baseId = crypto.randomUUID();
-  sourceId = crypto.randomUUID();
-  await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${baseId}::uuid, ${newShortId()}, 'Scraper outcome smoke')`;
-  await sql`
-    INSERT INTO pulse.sources (id, short_id, base_id, kind, name, endpoint_url)
-    VALUES (${sourceId}::uuid, ${newShortId()}, ${baseId}::uuid, 'metrics'::pulse.source_kind, 'Probe', ${`http://127.0.0.1:${endpoint.port}/metrics`})
-  `;
-}, 60_000);
-
-afterAll(async () => {
-  if (baseId) await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
-  endpoint?.stop(true);
-});
-
-const lastError = async (): Promise<string | null> => {
-  const [row] = await sql<{ last_error: string | null }[]>`SELECT last_error FROM pulse.sources WHERE id = ${sourceId}::uuid`;
-  return row?.last_error ?? null;
-};
-
-describe("metrics scrape outcomes", () => {
-  postgresTest("records endpoint and input failures as scrape outcomes but throws on ingest infrastructure failures", async () => {
-    const rejected = await runMetricsSourceScrape(
-      { baseId, sourceId },
-      { ingestBatch: async () => fail(err.badInput("Metric series limit reached")) },
-    );
-    expect(rejected).toMatchObject({ ok: false, error: { status: 400 } });
-    expect(await lastError()).toBe("Metric series limit reached");
-
-    await expect(
-      runMetricsSourceScrape({ baseId, sourceId }, { ingestBatch: async () => fail(err.internal("Failed to ingest Pulse batch")) }),
-    ).rejects.toThrow("Metrics ingest failed: Failed to ingest Pulse batch");
-    // Infrastructure failures are left to the job retry; the source keeps its last real outcome.
-    expect(await lastError()).toBe("Metric series limit reached");
-
-    const accepted = await runMetricsSourceScrape(
-      { baseId, sourceId },
-      { ingestBatch: async ({ batch }) => ok({ metrics: batch.metrics?.length ?? 0, events: 0, states: 0 }) },
-    );
-    expect(accepted).toEqual({ ok: true, data: { metrics: 1, events: 0, states: 0 } });
-    expect(await lastError()).toBeNull();
-
-    const unreachableEndpoint = endpoint;
-    unreachableEndpoint?.stop(true);
-    const unreachable = await runMetricsSourceScrape(
-      { baseId, sourceId },
-      { ingestBatch: async () => ok({ metrics: 0, events: 0, states: 0 }) },
-    );
-    expect(unreachable.ok).toBe(false);
-    expect(await lastError()).not.toBeNull();
-  });
-});
-
-postgresTest(
-  "minute slots stay due after slow completion and scrape work uses one pool connection",
-  async () => {
-    const base = crypto.randomUUID(),
-      source = crypto.randomUUID();
+suiteFor(
+  "database",
+  "valkey",
+  "clickhouse",
+)("Pulse scrape write transactions", () => {
+  test("scrapes exceed a two-connection pool without nested reservations; one source has one claimant", async () => {
+    const f = await writeFixture("scrape-small-pool");
+    const database = new SQL({ max: 2 });
+    const ids = Array.from({ length: 6 }, (_, i) => `40000000-0000-4000-8000-00000000000${i}`);
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const arrived = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
     let requests = 0;
-    const server = Bun.serve({
+    const endpoint = Bun.serve({
       port: 0,
-      async fetch() {
+      fetch: async () => {
         requests++;
-        await Bun.sleep(50);
-        return new Response("# TYPE probe gauge\nprobe 1\n");
+        entered();
+        await gate;
+        return new Response("# TYPE probe gauge\nprobe 42\n");
       },
     });
-    const database = new SQL({ url: process.env.DATABASE_URL!, max: 1 });
-    await sql`INSERT INTO pulse.bases(id,short_id,name) VALUES(${base}::uuid,${newShortId()},'Scrape cadence')`;
-    await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name,endpoint_url,scrape_interval_seconds) VALUES(${source}::uuid,${newShortId()},${base}::uuid,'metrics','Probe',${`http://127.0.0.1:${server.port}`},60)`;
+    const pending: Promise<unknown>[] = [];
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      const start = Math.floor(Date.now() / 60000) * 60000;
-      for (const slotTs of [start, start + 60000, start + 120000]) {
-        expect((await dueMetricsSources(slotTs)).some((row) => row.id === source)).toBe(true);
-        const result = await runMetricsSourceScrape({ baseId: base, sourceId: source, slotTs }, { database, ingestBatch });
-        expect(result.ok).toBe(true);
-        expect((await dueMetricsSources(slotTs)).some((row) => row.id === source)).toBe(false);
-      }
-      expect(requests).toBe(3);
-      const results = await Promise.all(
-        [0, 1, 2].map(() => runMetricsSourceScrape({ baseId: base, sourceId: source }, { database, ingestBatch })),
-      );
-      expect(results.every((result) => result.ok)).toBe(true);
-      const [count] = await sql`SELECT count(*)::int AS count FROM pulse.metric_samples WHERE base_id=${base}::uuid`;
-      expect(count.count).toBe(6);
-      const [sample] = await sql`SELECT resource_key FROM pulse.metric_series WHERE base_id=${base}::uuid`;
-      expect(sample.resource_key).toBe(`target:127.0.0.1:${server.port}`);
-      const entered = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
-      server.reload({
-        async fetch() {
-          entered.resolve();
-          await release.promise;
-          return new Response("# TYPE probe gauge\nprobe 2\n");
-        },
+      for (const id of ids)
+        await sql`INSERT INTO pulse.sources(id,short_id,base_id,kind,name,endpoint_url,scrape_interval_seconds)
+        VALUES(${id}::uuid,${id.replaceAll("-", "").slice(-6)},${f.base.id}::uuid,'metrics','Pool fixture',${`http://127.0.0.1:${endpoint.port}/metrics`},60)`;
+      await sql`INSERT INTO pulse.base_internal_targets(base_id,entry) VALUES(${f.base.id}::uuid,'127.0.0.1')`;
+      const deps = { database, clock: f.clock, ingestBatch: createIngestWriter({ database, store: f.store, clock: f.clock }) };
+      const scrape = (sourceId: string) => runMetricsSourceScrape({ baseId: f.base.id, sourceId }, deps);
+      const deadline = new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Scrapes starved the SQL pool")), 10000);
       });
-      const first = runMetricsSourceScrape({ baseId: base, sourceId: source }, { ingestBatch });
-      try {
-        await entered.promise;
-        const overlapping = await runMetricsSourceScrape({ baseId: base, sourceId: source }, { ingestBatch });
-        expect(overlapping).toMatchObject({ ok: false, error: { status: 409 } });
-      } finally {
-        release.resolve();
-        await first;
-      }
-      await sql`UPDATE pulse.sources SET enabled=false WHERE id=${source}::uuid`;
-      expect((await runMetricsSourceScrape({ baseId: base, sourceId: source }, { ingestBatch })).ok).toBe(false);
+      const first = scrape(ids[0]!);
+      pending.push(first);
+      await Promise.race([
+        arrived,
+        deadline,
+        first.then(() => {
+          throw new Error("Scrape finished before fetching");
+        }),
+      ]);
+      expect(await Promise.race([scrape(ids[0]!), deadline])).toMatchObject({ ok: false, error: { status: 409 } });
+      expect(requests).toBe(1);
+      const rest = ids.slice(1).map(scrape);
+      pending.push(...rest);
+      release();
+      const results = await Promise.race([Promise.all([first, ...rest]), deadline]);
+      expect(results.every((result) => result.ok)).toBe(true);
+      expect(requests).toBe(ids.length);
+      expect(await sql`SELECT id FROM pulse.sources WHERE base_id=${f.base.id}::uuid AND scrape_lease_until IS NOT NULL`).toHaveLength(0);
+      expect(await f.read("samples", "count() AS n")).toEqual([{ n: ids.length }]);
     } finally {
-      await database.close();
-      server.stop(true);
-      await sql`DELETE FROM pulse.bases WHERE id=${base}::uuid`;
+      clearTimeout(timeout);
+      release();
+      endpoint.stop(true);
+      await database.close({ timeout: 1 });
+      await Promise.allSettled(pending);
+      await f.cleanup();
     }
-  },
-  60000,
-);
+  }, 30000);
+  test("a scrape commits T1 independently, stores in ClickHouse, and keeps endpoint failures on the configured interval", async () => {
+    const f = await writeFixture("scrape");
+    let available = true;
+    const endpoint = Bun.serve({
+      port: 0,
+      fetch: () => (available ? new Response("# TYPE probe gauge\nprobe 42\n") : new Response("unavailable", { status: 503 })),
+    });
+    try {
+      await sql`UPDATE pulse.sources SET kind='metrics',endpoint_url=${`http://127.0.0.1:${endpoint.port}/metrics`},scrape_interval_seconds=3600 WHERE id=${f.sourceId}::uuid`;
+      await sql`INSERT INTO pulse.base_internal_targets(base_id,entry) VALUES(${f.base.id}::uuid,'127.0.0.1')`;
+      const deps = { clock: f.clock, ingestBatch: createIngestWriter({ store: f.store, clock: f.clock }) };
+      expect(await runMetricsSourceScrape({ baseId: f.base.id, sourceId: f.sourceId }, deps)).toEqual({
+        ok: true,
+        data: { metrics: 1, events: 0, states: 0 },
+      });
+      expect(await f.read("samples", "value")).toEqual([{ value: 42 }]);
+      available = false;
+      f.setTime("2026-10-17T13:00:00Z");
+      expect((await runMetricsSourceScrape({ baseId: f.base.id, sourceId: f.sourceId }, deps)).ok).toBe(false);
+      const [source] = await sql`SELECT last_error,last_scrape_slot_at FROM pulse.sources WHERE id=${f.sourceId}::uuid`;
+      expect(source?.last_error).toBeTruthy();
+      expect(source?.last_scrape_slot_at.toISOString()).toBe(f.clock().toISOString());
+      expect((await dueMetricsSources(Date.parse("2026-10-17T13:01:00Z"))).find((s) => s.id === f.sourceId)).toBeUndefined();
+      const scrapes = await sql<
+        { duration_ms: number }[]
+      >`SELECT duration_ms FROM pulse.source_scrapes WHERE source_id=${f.sourceId}::uuid`;
+      expect(scrapes.map((s) => s.duration_ms)).toEqual([0, 0]);
+    } finally {
+      endpoint.stop(true);
+      await f.cleanup();
+    }
+  }, 60000);
+});
+
+suiteFor(
+  "database",
+  "valkey",
+  "clickhouse",
+)("Pulse scrape families and source contracts", () => {
+  test("#4 real Traefik v3 histogram buckets reach samples/series views; refused families and summaries replace diagnostics", async () => {
+    const f = await writeFixture("traefik");
+    let text = await readFile(`${import.meta.dir}/fixtures/traefik-v3.prom`, "utf8");
+    const endpoint = Bun.serve({ port: 0, fetch: () => new Response(text) });
+    try {
+      await sql`UPDATE pulse.sources SET kind='metrics',endpoint_url=${`http://127.0.0.1:${endpoint.port}/metrics`},scrape_interval_seconds=60 WHERE id=${f.sourceId}::uuid`;
+      await sql`INSERT INTO pulse.base_internal_targets(base_id,entry) VALUES(${f.base.id}::uuid,'127.0.0.1')`;
+      const scrape = () =>
+        runMetricsSourceScrape(
+          { baseId: f.base.id, sourceId: f.sourceId },
+          { clock: f.clock, ingestBatch: createIngestWriter({ store: f.store, clock: f.clock }) },
+        );
+      expect((await scrape()).ok).toBe(true);
+      const buckets = await f.read(
+        "samples m JOIN " + '"' + f.base.database + '".series s ON m.series_id=s.series_id',
+        "s.metric,s.type,s.dimensions,m.value",
+        "WHERE s.metric='traefik_entrypoint_request_duration_seconds_bucket'",
+      );
+      expect(buckets.length).toBeGreaterThan(0);
+      expect(buckets.every((row) => row.type === "counter")).toBe(true);
+      expect(buckets.some((row) => JSON.parse(String(row.dimensions)).le === "+Inf")).toBe(true);
+      expect(buckets.some((row) => JSON.parse(String(row.dimensions)).le === "0.1")).toBe(true);
+      const [source] = await sql<
+        { refused_histograms: { family: string; reason: string }[]; skipped_summaries: number }[]
+      >`SELECT refused_histograms,skipped_summaries FROM pulse.sources WHERE id=${f.sourceId}::uuid`;
+      expect(source?.refused_histograms).toEqual([]);
+      expect(source?.skipped_summaries).toBe(7);
+      text =
+        '# TYPE missing histogram\nmissing_bucket{le="1"} 1\n# TYPE falling histogram\nfalling_bucket{le="1"} 5\nfalling_bucket{le="+Inf"} 3\n# TYPE ignored summary\nignored{quantile="0.5"} 1\nignored_sum 2\nignored_count 3';
+      f.setTime("2026-10-17T12:01:00Z");
+      expect((await scrape()).ok).toBe(true);
+      const [refused] = await sql<
+        { refused_histograms: { family: string; reason: string }[]; skipped_summaries: number }[]
+      >`SELECT refused_histograms,skipped_summaries FROM pulse.sources WHERE id=${f.sourceId}::uuid`;
+      expect(refused?.refused_histograms).toEqual([
+        { family: "missing", reason: "missing_inf" },
+        { family: "falling", reason: "not_cumulative" },
+      ]);
+      expect(refused?.skipped_summaries).toBe(3);
+      expect(await f.read("series", "metric", "WHERE metric LIKE 'missing%' OR metric LIKE 'falling%'")).toEqual([]);
+      text = "# TYPE up gauge\nup 1";
+      expect((await scrape()).ok).toBe(true);
+      expect(
+        await sql<
+          { refused_histograms: { family: string; reason: string }[]; skipped_summaries: number }[]
+        >`SELECT refused_histograms,skipped_summaries FROM pulse.sources WHERE id=${f.sourceId}::uuid`,
+      ).toEqual([{ refused_histograms: [], skipped_summaries: 0 }]);
+    } finally {
+      endpoint.stop(true);
+      await f.cleanup();
+    }
+  }, 60000);
+
+  test("#12 family filters precede sample/series caps, and source status uses the supplied request clock", async () => {
+    const f = await writeFixture("filtered"),
+      userId = "20000000-0000-4000-8000-000000000001";
+    const text =
+      "# TYPE excluded gauge\n" +
+      Array.from({ length: 50001 }, (_, i) => `excluded{key="${i}"} 1`).join("\n") +
+      "\n# TYPE keep_one gauge\nkeep_one 1\n# TYPE node_cpu_seconds_total counter\nnode_cpu_seconds_total 2";
+    const endpoint = Bun.serve({ port: 0, fetch: () => new Response(text) });
+    try {
+      await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${userId}::uuid,${userId},'local','user')`;
+      const [access] = await sql`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'admin') RETURNING id`;
+      await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${f.base.id}::uuid,${access!.id}::uuid)`;
+      await sql`UPDATE pulse.sources SET kind='metrics',endpoint_url=${`http://127.0.0.1:${endpoint.port}/metrics`},scrape_interval_seconds=60 WHERE id=${f.sourceId}::uuid`;
+      await sql`INSERT INTO pulse.base_internal_targets(base_id,entry) VALUES(${f.base.id}::uuid,'127.0.0.1')`;
+      await sql`UPDATE pulse.base_stores SET max_series=2 WHERE base_id=${f.base.id}::uuid`;
+      const updated = await updateSource({
+        baseId: f.base.id,
+        sourceId: f.sourceId,
+        user: { id: userId },
+        metricFilters: ["keep_one", "node_*"],
+      });
+      expect(updated.ok && updated.data.metricFilters).toEqual(["keep_one", "node_*"]);
+      expect(
+        (
+          await runMetricsSourceScrape(
+            { baseId: f.base.id, sourceId: f.sourceId },
+            { clock: f.clock, ingestBatch: createIngestWriter({ store: f.store, clock: f.clock }) },
+          )
+        ).ok,
+      ).toBe(true);
+      expect(await f.read("series", "metric", "ORDER BY metric")).toEqual([{ metric: "keep_one" }, { metric: "node_cpu_seconds_total" }]);
+      await sql`UPDATE pulse.sources SET throttled_at=${f.clock()} WHERE id=${f.sourceId}::uuid`;
+      const source = await getSource(f.sourceId, { id: userId }, f.clock());
+      expect(source.ok && source.data.status).toMatchObject({
+        newestDataAt: f.clock().toISOString(),
+        throttled: true,
+        throttledAt: f.clock().toISOString(),
+        refusedHistograms: [],
+        skippedSummaries: 0,
+        lastError: null,
+      });
+      const stale = await getSource(f.sourceId, { id: userId }, new Date("2026-10-17T12:05:00Z"));
+      expect(stale.ok && stale.data.status.throttled).toBe(false);
+      expect(
+        await updateSource({ baseId: f.base.id, sourceId: f.sourceId, user: { id: userId }, metricFilters: ["bad*name"] }),
+      ).toMatchObject({ ok: false, error: { status: 400 } });
+      expect(
+        await createSource({ baseId: f.base.id, user: { id: userId }, kind: "http_ingest", name: "wrong", metricFilters: [] }),
+      ).toMatchObject({ ok: false, error: { status: 400 } });
+    } finally {
+      endpoint.stop(true);
+      await f.cleanup();
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 60000);
+
+  test("#11 changing a metrics origin removes the token; a path change preserves it", async () => {
+    const f = await writeFixture("origin"),
+      userId = "20000000-0000-4000-8000-000000000002";
+    try {
+      await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${userId}::uuid,${userId},'local','user')`;
+      const [access] = await sql`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'admin') RETURNING id`;
+      await sql`INSERT INTO pulse.base_access(base_id,access_id) VALUES(${f.base.id}::uuid,${access!.id}::uuid)`;
+      await sql`INSERT INTO pulse.base_internal_targets(base_id,entry) VALUES(${f.base.id}::uuid,'127.0.0.1')`;
+      const token = await encryptSecret("fixture-bearer");
+      await sql`UPDATE pulse.sources SET kind='metrics',endpoint_url='http://127.0.0.1:9100/metrics',bearer_token_encrypted=${token} WHERE id=${f.sourceId}::uuid`;
+      const patch = (endpointUrl: string, bearerToken?: string) =>
+        updateSource({ baseId: f.base.id, sourceId: f.sourceId, user: { id: userId }, endpointUrl, bearerToken });
+      expect((await patch("http://127.0.0.1:9100/other")).ok).toBe(true);
+      expect((await sql`SELECT bearer_token_encrypted FROM pulse.sources WHERE id=${f.sourceId}::uuid`)[0]?.bearer_token_encrypted).toBe(
+        token,
+      );
+      expect((await patch("http://127.0.0.1:9200/metrics")).ok).toBe(true);
+      expect(
+        (await sql`SELECT bearer_token_encrypted FROM pulse.sources WHERE id=${f.sourceId}::uuid`)[0]?.bearer_token_encrypted,
+      ).toBeNull();
+      expect((await patch("http://127.0.0.1:9300/metrics", "replacement")).ok).toBe(true);
+      expect(
+        (await sql`SELECT bearer_token_encrypted FROM pulse.sources WHERE id=${f.sourceId}::uuid`)[0]?.bearer_token_encrypted,
+      ).toBeTruthy();
+    } finally {
+      await f.cleanup();
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  }, 60000);
+});

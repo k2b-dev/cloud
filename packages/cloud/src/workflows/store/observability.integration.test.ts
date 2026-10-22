@@ -19,7 +19,10 @@ import {
   listWorkflowRunTimeline,
   workflowHealth,
 } from "./observability";
+import { expireWorkflowEventPayloads } from "./retention";
 import { beginWorkflowEffect, claimWorkflowRun, createChildWorkflowRuns, createWorkflowRuntimeRepository, finishWorkflowRun } from "./runs";
+
+const NOW = new Date("2026-06-15T12:00:00.000Z");
 
 let readiness: Promise<boolean> | null = null;
 const ready = (): Promise<boolean> => {
@@ -99,6 +102,7 @@ suiteFor("database")("workflow observability", () => {
     // The cause, not a channel enum — this is what "why did this run" reads.
     expect(detail?.eventType).toBe("probe.detail");
     expect(detail?.eventData).toEqual({ rowId: "r-7" });
+    expect(detail?.eventPayloadExpired).toBe(false);
     expect(detail?.revision).toBe(1);
     expect(detail?.effectBudget).toEqual({ emails: 10 });
     expect(detail?.steps.map((s) => [s.stepKey, s.state])).toEqual([["send", "completed"]]);
@@ -246,5 +250,29 @@ suiteFor("database")("workflow observability", () => {
 
     const health = (await workflowHealth()).find((entry) => entry.appId === appId);
     expect(health?.oldestQueuedMs).toBeGreaterThan(500_000);
+  });
+
+  test("run details distinguish expired event data from a missing event", async () => {
+    expect(await ready()).toBe(true);
+    const appId = `expired-detail-${crypto.randomUUID()}`;
+    const { scopeId } = await listening(appId, "probe.expired-detail");
+    const emission = await emitWorkflowEvent(
+      { appId, scopeId, type: "probe.expired-detail", data: { body: "original" } },
+      { dispatch: "now" },
+    );
+    const runId = emission.runIds[0]!;
+    expect(await getWorkflowRun(runId)).toMatchObject({ eventData: { body: "original" }, eventPayloadExpired: false });
+    const finishedAt = new Date(NOW.getTime() - 31 * 86_400_000);
+    const occurredAt = new Date(NOW.getTime() - 90 * 86_400_000);
+    const claim = await claimWorkflowRun({ worker: "w1", runId });
+    await finishWorkflowRun(claim!, { state: "succeeded" });
+    await sql`UPDATE workflows.event SET dispatched_at = ${finishedAt}, occurred_at = ${occurredAt}, created_at = ${occurredAt}
+      WHERE id = ${emission.eventId}::uuid`;
+
+    await expireWorkflowEventPayloads({ now: NOW });
+    expect(await getWorkflowRun(runId)).toMatchObject({ eventData: null, eventPayloadExpired: true, inputs: { body: "original" } });
+
+    await sql`UPDATE workflows.run SET event_id = NULL WHERE id = ${runId}::uuid`;
+    expect(await getWorkflowRun(runId)).toMatchObject({ eventId: null, eventData: null, eventPayloadExpired: false });
   });
 });

@@ -15,6 +15,8 @@ cld venue get --json
 cld venue status --json
 ```
 
+Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+
 Commands accept a six-character venue ID, exact slug, or exact name. Direct resource IDs are always the short IDs shown by `cld venue list`; legacy UUIDs are rejected. A slug is discovery metadata and does not become the stored default or a URL identity. If an ID, slug, and name resolve to different venues, the command stops as ambiguous. The configured default venue stores the short ID and is used when a command allows the venue to be omitted.
 
 Venue, opening-rule, date-override, shift-template, assignment, and public-section IDs follow Cloud's short public-resource convention. A dated shift is a virtual occurrence: identify it by its venue ID, template ID, and date rather than treating its rendered calendar key as a resource ID.

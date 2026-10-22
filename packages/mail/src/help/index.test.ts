@@ -17,7 +17,7 @@ import { mailWorkspaceMessages } from "../frontend/mail-workspace-messages";
 import { bindMailWorkflow } from "../workflows/binder";
 import { buildMailWorkflowCatalog } from "../workflows/catalog";
 import { mailWorkflows } from "../workflows/module";
-import { mailHelp } from ".";
+import { mailHelp, mailPageHelp } from ".";
 
 const cliAutomationReference = await Bun.file(new URL("../cli-references/automation.md", import.meta.url)).text();
 const cliMailReferences = await Promise.all(
@@ -118,6 +118,23 @@ const expectedIds = [
 ];
 
 describe("mailHelp", () => {
+  test("every page Help id exists in English and German", () => {
+    for (const locale of ["en", "de"] as const) {
+      const documents = mailHelp.documentsByLocale?.[locale] ?? [];
+      for (const id of Object.values(mailPageHelp).flat()) {
+        expect(
+          documents.some((document) => document.id === id),
+          `${locale}: ${id}`,
+        ).toBe(true);
+      }
+      for (const document of documents) {
+        expect(document).toMatchObject({ kind: mailHelp.documents.find((base) => base.id === document.id)?.kind });
+      }
+    }
+    expect(mailHelp.documents.find((document) => document.id === "mail-start")?.kind).toBe("start");
+    expect(mailHelp.documents.find((document) => document.id === "mail-troubleshooting")?.kind).toBe("troubleshoot");
+  });
+
   test("documents the separate signature choice and CSS selectors in both languages", () => {
     const english = mailHelp.getMarkdown("mail-compose");
     const german = mailHelp.getMarkdown("mail-compose", "de");
@@ -364,7 +381,7 @@ describe("mailHelp", () => {
     expect(admin).toContain("Refresh storage snapshot** queues a background reconciliation");
     expect(admin).toContain("continue to show the last completed snapshot until that job finishes");
     expect(admin).toContain("cld mail admin mailbox access list|grant|set|revoke");
-    expect(work).toContain("Mailbox tools → Shared links");
+    expect(work).toContain("… → Shared links");
   });
 
   test("documents the permission-safe message inspector and exact source export", () => {
@@ -388,7 +405,9 @@ describe("mailHelp", () => {
 
     expect(work).toContain("stays unread in already open tabs");
     expect(work).toContain("View as plain text");
-    expect(work).toContain("safe HTML in light mode and plain text in dark mode");
+    expect(work).toContain("Show original colors");
+    expect(work).toContain("HTML with original colors");
+    expect(work).toContain("shows the HTML version of a message and adapts its colors to dark mode");
     expect(work).toContain("Settings → Reading → Default message format");
     expect(work).toContain("Scripts, forms, embedded objects, external stylesheets");
     expect(admin).toContain("Reading** is available to every mailbox reader");
@@ -423,7 +442,7 @@ describe("mailHelp", () => {
     expect(work).toContain("Find all from this sender");
     expect(work).not.toContain("Mark all as read");
     expect(work).toContain("Manage unsubscribe");
-    expect(work).toContain("Mailbox tools → Mailing lists");
+    expect(work).toContain("… → Mailing lists");
     expect(work).toContain("Everyone who can view the mailbox");
     expect(work).toContain("Unsubscribe and cleanup actions require **Edit** or **Manage** access");
     expect(work).toContain("Use as new message");
@@ -437,10 +456,10 @@ describe("mailHelp", () => {
     const automation = mailHelp.getMarkdown("mail-automation");
     const work = mailHelp.getMarkdown("mail-work");
 
-    expect(start).toContain("**Mailbox tools** for synchronization, health, automations");
+    expect(start).toContain("**…** for mailbox details, synchronization, health, automations");
     expect(start).not.toContain("- **Automations** for");
-    expect(admin).toContain("Open **Mailbox tools → Automations**");
-    expect(automation).toContain("Open **Mailbox tools → Automations**");
+    expect(admin).toContain("Open **… → Automations**");
+    expect(automation).toContain("Open **… → Automations**");
     expect(work).not.toContain("List help");
     expect(work).not.toContain("advertised help");
     expect(work).toContain("**List archive** opens the archive advertised by the list");
@@ -475,6 +494,17 @@ describe("mailHelp", () => {
     for (const [label, reference] of references) {
       for (const term of [...schemaTerms, ...limitTerms]) {
         expect(reference, `${label} reference missing incoming-automation contract term ${term}`).toContain(term);
+      }
+    }
+  });
+
+  test("keeps the working-model automation examples accepted by the incoming automation contract", async () => {
+    for (const file of ["../cli-references/index.md", "../../../../docs-site/apps-content/en/mail.md"]) {
+      const markdown = await Bun.file(new URL(file, import.meta.url)).text();
+      const examples = [...markdown.matchAll(/```yaml\n([\s\S]*?)```/g)].map((match) => match[1]!);
+      expect(examples.length).toBeGreaterThanOrEqual(1);
+      for (const source of examples) {
+        expect(createIncomingAutomationSchema.safeParse(Bun.YAML.parse(source)).success, source).toBe(true);
       }
     }
   });

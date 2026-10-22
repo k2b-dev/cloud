@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  type CapabilityInvocationResult,
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
+import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
 import { audit } from "@k2b/cloud/services";
 import {
   decodeNotebookCapabilityCursor,
@@ -455,6 +457,37 @@ describe("notebooks capabilities", () => {
     return trackedSpy(spyOn(commentStore, "getByShortId")).mockResolvedValue(commentFixture());
   };
 
+  test("every declared Type has a reader open-link case or an explicit reason", async () => {
+    mockCommentAccess();
+    trackedSpy(spyOn(noteStore, "getCurrentWithContent")).mockResolvedValue({ ...note, yjsSnapshot: null });
+    trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(noteStore, "resolveIdsToShortIds")).mockResolvedValue(new Map([[note.id, note.shortId]]));
+    const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+      notebook: {
+        reader: "notebook.read",
+        read: async () => notebooksCapabilities.queries["notebook.read"].run({ id: notebook.shortId }, userContext),
+      },
+      note: {
+        reader: "note.read",
+        read: async () => notebooksCapabilities.queries["note.read"].run(NoteReadInputSchema.parse({ id: note.shortId }), userContext),
+      },
+      comment: {
+        reader: "comment.read",
+        read: async () => notebooksCapabilities.queries["comment.read"].run({ id: commentFixture().shortId }, userContext),
+      },
+    };
+    expect(Object.keys(cases).sort()).toEqual(Object.keys(notebooksCapabilities.types).sort());
+    for (const [typeId, type] of Object.entries(notebooksCapabilities.types)) {
+      const fixture = cases[typeId];
+      if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
+      expect(fixture.reader).toBe(type.reader);
+      const result = await fixture.read();
+      if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+      assertResourceOpenLink(result.data);
+    }
+  });
+
   test("previews use the canonical service without returning source or HTML", async () => {
     trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
     trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
@@ -549,8 +582,10 @@ describe("notebooks capabilities", () => {
     const deleted = await deletion.run({ commentId: input.commentId }, userContext);
     expect(edited.ok).toBeTrue();
     expect(deleted.ok).toBeTrue();
+    if (deleted.ok)
+      expect(deleted.data.refs?.map(({ type, id }) => ({ type, id }))).toEqual([{ type: "notebooks.note", id: note.shortId }]);
     if (edited.ok) expect(capabilityResultSchema(edit.data).safeParse(edited.data).success).toBeTrue();
-    if (deleted.ok) expect(capabilityResultSchema(deletion.data).safeParse(deleted.data).success).toBeTrue();
+    if (deleted.ok) capabilityResultSchema(deletion.data).parse(deleted.data);
     expect(update).toHaveBeenCalledWith({ notebookId, noteId, commentId: input.commentId, authorUserId: userId, content: input.content });
     expect(remove).toHaveBeenCalledWith({ notebookId, noteId, commentId: input.commentId, authorUserId: userId });
   });
@@ -1044,7 +1079,7 @@ describe("notebooks capabilities", () => {
         display: "block",
       },
     ]);
-    expect(result.data.approvalScope).toBe(`notebook:${notebook.shortId}`);
+    expect(CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
   });
 
   test("returns a valid notebook scope from every rememberable action review", async () => {
@@ -1076,7 +1111,7 @@ describe("notebooks capabilities", () => {
     for (const [index, result] of results.entries()) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
-      expect(result.data.approvalScope).toBe(`notebook:${notebook.shortId}`);
+      expect(CapabilityActionReviewSchema.parse(result.data).approvalScope).toBe(`notebook:${notebook.shortId}`);
       const parsed = CapabilityActionReviewSchema.safeParse(result.data);
       if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
     }
@@ -1173,4 +1208,12 @@ test("move capability preserves parent-only messages and localizes placement rev
     const result = await operation.run(input, { ...userContext, locale: "de" });
     expect(result.ok && result.data.summary).toBe("„Knowledge index“ als 1. Notiz auf der obersten Ebene des Notizbuchs eingeordnet.");
   }
+});
+
+test("panel place refs select the owning app's public resource reader", () => {
+  const manifest = compileCapabilityManifest("notebooks", notebooksCapabilities);
+  const ref = { type: "notebooks.notebook", id: notebook.shortId };
+  const reader = resolveCapabilityResourceReader(manifest, ref);
+  expect(reader?.localId).toBe("notebook.read");
+  expect(notebooksCapabilities.queries["notebook.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
 });

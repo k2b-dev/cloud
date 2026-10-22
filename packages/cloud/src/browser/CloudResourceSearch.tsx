@@ -38,46 +38,42 @@ export type CloudResourceSearchProps = {
   navigationError?: string;
   placeholder?: string;
   requireReader?: boolean;
+  resourceType?: string;
   navigationItems?: readonly NavigationSearchItem[];
   searchResources?: boolean;
   excludeRefs?: readonly CloudResourceRef[];
 };
 
+/** What `/api/search` accepts as `q`; a prefilled query is cut to it as typing is. */
+const MAX_QUERY_LENGTH = 500;
+
 const isLinkableCommand = (command: PaletteCommand) => typeof command.action !== "function" && "command" in command.action;
 
 const itemKey = (item: SearchItem) => `${item.ref.type}:${item.ref.id}`;
 const URL_BASE = "https://cloud.invalid";
-const groupByApp = (items: SearchItem[]) => {
-  const groups = new Map<string, SearchItem[]>();
-  for (const item of items) {
-    const group = groups.get(item.appId) ?? [];
-    group.push(item);
-    groups.set(item.appId, group);
-  }
-  return [...groups.values()].flat();
-};
 
 export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   const locale = useLocale();
   const t = () => resourceSearchMessages.resolve([locale()]).t;
   const id = createUniqueId();
-  const [input, setInput] = createSignal("");
+  const [input, setInput] = createSignal((props.request?.query ?? "").slice(0, MAX_QUERY_LENGTH));
   const [tags, setTags] = createSignal<string[]>([]);
   const [scope, setScope] = createSignal<SearchScope | undefined>(
     props.request?.scope ?? (props.initialAppId ? { appId: props.initialAppId, label: props.initialAppId } : undefined),
   );
   const appId = () => scope()?.appId ?? scope()?.ref?.type.split(".")[0];
   const scopeLabel = () =>
-    !props.request && props.initialAppId
+    !props.request?.scope && props.initialAppId
       ? (catalogApps()?.find((app) => app.id === props.initialAppId)?.name ?? scope()?.label)
       : scope()?.label;
   createEffect(() => {
     const request = props.request;
     if (!request) return;
-    setScope(request.scope);
+    setScope(request.scope ?? (props.initialAppId ? { appId: props.initialAppId, label: props.initialAppId } : undefined));
     if (request.query !== undefined) {
-      setInput(request.query);
-      setCaret(request.query.length);
+      const query = request.query.slice(0, MAX_QUERY_LENGTH);
+      setInput(query);
+      setCaret(query.length);
     }
     setTags([]);
     setBrowsingTags(false);
@@ -231,9 +227,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
   /** Rows of the run for the current input; anything older is visible but cannot be chosen. */
   const freshResults = () => current() && shownRun();
   const results = createMemo(() =>
-    canSearch()
-      ? [...groupByApp(navigation()), ...shownBlocks().flatMap((block) => filterCloudResourceSearchItems(block.items, props))]
-      : [],
+    canSearch() ? [...navigation(), ...shownBlocks().flatMap((block) => filterCloudResourceSearchItems(block.items, props))] : [],
   );
   const searchContext = () => JSON.stringify([desiredUrl(), commandMode(), commandQuery()]);
   /**
@@ -455,6 +449,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
     }
   };
   const updateCaret = () => setCaret(inputRef.selectionStart ?? input().length);
+  const isApp = (item: SearchItem) => navigation().some((link) => link === item && link.kind === "app");
   const previewMetadata = () => (previewItem()?.metadata ?? []).filter((entry) => entry.label.trim() && entry.value.trim()).slice(0, 5);
 
   return (
@@ -555,7 +550,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
             autocomplete="off"
             autocapitalize="off"
             spellcheck={false}
-            maxLength={500}
+            maxLength={MAX_QUERY_LENGTH}
           />
         </div>
       </label>
@@ -665,7 +660,7 @@ export default function CloudResourceSearch(props: CloudResourceSearchProps) {
                           <i class={item.icon ?? item.appIcon} aria-hidden="true" />
                           <span class="cloud-resource-search__result-copy">
                             <span>{item.title}</span>
-                            <small>{item.preview ?? item.appName}</small>
+                            <small>{isApp(item) ? t().app : (item.preview ?? item.appName)}</small>
                           </span>
                           <Show when={commandFor(item)?.shortcut}>{(shortcut) => <Kbd keys={shortcut()} />}</Show>
                           <Show when={props.selectionMode && selectedKey() === itemKey(item)}>

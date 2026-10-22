@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import {
   type AiChatTask,
   type AiChatTaskOccurrence,
@@ -12,11 +12,12 @@ import {
   aiConversations,
   aiSkills,
 } from "@k2b/cloud/ai";
-import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  type CapabilityInvocationResult,
   capabilityResultSchema,
   type User,
 } from "@k2b/cloud/contracts";
@@ -82,6 +83,12 @@ const chat: AiConversation = {
 };
 
 const scheduledTask: AiChatTask = {
+  title: null,
+  name: "Release planning",
+  locale: null,
+  reasonCode: null,
+  reasonAt: null,
+  reasonAction: null,
   id: "88888888-8888-4888-8888-888888888888",
   shortId: "tSk234",
   chatId: chat.shortId,
@@ -154,9 +161,44 @@ const storedMessage = (seq: number, message: AiStoredMessage["message"], overrid
   ...overrides,
 });
 
-afterEach(() => mock.restore());
+beforeEach(() => setSystemTime(new Date("2026-04-07T09:00:00.000Z")));
+afterEach(() => {
+  mock.restore();
+  setSystemTime();
+});
 
 describe("Core AI capabilities", () => {
+  test("every declared Type has a reader open-link case or an explicit reason", async () => {
+    spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
+    spyOn(aiConversations, "listMessagesPage").mockResolvedValue({ messages: [], hasMore: false });
+    spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
+    spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([]);
+    spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
+    const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
+      "ai.chat": {
+        reader: "ai.chat.read",
+        read: async () => aiCapabilities.queries["ai.chat.read"].run({ id: chat.shortId, limit: 20 }, context),
+      },
+      "ai.task": {
+        reader: "ai.task.read",
+        read: async () => aiCapabilities.queries["ai.task.read"].run({ id: scheduledTask.shortId }, context),
+      },
+      "ai.skill": {
+        reader: "ai.skill.read",
+        read: async () => aiCapabilities.queries["ai.skill.read"].run({ id: skill.shortId }, context),
+      },
+    };
+    expect(Object.keys(cases).sort()).toEqual(Object.keys(aiCapabilities.types).sort());
+    for (const [typeId, type] of Object.entries(aiCapabilities.types)) {
+      const fixture = cases[typeId];
+      if (!fixture) throw new Error(`Missing reader fixture for ${typeId}`);
+      expect(fixture.reader).toBe(type.reader);
+      const result = await fixture.read();
+      if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+      assertResourceOpenLink(result.data);
+    }
+  });
+
   test("recipient discovery preserves actor visibility and returns directly usable principals", async () => {
     const list = spyOn(accountsAppService.entity, "list").mockResolvedValue({
       items: [{ kind: "user", user }],
@@ -226,9 +268,12 @@ describe("Core AI capabilities", () => {
     expect(operation.input.safeParse({ ...newGrant, principal: { type: "public" } }).success).toBe(false);
     expect(operation.input.safeParse({ ...newGrant, principal: { type: "authenticated" } }).success).toBe(true);
   });
-  test("publishes closed-world AI capabilities under the core.ai namespace", () => {
+  test("publishes Core AI capabilities and provider-backed geo queries", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
     const queries = [
+      "address.autocomplete",
+      "address.geocode",
+      "address.reverse",
       "ai.chat.read",
       "ai.chat.resources",
       "ai.chat.search",
@@ -242,6 +287,8 @@ describe("Core AI capabilities", () => {
       "ai.task.run.read",
       "ai.tasks.list",
       "entities.search",
+      "geo.availability",
+      "place.search",
     ];
     const actions = [
       "ai.chat.message",
@@ -263,7 +310,12 @@ describe("Core AI capabilities", () => {
     expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual(["core.ai.chat", "core.ai.skill", "core.ai.task"]);
     expect(Object.keys(aiCapabilities.queries).sort()).toEqual(queries);
     expect(manifest.queries.map((query) => query.localId).sort()).toEqual(queries);
-    expect(manifest.queries.every((query) => query.openWorld === false)).toBe(true);
+    expect(
+      manifest.queries
+        .filter((query) => query.openWorld)
+        .map((query) => query.localId)
+        .sort(),
+    ).toEqual(["address.autocomplete", "address.geocode", "address.reverse", "place.search"]);
     expect(manifest.actions.map((action) => action.localId).sort()).toEqual(actions);
     expect(manifest.actions.every((action) => action.openWorld === false)).toBe(true);
     expect(
@@ -408,7 +460,7 @@ describe("Core AI capabilities", () => {
     expect(aiChatTasks.list).toHaveBeenCalledWith(expect.objectContaining({ limit: 2, offset: 0 }));
   });
 
-  test("reads a scheduled task with its chat name and no extra task lookup", async () => {
+  test("reads a routine with its chat name and no extra task lookup", async () => {
     const get = spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
     const listOccurrences = spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([taskOccurrence]);
 
@@ -418,7 +470,7 @@ describe("Core AI capabilities", () => {
     expect(listOccurrences).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       ok: true,
-      data: { summary: "Read a scheduled task in “Release planning” (Active)." },
+      data: { summary: "Read the routine “Release planning” (Active)." },
     });
   });
 
@@ -536,7 +588,12 @@ describe("Core AI capabilities", () => {
       if (!result.ok) continue;
       const action = (aiCapabilities.actions as unknown as Record<string, CapabilityActionDefinition>)[localId];
       if (!action) throw new Error(`Missing Core action ${localId}`);
-      expect(capabilityResultSchema(action.data).safeParse(result.data).success).toBeTrue();
+      const parsed = capabilityResultSchema(action.data).safeParse(result.data);
+      expect(parsed.success).toBeTrue();
+      // A deleted Skill has nothing left to open, so its result names no ref.
+      expect(parsed.data?.refs).toEqual(
+        localId === "ai.skill.delete" ? undefined : [{ type: "core.ai.skill", id: skill.shortId, title: skill.name }],
+      );
     }
     expect(setReferences).toHaveBeenCalledWith(skill.id, context.accessSubject, {
       skillId: skill.shortId,
@@ -646,7 +703,7 @@ describe("Core AI capabilities", () => {
     }
     expect(results["ai.task.update"]).toMatchObject({
       ok: true,
-      data: { summary: `Changed the instructions of a task in “${chat.title}”.` },
+      data: { summary: `Changed the instructions of the routine “${chat.title}”.` },
     });
     expect(results["ai.chat.message"]).toMatchObject({ ok: true, data: { summary: "Sent a message to “Target chat”." } });
   });
@@ -852,7 +909,7 @@ describe("Core AI capabilities", () => {
     expect(result).toMatchObject({ ok: true, data: { data: { chat: { id: chat.shortId, archived: true } } } });
   });
 
-  test("the mobile app never creates, changes or resumes a scheduled task's mandate", async () => {
+  test("the mobile app never creates, changes or resumes a routine's mandate", async () => {
     const create = spyOn(aiChatTasks, "create");
     const update = spyOn(aiChatTasks, "update");
     const setState = spyOn(aiChatTasks, "setState");
@@ -903,7 +960,7 @@ test("task reference metadata uses the request locale with English fallback", as
     expect(result.data.refs?.[0]).toMatchObject({
       type: "core.ai.task",
       id: scheduledTask.shortId,
-      title: scheduledTask.prompt,
+      title: scheduledTask.name,
       icon: "ti ti-calendar-clock",
     });
     expect(result.data.refs?.[0]?.preview).toStartWith(prefix);
@@ -931,21 +988,21 @@ test("Skill, task and chat reviews and summaries use the reader's language", asy
   ).toMatchObject({
     ok: true,
     data: {
-      message: `Geplante Aufgabe in ${chat.title} (${chat.shortId}) erstellen.`,
+      message: `Routine in ${chat.title} anlegen.`,
       details: [
-        { label: "Chat", value: `${chat.title} (${chat.shortId})` },
+        { label: "Chat", value: chat.title },
         { label: "Zeitplan", value: "5. Jan. 2099, 09:30 (Europe/Berlin)" },
         { label: "Auftrag", value: scheduledTask.prompt },
-        { label: "Das erlaubst du dieser Aufgabe" },
+        { label: "Das erlaubst du dieser Routine" },
       ],
     },
   });
   expect(await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, german)).toMatchObject({
     ok: true,
     data: {
-      message: "Geplante Aufgabe tSk234 pausieren.",
+      message: "Routine „Release planning“ pausieren.",
       details: [
-        { label: "Aufgabe", value: scheduledTask.prompt },
+        { label: "Routine", value: scheduledTask.prompt },
         { label: "Zeitplan", value: "Wiederkehrend: 0 9 * * 1 (Europe/Berlin)" },
       ],
     },
@@ -991,6 +1048,74 @@ test("Skill, task and chat reviews and summaries use the reader's language", asy
     await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, { ...context, locale: "fr" }),
   ).toMatchObject({
     ok: true,
-    data: { message: "Pause scheduled task tSk234.", details: [{ label: "Task" }, { label: "Schedule" }] },
+    data: { message: "Pause routine “Release planning”.", details: [{ label: "Routine" }, { label: "Schedule" }] },
+  });
+});
+
+test("revoking the caller's last Skill access does not offer an unreadable ref or open link", async () => {
+  let revoked = false;
+  spyOn(aiSkills, "getByShortId").mockImplementation(async () => (revoked ? null : skill));
+  spyOn(aiSkills, "revokeAccess").mockImplementation(async () => {
+    revoked = true;
+    return true;
+  });
+  const action = aiCapabilities.actions["ai.skill.access.change"];
+  const result = await action.run(
+    action.input.parse({ skillId: skill.shortId, accessId: "AbC234", permission: null, expectedAccessRevision: "a".repeat(64) }),
+    context,
+  );
+  expect(result).toEqual({ ok: true, data: { data: { changed: true } } });
+});
+
+test("routine reads word their reason in the reader's locale and expose stopped runs", async () => {
+  spyOn(aiChatTasks, "get").mockResolvedValue({
+    ...scheduledTask,
+    title: "Neue Rechnungen",
+    name: "Neue Rechnungen",
+    locale: "en",
+    state: "needs_attention",
+    reasonCode: "rights_changed",
+    reasonAt: "2026-04-07T13:45:00.000Z",
+    lastError: "Raw English error",
+  });
+  spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([{ ...taskOccurrence, state: "stopped" }]);
+  const result = await aiCapabilities.queries["ai.task.read"].run({ id: scheduledTask.shortId }, { ...context, locale: "de" });
+  expect(result).toMatchObject({
+    ok: true,
+    data: {
+      data: {
+        task: {
+          title: "Neue Rechnungen",
+          name: "Neue Rechnungen",
+          reason: { code: "rights_changed", sentence: "Was sie darf, hat sich geändert. Bitte neu bestätigen." },
+          lastError: "Raw English error",
+        },
+        occurrences: [{ state: "stopped" }],
+      },
+    },
+  });
+});
+
+test("routine reads include the refused action in the localized approval reason", async () => {
+  spyOn(aiChatTasks, "get").mockResolvedValue({
+    ...scheduledTask,
+    state: "needs_attention",
+    reasonCode: "needs_approval",
+    reasonAt: "2026-10-18T09:00:00.000Z",
+    reasonAction: "Aufgabe zuweisen",
+  });
+  spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([]);
+  expect(await aiCapabilities.queries["ai.task.read"].run({ id: scheduledTask.shortId }, { ...context, locale: "de" })).toMatchObject({
+    ok: true,
+    data: {
+      data: {
+        task: {
+          reason: {
+            code: "needs_approval",
+            sentence: "Wollte Aufgabe zuweisen. Das macht der Assistant nur mit dir, und Routinen fragen nie.",
+          },
+        },
+      },
+    },
   });
 });

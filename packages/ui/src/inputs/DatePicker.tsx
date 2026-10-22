@@ -4,6 +4,7 @@ import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../i
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useDateConfigLocale } from "../intl/locale";
 import { resolveUiMessages, useUiMessages } from "../intl/messages";
+import { isWeekendKey } from "../intl/weekend";
 import {
   type DateRangeValue,
   dateKey,
@@ -13,18 +14,21 @@ import {
   formatDateTimeValue,
   inRange,
   isCompleteTime,
+  isDateKey,
   isRangeEdge,
   monthDate,
   monthNames,
   msUntilNextDay,
   normalizeTimeInput,
-  orderedRange,
   parseDateValue,
   pickerContext,
+  pickRangeDay,
   previewRange,
+  rangeAnchor,
   resolveFocusDay,
   splitDateTime,
   toDateTimeValue,
+  weekendBands,
   yearMonth,
 } from "./date-picker";
 import type { MaybeAccessor, ValueFieldProps } from "./field-contract";
@@ -60,6 +64,13 @@ export type DatePickerProps = DatePickerBaseProps<string | null> & {
 export type DateTimePickerProps = DatePickerBaseProps<string | null> & {
   /** Trigger content for a set value, for example the date and time with a relative hint. */
   renderValue?: (value: string) => JSX.Element;
+  /**
+   * The time is optional: the value is a date key such as `2026-10-24` until **Add time** adds one, then a date-time
+   * like without this option. Removing the time returns to the date key.
+   */
+  optionalTime?: boolean;
+  /** The time a new value starts with, `09:00` by default. */
+  defaultTime?: string;
 };
 export type DateRangePickerProps = DatePickerBaseProps<DateRangeValue> & {
   withTime?: boolean;
@@ -355,6 +366,9 @@ function DatePickerPanel(props: {
     document.addEventListener("visibilitychange", refresh);
     onCleanup(() => document.removeEventListener("visibilitychange", refresh));
   });
+  // The weekend columns of the locale, read from the first week so they follow the grid's first day of the week.
+  const weekendColumns = createMemo(() => (dayRows()[0] ?? []).map((cell) => isWeekendKey(cell.key, context().locale)));
+  const bands = createMemo(() => weekendBands(weekendColumns()));
   let calendar: HTMLElement | undefined;
   // Days that belong to the visible month; the roving tabindex must land on one
   // of them or the grid becomes unreachable by keyboard after month navigation.
@@ -453,15 +467,29 @@ function DatePickerPanel(props: {
           </div>
         }
       >
+        {/* The weekend is a calm band behind its columns, from the weekday row through the last week. The band only
+            paints a background, so it never moves a day. */}
         <div class="k2b-date-weekdays" aria-hidden="true">
-          <For each={weekdays()}>{(day) => <span>{day}</span>}</For>
+          <For each={bands()}>
+            {(band) => <span class="k2b-date-weekend" style={{ "grid-column": `${band.start + 1} / span ${band.span}` }} />}
+          </For>
+          <For each={weekdays()}>{(day, index) => <span data-weekend={weekendColumns()[index()] ? "true" : undefined}>{day}</span>}</For>
         </div>
         <div class="k2b-date-grid" role="grid">
+          <For each={bands()}>
+            {(band) => (
+              <span
+                class="k2b-date-weekend"
+                aria-hidden="true"
+                style={{ "grid-column": `${band.start + 1} / span ${band.span}`, "grid-row": `1 / span ${dayRows().length}` }}
+              />
+            )}
+          </For>
           <For each={dayRows()}>
             {(week) => (
               <div class="k2b-date-week" role="row">
                 <For each={week}>
-                  {(cell) => {
+                  {(cell, cellIndex) => {
                     const selected = () => props.selected?.() === cell.key;
                     const range = () => props.range?.() ?? { start: null, end: null };
                     const active = () => selected() || isRangeEdge(cell.key, range());
@@ -474,6 +502,7 @@ function DatePickerPanel(props: {
                         data-date-day={cell.key}
                         data-date-focus={focusable() ? "true" : undefined}
                         data-outside={cell.outside ? "true" : undefined}
+                        data-weekend={weekendColumns()[cellIndex()] ? "true" : undefined}
                         data-in-range={inRange(cell.key, range()) && !active() ? "true" : undefined}
                         data-today={today() ? "true" : undefined}
                         aria-current={today() ? "date" : undefined}
@@ -574,22 +603,39 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
   const value = () => resolveMaybeAccessor(props.value);
   const dateConfig = useDateConfigLocale(() => props.dateConfig);
   const parts = () => splitDateTime(value(), dateConfig());
+  const defaultTime = () => props.defaultTime ?? "09:00";
+  // Without `optionalTime` every value has a time; with it a date key has none.
+  const valueHasTime = () => !props.optionalTime || (Boolean(value()) && !isDateKey(value()!));
   const [visibleMonth, setVisibleMonth] = createSignal(parseDateValue(parts().date, dateConfig()));
   const [draftDate, setDraftDate] = createSignal(parts().date);
-  const [draftTime, setDraftTime] = createSignal(parts().time || "09:00");
-  const valueLabel = () => formatDateTimeValue(value(), dateConfig());
+  const [draftTime, setDraftTime] = createSignal(parts().time || defaultTime());
+  const [withTime, setWithTime] = createSignal(valueHasTime());
+  const valueLabel = () => (valueHasTime() ? formatDateTimeValue(value(), dateConfig()) : displayDate(value(), dateConfig()));
+  let addTimeButton: HTMLButtonElement | undefined;
+  let timeField: HTMLDivElement | undefined;
 
   const syncDraft = () => {
     const next = parts();
     setDraftDate(next.date);
-    setDraftTime(next.time || "09:00");
+    setDraftTime(next.time || defaultTime());
+    setWithTime(valueHasTime());
     setVisibleMonth(parseDateValue(next.date, dateConfig()));
+  };
+  const canApply = () => Boolean(draftDate()) && (!withTime() || isCompleteTime(draftTime()));
+  const draftValue = () => (withTime() ? toDateTimeValue(draftDate(), draftTime(), dateConfig()) : draftDate() || null);
+  const addTime = () => {
+    setWithTime(true);
+    queueMicrotask(() => timeField?.querySelector("input")?.focus());
+  };
+  const removeTime = () => {
+    setWithTime(false);
+    queueMicrotask(() => addTimeButton?.focus());
   };
 
   return (
     <PickerShell
       owner={props}
-      icon="ti ti-calendar-time"
+      icon={props.optionalTime && !valueHasTime() ? "ti ti-calendar" : "ti ti-calendar-time"}
       valueLabel={valueLabel}
       valueContent={props.renderValue ? () => props.renderValue!(value()!) : undefined}
       clearValue={null}
@@ -597,46 +643,70 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
       onOpen={syncDraft}
       wide={Boolean(props.presets?.length)}
     >
-      {(close) => (
-        <>
-          <div class="k2b-date-popover__body">
-            <PresetRail
-              presets={props.presets}
-              onSelect={(value) => {
-                close();
-                commitFieldValue(props, value);
-              }}
-            />
-            <DatePickerPanel
-              visibleMonth={visibleMonth}
-              setVisibleMonth={setVisibleMonth}
-              selected={draftDate}
-              focusDate={draftDate}
-              onSelect={(value) => {
-                setDraftDate(value);
-                setVisibleMonth(parseDateValue(value, dateConfig()));
-              }}
-              dateConfig={dateConfig()}
-            />
-          </div>
-          <div class="k2b-date-actions">
-            <TimeInput time={draftTime()} onChange={setDraftTime} />
-            <button
-              type="button"
-              class="k2b-date-apply"
-              disabled={!draftDate() || !isCompleteTime(draftTime())}
-              onClick={() => {
-                if (!draftDate() || !isCompleteTime(draftTime())) return;
-                const value = toDateTimeValue(draftDate(), draftTime(), dateConfig());
-                close();
-                commitFieldValue(props, value);
-              }}
-            >
-              {messages().apply}
-            </button>
-          </div>
-        </>
-      )}
+      {(close) => {
+        const apply = () => {
+          if (!canApply()) return;
+          const next = draftValue();
+          close();
+          commitFieldValue(props, next);
+        };
+        return (
+          <>
+            <div class="k2b-date-popover__body">
+              <PresetRail
+                presets={props.presets}
+                onSelect={(value) => {
+                  close();
+                  commitFieldValue(props, value);
+                }}
+              />
+              <DatePickerPanel
+                visibleMonth={visibleMonth}
+                setVisibleMonth={setVisibleMonth}
+                selected={draftDate}
+                focusDate={draftDate}
+                onSelect={(value) => {
+                  setDraftDate(value);
+                  setVisibleMonth(parseDateValue(value, dateConfig()));
+                  // A date without a time is complete with the day, as in the date picker.
+                  if (props.optionalTime && !withTime()) apply();
+                }}
+                dateConfig={dateConfig()}
+              />
+            </div>
+            <div class="k2b-date-actions">
+              <Show when={props.optionalTime} fallback={<TimeInput time={draftTime()} onChange={setDraftTime} />}>
+                {/* Adding and removing the time swap controls of one height in one place, so the panel never moves. */}
+                <div ref={timeField} class="k2b-date-optional-time" data-with-time={withTime() ? "true" : undefined}>
+                  <Show
+                    when={withTime()}
+                    fallback={
+                      <button ref={addTimeButton} type="button" class="k2b-date-optional-time__add" onClick={addTime}>
+                        <i class="ti ti-clock-plus" aria-hidden="true" />
+                        {messages().addTime}
+                      </button>
+                    }
+                  >
+                    <TimeInput time={draftTime()} onChange={setDraftTime} />
+                    <button
+                      type="button"
+                      class="k2b-date-optional-time__remove"
+                      aria-label={messages().removeTime}
+                      title={messages().removeTime}
+                      onClick={removeTime}
+                    >
+                      <i class="ti ti-x" aria-hidden="true" />
+                    </button>
+                  </Show>
+                </div>
+              </Show>
+              <button type="button" class="k2b-date-apply" disabled={!canApply()} onClick={apply}>
+                {messages().apply}
+              </button>
+            </div>
+          </>
+        );
+      }}
     </PickerShell>
   );
 }
@@ -655,14 +725,17 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
     start: parts().start.date || null,
     end: parts().end.date || null,
   });
+  // The day of the last click that started a one-day range; the next click on another day extends from it.
+  const [anchor, setAnchor] = createSignal<string | null>(null);
   const [previewDate, setPreviewDate] = createSignal<string | null>(null);
   const [startTime, setStartTime] = createSignal(parts().start.time || "09:00");
   const [endTime, setEndTime] = createSignal(parts().end.time || "10:00");
-  const displayRange = createMemo(() => previewRange(draftRange(), previewDate()));
+  const displayRange = createMemo(() => previewRange(draftRange(), anchor(), previewDate()));
 
   const syncDraft = () => {
     const next = parts();
     setDraftRange({ start: next.start.date || null, end: next.end.date || null });
+    setAnchor(null);
     setPreviewDate(null);
     setStartTime(next.start.time || "09:00");
     setEndTime(next.end.time || "10:00");
@@ -687,12 +760,9 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
   };
 
   const selectDate = (value: string) => {
-    const current = draftRange();
-    if (!current.start || current.end) {
-      setDraftRange({ start: value, end: null });
-    } else {
-      setDraftRange(orderedRange(current.start, value));
-    }
+    const next = pickRangeDay(draftRange(), anchor(), value);
+    setDraftRange(next.range);
+    setAnchor(next.anchor);
     setPreviewDate(null);
   };
 
@@ -790,10 +860,7 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
               range={displayRange}
               focusDate={() => draftRange().start}
               onSelect={selectDate}
-              onDayPreview={(value) => {
-                const current = draftRange();
-                setPreviewDate(current.start && !current.end ? value : null);
-              }}
+              onDayPreview={(value) => setPreviewDate(rangeAnchor(draftRange(), anchor()) ? value : null)}
               dateConfig={dateConfig()}
             />
           </div>

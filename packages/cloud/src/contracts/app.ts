@@ -15,7 +15,7 @@ export type LegalLink = {
   icon?: string;
 };
 
-/** Static page links for the global search UI, ranked after resource results.
+/** Static page links for the global search UI, shown before resource results.
  * These declare navigation only; they do not create capabilities or readers.
  */
 export type AppSearchLink = {
@@ -24,6 +24,7 @@ export type AppSearchLink = {
   description?: string;
   href: string;
   icon?: string;
+  /** Alternate search terms. At `nav.href`, these also match the automatic app launcher. */
   keywords?: readonly string[];
 };
 
@@ -58,6 +59,7 @@ export type AppAdminNavigationGroup = {
 
 export type AppPresentationTranslation = {
   name?: string;
+  panelLabel?: string;
   description?: string;
   /** Group labels keyed by `adminNav[].id`. */
   adminGroups?: Readonly<Record<string, string>>;
@@ -107,6 +109,18 @@ export type AppPwaPart = {
   requiresRoles?: Role[];
 };
 
+/** One same-origin panel page contributed by an application. Routes and services still authorize. */
+export type AppPanel = {
+  /** GET page below the app's routes, rendered with PanelLayout. */
+  href: string;
+  /** Panel name in the app's base locale; translated with presentation.translations[locale].panelLabel. */
+  label: string;
+  /** Icon class, for example "ti ti-sparkles". */
+  icon: string;
+  /** Coarse visibility like nav.requiresRoles; the slot grants no access. */
+  requiresRoles?: Role[];
+};
+
 export type AppMeta = {
   platformPermissions?: readonly PlatformPermission[];
   id: string;
@@ -142,6 +156,7 @@ export type AppMeta = {
   searchLinks?: readonly AppSearchLink[];
   /** The app's pages in the installable mobile app (preview), at `href` = `/pwa/<id>`. */
   pwa?: AppPwaPart;
+  panel?: AppPanel;
   /**
    * Dashboard widget endpoints this app exposes. Each entry references an
    * HTTP endpoint that returns a `WidgetResponse` (see `contracts/widgets.ts`).

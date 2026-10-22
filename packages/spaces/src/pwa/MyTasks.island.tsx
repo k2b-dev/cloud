@@ -5,6 +5,7 @@ import { Button, IconButton, Placeholder, SegmentedControl, type ToastHandle, to
 import { createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
+import { formatDeadline } from "@/presentation/deadline";
 import { spacesMessages } from "@/service/messages";
 import { isTaskOverdue } from "@/task-overdue";
 import { isOwnClaim } from "../frontend/[id]/_components/shared/claim/claim";
@@ -237,12 +238,8 @@ export default function MyTasks(props: Props) {
       return { text, datetime: item.startsAt, icon: "ti ti-clock", overdue: false };
     }
     if (!item.deadline) return null;
-    const deadline = new Date(item.deadline);
     return {
-      // Today's deadline by its time; others by their day, with "Yesterday" or the weekday for the last week.
-      text: dates.isToday(deadline, props.dateConfig)
-        ? dates.formatTime(deadline, props.dateConfig)
-        : dates.formatDateRelative(deadline, props.dateConfig),
+      text: formatDeadline(item.deadline, props.dateConfig),
       datetime: item.deadline,
       icon: "ti ti-calendar-due",
       // The overview contains only open items and omits completedAt.

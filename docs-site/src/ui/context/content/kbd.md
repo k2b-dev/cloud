@@ -20,6 +20,19 @@ formatShortcut("mod+k", { platform: "apple", locale: "en" }).label; // ⌘K
 keyboardPlatform("MacIntel"); // apple
 ```
 
+## Keyboard hints
+
+Use `class="k2b-kbd-hint"` for an optional shortcut hint, for example in a
+toolbar. It reserves its space with `visibility: hidden` and shows after the
+first qualifying key press. Typing and lone modifiers do not count. The host
+starts `installInputModeController()`; see [Input mode](/en/ui/input-mode).
+
+```tsx
+<Kbd keys="mod+k" class="k2b-kbd-hint" />
+```
+
+Keep shortcut lists and help visible; do not apply this utility to them.
+
 ## Input grammar
 
 Separate modifiers with `+`, then write exactly one key. Modifiers are `mod`,
@@ -54,8 +67,10 @@ Invalid combinations return `{ keys: [], label: "", name: "" }`.
 When the host knows the reader's platform, pass
 `platform={keyboardPlatform(request.headers.get("user-agent") ?? "")}` to
 `Kbd`. This keeps server and browser caps identical. Without `platform`,
-`Kbd` always uses `other` on the server and the first hydration pass; caps switch to the
-detected platform after mount. A client-only render detects it immediately.
+`Kbd` uses `other` on the server and, in a host that hydrates, during hydration;
+caps switch to the detected platform after mount. A browser render that does not
+hydrate, such as a client component or an island that renders again, detects it
+immediately.
 
 `keyboardPlatform()` without an argument reads the runtime's
 `navigator.platform`, then `navigator.userAgent`, including on the server.
@@ -73,4 +88,4 @@ and `name` strings. A spoken shortcut separates names with spaces.
 
 ## Runtime
 
-Server caps work without JavaScript. Hydration detects the platform after mount when `platform` is omitted.
+Server caps work without JavaScript. When `platform` is omitted, the component detects the platform in the browser.

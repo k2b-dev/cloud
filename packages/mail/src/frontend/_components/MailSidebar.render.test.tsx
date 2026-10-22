@@ -6,7 +6,6 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { selectHtml } from "../../../../../tests/fixtures/select-html";
-import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../../contact-directory-settings";
 import type { MailFolderView } from "../../service/messages";
 
 const root = mkdtempSync(join(tmpdir(), "mail-sidebar-render-tests-"));
@@ -14,165 +13,135 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const [{ default: MailSidebar }, { LocaleProvider }] = await Promise.all([import("./MailSidebar.tsx"), import("@k2b/ui")]);
+const { default: MailSidebar } = await import("./MailSidebar.tsx");
 
-const sidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) =>
-  createComponent(MailSidebar, {
-    currentUserEmail: null,
-    contactDirectory: DEFAULT_MAIL_CONTACT_DIRECTORY,
-    mailboxId: "Box001",
-    mailboxName: "Support",
-    syncEnabled: true,
-    needsConnection: false,
-    folders: [],
-    localTags: [],
-    savedViews: [],
-    scheduledMode: false,
-    scheduledCount: 0,
-    activeFolderId: null,
-    activeView: null,
-    activeSavedViewId: null,
-    activeTagId: null,
-    searchActive: false,
-    viewCounts: {
-      needs_action: 2,
-      mine: 1,
-      unassigned: 1,
-      waiting: 3,
-      done: 4,
-      snoozed: 0,
-      send_problems: 0,
-      recently_active: 5,
-      kept: 2,
-    },
-    canWrite: true,
-    canAdmin: true,
-    assignedOnly: false,
-    managementOpening: null,
-    settingsOpening: false,
-    detailsOpening: false,
-    onOpenDetails: () => {},
-    onOpenHealth: () => {},
-    onOpenSharedLinks: () => {},
-    onOpenRemoteContent: () => {},
-    onOpenSubscriptions: () => {},
-    onOpenSettings: () => {},
-    onMoveConversation: () => {},
-    onNavigate: () => {},
-    ...overrides,
-  });
+const { mailSidebarFixture, openMailboxFixture } = await import("./mail-sidebar.fixture");
+const sidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) => createComponent(MailSidebar, mailSidebarFixture(overrides));
 const renderSidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {}) => renderToString(() => sidebar(overrides));
 
+const { createMailboxPreferences } = await import("./mail-mailbox-preferences");
+const folder = (id: string, name: string, role: string, total: number, unread: number): MailFolderView => ({
+  id,
+  parentId: null,
+  name,
+  role,
+  providerRole: role,
+  configuredRole: null,
+  selectable: true,
+  display: "everywhere",
+  effectiveDisplay: "everywhere",
+  displayInheritedFromFolderId: null,
+  displayNeutral: false,
+  namespaceKinds: ["personal"],
+  discoveryState: "active",
+  missingSince: null,
+  syncStatus: "current",
+  total,
+  unread,
+});
+
 describe("Mail sidebar", () => {
-  test.each([
-    ["en", "Switch mailbox"],
-    ["de", "Postfach wechseln"],
-  ])("names the container and puts its overview only in switcher actions (%s)", async (locale, purpose) => {
-    const html = renderToString(() =>
-      createComponent(LocaleProvider, {
-        locale,
-        get children() {
-          return sidebar({ mailboxAddress: "help@example.test" });
-        },
+  test("Focus and a mailbox list the same mailboxes in pin order, with only the open folder group", async () => {
+    const render = (open: boolean) =>
+      renderSidebar({
+        mailboxes: [
+          { id: "Box002", name: "Sales", health: "active", healthReason: null, receivingAddress: null },
+          { id: "Box001", name: "Support", health: "active", healthReason: null, receivingAddress: null },
+        ],
+        open: open ? openMailboxFixture() : null,
+        preferences: createMailboxPreferences({ pinnedMailboxIds: ["Box001"], hiddenMailboxIds: [] }),
+      });
+    const focus = render(false);
+    const mailbox = render(true);
+    const rows = async (html: string) => (await selectHtml(html, "[data-mailbox]")).map((row) => row.attributes["data-mailbox"]);
+    expect(await rows(focus)).toEqual(["Box001", "Box002"]);
+    expect(await rows(mailbox)).toEqual(await rows(focus));
+    expect(await selectHtml(focus, '[role="group"][aria-label="Folders of Support"]')).toHaveLength(0);
+    expect(await selectHtml(mailbox, ".mail-sidebar-folders")).toHaveLength(1);
+    expect((await selectHtml(focus, 'a[href="/app/mail"]'))[0]?.attributes["aria-current"]).toBe("page");
+    expect((await selectHtml(mailbox, '[data-mailbox="Box001"] a'))[0]?.attributes["aria-current"]).toBe("page");
+    expect((await selectHtml(mailbox, 'a[href="/app/mail"]'))[0]?.attributes["aria-current"]).toBeUndefined();
+  });
+
+  test("phone title navigation lists places, hidden mailboxes and New mailbox without views or tools", () => {
+    const html = renderSidebar({
+      open: openMailboxFixture({
+        folders: [
+          folder("Inbox1", "Inbox", "inbox", 20, 5),
+          folder("Draft1", "Drafts", "drafts", 3, 0),
+          folder("Sent01", "Sent", "sent", 20, 2),
+          folder("Arch01", "Archive", "archive", 9, 4),
+          folder("Cust01", "Customers", "other", 9, 4),
+        ],
       }),
-    );
-    const trigger = await selectHtml(html, ".k2b-sidebar-switcher__trigger");
-    expect(trigger).toHaveLength(1);
-    expect(trigger[0]?.attributes["aria-label"]).toBe("Support");
-    expect((await selectHtml(html, ".k2b-sidebar-switcher .k2b-sr-only"))[0]?.text).toContain(purpose);
-    const snapshot = (await selectHtml(html, "script[data-cloud-workspace-navigation]"))[0]?.text;
-    expect(snapshot).toContain('"switchLabel":"' + purpose + '"');
-    expect(snapshot).not.toContain('"id":"mailboxes"');
-    expect(await selectHtml(html, '.k2b-app-workspace__sidebar-item[href="/app/mail"]')).toHaveLength(0);
-    expect((await selectHtml(html, '.k2b-sidebar-switcher__actions a[href="/app/mail"]'))[0]?.text).toContain(
-      locale === "en" ? "All mailboxes" : "Alle Postfächer",
-    );
-  });
-
-  test("separates follow-up and assignment and links stable tag IDs", () => {
-    const html = renderSidebar({
-      localTags: [
-        {
-          id: "Tag001",
-          mailboxId: "Box001",
-          name: "Important",
-          color: "#2563eb",
-          revision: 1,
-          createdAt: "2026-08-15T00:00:00.000Z",
-          updatedAt: "2026-08-15T00:00:00.000Z",
-        },
+      mailboxes: [
+        { id: "Box001", name: "Support", health: "active", healthReason: null, receivingAddress: null },
+        { id: "Box002", name: "Sales", health: "active", healthReason: null, receivingAddress: null },
+        { id: "Box003", name: "Hidden box", health: "active", healthReason: null, receivingAddress: null },
       ],
-      activeTagId: "Tag001",
-      searchActive: true,
+      preferences: createMailboxPreferences({ pinnedMailboxIds: ["Box002"], hiddenMailboxIds: ["Box003"] }),
     });
-
-    expect(html).toContain("Follow-up");
-    expect(html).toContain("Assignment");
-    expect(html).toContain("Tags");
-    expect(html).toContain("Important");
-    expect(html).toContain("local_tag_id");
-    expect(html).toContain("Tag001");
-    expect(html).not.toContain('title="Work"');
+    type Entry = { id: string; label: string; children?: Entry[] };
+    const snapshot = JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)![1]!) as { items: Entry[] };
+    const flatten = (items: Entry[]): Entry[] => items.flatMap((item) => [item, ...flatten(item.children ?? [])]);
+    expect(flatten(snapshot.items).map((item) => item.label)).toEqual([
+      "Focus",
+      "Mailboxes",
+      "Sales",
+      "Support",
+      "Inbox",
+      "Drafts",
+      "Scheduled",
+      "Send problems",
+      "Sent",
+      "More",
+      "Archive",
+      "Customers",
+      "Hidden mailboxes",
+      "Hidden box",
+      "New mailbox",
+    ]);
   });
 
-  test("keeps secondary destinations with Mail and gives primary counts useful semantics", () => {
-    const folder = (id: string, name: string, role: string, total: number, unread: number): MailFolderView => ({
-      id,
-      parentId: null,
-      name,
-      role,
-      providerRole: role,
-      configuredRole: null,
-      selectable: true,
-      display: "everywhere",
-      effectiveDisplay: "everywhere",
-      displayInheritedFromFolderId: null,
-      displayNeutral: false,
-      namespaceKinds: ["personal"],
-      discoveryState: "active",
-      missingSince: null,
-      syncStatus: "current",
-      total,
-      unread,
-    });
+  test("mailbox navigation is enhanced only when its island owns mailbox switches", () => {
+    for (const enhanced of [false, true]) {
+      const html = renderSidebar({ open: openMailboxFixture(), onOpenMailbox: enhanced ? () => {} : undefined });
+      const snapshot = JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)![1]!);
+      const entry = snapshot.items.find((item: { id: string }) => item.id === "mailboxes").children[0];
+      expect(entry.navigation).toBe(enhanced ? "enhanced" : undefined);
+      expect(entry.scroll).toBe(enhanced ? "preserve" : undefined);
+    }
+  });
+
+  test("phone navigation distinguishes the mailbox context from its active folder", () => {
     const html = renderSidebar({
-      scheduledCount: 7,
-      viewCounts: {
-        needs_action: 2,
-        mine: 1,
-        unassigned: 1,
-        waiting: 3,
-        done: 4,
-        snoozed: 0,
-        send_problems: 2,
-        recently_active: 5,
-        kept: 2,
-      },
-      folders: [
-        folder("00000000-0000-4000-8000-000000000001", "Inbox", "inbox", 20, 5),
-        folder("00000000-0000-4000-8000-000000000002", "Drafts", "drafts", 3, 0),
-        folder("00000000-0000-4000-8000-000000000003", "Sent", "sent", 20, 2),
-        folder("00000000-0000-4000-8000-000000000004", "Trash", "trash", 9, 4),
+      mailboxes: [
+        { id: "Box001", name: "Support", health: "active", healthReason: null, receivingAddress: null },
+        { id: "Box002", name: "Sales", health: "active", healthReason: null, receivingAddress: null },
       ],
+      open: openMailboxFixture({ activeFolderId: "Inbox1", folders: [folder("Inbox1", "Inbox", "inbox", 20, 5)] }),
     });
-
-    const desktop = html.slice(html.indexOf('class="k2b-app-workspace__sidebar-desktop'));
-    const mailSection = desktop.slice(desktop.indexOf(">Mail<"), desktop.indexOf(">Folders<"));
-    expect(mailSection.indexOf("Sent")).toBeLessThan(mailSection.indexOf("More"));
-    expect(mailSection.indexOf("More")).toBeLessThan(mailSection.indexOf("All mail"));
-    expect(mailSection).toContain("Inbox");
-    expect(mailSection).toContain(">5<");
-    expect(mailSection).toContain("Drafts");
-    expect(mailSection).toContain(">3<");
-    expect(mailSection).toContain("Scheduled");
-    expect(mailSection).toContain(">7<");
-    expect(mailSection).toContain("Send problems");
-    expect(mailSection).toContain(">2<");
-    expect(mailSection.slice(mailSection.indexOf("Sent"), mailSection.indexOf("More"))).not.toContain(">2<");
-    expect(mailSection).toContain("Trash");
-    expect(desktop).toContain("mail-compose-action");
+    type Entry = { id: string; context?: boolean; active?: boolean; children?: Entry[] };
+    const snapshot: { items: Entry[] } = JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)![1]!);
+    const boxes = snapshot.items.find((item) => item.id === "mailboxes")!.children!;
+    const current = boxes.find((item) => item.id === "mailbox:Box001")!;
+    expect(current.context).toBe(true);
+    expect(current.active).toBe(false);
+    expect(current.children!.find((item) => item.id === "folder:Inbox1")!.active).toBe(true);
+    expect(boxes.find((item) => item.id === "mailbox:Box002")!.context).toBe(false);
+    expect(snapshot.items.find((item) => item.id === "focus")!.context).toBeUndefined();
   });
 
+  test("a hidden open mailbox stays expanded, and a folder marks its own row instead of the mailbox", async () => {
+    const html = renderSidebar({
+      preferences: createMailboxPreferences({ pinnedMailboxIds: [], hiddenMailboxIds: ["Box001"] }),
+      open: openMailboxFixture({ activeFolderId: "Inbox1", folders: [folder("Inbox1", "Inbox", "inbox", 20, 5)] }),
+    });
+    expect((await selectHtml(html, ".mail-sidebar-hidden-mailboxes button[aria-expanded]"))[0]?.attributes["aria-expanded"]).toBe("true");
+    expect((await selectHtml(html, '[data-mailbox="Box001"] a'))[0]?.attributes["aria-current"]).toBeUndefined();
+    expect((await selectHtml(html, 'a[href="/app/mail/Box001?folder=Inbox1"]'))[0]?.attributes["aria-current"]).toBe("page");
+    expect(html).toContain(", 5 unread");
+  });
   test("marks where Only in the folder is set and keeps the unread count beside it", () => {
     const folder = (id: string, name: string, overrides: Partial<MailFolderView> = {}): MailFolderView => ({
       id,
@@ -195,17 +164,19 @@ describe("Mail sidebar", () => {
       ...overrides,
     });
     const html = renderSidebar({
-      folders: [
-        folder("Fold01", "Newsletter", { display: "folder_only", effectiveDisplay: "folder_only", unread: 12 }),
-        folder("Fold02", "Shared", { display: "folder_only", effectiveDisplay: "folder_only" }),
-        folder("Fold03", "Projects", {
-          parentId: "Fold02",
-          effectiveDisplay: "folder_only",
-          displayInheritedFromFolderId: "Fold02",
-          unread: 2,
-        }),
-        folder("Fold04", "Customers", { unread: 3 }),
-      ],
+      open: openMailboxFixture({
+        folders: [
+          folder("Fold01", "Newsletter", { display: "folder_only", effectiveDisplay: "folder_only", unread: 12 }),
+          folder("Fold02", "Shared", { display: "folder_only", effectiveDisplay: "folder_only" }),
+          folder("Fold03", "Projects", {
+            parentId: "Fold02",
+            effectiveDisplay: "folder_only",
+            displayInheritedFromFolderId: "Fold02",
+            unread: 2,
+          }),
+          folder("Fold04", "Customers", { unread: 3 }),
+        ],
+      }),
     });
     const desktop = html.slice(html.indexOf('class="k2b-app-workspace__sidebar-desktop'));
 
@@ -236,80 +207,5 @@ describe("Mail sidebar", () => {
       "folder:Fold03": null,
       "folder:Fold04": null,
     });
-  });
-
-  test("puts the mailbox details beside Compose, and gives readers them in Compose's place", () => {
-    type Entry = { id: string; label: string; action?: string; inlineActions?: Entry[] };
-    const phoneItems = (html: string) =>
-      (JSON.parse(/<script[^>]*data-cloud-workspace-navigation[^>]*>(.*?)<\/script>/s.exec(html)?.[1] ?? "{}") as { items: Entry[] }).items;
-    const actionsRow = (html: string) => {
-      const desktop = html.slice(html.indexOf('class="k2b-app-workspace__sidebar-desktop'));
-      return desktop.slice(desktop.indexOf("mail-sidebar-actions"), desktop.indexOf("k2b-app-workspace__sidebar-body"));
-    };
-
-    const writer = renderSidebar();
-    const writerRow = actionsRow(writer);
-    expect(writerRow.indexOf("mail-compose-action")).toBeLessThan(writerRow.indexOf("mail-details-action"));
-    expect(writerRow).toContain('aria-label="Mailbox details"');
-    expect(writerRow).toContain("ti ti-info-circle");
-    // On phones the details share Compose's row in the app menu.
-    const [compose] = phoneItems(writer);
-    expect(compose?.id).toBe("compose");
-    expect(compose?.inlineActions?.map((action) => [action.id, action.label, action.action])).toEqual([
-      ["details", "Mailbox details", "details"],
-    ]);
-
-    const reader = renderSidebar({ canWrite: false, canAdmin: false });
-    const readerRow = actionsRow(reader);
-    expect(readerRow).not.toContain("mail-compose-action");
-    // A labelled, full-width button in Compose's slot, not the square icon button.
-    expect(readerRow).toMatch(
-      /<button[^>]*class="k2b-button mail-details-action min-w-0 flex-1[^"]*"[^>]*data-size="sm"[^>]*data-variant="secondary"/,
-    );
-    expect(readerRow).not.toContain("aria-label=");
-    expect(readerRow).toContain("About this mailbox");
-    expect(readerRow).toContain("ti ti-info-circle");
-    const [details] = phoneItems(reader);
-    expect([details?.id, details?.label, details?.action]).toEqual(["details", "About this mailbox", "details"]);
-
-    const germanReader = actionsRow(
-      renderToString(() =>
-        createComponent(LocaleProvider, {
-          locale: "de",
-          get children() {
-            return sidebar({ canWrite: false, canAdmin: false });
-          },
-        }),
-      ),
-    );
-    expect(germanReader).toContain("Über dieses Postfach");
-
-    // People who see only assigned conversations get the reason instead of mailbox-wide actions.
-    const assigned = renderSidebar({ canWrite: true, canAdmin: false, assignedOnly: true });
-    const assignedRow = actionsRow(assigned);
-    expect(assignedRow).toContain("Only conversations assigned to you");
-    expect(assignedRow).not.toContain("mail-compose-action");
-    expect(assignedRow).not.toContain("mail-details-action");
-    expect(assigned).not.toContain("Mailbox tools");
-    expect(assigned).not.toContain(">Settings<");
-    expect(assigned).not.toContain("Unassigned");
-    expect(assigned).toContain("Assigned to me");
-    const assignedPhone = phoneItems(assigned).map((item) => item.id);
-    expect(assignedPhone).not.toContain("compose");
-    expect(assignedPhone).not.toContain("details");
-    expect(assignedPhone).not.toContain("tools");
-    expect(assignedPhone).not.toContain("settings");
-    expect(
-      actionsRow(
-        renderToString(() =>
-          createComponent(LocaleProvider, {
-            locale: "de",
-            get children() {
-              return sidebar({ canWrite: true, canAdmin: false, assignedOnly: true });
-            },
-          }),
-        ),
-      ),
-    ).toContain("Nur dir zugewiesene Unterhaltungen");
   });
 });

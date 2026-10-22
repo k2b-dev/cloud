@@ -184,9 +184,13 @@
 .cloud-resource-search__result:hover {
   background: var(--k2b-hover);
 }
-.cloud-resource-search__result.is-active,
-.cloud-resource-search__result.is-selected {
+/* The keyboard-active option is a state of the listbox and keeps the platform
+   selection; a picked resource is an object row and carries the app fill. */
+.cloud-resource-search__result.is-active {
   background: var(--k2b-selected);
+}
+.cloud-resource-search__result.is-selected {
+  background: var(--ui-app-selected);
 }
 .cloud-resource-search__result-copy {
   display: flex;
@@ -425,6 +429,31 @@
   }
   .cloud-resource-search.shows-details .cloud-resource-search__details {
     display: none;
+  }
+}
+
+/* On a phone the resource picker is a full-screen sheet: the whole width, from
+   below the status bar to the bottom edge, rounded at the top. Its results
+   take the room the search field and footer leave. Global search keeps its
+   floating card. */
+@media (max-width: 47.999rem) {
+  .cloud-search-dialog.cloud-search-dialog--picker {
+    --search-top: max(0.5rem, env(safe-area-inset-top, 0px));
+    --search-max-height: calc(100dvh - var(--search-top));
+    inset: var(--search-top) 0 auto;
+    transform: none;
+    width: 100%;
+    height: var(--search-max-height);
+    border-width: 1px 0 0;
+    border-radius: var(--ui-radius-frame) var(--ui-radius-frame) 0 0;
+  }
+  .cloud-search-dialog--picker > .cloud-search-dialog__content,
+  .cloud-search-dialog--picker .cloud-resource-search {
+    height: 100%;
+  }
+  .cloud-search-dialog--picker .cloud-resource-search {
+    --search-body-height: max(0px, calc(var(--search-max-height) - 12rem));
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
   }
 }
 

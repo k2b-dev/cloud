@@ -6,14 +6,16 @@ description: Convert a batch of mixed images to JPEG, PNG, WebP, or Base64 HTML 
 order: 117
 ---
 
-**Image Converter** turns mixed browser-readable images into one consistent output. It does not upload them.
+**Image Converter** converts JPEG, PNG, WebP, GIF, BMP, SVG, AVIF, and HEIC/HEIF photos from iPhones in your browser. It does not upload them.
+
+The HEIC decoder loads only when your browser cannot read the photo itself.
 
 :::steps
 1. Choose **Add images**, or drop files anywhere in the image workspace.
 2. If needed, select, remove, or rotate a preview clockwise before export.
 :::
 
-The export settings open automatically as soon as the batch contains an image. They close again when the batch is empty.
+The export settings open automatically as soon as you add a file. They stay closed while every file in the list failed.
 
 ## Choose the output {icon="photo"}
 
@@ -38,4 +40,18 @@ Base64 image tags are useful in controlled HTML. Email editors and recipients do
 
 ## Understand browser processing {icon="shield-check"}
 
-The converter keeps source files and results in the current browser page. It does not upload or persist them. The supported input formats depend on what the browser can decode. The converter rasterizes vector images and turns animated images into still images. The converted output does not keep image metadata.
+The converter keeps source files and results in the current browser page. It does not upload or persist them. The converter rasterizes vector images and turns animated images into still images. The converted output does not keep image metadata.
+
+## Fix a file that could not be added {icon="photo-x"}
+
+Each file gets a card in the image list. While a file loads, its card shows the current step.
+A failed card keeps the file name, the reason, and a recovery hint. Other images remain available for export.
+
+:::reference
+- **Unsupported format:** Convert the file to JPEG, PNG, WebP, or HEIC first. Or choose another file.
+- **Photo too large:** When the HEIC decoder is needed, the limit is 50 MP and 64 MiB per photo. Make the photo smaller first, or choose another file.
+- **Image could not be read:** The file may be damaged. Export it again from the source app, or choose another file.
+- **HEIC decoder unavailable:** Reload the page and try again. Or convert the photo to JPEG first.
+:::
+
+Remove a failed card with its trash button. **Clear all** removes the whole list when loading has finished.

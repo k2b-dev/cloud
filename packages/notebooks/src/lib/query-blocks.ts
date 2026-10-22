@@ -16,12 +16,21 @@ export type NotebookBlockDiagnosticCode =
   | "too-many-items"
   | "unexpected-line"
   | "unknown-key"
-  | "unclosed-block";
+  | "unclosed-block"
+  | "unknown-block"
+  | "invalid-source"
+  | "duplicate-block"
+  | "unknown-column"
+  | "not-a-number"
+  | "chart-x-type"
+  | "chart-one-series"
+  | "chart-unsupported";
 
 export type NotebookBlockDiagnostic = {
   code: NotebookBlockDiagnosticCode;
   line: number;
   path: string;
+  params?: { name?: string; row?: number; limit?: number };
 };
 
 export type QueryScope = "notebook" | "children" | "descendants";
@@ -72,7 +81,7 @@ export type TocBlock = {
 };
 
 type Directive = {
-  type: "query" | "toc";
+  type: "query" | "toc" | "chart";
   body: string[];
   line: number;
   closed: boolean;
@@ -109,8 +118,8 @@ const diagnostic = (code: NotebookBlockDiagnosticCode, line: number, path: strin
   path,
 });
 
-const directives = (md: string): Directive[] => {
-  if (!/:::(?:query|toc)\b/.test(md)) return [];
+export const directives = (md: string): Directive[] => {
+  if (!/:::(?:query|toc|chart)\b/.test(md)) return [];
   const lines = md.split("\n");
   const literalLines = literalMarkdownLines(md);
   const offsets: number[] = [];
@@ -123,7 +132,7 @@ const directives = (md: string): Directive[] => {
   for (let i = 0; i < lines.length; i++) {
     if (literalLines.has(i)) continue;
     const text = lines[i]!;
-    const opener = text.match(/^ {0,3}:::(query|toc)[ \t]*\r?$/);
+    const opener = text.match(/^ {0,3}:::(query|toc|chart)[ \t]*\r?$/);
     if (!opener?.[1]) continue;
     const line = i + 1;
     const body: string[] = [];
@@ -152,7 +161,7 @@ const directives = (md: string): Directive[] => {
 export const extractNotebookDirectiveRanges = (md: string): Array<Pick<Directive, "type" | "line" | "from" | "to" | "closed">> =>
   directives(md).map(({ type, line, from, to, closed }) => ({ type, line, from, to, closed }));
 
-const parseScalar = (raw: string): QueryScalar | null => {
+export const parseScalar = (raw: string): QueryScalar | null => {
   const value = raw.trim();
   if (!value) return null;
   if (value === "true") return true;
@@ -178,7 +187,7 @@ const parseScalar = (raw: string): QueryScalar | null => {
   return value.length <= QUERY_MAX_STRING_LENGTH ? value : null;
 };
 
-const splitInlineList = (raw: string): string[] | null => {
+export const splitInlineList = (raw: string): string[] | null => {
   const value = raw.trim();
   if (!value.startsWith("[") || !value.endsWith("]")) return null;
   const inner = value.slice(1, -1).trim();
@@ -205,7 +214,7 @@ const splitInlineList = (raw: string): string[] | null => {
   return items;
 };
 
-const parseValue = (raw: string): ParsedValue | null => {
+export const parseValue = (raw: string): ParsedValue | null => {
   const list = splitInlineList(raw);
   if (list) {
     const values = list.map(parseScalar);

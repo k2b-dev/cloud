@@ -65,6 +65,12 @@ const portableSections = [
       page("number", "NumberInput", "ti ti-number", "Bounded and formatted numeric input with steppers and clear state."),
       page("boolean", "Boolean inputs", "ti ti-toggle-right", "Switch, checkbox, and descriptive checkbox-card controls."),
       page("select", "Selection controls", "ti ti-list-check", "Single, multi, and compact controlled selection."),
+      page(
+        "rich-select",
+        "RichSelect",
+        "ti ti-list-details",
+        "Dropdown picker whose rows explain each choice, with an optional preview of the consequences.",
+      ),
       page("choice-chips", "ChoiceChips", "ti ti-circle-dot", "A labeled row of quick single choices that scrolls instead of wrapping."),
       page(
         "autocomplete-select",
@@ -115,11 +121,22 @@ const portableSections = [
       page("copy-remove", "Copy and remove", "ti ti-copy", "Focused clipboard feedback and destructive icon actions."),
       page("menus", "Menus", "ti ti-menu-2", "Dropdown and context menus with keyboard and viewport behavior."),
       page("gestures", "GestureMenu", "ti ti-hand-finger", "Swipe, double-tap, and long-press shortcuts into an element's menu."),
+      page(
+        "drag-and-drop",
+        "Drag and drop",
+        "ti ti-drag-drop-2",
+        "Drag rows, tasks, and paragraphs onto targets, with hold-then-drag on touch and a keyboard path.",
+      ),
       page("filters", "Filters", "ti ti-filter", "Section-aware single and multi-select filtering."),
       page("segmented-control", "SegmentedControl", "ti ti-layout-grid", "A controlled radio-group toolbar with roving focus."),
       page("tabs", "Tabs", "ti ti-folders", "Accessible controlled peer views with compositional or data-driven items."),
       page("disclosure", "Disclosure", "ti ti-chevron-down", "Native optional-detail disclosure with controlled and uncontrolled state."),
-      page("toolbar", "Toolbar", "ti ti-tools", "Semantic action groups, separators, spacing, and responsive wrapping."),
+      page(
+        "toolbar",
+        "Toolbar",
+        "ti ti-tools",
+        "Semantic action groups, floating selection actions, priority overflow, and keyboard hints.",
+      ),
       page("spotlight", "Spotlight search", "ti ti-search", "Portable search launchers and keyboard shortcut behavior."),
     ],
   },
@@ -128,11 +145,12 @@ const portableSections = [
     title: "Layout",
     icon: "ti ti-layout",
     pages: [
+      page("print", "Browser printing", "ti ti-printer", "Print readable content or an application export hint without clipping."),
       page(
         "workspace",
         "AppWorkspace",
         "ti ti-layout-sidebar",
-        "Responsive application frame with navigation, work, detail, and drawer regions.",
+        "Responsive application frame with navigation, ordered levels, detail, and drawer regions.",
       ),
       page(
         "detail-panel",
@@ -164,6 +182,12 @@ const portableSections = [
         "ti ti-chevron-left",
         "A page title with its way up: a back link, or a path whose middle collapses only when it does not fit.",
       ),
+      page(
+        "resize-separator",
+        "ResizeSeparator",
+        "ti ti-separator-vertical",
+        "Keyboard and pointer resizing with application-owned size and optional collapse.",
+      ),
       page("panes", "Panes", "ti ti-columns", "Controlled serializable tabs and nested split layouts."),
       page("overview", "AppOverview", "ti ti-home", "Application landing page with primary and supporting panels."),
       page("settings-modal", "Settings", "ti ti-settings", "Accessible settings tabs, fields, and save state."),
@@ -188,6 +212,12 @@ const portableSections = [
     pages: [
       page("utilities", "Theme and styles", "ti ti-palette", "Scoped styles plus configurable font and semantic color tokens."),
       page(
+        "color",
+        "Colors and selection",
+        "ti ti-color-swatch",
+        "Color style guidelines: when color carries meaning, the app color of a selected row, view, or filter, and what stays blue or neutral.",
+      ),
+      page(
         "base-stylesheet",
         "Base stylesheet",
         "ti ti-file-type-css",
@@ -201,6 +231,7 @@ const portableSections = [
         "ti ti-id",
         "Links, element cards that keep their size in every state, and portable avatar identity.",
       ),
+      page("avatar-stack", "AvatarStack", "ti ti-users", "Overlapping faces that open the full list of people."),
       page("details", "Description list", "ti ti-list-details", "Semantic responsive key-value details with optional actions."),
       page("progress", "Progress", "ti ti-progress", "Determinate progress in compact sizes and semantic tones."),
       page("stats", "Statistics", "ti ti-chart-bar", "Labeled values, context, accents, trends, and grids."),
@@ -225,6 +256,7 @@ const portableSections = [
         "ti ti-bell",
         "Scoped transient feedback with updates, actions, and dismissal, plus screen-reader announcements.",
       ),
+      page("moved-hint", "MovedHint", "ti ti-arrow-move-right", "A one-time anchored hint to a familiar path’s new place."),
       page("tooltip", "Tooltip", "ti ti-message", "Concise accessible hints with viewport-aware positioning."),
       page(
         "hover-preview",
@@ -241,6 +273,7 @@ const portableSections = [
     title: "Content",
     icon: "ti ti-file-description",
     pages: [
+      page("map-view", "MapView", "ti ti-map", "Server-rendered places and routes with a progressively loaded map image."),
       page("kbd", "Kbd", "ti ti-keyboard", "Accessible platform and locale aware shortcut caps."),
       page("label-chip", "LabelChip", "ti ti-tag", "Control names inside running text."),
       page("steps", "Steps", "ti ti-list-numbers", "Ordered instructions with accent numbers."),
@@ -268,6 +301,7 @@ const portableSections = [
         "ti ti-message-2",
         "Grouped conversation messages with safe Markdown, quotes, reactions, threads, and attachments that never move the layout.",
       ),
+      page("reaction-bar", "ReactionBar", "ti ti-mood-plus", "Emoji reactions with counts, names, and an optional picker anchor."),
       page("structured-data", "Structured data", "ti ti-braces", "Formatted and raw JSON-like data disclosure."),
       page("media", "Media previews", "ti ti-photo", "Image lightboxes, video, PDF previews, and zoomable content."),
       page("files", "Files", "ti ti-folders", "Generic file trees, browser composition, and content-aware previews."),
@@ -369,7 +403,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 139;
+export const portableUiComponentCount = 155;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
@@ -409,9 +443,17 @@ export const hiddenUiCatalogExports = {
  * inferred from arbitrary prose mentions.
  */
 export const documentedOnlyUiCatalogExports = {
+  MapAttribution: "Linked credits for OpenMapTiles maps; documented with the host tile and glyph setup on the MapView page.",
+  mapAttribution: "Plain attribution data for custom map credits; documented on the MapView page.",
+  mapStyle: "OpenMapTiles style builder requiring host tile and glyph templates; documented on the MapView page.",
+  MapViewFrame: "Server-only and PDF rendering uses the shared MapView geometry; documented on the MapView page.",
+  truncateMiddle: "Documented ReferenceChip helper for shortening titles by whole graphemes.",
+  REFERENCE_CHIP_MAX_CHARACTERS: "Documented ReferenceChip maximum visible title length.",
+  prefersReducedMotion: "Documented OS and host preference helper in the Motion guide (/en/ui/motion).",
   formatShortcut: "Documented Kbd formatter for plain text labels and spoken names.",
   keyboardPlatform: "Documented Kbd platform detection for browser and server hosts.",
   reconcileChatMentions: "Documented Chat composer helper for preserving reference ranges during external text edits.",
+  matchesChatCommand: "Documented Chat composer helper that filters application-owned slash rows with the composer's own matching.",
   findNavigationItem: "Documented lookup for the latest enabled Navigation item.",
   parseSignature: "Documented server-side reader that rebuilds a submitted SignatureInput value.",
   ChartSnapshotView: "Documented prepared-chart surface composed by ChartExplorer.",
@@ -446,7 +488,7 @@ export const documentedOnlyUiCatalogExports = {
   abbreviations: "Documented completion dictionary used by editor examples.",
   activatePanesItem: "Documented pure Panes activation helper.",
   applyPanesIntent: "Documented programmatic Panes move and split helper.",
-  appWorkspaceLayoutStyle: "Documented AppWorkspace layout-state helper.",
+  appWorkspaceDetailElementId: "Documented AppWorkspace Detail DOM id helper for application controls.",
   appWorkspacePanelVariable: "Documented AppWorkspace panel-variable helper.",
   appWorkspaceResizeLimits: "Documented AppWorkspace resize helper.",
   canPreviewFile: "Documented FileView capability helper.",
@@ -456,10 +498,13 @@ export const documentedOnlyUiCatalogExports = {
   createPanesLayout: "Documented Panes initial-layout helper.",
   createTemplateEditorPanesLayout: "Documented TemplateEditor layout helper.",
   fitFloatingWindowRect: "Documented FloatingWindow geometry helper.",
+  fileTypeOf: "Documented FileTypeIcon color-family resolver in the file browser guide.",
   formatFileViewSize: "Documented FileView metadata formatter.",
   getFileViewPreviewKind: "Documented FileView preview classifier.",
   isStructuredDataValue: "Documented StructuredDataPreview boundary validator.",
+  parkWorkspaceDetailDrawers: "Documented host helper for parking AppWorkspace detail drawers.",
   installAppWorkspaceController: "Documented AppWorkspace resize-controller installer.",
+  watchAppHostWidth: "Documented AppWorkspace host-width watcher for workspace chrome that script decides.",
   installationPlatform: "Documented InstallGuide platform classifier.",
   isPointInsideToast: "Documented toast interaction helper.",
   markdownInfoBlocks: "Documented MarkdownView info-block extension for renderers with their own marked instance.",
@@ -487,16 +532,15 @@ export const documentedOnlyUiCatalogExports = {
   renderMarkdownLink: "Documented MarkdownView link markup for renderers that know more about a link than its URL.",
   renderSafeMarkdown: "Documented MarkdownView safe renderer.",
   resolveAppWorkspaceSidebarWidth: "Documented AppWorkspace sidebar-state helper.",
+  attachResizeSeparator: "Documented ResizeSeparator installer for server-rendered markup.",
   resizePanesSplit: "Documented programmatic Panes resize helper.",
   safeAppWorkspacePanelId: "Documented AppWorkspace panel-id helper.",
   sameSettingValue: "Documented Settings dirty-state helper.",
   scanMarkdownInfoBlock: "Documented MarkdownView info-block grammar for renderers that scan Markdown themselves.",
-  serializeAppWorkspaceLayoutState: "Documented AppWorkspace persisted-state serializer.",
   shouldCollapseAppWorkspaceSidebar: "Documented AppWorkspace responsive-state helper.",
   suppressTextSelection: "Documented AppWorkspace helper that keeps a custom pointer drag from selecting page text.",
   syncThemeColor: "Documented MobileShell status-bar helper that changes the live document.",
   PAGE_TRAIL_EVENT: "Documented PageTitle window event that follows each published page trail.",
-  PageTrailProvider: "Documented PageTitle host provider; the catalog shows titles with fixed trails instead.",
   followPageTrail: "Documented PageTitle helper that keeps server-rendered titles in step with a new trail.",
   installPageTitleController: "Documented PageTitle path-collapse controller for titles that never hydrate.",
   readPageTrail: "Documented PageTitle reader of the trail a host published.",

@@ -20,6 +20,9 @@ setDefaultTimeout(60_000);
 
 const USER_ID = "33333333-3333-4333-8333-333333333333";
 const OTHER_ID = "44444444-4444-4444-8444-444444444444";
+const AGENT_ID = "66666666-6666-4666-8666-666666666666";
+const KEY_ID = "77777777-7777-4777-8777-777777777777";
+const SYNC_AGENT_ID = "88888888-8888-4888-8888-888888888888";
 const CLAIM_ID = "11111111-1111-4111-8111-111111111111";
 
 const space = {
@@ -98,6 +101,7 @@ const item = (id: string, title: string) => ({
   endsAt: null,
   allDay: false,
   deadline: null,
+  deadlineAllDay: false,
   estimatedDurationMinutes: null,
   activeBlockerCount: 0,
   priority: null,
@@ -113,6 +117,12 @@ const item = (id: string, title: string) => ({
   tags: [],
 });
 const task = item("Item01", "Ship release");
+const event = {
+  ...item("Event1", "Team meeting"),
+  url: "https://meeting.example/join",
+  startsAt: "2026-10-14T08:00:00Z",
+  endsAt: "2026-10-14T09:00:00Z",
+};
 const blocker = item("Block1", "Approve scope");
 const attachment = {
   id: "File01",
@@ -183,10 +193,20 @@ beforeAll(async () => {
         return Response.json({ message: "No item" }, { status: 404 });
       }
       if (path === "/api/spaces/items/Item01") return json(task);
+      if (path === "/api/spaces/items/Event1") return json(event);
       if (path === "/api/spaces/items/Block1") return json(blocker);
       if (path.startsWith("/api/spaces/items/")) return Response.json({ message: "Item not found" }, { status: 404 });
       if (path === "/api/spaces/Space1") return json(spaceDetail);
-      if (path === "/api/spaces/Space1/assignable-users") return json([{ id: OTHER_ID, uid: "ada", displayName: "Ada", avatarHash: null }]);
+      if (path === "/api/spaces/Space1/assignable-users")
+        return json(
+          [
+            { id: OTHER_ID, kind: "user", uid: "ada", displayName: "Ada", avatarHash: null },
+            { id: AGENT_ID, kind: "service_account", uid: "Release Agent", displayName: "Release Agent", avatarHash: null },
+            // Only standalone and agent names are unique; a Space API key may share one with an agent.
+            { id: KEY_ID, kind: "service_account", uid: "Roadmap sync", displayName: "Roadmap sync", avatarHash: null },
+            { id: SYNC_AGENT_ID, kind: "service_account", uid: "roadmap sync", displayName: "roadmap sync", avatarHash: null },
+          ].filter((entry) => entry.kind === (url.searchParams.get("kind") ?? entry.kind)),
+        );
       if (path === "/api/spaces/Space1/items/filter") return json({ items: [task], total: 1, page: 1, pageSize: 50, totalPages: 1 });
       if (path === "/api/spaces/Space1/items") return json({ ...task, ...(body as object), id: "New002" });
       if (path === "/api/spaces/Space1/templates") return json(spaceDetail.templates);
@@ -204,18 +224,28 @@ beforeAll(async () => {
             assigneeIds: [],
             assignCreator: true,
             checklist: ["Collect numbers", "Send"],
-            ...(url.searchParams.get("noDate") ? {} : { deadline: "2026-10-14T15:00:00.000Z" }),
+            ...(url.searchParams.get("noDate") ? {} : { deadline: "2026-10-14" }),
           },
         });
       if (path === "/api/spaces/calendar")
         return json([
           { id: "Evt001", spaceId: "Space1", spaceName: "Roadmap", title: "Launch", startsAt: "a", endsAt: "b" },
           { id: "Evt002", spaceId: "Other1", spaceName: "Other", title: "Else", startsAt: "a", endsAt: "b" },
+          {
+            id: "Evt003:2026-10-21T09:00:00.000Z",
+            spaceId: "Space1",
+            spaceName: "Roadmap",
+            title: "Weekly",
+            startsAt: "2026-10-21T09:00:00.000Z",
+            endsAt: "2026-10-21T10:00:00.000Z",
+            isRecurringInstance: true,
+            recurringEventId: "Evt003",
+          },
         ]);
       if (path === "/api/spaces/calendar/overlap")
         return json([{ itemId: "Evt001", spaceId: "Space1", spaceName: "Roadmap", title: "Launch" }]);
 
-      const itemPath = path.match(/^\/api\/spaces\/Space1\/items\/(Item01|Block1)(\/.*)?$/);
+      const itemPath = path.match(/^\/api\/spaces\/Space1\/items\/(Item01|Block1|Event1)(\/.*)?$/);
       if (itemPath) {
         const suffix = itemPath[2] ?? "";
         if (suffix === "" && request.method === "PATCH") return json({ ...task, ...(body as object) });
@@ -230,6 +260,13 @@ beforeAll(async () => {
           return json(request.method === "DELETE" ? { message: "ok" } : { id: "Cmt001", ...(body as object) });
         if (suffix === "/attachments" && request.method === "GET") return json([attachment]);
         if (suffix === "/attachments") return json({ ...attachment, id: "File02", filename: "bug.png" });
+        if (suffix.startsWith("/reactions/"))
+          return json({
+            reactions:
+              request.method === "DELETE"
+                ? []
+                : [{ emoji: decodeURIComponent(suffix.slice("/reactions/".length)), count: 1, own: true, people: [] }],
+          });
         if (suffix === "/attachments/File01/content") return new Response("image-bytes");
         if (suffix === "/attachments/File01") return json({ message: "Attachment deleted" });
         if (["/work", "/claim", "/release", "/progress"].includes(suffix)) return json(work);
@@ -325,7 +362,7 @@ describe("addressing", () => {
 
   test("<space>: addresses the space itself", async () => {
     const { json } = await run(["show", "Roadmap:"]);
-    expect(json).toEqual(spaceDetail);
+    expect(json).toEqual({ ...spaceDetail, permalink: `${base}/open/spaces.space/~${spaceDetail.id}` });
   });
 
   test("<space>: names the enabled automatic columns in text output", async () => {
@@ -337,9 +374,23 @@ describe("addressing", () => {
 });
 
 describe("browse", () => {
+  test("event items keep their URL and gain a permalink in JSON and JSONL", async () => {
+    for (const output of ["--json", "--jsonl"]) {
+      const result = await cld([output, "spaces", "show", event.id]);
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        id: event.id,
+        url: event.url,
+        permalink: `${base}/open/spaces.item/~${event.id}`,
+      });
+    }
+  });
+
   test("ls lists spaces, filtered by -q", async () => {
     expect((await run(["ls"])).json).toHaveLength(2);
-    expect((await run(["ls", "--q", "hir"])).json).toEqual([{ ...space, id: "Space2", name: "Hiring" }]);
+    expect((await run(["ls", "--q", "hir"])).json).toEqual([
+      { ...space, id: "Space2", name: "Hiring", permalink: `${base}/open/spaces.space/~Space2` },
+    ]);
   });
 
   test("ls <space> sends every filter through the item filter", async () => {
@@ -404,6 +455,33 @@ describe("browse", () => {
 });
 
 describe("changes", () => {
+  test("rejects escaped line breaks in inline text before any request", async () => {
+    for (const { args, field } of [
+      { args: ["add", "Roadmap:Write notes", "--description", "Caption:\\nText"], field: "description" },
+      { args: ["set", "Item01", "--description", "Caption:\\nText"], field: "description" },
+      { args: ["comments", "add", "Item01", "--content", "Caption:\\nText"], field: "content" },
+      { args: ["comments", "update", "Item01", "Cmt001", "--content", "Caption:\\nText"], field: "content" },
+      { args: ["done", "Item01", "--result", "Caption:\\nText"], field: "result" },
+      { args: ["progress", "Item01", "--content", "Caption:\\nText"], field: "content" },
+    ]) {
+      const result = await failing(args);
+      expect(result.stderr).toContain(
+        `--${field} contains "\\n" as two characters, not a line break. Pass multi-line text with --from <file|-> (for example a heredoc).`,
+      );
+      expect(result.requests).toEqual([]);
+    }
+  });
+
+  test("preserves real inline line breaks and literal file content", async () => {
+    const description = "Caption:\nText";
+    const added = await run(["add", "Roadmap:Write notes", "--description", description]);
+    expect(writes(added.requests)[0]?.body).toMatchObject({ description });
+    const path = join(dir, "literal-description.md");
+    await Bun.write(path, "Caption:\\nText");
+    const from = await run(["add", "Roadmap:Write notes", "--from", path]);
+    expect(writes(from.requests)[0]?.body).toMatchObject({ description: "Caption:\\nText" });
+  });
+
   test("create, add, set, mv and rm send the documented payloads", async () => {
     expect((await run(["create", "Hiring", "--description", "People"])).requests[0]?.body).toEqual({
       name: "Hiring",
@@ -434,7 +512,7 @@ describe("changes", () => {
       columnId: "Col001",
       title: "Write notes",
       description: "Long text",
-      deadline: "2026-10-20T15:00:00.000Z",
+      deadline: "2026-10-20",
       estimatedDurationMinutes: 90,
       assigneeIds: [USER_ID, OTHER_ID],
       tagIds: ["Tag001"],
@@ -476,13 +554,40 @@ describe("changes", () => {
     expect(writes((await run(["assign", "Item01", "none"])).requests)[0]?.body).toEqual({ assigneeIds: [] });
     expect((await failing(["assign", "Item01", "nobody"])).stderr).toContain('"nobody"');
 
-    expect(writes((await run(["due", "Item01", "2026-10-20"])).requests)[0]?.body).toEqual({ deadline: "2026-10-20T15:00:00.000Z" });
+    expect(writes((await run(["due", "Item01", "2026-10-20"])).requests)[0]?.body).toEqual({ deadline: "2026-10-20" });
     expect(writes((await run(["due", "Item01", "none"])).requests)[0]?.body).toEqual({ deadline: null });
+  });
+
+  test("assign resolves a service account name case-insensitively and keeps usernames exact", async () => {
+    const result = await run(["assign", "Item01", "release AGENT"]);
+    expect(writes(result.requests)[0]?.body).toEqual({ assigneeIds: [AGENT_ID] });
+    expect((await failing(["assign", "Item01", "ADA"])).stderr).toContain(
+      "Use me, an ID, a username, or a service account name with access",
+    );
+    // A name that several service accounts share never picks one of them; it asks for the ID and changes nothing.
+    const ambiguous = await failing(["assign", "Item01", "Roadmap Sync"]);
+    expect(ambiguous.stderr).toContain(
+      `Several service accounts are named "Roadmap Sync" in this space. Use the ID of the one you mean: ${KEY_ID}, ${SYNC_AGENT_ID}.`,
+    );
+    expect(writes(ambiguous.requests)).toEqual([]);
   });
 
   test("deps lists both directions and adds or removes blockers by address", async () => {
     const listed = await run(["deps", "Item01"]);
-    expect(listed.json).toEqual({ item: { id: "Item01", title: "Ship release" }, blockers, blocks: blocksPage });
+    expect(listed.json).toEqual({
+      item: { id: "Item01", title: "Ship release", permalink: `${base}/open/spaces.item/~Item01` },
+      blockers: blockers.map((entry) => ({
+        ...entry,
+        blocker: { ...entry.blocker, permalink: `${base}/open/spaces.item/~${entry.blocker.id}` },
+      })),
+      blocks: {
+        ...blocksPage,
+        items: blocksPage.items.map((entry) => ({
+          ...entry,
+          dependent: { ...entry.dependent, permalink: `${base}/open/spaces.item/~${entry.dependent.id}` },
+        })),
+      },
+    });
     expect(writes(listed.requests)).toEqual([]);
 
     const changed = await run(["deps", "Item01", "--add", "Roadmap:Approve scope", "--rm", "Block1"]);
@@ -510,8 +615,8 @@ describe("changes", () => {
     const exact = await run(["set", "Item01", "--deadline", "2026-10-20T10:00:00+02:00"]);
     expect(writes(exact.requests)[0]?.body).toEqual({ deadline: "2026-10-20T08:00:00.000Z" });
 
-    // Impossible dates fail instead of rolling over; years before 100 would turn into 19xx.
-    for (const date of ["2026-02-30", "0026-10-20"]) {
+    // Impossible calendar dates fail instead of rolling over.
+    for (const date of ["2026-02-30", "2026-13-01"]) {
       const invalid = await failing(["due", "Item01", date]);
       expect(invalid.stderr).toContain("<date> must be an ISO datetime or a YYYY-MM-DD date.");
       expect(writes(invalid.requests)).toEqual([]);
@@ -520,8 +625,28 @@ describe("changes", () => {
 });
 
 describe("secondary resources", () => {
+  test("reaction intents encode emoji and print the fresh summary", async () => {
+    for (const emoji of ["👍🏽", "❤️"]) {
+      const added = await run(["reactions", "add", "Item01", emoji]);
+      expect(writes(added.requests)[0]).toMatchObject({
+        method: "PUT",
+        path: `/api/spaces/Space1/items/Item01/reactions/${encodeURIComponent(emoji)}`,
+      });
+      expect(added.json).toEqual({ reactions: [{ emoji, count: 1, own: true, people: [] }] });
+      const removed = await run(["reactions", "remove", "Item01", emoji]);
+      expect(writes(removed.requests)[0]).toMatchObject({
+        method: "DELETE",
+        path: `/api/spaces/Space1/items/Item01/reactions/${encodeURIComponent(emoji)}`,
+      });
+      expect(removed.json).toEqual({ reactions: [] });
+    }
+  });
+
   test("comments list, add, update and delete", async () => {
-    expect((await run(["comments", "list", "Item01", "--page", "2", "--per-page", "10"])).json).toEqual(commentsPage);
+    expect((await run(["comments", "list", "Item01", "--page", "2", "--per-page", "10"])).json).toEqual({
+      ...commentsPage,
+      items: commentsPage.items.map((comment) => ({ ...comment, permalink: `${base}/open/spaces.comment/~${comment.id}` })),
+    });
     expect(writes((await run(["comments", "add", "Item01", "--content", "Ready"])).requests)[0]?.body).toEqual({ content: "Ready" });
     const updated = await run(["comments", "update", "Item01", "Cmt001", "--content", "Edited"]);
     expect(writes(updated.requests)[0]).toMatchObject({ method: "PATCH", path: "/api/spaces/Space1/items/Item01/comments/Cmt001" });
@@ -614,7 +739,28 @@ describe("secondary resources", () => {
 
   test("calendar, overlap and invitations", async () => {
     const calendar = await run(["calendar", "2026-10-01", "2026-10-31", "--space", "Roadmap"]);
-    expect(calendar.json).toEqual([{ id: "Evt001", spaceId: "Space1", spaceName: "Roadmap", title: "Launch", startsAt: "a", endsAt: "b" }]);
+    expect(calendar.json).toEqual([
+      {
+        id: "Evt001",
+        spaceId: "Space1",
+        spaceName: "Roadmap",
+        title: "Launch",
+        startsAt: "a",
+        endsAt: "b",
+        permalink: `${base}/open/spaces.item/~Evt001`,
+      },
+      {
+        id: "Evt003:2026-10-21T09:00:00.000Z",
+        spaceId: "Space1",
+        spaceName: "Roadmap",
+        title: "Weekly",
+        startsAt: "2026-10-21T09:00:00.000Z",
+        endsAt: "2026-10-21T10:00:00.000Z",
+        isRecurringInstance: true,
+        recurringEventId: "Evt003",
+        permalink: `${base}/open/spaces.item/~Evt003`,
+      },
+    ]);
     expect(calendar.requests.at(-1)?.path).toBe(
       `/api/spaces/calendar?${new URLSearchParams({ from: "2026-09-30T22:00:00.000Z", to: "2026-10-31T23:00:00.000Z" })}`,
     );
@@ -642,7 +788,7 @@ describe("templates", () => {
     expect(shown).toMatchObject({ id: "Tpl002", timeZone: "Europe/Berlin" });
     expect(shown.proposals).toHaveLength(1);
     const text = await cld(["spaces", "templates", "ls", "Roadmap"]);
-    expect(text.stdout).toContain("Wed or Thu · 17:00");
+    expect(text.stdout).toContain("Wed or Thu · all day");
     expect(text.stdout).toContain("In 2 days · 10:00");
   });
 
@@ -670,7 +816,7 @@ describe("templates", () => {
       assigneeIds: [],
       assignCreator: true,
       checklist: ["Collect numbers", "Send"],
-      deadline: "2026-10-14T15:00:00.000Z",
+      deadline: "2026-10-14",
     });
 
     const own = await run(["add", "Roadmap:Own title", "--template", "Tpl001", "--no-date", "--tag", "Backend", "--assignee", "ada"]);
@@ -691,7 +837,7 @@ describe("templates", () => {
     expect(dated.requests.find((entry) => entry.path.includes("/draft"))?.path).toBe(
       "/api/spaces/Space1/templates/Tpl001/draft?date=2026-10-23&timeZone=Europe%2FBerlin",
     );
-    expect(writes(dated.requests)[0]?.body).toMatchObject({ deadline: "2026-10-23T15:00:00.000Z" });
+    expect(writes(dated.requests)[0]?.body).toMatchObject({ deadline: "2026-10-23" });
 
     const halfRange = await failing(["add", "Roadmap", "--template", "Tpl002", "--starts-at", "2026-10-14T08:30:00Z"]);
     expect(halfRange.stderr).toContain("--ends-at");

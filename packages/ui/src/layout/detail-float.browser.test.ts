@@ -2,15 +2,15 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "detail-float.fixture.ts");
 const fixture = `
-import { createSignal } from "solid-js";
+import { createEffect, createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { AppWorkspace, DetailPanel, DataTable, PageTrailProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { AppWorkspace, appWorkspaceDetailElementId, DetailPanel, DataTable, MovedHint, PageTrailProvider } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const params = new URLSearchParams(document.body.dataset.params);
 const [open, setOpen] = createSignal(params.has("initial"));
 let selected = 0;
@@ -29,6 +29,28 @@ const mainContent = () => {
   toolbar.id = "toolbar";
   toolbar.textContent = "Fixed toolbar";
   toolbar.style.cssText = "height:40px;flex-shrink:0";
+  if (params.has("request-control")) {
+    const toggle = document.createElement("button");
+    toggle.id = "reader-toggle";
+    toggle.textContent = "Reader";
+    toggle.setAttribute("aria-controls", appWorkspaceDetailElementId("record"));
+    createEffect(() => toggle.setAttribute("aria-pressed", String(open())));
+    toggle.addEventListener("click", () => {
+      document.body.dataset.toggleClicks = String(Number(document.body.dataset.toggleClicks || 0) + 1);
+      setOpen(value => !value);
+    });
+    toolbar.append(toggle);
+  }
+  let hint = null;
+  if (params.has("moved-hint")) {
+    const target = document.createElement("button");
+    target.textContent = "Filters";
+    toolbar.append(target);
+    hint = createComponent(MovedHint, {
+      open:true, target:() => target, onDismiss:() => { document.body.dataset.hintDismissed = "true"; },
+      action:{label:"Show filters",href:"#filters"}, children:"Tags moved to the filters.",
+    });
+  }
   if (params.has("table")) {
     return [toolbar, createComponent(DataTable, {
       class:"fixture-table", surface:"paper", fillHeight:true, scrollClass:"k2b-detail-trail",
@@ -45,7 +67,7 @@ const mainContent = () => {
       renderCell:({row,col,value}) => col.id === "0" ? button(row.index) : col.id === "date" ? row.date.toISOString().slice(0,10) : value,
     })];
   }
-  if (!params.has("trail")) return [toolbar, ...Array.from({length:40}, (_, index) => button(index))];
+  if (!params.has("trail")) return [toolbar, hint, ...Array.from({length:40}, (_, index) => button(index))];
   const trail = document.createElement("div");
   trail.id = "board";
   trail.className = "k2b-detail-trail fixture-board";
@@ -63,9 +85,9 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Devices",ancesto
   get children() { return [
     createComponent(AppWorkspace.Sidebar, { id:"navigation", maxSize:960, get children() { return createComponent(AppWorkspace.SidebarDesktop, {get children() {return createComponent(AppWorkspace.SidebarItem, {href:"/devices", active:true, children:"Devices"});}}); } }),
     createComponent(AppWorkspace.Content, { get children() { return [
-      createComponent(AppWorkspace.Main, { class:"fixture-main", scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
+      createComponent(AppWorkspace.Main, { class:"fixture-main", minWidth:params.has("moved-hint") || params.has("request-control") ? 760 : undefined, scroll:!params.has("trail") && !params.has("table"), get children() { return mainContent(); } }),
       createComponent(AppWorkspace.Detail, {
-        id:"record", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {
+        id:"record", onOpen:params.has("reopen") ? () => setOpen(true) : undefined, available:!params.has("unavailable"), openOnChoice:!params.has("request-control"), phone:params.has("phone-page") ? "page" : "sheet", width:params.get("width") || "md", get open() { return open(); }, onClose:params.has("fixed") ? undefined : close, onStep:direction => {
           document.body.dataset.steps = String(Number(document.body.dataset.steps || 0) + direction);
           const count = document.querySelectorAll('[id^="row-"]').length;
           selected = Math.max(0, Math.min(count - 1, selected + direction));
@@ -82,6 +104,12 @@ render(() => createComponent(PageTrailProvider, { trail:{title:"Devices",ancesto
 }); } }), document.getElementById("app"));
 const workspace = document.querySelector("[data-k2b-app-workspace]");
 const aside = document.querySelector(".k2b-app-workspace__detail");
+if (params.has("island")) {
+  const island = document.createElement("solid-island");
+  const content = aside.parentElement;
+  island.append(document.querySelector("[data-app-workspace-detail-toggle]"), aside.previousElementSibling, aside);
+  content.append(island);
+}
 document.body.dataset.initialMotion = String(workspace.hasAttribute("data-workspace-motion"));
 document.body.dataset.initialTransition = getComputedStyle(aside).transitionDuration;
 document.body.dataset.initialWidth = String(aside.getBoundingClientRect().width);
@@ -107,7 +135,7 @@ afterAll(async () => {
 const load = async (width: number, height: number, params = "", options: BrowserContextOptions = {}) => {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce", ...options });
   await page.setContent(
-    // Flush by default, as Cloud's shell is up to 1535 px; `card` frames the workspace as Cloud does from 1536 px.
+    // Flush by default, as Cloud's shell is up to 1023 px; `card` frames the workspace as Cloud does from 1024 px.
     `<!doctype html><html lang="en"><head><style>${css}</style><style>${
       new URLSearchParams(params).has("card")
         ? "#app{box-sizing:border-box;padding:0.5rem}"
@@ -303,15 +331,15 @@ describe("floating workspace detail", () => {
       await page.close();
     }
   });
-  test("a narrow content area keeps Main and Detail at their minimum, overlapping", async () => {
-    const page = await load(1024, 900, "sidebar=500&persisted=640");
+  test("a narrow content area parks Detail while Main keeps the full content width", async () => {
+    const page = await load(1024, 900, "sidebar=500&persisted=640&initial=1");
     try {
-      await openRow(page);
+      await page.waitForFunction(() => getComputedStyle(document.querySelector(".k2b-app-workspace__detail")!).display === "none");
+      expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(true);
       const shape = await geometry(page);
-      expectInset(shape);
-      expect(shape.main.width).toBeCloseTo(320, 1);
-      expect(shape.detail.width).toBeCloseTo(320, 1);
-      expect(shape.detail.left).toBeLessThan(shape.main.right);
+      expect(shape.main.width).toBeGreaterThanOrEqual(320);
+      expect(shape.main.width).toBeCloseTo(shape.content.width, 1);
+      expect(await page.locator(".k2b-app-workspace__detail").getAttribute("hidden")).toBeNull();
     } finally {
       await page.close();
     }
@@ -402,6 +430,7 @@ describe("floating workspace detail", () => {
         });
         expect(clipping).toEqual([]);
         await page.locator("#close").click();
+        await settled(page);
         const closed = await table();
         expect(closed.right).toBeCloseTo(shape.root.right - shape.border - 8, 1);
         expect(closed.width).toBeCloseTo(closed.client, 0);
@@ -559,13 +588,15 @@ describe("floating workspace detail", () => {
     }
   });
   for (const fixed of [false, true]) {
-    test(`820×1180 touch tablet ${fixed ? "reflows a permanent panel" : "overlays a closable drawer"}`, async () => {
+    test(`820×1180: a fitting ${fixed ? "permanent" : "closable"} detail is a column even with touch`, async () => {
       const page = await load(820, 1180, fixed ? "fixed=1" : "", { hasTouch: true });
       try {
         await openRow(page);
         const shape = await geometry(page);
         expectInset(shape);
-        expect(shape.main.width).toBeCloseTo(fixed ? shape.root.width - shape.detail.width - 8 : shape.content.width, 1);
+        expect(shape.main.width).toBeCloseTo(shape.root.width - shape.detail.width - 8, 1);
+        expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(false);
+        expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBeNull();
       } finally {
         await page.close();
       }
@@ -573,9 +604,16 @@ describe("floating workspace detail", () => {
   }
   for (const params of ["trail=1", "table=1&wide=1"]) {
     test(`820×1180 touch tablet: the last ${params.startsWith("trail") ? "card" : "column"} scrolls out from under the drawer`, async () => {
-      const page = await load(820, 1180, params, { hasTouch: true });
+      const page = await load(820, 1180, `${params}&width=xl&initial=1`, { hasTouch: true });
       try {
-        await openRow(page);
+        expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
+        await page.locator("[data-app-workspace-detail-toggle]").click();
+        expect(await page.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBe("open");
+        await settled(page);
+        const space = await page
+          .locator(".k2b-app-workspace__content")
+          .evaluate((element) => Number.parseFloat(getComputedStyle(element).getPropertyValue("--k2b-detail-space")));
+        expect(space).toBeCloseTo((await page.locator(".k2b-app-workspace__detail").boundingBox())!.width, 1);
         const scroller = params.startsWith("trail") ? "#board" : ".k2b-table-wrap";
         const shape = await page.locator(scroller).evaluate((element, board) => {
           element.scrollLeft = element.scrollWidth;
@@ -594,6 +632,150 @@ describe("floating workspace detail", () => {
       }
     });
   }
+  test("390×844: a phone page fills the viewport without sheet space or gestures and Escape closes it", async () => {
+    const page = await load(390, 844, "phone-page=1", { hasTouch: true });
+    try {
+      const mainState = () =>
+        page.locator(".k2b-app-workspace__main").evaluate((main) => ({
+          height: main.clientHeight,
+          scrollHeight: main.scrollHeight,
+          scrollTop: main.scrollTop,
+          padding: getComputedStyle(main).scrollPaddingBottom,
+          after: getComputedStyle(main, "::after").content,
+        }));
+      await page.locator("#row-30").scrollIntoViewIfNeeded();
+      const before = await mainState();
+      await page.locator("#row-30").click();
+      await settlePanel(page);
+      const shape = await geometry(page);
+      expect(shape.detail).toMatchObject({ top: 0, left: 0, width: 390, height: 844, bottom: 844 });
+      expect(shape.full).toBeNull();
+      expect(await page.locator(".k2b-app-workspace__detail-grabber").isVisible()).toBe(false);
+      expect(await mainState()).toEqual(before);
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Selected record");
+      const header = page.locator(".k2b-detail-panel__header");
+      expect(await header.evaluate((element) => getComputedStyle(element).touchAction)).not.toBe("none");
+      const box = await header.boundingBox();
+      const x = box!.x + 30,
+        y = box!.y + box!.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, y + 140, { steps: 8 });
+      // settled: inspect the active pointer gesture before release; the phone page must not move.
+      expect((await geometry(page)).detail).toEqual(shape.detail);
+      await page.mouse.up();
+      await settlePanel(page);
+      expect((await geometry(page)).detail).toEqual(shape.detail);
+      expect(await page.locator("body").getAttribute("data-closes")).toBeNull();
+      if (browserName !== "webkit") {
+        for (const type of ["touchstart", "touchmove", "touchend"]) {
+          await header.evaluate((element, type) => {
+            const sample = new Touch({ identifier: 1, target: element, clientX: 100, clientY: type === "touchstart" ? 20 : 180 });
+            element.dispatchEvent(
+              new TouchEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                touches: type === "touchend" ? [] : [sample],
+                changedTouches: [sample],
+              }),
+            );
+          }, type);
+        }
+        await settlePanel(page);
+        expect((await geometry(page)).detail).toEqual(shape.detail);
+        expect(await page.locator("body").getAttribute("data-closes")).toBeNull();
+      }
+      await page.keyboard.press("Escape");
+      await settlePanel(page);
+      expect(await page.locator("body").getAttribute("data-closes")).toBe("1");
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("row-30");
+      expect(await page.locator("[data-k2b-app-workspace] [inert]").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: a phone page isolates workspace focus and releases only its own inert on Escape", async () => {
+    const page = await load(390, 844, "phone-page=1");
+    try {
+      // The application's own inert must survive opening and closing the page.
+      await page.locator(".k2b-app-workspace__sidebar").evaluate((sidebar) => sidebar.setAttribute("inert", ""));
+      await openRow(page);
+      expect(await page.locator(".k2b-app-workspace__main").getAttribute("inert")).toBe("");
+      for (const region of await page.locator(".k2b-app-workspace__sidebar, .k2b-app-workspace__head").all()) {
+        expect(await region.getAttribute("inert")).toBe("");
+      }
+      const detail = page.locator(".k2b-app-workspace__detail");
+      // The page opens with focus on its title, which is no tab stop; Shift+Tab as the first key stays inside too.
+      await page.waitForFunction(() => document.activeElement?.textContent === "Selected record");
+      await page.keyboard.press("Shift+Tab");
+      expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
+      // Focus on the body, as after loading with the page open, enters the page in both directions, past chrome
+      // outside the workspace that the page covers.
+      await page.evaluate(() => {
+        const chrome = (id: string) => Object.assign(document.createElement("button"), { id, textContent: id });
+        document.body.prepend(chrome("chrome-before"));
+        document.body.append(chrome("chrome-after"));
+      });
+      for (const key of ["Tab", "Shift+Tab"]) {
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+        await page.keyboard.press(key);
+        expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
+      }
+      await settled(page);
+      await detail.evaluate((aside) => {
+        const stops = Array.from(
+          aside.querySelectorAll<HTMLElement>("a[href], button:not([disabled]), input:not([disabled]), [tabindex]"),
+        ).filter((element) => element.tabIndex >= 0 && element.getClientRects().length > 0 && !element.closest("[inert]"));
+        stops.at(-1)!.focus();
+      });
+      for (const key of ["Tab", "Tab", "Shift+Tab", "F6"]) {
+        await page.keyboard.press(key);
+        expect(await detail.evaluate((aside) => aside.contains(document.activeElement))).toBe(true);
+      }
+      await page.keyboard.press("Escape");
+      await settlePanel(page);
+      expect(await detail.isVisible()).toBe(false);
+      expect(
+        await page.locator("[data-k2b-app-workspace] [inert]").evaluateAll((regions) => regions.map((region) => region.className)),
+      ).toEqual([await page.locator(".k2b-app-workspace__sidebar").getAttribute("class")]);
+      expect(await page.evaluate(() => document.activeElement?.id)).toBe("row-0");
+    } finally {
+      await page.close();
+    }
+  });
+  test("390×844: resizing an open phone page to desktop releases workspace inert", async () => {
+    const page = await load(390, 844, "phone-page=1");
+    try {
+      await openRow(page);
+      expect(await page.locator(".k2b-app-workspace__main").getAttribute("inert")).toBe("");
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.waitForFunction(() => !document.querySelector("[data-k2b-app-workspace] [inert]"));
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+  test("1440px: phone page detail keeps the normal floating desktop geometry", async () => {
+    const sheet = await load(1440, 900);
+    const page = await load(1440, 900, "phone-page=1");
+    try {
+      await openRow(sheet);
+      await openRow(page);
+      expect((await geometry(page)).detail).toEqual((await geometry(sheet)).detail);
+      expect((await geometry(page)).main).toEqual((await geometry(sheet)).main);
+      expect((await geometry(page)).detail.top).toBe(8);
+      expect(await page.locator("[data-k2b-app-workspace] [inert]").count()).toBe(0);
+      expect(await page.locator(".k2b-app-workspace__detail-grabber").isVisible()).toBe(false);
+      await page.keyboard.press("Escape");
+      await settlePanel(page);
+      expect(await page.locator("body").getAttribute("data-closes")).toBe("1");
+    } finally {
+      await sheet.close();
+      await page.close();
+    }
+  });
   test("390×844: the half sheet sits on the window's bottom edge, Main's last row scrolls above it, and the grabber toggles detents", async () => {
     const page = await load(390, 844);
     try {
@@ -766,6 +948,90 @@ describe("floating workspace detail", () => {
     }
   });
 
+  for (const activation of ["pointer", "Enter", "Space"] as const) {
+    test(`a Main toggle's ${activation} activation opens and parks an already-open waiting Detail`, async () => {
+      const page = await load(1194, 900, "initial=1&request-control=1");
+      try {
+        const detail = page.locator(".k2b-app-workspace__detail");
+        const control = page.locator("#reader-toggle");
+        expect(await control.getAttribute("aria-controls")).toBe(await detail.getAttribute("id"));
+        expect(await detail.isVisible()).toBe(false);
+        expect(await control.getAttribute("aria-expanded")).toBe("false");
+        const activate = async () => {
+          if (activation === "pointer") await control.click();
+          else {
+            await control.focus();
+            await page.keyboard.press(activation);
+          }
+          await settlePanel(page);
+        };
+        await activate();
+        expect(await detail.isVisible()).toBe(true);
+        expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
+        expect(await control.getAttribute("aria-expanded")).toBe("true");
+        expect(await control.getAttribute("aria-pressed")).toBe("true");
+        expect(await page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent)).toBe(
+          activation === "pointer" ? "reader-toggle" : "Selected record",
+        );
+        await activate();
+        expect(await detail.isVisible()).toBe(false);
+        expect(await control.getAttribute("aria-expanded")).toBe("false");
+        await activate();
+        await detail.locator("h2").focus();
+        await page.keyboard.press("Escape");
+        await settlePanel(page);
+        expect(await detail.isVisible()).toBe(false);
+        expect(await control.getAttribute("aria-expanded")).toBe("false");
+        expect(await page.locator("[data-app-workspace-detail-toggle]").evaluate((element) => element === document.activeElement)).toBe(
+          true,
+        );
+        expect(await detail.getAttribute("hidden")).toBeNull();
+        expect(await control.getAttribute("aria-pressed")).toBe("true");
+        expect(await page.locator("body").getAttribute("data-toggle-clicks")).toBeNull();
+
+        await page.setViewportSize({ width: 1600, height: 900 });
+        await page.waitForFunction(() => !document.getElementById("reader-toggle")!.hasAttribute("aria-expanded"));
+        expect(await detail.isVisible()).toBe(true);
+        await control.click();
+        expect(await detail.getAttribute("hidden")).not.toBeNull();
+        expect(await control.getAttribute("aria-pressed")).toBe("false");
+        expect(await page.locator("body").getAttribute("data-toggle-clicks")).toBe("1");
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  test("an open MovedHint leaves detail J/K stepping and Escape drawer parking available", async () => {
+    const page = await load(1194, 900, "initial=1&moved-hint=1");
+    try {
+      const detail = page.locator(".k2b-app-workspace__detail");
+      const toggle = page.locator("[data-app-workspace-detail-toggle]");
+      const hint = page.locator(".k2b-moved-hint");
+      await page.waitForFunction(() => document.querySelector(".k2b-moved-hint")?.matches(":popover-open"));
+      await toggle.focus();
+      await page.keyboard.press("Enter");
+      expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
+      await detail.locator("h2").focus();
+      await page.keyboard.press("j");
+      expect(await page.locator("body").getAttribute("data-steps")).toBe("1");
+      await page.keyboard.press("k");
+      expect(await page.locator("body").getAttribute("data-steps")).toBe("0");
+      expect(await hint.evaluate((element) => element.matches(":popover-open"))).toBe(true);
+      await detail.locator("h2").focus();
+      expect(await detail.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+      await page.keyboard.press("Escape");
+      expect(await detail.isVisible()).toBe(false);
+      expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(await detail.getAttribute("hidden")).toBeNull();
+      expect(await page.locator("body").getAttribute("data-closes")).toBeNull();
+      expect(await page.locator("body").getAttribute("data-hint-dismissed")).toBeNull();
+      expect(await hint.evaluate((element) => element.matches(":popover-open"))).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
   test("J/K step selection and F6 switches focus between the item and detail title", async () => {
     const page = await load(1366, 900);
     try {
@@ -810,72 +1076,226 @@ describe("floating workspace detail", () => {
 
   // WebKit cannot construct Touch objects in this fixture. Geometry, mouse
   // drags, keyboard interaction, and detents still run in both engines.
-  test.skipIf(browserName === "webkit")("touch content pulls a full sheet to half and drawer swipes respect scroll owners", async () => {
-    const touch = async (page: Page, type: string, x: number, y: number, target: string) =>
-      page.evaluate(
-        ({ type, x, y, target }) => {
-          const element = document.querySelector(target)!;
-          const sample = new Touch({ identifier: 1, target: element, clientX: x, clientY: y });
-          element.dispatchEvent(
-            new TouchEvent(type, {
-              bubbles: true,
-              cancelable: true,
-              touches: type === "touchend" || type === "touchcancel" ? [] : [sample],
-              changedTouches: [sample],
-            }),
-          );
-        },
-        { type, x, y, target },
-      );
-    const phone = await load(390, 844, "initial=1", { hasTouch: true });
+  test.skipIf(browserName === "webkit")(
+    "touch content pulls a full sheet to half and drawer swipes respect scroll owners and park",
+    async () => {
+      const touch = async (page: Page, type: string, x: number, y: number, target: string) =>
+        page.evaluate(
+          ({ type, x, y, target }) => {
+            const element = document.querySelector(target)!;
+            const sample = new Touch({ identifier: 1, target: element, clientX: x, clientY: y });
+            element.dispatchEvent(
+              new TouchEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                touches: type === "touchend" || type === "touchcancel" ? [] : [sample],
+                changedTouches: [sample],
+              }),
+            );
+          },
+          { type, x, y, target },
+        );
+      const phone = await load(390, 844, "initial=1", { hasTouch: true });
+      try {
+        await phone.locator(".k2b-app-workspace__detail-grabber").click();
+        await settlePanel(phone);
+        await touch(phone, "touchstart", 100, 100, "#detail-text");
+        await touch(phone, "touchmove", 100, 200, "#detail-text");
+        await touch(phone, "touchend", 100, 200, "#detail-text");
+        await settlePanel(phone);
+        expect((await geometry(phone)).full).toBeNull();
+      } finally {
+        await phone.close();
+      }
+      // An xl Detail waits at 820 px; its drawer is open on request.
+      const drawer = await load(820, 1180, "initial=1&width=xl", { hasTouch: true });
+      try {
+        await drawer.locator("[data-app-workspace-detail-toggle]").click();
+        expect(await drawer.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBe("open");
+        await drawer.locator("#detail-text").evaluate((element) => {
+          const scroller = document.createElement("div");
+          scroller.id = "horizontal-owner";
+          scroller.style.cssText = "width:200px;overflow-x:auto";
+          const wide = document.createElement("div");
+          wide.id = "horizontal-content";
+          wide.style.cssText = "width:1000px;height:40px";
+          wide.textContent = "Scrollable content";
+          scroller.append(wide);
+          element.append(scroller);
+          scroller.scrollLeft = 100;
+        });
+        // A slider owns its horizontal drag.
+        await drawer.locator("#detail-text").evaluate((element) => {
+          const slider = document.createElement("input");
+          slider.id = "slider";
+          slider.type = "range";
+          element.append(slider);
+        });
+        await touch(drawer, "touchstart", 400, 100, "#slider");
+        await touch(drawer, "touchmove", 520, 100, "#slider");
+        await touch(drawer, "touchend", 520, 100, "#slider");
+        expect(await drawer.locator("body").getAttribute("data-closes")).toBeNull();
+        await touch(drawer, "touchstart", 400, 100, "#horizontal-content");
+        await touch(drawer, "touchmove", 500, 100, "#horizontal-content");
+        await touch(drawer, "touchend", 500, 100, "#horizontal-content");
+        expect(await drawer.locator("body").getAttribute("data-closes")).toBeNull();
+        expect(await drawer.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-dragging")).toBeNull();
+        expect(await drawer.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBe("open");
+        await touch(drawer, "touchstart", 400, 100, "#detail-text");
+        await touch(drawer, "touchmove", 500, 100, "#detail-text");
+        await touch(drawer, "touchend", 500, 100, "#detail-text");
+        await settlePanel(drawer);
+        // A swipe parks the drawer behind Details; the application's detail stays open.
+        expect(await drawer.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-drawer")).toBeNull();
+        expect(await drawer.locator("body").getAttribute("data-closes")).toBeNull();
+      } finally {
+        await drawer.close();
+      }
+    },
+  );
+});
+
+// Error class: a downward shadow clipped to its side gives a drawer no clear
+// elevation cue. Compare painted pixels, not just the declared shadow token.
+for (const theme of ["light", "dark"] as const)
+  for (const width of [834, 1194, 1440])
+    test(`${width} ${theme}: a waiting drawer casts its shadow toward the covered content without moving Main`, async () => {
+      const page = await load(width, 900, "initial=1&request-control&width=lg");
+      try {
+        // Sample a known, uniform surface; row content must not influence the shadow contrast.
+        await page.addStyleTag({
+          content: ".fixture-main{background:var(--k2b-surface)}.fixture-main > button{visibility:hidden}",
+        });
+        await page.evaluate((theme) => document.documentElement.classList.toggle("dark", theme === "dark"), theme);
+        if (width === 1194)
+          await page.locator("#app").evaluate((host) => {
+            host.style.width = "834px";
+          });
+        const before = await geometry(page);
+        await page.locator("#reader-toggle").click();
+        await settlePanel(page);
+        const opened = await geometry(page);
+        expect(opened.main).toEqual(before.main);
+        const detail = page.locator(".k2b-app-workspace__detail");
+        expect(await detail.getAttribute("data-workspace-detail-drawer")).toBe("open");
+        const x = Math.floor(opened.detail.left);
+        const png = await page.screenshot({ clip: { x: x - 140, y: 450, width: 140, height: 8 } });
+        const contrast = await page.evaluate(
+          async (src) => {
+            const image = new Image();
+            image.src = src;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = 140;
+            canvas.height = 8;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(image, 0, 0);
+            const mean = (start: number) => {
+              const data = context.getImageData(start, 0, 8, 8).data;
+              let total = 0;
+              for (let i = 0; i < data.length; i += 4) total += (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+              return total / 64;
+            };
+            return mean(12) - mean(132);
+          },
+          `data:image/png;base64,${png.toString("base64")}`,
+        );
+        console.info(`drawer edge ${theme} ${width}: ${contrast.toFixed(2)} luminance levels`);
+        expect(contrast).toBeGreaterThan(theme === "light" ? 25 : 6.5);
+        const shadow = await detail.evaluate((element) => getComputedStyle(element).boxShadow);
+        expect(shadow).toContain(theme === "light" ? "-14px 0px 36px" : "-16px 0px 40px");
+        await page.keyboard.press("Escape");
+        await settled(page);
+        expect((await geometry(page)).main).toEqual(before.main);
+      } finally {
+        await page.close();
+      }
+    });
+
+// Separate app visibility must not remove the way to reopen an available Detail.
+for (const width of [1920, 834, 390]) {
+  test(`${browserName}: reopenable detail survives default closed and X at ${width}`, async () => {
+    const page = await load(width, 900, "reopen&request-control&width=lg&island");
     try {
-      await phone.locator(".k2b-app-workspace__detail-grabber").click();
-      await settlePanel(phone);
-      await touch(phone, "touchstart", 100, 100, "#detail-text");
-      await touch(phone, "touchmove", 100, 200, "#detail-text");
-      await touch(phone, "touchend", 100, 200, "#detail-text");
-      await settlePanel(phone);
-      expect((await geometry(phone)).full).toBeNull();
+      const toggle = page.locator("[data-app-workspace-detail-toggle]");
+      expect(await toggle.isVisible()).toBe(true);
+      await toggle.focus();
+      await page.keyboard.press("Enter");
+      await settlePanel(page);
+      expect(await page.locator("#close").isVisible()).toBe(true);
+      expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+      expect(await page.evaluate(() => Boolean(document.activeElement?.closest(".k2b-app-workspace__detail")))).toBe(true);
+      await page.keyboard.press("Escape");
+      expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+      await toggle.click();
+      await page.locator("#close").click();
+      expect(await toggle.isVisible()).toBe(true);
+      expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+      await toggle.click();
+      expect(await page.locator("#close").isVisible()).toBe(true);
+      if (width === 1920) {
+        await page.setViewportSize({ width: 1800, height: 900 });
+        await settlePanel(page);
+        expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+        expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
+      }
     } finally {
-      await phone.close();
-    }
-    const drawer = await load(820, 1180, "initial=1", { hasTouch: true });
-    try {
-      await drawer.locator("#detail-text").evaluate((element) => {
-        const scroller = document.createElement("div");
-        scroller.id = "horizontal-owner";
-        scroller.style.cssText = "width:200px;overflow-x:auto";
-        const wide = document.createElement("div");
-        wide.id = "horizontal-content";
-        wide.style.cssText = "width:1000px;height:40px";
-        wide.textContent = "Scrollable content";
-        scroller.append(wide);
-        element.append(scroller);
-        scroller.scrollLeft = 100;
-      });
-      // A slider owns its horizontal drag.
-      await drawer.locator("#detail-text").evaluate((element) => {
-        const slider = document.createElement("input");
-        slider.id = "slider";
-        slider.type = "range";
-        element.append(slider);
-      });
-      await touch(drawer, "touchstart", 400, 100, "#slider");
-      await touch(drawer, "touchmove", 520, 100, "#slider");
-      await touch(drawer, "touchend", 520, 100, "#slider");
-      expect(await drawer.locator("body").getAttribute("data-closes")).toBeNull();
-      await touch(drawer, "touchstart", 400, 100, "#horizontal-content");
-      await touch(drawer, "touchmove", 500, 100, "#horizontal-content");
-      await touch(drawer, "touchend", 500, 100, "#horizontal-content");
-      expect(await drawer.locator("body").getAttribute("data-closes")).toBeNull();
-      expect(await drawer.locator(".k2b-app-workspace__detail").getAttribute("data-workspace-detail-dragging")).toBeNull();
-      await touch(drawer, "touchstart", 400, 100, "#detail-text");
-      await touch(drawer, "touchmove", 500, 100, "#detail-text");
-      await touch(drawer, "touchend", 500, 100, "#detail-text");
-      await settlePanel(drawer);
-      expect(await drawer.locator("body").getAttribute("data-closes")).toBe("1");
-    } finally {
-      await drawer.close();
+      await page.close();
     }
   });
+}
+
+test(`${browserName}: unavailable detail cannot reveal retained content`, async () => {
+  const page = await load(834, 900, "reopen&unavailable&initial=1&width=lg");
+  try {
+    const toggle = page.locator("[data-app-workspace-detail-toggle]");
+    expect(await toggle.isVisible()).toBe(true);
+    expect(await toggle.isDisabled()).toBe(true);
+    expect(await page.locator("#close").isVisible()).toBe(false);
+    expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+  } finally {
+    await page.close();
+  }
 });
+
+for (const width of [834, 390]) {
+  test(`${browserName}: reopenable detail remains reachable after a swipe at ${width}`, async () => {
+    const page = await load(width, 900, "reopen&width=lg&request-control", { hasTouch: true });
+    try {
+      const toggle = page.locator("[data-app-workspace-detail-toggle]");
+      await toggle.click();
+      await settlePanel(page);
+      for (const type of ["touchstart", "touchmove", "touchend"]) {
+        await page.evaluate(
+          ({ type, phone }) => {
+            const element = document.querySelector("#detail-text")!;
+            const moved = type !== "touchstart";
+            const sample = {
+              identifier: 1,
+              target: element,
+              clientX: moved && !phone ? 540 : 400,
+              clientY: moved && phone ? 240 : 100,
+            };
+            // WebKit exposes TouchEvent but no constructible Touch. Keep the
+            // event class and provide the touch lists the controller consumes.
+            const event = new TouchEvent(type, { bubbles: true, cancelable: true });
+            Object.defineProperties(event, {
+              touches: { value: type === "touchend" ? [] : [sample] },
+              changedTouches: { value: [sample] },
+            });
+            element.dispatchEvent(event);
+          },
+          { type, phone: width < 768 },
+        );
+      }
+      await settlePanel(page);
+      expect(await toggle.isVisible()).toBe(true);
+      expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+      expect(await page.locator("#close").isVisible()).toBe(false);
+      await toggle.click();
+      expect(await page.locator("#close").isVisible()).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+}

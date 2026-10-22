@@ -20,19 +20,22 @@ describe("Notebooks workspace contract", () => {
   test("keeps notebook settings modal-only and opens without an access preflight", async () => {
     const pageSource = await Bun.file(resolve(import.meta.dir, "[id]/page.tsx")).text();
     const pageDataSource = await Bun.file(resolve(import.meta.dir, "[id]/page-data.ts")).text();
-    const buttonSource = await Bun.file(resolve(import.meta.dir, "[id]/_components/settings/NotebookSettingsButton.tsx")).text();
+    const sidebarSource = await Bun.file(resolve(import.meta.dir, "[id]/_components/sidebar/NotebookSidebar.island.tsx")).text();
+    const openSettings = sidebarSource.slice(
+      sidebarSource.indexOf("const openSettings ="),
+      sidebarSource.indexOf("const navigationHidden ="),
+    );
 
     expect(pageSource).not.toContain("NotebookSettingsPanel.island");
     expect(pageDataSource).not.toContain("isSettingsMode");
-    expect(buttonSource).not.toContain("apiClient");
-    expect(buttonSource).toContain("openNotebookSettingsDialog");
+    expect(openSettings).not.toContain("apiClient");
+    expect(openSettings).toContain("openNotebookSettingsDialog");
   });
 
-  test("gives presence identities a visible gap", async () => {
+  test("uses the shared presence stack", async () => {
     const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/detail/NotebookDetailPanel.island.tsx")).text();
 
-    // The gap separates avatar and name; the row itself starts at the section's content edge like the rows around it.
-    expect(source).toContain('<li class="flex items-center gap-3 py-1.5 text-sm text-primary">');
+    expect(source).toContain("<AvatarStack people={people()}");
   });
 
   test("uses shared tree rows and action visibility for note navigation", async () => {

@@ -1,6 +1,6 @@
 import { prompts } from "@k2b/ui";
 import { apiClient } from "@/api/client";
-import type { SpaceItemClaim } from "@/contracts";
+import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
 import { readResponseError } from "../../../../lib/response";
 import type { spaceMessages } from "../../../messages";
 
@@ -11,6 +11,10 @@ type Target = { spaceId: string; itemId: string };
 export const isOwnClaim = (claim: SpaceItemClaim | null | undefined, currentUserId: string) =>
   claim?.actor.kind === "user" && claim.actor.id === currentUserId;
 
+/** Whether `assignee` is the person or service account working on the task, matching principal kind and ID. */
+export const isClaimHolder = (claim: SpaceItemClaim | null | undefined, assignee: Pick<SpaceItemAssignee, "kind" | "id">) =>
+  claim?.actor.kind === assignee.kind && claim.actor.id === assignee.id;
+
 /** The claim ID to send whenever completion changes; the holder completes or reopens a claimed task with it. */
 export const ownClaimId = (claim: SpaceItemClaim | null | undefined, currentUserId: string) =>
   isOwnClaim(claim, currentUserId) ? claim!.id : undefined;
@@ -20,12 +24,12 @@ export const othersClaim = (claim: SpaceItemClaim | null | undefined, currentUse
   claim && !isOwnClaim(claim, currentUserId) ? claim : null;
 
 /**
- * Claim fields of a change a claim guards (completion, reopening, a wormhole transfer): the holder's own claim ID, or a
- * confirmed take-over of the exact claim seen.
+ * Claim fields of a change a claim guards (completion, reopening, a wormhole transfer, removing the holder from the
+ * assignees): the holder's own claim ID, or a confirmed take-over of the exact claim seen.
  */
 export type ClaimFields = { claimId?: string; force?: true };
 
-type GuardedChange = "complete" | "reopen" | "transfer";
+type GuardedChange = "complete" | "reopen" | "transfer" | "unassign";
 
 /**
  * Claims coordinate work and do not lock it: a guarded change of a task someone else claimed asks once and then takes
@@ -45,8 +49,11 @@ const resolveClaim = async (
       ? [t.takeOverAndComplete({ name }), t.takeOverAndCompleteAction]
       : change === "reopen"
         ? [t.takeOverAndReopen({ name }), t.takeOverAndReopenAction]
-        : [t.takeOverAndMove({ name }), t.takeOverAndMoveAction];
-  const confirmed = await prompts.confirm(question, { title: t.takeOverTitle, icon: "ti ti-replace", confirmText, cancelText: t.cancel });
+        : change === "transfer"
+          ? [t.takeOverAndMove({ name }), t.takeOverAndMoveAction]
+          : [t.removeWorkingAssignee({ name }), t.removeWorkingAssigneeAction];
+  const [title, icon] = change === "unassign" ? [t.removeWorkingAssigneeTitle, "ti ti-user-minus"] : [t.takeOverTitle, "ti ti-replace"];
+  const confirmed = await prompts.confirm(question, { title, icon, confirmText, cancelText: t.cancel });
   return confirmed ? { claimId: other.id, force: true } : null;
 };
 
@@ -57,6 +64,22 @@ export const resolveCompletionClaim = (claim: SpaceItemClaim | null | undefined,
 /** Claim fields to send a task through a wormhole, which ends its claim; see `resolveClaim`. */
 export const resolveTransferClaim = (claim: SpaceItemClaim | null | undefined, currentUserId: string, t: Messages) =>
   resolveClaim(claim, currentUserId, "transfer", t);
+
+/**
+ * Claim fields to replace the assignees with `assigneeIds`. Removing the account that works on the task ends their claim:
+ * your own at once, since you removed yourself, someone else's after one confirmation; see `resolveClaim`. A list that
+ * keeps the holder, or whose current assignees do not include the holder, needs no claim fields.
+ */
+export const resolveAssigneeClaim = async (
+  claim: SpaceItemClaim | null | undefined,
+  currentUserId: string,
+  currentAssignees: readonly Pick<SpaceItemAssignee, "kind" | "id">[],
+  assigneeIds: readonly string[],
+  t: Messages,
+): Promise<ClaimFields | null> =>
+  claim && currentAssignees.some((assignee) => isClaimHolder(claim, assignee)) && !assigneeIds.includes(claim.actor.id)
+    ? resolveClaim(claim, currentUserId, "unassign", t)
+    : {};
 
 /** Claims the task with a fresh browser-generated claim ID, exactly like a CLI worker. */
 export const claimTask = async (target: Target, t: Messages) => {

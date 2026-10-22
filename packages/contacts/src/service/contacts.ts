@@ -4,7 +4,6 @@ import { err, fail, ok, type PageParams, type Paginated, paginate, type Result }
 import { sql } from "bun";
 import { newShortId, withShortIdRetry } from "../lib/short-id";
 import { resolveContactName, resolveStoredContactLabel } from "../shared";
-import { mayReadAcrossBooks } from "./access";
 import { contactsLive, publishContactChange } from "./live";
 import { emptyToNull, isUuid, type SqlExecutor, toDateOnly, toPgUuidArray } from "./shared";
 import * as tags from "./tags";
@@ -388,7 +387,8 @@ const loadBankAccounts = async (contactIds: string[]): Promise<Map<string, Conta
  * Emails / phones / addresses keep their batched loaders because they live in
  * separate child tables and are already efficient.
  */
-const getManualContactsByIds = async (ids: string[]): Promise<Map<string, Contact>> => {
+const getManualContactsByIds = async (ids: string[], signal?: AbortSignal): Promise<Map<string, Contact>> => {
+  signal?.throwIfAborted();
   const validIds = ids.filter(isUuid);
   if (validIds.length === 0) return new Map();
 
@@ -467,6 +467,7 @@ const getManualContactsByIds = async (ids: string[]): Promise<Map<string, Contac
   `;
 
   const contactIds = rows.map((row) => row.id);
+  signal?.throwIfAborted();
   const [emailsByContact, phonesByContact, addressesByContact, websitesByContact, bankAccountsByContact] = await Promise.all([
     loadEmails(contactIds),
     loadPhones(contactIds),
@@ -475,6 +476,7 @@ const getManualContactsByIds = async (ids: string[]): Promise<Map<string, Contac
     loadBankAccounts(contactIds),
   ]);
 
+  signal?.throwIfAborted();
   const mapped = new Map<string, Contact>();
   for (const row of rows) {
     mapped.set(
@@ -962,6 +964,44 @@ export const list = async (config: {
     hasNext: page * perPage < total,
   };
 };
+
+// Equals the documented paginate() maximum: perPage is limited to 1000.
+export const EXPORT_PAGE_SIZE = 1000;
+
+type ExportPageConfig = { bookId: string; after: string | null; signal: AbortSignal };
+
+const loadExportPage = async ({ bookId, after, signal }: ExportPageConfig) => {
+  signal.throwIfAborted();
+  const rows = await sql<{ id: string }[]>`
+    SELECT c.id FROM contacts.contacts c
+    WHERE c.book_id = ${bookId}::uuid
+      AND (${after}::uuid IS NULL OR c.id > ${after}::uuid)
+    ORDER BY c.id
+    LIMIT ${EXPORT_PAGE_SIZE}
+  `;
+  const ids = rows.map((row) => row.id);
+  signal.throwIfAborted();
+  return { ids, contacts: await getManualContactsByIds(ids, signal) };
+};
+
+/** Reads a book in bounded ID order, even when contacts disappear during hydration. */
+export async function* exportPages(config: { bookId: string; signal: AbortSignal }, loadPage = loadExportPage): AsyncGenerator<Contact[]> {
+  if (!isUuid(config.bookId)) return;
+  let after: string | null = null;
+  while (true) {
+    config.signal.throwIfAborted();
+    const { ids, contacts } = await loadPage({ ...config, after });
+    config.signal.throwIfAborted();
+    if (ids.length === 0) return;
+    const page = ids.flatMap((id) => {
+      const contact = contacts.get(id);
+      return contact?.bookId === config.bookId ? [contact] : [];
+    });
+    if (page.length > 0) yield page;
+    if (ids.length < EXPORT_PAGE_SIZE) return;
+    after = ids[ids.length - 1]!;
+  }
+}
 
 /**
  * Returns one contact from one specific book.
@@ -1875,15 +1915,11 @@ export const mergeDuplicate = async (config: {
 /** Global search across all readable persisted contact books. */
 export const search = async (config: {
   subject: AccessSubject;
-  boundBookId?: string | null;
-  bypassAccess?: boolean;
+  boundBookId: string | null;
   pagination?: PageParams;
   filter?: ContactListFilter;
 }): Promise<Paginated<Contact>> => {
   const { page, perPage, offset } = paginate(config.pagination);
-  if (!(await mayReadAcrossBooks(config.subject, config.boundBookId))) {
-    return { items: [], page, perPage, total: 0, hasNext: false };
-  }
   const requestedFavoriteUserId = config.filter?.favoriteUserId;
   if (requestedFavoriteUserId !== undefined && !isUuid(requestedFavoriteUserId)) {
     return { items: [], page, perPage, total: 0, hasNext: false };
@@ -1899,8 +1935,7 @@ export const search = async (config: {
   const phonePresence = config.filter?.phone ?? "all";
   const sort = config.filter?.sort ?? "name";
   const favoriteUserId = requestedFavoriteUserId ?? null;
-  const bindingMatch =
-    config.subject.type === "service_account" && config.boundBookId ? sql`c.book_id = ${config.boundBookId}::uuid` : sql`true`;
+  const bindingMatch = config.boundBookId ? sql`c.book_id = ${config.boundBookId}::uuid` : sql`true`;
 
   const [countRow] = await sql<{ count: number }[]>`
     SELECT COUNT(DISTINCT c.id)::int AS count
@@ -1911,7 +1946,7 @@ export const search = async (config: {
     LEFT JOIN contacts.contact_phones cp ON cp.contact_id = c.id
     LEFT JOIN contacts.contact_addresses ca ON ca.contact_id = c.id
     LEFT JOIN contacts.contact_bank_accounts cba ON cba.contact_id = c.id
-    WHERE (${config.bypassAccess ?? false}::boolean OR ${mapManualReadableAccessCondition(config.subject)})
+    WHERE ${mapManualReadableAccessCondition(config.subject)}
       AND ${bindingMatch}
       AND ${mapManualSearchCondition(searchPattern)}
       AND (${tagIdsArray}::uuid[] IS NULL OR EXISTS (
@@ -1952,7 +1987,7 @@ export const search = async (config: {
       LEFT JOIN contacts.contact_phones cp ON cp.contact_id = c.id
       LEFT JOIN contacts.contact_addresses ca ON ca.contact_id = c.id
       LEFT JOIN contacts.contact_bank_accounts cba ON cba.contact_id = c.id
-      WHERE (${config.bypassAccess ?? false}::boolean OR ${mapManualReadableAccessCondition(config.subject)})
+      WHERE ${mapManualReadableAccessCondition(config.subject)}
         AND ${bindingMatch}
         AND ${mapManualSearchCondition(searchPattern)}
         AND (${tagIdsArray}::uuid[] IS NULL OR EXISTS (

@@ -91,7 +91,7 @@ Escape closes only the top floating window.
 The geometry helper is SSR-safe. Portal mounting and window interaction are
 browser-only. `openFloatingWindow` throws when `document` is unavailable.
 
-Open them from an island or another hydrated client component. Do not call the helper during SSR.
+Open them from an island or another component with browser code. Do not call the helper during SSR.
 
 ## Example
 

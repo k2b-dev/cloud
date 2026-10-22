@@ -244,6 +244,8 @@ export const readCliInput = async (input: CliInputFlagValue, options: ReadCliInp
 
 export const defineCliCommands = (config: CliCommandsConfig): CloudCliModule => {
   const root = buildCommandTree(config.commands, config.groupSummaries);
+  // `cld <module> reference` prints the module's skill references instead.
+  if (root.children.has("reference")) throw new Error(`CLI module "${config.name}" must not declare the reserved command "reference"`);
   if (config.alias !== undefined && !isCloudCliAlias(config.alias, config.name)) {
     throw new Error("CLI alias must be a lowercase kebab-case name different from the module name");
   }

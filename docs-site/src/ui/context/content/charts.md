@@ -6,6 +6,8 @@
 
 Use it to show a trend, distribution, comparison, geographic series, or state history.
 
+Every non-empty chart has tooltips, keyboard inspection, and tap by default; see [How to customize](#how-to-customize).
+
 Use `StatCell` for one value. Use `DataTable` when readers need exact records rather than a visual summary.
 
 ## Import
@@ -43,6 +45,29 @@ import {
 
 TypeScript narrows the remaining properties from `kind`. `width` and `height` are removed from the accepted chart options: CSS fits the server-rendered SVG to the component’s box.
 
+## A legend above a line chart
+
+For `kind="line"`, combine `legend` with `legendPlacement="top-start"`
+to show complete series names in a wrapping legend above the plot. The
+legend and plot share the height you give the outer `class` or `style`;
+the legend does not add height outside that box. In a fixed-height box, the
+legend takes at most 44px or 40% of the height, whichever is smaller, leaving
+at least 60% for the plot. A single line uses 30px including its spacing.
+Longer legends scroll; focus the legend to scroll with the keyboard. Complete
+names remain available without truncation. Omitting the option preserves the SVG
+legend below the plot; `legend={false}` suppresses either legend.
+
+Names, fallback names (`Series N`), indices and palette overrides match the
+renderer, including empty series alongside populated series. The initial
+server and browser layout uses the same markup. Pointer inspection,
+keyboard inspection and linked cursors follow the actual plot below the legend.
+
+```tsx
+<Chart kind="line" legend legendPlacement="top-start"
+  style={{ height: "18rem" }}
+  series={[{ label: "Orders", data: [{ x: 1, y: 12 }, { x: 2, y: 18 }] }]} />
+```
+
 ## Props reference
 
 Use the discriminated `ChartProps` union to type data builders without widening
@@ -52,7 +77,6 @@ Use the discriminated `ChartProps` union to type data builders without widening
 const options = {
   kind: "scatter",
   series: [{ label: "Cached", data: [{ x: 50, y: 30 }] }],
-  interactive: true,
   style: { height: "14rem" },
 } satisfies ChartProps;
 
@@ -68,12 +92,12 @@ All kinds accept these wrapper props:
 | `kind` | Required literal from the 14 kinds above. Determines the data payload and allowed options. |
 | `class` | Optional class on the wrapper. |
 | `style` | Solid `JSX.CSSProperties` or a CSS string on the wrapper. Set height here, not with a `height` prop. |
-| `labels` | Optional `ChartLabels` overrides. Keys: `empty`, `series`, `interactiveMap`, `interactiveTimeline`, `interactiveLine`, `interactiveChart`, `zoomIn`, `zoomOut`, `resetMap`, `resetTimeline`. Omitted keys use the inherited UI messages. These do not rename tooltip fields; use `tooltip` for domain labels. |
-| `interactive` | Boolean, default `false`. Enables inspection; additionally enables navigation on maps and timelines. |
+| `labels` | Optional `ChartLabels` overrides. Keys: `empty`, `series`, `interactiveMap`, `interactiveTimeline`, `interactiveLine`, `interactiveChart`, `zoomIn`, `zoomOut`, `resetMap`, `resetTimeline`. Region names fall back to a nonblank chart `title` (or `label` for stat/gauge), then the inherited UI messages. Other omitted keys use the inherited UI messages. These do not rename tooltip fields; use `tooltip` for domain labels. |
+| `interactive` | Boolean, default `false`. Enables map and state-timeline navigation: pan, zoom and reset controls. Tooltips and keyboard inspection work without it, including with `interactive={false}`. |
 | `maxGap` | Line charts only: positive finite distance in numeric X units (milliseconds for epoch timestamps). Larger distances start a new line segment; isolated samples remain visible. Supports straight, smooth and step lines. Combining it with `area` or `errorBand` fills throws. Omit it to preserve continuous lines. |
 | `cursor` | Optional `ChartCursor` from `createChartCursor()`. Connects line charts by numeric X value; other kinds ignore it. Hover is independent of `selected` and does not reload data or rebuild SVG. |
 | `selected` | Optional `ChartDatumRef \| null`: `{ role, index, seriesIndex? }` using the current input snapshot. Highlights a datum without selecting it or opening a tooltip. Missing references paint nothing. Map stable application IDs to these indices after every data replacement. |
-| `tooltip` | Synchronous `(selection: ChartSelection) => ChartTooltip`. Used only with `interactive`. Omit for the built-in tooltip. Does not accept JSX, HTML, or a promise. |
+| `tooltip` | Synchronous `(selection: ChartSelection) => ChartTooltip`. Customizes the always-on tooltip. Omit for the built-in tooltip. Does not accept JSX, HTML, or a promise. |
 | `onSelect` | Optional synchronous `(selection: ChartSelection) => void`. Click, tap, and Enter emit selection; hover and focus do not. Use `selected` for a controlled highlight. |
 
 Do not pass `width`, `height`, or stdlib's `inspect`: the wrapper owns them.
@@ -167,8 +191,8 @@ interactive region names, zoom controls, and reset controls. Pass labels from
 the host when the application is localized; the component never reads the
 browser locale during SSR.
 
-`interactive` enables inspection for all 14 chart kinds. Hover or tap a datum
-to show its values; click or tap pins the tooltip and calls the optional
+Every non-empty chart supports inspection across all 14 kinds, without a prop.
+Hover or tap a datum to show its values; click or tap pins the tooltip and calls the optional
 `onSelect` callback. Hover and focus never emit selection events. Escape,
 focus leaving the chart, an outside tap, scrolling, resizing, and a data update
 clear the inspection. Map and timeline dragging does not select data.
@@ -187,16 +211,26 @@ identify observations within their source group. References belong to the
 current data snapshot. Retain application IDs in your source records when an
 action must survive sorting or replacement of that snapshot.
 
-Use `tooltip` to return a `ChartTooltip` with a title and labeled text rows.
-The default tooltip uses axis/value formatters and the inherited UI locale.
-Custom tooltip output is rendered as text, never interpreted as HTML. Each live chart example supplies domain-specific labels and units. The code example includes its tooltip formatter. Use these labels to explain what a value measures instead of showing raw X/Y coordinates.
+### How to customize
+
+Give the chart a domain title with `title` where supported, or name it through
+its kind's `labels` override. Use `tooltip` to return a `ChartTooltip` with a
+title and labeled text rows, including units. The built-in tooltip preserves
+supported renderer formatters: `xAxis.format` / `yAxis.format` on Cartesian
+charts and `format` on gauge, bar-gauge, stat and heatmap charts. For gauge,
+bar-gauge and stat, the kind's `unit` option is appended after `format`.
+Sparklines, pies, donuts and maps can supply units through `tooltip`.
+A `StatCell` trend takes the same formatter through `trendTooltip`.
+
+The default tooltip uses the inherited UI locale. Custom tooltip output is
+rendered as text. Each live chart example includes a formatter with domain
+labels and units.
 
 ```tsx
 <Chart
   kind="bar"
   data={[{ label: "Imports", value: 42 }, { label: "Exports", value: 28 }]}
   style={{ height: "14rem" }}
-  interactive
   onSelect={({ datum }) => setSelectedQueueIndex(datum.index)}
   tooltip={({ datum }) => ({
     title: datum.label,
@@ -208,8 +242,8 @@ Custom tooltip output is rendered as text, never interpreted as HTML. Each live 
 />
 ```
 
-Interactive line charts expose the nearest point through pointer and keyboard
-inspection. Interactive maps use the supplied viewport as their reset point
+Line charts expose the nearest point through pointer and keyboard inspection.
+Maps with `interactive` use the supplied viewport as their reset point
 and keep pan and zoom within geographic bounds.
 
 State timelines use `StateTimelineRow` values containing bounded
@@ -288,7 +322,6 @@ A domain-specific scatter tooltip can use raw values directly:
   kind="scatter"
   style={{ height: "14rem" }}
   series={[{ label: "Cached", data: [{ x: 50, y: 30 }] }]}
-  interactive
   tooltip={({ datum }) => ({
     title: datum.label ?? "Response latency",
     rows: datum.values.flatMap(({ key, value }) =>
@@ -299,7 +332,7 @@ A domain-specific scatter tooltip can use raw values directly:
 />
 ```
 
-Formatter and selection callbacks run in the hydrated component. In an islands
+Formatter and selection callbacks run in browser code. In an islands
 app, define them inside the island; do not serialize functions through server
 props. Pass serializable source data into the island. The SVG remains fully
 server-rendered. Keep callbacks synchronous and free of render-time effects;
@@ -325,26 +358,30 @@ Use it beside a chart when the server owns the query window:
 
 ## Accessibility
 
-Each interactive chart has one keyboard entry point. Arrow keys inspect data;
+Each non-empty chart has one tab stop for inspection. Arrow keys inspect data;
 Home and End reach the first and last datum. Heatmaps navigate by row and
 column, skipping absent cells. Enter selects the inspected datum; Escape closes
-the tooltip. Native timeline links retain their link behavior.
+the tooltip. Empty charts have no tab stop or tooltip. Native timeline links
+retain their link behavior.
 
-Maps and timelines keep their existing arrow-key pan and `+`, `-`, and `0` reset
-controls. Hold Alt with arrow keys, Home, or End to inspect their data instead.
-Their named zoom and reset buttons remain separately reachable. Other chart
-kinds expose inspection without adding pan or zoom.
+On maps and state timelines, hold Alt with arrows, Home or End to inspect data.
+With `interactive`, plain arrows pan; `+` and `-` zoom, and `0` resets the view.
+Their named zoom and reset buttons remain separately reachable.
 
+The accessible name uses the kind's explicit `labels` override, then a nonblank
+chart `title`, then `label` for stat/gauge, then the kind's default UI message.
 Tooltip values are associated with the focused chart through `aria-describedby`.
-SVG titles provide a text fallback without the enhanced tooltip. Touch scrolling
-remains native on ordinary plots; maps and timelines retain their explicit drag
-navigation.
+Native SVG titles provide a text fallback before browser code loads.
+
+On phones, tapping pins the tooltip. Tap elsewhere or scroll to hide it.
+Vertical scrolling stays native on ordinary plots; only maps and timelines
+with `interactive` take over dragging for navigation.
 
 Always provide the same conclusion in text. Do not make color, pointer hover, or the chart itself the only source of a status or exact value.
 
 ## Runtime
 
-The complete SVG renders on the server and fits its container before JavaScript loads. Hydration and resizing keep the same chart geometry, so range navigation does not briefly show a smaller chart.
+The complete SVG renders on the server and fits its container before JavaScript loads. Mounting in the browser and resizing keep the same chart geometry, so range navigation does not briefly show a smaller chart.
 
 Cartesian plots fill the available width and height while labels and markers retain their size. At zoom zero, maps fit the complete world without cropping or distortion; shallow containers leave space on either side. Each zoom level doubles the geographic scale from that fitted world view, without changing the fitting mode. Zoomed content can use the full plot width and is clipped only at its edges. Titles and legends stay outside the geographic crop. Pies, donuts, and gauges preserve their aspect ratio. Load `@k2b/ui/styles.css` in the page head so this layout applies to the first frame.
 
@@ -354,7 +391,61 @@ including logarithmic axes, nested map viewports, and responsive sizing.
 
 Reactive data rebuilds the complete SVG. This suits dashboard polling and normal realtime updates, not frame-by-frame animation.
 
-Interactive charts require hydration. Static charts remain readable in the server response.
+Tooltips, keyboard inspection and navigation require browser code. Render charts inside an island. A server-only chart has no tooltips, and the `chart-rendering` check fails for it. The SVG and native mark titles remain readable in the server response.
+
+## Inspection without Solid
+
+Use `@k2b/ui/chart-inspection` when your host renders stdlib chart SVG itself,
+for example in a sandboxed HTML document that cannot load a framework.
+Raw stdlib renderers are allowed only with `inspectChart`; the `chart-rendering` check enforces this with a file allow-list.
+The module contains no Solid. The base stylesheet styles chart tooltips in HTML apps.
+It keeps `<table class="k2b-chart__table" hidden>` after a chart hidden on screen
+and prints it below the chart, breaking between rows with the header repeated.
+
+```ts
+import { inspectChart } from "@k2b/ui/chart-inspection";
+
+// inspectChart(container, { kind, format, select?, cursor? })
+// returns { invalidate, close, destroy }.
+```
+
+`kind` is the rendered chart kind. `format(selection)` returns a `ChartTooltip`
+with an optional `title` and `rows: { label, value }[]` of strings.
+Optional `select(selection)` receives click, tap, or Enter selections.
+Optional `cursor` links line charts; import `createChartCursor` from the same module.
+
+```ts
+import { charts } from "@k2b/stdlib";
+import { inspectChart } from "@k2b/ui/chart-inspection";
+
+const data = [{ label: "Jobs", value: 42 }];
+// The inspector adds its tooltip to the container; keep the SVG in a child.
+const plot = container.appendChild(document.createElement("div"));
+plot.innerHTML = charts.bar({ data, inspect: true, width: 480, height: 280 });
+const inspection = inspectChart(container, {
+  kind: "bar",
+  format: ({ datum }) => ({
+    title: data[datum.index]!.label,
+    rows: [{ label: "Completed", value: String(data[datum.index]!.value) }],
+  }),
+});
+
+// After a redraw, replace only the SVG and refresh the datum metadata:
+plot.innerHTML = charts.bar({ data, inspect: true, width: 480, height: 280 });
+inspection.invalidate();
+// On teardown:
+inspection.destroy();
+```
+
+The markup must come from the stdlib renderer with `inspect: true`.
+Only valid `data-chart-datum` metadata participates. Tooltip content is inserted
+as text. Inspection uses the same keyboard, pointer, pin, and close behavior as
+`Chart`; see [Accessibility](#accessibility). The host gives the container its
+role and accessible name, and loads `@k2b/ui/styles.css` for the tooltip and
+inspection paint. Use the `k2b-ui` scope and `k2b-chart` container class.
+The inspector adds a keyboard entry point if no `tabindex` exists and removes
+it on teardown. `close()` dismisses inspection; `invalidate()` refreshes datum
+metadata after a redraw; `destroy()` removes the listeners and added elements.
 
 ## Example
 
@@ -376,7 +467,6 @@ Interactive charts require hydration. Static charts remain readable in the serve
   yAxis={{ format: (value) => `${value} req/s` }}
   legend
   smooth
-  interactive
 />
 ```
 
@@ -488,7 +578,7 @@ Treat snapshots as immutable trusted renderer output. Never accept arbitrary
 user-supplied SVG for `chart.svg`. Across SSR/JSON boundaries, row data must also be
 serializable; TypeScript row types alone do not enforce JSON serialization. Layout
 uses a fixed logical width of 480 and height of 280, except row-derived timeline
-height. CSS sizes the SVG before hydration without measuring/rebuilding it.
+height. CSS sizes the SVG in the server HTML without measuring/rebuilding it.
 
 ### One controller for local and remote data
 
@@ -703,8 +793,8 @@ const cursor = createChartCursor({
   formatX: (timestamp) => new Date(timestamp).toISOString(),
 });
 
-<Chart kind="line" series={latency} cursor={cursor} interactive />
-<Chart kind="line" series={requests} cursor={cursor} interactive />
+<Chart kind="line" series={latency} cursor={cursor} />
+<Chart kind="line" series={requests} cursor={cursor} />
 // Existing server-prepared explorer data works with the same cursor:
 <ChartExplorer title="Errors" data={errors} columns={columns} cursor={cursor} />
 ```

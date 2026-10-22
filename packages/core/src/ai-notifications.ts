@@ -1,8 +1,17 @@
-import { type BoundNotificationMap, lazySync, notification } from "@k2b/cloud";
-import { AI_SHORT_ID_PATTERN } from "@k2b/cloud/ai";
+import { type BoundNotificationMap, lazySync, listApps, notification } from "@k2b/cloud";
+import {
+  AI_SHORT_ID_PATTERN,
+  CHAT_TASK_REASON_CODES,
+  type ChatTaskReasonCode,
+  chatTaskLocale,
+  chatTaskName,
+  chatTaskReasonSentence,
+} from "@k2b/cloud/ai";
 import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
 import { coreSettings, getFreeIpaConfig, logger, notifications, trace } from "@k2b/cloud/services";
+import { listPending, loadApprovalActionPolicies, pendingApprovalCard } from "@k2b/cloud/services/approvals";
 import { toPgTextArray } from "@k2b/cloud/services/postgres";
+import { resolveAppIdentityPresentation } from "@k2b/cloud/shared";
 import { i18n } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
@@ -25,13 +34,15 @@ const notificationMessages = i18n.define({
       costBody: ({ cost, unit }: { cost: string; unit: string }) =>
         `Reference costs over the last 24 hours: ${cost} ${unit}. Review Usage rules and the contributing workflows.`,
       approvalWaiting: ({ count }: { count: number }) => (count === 1 ? "Approval waiting" : `${count} approvals waiting`),
+      approvalMore: ({ count }: { count: number }) => `And ${count} more waiting.`,
+      approvalOpen: ({ target }: { target: string }) => `Open it at ${target}`,
       approvalBody: "An Action waits for your approval. Nothing happens until you decide.",
       approvalEmail: ({ target }: { target: string }) =>
         `An Action waits for your approval. Nothing happens until you decide. Open it at ${target}`,
       responseReady: "Assistant response ready",
       responseFinished: "Your Assistant response has finished.",
       responseEmail: ({ target }: { target: string }) => `Your Assistant response has finished. Open it at ${target}`,
-      taskAttention: ({ taskId }: { taskId: string }) => `Scheduled task ${taskId} needs attention`,
+      taskAttention: ({ name }: { name: string }) => `“${name}” needs you`,
     },
     de: {
       costWarning: "Kostenwarnung für Hintergrund-AI",
@@ -39,17 +50,21 @@ const notificationMessages = i18n.define({
       costBody: ({ cost, unit }) =>
         `Referenzkosten der letzten 24 Stunden: ${cost} ${unit}. Prüfe die Usage-Regeln und die verursachenden Workflows.`,
       approvalWaiting: ({ count }) => (count === 1 ? "Freigabe wartet" : `${count} Freigaben warten`),
+      approvalMore: ({ count }) => (count === 1 ? "Und 1 weitere wartet." : `Und ${count} weitere warten.`),
+      approvalOpen: ({ target }) => `Öffne sie unter ${target}`,
       approvalBody: "Eine Aktion wartet auf deine Freigabe. Bis du entscheidest, passiert nichts.",
       approvalEmail: ({ target }) =>
         `Eine Aktion wartet auf deine Freigabe. Bis du entscheidest, passiert nichts. Öffne sie unter ${target}`,
       responseReady: "Antwort des Assistenten ist bereit",
       responseFinished: "Die Antwort des Assistenten ist fertig.",
       responseEmail: ({ target }) => `Die Antwort des Assistenten ist fertig. Öffne sie unter ${target}`,
-      taskAttention: ({ taskId }) => `Geplante Aufgabe ${taskId} erfordert deine Aufmerksamkeit`,
+      taskAttention: ({ name }) => `„${name}“ braucht dich`,
     },
   },
 });
 const text = (locale: string) => notificationMessages.resolve([locale]).t;
+const escapeHtml = (value: string): string =>
+  value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 const absoluteUrl = async (path: string): Promise<string> => {
   const configured = String((await coreSettings.get<string>("app.url")) || "").trim();
@@ -71,16 +86,31 @@ export const AI_NOTIFICATIONS = {
       "Benachrichtigung, wenn eine Aktion, die du außerhalb der Cloud-Seiten gestartet hast, etwa in cld oder einem Editor, auf deine Freigabe wartet.",
     ),
     delivery: { recommended: ["browser"] },
-    data: z.object({ count: z.number().int().positive() }),
-    render: ({ count }, { locale }) => ({
+    data: z.object({
+      count: z.number().int().positive(),
+      question: z.string().max(400).optional(),
+      reason: z.string().max(500).optional(),
+    }),
+    render: ({ count, question, reason }, { locale }) => ({
       title: text(locale).approvalWaiting({ count }),
-      body: text(locale).approvalBody,
+      body: question
+        ? [question, reason, count > 1 ? text(locale).approvalMore({ count: count - 1 }) : undefined].filter(Boolean).join("\n")
+        : text(locale).approvalBody,
       targetHref: APPROVALS_PAGE_PATH,
     }),
-    email: async ({ count }, { locale }) => ({
-      subject: text(locale).approvalWaiting({ count }),
-      content: text(locale).approvalEmail({ target: await absoluteUrl(APPROVALS_PAGE_PATH) }),
-    }),
+    email: async ({ count, question, reason }, { locale }) => {
+      const subject = text(locale).approvalWaiting({ count });
+      const target = await absoluteUrl(APPROVALS_PAGE_PATH);
+      if (!question) return { subject, content: text(locale).approvalEmail({ target }) };
+      // Escaped HTML, because plain content is read as HTML and would drop "<lea@example.com>" from the question.
+      const lines = [
+        question,
+        reason,
+        count > 1 ? text(locale).approvalMore({ count: count - 1 }) : undefined,
+        text(locale).approvalOpen({ target }),
+      ].filter((line): line is string => Boolean(line));
+      return { subject, rawHtml: lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("") };
+    },
   }),
   backgroundCosts: notification({
     recipient: "user",
@@ -120,21 +150,21 @@ export const AI_NOTIFICATIONS = {
   }),
   taskNeedsAttention: notification({
     recipient: "user",
-    label: "Assistant scheduled tasks",
-    description: "A notification when a scheduled Assistant task cannot continue.",
-    presentation: presentation(
-      "Geplante Aufgaben des Assistenten",
-      "Benachrichtigung, wenn eine geplante Aufgabe nicht fortgesetzt werden kann.",
-    ),
+    label: "Assistant routines",
+    description: "A notification when an Assistant routine cannot continue.",
+    presentation: presentation("Assistant-Routinen", "Benachrichtigung, wenn eine Assistant-Routine nicht weiterlaufen kann."),
     delivery: { recommended: ["browser"] },
     data: z.object({
       conversationId: z.string().regex(AI_SHORT_ID_PATTERN),
-      taskId: z.string().regex(AI_SHORT_ID_PATTERN),
-      error: z.string(),
+      name: z.string(),
+      code: z.enum(CHAT_TASK_REASON_CODES),
+      at: z.string(),
+      action: z.string().max(200).optional(),
+      timeZone: z.string(),
     }),
-    render: ({ conversationId, taskId, error }, { locale }) => ({
-      title: text(locale).taskAttention({ taskId }),
-      body: error,
+    render: ({ conversationId, name, code, at, action, timeZone }, { locale }) => ({
+      title: text(locale).taskAttention({ name }),
+      body: chatTaskReasonSentence({ code, at, action }, { locale, timeZone }),
       targetHref: `/app/assistant?conversation=${encodeURIComponent(conversationId)}`,
     }),
   }),
@@ -153,7 +183,14 @@ type TaskAttentionCandidate = {
   conversation_id: string;
   task_id: string;
   user_id: string;
-  error: string;
+  title: string | null;
+  chat_title: string;
+  prompt: string;
+  locale: string | null;
+  timezone: string;
+  reason_code: ChatTaskReasonCode;
+  reason_at: Date;
+  reason_action: string | null;
 };
 
 type AiNotificationRecoverySummary = {
@@ -224,9 +261,10 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     const candidates = await sql<TaskAttentionCandidate[]>`
       SELECT occurrence.id AS occurrence_id,
              conversation.short_id AS conversation_id,
-             task.short_id AS task_id,
+             task.id AS task_id,
              task.sponsor_user_id AS user_id,
-             occurrence.error
+             task.title, conversation.title AS chat_title, task.prompt, task.locale, task.timezone, task.reason_code, task.reason_at,
+             CASE WHEN task.reason_code = 'needs_approval' THEN task.reason_action END AS reason_action
       FROM ai.chat_task_occurrences occurrence
       JOIN ai.chat_tasks task ON task.id = occurrence.task_id
       JOIN ai.conversations conversation ON conversation.id = task.conversation_id
@@ -234,13 +272,15 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
       WHERE occurrence.state = 'failed'
         AND occurrence.completed_at >= definition.first_seen_at
         AND occurrence.error IS NOT NULL
-        AND task.state = 'needs_attention'
+        AND task.state = 'needs_attention' AND task.reason_code IN ('failed', 'rights_changed', 'needs_approval')
         AND (${input.occurrenceId ?? null}::uuid IS NULL OR occurrence.id = ${input.occurrenceId ?? null}::uuid)
         AND NOT EXISTS (
           SELECT 1
           FROM notifications.events event
           WHERE event.definition_id = ${definitions.taskNeedsAttention.id}
-            AND event.idempotency_key = 'occurrence:' || occurrence.id::text
+            AND (event.idempotency_key = 'routine:' || task.id::text || ':' || task.reason_code || ':' ||
+              floor(extract(epoch FROM task.reason_at) * 1000)::bigint::text
+              OR event.idempotency_key = 'occurrence:' || occurrence.id::text)
         )
         AND NOT EXISTS (
           SELECT 1
@@ -260,9 +300,16 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
       try {
         await notifications.send(definitions.taskNeedsAttention, {
           recipient: { userId: candidate.user_id },
-          data: { conversationId: candidate.conversation_id, taskId: candidate.task_id, error: candidate.error },
-          idempotencyKey: `occurrence:${candidate.occurrence_id}`,
-          locale,
+          data: {
+            conversationId: candidate.conversation_id,
+            name: chatTaskName({ title: candidate.title, chatTitle: candidate.chat_title, prompt: candidate.prompt }),
+            code: candidate.reason_code,
+            at: new Date(candidate.reason_at).toISOString(),
+            action: candidate.reason_action ?? undefined,
+            timeZone: candidate.timezone,
+          },
+          idempotencyKey: `routine:${candidate.task_id}:${candidate.reason_code}:${new Date(candidate.reason_at).getTime()}`,
+          locale: chatTaskLocale(candidate.locale, locale),
         });
         sent += 1;
       } catch (error) {
@@ -304,8 +351,8 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     // request was asked means the person is deciding in Cloud already; requests from before registration stay silent.
     const candidates = await sql<{ id: string; user_id: string; count: number }[]>`
       WITH eligible AS MATERIALIZED (
-        SELECT r.id,r.approver_user_id,r.created_at FROM approvals.requests r
-        WHERE r.status='pending' AND r.expires_at > now()
+        SELECT r.id,r.approver_user_id,r.created_at FROM approvals.requests r JOIN auth.users u ON u.id=r.approver_user_id
+        WHERE r.status='pending' AND r.expires_at > now() AND r.approver_auth_epoch=u.auth_epoch
           AND (${input.approvalId ?? null}::uuid IS NULL OR r.approver_user_id=(
             SELECT approver_user_id FROM approvals.requests WHERE id=${input.approvalId ?? null}::uuid))
           AND EXISTS (SELECT 1 FROM ai.pending_actions p JOIN ai.turns t ON t.id=p.turn_id
@@ -330,11 +377,43 @@ export const createAiNotificationService = (definitions: AiNotificationDefinitio
     let failed = 0;
     for (const candidate of candidates) {
       try {
+        let recipientLocale = locale;
+        let question: string | undefined;
+        let reason: string | undefined;
+        try {
+          const { items } = await listPending({ approverUserId: candidate.user_id, id: candidate.id, limit: 1 });
+          const row = items[0];
+          if (row) {
+            const run = row.runConfig?.kind === "compact" ? null : row.runConfig;
+            recipientLocale = run?.locale ?? locale;
+            const apps = await listApps();
+            // The same card as the approvals page and Cloud Login, with the Action's declared reason when the review has none.
+            const policy = (await loadApprovalActionPolicies([row]))(row);
+            const card = pendingApprovalCard(
+              row,
+              (id, language) => {
+                const app = apps.find((entry) => entry.id === id);
+                return app ? resolveAppIdentityPresentation(app, language).name : id;
+              },
+              policy ?? undefined,
+              locale || undefined,
+            );
+            // The card's language, so the title and the question never mix languages.
+            recipientLocale = card.locale;
+            question = card.questionText.slice(0, 400);
+            reason = card.reason.text.slice(0, 500);
+          }
+        } catch (error) {
+          log.warn("Failed to build approval waiting question; using the general notice", {
+            approvalId: candidate.id,
+            error: error instanceof Error ? error.message : "Question unavailable",
+          });
+        }
         await notifications.send(definitions.approvalWaiting, {
           recipient: { userId: candidate.user_id },
-          data: { count: candidate.count },
+          data: { count: candidate.count, ...(question ? { question, reason } : {}) },
           idempotencyKey: `approval:${candidate.id}`,
-          locale,
+          locale: recipientLocale,
         });
         sent += 1;
       } catch (error) {

@@ -26,7 +26,9 @@ import {
 A click, typing, or Arrow Up/Down opens the results. Focus alone, whether from
 Tab or a dialog focusing the field as it opens, leaves the results closed so
 Escape can close the enclosing dialog. While the results are open, Escape
-closes only them.
+closes only them, and Enter selects the active result or does nothing: it never
+submits an enclosing form, so a person who types a name and presses Enter
+does not send a half-finished choice.
 
 `fetchData(query, signal)` runs immediately with the current query when a click
 or Arrow Up/Down opens the results, and after a 150 ms debounce while the user
@@ -46,6 +48,8 @@ automatic clear after selection.
 
 Loading keeps the previous results visible. A failed lookup replaces the list with its error and a retry action.
 
+Unlike `disabled`, `readOnly` keeps focus while blocking new picks, for example while the control’s own pick is being saved.
+
 ## API reference
 
 See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
@@ -54,6 +58,7 @@ See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldPr
 type ComboboxOption = { id: string; label: string; description?: string; icon?: string };
 
 type ComboboxProps = FieldProps & {
+  readOnly?: boolean;
   query?: MaybeAccessor<string>; onQueryChange?: (query: string) => void; placeholder?: string;
   fetchData: (query: string, signal: AbortSignal) => Promise<ComboboxOption[]>;
   onSelect: (option: ComboboxOption) => void; debounceMs?: number;
@@ -76,7 +81,7 @@ a persistent label.
 
 ## Runtime
 
-`Combobox` requires hydrated Solid client code. It uses browser focus, the Popover API, measured viewport placement that matches the field width, request cancellation, and keyboard events.
+`Combobox` requires browser code. It uses browser focus, the Popover API, measured viewport placement that matches the field width, request cancellation, and keyboard events.
 
 ## Example
 

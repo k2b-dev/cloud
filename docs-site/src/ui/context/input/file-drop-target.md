@@ -5,6 +5,8 @@ outside the page are dragged over the window. A calm overlay covers the area
 and says in one sentence what dropping does. The parent owns validation beyond
 the declared limits, uploads, progress, and persistence.
 
+`FileDropTarget` accepts files from outside the page through native drag events. For rows, tasks, or paragraphs already inside the page, use [`DragSource` and `DropTarget`](../actions/drag-and-drop). The two paths are independent.
+
 ## Use FileDropTarget
 
 Use it wherever a page or dialog can receive files: a chat composer, a folder
@@ -41,8 +43,12 @@ never part of the default area.
 
 The overlay sits in the top layer over the visible part of the area. It never
 takes the pointer and moves nothing: no layout shift, no movement on hover.
-While files are over the window it shows a light frame and the sentence; over
-the area the frame turns to the accent color. While an area is on the page, a
+It has no frame. While files are over the window, a faint accent tint marks
+every area that takes them. Over the area the tint gets stronger, and one solid
+chip at the bottom center of the area says the sentence. The chip sits below
+centered content, such as an empty state's `FileDropzone`, instead of covering
+it. In an area at most 10rem high, such as a one-row file field, the chip is
+smaller, centered, and shows at most two lines. While an area is on the page, a
 drop outside every target is refused, so the browser does not open the file and
 leave the page.
 
@@ -54,9 +60,11 @@ leave the page.
   `application/x-k2b-page-drag` when it starts, so a drag that is cancelled
   or whose source disappears leaves nothing behind.
 - The most specific target under the pointer wins. A `fileDropTarget` element
-  or a `FileDropzone` inside an area takes the drop, and the area's overlay
-  shows its sentence while the pointer is over it. The element itself gets an
-  inset ring through `data-file-drop="over"`.
+  or a `FileDropzone` inside an area takes the drop. The area's chip shows the
+  element's sentence while the pointer is over it, and the element itself gets
+  an inset ring through `data-file-drop="over"`. A `FileDropzone` shows its
+  `dropLabel` in its own title, so the chip stays hidden over it: the sentence
+  appears once.
 - The topmost open modal dialog takes precedence. Targets inside it work;
   targets on the page or in dialogs behind it are off until it closes.
 - A target whose own place is hidden is off, even when its area is visible:
@@ -96,7 +104,7 @@ message", and localize it like every other application string.
 
 ## Runtime
 
-Drag tracking needs hydrated Solid client code. One tracker per document serves
+Drag tracking requires browser code. One tracker per document serves
 every target. Server-rendered markup contains only the closed overlay.
 
 ## API reference

@@ -3,9 +3,10 @@ import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import { batch, createSignal, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
-import type { Mailbox } from "../../contracts";
+import type { Mailbox, MailConversationPreview } from "../../contracts";
 import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
+import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationReader from "./MailConversationReader";
 import type { MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import type { MailListItem } from "./mail-navigation";
@@ -23,10 +24,14 @@ export type MailListHarnessOptions = {
    * history, the detail arrives as one reconciled snapshot, and back and forward restore it.
    */
   reader?: boolean;
+  /** Starts the list at this route and lets it navigate through the history, as the workspace does. */
+  requestUrl?: string;
   /** The reader's toolbar; Reply by default. */
   toolbarActions?: MailConversationToolbarActionId[];
   /** The mail server deleted the messages of kept conversations, so the reader shows Cloud's copies. */
   deletedOnServer?: boolean;
+  /** Makes plain text conversations a reply with this body, for example quoted text, after an earlier message. */
+  plainText?: string;
 };
 
 declare global {
@@ -36,6 +41,9 @@ declare global {
     setMailItems: (items: MailListItem[]) => void;
     /** Marks rows as leaving, as the workspace does while an action takes them out of the list. */
     setMailLeaving: (keys: string[]) => void;
+    mountMailQuickLook: (item: MailListItem, preview: MailConversationPreview) => void;
+    setMailActive: (id: string | null) => void;
+    setMailChecked: (ids: string[]) => void;
     mailItems: () => MailListItem[];
     mailNavigations: string[];
     folderHintDismissed: boolean;
@@ -49,7 +57,7 @@ const mailbox = { id: "Box001", name: "Example Club", health: "healthy" } as unk
 const noop = () => {};
 
 /** One message per conversation; even rows have an HTML body in its frame, odd rows a plain text body. */
-const detailFor = (item: MailListItem | undefined, deletedOnServer = false) => {
+const detailFor = (item: MailListItem | undefined, deletedOnServer = false, plainText?: string) => {
   if (!item?.conversationId) return { selectedConversationId: null, subject: "", messages: [] as MessageDetail[] };
   const html = Number(item.conversationId.slice(2)) % 2 === 0;
   const message: MessageDetail = {
@@ -82,7 +90,22 @@ const detailFor = (item: MailListItem | undefined, deletedOnServer = false) => {
     delivery: null,
     attachments: [],
   };
-  return { selectedConversationId: item.conversationId, subject: item.subject, messages: [message] };
+  const reply = !html && plainText;
+  const messages = reply
+    ? [
+        message,
+        {
+          ...message,
+          id: `Re${item.conversationId.slice(2)}`,
+          messageId: `<re-${item.conversationId}@example.test>`,
+          from: [{ name: "Mara Example", address: "mara@example.test" }],
+          internalDate: new Date(Date.parse(item.latestMessageAt) + 60_000).toISOString(),
+          sentAt: new Date(Date.parse(item.latestMessageAt) + 60_000).toISOString(),
+          plainText: reply,
+        },
+      ]
+    : [message];
+  return { selectedConversationId: item.conversationId, subject: item.subject, messages };
 };
 
 window.mountMailList = (options) => {
@@ -96,10 +119,14 @@ window.mountMailList = (options) => {
   window.setMailLeaving = (keys) => setLeaving(new Set(keys));
   window.mailItems = () => [...list.items];
   const [selected, setSelected] = createSignal(options.selectedConversationId);
+  window.setMailActive = setSelected;
+  const [checked, setChecked] = createSignal<ReadonlySet<string>>(new Set());
+  window.setMailChecked = (ids) => setChecked(new Set(ids));
   const [detail, setDetail] = createStore(
     detailFor(
       options.items.find((item) => item.conversationId === selected()),
       options.deletedOnServer,
+      options.plainText,
     ),
   );
   // Keeping arrives with the next snapshot, like the workspace's: the open row's state decides the reader's.
@@ -121,11 +148,25 @@ window.mountMailList = (options) => {
           detailFor(
             list.items.find((item) => item.conversationId === conversationId),
             options.deletedOnServer,
+            options.plainText,
           ),
         ),
       );
     });
-  const requestUrl = () => `/app/mail/Box001${selected() ? `?conversation=${selected()}` : ""}`;
+  const [route, setRoute] = createSignal(options.requestUrl);
+  const updateRoute = () => setRoute(location.pathname + location.search);
+  const openHref = (href: string, replace = false) => {
+    if (!options.requestUrl) return;
+    window.mailNavigations.push(href);
+    if (replace) history.replaceState(null, "", href);
+    else history.pushState(null, "", href);
+    updateRoute();
+  };
+  if (options.requestUrl) {
+    history.replaceState(null, "", options.requestUrl);
+    window.addEventListener("popstate", updateRoute);
+  }
+  const requestUrl = () => route() ?? `/app/mail/Box001${selected() ? `?conversation=${selected()}` : ""}`;
   if (options.reader) {
     history.replaceState(null, "", requestUrl());
     window.addEventListener("popstate", () => open(new URL(location.href).searchParams.get("conversation")));
@@ -167,15 +208,16 @@ window.mountMailList = (options) => {
                   mailbox={mailbox}
                   mailboxId="Box001"
                   requestUrl={requestUrl()}
-                  query=""
+                  query={options.requestUrl ? (new URL(requestUrl(), location.origin).searchParams.get("q") ?? "") : ""}
                   search={{ query: "", expression: null, sort: "relevance", error: null }}
                   title="Inbox"
+                  namedBy="tabs"
                   items={list.items}
                   leavingKeys={leaving()}
                   error={null}
                   selectedConversationId={selected()}
                   selectedMessageId={null}
-                  selectedConversationIds={new Set()}
+                  selectedConversationIds={checked()}
                   selectionMode={options.selectionMode ?? false}
                   nextCursor={null}
                   dateConfig={dateConfig}
@@ -204,7 +246,12 @@ window.mountMailList = (options) => {
                   onCollapse={noop}
                   onOpenHealth={noop}
                   onOpenDeliverySettings={noop}
-                  onNavigate={noop}
+                  onNavigate={(nav) => {
+                    if (!options.requestUrl) return;
+                    window.mailNavigations.push(nav.href);
+                    nav.push();
+                    updateRoute();
+                  }}
                   onNavigateItem={(href) => {
                     window.mailNavigations.push(href);
                     if (!options.reader) return;
@@ -212,7 +259,6 @@ window.mountMailList = (options) => {
                     open(new URL(href, location.href).searchParams.get("conversation"));
                   }}
                   onToggleSelectionMode={noop}
-                  onListModeChange={noop}
                   onToggleSelection={noop}
                   onClearSelection={noop}
                   onAddTags={noop}
@@ -221,7 +267,7 @@ window.mountMailList = (options) => {
                   onItemAction={noop}
                   onManageTags={noop}
                   onMergeItem={noop}
-                  onOpenHref={noop}
+                  onOpenHref={openHref}
                   onLoadMore={() => false}
                   onRefresh={async () => {}}
                 />
@@ -285,4 +331,28 @@ window.mountMailList = (options) => {
     ),
     host,
   );
+};
+
+/** The real quick-look content in its shipped fixed card, including at widths where the list suppresses previews. */
+window.mountMailQuickLook = (item, preview) => {
+  const card = document.createElement("div");
+  card.id = "summary-card";
+  card.className = "k2b-hover-preview mail-quick-look-card";
+  card.setAttribute("popover", "manual");
+  card.setAttribute("data-size", "fixed");
+  document.querySelector("#root")!.append(card);
+  render(
+    () => (
+      <LocaleProvider locale="en">
+        <MailConversationQuickLook
+          item={item}
+          state={{ status: "ready", data: preview }}
+          dateConfig={{ locale: "en", timeZone: "Europe/Berlin" }}
+          onOpen={() => {}}
+        />
+      </LocaleProvider>
+    ),
+    card,
+  );
+  card.showPopover();
 };

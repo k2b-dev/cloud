@@ -5,7 +5,7 @@ section: Identity and access
 order: 355
 description: Configure OAuth clients and choose authorization code, device authorization, or client credentials.
 tags: [identity, oauth, oidc]
-updated: 2026-10-03
+updated: 2026-10-19
 ---
 
 # OAuth clients and flows
@@ -26,10 +26,44 @@ Cloud has three client origins:
   7591 and authorized through explicit user consent.
 
 The first-party `cld` command uses Cloud's protected `cloud-cli` registration
-for login, refresh, and logout. `cld login --device` uses the same
-registration through the device authorization grant. It does not dynamically
-register or accept an alternate OAuth client ID. Dynamic registration is for clients without a prior
+for login, refresh, and logout. Every browser `cld login` opens a consent page,
+even when the person is already signed in. `cld login --device` uses the same
+registration through the device authorization grant. `cld login --user`
+starts that grant with `login_hint`, and `cld login --ttl` sends `ttl`. `cld`
+does not dynamically register or accept an alternate OAuth client ID. Dynamic registration is for clients without a prior
 relationship with the Cloud instance.
+
+## Confirm new access
+
+Creating a refresh-token family with `offline_access` requires a browser
+sign-in from the last ten minutes. Cloud checks that sign-in inside the
+transaction that records the authorization, and Core requires that recorded
+confirmation before activating the family. OAuth tokens, API keys, and mobile
+app sessions do not count as browser confirmation. Access-token-only grants
+and rotation of an existing refresh family keep their existing behavior.
+
+On consent and device pages, an older session asks the person to confirm their
+identity first. Denying a request remains available without signing in again.
+Managed clients requesting `offline_access` return through
+`/auth/login?redirectTo=…`: the return URL keeps the same authorization request
+and adds `reauthenticate=1`. After signing in with the same account, the person
+returns to that request. This confirmation does not sign out the existing
+session. Managed requests without `offline_access` keep their normal flow.
+
+A terminal Cloud Login approval also counts as confirmation when it is consumed
+in the issuance transaction and matches this exact device grant: client,
+scopes, stored login lifetime, and person. The refresh family cannot outlive
+that stored lifetime. A missing confirmation or a mismatched approval returns
+`invalid_grant`; clients must start a new sign-in. `cld` says to run `cld login`
+again and confirm in the browser.
+
+Each new browser-confirmed refresh family sends a **New access** notice to the
+person, with email and browser delivery recommended. It names the command line
+for `cloud-cli`, or the application for other clients, and shows the time in
+the installation timezone. If the access was not yours, contact your
+administrator. The notice links to `/me/security`. Existing families and
+refresh rotation do not send this notice. Terminal Cloud Login approval itself
+confirms the access; that path does not send this additional notice.
 
 ## Authorization-code flow
 
@@ -100,13 +134,15 @@ refresh-token family to it. This is required by the
 Confidential clients can send credentials through HTTP Basic or the form.
 
 The resulting access token resolves to a user actor. `offline_access` can
-produce a refresh token.
+produce a refresh token. The exchange accepts the optional `ttl` form
+parameter described under [Login lifetime](#login-lifetime).
 
-Refresh tokens rotate on every successful use. A refresh request can reduce
-its scopes, but cannot add scopes; the reduced set remains in effect for later
-rotations. Resource-bound grants must repeat the exact `resource` on every
-refresh. Cloud also rechecks the account, client scopes and audiences, profile
-or explicit client access, and client existence before issuing a replacement.
+Refresh tokens rotate on every successful use. Rotation keeps the family's
+absolute expiry. A refresh request can reduce its scopes, but cannot add
+scopes; the reduced set remains in effect for later rotations. Resource-bound
+grants must repeat the exact `resource` on every refresh. Cloud also rechecks
+the account, client scopes and audiences, profile or explicit client access,
+and client existence before issuing a replacement.
 If any check fails, the grant cannot mint another access token.
 
 Authorization codes capture their granted audiences when created. Both the
@@ -115,8 +151,9 @@ audience later does not widen an existing grant.
 
 The OpenID Connect UserInfo endpoint accepts only user access tokens that
 contain `openid`, were issued for the requesting client, and still refer to an
-active account and registered client. ID tokens and resource-only access tokens
-are rejected.
+active account and registered client. It applies the same live account-epoch
+check as Cloud applications. ID tokens and resource-only access tokens are
+rejected.
 
 The OpenID Connect `sub` claim is the immutable Cloud user UUID. Human-readable
 account names remain available through `uid`; changing a login name does not
@@ -127,6 +164,44 @@ Local accounts can exist without one when the operator
 [allows it](/en/docs/accounts/registration#allow-local-accounts-without-email);
 their ID tokens and UserInfo responses omit `email` even with the `email` scope.
 Clients should identify users by `sub`.
+
+## Login lifetime
+
+Authorization-code and device logins have an absolute end. Without `ttl`, the
+refresh-token family lasts 90 days, except for
+[Cloud Login approval](#approve-in-cloud-login). Access and ID tokens last at
+most one hour and never outlive the login.
+
+The Cloud extension `ttl` requests a shorter login lifetime in integer seconds.
+Send it on `POST /oauth/token` with `grant_type=authorization_code`, or on
+`POST /oauth/device_authorization`, including requests with `login_hint`.
+For example, `ttl=600` requests ten minutes.
+Use decimal digits only, without a leading zero, from 1 to 15 digits. Zero,
+negative values, fractions, and empty values return `invalid_request`.
+Sending `ttl` with any other token grant also returns `invalid_request`.
+A refresh request cannot set or extend the login lifetime.
+
+Cloud caps `ttl` at the session length setting `user.session.expiry_hours`
+(converted to whole seconds) and the 90-day default, whichever is shorter.
+For device requests, Cloud stores the capped lifetime when authorization
+starts and checks the current cap again when issuing tokens. Lowering the
+setting does not shorten logins that already exist. Without `ttl`, this
+setting does not change the 90-day OAuth lifetime for requests without
+`login_hint`.
+
+Every token response that carries `refresh_token` also includes
+`refresh_token_expires_in`: the whole seconds remaining until the family's
+absolute expiry. This applies to authorization-code exchanges, approved device
+polls, and refreshes. `expires_in` gives the access token's lifetime, which can
+be shorter than one hour when the login ends sooner. Rotation never moves the
+family expiry.
+
+Both discovery documents, `/.well-known/openid-configuration` and
+`/.well-known/oauth-authorization-server`, advertise
+`cloud_login_ttl_supported: true`. Clients can check it before sending `ttl`.
+
+`cld login --ttl 8h` checks this marker, sends `ttl`, and prints the end from
+`refresh_token_expires_in`.
 
 ## Device authorization flow
 
@@ -167,11 +242,12 @@ client_id=<client-id>&scope=openid%20offline_access%20read
 }
 ```
 
-The requested scopes must be allowed for the client. Without `scope`, Cloud
-requests `openid`. The user code has eight characters from an alphabet
-without `0`, `O`, `1`, and `I`. It is displayed as `XXXX-XXXX` and accepted
-without the dash or in lowercase. Both codes expire after ten minutes. Cloud
-stores only SHA-256 hashes of both codes.
+The request also accepts the optional `ttl` form parameter described under
+[Login lifetime](#login-lifetime). The requested scopes must be allowed for the
+client. Without `scope`, Cloud requests `openid`. The user code has eight
+characters from an alphabet without `0`, `O`, `1`, and `I`. It is displayed as
+`XXXX-XXXX` and accepted without the dash or in lowercase. Both codes expire
+after ten minutes. Cloud stores only SHA-256 hashes of both codes.
 
 The person opens the verification URI, enters the code, and sees the client
 name, client ID, the code again, the requested scopes, and a warning to approve
@@ -206,7 +282,7 @@ client_id=<client-id>
 | `slow_down` | Polled within five seconds of the previous poll | Add five seconds to the interval |
 | `access_denied` | The person denied the request | Stop |
 | `expired_token` | The ten minutes passed | Start again |
-| `invalid_grant` | Unknown code, another client's code, or already redeemed | Stop |
+| `invalid_grant` | Unknown code, another client's code, already redeemed, or missing grant confirmation | Start a new sign-in and confirm in the browser |
 
 After approval, the next poll returns the same token response as the
 authorization-code flow, including a rotating refresh token when
@@ -225,6 +301,66 @@ Rate limits:
 
 The OAuth app's background cleanup removes device authorizations one hour after
 expiry and immediately after their tokens are issued.
+
+### Approve in Cloud Login
+
+First-party clients can send `login_hint` to request approval in the person's
+paired Cloud Login. Today this is available to the Cloud CLI's `cloud-cli`
+registration. [Cloud Login approval](/en/docs/operations/app-approval) must be
+turned on, and the paired app must support terminal sign-ins.
+The account must have accepted the terms once in the browser.
+Until then, the request behaves like an unknown account and expires.
+
+```http
+POST /oauth/device_authorization
+Content-Type: application/x-www-form-urlencoded
+
+client_id=cloud-cli&scope=openid%20offline_access%20read&login_hint=alice
+```
+
+Use a username or email address. Cloud trims surrounding whitespace and accepts
+1–254 characters. Email lookup is case-insensitive.
+
+```json
+{
+  "device_code": "<opaque device code>",
+  "comparison": "012345",
+  "expires_in": 300,
+  "interval": 5
+}
+```
+
+The person compares the six digits with Cloud Login, reviews the client,
+scopes and login lifetime, then approves or denies. There is no `user_code`
+or verification URI: this request cannot be approved by entering a code in
+the browser. It expires after five minutes.
+
+Poll `/oauth/token` with the normal device-code grant. The same errors apply:
+`authorization_pending`, `slow_down`, `access_denied`, `expired_token`, and
+`invalid_grant` on replay or when the account was signed out everywhere after
+approval. Unknown, ambiguous and unpaired accounts get the
+same start response and remain pending until expiry. No account lookup result
+is exposed to the client.
+
+Without `ttl`, the login lasts `user.session.expiry_hours`, up to 90 days.
+A shorter `ttl` reduces that lifetime. The lifetime is absolute; refreshing
+never extends it. Clients without `login_hint` keep the existing device flow
+and 90-day default.
+
+`cld login --user alice` checks `cloud_login_hint_supported`, uses this flow,
+and prints the six digits to compare.
+
+Start errors:
+
+| Error | Meaning | Client action |
+| --- | --- | --- |
+| `invalid_request` | Non-first-party client, malformed hint, or approval turned off | Correct the request or start without `login_hint` |
+| `invalid_scope` | Empty, disallowed, or `admin` scopes | Request allowed scopes; use the plain device flow for `admin` |
+| HTTP 503 `temporarily_unavailable` | Core cannot accept the request | Try later; operators should update Core before OAuth |
+
+An older Core without the approval route also produces 503. Both discovery
+documents advertise `cloud_login_hint_supported: true`; clients should check
+this marker before using the extension.
 
 ## Client-credentials flow
 
@@ -360,12 +496,27 @@ Applications do not import `oauthTokens` or verify JWTs. Apply
 `auth.requireRole("authenticated")`, then read `actor` and `accessSubject` from
 the request context.
 
-Access tokens expire after one hour. Core owns signing-key rotation and publishes
-public keys for their verification lifetime. Revoking a refresh grant or
-signing out an OAuth client prevents future refreshes but does not revoke an
-already issued access token. That token can remain valid until its one-hour
-expiry. Current-client validation and domain authorization still apply on each
-request.
+User access tokens carry an `auth_epoch` claim matching the account's current
+authentication epoch. Applications and `/oauth/userinfo` check it on every
+request; tokens with a missing or invalid claim, or a different epoch, are
+rejected. ID tokens and client-credentials tokens do not carry this claim.
+
+Signing an account out everywhere ends its OAuth sign-ins: refresh families,
+authorization codes and device codes approved but not yet redeemed (in the
+browser or in Cloud Login), and already issued user access tokens. This
+includes password changes in the profile or at sign-in, administrator password
+resets, password resets by link, an administrator signing the account out
+everywhere, account expiry, and directory synchronization that ends the
+account's sessions. The next refresh or code
+exchange returns `invalid_grant`; access tokens stop working on the next
+request. Signing out of one browser ends only that browser session.
+
+Access tokens expire after at most one hour, and never after the login ends.
+Core owns signing-key rotation and publishes public keys for their verification
+lifetime. Revoking an individual refresh grant or signing out an OAuth client
+prevents future refreshes; its already issued access token can remain valid
+until expiry. Current-client validation and domain authorization still apply
+on each request.
 
 Core signs OAuth tokens. The OAuth application owns the public protocol,
 clients, consent, authorization codes, refresh grants and discovery. Core and

@@ -5,7 +5,7 @@ section: Operations
 order: 1138
 description: JetStream storage reserved for Notebook live editing, how it is sized, and how per-note topics from older releases are retired.
 tags: [notebooks, nats, jetstream, storage, migration]
-updated: 2026-09-23
+updated: 2026-10-19
 ---
 
 # Size and migrate the Notebook document log
@@ -15,6 +15,13 @@ document log shared by all notes, `cloud:notebooks:yjs`. Each note's updates
 use the note ID as the Sync tenant. Snapshots in Postgres remain the durable
 document state. The log only needs to hold updates until a snapshot covers
 them.
+The platform now provides the log through `@k2b/cloud/shared-text`; the topic
+names and limits are unchanged.
+The snapshot pipeline also comes from the platform, with the same job ID,
+partitions, retries and reconcile schedule.
+For a legacy note with Markdown but no binary snapshot, the first reader
+persists a shared Yjs base before live editing begins. Editors, server writes
+and the snapshot worker then start from the same content.
 
 Releases up to 0.10 created one log per note. JetStream reserves every
 stream's configured byte limit against the account, whether or not data is
@@ -167,6 +174,8 @@ unavailable**, and the Notebooks logs contain
    saves an edit. Then restore the original account limit.
 
 The editor shows **Live editing is unavailable** while the broker refuses to
-store updates. It retries five times over about a minute, then reloads the
-note and tells the user to ask an administrator to raise the limit. Changes
-typed while live editing is unavailable are not saved.
+store updates. It retries five times over about a minute, then keeps the text
+on screen read-only. The bar says storage is full and whether changes are saved,
+and offers **Copy text** and **Reload**. Changes typed during the outage are
+resent on each retry, so they are saved if the broker accepts updates again
+within that minute. After the retries stop, they stay only in the open tab.

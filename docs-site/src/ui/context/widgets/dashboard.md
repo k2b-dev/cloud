@@ -20,6 +20,9 @@ fills widgets after the page renders, such as a dashboard, renders the loading
 and failure states in the same fixed frame size so nothing moves when data
 arrives.
 
+The header icon sits in a soft chip of its color, using the host's
+`--k2b-app-workspace-active` accent hook.
+
 ## Import
 
 ```tsx
@@ -89,10 +92,16 @@ Visible focus treatments cover header, row, and pill links. The packaged
 stylesheet removes decorative link transitions when reduced motion is
 requested.
 
+The Cloud dashboard places edit controls over the frame so entering edit mode
+does not move widgets. **Move forward** and **Move back** provide alternatives
+to dragging. A widget with declared settings also offers **Customize**. These
+controls and per-entry settings belong to the host; the portable frame keeps
+its presentation contract.
+
 ## Runtime
 
 Widgets render complete server HTML and make no network requests. Native links
-work without hydration. Client-side navigation enhancement remains the host's
+work without browser code. Client-side navigation enhancement remains the host's
 responsibility.
 
 ## Example

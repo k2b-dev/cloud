@@ -1,6 +1,10 @@
-import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
-import { type NetworkLookup, type PublicNetworkAddress, resolvePublicNetworkAddresses } from "@k2b/cloud/services/network-security";
+import {
+  type NetworkLookup,
+  type PublicNetworkAddress,
+  pinnedNetworkLookup,
+  resolvePublicNetworkAddresses,
+} from "@k2b/cloud/services/network-security";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
@@ -326,9 +330,9 @@ const performOneClickRequest: OneClickTransport = async (url, addresses, timeout
           "Content-Length": Buffer.byteLength(body),
           "User-Agent": "Cloud-Mail/1.0",
         },
-        lookup(_hostname, _options, callback) {
-          callback(null, addresses[0]!.address, addresses[0]!.family);
-        },
+        lookup: pinnedNetworkLookup(addresses),
+        // A default agent may route through an environment proxy, which would resolve the name again.
+        agent: false,
       },
       (incoming) => {
         let bytes = 0;
@@ -357,8 +361,7 @@ const performOneClickRequest: OneClickTransport = async (url, addresses, timeout
 const postOneClick = async (href: string, options: RequestOptions = {}, redirectCount = 0): Promise<void> => {
   const url = new URL(href);
   if (url.protocol !== "https:" || url.username || url.password) throw new Error("One-click unsubscribe requires a public HTTPS URL");
-  const lookup: NetworkLookup = options.lookup ?? ((hostname, lookupOptions) => dnsLookup(hostname, lookupOptions));
-  const addresses = await resolvePublicNetworkAddresses(url.hostname, lookup);
+  const addresses = await resolvePublicNetworkAddresses(url.hostname, options.lookup);
   const response = await (options.request ?? performOneClickRequest)(url, addresses, options.timeoutMs ?? REQUEST_TIMEOUT_MS);
 
   if ([307, 308].includes(response.statusCode) && response.location) {

@@ -1,4 +1,4 @@
-import { arg, command, confirmFlag, flag, printStructured } from "@k2b/cloud/cli";
+import { arg, cloudResourceUrl, command, confirmFlag, flag, printStructured, withCloudResourcePermalink } from "@k2b/cloud/cli";
 import type { PublicView as View } from "../api/public-dto";
 import type { DslQueryAutocompleteResponse, DslQueryCompileViewResponse, DslQueryExecuteResponse } from "../contracts";
 import { customAppContextKeys } from "../custom-apps/context-keys";
@@ -310,10 +310,13 @@ export const formulaCommands = [
         `/formulas/by-table/${encodeURIComponent(table.id)}/check`,
         jsonRequest("POST", applyDefined({ expression }, { currentFieldId: currentField ? currentField.id : undefined })),
       );
-      if (ctx.options.output === "json") {
-        ctx.json(payload);
+      if (
+        printStructured(ctx, {
+          ...payload,
+          rows: payload.rows.map((row) => ({ ...row, permalink: cloudResourceUrl(ctx, { type: "grids.record", id: row.recordId }) })),
+        })
+      )
         return payload.ok ? 0 : 1;
-      }
       if (payload.diagnostics.length > 0) {
         for (const diagnostic of payload.diagnostics) ctx.print(`${diagnostic.severity}: ${diagnostic.message}`);
         ctx.print("");
@@ -342,13 +345,18 @@ export const viewCommands = [
     async run({ ctx, args, flags }) {
       const { table } = await resolveTableFromCommand(ctx, args.args);
       const views = await listViews(ctx, table.id);
-      printJsonOrTable(ctx, views, viewRows(views), [
-        { key: "id", label: "ID" },
-        { key: "name", label: "NAME" },
-        { key: "scope", label: "SCOPE" },
-        { key: "updatedAt", label: "UPDATED" },
-        { key: "id", label: "ID" },
-      ]);
+      printJsonOrTable(
+        ctx,
+        views.map((view) => withCloudResourcePermalink(ctx, "grids.view", view)),
+        viewRows(views).map((view) => withCloudResourcePermalink(ctx, "grids.view", view)),
+        [
+          { key: "id", label: "ID" },
+          { key: "name", label: "NAME" },
+          { key: "scope", label: "SCOPE" },
+          { key: "updatedAt", label: "UPDATED" },
+          { key: "id", label: "ID" },
+        ],
+      );
     },
   }),
   command("views get", {
@@ -359,7 +367,7 @@ export const viewCommands = [
       const { table, rest } = await resolveTableScopeFromCommand(ctx, args.args, { table: flags.table, item: flags.view });
       const view = await resolveOptionalView(ctx, table, flags.view ?? rest[0]);
       if (!view) throw new Error("Missing view.");
-      if (!printCliStructured(ctx, view)) {
+      if (!printCliStructured(ctx, withCloudResourcePermalink(ctx, "grids.view", view))) {
         ctx.print(`${view.name} (${view.id})`);
         ctx.print(`scope: ${view.ownerUserId ? "personal" : "shared"}`);
         ctx.print(`id: ${view.id}`);
@@ -393,7 +401,11 @@ export const viewCommands = [
       });
       if (!body.name) throw new Error("Missing view name. Pass --name or --body JSON.");
       const view = await readApi<View>(ctx, `/views/by-table/${encodeURIComponent(table.id)}`, jsonRequest("POST", body));
-      printJsonOrMessage(ctx, view, `Created view ${view.name} (${view.id}).`);
+      printJsonOrMessage(
+        ctx,
+        withCloudResourcePermalink(ctx, "grids.view", view),
+        `Created view ${view.name} (${view.id}). ${cloudResourceUrl(ctx, { type: "grids.view", id: view.id })}`,
+      );
     },
   }),
   command("views update", {
@@ -422,7 +434,7 @@ export const viewCommands = [
         shared: flags.shared ? true : flags.personal ? false : undefined,
       });
       const updated = await readApi<View>(ctx, `/views/${encodeURIComponent(view.id)}`, jsonRequest("PATCH", body));
-      printJsonOrMessage(ctx, updated, `Updated view ${updated.name} (${updated.id}).`);
+      printJsonOrMessage(ctx, withCloudResourcePermalink(ctx, "grids.view", updated), `Updated view ${updated.name} (${updated.id}).`);
     },
   }),
   command("views delete", {
@@ -443,7 +455,7 @@ export const viewCommands = [
     args: { view: arg.required({ description: "View public id" }) },
     async run({ ctx, args }) {
       const view = await readApi<View>(ctx, `/views/${encodeURIComponent(args.view)}/restore`, jsonRequest("POST"));
-      printJsonOrMessage(ctx, view, `Restored view ${view.name} (${view.id}).`);
+      printJsonOrMessage(ctx, withCloudResourcePermalink(ctx, "grids.view", view), `Restored view ${view.name} (${view.id}).`);
     },
   }),
 ];

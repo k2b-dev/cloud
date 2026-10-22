@@ -25,6 +25,7 @@ test("the visible shell and runtime load panels only on open", async () => {
     resolve(import.meta.dir, "ShellRuntime.island.tsx"),
   ]);
   for (const file of [
+    "browser/panel-slot.ts",
     "ssr/AppLaunchpadPanel.tsx",
     "ssr/MobileNavigation.tsx",
     "ssr/launchpad-surface.tsx",

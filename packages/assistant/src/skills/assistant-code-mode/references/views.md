@@ -232,8 +232,8 @@ export default async () => {
     });
     for (const item of result.data) rows.push({
       task: { ...item.ref, title: item.title }, space: item.spaceName,
-      // Deadlines are instants; a Date in a date column keeps the run's calendar day.
-      deadline: item.deadline ? new Date(item.deadline) : null,
+      // An all-day deadline is already a date; a timed one is an instant, and its Date keeps the run's day.
+      deadline: item.deadlineAllDay ? item.deadline : item.deadline ? new Date(item.deadline) : null,
     });
     if (rows.length > 3840) throw new Error("Too many tasks for one view; narrow the query before rerunning.");
     cursor = result.page?.hasMore ? result.page.nextCursor : undefined;

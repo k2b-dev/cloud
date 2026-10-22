@@ -3,8 +3,26 @@ import { hc } from "hono/client";
 import { generateSpecs } from "hono-openapi";
 import app from "./index";
 
-type Schema = { $ref?: string; items?: Schema; properties?: Record<string, Schema> };
-type Operation = { responses?: Record<string, { content?: Record<string, { schema?: Schema }> }> };
+type Schema = {
+  $ref?: string;
+  items?: Schema;
+  properties?: Record<string, Schema>;
+  nullable?: boolean;
+  type?: string | string[];
+  anyOf?: Schema[];
+};
+type Operation = {
+  responses?: Record<
+    string,
+    {
+      content?: Record<string, { schema?: Schema }>;
+      headers?: Record<
+        string,
+        { required?: boolean; description?: string; schema?: { type?: string; maxLength?: number; pattern?: string } }
+      >;
+    }
+  >;
+};
 type Spec = {
   paths: Record<string, { get?: Operation; post?: Operation }>;
   components?: { schemas?: Record<string, Schema> };
@@ -12,6 +30,24 @@ type Spec = {
 
 const responseSchema = (spec: Spec, path: string, method: "get" | "post" = "get", status = "200") =>
   spec.paths[path]?.[method]?.responses?.[status]?.content?.["application/json"]?.schema;
+
+test("graph nodes document hierarchy, manual position, and last change", async () => {
+  const spec = (await generateSpecs(app)) as Spec;
+  const resolve = (schema?: Schema): Schema | undefined =>
+    schema?.$ref ? resolve(spec.components?.schemas?.[schema.$ref.replace("#/components/schemas/", "")]) : schema;
+  const response = resolve(responseSchema(spec, "/{id}/graph"));
+  const data = resolve(response?.properties?.data);
+  const nodes = resolve(data?.properties?.nodes);
+  const node = resolve(nodes?.items);
+  expect(Object.keys(node?.properties ?? {}).sort()).toEqual(["id", "inDegree", "parentId", "position", "title", "updatedAt"]);
+  const parent = resolve(node?.properties?.parentId);
+  expect(
+    parent?.nullable === true ||
+      parent?.type === "null" ||
+      (Array.isArray(parent?.type) && parent.type.includes("null")) ||
+      parent?.anyOf?.some((schema) => resolve(schema)?.type === "null") === true,
+  ).toBe(true);
+});
 
 test("the note tree and the book tree are separate OpenAPI components", async () => {
   const spec = (await generateSpecs(app)) as Spec;
@@ -81,4 +117,14 @@ test("version restores document their public results and expose bodyless typed c
     { url: "http://example.test/abc123/notes/def456/versions/version/restore", method: "POST", body: undefined },
     { url: "http://example.test/abc123/notes/def456/versions/version/copy", method: "POST", body: undefined },
   ]);
+});
+
+test("PDF response documents the optional bounded omission report header", async () => {
+  const spec = (await generateSpecs(app)) as Spec;
+  const header = spec.paths["/{id}/notes/{noteId}/pdf"]?.post?.responses?.["200"]?.headers?.["X-Notebooks-Pdf-Omissions"];
+  expect(header).toMatchObject({ required: false, schema: { type: "string", maxLength: 2048, pattern: "^[A-Za-z0-9_-]+$" } });
+  expect(header?.description).toContain("base64url");
+  expect(header?.description).toContain("UTF-8 JSON {items:[{code,kind,label}],more}");
+  expect(header?.description).toContain("marked in place");
+  expect(header?.description).toContain("did not fit");
 });

@@ -1,5 +1,7 @@
+import { getApp } from "@k2b/cloud";
 import { type CapabilityCatalogApp, getCapabilityCatalogApp, listCapabilityCatalog } from "@k2b/cloud/capabilities/server";
 import {
+  CapabilityAppIdSchema,
   type CapabilityContractIssue,
   CONTACT_DIRECTORY_FUNCTIONS,
   type ContactDirectoryFunction,
@@ -7,12 +9,16 @@ import {
   contactDirectory,
 } from "@k2b/cloud/contracts";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
+import type { Context } from "hono";
 import { app } from "../config";
 import { contactDirectoryMessages } from "../contact-directory-messages";
 import {
   MAIL_CONTACT_DIRECTORY_REQUIRED,
   MAIL_CONTACT_DIRECTORY_SETTING_KEYS,
+  type MailContactDirectory,
   type MailContactDirectoryConfig,
+  requestContactDirectoryConfig,
+  resolveMailContactDirectory,
 } from "../contact-directory-settings";
 import { isCurrentPlatformAdmin } from "./access";
 import type { MailRequestContext } from "./auth";
@@ -52,7 +58,8 @@ const platform: ContactDirectoryDependencies = {
   listCatalog: listCapabilityCatalog,
   getCatalogApp: getCapabilityCatalogApp,
   isAdmin: (context) => isCurrentPlatformAdmin(context),
-  writeSetting: (key, value) => app.settings.set(key, value),
+  // complete value from explicit admin input; nothing is merged over a read (#1303)
+  writeSetting: (key, value) => app.settings.set(key, value, { replaceUnreadable: true }),
 };
 
 const requireAdmin = async (context: MailRequestContext, deps: ContactDirectoryDependencies): Promise<Result<void>> =>
@@ -205,3 +212,26 @@ export const saveContactDirectory = async (
   }
   return { ok: true, config: stored };
 };
+
+/** A request-local registry read distinguishes an absent provider from a failed call. */
+const defaultIsRegistered = async (appId: string): Promise<boolean> => (await getApp(appId)) !== null;
+
+export const resolveRegisteredContactDirectory = async (
+  config: MailContactDirectoryConfig,
+  isRegistered: (appId: string) => Promise<boolean> = defaultIsRegistered,
+): Promise<MailContactDirectory> => {
+  const mapped = resolveMailContactDirectory(config);
+  if (!CapabilityAppIdSchema.safeParse(config.appId.trim()).success) return mapped;
+  try {
+    if (!(await isRegistered(config.appId.trim())))
+      return { suggest: null, resolve: null, read: null, listWritableBooks: null, create: null };
+  } catch {
+    // Registry failure is transient. Keep the targets so callers offer Retry.
+  }
+  return mapped;
+};
+
+export const requestContactDirectory = async (
+  c: Context,
+  deps: { isRegistered: (appId: string) => Promise<boolean> } = { isRegistered: defaultIsRegistered },
+): Promise<MailContactDirectory> => resolveRegisteredContactDirectory(requestContactDirectoryConfig(c), deps.isRegistered);

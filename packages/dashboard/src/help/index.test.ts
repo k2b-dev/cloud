@@ -9,7 +9,7 @@ describe("dashboardHelp", () => {
     expect(dashboardHelp.getMarkdown("dashboard-start")).toContain("Dashboard settings require a session of a person");
     const startHtml = dashboardHelp.documents.find((document) => document.id === "dashboard-start")?.html;
     expect(startHtml).toContain('<h2 id="overview" class="help-section-title"');
-    expect(startHtml).toContain("<span>Overview</span>");
+    expect(startHtml).toContain('class="help-section-title">Overview</h2>');
     expect(dashboardHelp.getMarkdown("dashboard-troubleshooting")).toContain("App shortcuts can disappear");
     expect(dashboardHelp.getMarkdown("dashboard-start")).toContain("Until you change something, you see the widgets your apps suggest");
   });

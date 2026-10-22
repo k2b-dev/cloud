@@ -32,22 +32,12 @@ const UNSAFE_IPV4_RANGES: ReadonlyArray<readonly [string, number]> = [
   ["240.0.0.0", 4],
 ];
 
-const ipv6ToBigInt = (rawAddress: string): bigint | null => {
-  let address = rawAddress.toLowerCase().split("%")[0] ?? "";
-  if (address.includes(".")) {
-    const separator = address.lastIndexOf(":");
-    const ipv4 = ipv4ToNumber(address.slice(separator + 1));
-    if (separator < 0 || ipv4 === null) return null;
-    address = `${address.slice(0, separator)}:${(ipv4 >>> 16).toString(16)}:${(ipv4 & 0xffff).toString(16)}`;
-  }
+// Only canonical IPv6 from the WHATWG parser reaches this conversion.
+const ipv6ToBigInt = (address: string): bigint => {
   const halves = address.split("::");
-  if (halves.length > 2) return null;
   const left = halves[0] ? halves[0].split(":") : [];
   const right = halves[1] ? halves[1].split(":") : [];
-  const missing = halves.length === 2 ? 8 - left.length - right.length : 0;
-  if (missing < 0 || (halves.length === 1 && left.length !== 8)) return null;
-  const groups = [...left, ...Array.from({ length: missing }, () => "0"), ...right];
-  if (groups.length !== 8 || groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))) return null;
+  const groups = [...left, ...Array.from({ length: 8 - left.length - right.length }, () => "0"), ...right];
   return groups.reduce((value, group) => (value << 16n) | BigInt(`0x${group}`), 0n);
 };
 
@@ -57,51 +47,161 @@ const ipv6InRange = (address: bigint, base: bigint, bits: number): boolean => {
 };
 
 const UNSAFE_IPV6_RANGES: ReadonlyArray<readonly [bigint, number]> = [
-  [ipv6ToBigInt("::")!, 96],
-  [ipv6ToBigInt("64:ff9b::")!, 96],
-  [ipv6ToBigInt("64:ff9b:1::")!, 48],
-  [ipv6ToBigInt("100::")!, 64],
-  [ipv6ToBigInt("2001::")!, 32],
-  [ipv6ToBigInt("2001:2::")!, 48],
-  [ipv6ToBigInt("2001:db8::")!, 32],
-  [ipv6ToBigInt("2002::")!, 16],
-  [ipv6ToBigInt("3fff::")!, 20],
-  [ipv6ToBigInt("fc00::")!, 7],
-  [ipv6ToBigInt("fe80::")!, 10],
-  [ipv6ToBigInt("fec0::")!, 10],
-  [ipv6ToBigInt("ff00::")!, 8],
+  [ipv6ToBigInt("2001::"), 23],
+  [ipv6ToBigInt("2001:db8::"), 32],
+  [ipv6ToBigInt("2002::"), 16],
+  [ipv6ToBigInt("3fff::"), 20],
 ];
 
-export const normalizeNetworkHostname = (hostname: string): string =>
-  hostname
-    .toLowerCase()
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.$/, "");
-
-export const networkAddressFamily = (rawAddress: string): 4 | 6 | null => {
-  const address = normalizeNetworkHostname(rawAddress);
-  if (ipv4ToNumber(address) !== null) return 4;
-  return ipv6ToBigInt(address) !== null ? 6 : null;
+export const normalizeNetworkHostname = (hostname: string): string => {
+  const lower = hostname.toLowerCase();
+  if (lower.startsWith("[") && lower.endsWith("]") && lower.includes(":")) return lower.slice(1, -1);
+  return lower.includes(":") ? lower : lower.replace(/\.$/, "");
 };
 
-export const isUnsafeNetworkAddress = (rawAddress: string): boolean => {
+// WHATWG's "ends in a number" rule: these hosts must parse as IPv4,
+// rather than falling back to DNS (including invalid octal and overflow).
+const endsInNumber = (hostname: string): boolean => {
+  const last = hostname.split(".").at(-1) ?? "";
+  return /^\d+$/.test(last) || /^0x[0-9a-f]*$/i.test(last);
+};
+
+/** Parse all URL IP literal forms without DNS or server-only dependencies. */
+export const parseNetworkAddress = (rawAddress: string): { address: string; family: 4 | 6 } | null => {
   const address = normalizeNetworkHostname(rawAddress);
-  const family = networkAddressFamily(address);
-  if (family === 4) return UNSAFE_IPV4_RANGES.some(([base, bits]) => ipv4InRange(address, base, bits));
-  if (family !== 6) return true;
-  const value = ipv6ToBigInt(address);
-  if (value === null) return true;
-  if (value >> 32n === 0xffffn) {
-    const mapped = Number(value & 0xffffffffn);
-    const ipv4 = [mapped >>> 24, (mapped >>> 16) & 255, (mapped >>> 8) & 255, mapped & 255].join(".");
-    return isUnsafeNetworkAddress(ipv4);
+  const ipv6 = address.includes(":");
+  if (!address || /[\s/@\\?#%\[\]]/.test(address) || (!ipv6 && !endsInNumber(address))) return null;
+  try {
+    // URL implements legacy IPv4 (decimal, octal, hex and shortened forms),
+    // as well as IPv6 compression and dotted tails. Reject zone IDs above.
+    const parsed = new URL(`http://${ipv6 ? `[${address}]` : address}/`).hostname;
+    if (ipv6) return { address: normalizeNetworkHostname(parsed), family: 6 };
+    return ipv4ToNumber(parsed) !== null ? { address: parsed, family: 4 } : null;
+  } catch {
+    return null;
   }
-  return UNSAFE_IPV6_RANGES.some(([base, bits]) => ipv6InRange(value, base, bits));
+};
+
+export const networkAddressFamily = (rawAddress: string): 4 | 6 | null => parseNetworkAddress(rawAddress)?.family ?? null;
+
+export const isUnsafeNetworkAddress = (rawAddress: string): boolean => {
+  const literal = parseNetworkAddress(rawAddress);
+  if (!literal) return true;
+  if (literal.family === 4) return UNSAFE_IPV4_RANGES.some(([base, bits]) => ipv4InRange(literal.address, base, bits));
+  const value = ipv6ToBigInt(literal.address);
+  if (value >> 32n === 0xffffn || ipv6InRange(value, ipv6ToBigInt("64:ff9b::"), 96)) {
+    const mapped = Number(value & 0xffffffffn);
+    return isUnsafeNetworkAddress([mapped >>> 24, (mapped >>> 16) & 255, (mapped >>> 8) & 255, mapped & 255].join("."));
+  }
+  return !ipv6InRange(value, ipv6ToBigInt("2000::"), 3) || UNSAFE_IPV6_RANGES.some(([base, bits]) => ipv6InRange(value, base, bits));
 };
 
 export const isUnsafeNetworkHostname = (rawHostname: string): boolean => {
   const hostname = normalizeNetworkHostname(rawHostname);
   return (
-    hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "metadata.google.internal" || hostname.endsWith(".internal")
+    !hostname ||
+    ["localhost", "localhost.localdomain", "metadata", "metadata.google.internal", "instance-data"].includes(hostname) ||
+    [".localhost", ".internal", ".local", ".home.arpa"].some((suffix) => hostname.endsWith(suffix)) ||
+    /[%\[\]]/.test(hostname) ||
+    ((endsInNumber(hostname) || hostname.includes(":")) && !parseNetworkAddress(hostname))
   );
+};
+
+/** Operator-owned exact DNS names and canonical IP networks. Never populate from person input. */
+export type NetworkAllowlist = {
+  readonly hosts: ReadonlySet<string>;
+  readonly networks: ReadonlyArray<Readonly<{ address: string; family: 4 | 6; bits: number }>>;
+  /** Exact hosts/IPs restricted to a port. Optional for existing callers constructing lists. */
+  readonly hostPorts?: ReadonlyMap<string, ReadonlySet<number>>;
+};
+
+export const EMPTY_NETWORK_ALLOWLIST: NetworkAllowlist = { hosts: new Set(), networks: [] };
+
+export const parseNetworkAllowlist = (entries: readonly string[]): NetworkAllowlist => {
+  const hosts = new Set<string>();
+  const hostPorts = new Map<string, Set<number>>();
+  const networks: Array<{ address: string; family: 4 | 6; bits: number }> = [];
+  for (const entry of entries) {
+    const invalid = (reason = "expected an exact host name, IP address or CIDR") =>
+      new Error(`Invalid network allowlist entry "${entry}": ${reason}`);
+    const portMatch = entry.match(/^(?:\[([^\]]+)\]|([^:/\[\]]+)):([^:]*)$/);
+    if (portMatch) {
+      const rawHost = portMatch[1] ?? portMatch[2]!;
+      const rawPort = portMatch[3]!;
+      if (!/^[1-9]\d{0,4}$/.test(rawPort) || Number(rawPort) > 65535)
+        throw invalid("expected a port from 1 to 65535 without leading zeros");
+      if (portMatch[1] && parseNetworkAddress(rawHost)?.family !== 6) throw invalid();
+      const parsed = parseNetworkAllowlist([rawHost]);
+      const host = [...parsed.hosts][0] ?? parsed.networks[0]?.address;
+      if (!host) throw invalid();
+      const ports = hostPorts.get(host) ?? new Set<number>();
+      ports.add(Number(rawPort));
+      hostPorts.set(host, ports);
+      continue;
+    }
+    const parts = entry.split("/");
+    const raw = parts[0] ?? "";
+    const literal = parseNetworkAddress(raw);
+    if (literal) {
+      // Allowlist entries use strict IP notation, even though URL destinations may use legacy IPv4.
+      if (literal.family === 4 && ipv4ToNumber(raw) === null) throw invalid();
+      if (literal.family === 6 && raw.includes(".") && ipv4ToNumber(raw.replace(/\]$/, "").split(":").at(-1) ?? "") === null)
+        throw invalid();
+      const width = literal.family === 4 ? 32 : 128;
+      if (parts.length > 2 || (parts.length === 2 && !/^(0|[1-9]\d*)$/.test(parts[1] ?? ""))) throw invalid();
+      const bits = parts.length === 2 ? Number(parts[1]) : width;
+      if (bits > width) throw invalid();
+      if (bits === 0) throw invalid("a /0 network allows every address; list the internal hosts or ranges instead");
+      const value = literal.family === 4 ? BigInt(ipv4ToNumber(literal.address)!) : ipv6ToBigInt(literal.address);
+      const shift = BigInt(width - bits);
+      const base = (value >> shift) << shift;
+      if (base !== value) {
+        const address =
+          literal.family === 4
+            ? [24n, 16n, 8n, 0n].map((shift) => Number((base >> shift) & 255n)).join(".")
+            : parseNetworkAddress(
+                Array.from({ length: 8 }, (_, index) => ((base >> BigInt((7 - index) * 16)) & 65535n).toString(16)).join(":"),
+              )!.address;
+        throw invalid(`host bits are set; use ${address}/${bits}`);
+      }
+      networks.push({ ...literal, bits });
+      continue;
+    }
+    const hostname = normalizeNetworkHostname(raw);
+    if (
+      parts.length !== 1 ||
+      endsInNumber(hostname) ||
+      raw.includes(":") ||
+      hostname.length > 253 ||
+      !hostname.split(".").every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))
+    )
+      throw invalid();
+    hosts.add(hostname);
+  }
+  return hostPorts.size ? { hosts, networks, hostPorts } : { hosts, networks };
+};
+
+/** Parse operator configuration with the variable name in startup errors. */
+export const parseNetworkAllowlistEnv = (variable: string, entries: readonly string[]): NetworkAllowlist => {
+  try {
+    return parseNetworkAllowlist(entries);
+  } catch (error) {
+    throw new Error(`${variable}: ${error instanceof Error ? error.message : "Invalid allowlist"}`);
+  }
+};
+
+export const isAllowlistedNetworkAddress = (allowlist: NetworkAllowlist, rawAddress: string, port?: number): boolean => {
+  const literal = parseNetworkAddress(rawAddress);
+  if (!literal) return false;
+  if (port !== undefined && allowlist.hostPorts?.get(literal.address)?.has(port)) return true;
+  if (literal.family === 6) {
+    const value = ipv6ToBigInt(literal.address);
+    // Only IPv4-mapped IPv6 reaches the embedded IPv4 host directly.
+    if (value >> 32n === 0xffffn) {
+      const ipv4 = [24n, 16n, 8n, 0n].map((shift) => Number((value >> shift) & 255n)).join(".");
+      if (isAllowlistedNetworkAddress(allowlist, ipv4, port)) return true;
+    }
+    return allowlist.networks.some((network) => network.family === 6 && ipv6InRange(value, ipv6ToBigInt(network.address), network.bits));
+  }
+  return allowlist.networks.some((network) => network.family === 4 && ipv4InRange(literal.address, network.address, network.bits));
 };

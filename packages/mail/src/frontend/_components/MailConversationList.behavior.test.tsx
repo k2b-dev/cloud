@@ -21,6 +21,7 @@ const listProps = (requestUrl: string) => ({
   search: resolveMailSearchRoute(new URL(requestUrl, "https://cloud.test")),
   query: "",
   title: "Needs action",
+  namedBy: "tabs" as const,
   items: [],
   error: null,
   selectedConversationId: null,
@@ -45,7 +46,7 @@ const listProps = (requestUrl: string) => ({
   onNavigate: () => {},
   onNavigateItem: () => {},
   onToggleSelectionMode: () => {},
-  onListModeChange: () => {},
+
   onToggleSelection: () => {},
   onClearSelection: () => {},
   onAddTags: () => {},
@@ -96,30 +97,6 @@ test.skipIf(isServer)("overscrolling the conversation list at its top runs the w
   }
 });
 
-test.skipIf(isServer)("the structured search summary is one named button that covers its icon and text", async () => {
-  const dom = createDomTestHarness();
-  const { default: MailConversationList } = await import("./MailConversationList");
-  const dispose = render(
-    () => createComponent(MailConversationList, { ...listProps("/app/mail/Box001?q=sdsd"), query: "sdsd", onRefresh: async () => {} }),
-    dom.root,
-  );
-  try {
-    const summary = dom.root.querySelector<HTMLButtonElement>(".mail-search-summary")!;
-    expect(summary.tagName).toBe("BUTTON");
-    expect(summary.type).toBe("button");
-    expect(summary.getAttribute("aria-label")).toMatch(/^Edit structured search: .*sdsd/);
-    expect(summary.tabIndex).toBe(0);
-    // Every visible part of the line sits inside the one button, so there is no gap with another cursor.
-    expect(Array.from(summary.children, (child) => child.tagName)).toEqual(["I", "SPAN"]);
-    expect(summary.querySelector("i.ti-filter-check")?.getAttribute("aria-hidden")).toBe("true");
-    expect(summary.querySelector(".mail-search-summary__text")?.textContent).toContain("sdsd");
-    expect(summary.parentElement?.querySelectorAll(":scope > button.mail-search-summary")).toHaveLength(1);
-  } finally {
-    dispose();
-    dom.cleanup();
-  }
-});
-
 test.skipIf(isServer)("search filters open one builder however often they are pressed while its code loads", async () => {
   const dom = createDomTestHarness();
   const { default: MailConversationList } = await import("./MailConversationList");
@@ -129,14 +106,14 @@ test.skipIf(isServer)("search filters open one builder however often they are pr
   );
   try {
     const filters = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!;
-    const summary = dom.root.querySelector<HTMLButtonElement>(".mail-search-summary")!;
     filters.click();
     // The trigger shows that it is busy and stays enabled, so it keeps focus for the dialog to return it.
     expect(filters.getAttribute("aria-busy")).toBe("true");
     expect(filters.disabled).toBe(false);
     expect(filters.querySelector("i.ti-loader-2")).not.toBeNull();
     filters.click();
-    summary.click();
+    filters.click();
+    expect(dom.root.querySelector(".mail-search-summary")).toBeNull();
     for (let attempt = 0; attempt < 100 && filters.hasAttribute("aria-busy"); attempt += 1) await Bun.sleep(5);
     expect(searchBuilderOpens).toHaveLength(1);
     expect(filters.hasAttribute("aria-busy")).toBe(false);
@@ -146,3 +123,49 @@ test.skipIf(isServer)("search filters open one builder however often they are pr
     dom.cleanup();
   }
 });
+
+for (const [query, expected] of [
+  ["?q=quick", "saved"],
+  ["?search=invalid&q=quick", "saved"],
+  [
+    `?${new URLSearchParams({ search: JSON.stringify({ expression: { type: "text", field: "from", query: "structured", match: "exact" }, sort: "newest" }), q: "quick" })}`,
+    "structured",
+  ],
+]) {
+  test.skipIf(isServer)(`the list builder retains structured, saved-view, quick-search precedence: ${query}`, async () => {
+    const dom = createDomTestHarness();
+    const { default: MailConversationList } = await import("./MailConversationList");
+    const dispose = render(
+      () =>
+        createComponent(MailConversationList, {
+          ...listProps(`/app/mail/Box001${query}`),
+          activeSavedViewId: "View01",
+          savedViews: [
+            {
+              id: "View01",
+              mailboxId: "Box001",
+              scope: "private",
+              ownerUserId: "user-1",
+              name: "Saved",
+              filter: { expression: { type: "text", field: "subject", query: "saved", match: "words" }, sort: "newest" },
+              revision: 1,
+              createdAt: "2026-10-14T10:00:00Z",
+              updatedAt: "2026-10-14T10:00:00Z",
+            },
+          ],
+          onRefresh: async () => {},
+        }),
+      dom.root,
+    );
+    try {
+      const before = searchBuilderOpens.length;
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
+      const deadline = performance.now() + 2000;
+      while (searchBuilderOpens.length === before && performance.now() < deadline) await Bun.sleep(1);
+      expect(searchBuilderOpens.at(-1)).toMatchObject({ initialState: { expression: { query: expected } } });
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+}

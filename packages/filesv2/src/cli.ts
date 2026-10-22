@@ -4,6 +4,7 @@ import {
   arg,
   type CloudCliContext,
   type CloudCliText,
+  cloudResourceUrl,
   command,
   confirmFlag,
   defineCliCommands,
@@ -13,13 +14,23 @@ import {
   printStructured,
 } from "@k2b/cloud/cli";
 import type { ApiType } from "./api";
-import { addressOf, areaLabel, type FileTarget, fileResolver } from "./cli-address";
+import {
+  addressOf,
+  areaLabel,
+  type FileTarget,
+  fileResolver,
+  withEntryPermalink,
+  withEntryPermalinks,
+  withEntryResultPermalink,
+} from "./cli-address";
 import { adminCommands } from "./cli-admin";
 import { downloadFile, readFile } from "./cli-download";
+import { cloudRequest, readWithin } from "./cli-request";
 import { templateCommands } from "./cli-templates";
 import { uploadFile } from "./cli-upload";
 import {
   type ArchiveDownload,
+  type BaseSummary,
   type BasesResult,
   CONTENT_STREAM_LIMIT,
   type DirectoryResult,
@@ -28,6 +39,8 @@ import {
   type EntryResult,
   type FileEntry,
   type FileVersion,
+  type FolderBatchResult,
+  type FolderResult,
   type MarkedEntry,
   type SearchResult,
   type SharePage,
@@ -38,6 +51,8 @@ import {
 } from "./contracts";
 import { DOCUMENT_KINDS } from "./documents";
 import { editorUrl } from "./frontend/urls";
+import { entryRefId } from "./resource-ref";
+import { uploadRequestFailure, uploadResponseFailure } from "./upload-transfer";
 
 /** The server's scan budget for one listing or search; `tree` stops at the same size instead of paging forever. */
 const TREE_LIMIT = 10_000;
@@ -120,19 +135,54 @@ function filesCommands(locale?: string) {
     });
   const mkdir = async (ctx: CloudCliContext, baseId: string, path: string) =>
     ctx.readJson<EntryResult>(await api(ctx).bases[":baseId"].directories.$post({ param: { baseId }, json: { path } }));
-  /** Creates every missing folder of `path`; an existing folder is fine, an existing file is not. */
-  const mkdirParents = async (ctx: CloudCliContext, baseId: string, path: string) => {
-    let result: EntryResult | undefined;
-    const segments = path.split("/").filter(Boolean);
-    for (let index = 1; index <= segments.length; index++) {
-      const current = segments.slice(0, index).join("/");
-      result = await mkdir(ctx, baseId, current).catch(async (error: unknown) => {
-        if (!isStatus(error, 409)) throw error;
-        const existing = await entry(ctx, { baseId, path: current, folder: true });
-        if (!existing.entry.directory) throw error;
-        return existing;
-      });
+  const folderFailure = (results: FolderResult[], reason: string) => {
+    const none = t({ en: "none", de: "keine" });
+    const created =
+      results
+        .filter((item) => item.state === "created")
+        .map((item) => item.path)
+        .join(", ") || none;
+    const remaining =
+      results
+        .filter((item) => item.state === "skipped")
+        .map((item) => item.path)
+        .join(", ") || none;
+    return new Error(
+      `${reason}. ${t({ en: "Created", de: "Angelegt" })}: ${created}. ${t({ en: "Not attempted", de: "Nicht versucht" })}: ${remaining}.`,
+    );
+  };
+  /** Creates each folder below an existing parent, in order; an existing name fails and stops the rest. */
+  const mkdirEach = async (ctx: CloudCliContext, baseId: string, paths: string[]): Promise<FolderBatchResult> => {
+    const results: FolderResult[] = [];
+    let base: BaseSummary | undefined;
+    for (const [index, path] of paths.entries()) {
+      try {
+        const created = await mkdir(ctx, baseId, path);
+        base = created.base;
+        results.push({ path, state: "created", entry: created.entry });
+      } catch (error) {
+        results.push({ path, state: "failed" }, ...paths.slice(index + 1).map((rest): FolderResult => ({ path: rest, state: "skipped" })));
+        throw folderFailure(results, `${error instanceof Error ? error.message : String(error)} (${path})`);
+      }
     }
+    // `sameArea` guarantees at least one folder, and every one was created.
+    return { base: base!, results };
+  };
+  /** Creates every missing folder of every path in one batch; an existing folder is fine, an existing file is not. */
+  const mkdirParents = async (ctx: CloudCliContext, baseId: string, folders: string[]) => {
+    const paths = [
+      ...new Set(
+        folders.flatMap((path) => {
+          const segments = path.split("/");
+          return segments.map((_, index) => segments.slice(0, index + 1).join("/"));
+        }),
+      ),
+    ].sort((a, b) => a.split("/").length - b.split("/").length);
+    const result = await cloudRequest<FolderBatchResult>(ctx, (signal) =>
+      api(ctx).bases[":baseId"].directories.batch.$post({ param: { baseId }, json: { paths } }, { init: { signal } }),
+    );
+    const failed = result.results.find((item) => item.state === "failed");
+    if (failed) throw folderFailure(result.results, `${failed.path}: ${failed.message ?? failed.error}`);
     return result;
   };
   /** Local target for a download: the given path, a file inside a given local folder, or the remote name in the working directory. */
@@ -140,6 +190,14 @@ function filesCommands(locale?: string) {
     if (!local) return name;
     const info = await localStat(local).catch(() => null);
     return info?.isDirectory() ? join(local, name) : local;
+  };
+  const withEntriesPermalinks = (ctx: CloudCliContext, result: EntriesResult) => {
+    if (ctx.options.output === "text") return result;
+    return {
+      ...result,
+      entries: withEntryPermalinks(ctx, result.base.id, result.entries),
+      results: result.results.map((item) => (item.ok ? { ...item, entry: withEntryPermalink(ctx, result.base.id, item.entry) } : item)),
+    };
   };
   const batch = (ctx: CloudCliContext, result: { results: { path: string; ok: boolean; error?: string }[] }) => {
     printRows(ctx, ctx.options.output === "jsonl" ? result.results : result, result.results, [
@@ -149,8 +207,9 @@ function filesCommands(locale?: string) {
     ]);
     if (result.results.some((item) => !item.ok)) return 1;
   };
-  const entryRows = (ctx: CloudCliContext, value: unknown, items: FileEntry[], key: "name" | "path") =>
-    printRows(ctx, ctx.options.output === "jsonl" ? items : value, items, [
+  const entryRows = (ctx: CloudCliContext, value: DirectoryResult | SearchResult, items: FileEntry[], key: "name" | "path") => {
+    const linked = withEntryPermalinks(ctx, value.base.id, items);
+    printRows(ctx, ctx.options.output === "jsonl" ? linked : { ...value, items: linked }, items, [
       {
         key,
         label: key === "name" ? t({ en: "Name", de: "Name" }) : t({ en: "Path", de: "Pfad" }),
@@ -159,16 +218,21 @@ function filesCommands(locale?: string) {
       { key: "size", label: "Bytes", value: (item) => (item.directory ? "" : item.size) },
       { key: "modified", label: t({ en: "Modified", de: "Geändert" }) },
     ]);
-  const markedRows = (ctx: CloudCliContext, items: MarkedEntry[], column: CloudCliText) =>
+  };
+  const markedRows = (ctx: CloudCliContext, items: MarkedEntry[], column: CloudCliText) => {
+    const linked = items.map((item) =>
+      ctx.options.output === "text" ? item : { ...item, entry: withEntryPermalink(ctx, item.base.id, item.entry) },
+    );
     printRows(
       ctx,
-      items,
+      linked,
       items.map((item) => ({ address: addressOf(item.base, item.entry.path), markedAt: item.markedAt })),
       [
         { key: "address", label: t({ en: "Address", de: "Adresse" }) },
         { key: "markedAt", label: t(column) },
       ],
     );
+  };
 
   return defineCliCommands({
     name: "filesv2",
@@ -298,7 +362,7 @@ function filesCommands(locale?: string) {
             } while (cursor);
           };
           await walk(target.path, 1);
-          if (printStructured(ctx, { base, path: target.path, depth, items })) return;
+          if (printStructured(ctx, { base, path: target.path, depth, items: withEntryPermalinks(ctx, target.baseId, items) })) return;
           ctx.print(`${addressOf(base ?? { name: target.baseId }, target.path)}`);
           for (const item of items) ctx.print(`${"  ".repeat(item.depth)}${item.name}${item.directory ? "/" : ""}`);
         },
@@ -308,7 +372,7 @@ function filesCommands(locale?: string) {
         args: { file: fileArg({ en: "<area>:/path or a file ID", de: "<bereich>:/pfad oder eine Datei-ID" }) },
         async run({ ctx, args }) {
           const result = await entry(ctx, await fileResolver(ctx).file(args.file));
-          if (printStructured(ctx, result)) return;
+          if (printStructured(ctx, withEntryResultPermalink(ctx, result))) return;
           const rows: [string, unknown][] = [
             [t({ en: "Address", de: "Adresse" }), addressOf(result.base, result.entry.path)],
             [t({ en: "Type", de: "Art" }), result.entry.directory ? t({ en: "folder", de: "Ordner" }) : t({ en: "file", de: "Datei" })],
@@ -357,7 +421,17 @@ function filesCommands(locale?: string) {
               }),
             );
           }
-          if (!printStructured(ctx, { baseId: target.baseId, path, bytes: bytes.byteLength, content })) await ctx.write(content);
+          if (ctx.options.output === "text") await ctx.write(content);
+          else {
+            const id = target.entry?.resourceId ?? target.entry?.entry.resourceId ?? entryRefId(target.baseId, path);
+            printStructured(ctx, {
+              baseId: target.baseId,
+              path,
+              bytes: bytes.byteLength,
+              content,
+              ...(id ? { permalink: cloudResourceUrl(ctx, { type: "filesv2.entry", id }) } : {}),
+            });
+          }
         },
       }),
       command("get", {
@@ -439,13 +513,27 @@ function filesCommands(locale?: string) {
         async run({ ctx, args, flags }) {
           const target = await fileResolver(ctx).file(args.remote);
           const path = target.folder ? joinPath(target.path, basename(args.local)) : target.path;
-          if (flags.parents && parentOf(path)) await mkdirParents(ctx, target.baseId, parentOf(path));
+          if (flags.parents && parentOf(path)) await mkdirParents(ctx, target.baseId, [parentOf(path)]);
           const baseParam = param(target);
+          const readUpload = async <T>(
+            signal: AbortSignal,
+            send: Promise<Parameters<typeof ctx.readJson>[0] & { headers: Headers }>,
+          ): Promise<T> => {
+            const response = await send;
+            if (!response.ok) {
+              const error = await uploadResponseFailure(response, "Request failed");
+              signal.throwIfAborted();
+              error.message = `${response.status} ${error.message}`;
+              throw error;
+            }
+            return readWithin<T>(ctx, signal, Promise.resolve(response));
+          };
           const result = await uploadFile(ctx, args.local, {
             scope: JSON.stringify([ctx.options.profile, target.baseId, path, flags.replace, flags.expectedRevision]),
             open: async (size, signal, idempotencyKey) =>
-              ctx.readJson<UploadSession>(
-                await api(ctx).bases[":baseId"].uploads.$post(
+              readUpload<UploadSession>(
+                signal,
+                api(ctx).bases[":baseId"].uploads.$post(
                   {
                     param: baseParam,
                     json: {
@@ -460,31 +548,38 @@ function filesCommands(locale?: string) {
                 ),
               ),
             renew: async (id, signal) =>
-              ctx.readJson<UploadLease>(
-                await api(ctx).bases[":baseId"].uploads[":id"].lease.$post({ param: { ...baseParam, id } }, { init: { signal } }),
+              readUpload<UploadLease>(
+                signal,
+                api(ctx).bases[":baseId"].uploads[":id"].lease.$post({ param: { ...baseParam, id } }, { init: { signal } }),
               ),
             commit: async (id, signal) =>
-              ctx.readJson<EntryResult>(
-                await api(ctx).bases[":baseId"].uploads[":id"].commit.$post({ param: { ...baseParam, id } }, { init: { signal } }),
+              readUpload<EntryResult>(
+                signal,
+                api(ctx).bases[":baseId"].uploads[":id"].commit.$post({ param: { ...baseParam, id } }, { init: { signal } }),
               ),
             abort: async (id, signal) => {
-              await api(ctx).bases[":baseId"].uploads[":id"].abort.$post({ param: { ...baseParam, id } }, { init: { signal } });
+              try {
+                const response = await api(ctx).bases[":baseId"].uploads[":id"].abort.$post(
+                  { param: { ...baseParam, id } },
+                  { init: { signal } },
+                );
+                if (!response.ok) throw await uploadResponseFailure(response, "Request failed");
+                signal.throwIfAborted();
+              } catch (error) {
+                throw uploadRequestFailure(error, "Request failed", signal);
+              }
             },
           });
-          if (!printStructured(ctx, result))
+          const linked = withEntryResultPermalink(ctx, result);
+          if (!printStructured(ctx, linked))
             ctx.print(
-              `${t({ en: "Uploaded", de: "Hochgeladen" })}: ${addressOf(result.base, result.entry.path)} (${result.entry.size} bytes)`,
+              `${t({ en: "Uploaded", de: "Hochgeladen" })}: ${addressOf(result.base, result.entry.path)} (${result.entry.size} bytes)${linked.entry.permalink ? ` ${linked.entry.permalink}` : ""}`,
             );
         },
       }),
       command("mkdir", {
-        summary: t({ en: "Create a folder", de: "Einen Ordner anlegen" }),
-        args: {
-          folder: arg.required({
-            valueLabel: "folder",
-            description: t({ en: "<area>:/path of the new folder", de: "<bereich>:/pfad des neuen Ordners" }),
-          }),
-        },
+        summary: t({ en: "Create folders", de: "Ordner anlegen" }),
+        args: { folders: fileArgs({ en: "New folders in one area", de: "Neue Ordner in einem Bereich" }) },
         flags: {
           parents: flag.boolean({
             aliases: ["p"],
@@ -496,11 +591,35 @@ function filesCommands(locale?: string) {
         },
         examples: ["cld filesv2 mkdir -p me:/Documents/2026/Q3"],
         async run({ ctx, args, flags }) {
-          const target = await fileResolver(ctx).file(args.folder);
-          const path = requireEntry(target);
-          const result = flags.parents ? (await mkdirParents(ctx, target.baseId, path))! : await mkdir(ctx, target.baseId, path);
-          if (!printStructured(ctx, result))
-            ctx.print(`${t({ en: "Created", de: "Angelegt" })}: ${addressOf(result.base, result.entry.path)}`);
+          const { baseId, targets } = await fileResolver(ctx).sameArea(args.folders);
+          const paths = targets.map(requireEntry);
+          const result = flags.parents ? await mkdirParents(ctx, baseId, paths) : await mkdirEach(ctx, baseId, paths);
+          if (paths.length === 1) {
+            const item = result.results.find((item) => item.path === paths[0]);
+            if (!item?.entry) throw new Error(t({ en: "The folder result is missing.", de: "Das Ordnerergebnis fehlt." }));
+            const linked = withEntryResultPermalink(ctx, { base: result.base, entry: item.entry });
+            if (!printStructured(ctx, linked))
+              ctx.print(
+                `${t({ en: "Created", de: "Angelegt" })}: ${addressOf(linked.base, linked.entry.path)}${linked.entry.permalink ? ` ${linked.entry.permalink}` : ""}`,
+              );
+            return;
+          }
+          const results = result.results.map((item) =>
+            item.entry ? { ...item, entry: withEntryPermalink(ctx, result.base.id, item.entry) } : item,
+          );
+          printRows(
+            ctx,
+            ctx.options.output === "jsonl" ? results : { ...result, results },
+            results.filter((item) => paths.includes(item.path)),
+            [
+              {
+                key: "state",
+                label: t({ en: "State", de: "Status" }),
+                value: (item) => (item.state === "existing" ? t({ en: "Exists", de: "Existiert" }) : t({ en: "Created", de: "Angelegt" })),
+              },
+              { key: "path", label: t({ en: "Folder", de: "Ordner" }), value: (item) => addressOf(result.base, item.path) },
+            ],
+          );
         },
       }),
       command("mv", {
@@ -530,7 +649,7 @@ function filesCommands(locale?: string) {
             const result = await ctx.readJson<EntriesResult>(
               await api(ctx).bases[":baseId"].move.$post({ param: { baseId }, json: { paths: sources, folder: destination.path } }),
             );
-            return batch(ctx, result);
+            return batch(ctx, withEntriesPermalinks(ctx, result));
           }
           if (existing)
             throw new Error(
@@ -555,7 +674,7 @@ function filesCommands(locale?: string) {
             entries: [renamed.entry],
             results: [{ path: source, ok: true, entry: renamed.entry }],
           };
-          return batch(ctx, result);
+          return batch(ctx, withEntriesPermalinks(ctx, result));
         },
       }),
       command("cp", {
@@ -583,7 +702,7 @@ function filesCommands(locale?: string) {
               json: { paths: targets.map(requireEntry), targetBaseId: destination.baseId, folder: destination.path },
             }),
           );
-          return batch(ctx, result);
+          return batch(ctx, withEntriesPermalinks(ctx, result));
         },
       }),
       command("rm", {
@@ -672,7 +791,7 @@ function filesCommands(locale?: string) {
               query: { path: flags.to?.replace(/^\/+/, "") },
             }),
           );
-          if (!printStructured(ctx, result))
+          if (!printStructured(ctx, withEntryResultPermalink(ctx, result)))
             ctx.print(`${t({ en: "Restored", de: "Wiederhergestellt" })}: ${addressOf(result.base, result.entry.path)}`);
         },
       }),
@@ -749,7 +868,7 @@ function filesCommands(locale?: string) {
                 })
               : await api(ctx).bases[":baseId"].versions.restore.$post({ param: param(target), json: { path, id: args.id } }),
           );
-          if (!printStructured(ctx, result))
+          if (!printStructured(ctx, withEntryResultPermalink(ctx, result)))
             ctx.print(`${t({ en: "Restored", de: "Wiederhergestellt" })}: ${addressOf(result.base, result.entry.path)}`);
         },
       }),
@@ -943,8 +1062,11 @@ function filesCommands(locale?: string) {
               ? await api(ctx).bases[":baseId"].markdown.$post({ param: param(target), json: { path } })
               : await api(ctx).bases[":baseId"].documents.$post({ param: param(target), json: { path, kind } }),
           );
-          if (!printStructured(ctx, result))
-            ctx.print(`${t({ en: "Created", de: "Angelegt" })}: ${addressOf(result.base, result.entry.path)}`);
+          const linked = withEntryResultPermalink(ctx, result);
+          if (!printStructured(ctx, linked))
+            ctx.print(
+              `${t({ en: "Created", de: "Angelegt" })}: ${addressOf(result.base, result.entry.path)}${linked.entry.permalink ? ` ${linked.entry.permalink}` : ""}`,
+            );
         },
       }),
       command("edit-url", {

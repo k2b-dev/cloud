@@ -1,31 +1,13 @@
 import { createHash } from "node:crypto";
 import { type SQL, sql } from "bun";
 import { testFor } from "../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../scripts/fixtures/test-short-id";
 
 export const postgresTest = testFor("database");
 export const testUuid = () => Bun.randomUUIDv7();
-/** Leads every fixture short ID; `newShortId()` never emits `o` or `O`. */
-export const TEST_SHORT_ID_MARK = "o";
-const shortIdSpace = 36 ** 5;
-let shortIdCounter = Date.now() % shortIdSpace;
-
-/**
- * The only source of short IDs for Grids test fixtures, also for bulk SQL
- * inserts. Raw fixture inserts bypass the production `insertWithShortId`
- * retry, so every value must be new to the database: `o` plus a five-digit
- * base36 counter. The counter never repeats within a process and starts at the
- * time this module loads, so a later test process sharing the database starts
- * beyond the IDs of an earlier one only if that one issued fewer IDs than the
- * milliseconds it ran. A process that issues more, like the evidence exports
- * with their 25,001-record test, deletes the rows of that test and of every
- * later test in the process. The `o` keeps fixtures apart from IDs that
- * services generate in the same database. `integration-test-utils.test.ts`
- * flags the common other ways to make up a short ID in Grids database tests.
- */
-export const testShortId = () => {
-  shortIdCounter = (shortIdCounter + 1) % shortIdSpace;
-  return `${TEST_SHORT_ID_MARK}${shortIdCounter.toString(36).padStart(5, "0")}`;
-};
+// A process that issues more short IDs than the milliseconds it runs, like the 25,001-record evidence
+// export test, deletes the rows of that test and of every later test in the process (see testShortId).
+export { TEST_SHORT_ID_MARK, testShortId } from "../../../scripts/fixtures/test-short-id";
 
 /**
  * The Record change feed withholds a change until every older transaction on

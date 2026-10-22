@@ -34,6 +34,7 @@ const messages = i18n.define({
       turnErrorReason: ({ code, limitMinutes }: AiTurnError) => {
         if (code === "model_unavailable") return "The model service did not answer.";
         if (code === "provider_stopped") return "The model provider ended this answer early.";
+        if (code === "tool_failed") return "A step failed, and the model stopped without an answer.";
         if (code === "quota_exhausted") return "Your AI usage limit for this period is reached. You can continue once it resets.";
         if (code === "context_full") return "This chat is too long for the model. Start a new chat to continue; this one stays as it is.";
         if (code === "time_limit")
@@ -136,6 +137,11 @@ const messages = i18n.define({
       revokeFailed: "Could not revoke. Try again.",
       revokeWebsiteFor: ({ host }: { host: string }) => `Revoke the approval for ${host}`,
       websiteRevoked: "Revoked. The next request asks again.",
+      fetchingFile: ({ name }: { name: string }) => `Fetching ${name}`,
+      fetchedFile: ({ name }: { name: string }) => `Fetched ${name}`,
+      fetchSource: "Source",
+      fetchSavedAs: "Saved as",
+      fetchReadableCopy: "Readable copy",
       details: "Details",
       hideDetails: "Hide details",
       moreOptions: ({ title }: { title: string }) => `More options for ${title}`,
@@ -336,6 +342,7 @@ const messages = i18n.define({
       turnErrorReason: ({ code, limitMinutes }) => {
         if (code === "model_unavailable") return "Der KI-Dienst hat nicht geantwortet.";
         if (code === "provider_stopped") return "Der KI-Anbieter hat diese Antwort vorzeitig beendet.";
+        if (code === "tool_failed") return "Ein Schritt ist fehlgeschlagen, und das Modell hat danach nicht geantwortet.";
         if (code === "quota_exhausted")
           return "Dein KI-Kontingent für diesen Zeitraum ist aufgebraucht. Du kannst weiterarbeiten, sobald es sich erneuert.";
         if (code === "context_full")
@@ -444,6 +451,11 @@ const messages = i18n.define({
       revokeFailed: "Konnte nicht entzogen werden. Versuche es erneut.",
       revokeWebsiteFor: ({ host }: { host: string }) => `Freigabe für ${host} entziehen`,
       websiteRevoked: "Entzogen. Der nächste Abruf fragt wieder.",
+      fetchingFile: ({ name }) => `Lädt herunter: ${name}`,
+      fetchedFile: ({ name }) => `Heruntergeladen: ${name}`,
+      fetchSource: "Quelle",
+      fetchSavedAs: "Gespeichert als",
+      fetchReadableCopy: "Lesbare Kopie",
       details: "Details",
       hideDetails: "Details ausblenden",
       moreOptions: ({ title }) => `Weitere Optionen für ${title}`,

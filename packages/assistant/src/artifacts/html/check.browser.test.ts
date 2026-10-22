@@ -200,35 +200,38 @@ test("cancellation closes pages and discards the scope even during initializatio
   const abort = new AbortController();
   const discarded: string[] = [];
   const source: ArtifactSource = { entry: "index.html", files: [{ path: "index.html", content: "<h1>Cancel</h1>" }] };
-  await expect(
-    runHtmlCheck({
-      browser,
-      conversationId: "00000000-0000-4000-8000-000000000001",
-      signal: abort.signal,
-      start: async () => ({
-        scopeId: "Scp234",
-        source,
-        steps: [],
-        hash: checkHash(source, []),
-        warnings: [],
-        context: { locale: "en-US", timeZone: "UTC", user: null },
-        theme: "light",
-        assets,
-      }),
-      initialize: async () => {
-        abort.abort(new Error("Check cancelled"));
-      },
-      discard: async (id) => {
-        discarded.push(id);
-      },
-      save: async () => {
-        throw new Error("Unexpected save");
-      },
-      upload: async () => {
-        throw new Error("Unexpected upload");
-      },
+  const error = await runHtmlCheck({
+    browser,
+    conversationId: "00000000-0000-4000-8000-000000000001",
+    signal: abort.signal,
+    start: async () => ({
+      scopeId: "Scp234",
+      source,
+      steps: [],
+      hash: checkHash(source, []),
+      warnings: [],
+      context: { locale: "en-US", timeZone: "UTC", user: null },
+      theme: "light",
+      assets,
     }),
-  ).rejects.toThrow("Check cancelled");
+    initialize: async () => {
+      abort.abort(new Error("Check cancelled"));
+    },
+    discard: async (id) => {
+      discarded.push(id);
+    },
+    save: async () => {
+      throw new Error("Unexpected save");
+    },
+    upload: async () => {
+      throw new Error("Unexpected upload");
+    },
+  }).then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+  expect(error).toBeInstanceOf(Error);
+  expect(String(error)).toContain("Check cancelled");
   expect(discarded).toEqual(["Scp234"]);
   expect(browser.contexts()).toHaveLength(0);
 }, 60000);
@@ -253,52 +256,54 @@ test.each(["startup", "step"])(
         },
       ],
     };
-    await expect(
-      runHtmlCheck({
-        browser,
-        conversationId: "00000000-0000-4000-8000-000000000001",
-        signal: abort.signal,
-        start: async () => ({
-          scopeId: "Scp234",
-          artifactId: "App234",
-          source,
-          steps: at === "step" ? [{ action: "click", target: { role: "button", name: "Wait" } }] : [],
-          hash: checkHash(source, []),
-          warnings: [],
-          context: { locale: "en-US", timeZone: "UTC", user: null },
-          theme: "light",
-          assets,
-        }),
-        initialize: async (page) => {
-          await page.route(
-            (url) => /^https?:$/.test(url.protocol),
-            async (route) => {
-              if (new URL(route.request().url()).pathname.endsWith("/storage")) {
-                abort.abort(reason);
-                await route.abort().catch(() => {});
-                return;
-              }
-              await route.fulfill({
-                contentType: "text/html",
-                body: "<!doctype html><html lang=en><title>Cancel</title><body></body></html>",
-              });
-            },
-          );
-          await page.goto("http://check.test");
-          await page.addScriptTag({ content: runtime });
-        },
-        discard: async (id) => {
-          discarded.push(id);
-        },
-        save: async (name) => {
-          saved.push(name);
-          return `/files/${name}`;
-        },
-        upload: async () => {
-          throw new Error("Unexpected upload");
-        },
+    const error = await runHtmlCheck({
+      browser,
+      conversationId: "00000000-0000-4000-8000-000000000001",
+      signal: abort.signal,
+      start: async () => ({
+        scopeId: "Scp234",
+        artifactId: "App234",
+        source,
+        steps: at === "step" ? [{ action: "click", target: { role: "button", name: "Wait" } }] : [],
+        hash: checkHash(source, []),
+        warnings: [],
+        context: { locale: "en-US", timeZone: "UTC", user: null },
+        theme: "light",
+        assets,
       }),
-    ).rejects.toBe(reason);
+      initialize: async (page) => {
+        await page.route(
+          (url) => /^https?:$/.test(url.protocol),
+          async (route) => {
+            if (new URL(route.request().url()).pathname.endsWith("/storage")) {
+              abort.abort(reason);
+              await route.abort().catch(() => {});
+              return;
+            }
+            await route.fulfill({
+              contentType: "text/html",
+              body: "<!doctype html><html lang=en><title>Cancel</title><body></body></html>",
+            });
+          },
+        );
+        await page.goto("http://check.test");
+        await page.addScriptTag({ content: runtime });
+      },
+      discard: async (id) => {
+        discarded.push(id);
+      },
+      save: async (name) => {
+        saved.push(name);
+        return `/files/${name}`;
+      },
+      upload: async () => {
+        throw new Error("Unexpected upload");
+      },
+    }).then(
+      () => undefined,
+      (reason: unknown) => reason,
+    );
+    expect(error).toBe(reason);
     expect(saved).toEqual(at === "startup" ? [] : ["desktop-start-light.png"]);
     expect(discarded).toEqual(["Scp234"]);
     expect(browser.contexts()).toHaveLength(0);

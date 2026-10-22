@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import type { AiMemory, AiUserPrefs } from "@k2b/cloud/ai";
+import type { AiMemory, AiSkill, AiUserPrefs } from "@k2b/cloud/ai";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { assistantApi } from "../api/client";
 
@@ -185,6 +185,60 @@ test("API access appears only while the operator offers the OpenAI-compatible AP
     while (dialogCore.isOpen()) dialogCore.close();
     getPrefs.mockRestore();
     listMemories.mockRestore();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});
+
+test("a Skill link opens that Skill's editor directly", async () => {
+  const dom = createDomTestHarness();
+  dom.root.className = "k2b-ui";
+  const { dialogCore } = await import("@k2b/ui");
+  const { openAssistantPrefsModal } = await import("./AssistantPrefsModals");
+  const prefs: AiUserPrefs = {
+    userId: "user",
+    memoryEnabled: true,
+    memoryLearningEnabled: true,
+    lastModelId: "",
+    updatedAt: new Date(0).toISOString(),
+  };
+  const skill: AiSkill = {
+    source: null,
+    id: "SkL123",
+    shortId: "SkL123",
+    name: "release-notes",
+    description: "Write release notes.",
+    permission: "read",
+    enabled: true,
+    manualOnly: false,
+    revision: 1,
+    referenceCount: 0,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    instructions: "Summarize the changes.",
+    extraFrontmatter: {},
+    references: [],
+  };
+  const getPrefs = spyOn(assistantApi, "getPrefs").mockResolvedValue(prefs);
+  const getSkill = spyOn(assistantApi, "getSkill").mockResolvedValue(skill);
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => Response.json([]), { preconnect: globalThis.fetch.preconnect }),
+  );
+  try {
+    const dialog = openAssistantPrefsModal("skills", { skillId: "SkL123" });
+    await tick();
+    expect(getSkill.mock.calls).toEqual([["SkL123"]]);
+    const values = Array.from(dom.document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")).map(
+      (field) => field.value,
+    );
+    expect(values).toContain("release-notes");
+
+    dialogCore.close();
+    await dialog;
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    getPrefs.mockRestore();
+    getSkill.mockRestore();
     fetchMock.mockRestore();
     dom.cleanup();
   }

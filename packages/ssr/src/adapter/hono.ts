@@ -178,11 +178,12 @@ export const routes = (config: SsrConfig) => {
   const serveAsset = (c: Context) => {
     const filename = c.req.param("filename");
     if (!filename) return c.notFound();
+    if (!dev && `/${c.req.param("version")}` !== getAssetPrefix(config)) return c.notFound();
 
     return createAssetResponse(c.req.raw, ssrDir, filename, dev);
   };
 
-  const prefix = getAssetPrefix(dev);
+  const prefix = dev ? "" : "/:version";
   app.get(`${prefix}/:filename{.+\\.js$}`, serveAsset);
   app.get(`${prefix}/:filename{.+\\.js\\.map$}`, serveAsset);
 

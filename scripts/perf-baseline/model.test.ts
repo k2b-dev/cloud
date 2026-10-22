@@ -25,10 +25,11 @@ describe("performance baseline contracts", () => {
   test("defaults and page selection are stable; malformed flags fail before side effects", () => {
     expect(parseArgs([])).toEqual({
       help: false,
+      panel: false,
       keep: false,
       skipBuild: false,
       runs: 3,
-      pages: ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts"],
+      pages: ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts", "spaces"],
     });
     expect(
       parseArgs(["--pages", "files,document", "--runs", "1", "--skip-build", "--keep", "--out", ".local/example", "--compare", "old.json"]),
@@ -60,6 +61,18 @@ describe("performance baseline contracts", () => {
     expect(info.css).toEqual(["/public/faq/app.css"]);
     expect(info.propsBytes).toBe(Buffer.byteLength(props) + Buffer.byteLength(empty));
     expect(info.propsShare).toBeCloseTo(info.propsBytes / Buffer.byteLength(html), 6);
+  });
+
+  test("content-hashed SSR prefixes and modulepreload preserve the inspector module set", async () => {
+    const html = `<solid-island data-id="one" data-props="{}"></solid-island><script type="module">const p="/faq/_ssr/0123456789abcdef";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`;
+    const preload = `["chunk-abc.js","chunk-def.js"].forEach(f=>{const l=document.createElement('link');l.rel='modulepreload';l.href=p+'/'+f;document.head.append(l)});`;
+    const withPreloads = html.replace(";document.querySelectorAll", ";" + preload + "document.querySelectorAll");
+    const original = await inspectHtml(html, "http://127.0.0.1:4100/faq");
+    const preloaded = await inspectHtml(withPreloads, "http://127.0.0.1:4100/faq");
+    expect(preloaded.islandEntries).toEqual(original.islandEntries);
+    expect(preloaded.modules).toEqual(original.modules);
+    expect(original.islandEntries).toEqual(["/faq/_ssr/0123456789abcdef/one.js"]);
+    expect(assetPath("/app/mail/_ssr/0123456789abcdef/x.js", ["mail"])).toEqual({ app: "mail", file: "_ssr/x.js" });
   });
 
   test("literal dynamic imports in other inline scripts remain lazy extras", async () => {
@@ -124,17 +137,19 @@ describe("performance baseline contracts", () => {
     expect(() => aggregate([Number.NaN])).toThrow();
   });
 
-  test("observation stops only after all initial wrappers, completed scripts, and 500 ms of quiet", () => {
-    expect(interactive({ initial: 2, mounted: 1, pendingScripts: 0, quietMs: 600 })).toBe(false);
-    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 1, quietMs: 600 })).toBe(false);
-    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, quietMs: 499 })).toBe(false);
-    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, quietMs: 500 })).toBe(true);
-    expect(interactive({ initial: 0, mounted: 0, pendingScripts: 0, quietMs: 500 })).toBe(true);
+  test("observation stops only after all initial wrappers, completed and timed scripts, and 500 ms of quiet", () => {
+    expect(interactive({ initial: 2, mounted: 1, pendingScripts: 0, untimedScripts: 0, quietMs: 600 })).toBe(false);
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 1, untimedScripts: 0, quietMs: 600 })).toBe(false);
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, untimedScripts: 0, quietMs: 499 })).toBe(false);
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, untimedScripts: 0, quietMs: 500 })).toBe(true);
+    expect(interactive({ initial: 0, mounted: 0, pendingScripts: 0, untimedScripts: 0, quietMs: 500 })).toBe(true);
+    // WebKit can deliver a finished script's resource entry late; TTI needs every script's entry.
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, untimedScripts: 1, quietMs: 5000 })).toBe(false);
   });
 
   test("TTI excludes the quiet window and host polling latency", () => {
     const timing = { fcp: 176, mountTimes: [200, 240], scriptUrls: [], resources: [], longtasks: [] };
-    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, quietMs: 762 })).toBe(true);
+    expect(interactive({ initial: 2, mounted: 2, pendingScripts: 0, untimedScripts: 0, quietMs: 762 })).toBe(true);
     expect(timeToInteractive(timing)).toBe(240);
   });
 

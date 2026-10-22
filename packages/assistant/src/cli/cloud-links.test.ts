@@ -11,6 +11,13 @@ describe("streaming Cloud links", () => {
     expect(links.flush()).toBe("");
   });
 
+  test.each(["/open/mail.draft/~AbC123", "/open/demo.item/~.."])("preserves the resource id in %s", (path) => {
+    const links = createCloudLinkRewriter("https://cloud.example.org");
+    const rewritten = links.push(`[Resource](${path})`) + links.flush();
+    expect(rewritten).toBe(`[Resource](https://cloud.example.org${path})`);
+    expect(new URL(`https://cloud.example.org${path}`).pathname).toBe(path);
+  });
+
   test("keeps protocol-relative and absolute links unchanged", () => {
     const links = createCloudLinkRewriter("https://cloud.example.org");
     expect(links.push("[A](//x/a) [B](https://other.test/b) [C](relative)")).toBe("[A](//x/a) [B](https://other.test/b) [C](relative)");

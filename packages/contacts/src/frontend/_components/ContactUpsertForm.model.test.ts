@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Contact } from "../../service";
 import {
+  applyQuickEditFields,
   buildContactPayload,
   type ContactUpsertDraft,
   contactToUpsertDraft,
@@ -9,6 +10,9 @@ import {
   initialBankAccountRows,
   initialEmailRows,
 } from "./ContactUpsertForm.model";
+import { contactFormMessages, contactRowLabels } from "./contact-form-messages";
+
+const rowLabels = contactRowLabels(contactFormMessages.resolve(["en"]).t);
 
 const baseContact: Contact = {
   id: "contact-1",
@@ -89,13 +93,41 @@ const baseDraft: ContactUpsertDraft = {
 
 describe("ContactUpsertForm model", () => {
   test("creates a minimal prefilled draft without guessing name structure", () => {
-    const draft = createContactUpsertDraft({ label: " Ada Example ", email: " ada@example.test " });
+    const draft = createContactUpsertDraft({ label: " Ada Example ", email: " ada@example.test " }, rowLabels);
 
     expect(draft.label).toBe("Ada Example");
     expect(draft.firstName).toBe("");
     expect(draft.lastName).toBe("");
     expect(draft.emails).toEqual([{ label: "Email", email: "ada@example.test" }]);
   });
+
+  for (const [locale, emailLabel, phoneLabel] of [
+    ["de", "E-Mail", "Telefon"],
+    ["en", "Email", "Telephone"],
+  ] satisfies [string, string, string][]) {
+    test(`quick edits seed ${locale} labels for new email and phone rows`, () => {
+      const labels = contactRowLabels(contactFormMessages.resolve([locale]).t);
+      const payload = buildContactPayload(
+        applyQuickEditFields(
+          baseContact,
+          {
+            label: "Ada",
+            firstName: "Ada",
+            lastName: "Lovelace",
+            companyName: "",
+            jobTitle: "",
+            parentRef: null,
+            tagIds: [],
+            email: "ada@example.test",
+            phone: "+49 123",
+          },
+          labels,
+        ),
+      );
+      expect(payload.emails).toEqual([{ label: emailLabel, email: "ada@example.test" }]);
+      expect(payload.phones).toEqual([{ label: phoneLabel, phone: "+49 123" }]);
+    });
+  }
 
   test("normalizes draft rows into a create/update payload", () => {
     expect(buildContactPayload(baseDraft)).toEqual({
@@ -142,9 +174,9 @@ describe("ContactUpsertForm model", () => {
   });
 
   test("keeps empty default contact rows for create and edit forms", () => {
-    expect(initialEmailRows(null)).toEqual([{ label: "Email", email: "" }]);
-    expect(initialEmailRows(baseContact)).toEqual([{ label: "Email", email: "" }]);
-    expect(initialAddressRows(baseContact)).toEqual([
+    expect(initialEmailRows(null, rowLabels)).toEqual([{ label: "Email", email: "" }]);
+    expect(initialEmailRows(baseContact, rowLabels)).toEqual([{ label: "Email", email: "" }]);
+    expect(initialAddressRows(baseContact, rowLabels)).toEqual([
       {
         label: "Address",
         recipientName: "",
@@ -157,7 +189,7 @@ describe("ContactUpsertForm model", () => {
         countryCode: "DE",
       },
     ]);
-    expect(initialBankAccountRows(baseContact)).toEqual([]);
+    expect(initialBankAccountRows(baseContact, rowLabels)).toEqual([]);
   });
 
   test("preserves non-quick-edit fields when converting an existing contact", () => {
@@ -191,7 +223,7 @@ describe("ContactUpsertForm model", () => {
     };
 
     const payload = buildContactPayload({
-      ...contactToUpsertDraft(contact),
+      ...contactToUpsertDraft(contact, rowLabels),
       companyName: "Analytical Engines",
     });
 

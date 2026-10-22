@@ -1,9 +1,9 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
-import { requestContactDirectory } from "../../../../contact-directory-settings";
 import type { MailRequestContext } from "../../../../service";
 import { loadMailAutomaticRepliesWorkspace } from "../../../../service/automation-workspace";
+import { requestContactDirectory } from "../../../../service/contact-directory";
 import { isAutomaticReplyPresetId } from "../../../_components/MailAutomaticReplySettings";
 import MailAutomaticRepliesPage from "../../../MailAutomaticRepliesPage.island";
 import { mailPageMessages } from "../../../pages-messages";
@@ -27,9 +27,11 @@ export default ssr<AuthContext>(async (c) => {
   if (!result.ok) return ssr.error(c, result.error.status);
   const data = await projectAutomationWorkspace(result.data);
   const requestedPreset = c.req.query("new");
+  const directory = await requestContactDirectory(c);
   return () => (
     <Layout
       c={c}
+      printHint={t.printHint}
       fullPage
       workspaceSidebarCollapsible={false}
       title={[
@@ -43,7 +45,7 @@ export default ssr<AuthContext>(async (c) => {
       <MailAutomaticRepliesPage
         data={data}
         currentUserEmail={user.mail}
-        contactDirectory={requestContactDirectory(c)}
+        contactDirectory={directory}
         initialPreset={isAutomaticReplyPresetId(requestedPreset) ? requestedPreset : null}
       />
     </Layout>

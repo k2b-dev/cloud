@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-04
+updated: 2026-10-19
 ---
 
 # Configuration reference
@@ -37,6 +37,8 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `GOTENBERG_URL` | string | runtime | unset | no | Internal Gotenberg base URL used to bootstrap the `gotenberg.url` PDF rendering setting; the stored setting wins once written. |
 | `APP_SECRET` | string | secret | empty | no | Deployment-wide secret for at-rest settings encryption and signed cursors; generate once with `openssl rand -hex 32` and never change it after data has been written. |
 | `ADMIN_LOGIN_TOKEN` | string | secret | empty | no | Core only: temporary first-administrator or recovery login token; remove it after normal administrator sign-in works. |
+| `OUTGOING_MAIL_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for outgoing mail SMTP and bounce IMAP connections; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup. |
+| `GEO_ALLOWED_TARGETS` | list | runtime | `geo` | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for Geo requests; unset allows public targets and `geo`, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | string | secret | unset | no | Core only: 64-hex KEK for platform identity signing keys stored in Postgres; generate once with `openssl rand -hex 32` and never distribute it to other apps. |
 | `CLOUD_IDENTITY_NEXT_KEY` | string | secret | unset | no | Core only: pre-distributed next KEK before promoting it to current; cannot be combined with `CLOUD_IDENTITY_PREVIOUS_KEY`. |
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | string | secret | unset | no | Core only: old KEK set during an explicit rolling rewrap of stored identity signing keys, then removed. |
@@ -54,6 +56,7 @@ Declared in `packages/assistant/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
+| `ASSISTANT_RSQL_ALLOWED_TARGETS` | list | runtime | `rsql` | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for Assistant rsql requests; unset allows public targets and `rsql`, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup. |
 | `CLOUD_CLI_CHROMIUM` | string | runtime | unset | no | Path to a Chromium executable for Assistant code mode when Playwright's bundled browser is unavailable; the assistant image sets `/usr/bin/chromium`. |
 
 ## Application: gateway-ops
@@ -62,6 +65,7 @@ Declared in `packages/gateway-ops/src/env.ts`.
 
 | Variable | Type | Scope | Default | Required | Description |
 | --- | --- | --- | --- | --- | --- |
+| `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for health webhooks; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup. |
 | `NATS_ADMIN_SERVERS` | list | runtime | empty list | no | Optional comma-separated NATS system-account servers used only for Gateway Ops cluster diagnostics. |
 | `NATS_ADMIN_CREDS_FILE` | string | runtime | unset | no | Path to the mounted system-account `.creds` file for NATS diagnostics; do not combine with the NKey seed file. |
 | `NATS_ADMIN_NKEY_SEED_FILE` | string | runtime | unset | no | Path to a static system-account NKey seed file for NATS diagnostics; an alternative to the `.creds` file. |
@@ -75,6 +79,14 @@ Declared in `packages/gateway/src/env.ts`.
 | --- | --- | --- | --- | --- | --- |
 | `GATEWAY_INSTANCE_ID` | string | runtime | unset | no | Stable identity of this gateway router instance in the registry; defaults to `HOSTNAME`, then `gateway-router`. |
 | `GATEWAY_TRUSTED_PROXIES` | list | runtime | `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7` | no | Comma-separated IP addresses or CIDR ranges of the reverse proxies allowed to name the client in `X-Forwarded-For`; the default trusts loopback and private networks, which covers Traefik on a Docker network. Set the proxy's exact address or subnet when clients on private networks reach the gateway directly or through a proxy that appends to their `X-Forwarded-For`. An invalid entry stops the gateway at startup. |
+
+## Application: notebooks
+
+Declared in `packages/notebooks/src/env.ts`.
+
+| Variable | Type | Scope | Default | Required | Description |
+| --- | --- | --- | --- | --- | --- |
+| `NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks that notebook S3 snapshots may upload to, for example `minio,10.20.0.0/16`; unset allows only public storage. Bare entries cover every port; host:port and [ipv6]:port restrict a host or IP to one port; `/0` entries and other invalid entries stop Notebooks at startup. |
 
 ## Application: pwa-auth
 

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // How far the field grows, whether it ever collapses to be measured, and whether anything moves are results of layout
 // in a real engine. The composer sits under a VirtualFeed, as in a conversation, inside a size container.
@@ -27,7 +27,37 @@ const [draft, setDraft] = createSignal("");
 const [hint, setHint] = createSignal(undefined);
 const [dictation, setDictation] = createSignal(null);
 window.sent = [];
-window.fixture = { setHint, setDictation, setDraft };
+window.outsideClicks = { native: 0, onclick: 0 };
+if (options.viewportHeight) {
+  const header = document.createElement("header");
+  header.id = "outside-header";
+  const headerButton = document.createElement("button");
+  headerButton.textContent = "Header action";
+  header.append(headerButton);
+  const feedButton = document.createElement("button");
+  feedButton.id = "outside-feed";
+  feedButton.textContent = "Feed action";
+  for (const button of [headerButton, feedButton]) {
+    button.addEventListener("click", () => window.outsideClicks.native++);
+    button.onclick = () => window.outsideClicks.onclick++;
+  }
+  document.body.append(header, feedButton);
+}
+if (options.tabBar) {
+  const bar = document.createElement("nav");
+  bar.id = "tab-bar";
+  const button = document.createElement("button");
+  button.textContent = "Cloud tab";
+  button.addEventListener("click", () => window.outsideClicks.native++);
+  bar.append(button);
+  document.body.append(bar);
+}
+let resolveSearch;
+let searches = 0;
+window.fixture = { setHint, setDictation, setDraft,
+  resolveSearch: (rows) => resolveSearch?.(rows),
+  searchCount: () => searches,
+};
 
 render(
   () =>
@@ -50,7 +80,18 @@ render(
             },
           }),
           createComponent(Chat.Composer, {
-            variant: "conversation",
+            addOpensCommands: options.add ? true : undefined,
+            variant: options.mode === "slash" ? "default" : "conversation",
+            commandSections: options.sections ? [{ id: "local", label: "Local commands" }, { id: "remote", label: "Results", searched: true }] : undefined,
+            commands: options.sections ? Array.from({ length: 24 }, (_, index) => ({ id: "local-" + index, name: "Query " + index, description: "Local command", section: "local" })) : options.mode === "slash" ? [
+              { id: "alpha", name: "alpha", label: "Alpha", description: "First local command", keywords: ["q", "qu"] },
+              { id: "blocked", name: "blocked", label: "Blocked", description: "Unused", keywords: ["q", "qu"], reason: "Available after the first response" },
+              { name: "fail", description: "Reject this action", action: async () => { throw new Error("Please try again"); } },
+              { name: "done", description: "Finish this action", action: async () => ({ done: "All done" }) },
+              // An action that navigates within the page at once, as an application's router does.
+              ...(options.navigate ? [{ name: "go", label: "Go", description: "Open the next page", action: () => { history.pushState({ page: 2 }, "", "#next"); } }] : []),
+            ] : undefined,
+            searchCommands: options.mode === "slash" ? () => new Promise((resolve) => { searches++; resolveSearch = resolve; }) : undefined,
             get value() {
               return draft();
             },
@@ -58,6 +99,8 @@ render(
             onSubmit: ({ text }) => {
               window.sent.push(text);
               setItems((current) => [...current, { id: "s" + current.length, text }]);
+              // An application that opens the sent conversation's address at once.
+              if (options.submitNavigate) history.pushState({ page: "sent" }, "", "#sent");
               // A server round trip, as an application that waits for its request.
               if (options.submitDelay) return new Promise((done) => setTimeout(done, options.submitDelay));
             },
@@ -90,6 +133,8 @@ if (!build.success) throw new AggregateError(build.logs, "Could not bundle the C
 const script = await build.outputs[0]!.text();
 
 type Fixture = {
+  resolveSearch: (rows: { id?: string; name: string; description: string; section?: string; keywords?: string[] }[]) => void;
+  searchCount: () => number;
   setHint: (hint: string | undefined) => void;
   setDictation: (state: string | null) => void;
   setDraft: (value: string) => void;
@@ -108,25 +153,59 @@ afterAll(async () => {
 const height = 800;
 
 const open = async (
-  options: { width?: number; locale?: "en" | "de"; dark?: boolean; submitDelay?: number; attach?: "files" | "menu" | "none" } = {},
+  options: {
+    mode?: "slash";
+    add?: boolean;
+    tabBar?: boolean;
+    sections?: boolean;
+    /** Places the composer at the screen bottom, including in phone landscape. */
+    viewportHeight?: boolean;
+    /** Adds a command whose action pushes a history entry, as a router's navigation does. */
+    navigate?: boolean;
+    /** Makes onSubmit push a history entry, as an application that opens the sent conversation does. */
+    submitNavigate?: boolean;
+    /** Installs Playwright's clock before the page loads; it follows real time until a test moves it. */
+    clock?: boolean;
+    width?: number;
+    locale?: "en" | "de";
+    dark?: boolean;
+    submitDelay?: number;
+    attach?: "files" | "menu" | "none";
+  } = {},
   context: BrowserContextOptions = {},
 ): Promise<Page> => {
   const width = options.width ?? 720;
   const page = await (await browser.newContext({ viewport: { width, height }, ...context })).newPage();
+  if (options.clock) await page.clock.install({ time: new Date("2026-10-15T12:00:00Z") });
   await page.route(`${assets}**`, (route) =>
     route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
   );
-  await page.setContent(
-    `<!doctype html><html lang="${options.locale ?? "en"}"><head><meta name="viewport" content="width=device-width">` +
-      `<style>${css}</style><style>${fonts}</style>` +
-      `<style>*,*::before,*::after{transition:none!important}
+  const documentHtml =
+    `<!doctype html><html lang="${options.locale ?? "en"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">` +
+    `<style>${css}</style><style>${fonts}</style>` +
+    `<style>*,*::before,*::after{transition:none!important}
 html, body { margin: 0; height: 100%; }
-#app { display: flex; flex-direction: column; height: ${height}px; container-type: size; padding: 0 0.5rem 0.5rem; box-sizing: border-box; }
+#app { display: flex; flex-direction: column; height: ${options.viewportHeight ? "100dvh" : `${height}px`}; container-type: size; padding: 0 0.5rem 0.5rem; box-sizing: border-box; }
 .k2b-virtual-feed { flex: 1; min-height: 0; }
+#outside-header { position: fixed; top: 4px; left: 12px; }
+#outside-header button, #outside-feed { height: 24px; padding: 0 8px; }
+#outside-feed { position: fixed; top: 36px; right: 12px; }
+${
+  options.tabBar
+    ? `
+#app { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem + 3.875rem + 0.75rem); }
+#tab-bar { position: fixed; bottom: 0; left: 0; right: 0; height: calc(env(safe-area-inset-bottom, 0px) + 0.5rem + 3.875rem + 0.75rem); }
+#tab-bar button { height: 3.875rem; width: 100%; }
+`
+    : ""
+}
 .row { margin: 0; padding: 6px 12px; font: 14px/20px sans-serif; }
 </style></head>` +
-      `<body class="k2b-ui${options.dark ? " k2b-dark" : ""}" style="background:var(--k2b-surface)"><div id="app"></div></body></html>`,
-  );
+    `<body class="k2b-ui${options.dark ? " k2b-dark" : ""}" style="background:var(--k2b-surface)"><div id="app"></div></body></html>`;
+  // A real origin lets same-URL history entries behave equally in Chromium and WebKit.
+  const documentUrl = `${assets}chat-composer`;
+  await page.route(documentUrl, (route) => route.fulfill({ contentType: "text/html; charset=utf-8", body: documentHtml }));
+  await page.goto(documentUrl);
   await page.evaluate(async () => {
     await Promise.all(["400 14px 'IBM Plex Sans'", "16px tabler-icons"].map((font) => document.fonts.load(font)));
   });
@@ -454,6 +533,652 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
         expect(format.buttons[0]!.left).toBeCloseTo(format.fieldLeft, 1);
         await page.close();
       }
+    }
+  }, 30_000);
+});
+
+const slashBoxes = (page: Page, option = false) =>
+  page.evaluate((option) => {
+    const box = (selector: string) => {
+      const rect = document.querySelector(selector)!.getBoundingClientRect();
+      return [rect.left, rect.top, rect.width, rect.height].map(Math.round);
+    };
+    return { field: box("textarea"), composer: box(".k2b-chat-composer"), ...(option ? { firstOption: box('[role="option"]') } : {}) };
+  }, option);
+
+describe(`default slash ChatComposer in ${browserName}`, () => {
+  for (const width of [1440, 390]) {
+    test(`pending search retains option ids and field and option boxes at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/q");
+        await page.waitForFunction(() => fixture.searchCount() === 1);
+        await page.evaluate(() =>
+          fixture.resolveSearch([{ id: "server", name: "Server", keywords: ["qu"], description: "Previous result" }]),
+        );
+        await page.locator('[role="option"]').filter({ hasText: "Previous result" }).waitFor();
+        await frames(page, 2);
+        const ids = await page.locator('[role="option"]').evaluateAll((rows) => rows.map((row) => row.id));
+        const before = await slashBoxes(page, true);
+        await field.press("End");
+        await page.keyboard.type("u");
+        await page.waitForFunction(() => fixture.searchCount() === 2);
+        expect(await page.locator('[role="option"]').evaluateAll((rows) => rows.map((row) => row.id))).toEqual(ids);
+        expect(await slashBoxes(page, true)).toEqual(before);
+        expect(await page.locator('[role="listbox"]').getAttribute("aria-busy")).toBe("true");
+        expect(await page.locator(".k2b-chat-composer__loading").count()).toBe(0);
+        await page.evaluate(() => fixture.resolveSearch([{ id: "replacement", name: "Replacement", description: "New result" }]));
+        await page.locator('[role="option"]').filter({ hasText: "New result" }).waitFor();
+        expect(await page.locator('[role="option"]').filter({ hasText: "Previous result" }).count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`error and done status never move the field or composer and hide behind suggestions at ${width}px`, async () => {
+      const page = await open({ mode: "slash", width, clock: true });
+      try {
+        const field = page.locator("textarea").first();
+        await field.fill("/fail");
+        await frames(page, 2);
+        const before = await slashBoxes(page);
+        await field.press("Enter");
+        const status = page.locator('.k2b-chat-composer__status-line[data-tone="error"]');
+        await status.waitFor();
+        expect(await status.textContent()).toBe("Please try again");
+        expect(await field.inputValue()).toBe("/fail");
+        expect(await slashBoxes(page)).toEqual(before);
+        await field.click();
+        expect(await page.locator('[role="listbox"]').isVisible()).toBe(true);
+        expect(await page.locator(".k2b-chat-composer__status-line").count()).toBe(0);
+        await field.press("Escape");
+        expect(await status.isVisible()).toBe(true);
+        await field.fill("/done");
+        await frames(page, 2);
+        const beforeDone = await slashBoxes(page);
+        await field.press("Enter");
+        await page.locator('.k2b-chat-composer__status-line[data-tone="done"]').waitFor();
+        expect(await slashBoxes(page)).toEqual(beforeDone);
+        await field.fill("/done");
+        expect(await page.locator(".k2b-chat-composer__status-line").count()).toBe(0);
+        await field.press("Escape");
+        expect(await page.locator(".k2b-chat-composer__status-line").textContent()).toBe("All done");
+        await page.clock.fastForward(3_100);
+        expect(await page.locator(".k2b-chat-composer__status-line").count()).toBe(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+});
+
+test(`section headings stick while scrolled and arriving server rows preserve the visible row in ${browserName}`, async () => {
+  for (const width of [1440, 390]) {
+    const page = await open({ mode: "slash", sections: true, width });
+    try {
+      await page.locator("textarea").first().fill("/q");
+      await page.waitForFunction(() => fixture.searchCount() === 1);
+      const list = page.locator('[role="listbox"]');
+      await list.evaluate((element) => {
+        element.scrollTop = 120;
+      });
+      await frames(page, 2);
+      const heading = page.locator(".k2b-chat-composer__command-heading").first();
+      const listBefore = await list.boundingBox();
+      const headingBox = await heading.boundingBox();
+      expect(Math.abs(headingBox!.y - listBefore!.y)).toBeLessThanOrEqual(1.5);
+      const visibleId = await list.evaluate((element) => {
+        const top = element.getBoundingClientRect().top;
+        const heading = element.querySelector(".k2b-chat-composer__command-heading")!.getBoundingClientRect();
+        return [...element.querySelectorAll('[role="option"]')].find(
+          (row) => row.getBoundingClientRect().top >= Math.max(top, heading.bottom),
+        )!.id;
+      });
+      const row = page.locator(`[id="${visibleId}"]`);
+      const before = await row.boundingBox();
+      await page.evaluate(() =>
+        fixture.resolveSearch(
+          Array.from({ length: 8 }, (_, index) => ({
+            id: "server-" + index,
+            name: "Query server " + index,
+            description: "Loaded result",
+            section: "remote",
+          })),
+        ),
+      );
+      await page.locator('[role="option"]').filter({ hasText: "Query server 0" }).waitFor();
+      await frames(page, 2);
+      expect(await list.boundingBox()).toEqual(listBefore);
+      expect(await row.boundingBox()).toEqual(before);
+      expect(Math.abs((await heading.boundingBox())!.y - listBefore!.y)).toBeLessThanOrEqual(1.5);
+    } finally {
+      await page.close();
+    }
+  }
+}, 30_000);
+
+const phones: { name: string; context: BrowserContextOptions }[] = [
+  { name: "portrait", context: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 } },
+  { name: "landscape", context: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true } },
+];
+
+const finishListAnimation = async (page: Page) => {
+  await frames(page, 2);
+  await page.locator(".k2b-chat-composer__commands").evaluate(async (element) => {
+    const panel = element.closest("[data-search]") ?? element;
+    await Promise.all(
+      panel
+        .getAnimations({ subtree: true })
+        .filter((animation) => animation.timeline === document.timeline)
+        .map((animation) => animation.finished),
+    );
+  });
+};
+
+const listGeometry = (page: Page) =>
+  page.evaluate(() => {
+    const list = document.querySelector<HTMLElement>(".k2b-chat-composer__commands")!;
+    const rect = list.getBoundingClientRect();
+    const style = getComputedStyle(list);
+    const shell = document.querySelector(".k2b-chat-composer-shell")!.getBoundingClientRect();
+    return {
+      left: rect.left,
+      right: rect.right,
+      bottom: rect.bottom,
+      composerTop: document.querySelector(".k2b-chat-composer")!.getBoundingClientRect().top,
+      shellLeft: shell.left,
+      shellRight: shell.right,
+      width: innerWidth,
+      corners: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomLeftRadius, style.borderBottomRightRadius].map(
+        parseFloat,
+      ),
+      sides: [style.borderLeftWidth, style.borderRightWidth].map(parseFloat),
+      pageOverflow: document.documentElement.scrollWidth - innerWidth,
+      listOverflow: list.scrollWidth - list.clientWidth,
+      rows: [...list.querySelectorAll(".k2b-chat-composer__command")].map((row) => {
+        const name = row.querySelector("strong")!;
+        const description = row.querySelector("small");
+        return {
+          height: row.getBoundingClientRect().height,
+          descriptionTop: description?.getBoundingClientRect().top,
+          nameBottom: name.getBoundingClientRect().bottom,
+        };
+      }),
+    };
+  });
+
+const expectPageHistory = async (page: Page) => {
+  await page.waitForFunction(() => history.state?.sentinel === 1 && history.state?.k2bDialog === undefined);
+  expect(await page.evaluate(() => history.state)).toEqual({ sentinel: 1 });
+};
+
+const outsideClicks = (page: Page) => page.evaluate(() => window.outsideClicks);
+
+declare global {
+  interface Window {
+    outsideClicks: { native: number; onclick: number };
+    /** The hash of every popstate an application listener received. */
+    pops: string[];
+    /** The text of every submission. */
+    sent: string[];
+  }
+}
+
+describe(`slash command phone sheet in ${browserName}`, () => {
+  for (const { name, context } of phones) {
+    test(`the ${name} sheet spans the column, joins the composer and keeps the field still`, async () => {
+      const page = await open({ mode: "slash", viewportHeight: true }, context);
+      try {
+        const field = page.locator("textarea").first();
+        await field.tap();
+        const before = await field.boundingBox();
+        await page.keyboard.type("/");
+        await page.locator(".k2b-chat-composer__commands").waitFor();
+        expect(await field.boundingBox()).toEqual(before);
+        await finishListAnimation(page);
+        expect(await field.boundingBox()).toEqual(before);
+        const box = await listGeometry(page);
+        expect(Math.abs(box.left)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box.right - box.width)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box.bottom - box.composerTop)).toBeLessThanOrEqual(1);
+        expect(box.corners[0]).toBeGreaterThan(0);
+        expect(box.corners[1]).toBeGreaterThan(0);
+        expect(box.corners.slice(2)).toEqual([0, 0]);
+        expect(box.sides).toEqual([0, 0]);
+        expect(box.rows.length).toBeGreaterThan(0);
+        for (const row of box.rows) {
+          expect(row.height).toBeGreaterThanOrEqual(48);
+          if (row.descriptionTop !== undefined) expect(row.descriptionTop).toBeGreaterThanOrEqual(row.nameBottom - 1);
+        }
+        expect(box.rows.some((row) => row.descriptionTop !== undefined)).toBe(true);
+        expect(box.pageOverflow).toBeLessThanOrEqual(0);
+        expect(box.listOverflow).toBeLessThanOrEqual(0);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    for (const target of ["#outside-header button", "#outside-feed"]) {
+      test(`a ${name} tap on ${target} dismisses only the sheet and the next tap acts normally`, async () => {
+        const page = await open({ mode: "slash", viewportHeight: true }, context);
+        try {
+          await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+          const field = page.locator("textarea").first();
+          await field.tap();
+          await page.keyboard.type("/al");
+          await finishListAnimation(page);
+          expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+          const button = page.locator(target);
+          // The test taps an exposed button, not a command covering it.
+          expect(
+            await button.evaluate((element) => {
+              const box = element.getBoundingClientRect();
+              return element.contains(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2));
+            }),
+          ).toBe(true);
+          await button.tap();
+          expect(await page.locator(".k2b-chat-composer__commands").count()).toBe(0);
+          expect(await outsideClicks(page)).toEqual({ native: 0, onclick: 0 });
+          expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
+          expect(await field.inputValue()).toBe("/al");
+          await expectPageHistory(page);
+          await button.tap();
+          expect(await outsideClicks(page)).toEqual({ native: 1, onclick: 1 });
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
+    }
+
+    test(`Back closes the ${name} sheet first, preserving URL, focus and slash text`, async () => {
+      const page = await open({ mode: "slash", viewportHeight: true }, context);
+      try {
+        const url = page.url();
+        await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+        const length = await page.evaluate(() => history.length);
+        const field = page.locator("textarea").first();
+        await field.tap();
+        await page.keyboard.type("/al");
+        await finishListAnimation(page);
+        expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+        expect(await page.evaluate(() => history.length)).toBe(length + 1);
+        // The page's own popstate listeners never see this Back: it only closes the sheet's same-URL entry.
+        await page.evaluate(() => {
+          window.addEventListener("popstate", () => document.body.setAttribute("data-page-popstate", ""));
+          history.back();
+        });
+        await page.waitForFunction(() => !document.querySelector(".k2b-chat-composer__commands"));
+        await expectPageHistory(page);
+        expect(page.url()).toBe(url);
+        expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
+        expect(await field.inputValue()).toBe("/al");
+        expect(await page.evaluate(() => document.body.hasAttribute("data-page-popstate"))).toBe(false);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`choosing a command and Escape both remove the ${name} sheet history entry`, async () => {
+      const page = await open({ mode: "slash", viewportHeight: true }, context);
+      try {
+        await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+        const field = page.locator("textarea").first();
+        for (const close of ["choose", "escape"]) {
+          await field.fill("");
+          await field.tap();
+          await page.keyboard.type("/al");
+          await finishListAnimation(page);
+          expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+          if (close === "choose") await page.locator(".k2b-chat-composer__command").filter({ hasText: "First local command" }).tap();
+          else await field.press("Escape");
+          expect(await page.locator(".k2b-chat-composer__commands").count()).toBe(0);
+          await expectPageHistory(page);
+          expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
+          expect(await field.inputValue()).toBe(close === "choose" ? "" : "/al");
+        }
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`an action that navigates finds the ${name} sheet's history entry gone`, async () => {
+      const page = await open({ mode: "slash", viewportHeight: true, navigate: true }, context);
+      try {
+        await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+        const field = page.locator("textarea").first();
+        await field.tap();
+        await page.keyboard.type("/go");
+        await finishListAnimation(page);
+        expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+        await page.locator(".k2b-chat-composer__command").filter({ hasText: "Open the next page" }).tap();
+        await page.waitForFunction(() => history.state?.page === 2);
+        // One Back returns to the page as it was before the sheet opened, not to a leftover sheet entry.
+        await page.evaluate(
+          () =>
+            new Promise<void>((done) => {
+              window.addEventListener("popstate", () => done(), { once: true });
+              history.back();
+            }),
+        );
+        expect(await page.evaluate(() => history.state)).toEqual({ sentinel: 1 });
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
+    test(`emoji suggestions keep their floating list and leave history alone in ${name}`, async () => {
+      const page = await open({ mode: "slash", viewportHeight: true }, context);
+      try {
+        await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+        const field = page.locator("textarea").first();
+        await field.tap();
+        await page.keyboard.type(":smi");
+        await page.locator(".k2b-chat-composer__commands").waitFor();
+        await finishListAnimation(page);
+        expect(await page.locator(".k2b-chat-composer-accessory[data-commands]").count()).toBe(0);
+        const box = await listGeometry(page);
+        expect(Math.abs(box.bottom - (box.composerTop - 8))).toBeLessThanOrEqual(1);
+        expect(Math.abs(box.left - box.shellLeft)).toBeLessThanOrEqual(1);
+        expect(Math.abs(box.right - box.shellRight)).toBeLessThanOrEqual(1);
+        for (const corner of box.corners) expect(corner).toBeGreaterThan(0);
+        for (const side of box.sides) expect(side).toBeGreaterThan(0);
+        await expectPageHistory(page);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+
+  test("a router sees address changes under the sheet but never its same-URL Back or Forward", async () => {
+    const page = await open({ mode: "slash", viewportHeight: true }, phones[0]!.context);
+    try {
+      await page.evaluate(() => {
+        history.replaceState({ sentinel: 1 }, "");
+        window.pops = [];
+        window.addEventListener("popstate", () => window.pops.push(location.hash));
+      });
+      const field = page.locator("textarea").first();
+      const openSheet = async () => {
+        await field.tap();
+        await page.keyboard.type("/al");
+        await finishListAnimation(page);
+        expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+      };
+      const pops = () => page.evaluate(() => window.pops);
+
+      // The application navigates while the sheet is open: Back from its page reaches the router.
+      await openSheet();
+      await page.evaluate(() => history.pushState(null, "", "#pushed"));
+      await page.evaluate(() => history.back());
+      await page.waitForFunction(() => window.pops.length === 1);
+      expect(await pops()).toEqual([""]);
+      await field.press("Escape");
+      await expectPageHistory(page);
+
+      // The application rewrites the sheet entry's address: Back to the page beneath reaches the router.
+      await field.fill("");
+      await openSheet();
+      await page.evaluate(() => history.replaceState(history.state, "", "#replaced"));
+      await page.evaluate(() => history.back());
+      await page.waitForFunction(() => window.pops.length === 2);
+      expect(await pops()).toEqual(["", ""]);
+      await page.waitForFunction(() => !document.querySelector(".k2b-chat-composer__commands"));
+
+      // Forward onto the entry a chosen command left behind, and Back again, stay with the sheet's history.
+      await field.fill("");
+      await openSheet();
+      await page.locator(".k2b-chat-composer__command").filter({ hasText: "First local command" }).tap();
+      await expectPageHistory(page);
+      await page.evaluate(() => history.forward());
+      await page.waitForFunction(() => typeof history.state?.k2bDialog === "number");
+      await page.evaluate(() => history.back());
+      await expectPageHistory(page);
+      await frames(page, 2);
+      expect(await pops()).toEqual(["", ""]);
+      expect(await page.locator(".k2b-chat-composer__commands").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("sending with the sheet open lets the application's address follow the page beneath it", async () => {
+    const page = await open({ mode: "slash", viewportHeight: true, submitNavigate: true }, phones[0]!.context);
+    try {
+      await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+      const field = page.locator("textarea").first();
+      await field.tap();
+      await page.keyboard.type("/al");
+      await finishListAnimation(page);
+      expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+      await page.locator(".k2b-chat-composer__send").tap();
+      await page.waitForFunction(() => history.state?.page === "sent");
+      expect(await page.evaluate(() => window.sent)).toEqual(["/al"]);
+      // One Back returns to the page as it was before the sheet opened, not to a leftover sheet entry.
+      await page.evaluate(() => history.back());
+      await expectPageHistory(page);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("desktop commands keep floating geometry and an outside click closes them and acts normally", async () => {
+    const page = await open({ mode: "slash", viewportHeight: true }, { viewport: { width: 1440, height: 900 }, hasTouch: false });
+    try {
+      await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+      const length = await page.evaluate(() => history.length);
+      const field = page.locator("textarea").first();
+      await field.click();
+      await page.keyboard.type("/");
+      await finishListAnimation(page);
+      const box = await listGeometry(page);
+      expect(Math.abs(box.bottom - (box.composerTop - 8))).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.left - box.shellLeft)).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.right - box.shellRight)).toBeLessThanOrEqual(1);
+      for (const corner of box.corners) expect(corner).toBeGreaterThan(0);
+      for (const side of box.sides) expect(side).toBeGreaterThan(0);
+      // Desktop rows keep their compact type; only the phone sheet takes the larger sizes.
+      expect(
+        await page
+          .locator(".k2b-chat-composer__command strong")
+          .first()
+          .evaluate((name) => getComputedStyle(name).fontSize),
+      ).toBe("13px");
+      await expectPageHistory(page);
+      expect(await page.evaluate(() => history.length)).toBe(length);
+      await page.locator("#outside-header button").click();
+      expect(await page.locator(".k2b-chat-composer__commands").count()).toBe(0);
+      expect(await outsideClicks(page)).toEqual({ native: 1, onclick: 1 });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+});
+
+/** The search and top option stay anchored while Plus filters a panel of held height. */
+const plusBoxes = (page: Page) =>
+  page.evaluate(() => {
+    const box = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return [rect.x, rect.y, rect.width, rect.height].map(Math.round);
+    };
+    return {
+      composer: box(".k2b-chat-composer"),
+      search: box('input[role="combobox"]'),
+      option: box('[role="option"]'),
+      panel: box(".k2b-chat-composer-accessory[data-commands]"),
+    };
+  });
+
+/** The assistant composer and its field, which opening the list from Plus must not move. */
+const composerBoxes = (page: Page) =>
+  page.evaluate(() =>
+    [".k2b-chat-composer", "textarea", '[aria-haspopup="listbox"]'].map((selector) => {
+      const rect = document.querySelector(selector)!.getBoundingClientRect();
+      return [rect.x, rect.y, rect.width, rect.height].map(Math.round);
+    }),
+  );
+
+describe(`Plus command list in ${browserName}`, () => {
+  for (const width of [1440, 390]) {
+    const context = width === 390 ? phones[0]!.context : {};
+    for (const tabBar of [false, true]) {
+      test(`Plus focuses search above the composer at ${width}px (tab bar=${tabBar})`, async () => {
+        const page = await open({ mode: "slash", add: true, width, viewportHeight: true, tabBar }, context);
+        try {
+          const field = page.locator("textarea").first();
+          const before = await composerBoxes(page);
+          const plus = page.getByRole("button", { name: "Add", exact: true });
+          if (width === 390) await plus.tap();
+          else await plus.click();
+          await finishListAnimation(page);
+          await settled(page);
+          expect(await composerBoxes(page)).toEqual(before);
+          expect(await page.getByRole("combobox", { name: "Search entries" }).evaluate((el) => el === document.activeElement)).toBe(true);
+          expect(await field.getAttribute("role")).toBeNull();
+          const boxes = await page.evaluate(() => {
+            const panel = document.querySelector(".k2b-chat-composer-accessory[data-commands]")!.getBoundingClientRect();
+            const composer = document.querySelector(".k2b-chat-composer")!.getBoundingClientRect();
+            const search = document.querySelector('input[role="combobox"]')!.getBoundingClientRect();
+            const bar = document.querySelector("#tab-bar")?.getBoundingClientRect();
+            const viewport = visualViewport;
+            return {
+              panelBottom: panel.bottom,
+              composerTop: composer.top,
+              composerBottom: composer.bottom,
+              searchTop: search.top,
+              searchBottom: search.bottom,
+              barTop: bar?.top,
+              viewportTop: viewport?.offsetTop ?? 0,
+              viewportBottom: (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight),
+            };
+          });
+          expect(Math.abs(boxes.panelBottom - (boxes.composerTop - (width === 390 ? 0 : 8)))).toBeLessThanOrEqual(1);
+          expect(boxes.searchTop).toBeGreaterThanOrEqual(boxes.viewportTop);
+          expect(boxes.searchBottom).toBeLessThanOrEqual(Math.min(boxes.composerTop, boxes.viewportBottom));
+          if (tabBar) {
+            expect(boxes.composerBottom).toBeLessThanOrEqual(boxes.barTop! + 1);
+            expect(boxes.panelBottom).toBeLessThanOrEqual(boxes.barTop!);
+          }
+        } finally {
+          await page.close();
+        }
+      }, 30_000);
+    }
+
+    test(`Plus keeps the composer, search and first option still while typing and resolving at ${width}px`, async () => {
+      const page = await open({ mode: "slash", add: true, width, viewportHeight: true }, context);
+      try {
+        const plus = page.getByRole("button", { name: "Add", exact: true });
+        if (width === 390) await plus.tap();
+        else await plus.click();
+        await finishListAnimation(page);
+        await settled(page);
+        await page.waitForFunction(() => fixture.searchCount() === 1);
+        const search = page.getByRole("combobox", { name: "Search entries" });
+        const before = await plusBoxes(page);
+        for (const character of ["q", "u"]) {
+          const count = await page.evaluate(() => fixture.searchCount());
+          await search.press(character);
+          await page.waitForFunction((count) => fixture.searchCount() > count, count);
+          await settled(page);
+          expect(await plusBoxes(page)).toEqual(before);
+          await page.evaluate(() => fixture.resolveSearch([{ id: "server", name: "Query server", description: "Loaded result" }]));
+          await page.getByRole("option").filter({ hasText: "Loaded result" }).waitFor();
+          await settled(page);
+          expect(await plusBoxes(page)).toEqual(before);
+        }
+        // The option is absent when no rows match; the panel and search keep their original boxes throughout.
+        for (const character of ["z", "z", "z"]) {
+          const count = await page.evaluate(() => fixture.searchCount());
+          await search.press(character);
+          await page.waitForFunction((count) => fixture.searchCount() > count, count);
+          await page.evaluate(() => fixture.resolveSearch([]));
+          await settled(page);
+          const boxes = await plusBoxes(page);
+          expect(boxes.composer).toEqual(before.composer);
+          expect(boxes.search).toEqual(before.search);
+          expect(boxes.panel).toEqual(before.panel);
+        }
+        await page.getByText("Nothing found for “quzzz”", { exact: true }).waitFor();
+        expect(await page.getByRole("option").count()).toBe(0);
+        await search.fill("");
+        await settled(page);
+        expect(await plusBoxes(page)).toEqual(before);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+
+  for (const target of ["#outside-header button", "#outside-feed", "#tab-bar button"]) {
+    test(`a phone tap on ${target} closes only Plus and restores textarea focus`, async () => {
+      const page = await open({ mode: "slash", add: true, tabBar: true, viewportHeight: true }, phones[0]!.context);
+      try {
+        await page.evaluate(() => history.replaceState({ sentinel: 1 }, ""));
+        const field = page.locator("textarea").first();
+        await field.fill("Hello world");
+        await field.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(1, 5));
+        await page.getByRole("button", { name: "Add", exact: true }).tap();
+        await finishListAnimation(page);
+        await settled(page);
+        const button = page.locator(target);
+        expect(
+          await button.evaluate((el) => {
+            const rect = el.getBoundingClientRect();
+            return el.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+          }),
+        ).toBe(true);
+        await button.tap();
+        expect(await page.getByRole("listbox").count()).toBe(0);
+        expect(await outsideClicks(page)).toEqual({ native: 0, onclick: 0 });
+        expect(await field.evaluate((el) => el === document.activeElement)).toBe(true);
+        expect(await field.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([1, 5]);
+        expect(await field.inputValue()).toBe("Hello world");
+        await expectPageHistory(page);
+        await button.tap();
+        expect(await outsideClicks(page)).toEqual({ native: 1, onclick: target === "#tab-bar button" ? 0 : 1 });
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+  }
+
+  test("phone Back closes Plus first and the next Back navigates normally", async () => {
+    const page = await open({ mode: "slash", add: true, tabBar: true, viewportHeight: true }, phones[0]!.context);
+    try {
+      await page.evaluate(() => {
+        history.replaceState({ previous: 1 }, "", "#previous");
+        history.pushState({ sentinel: 1 }, "", "#current");
+        window.pops = [];
+        window.addEventListener("popstate", () => window.pops.push(location.hash));
+      });
+      const url = page.url();
+      const length = await page.evaluate(() => history.length);
+      const field = page.locator("textarea").first();
+      await field.fill("Hello world");
+      await field.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(5, 5));
+      await page.getByRole("button", { name: "Add", exact: true }).tap();
+      await finishListAnimation(page);
+      await settled(page);
+      expect(await page.evaluate(() => typeof history.state?.k2bDialog)).toBe("number");
+      expect(await page.evaluate(() => history.length)).toBe(length + 1);
+      await page.evaluate(() => history.back());
+      await page.waitForFunction(() => !document.querySelector('[role="listbox"]'));
+      await expectPageHistory(page);
+      expect(page.url()).toBe(url);
+      expect(await page.evaluate(() => window.pops)).toEqual([]);
+      expect(await field.evaluate((el) => el === document.activeElement)).toBe(true);
+      expect(await field.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([5, 5]);
+      expect(await field.inputValue()).toBe("Hello world");
+      await page.evaluate(() => history.back());
+      await page.waitForFunction(() => history.state?.previous === 1);
+      expect(new URL(page.url()).hash).toBe("#previous");
+      expect(await page.evaluate(() => window.pops)).toEqual(["#previous"]);
+    } finally {
+      await page.close();
     }
   }, 30_000);
 });

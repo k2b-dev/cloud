@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { MAIL_SEARCH_PARAMETER, parseMailSearchState, serializeMailSearchState } from "../../search-state";
+import { MAX_MAIL_SEARCH_PARAMETER_LENGTH, MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../../search-url";
 import {
   buildExactParticipantSearchHref,
   buildExactSenderSearchHref,
   buildMailAttachmentDownloadHref,
   buildMailingListHref,
   buildMailListHref,
+  buildMailSearchClearHref,
+  buildMailSearchHref,
   buildMailSelectionHref,
   isMailListItemActive,
   isMailWorkspaceUrl,
@@ -117,7 +120,8 @@ describe("Mail search navigation", () => {
     expect(href).not.toBeNull();
     const next = new URL(href!, url.origin);
 
-    expect(next.searchParams.get("folder")).toBe("Fold01");
+    expect(next.searchParams.has("folder")).toBe(false);
+    expect(next.searchParams.get("searchFrom")).toBe("folder=Fold01&conversation=Conv01");
     expect(next.searchParams.has("q")).toBe(false);
     expect(next.searchParams.has("conversation")).toBe(false);
     expect(parseMailSearchState(next)).toEqual({
@@ -137,7 +141,8 @@ describe("Mail search navigation", () => {
     expect(href).not.toBeNull();
     const next = new URL(href!, url.origin);
 
-    expect(next.searchParams.get("folder")).toBe("Fold01");
+    expect(next.searchParams.has("folder")).toBe(false);
+    expect(next.searchParams.get("searchFrom")).toBe("folder=Fold01&conversation=Conv01");
     expect(next.searchParams.has("q")).toBe(false);
     expect(next.searchParams.has("conversation")).toBe(false);
     expect(parseMailSearchState(next)).toEqual({
@@ -198,5 +203,125 @@ describe("Mail workspace route ownership", () => {
     ]) {
       expect(isMailWorkspaceUrl(new URL(href, origin), mailboxId, origin)).toBe(false);
     }
+  });
+});
+
+describe("Mail search origin", () => {
+  const path = "/app/mail/Box001";
+  const url = (query: string) => new URL(`${path}${query ? `?${query}` : ""}`, "https://cloud.example");
+  const origins = ["view=needs_action", "folder=Fold01", "savedView=Saved1", "scheduled=1", "search=tag+filter", ""];
+
+  for (const origin of origins) {
+    test(`records and restores ${origin || "All mail"} with its selection`, () => {
+      const selection = "conversation=Conv01&message=Msg001";
+      const expectedOrigin = [origin, selection].filter(Boolean).join("&");
+      const source = url(`${expectedOrigin}&cursor=page-2&mailingList=list&q=old&qFields=body`);
+      const searched = new URL(buildMailSearchHref(source, { q: "invoice" }), source.origin);
+      expect(searched.searchParams.get("searchFrom")).toBe(expectedOrigin);
+      expect(searched.searchParams.get("q")).toBe("invoice");
+      for (const name of ["view", "folder", "savedView", "scheduled", "search", "conversation", "message", "cursor", "qFields"])
+        expect(searched.searchParams.has(name)).toBe(false);
+      expect(buildMailSearchClearHref(searched)).toBe(`${path}?${expectedOrigin}`);
+    });
+  }
+
+  test("records a present, empty origin for All mail and keeps it during refinements", () => {
+    const first = buildMailSearchHref(url(""), { q: "one" });
+    expect(first).toBe(`${path}?searchFrom=&q=one`);
+    const refined = buildMailSearchHref(new URL(first, "https://cloud.example"), { q: "two", qFields: "body" });
+    expect(refined).toBe(`${path}?searchFrom=&q=two&qFields=body`);
+    expect(buildMailSearchClearHref(new URL(refined, "https://cloud.example"))).toBe(path);
+  });
+
+  test("takes first values in the view parameter order", () => {
+    const searched = buildMailSearchHref(
+      url("message=m&conversation=c&search=tag&scheduled=1&savedView=s&folder=f&view=needs_action&view=done&folder=other"),
+      { q: "one" },
+    );
+    expect(new URL(searched, "https://cloud.example").searchParams.get("searchFrom")).toBe(
+      "view=needs_action&folder=f&savedView=s&scheduled=1&search=tag&conversation=c&message=m",
+    );
+  });
+
+  test("keeps an existing origin when refining, switching to the builder, or saving a search", () => {
+    const source = url("q=old&conversation=result&searchFrom=view%3Dneeds_action%26conversation%3Doriginal");
+    const searches: Record<string, string>[] = [{ q: "new" }, { search: "structured" }, { savedView: "Saved1" }];
+    for (const search of searches) {
+      const next = new URL(buildMailSearchHref(source, search), source.origin);
+      expect(next.searchParams.get("searchFrom")).toBe("view=needs_action&conversation=original");
+      expect(buildMailSearchClearHref(next)).toBe(`${path}?view=needs_action&conversation=original`);
+    }
+  });
+
+  test("drops a starting filter that would push the search past the workspace route limit", () => {
+    const source = url("view=needs_action");
+    source.searchParams.set("search", JSON.stringify({ query: '"'.repeat(1_000) }));
+    const href = buildMailSearchHref(source, { search: "structured" });
+    expect(href.length).toBeLessThanOrEqual(MAX_MAIL_WORKSPACE_HREF_LENGTH);
+    expect(new URL(href, source.origin).searchParams.get("searchFrom")).toBe("view=needs_action");
+    const small = url("view=needs_action&search=tag");
+    expect(new URL(buildMailSearchHref(small, { search: "structured" }), source.origin).searchParams.get("searchFrom")).toBe(
+      "view=needs_action&search=tag",
+    );
+  });
+
+  test("leaves room for selecting and paging results after dropping a large starting filter", () => {
+    const filter = (count: number, length: number) =>
+      serializeMailSearchState({
+        expression: {
+          type: "and",
+          expressions: Array.from({ length: count }, () => ({ type: "text", field: "any", query: "a".repeat(length), match: "words" })),
+        },
+        sort: "relevance",
+      });
+    const starting = filter(2, 500);
+    const search = filter(4, 475);
+    if (!starting.ok || !search.ok) throw new Error("Invalid search fixture");
+    const source = url("view=needs_action");
+    source.searchParams.set("search", starting.value);
+    const href = buildMailSearchHref(source, { search: search.value });
+    const selected = new URL(buildMailSelectionHref(new URL(href, source.origin), { ...item, selectionKind: "message" }), source.origin);
+    expect(selected.searchParams.get("conversation")).toBe("Conv01");
+    expect(selected.searchParams.get("message")).toBe("Msg001");
+    // Search pages use a base64url cursor with a fixed hash, rank, timestamp, and UUID.
+    selected.searchParams.set(
+      "cursor",
+      Buffer.from(
+        JSON.stringify({
+          version: 3,
+          sort: "relevance",
+          backend: "pg_textsearch",
+          queryHash: "a".repeat(64),
+          rank: 0.123456789,
+          internalDate: "2026-10-03T10:00:00.000000Z",
+          id: "019a0000-0000-7000-8000-000000000001",
+        }),
+      ).toString("base64url"),
+    );
+    expect(`${selected.pathname}${selected.search}`.length).toBeLessThanOrEqual(MAX_MAIL_WORKSPACE_HREF_LENGTH);
+    expect(href.length).toBeLessThanOrEqual(MAX_MAIL_SEARCH_PARAMETER_LENGTH);
+    expect(new URL(href, source.origin).searchParams.get("searchFrom")).toBe("view=needs_action");
+  });
+
+  test("filters a hand-edited origin and restores only first allowed values", () => {
+    const source = url("q=invoice&mailingList=current");
+    source.searchParams.set(
+      "searchFrom",
+      "q=leak&cursor=next&searchFrom=nested&unknown=no&message=m&view=needs_action&view=done&conversation=c",
+    );
+    expect(buildMailSearchClearHref(source)).toBe(`${path}?view=needs_action&conversation=c&message=m`);
+  });
+
+  test("falls back to the existing clear behavior for links without an origin", () => {
+    const source = url("folder=f&q=old&qFields=body&cursor=next&conversation=c&search=old");
+    expect(buildMailSearchClearHref(source)).toBe(buildMailListHref(source, true));
+  });
+
+  test("keeps the origin when selecting and closing results but removes it when clearing the list", () => {
+    const source = url("q=one&searchFrom=view%3Dneeds_action");
+    const selected = new URL(buildMailSelectionHref(source, item), source.origin);
+    expect(selected.searchParams.get("searchFrom")).toBe("view=needs_action");
+    expect(new URL(buildMailListHref(selected), source.origin).searchParams.get("searchFrom")).toBe("view=needs_action");
+    expect(new URL(buildMailListHref(selected, true), source.origin).searchParams.has("searchFrom")).toBe(false);
   });
 });

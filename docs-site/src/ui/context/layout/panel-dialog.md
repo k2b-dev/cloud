@@ -10,6 +10,9 @@ forced-color mode.
 
 It does not open a dialog, own form state, validate fields, or save data.
 
+For a short dialog that should become a sheet on phones, use
+[`bottomSheetAdaptiveOptions`](/en/ui/layout/bottom-sheet#sheet-or-dialog).
+
 ## Use PanelDialog
 
 Use it for editors with several related field groups or a stable action footer.
@@ -138,8 +141,9 @@ the body or a section they start at the content edge.
 Header and footer sit flat on the dialog surface: no grey band and no divider
 line. Both stay outside the scrolling body, so they remain visible while only
 the body scrolls; the body's fade is the only cue that content continues. This
-is the same flat header as `prompts` dialogs, with the same quiet icon color
-and close control; `PanelDialog` uses the larger title for its larger editors.
+shares the flat surface and close control of `prompts` dialogs; `PanelDialog`
+uses the larger title for its larger editors. Its header icon sits in a soft
+chip of the accent ink `--k2b-app-workspace-active`.
 
 The header uses a 20 px semibold title and a 13 px secondary subtitle. Without
 a subtitle, it centers the title beside its icon and actions. Headers with a
@@ -220,7 +224,7 @@ Tabs use tab triggers inside a labelled tab list. Pass `ariaLabel` when the defa
 ## Runtime
 
 `PanelDialog` can render layout on the server, but the dialog host, tabs, close
-controls, hideable sections, and form mutations require hydrated client code.
+controls, hideable sections, and form mutations require browser code.
 
 `confirmDiscardIfDirty` returns immediately when its boolean or accessor is
 false. Otherwise it opens the package confirmation prompt and resolves to the

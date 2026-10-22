@@ -2,6 +2,7 @@ export { type AiAppSkillIssue, aiAppSkills, appSkillsRegistryState, reconcileApp
 export { type AiApprovalPreferenceRoutes, type AiApprovalPreferenceView, createAiApprovalPreferenceRoutes } from "./approval-routes";
 export {
   AI_WEBSITE_APPROVAL_TOOL,
+  type AiToolApprovalChangeContext,
   type AiToolApprovalContext,
   type AiToolApprovalPreference,
   type AiToolApprovalRemember,
@@ -21,6 +22,7 @@ export {
 export { assistantAiSettingsState, listAssistantAiModels, selectAssistantAiModelId } from "./assistant-models";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
 export { CloudAiTranscribeAudioInputSchema, CloudAiTranscribeAudioOutputSchema, createCloudAiTranscribeAudioTool } from "./audio-tool";
+export { AiBackgroundApprovalRequiredError, authorizeBackgroundAction } from "./background-review";
 export { CODE_RUNTIME_TOOL_NAMES, CodeResourceId, CodeRuntimeInput, parseCodeToolInput } from "./browser-code-contracts";
 export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
 export { getAiChatQuotas } from "./chat-quotas";
@@ -33,11 +35,22 @@ export {
   ChatTaskOccurrenceIdSchema,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,
+  chatTaskName,
   getChatTaskTimezone,
   normalizeChatTaskSchedule,
   toAiChatTaskOccurrenceView,
   toAiChatTaskView,
 } from "./chat-task-contracts";
+export {
+  CHAT_TASK_REASON_CODES,
+  type ChatTaskReason,
+  type ChatTaskReasonCode,
+  chatTaskLocale,
+  chatTaskNeedsNewTime,
+  chatTaskReasonSentence,
+  chatTaskReasonState,
+  chatTaskStopSentence,
+} from "./chat-task-reasons";
 export {
   type AiChatTask,
   AiChatTaskIdempotencyConflictError,
@@ -249,6 +262,7 @@ export {
   createCloudAiMemoryTool,
 } from "./memory-tool";
 export { migrateCloudAi } from "./migrate";
+export { type AiOpenQuestion, type AiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 export { personalAiModelPolicy } from "./personal-agent";
 export { type AiUserPrefs, aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 export {
@@ -407,6 +421,7 @@ export type {
   AiProjectPromptSnapshot,
   AiProviderId,
   AiPublicModelProfile,
+  AiRecentResource,
   AiResolvedModel,
   AiRuntimeTool,
   AiSettingsError,

@@ -1,12 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import {
+  APP_APPROVAL_LIMITS,
   APP_APPROVAL_PROTOCOL,
   type AppActionView,
   AppActionViewSchema,
+  AppDeviceCommandSchema,
+  AppDeviceInboxSchema,
+  AppDeviceInboxWithChangesSchema,
   type AppDeviceProof,
   AppDevicePublicKeySchema,
   AppDeviceRequestSchema,
+  AppLoginContextSchema,
   AppPairingClaimSchema,
+  AppPendingLoginSchema,
   appActionDigest,
   appActionDigestMessage,
   appDeviceProofMessage,
@@ -189,4 +195,140 @@ test("Action views reject bidi overrides and newlines in every shown text field"
     ])
       expect(AppActionViewSchema.safeParse({ ...actionView, ...change }).success).toBe(false);
   }
+});
+
+test("inbox opt-in has a single nested signing appendix and strict unique capabilities", () => {
+  const base = `["cloud-app-approval-v1","device","https://cloud.example","${id}","${id}",100,160,"inbox"`;
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox" } })).toBe(`${base}]`);
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox", accept: ["terminal-logins"] } })).toBe(
+    `${base},["terminal-logins"]]`,
+  );
+  for (const accept of [[], ["unknown"], ["terminal-logins", "terminal-logins"]])
+    expect(AppDeviceCommandSchema.safeParse({ operation: "inbox", accept }).success).toBe(false);
+});
+
+test("terminal consent is strict, plain and bounded within a five-login inbox", () => {
+  const terminal = {
+    client: { id: "c".repeat(256), name: "😀".repeat(60) },
+    scopes: Array.from({ length: 16 }, (_, i) => `s${i}`.padEnd(40, "x")),
+    lifetimeSeconds: 7_776_000,
+  };
+  const login = {
+    requestId: id,
+    challenge: coordinate,
+    comparison: "000123",
+    createdAt: "2026-10-11T10:00:00.000Z",
+    expiresAt: "2026-10-11T10:05:00.000Z",
+    terminal,
+  };
+  expect(AppPendingLoginSchema.parse(login)).toEqual(login);
+  for (const change of [
+    { ...terminal, extra: true },
+    { ...terminal, client: { ...terminal.client, extra: true } },
+    { ...terminal, client: { id: "cli", name: "client\u202e" } },
+    { ...terminal, scopes: ["admin scope"] },
+    { ...terminal, lifetimeSeconds: 0 },
+  ])
+    expect(AppPendingLoginSchema.safeParse({ ...login, terminal: change }).success).toBe(false);
+  const inbox = AppDeviceInboxSchema.parse({ logins: Array(5).fill(login), actions: [], moreActions: 0, pollAfterSeconds: 5 });
+  expect(new TextEncoder().encode(JSON.stringify(inbox)).length).toBeLessThanOrEqual(APP_APPROVAL_LIMITS.bodyBytes);
+});
+
+test("inbox opt-in preserves the original literal signing message and binds accepted parts", () => {
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox" } })).toBe(
+    `["cloud-app-approval-v1","device","https://cloud.example","${id}","${id}",100,160,"inbox"]`,
+  );
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox", accept: ["device-changes"] } })).toBe(
+    `["cloud-app-approval-v1","device","https://cloud.example","${id}","${id}",100,160,"inbox",["device-changes"]]`,
+  );
+  expect(
+    appDeviceProofMessage({
+      ...proof,
+      command: { operation: "change", changeId: id, kind: "revoke", targetId: id, endSessions: true, decision: "approve" },
+    }),
+  ).toBe(
+    `["cloud-app-approval-v1","device","https://cloud.example","${id}","${id}",100,160,"change","${id}","revoke","${id}",true,"approve"]`,
+  );
+});
+
+test("five logins and five device changes with 80 four-byte code points fit the inbox budget without actions", () => {
+  const inbox = AppDeviceInboxWithChangesSchema.parse({
+    logins: Array.from({ length: APP_APPROVAL_LIMITS.pendingPerAccount }, () => ({
+      requestId: id,
+      challenge: coordinate,
+      comparison: "000123",
+      createdAt: "2026-10-11T10:00:00.000Z",
+      expiresAt: "2026-10-11T10:05:00.000Z",
+    })),
+    moreChanges: 0,
+    changes: Array.from({ length: APP_APPROVAL_LIMITS.pendingPerAccount }, () => ({
+      changeId: id,
+      kind: "revoke",
+      device: { id, name: "🦊".repeat(80) },
+      endSessions: true,
+      createdAt: "2026-10-11T10:00:00.000Z",
+      expiresAt: "2026-10-11T10:05:00.000Z",
+    })),
+    actions: [],
+    moreActions: 0,
+    pollAfterSeconds: APP_APPROVAL_LIMITS.pollSeconds,
+  });
+  expect(inbox.logins).toHaveLength(5);
+  expect(inbox.changes).toHaveLength(5);
+  expect(inbox.moreChanges).toBe(0);
+  for (const moreChanges of [undefined, -1, 0.5, APP_APPROVAL_LIMITS.pendingPerAccount + 1])
+    expect(AppDeviceInboxWithChangesSchema.safeParse({ ...inbox, moreChanges }).success).toBe(false);
+  expect(AppDeviceInboxWithChangesSchema.safeParse({ ...inbox, moreChanges: APP_APPROVAL_LIMITS.pendingPerAccount }).success).toBe(true);
+  expect(new TextEncoder().encode(JSON.stringify(inbox)).length).toBeLessThanOrEqual(APP_APPROVAL_LIMITS.bodyBytes);
+});
+
+test("literal legacy proofs remain stable; context opt-in is one nested appendix", () => {
+  expect(appDeviceProofMessage(proof)).toBe(
+    '["cloud-app-approval-v1","device","https://cloud.example","ab811792-7476-4a8c-b676-2c6007bb9b5b","ab811792-7476-4a8c-b676-2c6007bb9b5b",100,160,"pending"]',
+  );
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox" } })).toBe(
+    '["cloud-app-approval-v1","device","https://cloud.example","ab811792-7476-4a8c-b676-2c6007bb9b5b","ab811792-7476-4a8c-b676-2c6007bb9b5b",100,160,"inbox"]',
+  );
+  expect(appDeviceProofMessage({ ...proof, command: { operation: "inbox", accept: ["terminal-logins"] } })).toBe(
+    '["cloud-app-approval-v1","device","https://cloud.example","ab811792-7476-4a8c-b676-2c6007bb9b5b","ab811792-7476-4a8c-b676-2c6007bb9b5b",100,160,"inbox",["terminal-logins"]]',
+  );
+  for (const operation of ["pending", "inbox"] as const) {
+    const command = { operation, accept: ["login-context"] as ["login-context"] };
+    expect(JSON.parse(appDeviceProofMessage({ ...proof, command })).slice(7)).toEqual([operation, ["login-context"]]);
+    expect(AppDeviceCommandSchema.safeParse(command).success).toBe(true);
+    for (const accept of [[], ["future"], ["login-context", "login-context"], Array(9).fill("login-context")])
+      expect(AppDeviceCommandSchema.safeParse({ operation, accept }).success).toBe(false);
+  }
+  expect(AppDeviceCommandSchema.safeParse({ operation: "pending", accept: ["terminal-logins"] }).success).toBe(false);
+  expect(AppDeviceCommandSchema.safeParse({ operation: "inbox", accept: ["terminal-logins", "login-context"] }).success).toBe(true);
+});
+
+test("login context has strict codes, plain 96-byte names and nullable history", () => {
+  const context = {
+    level: "info",
+    browser: "firefox",
+    os: "linux",
+    country: "AT",
+    city: "界".repeat(32),
+    network: null,
+    history: null,
+  } as const;
+  expect(AppLoginContextSchema.parse(context)).toEqual(context);
+  for (const change of [
+    { city: "界".repeat(33) },
+    { network: "界".repeat(33) },
+    { city: "" },
+    { network: "" },
+    { city: "hi\nthere" },
+    { network: "hi\u202ethere" },
+    { city: "hi\u200bthere" },
+    { country: "at" },
+    { country: "AUT" },
+    { browser: "unknown" },
+    { os: "unknown" },
+    { extra: true },
+    { sameNetwork: false },
+    { history: { knownSince: null, newCountry: false, countriesSince: null, extra: true } },
+  ])
+    expect(AppLoginContextSchema.safeParse({ ...context, ...change }).success).toBe(false);
 });

@@ -5,7 +5,7 @@ section: Frontend
 order: 810
 description: Render application pages on the server and map them to explicit routes.
 tags: [ssr, routing, solidjs]
-updated: 2026-10-10
+updated: 2026-10-18
 ---
 
 # SSR pages and routing
@@ -187,3 +187,30 @@ appears in the HTML.
 
 The page must remain correct on reload and without JavaScript. Islands are an
 enhancement, not the only rendering path.
+
+## One-time hints for moved paths
+
+Render `MovedHint` directly after the old control. Decide visibility on the
+server with `hintOpen(c, "files.tags", { allowed })` from `@k2b/cloud/ssr`.
+`allowed` is required: check whether the person may use the new path. The
+helper also requires a user-backed request actor; anonymous visitors see no hint.
+Pass that result to the island as `open`, so a dismissed hint never flashes
+on reload. See [MovedHint](/en/ui/feedback/moved-hint) for keyboard and layout behavior.
+
+Call `markHintSeen(c, "files.tags")` from `@k2b/cloud/ssr` in the new path's
+route, after its access check: using the new path counts as seen. It appends a
+Set-Cookie header and preserves other cookies. Behind the gateway,
+`x-forwarded-proto: https` also sets Secure.
+
+In the island's `onDismiss`, call `markHintSeen("files.tags")` from
+`@k2b/cloud/browser/hints` before setting `open` to false or navigating.
+The UI component owns no storage; these helpers share the `cloud_seen_hints`
+cookie, scoped to `/` with SameSite=Lax and a one-year lifetime. Like
+announcements, this is per browser, not an account preference. Clearing cookies
+shows eligible hints again. Storage must be available to remember dismissal.
+
+IDs match `/^[a-z0-9][a-z0-9._-]{0,63}$/`; invalid IDs throw. The cookie keeps
+at most 64 unique IDs in recent-use order and drops the oldest. Long IDs can
+reach the 4096-byte cookie budget earlier; the oldest IDs are dropped then too.
+Use a stable,
+application-qualified ID such as `files.tags`. Do not store personal data in IDs.

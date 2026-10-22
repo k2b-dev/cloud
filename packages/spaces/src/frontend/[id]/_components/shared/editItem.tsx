@@ -4,6 +4,7 @@ import { apiClient } from "@/api/client";
 import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages } from "../../messages";
+import { type ClaimFields, resolveAssigneeClaim } from "./claim/claim";
 import ItemForm, { type ItemFormData } from "./ItemForm";
 
 type EditItemParams = {
@@ -12,6 +13,8 @@ type EditItemParams = {
   columns: SpaceColumn[];
   tags: SpaceTag[];
   dateConfig?: DateContext;
+  /** The signed-in person, who may remove the person working on the task; see `resolveAssigneeClaim`. */
+  currentUserId: string;
 };
 
 /** Creates one item in the given Space; a refusal throws the server's reason, or `failure` when it gives none. */
@@ -31,7 +34,13 @@ export const createSpaceItem = async (spaceId: string, data: ItemFormData, failu
   return res.json();
 };
 
-export const saveItemFormData = async (params: { spaceId: string; itemId: string; data: ItemFormData; locale?: string }): Promise<void> => {
+export const saveItemFormData = async (params: {
+  spaceId: string;
+  itemId: string;
+  data: ItemFormData;
+  claim?: ClaimFields;
+  locale?: string;
+}): Promise<void> => {
   const { t } = spaceMessages.resolve(params.locale ? [params.locale] : []);
   const res = await apiClient[":id"].items[":itemId"].$patch({
     param: { id: params.spaceId, itemId: params.itemId },
@@ -45,6 +54,7 @@ export const saveItemFormData = async (params: { spaceId: string; itemId: string
       estimatedDurationMinutes: params.data.estimatedDurationMinutes ?? null,
       startsAt: params.data.startsAt ?? null,
       endsAt: params.data.endsAt ?? null,
+      ...params.claim,
     },
   });
   if (!res.ok) throw new Error(await readResponseError(res, t.itemUpdateFailed));
@@ -66,7 +76,12 @@ export const openEditItemDialog = async (params: EditItemParams): Promise<ItemFo
           columns={params.columns}
           tags={params.tags}
           onSubmit={async (data) => {
-            await saveItemFormData({ spaceId: params.spaceId, itemId: params.item.id, data, locale });
+            // Removing the person who works on the task asks as in the details; declining keeps the dialog open.
+            const claim = data.assigneeIds
+              ? await resolveAssigneeClaim(params.item.claim, params.currentUserId, params.item.assignees ?? [], data.assigneeIds, t)
+              : {};
+            if (!claim) return;
+            await saveItemFormData({ spaceId: params.spaceId, itemId: params.item.id, data, claim, locale });
             close(data);
           }}
           onCancel={() => close(null)}

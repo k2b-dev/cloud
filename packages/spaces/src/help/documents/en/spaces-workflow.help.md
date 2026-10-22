@@ -4,15 +4,24 @@ title: Plan and track work
 icon: ti ti-arrow-bounce
 description: Create items, start from templates, structure tasks, and keep active work and handoffs readable.
 order: 120
+kind: task
 ---
 
 Spaces works best when each item has a clear next action. Keep item titles short, and put context in the notes. Use status or dates to make queues obvious. Use events when the work is mainly planned in the calendar.
 
 ## Create an item {icon="square-plus"}
 
+Choose **New task** in the page header. In the calendar, this button is **New event**. On a phone, use the round **+** button.
+
 When you create an item, Spaces first selects a task or an event, based on the current view. You can switch the type at the top of the dialog. The compact form asks for a title and a description. Events also need their schedule.
 
 Choose **More options** to see all task or event fields. You keep what you already entered. A task gets the status where you started to create it, or the first status when none was selected.
+
+## Set a task deadline {icon="calendar-due"}
+
+Deadlines are all-day by default. Choose a date to make the task due that day. **Add time** adds a specific time; **Remove time** returns to an all-day deadline.
+
+An all-day deadline becomes overdue on the following day in your timezone. It stays due today for its whole day. The calendar shows it in the all-day row of the day and week views, and on its date in month and year views. Existing deadlines with a time keep their time.
 
 ## Start from a template {icon="template"}
 
@@ -25,7 +34,7 @@ A template can propose dates:
 - A rule such as "Wednesday or Thursday" shows the next matching days as chips, for example **Wed 10/14**, **Thu 10/15**, and **Wed 10/21**. A rule such as "in 3 days" proposes one date.
 - The first proposal is selected. Choose another chip, **Other date…** for any date, or **No date** for a task without a deadline.
 - For events, the schedule field below stays available for any other time.
-- Proposals use your time zone. With a weekday rule, today appears only while the time of the template has not passed yet.
+- Proposals use your time zone. With a weekday rule, an all-day task keeps today available for its whole day. A template with a time offers today only while that time still lies ahead.
 - The placeholders `{{date}}`, `{{weekday}}`, and `{{week}}` in the title and description follow the chosen date until you edit the text. This also applies to **No date** and to a date from the picker.
 
 With **Manage** access, you set up templates in the Space settings under **Templates**: a name, the defaults, the date rule, and a due time or start time. **Assign to me** assigns whoever creates the item. Changing or deleting a template never changes items that were already created from it. Everyone who can create items can use the templates.
@@ -34,7 +43,7 @@ With **Manage** access, you set up templates in the Space settings under **Templ
 
 :::reference
 - **Title:** Use a direct action or a noun phrase. Make the title readable in a list without opening the item.
-- **Assignees:** Assign people when the item needs follow-up. Leave the item unassigned when it belongs in a shared queue.
+- **Assignees:** Assign people or service accounts with their own access to the Space when the item needs follow-up. Leave the item unassigned when it belongs in a shared queue.
 - **Status:** Use the status to show the workflow state. Kanban views depend on a consistent status.
 - **Due date or event time:** Use a deadline for tasks and a schedule for events when the timing changes what people do next.
 - **Estimated duration:** Record a positive estimate in whole minutes when it helps someone size or schedule a task. Events use their start and end time instead.
@@ -85,12 +94,26 @@ Under **Blocked by**, every blocking task shows its title and state: a lock for 
 
 You can edit or delete your own comment for 10 minutes after you post it. Comments of other people stay unchanged, even for people with **Manage** access.
 
+## React with an emoji {icon="mood-plus"}
+
+You need **Edit** access to react. Reactions send no notifications.
+
+:::steps
+1. On a Kanban card, select an emoji chip to add or remove your reaction.
+2. With a mouse, point at the card. Select **Add reaction** to pick another emoji.
+3. On a phone or tablet, open the item. Above the comments, select a chip or **Add reaction**.
+4. To see who reacted, point at a chip. On a touch screen, hold the chip.
+5. If saving fails, select **Try again** in the error message.
+:::
+
+An item can have up to 20 different emoji. When it has 20, react with one of them.
+
 ## Work quickly with the keyboard {icon="keyboard"}
 
 - With an item open, press **J** for the next and **K** for the previous item in List, Table, and Kanban.
 - Press **Cmd/Ctrl+Alt+N** to create a task, or an event in the calendar view.
 - Press **Cmd/Ctrl+Shift+K** to search the current Space.
-- In Kanban, focus the board and use the arrow keys to move between cards. The keyboard button above the board lists these shortcuts.
+- In Kanban, focus the board and use the arrow keys to move between cards. **… → Keyboard shortcuts** in the page header lists these shortcuts.
 - To move a card, focus its grip, press **Space**, use the arrow keys, and press **Space** to drop it or **Escape** to cancel.
 - Press **Enter** to open the focused card, **M** to assign it to yourself, or **D** to complete it.
 
@@ -104,13 +127,19 @@ Choose **I'm on it** on a board card or in the task details to claim a task. Cho
 
 While a task is claimed, other people see who works on it:
 
-- The card shows the avatar of the holder with a green ring, first among the assignees, in any column.
+- Board cards, list rows, and table cells show the working person first in the avatar stack with a green ring. They appear once and never in the `+N` overflow.
 - The **In progress** filter lists claimed tasks.
-- In the details, the holder leads the **Assigned** list with the same ring, the label **working on it**, and the time they started. A holder who is not assigned is marked as such.
+- In the details, **Assigned** is one list. The working person's row comes first with the green ring, **working on it**, and the time they started working.
 
-A claim only marks who works on the task right now. The assignment and the column do not change. CLI workers and service accounts claim the same way and appear the same way.
+A holder outside the assignees, such as a personal automation key or an account that was deleted, still appears first as a working row. This row has no remove action.
 
-Claims do not expire. They coordinate work and do not lock it: with **Edit** access, you can move a claimed task between open columns, and ordinary shared edits stay available. Completing your own claimed task, also by dragging it into a done column, releases the claim. With **Edit** access, you see **Take over** for the claim of another account. You confirm it in a dialog that names the current holder. If you complete a task that someone else claimed, for example by dragging it into a done column, Spaces asks once, such as "Claimed by Jana Berger – take over and complete?". It then takes the claim over and completes the task in one step. **Cancel** leaves the card where it was. Sending a task through a wormhole to another Space ends its claim the same way: your own claim ends without a question, and you take over someone else's claim after you confirm. The activity shows who took a claim over from whom.
+Claiming a task also assigns it to you. The claim shows which assignee works on it now. Releasing your own claim keeps you assigned. The column does not change. **Assigned to me** includes tasks you claimed. **Unassigned** excludes tasks claimed by a person or an agent. Active service accounts with their own access to the Space can be assignees; Space API keys can be assigned only in their own Space. Personal automation keys cannot be assignees. An account that claims a task is assigned even without its own access, for example with access for all signed-in accounts. **Assigned to me** stays limited to your personal assignments.
+
+**Take over** moves the claim and the assignment to you. A forced release of another account's claim also removes their assignment. If they were the only assignee, the task becomes unassigned.
+
+Removing a working person or service account from **Assigned** ends their claim. Removing someone else asks you to confirm once. If another session claimed the task, Spaces refuses an assignee list that omits that holder. Read the task again. In the CLI, release the claim before you use `assign` or `set` to remove its holder.
+
+Claims do not expire. They coordinate work and do not lock it: with **Edit** access, you can move a claimed task between open columns, and ordinary shared edits stay available. Completing your own claimed task, also by dragging it into a done column, releases the claim. With **Edit** access, you see **Take over** for the claim of another account. You confirm it in a dialog that names the current holder. If you complete a task that someone else claimed, for example by dragging it into a done column, Spaces asks once, such as "Claimed by Jana Berger – take over and complete?". It then takes the claim over and completes the task in one step. The assignees do not change. **Cancel** leaves the card where it was. Sending a task through a wormhole to another Space ends its claim the same way: your own claim ends without a question, and you take over someone else's claim after you confirm. The activity shows who took a claim over from whom.
 
 ## Prepare invitations from Cloud search {icon="calendar-event"}
 

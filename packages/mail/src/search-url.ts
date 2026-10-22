@@ -8,8 +8,10 @@ export type MailQuickSearchField = (typeof MAIL_QUICK_SEARCH_FIELDS)[number];
 export const DEFAULT_MAIL_QUICK_SEARCH_FIELDS = ["any"] as const satisfies readonly MailQuickSearchField[];
 
 // The workspace-route API accepts hrefs up to 4,000 characters. Keeping the
-// encoded search value below 3,000 leaves room for the mailbox path and future
-// non-search route state without relying on browser-specific URL limits.
+// encoded search value below 3,000 leaves room for the mailbox path and other
+// route state, such as the view a search started from, without relying on
+// browser-specific URL limits.
+export const MAX_MAIL_WORKSPACE_HREF_LENGTH = 4_000;
 export const MAX_MAIL_SEARCH_PARAMETER_LENGTH = 3_000;
 
 export type { MailSearchState } from "./contracts";

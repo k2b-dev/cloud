@@ -5,10 +5,12 @@ import {
   Avatar,
   addPanesItem,
   Button,
+  ButtonLink,
   DataPanel,
   DescriptionList,
   DetailPanel,
   Discussion,
+  FilterChip,
   FloatingWindow,
   IconButton,
   LinkCard,
@@ -16,6 +18,7 @@ import {
   MultiSelectInput,
   NoticeCard,
   PageTitle,
+  PageTrailProvider,
   Pagination,
   PanelDialog,
   PanelHeader,
@@ -45,12 +48,351 @@ import {
   Tag,
   TextInput,
   Toolbar,
+  ViewTabs,
 } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { BottomSheetDemo, MobileShellDemo, NavigationDemo, TabBarDemo } from "./mobile-navigation";
+import { ResizeSeparatorDemo } from "./resize-separator";
 import { DemoGrid, type DemoSection } from "./types";
 import { LiveWorkspaceDemo } from "./workspace-live";
+
+const WorkspaceHeadRowDemo = () => {
+  const [tags, setTags] = createSignal(["customer"]);
+  const [statuses, setStatuses] = createSignal<string[]>([]);
+  const views = ["List", "Board", "Calendar", "Timeline", "Files", "Activity", "Archive"].map((label) => ({
+    id: label.toLowerCase(),
+    label,
+    href: `?view=${label.toLowerCase()}`,
+    count: label === "List" ? 12 : undefined,
+  }));
+  const filtered = () => tags().length > 0 || statuses().length > 0;
+  return (
+    <DemoCard
+      id="workspace-head-row"
+      chip={[
+        { kind: "component", name: "AppWorkspace.Head", from: "@k2b/ui" },
+        { kind: "component", name: "ViewTabs", from: "@k2b/ui" },
+      ]}
+      description="Objects stay on the left; views, filters, Reset, and actions share the head. Narrow the host to wrap filters and reveal the compact More count."
+      code={`<AppWorkspace.Head
+  views={<ViewTabs label="Views" current="list" items={views} />}
+  filters={<>{tagFilter}{statusFilter}</>}
+  filtered={filtered()}
+  onReset={() => { setTags([]); setStatuses([]); }}
+  count="12 results"
+  actions={<IconButton label="Search" variant="ghost"><i class="ti ti-search" aria-hidden="true" /></IconButton>}
+  primary={{ label: "New task", icon: "ti ti-plus", href: "?new=task" }}
+/>`}
+    >
+      <div
+        style={{
+          height: "24rem",
+          container: "k2b-app-area / inline-size",
+          resize: "horizontal",
+          overflow: "auto",
+          "max-width": "100%",
+          "min-width": "20rem",
+        }}
+      >
+        <PageTrailProvider trail={{ title: "Customer work", ancestors: [{ title: "Spaces", href: "?objects=spaces" }] }}>
+          <AppWorkspace>
+            <AppWorkspace.Head
+              views={<ViewTabs label="Views" current="list" items={views} />}
+              filters={
+                <>
+                  <FilterChip
+                    showValue
+                    label="Tags"
+                    icon="ti ti-tag"
+                    value={tags()}
+                    onValueChange={setTags}
+                    options={[{ multiple: true, options: [{ value: "customer", label: "Customer", color: "#16a34a" }] }]}
+                  />
+                  <FilterChip
+                    showValue
+                    label="Status"
+                    icon="ti ti-filter"
+                    value={statuses()}
+                    onValueChange={setStatuses}
+                    options={[
+                      {
+                        options: [
+                          { value: "open", label: "Open" },
+                          { value: "done", label: "Done" },
+                        ],
+                      },
+                    ]}
+                  />
+                </>
+              }
+              filtered={filtered()}
+              onReset={() => {
+                setTags([]);
+                setStatuses([]);
+              }}
+              count="12 results"
+              actions={
+                <IconButton label="Search" variant="ghost" size="sm">
+                  <i class="ti ti-search" aria-hidden="true" />
+                </IconButton>
+              }
+              primary={{ label: "New task", icon: "ti ti-plus", href: "?new=task" }}
+            />
+            <AppWorkspace.Sidebar label="Spaces" collapsible>
+              <AppWorkspace.SidebarDesktop>
+                <AppWorkspace.SidebarBody>
+                  <AppWorkspace.SidebarSection title="Spaces">
+                    <AppWorkspace.SidebarItem href="?space=customer" active>
+                      Customer work
+                    </AppWorkspace.SidebarItem>
+                    <AppWorkspace.SidebarItem href="?space=operations">Operations</AppWorkspace.SidebarItem>
+                  </AppWorkspace.SidebarSection>
+                </AppWorkspace.SidebarBody>
+              </AppWorkspace.SidebarDesktop>
+            </AppWorkspace.Sidebar>
+            <AppWorkspace.Content>
+              <AppWorkspace.Main>
+                <div class="p-4">
+                  <h2>Tasks</h2>
+                  <p>Prepare the customer workshop</p>
+                  <p>Review the project brief</p>
+                </div>
+              </AppWorkspace.Main>
+            </AppWorkspace.Content>
+          </AppWorkspace>
+        </PageTrailProvider>
+      </div>
+    </DemoCard>
+  );
+};
+
+const longViews = [
+  { id: "focus", label: "Focus", count: 12 },
+  { id: "needs-action", label: "Needs action", count: 12 },
+  { id: "assigned", label: "Assigned to me", count: 5 },
+  { id: "waiting", label: "Waiting for a reply", count: 2 },
+  { id: "unassigned", label: "Not assigned", count: 4 },
+  { id: "done", label: "Done" },
+].map((view) => ({ ...view, href: `?view=${view.id}` }));
+
+const WorkspaceHeadLongViewsDemo = () => (
+  <DemoCard
+    id="workspace-head-long-views"
+    chip={[
+      { kind: "component", name: "AppWorkspace.Head", from: "@k2b/ui" },
+      { kind: "component", name: "ViewTabs", from: "@k2b/ui" },
+    ]}
+    description="Long view names in a narrow head keep their full label and count. The strip scrolls sideways, starts with the current view in view, and fades the edges where more views wait. Widen the host to compare."
+    code={`<AppWorkspace.Head
+  views={<ViewTabs label="Views" current="waiting" items={[
+    { id: "focus", label: "Focus", count: 12, href: "?view=focus" },
+    { id: "needs-action", label: "Needs action", count: 12, href: "?view=needs-action" },
+    { id: "assigned", label: "Assigned to me", count: 5, href: "?view=assigned" },
+    { id: "waiting", label: "Waiting for a reply", count: 2, href: "?view=waiting" },
+    { id: "unassigned", label: "Not assigned", count: 4, href: "?view=unassigned" },
+    { id: "done", label: "Done", href: "?view=done" },
+  ]} />}
+  actions={<>{listType}{more}</>}
+/>`}
+  >
+    <div
+      style={{
+        width: "24rem",
+        height: "12rem",
+        container: "k2b-app-area / inline-size",
+        resize: "horizontal",
+        overflow: "auto",
+        "max-width": "100%",
+        "min-width": "20rem",
+      }}
+    >
+      <PageTrailProvider trail={{ title: "Support", ancestors: [] }}>
+        <AppWorkspace>
+          <AppWorkspace.Head
+            views={<ViewTabs label="Views" current="waiting" items={longViews} />}
+            actions={
+              <>
+                <IconButton label="List type" variant="ghost" size="sm">
+                  <i class="ti ti-layout-list" aria-hidden="true" />
+                </IconButton>
+                <IconButton label="More actions" variant="ghost" size="sm">
+                  <i class="ti ti-dots" aria-hidden="true" />
+                </IconButton>
+              </>
+            }
+          />
+          <AppWorkspace.Content>
+            <AppWorkspace.Main>
+              <div class="p-4">
+                <p>Waiting for a reply</p>
+              </div>
+            </AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </PageTrailProvider>
+    </div>
+  </DemoCard>
+);
+
+const workspaceLevelsFrameHeight = 560;
+const workspaceLevelsCode = `const level = new URL(request.url).searchParams.get("level") ?? "areas";
+
+<AppWorkspace.Main level={level}>
+  <AppWorkspace.MainPane id="areas" label="AI" href="?level=areas">{areas}</AppWorkspace.MainPane>
+  <AppWorkspace.MainPane id="providers" label={provider.name} description={provider.kind} href="?level=providers"
+    actions={<Button size="sm" variant="secondary">Add models</Button>}>
+    {models}
+  </AppWorkspace.MainPane>
+  <AppWorkspace.MainPane id="model" label={model.name}>{details}</AppWorkspace.MainPane>
+</AppWorkspace.Main>`;
+
+/**
+ * The window stays at 1440 px while a host column takes width from the app
+ * area, so the card frames a full page and scales it to the card.
+ */
+const WorkspaceHostDemo = () => {
+  const [host, setHost] = createSignal("860");
+  const [available, setAvailable] = createSignal<number>();
+  let frame: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!frame) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setAvailable(entry.contentRect.width);
+    });
+    observer.observe(frame);
+    onCleanup(() => observer.disconnect());
+  });
+  const scale = () => (available() === undefined ? 1 : Math.min(1, available()! / 1440));
+  return (
+    <DemoCard
+      id="workspace-host"
+      chip={[{ kind: "component", name: "AppWorkspace", from: "@k2b/ui" }]}
+      description="The window stays at 1440 px while a panel beside the app takes width. At 1024 px the app shows its 1024 px layout. At 860 px the contact does not fit beside the list and waits behind Details: open it, press Escape, or widen the area again."
+      code={`<div style={{ container: "k2b-app-area / inline-size", width: hostWidth }}>
+  <AppWorkspace>{/* Mail regions */}</AppWorkspace>
+</div>`}
+    >
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <SegmentedControl
+            ariaLabel="Host width"
+            size="sm"
+            value={host}
+            onValueChange={setHost}
+            options={[
+              { value: "1440", label: "1440 px" },
+              { value: "1024", label: "1024 px" },
+              { value: "860", label: "860 px" },
+            ]}
+          />
+          <ButtonLink href={`/en/ui/demo/workspace-host?host=${host()}`} target="_blank" rel="noopener" size="sm" variant="ghost">
+            <i class="ti ti-external-link" aria-hidden="true" />
+            Open full page
+          </ButtonLink>
+        </div>
+        <div
+          ref={frame}
+          style={{ height: "560px", overflow: "hidden", "border-radius": "var(--k2b-radius-surface)", background: "var(--k2b-surface)" }}
+        >
+          <iframe
+            title={`Workspace in a ${host()} px host`}
+            src={`/en/ui/demo/workspace-host?host=${host()}`}
+            style={{
+              display: "block",
+              border: "0",
+              width: "1440px",
+              height: `${560 / scale()}px`,
+              "max-width": "none",
+              transform: `scale(${scale()})`,
+              "transform-origin": "top left",
+              visibility: available() === undefined ? "hidden" : undefined,
+            }}
+          />
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
+
+/**
+ * Levels follow the app area, so the card frames a full page of its own at a
+ * chosen width and scales it to the card. The frame keeps its height, so
+ * switching widths moves nothing on this page.
+ */
+const WorkspaceLevelsDemo = () => {
+  const [width, setWidth] = createSignal("1024");
+  const [available, setAvailable] = createSignal<number>();
+  let frame: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!frame) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setAvailable(entry.contentRect.width);
+    });
+    observer.observe(frame);
+    onCleanup(() => observer.disconnect());
+  });
+  const scale = () => {
+    const room = available();
+    return room === undefined ? 1 : Math.min(1, room / Number(width()));
+  };
+  return (
+    <DemoCard
+      id="workspace-levels"
+      chip={[
+        { kind: "component", name: "AppWorkspace.Main level", from: "@k2b/ui" },
+        { kind: "component", name: "AppWorkspace.MainPane", from: "@k2b/ui" },
+      ]}
+      description="A settings area in three levels. 1440 px shows all three, 1024 px the two deepest, 390 px one with the back step. Follow a row, go back, or drag or arrow-key a separator; the width survives a reload."
+      code={workspaceLevelsCode}
+    >
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <SegmentedControl
+            ariaLabel="Viewport width"
+            size="sm"
+            value={width}
+            onValueChange={setWidth}
+            options={[
+              { value: "390", label: "390 px" },
+              { value: "1024", label: "1024 px" },
+              { value: "1440", label: "1440 px" },
+            ]}
+          />
+          <ButtonLink href="/en/ui/demo/workspace-levels" target="_blank" rel="noopener" size="sm" variant="ghost">
+            <i class="ti ti-external-link" aria-hidden="true" />
+            Open full page
+          </ButtonLink>
+        </div>
+        <div
+          ref={frame}
+          style={{
+            height: `${workspaceLevelsFrameHeight}px`,
+            overflow: "hidden",
+            "border-radius": "var(--k2b-radius-surface)",
+            "box-shadow": "inset 0 0 0 1px var(--k2b-border)",
+            background: "var(--k2b-surface)",
+          }}
+        >
+          <iframe
+            title={`Workspace levels at ${width()} px`}
+            src="/en/ui/demo/workspace-levels"
+            style={{
+              display: "block",
+              border: "0",
+              width: `${width()}px`,
+              height: `${workspaceLevelsFrameHeight / scale()}px`,
+              "max-width": "none",
+              transform: `scale(${scale()})`,
+              "transform-origin": "top left",
+              visibility: available() === undefined ? "hidden" : undefined,
+            }}
+          />
+        </div>
+      </div>
+    </DemoCard>
+  );
+};
 
 const WorkspaceDemo = () => {
   const [activeView, setActiveView] = createSignal("available");
@@ -216,7 +558,13 @@ const WorkspaceDemo = () => {
             <div class="ui-demo-pane">Main 2</div>
           </AppWorkspace.MainPane>
         </AppWorkspace.Main>
-        <AppWorkspace.Detail id="record" open={detailOpen()} onClose={() => setDetailOpen(false)} width="sm">
+        <AppWorkspace.Detail
+          id="record"
+          open={detailOpen()}
+          onOpen={() => setDetailOpen(true)}
+          onClose={() => setDetailOpen(false)}
+          width="sm"
+        >
           <div class="ui-demo-pane">Selected item</div>
         </AppWorkspace.Detail>
       </AppWorkspace.Content>
@@ -230,7 +578,7 @@ const WorkspaceDemo = () => {
     <DemoCard
       id="workspace"
       chip={{ kind: "component", name: "AppWorkspace", from: "@k2b/ui" }}
-      description="A portable application frame with responsive, collapsible, and hideable navigation, peer panes, contextual detail, a bottom drawer, and pointer and keyboard resizing."
+      description="A portable application frame with responsive, collapsible, and hideable navigation, peer panes, contextual detail, a bottom drawer, and pointer and keyboard resizing. Object-row icons sit in soft chips of the app color."
       code={`const [layout, setLayout] = createSignal<AppWorkspaceLayoutState>({ version: 2, sidebarWidth: 208 });
 const [active, setActive] = createSignal("available");
 const [expanded, setExpanded] = createSignal(["items"]);
@@ -269,7 +617,7 @@ const [navigationHidden, setNavigationHidden] = createSignal(false);
       <AppWorkspace.MainPane id="main-2" label="Main 2" open={paneOpen()}>…</AppWorkspace.MainPane>
       …
     </AppWorkspace.Main>
-    <AppWorkspace.Detail id="record" open={detailOpen()} onClose={() => setDetailOpen(false)} width="sm">…</AppWorkspace.Detail>
+    <AppWorkspace.Detail id="record" open={detailOpen()} onOpen={() => setDetailOpen(true)} onClose={() => setDetailOpen(false)} width="sm">…</AppWorkspace.Detail>
   </AppWorkspace.Content>
   <AppWorkspace.BottomDrawer id="events" open={drawerOpen()} height="sm">…</AppWorkspace.BottomDrawer>
 </AppWorkspace>`}
@@ -278,6 +626,105 @@ const [navigationHidden, setNavigationHidden] = createSignal(false);
         <Show when={sidebarCollapsed()} fallback={workspace(false)}>
           {workspace(true)}
         </Show>
+      </div>
+    </DemoCard>
+  );
+};
+
+const StackedOverviewDemo = () => {
+  const [active, setActive] = createSignal(0);
+  const [newRequests, setNewRequests] = createSignal(0);
+  const names = [
+    "Team",
+    "Personal",
+    "A notebook with a very long name for research and reference",
+    "Projects",
+    "Customers",
+    "Suppliers",
+    "Ideas",
+    "Operations",
+  ];
+  return (
+    <DemoCard
+      id="workspace-stacked-overview"
+      chip={{ kind: "component", name: "AppWorkspace", from: "@k2b/ui" }}
+      description="An overview's objects become scrolling chips below 64 rem. All opens the complete sidebar, including Archive and footer actions. On phones the objects precede the view tabs; the host supplies the surface behind the object row. Select a notebook to change the current chip."
+      code={`<AppWorkspace flat resizable={false} mobileSurface="flush">
+  <AppWorkspace.Sidebar label="Notebooks" mobile="stacked">
+    <AppWorkspace.SidebarDesktop>
+      <AppWorkspace.SidebarBody>
+        <AppWorkspace.SidebarSection title="Your notebooks">
+          <AppWorkspace.SidebarItem variant="object" icon="ti ti-notebook" active>
+            <AppWorkspace.SidebarItemLabel>Team</AppWorkspace.SidebarItemLabel>
+            <AppWorkspace.SidebarItemMeta>4</AppWorkspace.SidebarItemMeta>
+          </AppWorkspace.SidebarItem>
+        </AppWorkspace.SidebarSection>
+        <AppWorkspace.SidebarSection title="Archive" collapsible defaultOpen={false}>
+          <AppWorkspace.SidebarItem href="#archived">Archived notebook</AppWorkspace.SidebarItem>
+        </AppWorkspace.SidebarSection>
+      </AppWorkspace.SidebarBody>
+      <AppWorkspace.SidebarFooter>
+        <AppWorkspace.SidebarItem onClick={createNotebook}>New notebook</AppWorkspace.SidebarItem>
+        <AppWorkspace.SidebarItem href="#deleted">Recently deleted</AppWorkspace.SidebarItem>
+      </AppWorkspace.SidebarFooter>
+    </AppWorkspace.SidebarDesktop>
+  </AppWorkspace.Sidebar>
+  <AppWorkspace.Head views={<ViewTabs label="Views" current="all" items={[{ id: "all", label: "All", href: "#all" }]} />} />
+  <AppWorkspace.Content><AppWorkspace.Main>…</AppWorkspace.Main></AppWorkspace.Content>
+</AppWorkspace>`}
+    >
+      <div class="ui-workspace-demo">
+        <AppWorkspace flat resizable={false} mobileSurface="flush">
+          <AppWorkspace.Sidebar label="Notebooks" mobile="stacked">
+            <AppWorkspace.SidebarDesktop>
+              <AppWorkspace.SidebarBody>
+                <AppWorkspace.SidebarSection title="Your notebooks">
+                  <For each={names}>
+                    {(name, index) => (
+                      <AppWorkspace.SidebarItem
+                        variant="object"
+                        href={`#demo-notebook-${index()}`}
+                        icon="ti ti-notebook"
+                        active={active() === index()}
+                        onClick={() => setActive(index())}
+                      >
+                        <AppWorkspace.SidebarItemLabel>{name}</AppWorkspace.SidebarItemLabel>
+                        <AppWorkspace.SidebarItemMeta>{index() + 4}</AppWorkspace.SidebarItemMeta>
+                      </AppWorkspace.SidebarItem>
+                    )}
+                  </For>
+                </AppWorkspace.SidebarSection>
+                <AppWorkspace.SidebarSection title="Archive" collapsible defaultOpen={false}>
+                  <AppWorkspace.SidebarItem href="#demo-archived" onClick={() => setActive(-1)}>
+                    Archived notebook
+                  </AppWorkspace.SidebarItem>
+                </AppWorkspace.SidebarSection>
+              </AppWorkspace.SidebarBody>
+              <AppWorkspace.SidebarFooter>
+                <AppWorkspace.SidebarItem icon="ti ti-plus" onClick={() => setNewRequests((count) => count + 1)}>
+                  New notebook
+                </AppWorkspace.SidebarItem>
+                <AppWorkspace.SidebarItem icon="ti ti-trash" href="#demo-deleted" onClick={() => setActive(-2)}>
+                  Recently deleted
+                </AppWorkspace.SidebarItem>
+              </AppWorkspace.SidebarFooter>
+            </AppWorkspace.SidebarDesktop>
+          </AppWorkspace.Sidebar>
+          <AppWorkspace.Head views={<ViewTabs label="Views" current="all" items={[{ id: "all", label: "All", href: "#all" }]} />} />
+          <AppWorkspace.Content>
+            <AppWorkspace.Main>
+              <div class="ui-workspace-demo__body">
+                <h3>{active() === -1 ? "Archived notebook" : active() === -2 ? "Recently deleted" : names[active()]}</h3>
+                <p>Choose a notebook from the sidebar or chip row.</p>
+                <p role="status">
+                  {newRequests()
+                    ? `New notebook action used ${newRequests()} times in this demo.`
+                    : "Choose New notebook in All to try the footer action."}
+                </p>
+              </div>
+            </AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
       </div>
     </DemoCard>
   );
@@ -412,7 +859,7 @@ const OverviewDemo = () => (
       { kind: "component", name: "AppOverview", from: "@k2b/ui" },
       { kind: "component", name: "LinkCard", from: "@k2b/ui" },
     ]}
-    description="An application landing page with one primary action in the page header, objects as calm cards, and a quieter supporting panel."
+    description="An application landing page with one primary action, soft app-color icon chips in the header and cards, and a quieter supporting panel."
     code={`<AppOverview title="Projects" subtitle="3 projects" icon="ti ti-folders" actions={<Button>New project</Button>}>
   <AppOverview.Main title="Your projects">
     <AppOverview.Cards>
@@ -838,7 +1285,7 @@ const PanelDemo = () => {
     <DemoCard
       id="panel-dialog"
       chip={{ kind: "component", name: "PanelDialog", from: "@k2b/ui" }}
-      description="Each section is a title above one tinted group; fields and muted fills such as segmented tracks inside it turn white. Scroll the bounded body: header and footer stay in view. Toggle the optional sections: their titles stay in place and edited values stay intact."
+      description="The header icon sits in a soft chip of the app color. Each section is a title above one tinted group; fields and muted fills such as segmented tracks inside it turn white. Scroll the bounded body: header and footer stay in view. Toggle the optional sections: their titles stay in place and edited values stay intact."
       code={`const [shared, setShared] = createSignal(true);
 const [baseUrl, setBaseUrl] = createSignal("");
 const [auth, setAuth] = createSignal("token");
@@ -1091,10 +1538,10 @@ const DetailPanelDemo = () => {
         <article class="ui-detail-panel-pattern">
           <header>
             <strong>Customer request</strong>
-            <span>Request state and customer context form clear, related surfaces.</span>
+            <span>Plain sections share the host surface without nested boxes.</span>
           </header>
           <div class="ui-detail-panel-pattern__frame">
-            <DetailPanel class="ui-detail-panel-grouped">
+            <DetailPanel surface="plain" class="ui-detail-panel-grouped">
               <DetailPanel.Header
                 title="Bug report"
                 subtitle="No preview · 5 minutes ago"
@@ -1696,6 +2143,22 @@ const TableOfContentsDemo = () => {
 };
 
 const demos: DemoSection = {
+  print: () => (
+    <DemoCard
+      id="print-content"
+      chip={{ kind: "asset", name: "Browser printing", from: "@k2b/ui" }}
+      description="On paper, the marked article prints alone and its edit control stays on screen. The demo leaves the attribute out, so this page still prints as a whole."
+      code={
+        '<article data-print-region=""><h1>Field notes</h1><button class="print:hidden">Edit</button><p>The complete note.</p></article>'
+      }
+    >
+      <article>
+        <h1>Field notes</h1>
+        <Button class="print:hidden">Edit</Button>
+        <p>The complete note.</p>
+      </article>
+    </DemoCard>
+  ),
   "table-of-contents": () => (
     <DemoGrid>
       <DemoCard
@@ -1725,11 +2188,17 @@ const items = [
   navigation: () => <NavigationDemo />,
   workspace: () => (
     <DemoGrid columns="one">
+      <WorkspaceHeadRowDemo />
+      <WorkspaceHeadLongViewsDemo />
       <NavigationDemo />
       <LiveWorkspaceDemo />
+      <WorkspaceLevelsDemo />
+      <WorkspaceHostDemo />
       <WorkspaceDemo />
+      <StackedOverviewDemo />
     </DemoGrid>
   ),
+  "resize-separator": () => <ResizeSeparatorDemo />,
   panes: () => (
     <DemoGrid columns="one">
       <PanesDemo />

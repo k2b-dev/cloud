@@ -500,7 +500,8 @@ export const insertTable = async (view: EditorView, dimensions?: { rows: number;
         cols: { type: "number", label: t.columns, default: 3, min: 1, max: 20, required: true },
       },
     });
-    if (!result) return;
+    // Sync can end while the dialog is open; a read-only note then takes no new text.
+    if (!result || view.state.readOnly) return;
     rows = result.rows;
     cols = result.cols;
   }
@@ -566,7 +567,7 @@ export const insertNoteLink = async (view: EditorView, notebookId: string, local
   const selectedText = view.state.sliceDoc(sel.from, sel.to);
 
   const picked = await openNoteLinkPrompt(notebookId, locale);
-  if (!picked) return;
+  if (!picked || view.state.readOnly) return;
 
   const linkText = selectedText.length > 0 ? selectedText : picked.title;
   // `note://<shortId>` is our internal scheme — the read-mode HTML

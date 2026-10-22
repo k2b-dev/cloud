@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { cssDeclarations, parseCssRules } from "../styles/css-contract-test-helpers";
+import { cssDeclarations, parseCssRules, readShippedCssRules } from "../styles/css-contract-test-helpers";
 
 const css = await Bun.file(new URL("../styles/index.css", import.meta.url)).text();
 const rules = parseCssRules("index.css", css);
@@ -26,4 +26,50 @@ test("pressed toolbar buttons retain their state in forced colours", () => {
     ["color", ["HighlightText"]],
     ["background", ["Highlight"]],
   ]);
+});
+
+test("floating Toolbar reserves height, uses the float shadow, and keeps hints out of layout", () => {
+  const declarations = (selector: string) => {
+    const rule = rules.find((rule) => rule.selector === selector && rule.context === "");
+    expect(rule, selector).toBeDefined();
+    return cssDeclarations(rule!.body);
+  };
+  const pill = declarations('.k2b-ui .k2b-toolbar[data-variant="floating"]');
+  expect(pill.get("box-shadow")).toEqual(["var(--k2b-shadow-float)"]);
+  expect(pill.get("block-size")).toEqual(["3.25rem"]);
+  const strip = declarations(".k2b-ui .k2b-toolbar-float");
+  expect(strip.get("position")).toEqual(["sticky"]);
+  expect(strip.get("margin-block-start")).toEqual(["auto"]);
+  expect(strip.get("pointer-events")).toEqual(["none"]);
+  expect(declarations(".k2b-ui .k2b-toolbar .k2b-toolbar__hint").get("position")).toEqual(["absolute"]);
+  // Measuring never shows or hides More, which would drop focus from it: an idle More keeps its box out of the flow.
+  const idleMore = declarations('.k2b-ui .k2b-toolbar > .k2b-toolbar__more[data-overflow="hidden"]');
+  expect(idleMore.get("display")).toEqual(["block !important"]);
+  expect(idleMore.get("position")).toEqual(["absolute"]);
+  expect(idleMore.get("visibility")).toEqual(["hidden"]);
+  expect(declarations(".k2b-ui .k2b-toolbar[data-overflow-pending]").get("visibility")).toEqual(["hidden"]);
+  expect(declarations(".k2b-ui .k2b-toolbar[data-overflow-pending]").get("opacity")).toEqual(["0"]);
+  expect(
+    rules.some(
+      (rule) =>
+        rule.selector === ".k2b-ui .k2b-toolbar[data-overflow-pending]" &&
+        rule.context === "@media (scripting: none)" &&
+        cssDeclarations(rule.body).get("visibility")?.includes("visible"),
+    ),
+  ).toBe(true);
+});
+
+test("toolbar hover and keyboard hints never change layout or move controls", () => {
+  const shipped = readShippedCssRules(new URL("../styles", import.meta.url).pathname);
+  const keyboardRules = shipped.filter((rule) => rule.selector.includes("data-k2b-kbd"));
+  expect(keyboardRules).toHaveLength(1);
+  expect(keyboardRules[0]!.selector).toBe(':where(html[data-k2b-kbd="on"]) .k2b-ui .k2b-kbd-hint');
+  expect([...cssDeclarations(keyboardRules[0]!.body)]).toEqual([["visibility", ["visible"]]]);
+  const hoverRules = shipped.filter((rule) => rule.selector.includes("k2b-toolbar") && rule.selector.includes(":hover"));
+  expect(hoverRules.length).toBeGreaterThan(0);
+  for (const rule of hoverRules) {
+    for (const property of cssDeclarations(rule.body).keys()) {
+      expect(["color", "background", "background-color", "border-color", "box-shadow", "opacity"], rule.selector).toContain(property);
+    }
+  }
 });

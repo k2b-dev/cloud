@@ -60,3 +60,132 @@ test("TextInput keeps phone keyboards from capitalizing or correcting user names
   dispose();
   dom.cleanup();
 });
+
+test("compact values retain names, refs, submission and associated errors without an icon well", () => {
+  const dom = createDomTestHarness();
+  let inputRef: HTMLInputElement | undefined;
+  let submitted = 0;
+  const dispose = render(
+    () => (
+      <>
+        <TextInput
+          variant="compact"
+          prefix={<span>:region</span>}
+          aria-label="Region"
+          value="Europe"
+          error="Enter a region"
+          readOnly
+          ref={(element) => {
+            inputRef = element;
+          }}
+          onSubmit={() => submitted++}
+        />
+        <TextInput label="Default" value="Europe" error="Enter a region" />
+      </>
+    ),
+    dom.root,
+  );
+  try {
+    const input = dom.root.querySelector<HTMLInputElement>('input[aria-label="Region"]')!;
+    expect(input).toBe(inputRef!);
+    expect(input.readOnly).toBeTrue();
+    expect(input.size).toBe(9);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    const error = dom.document.getElementById(input.getAttribute("aria-describedby")!);
+    expect(error?.textContent).toBe("Enter a region");
+    expect(error?.classList.contains("k2b-field__error--sr-only")).toBeFalse();
+    const shell = input.parentElement!;
+    expect(shell.textContent).toContain(":region");
+    expect(shell.querySelector(".k2b-input-shell__icon")).toBeNull();
+    const enter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    input.dispatchEvent(enter);
+    expect(submitted).toBe(1);
+    expect(enter.defaultPrevented).toBeTrue();
+    const defaultField = dom.root.querySelector('input:not([aria-label="Region"])')!.closest(".k2b-field")!;
+    expect(defaultField.querySelector(".k2b-input-shell__icon")).not.toBeNull();
+    expect(defaultField.querySelector(".k2b-field__error--sr-only")).toBeNull();
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.each([false, true])("external errors update without replacing the native control (multiline=%s)", (multiline) => {
+  const dom = createDomTestHarness();
+  const [error, setError] = createSignal<string>();
+  const [target, setTarget] = createSignal<string | undefined>("123:problem");
+  let ref: HTMLElement | undefined;
+  let edits = 0;
+  const dispose = render(
+    () => (
+      <>
+        <span id="context">Existing help</span>
+        <TextInput
+          id="region"
+          label="Region"
+          description="Choose a region"
+          aria-describedby="context"
+          value="Europe"
+          multiline={multiline}
+          error={error}
+          externalErrorId={target()}
+          ref={(element) => {
+            ref = element;
+          }}
+          onValueChange={() => edits++}
+        />
+        <p id={target()}>{error()}</p>
+      </>
+    ),
+    dom.root,
+  );
+  try {
+    const input = dom.root.querySelector<HTMLInputElement | HTMLTextAreaElement>("input,textarea")!;
+    const shell = input.parentElement!;
+    input.focus();
+    input.setSelectionRange(1, 4);
+    const preserved = () => {
+      expect(dom.root.querySelector("input,textarea")).toBe(input);
+      expect(ref).toBe(input);
+      expect(dom.document.activeElement).toBe(input);
+      expect([input.selectionStart, input.selectionEnd]).toEqual([1, 4]);
+      expect(input.value).toBe("Europe");
+      expect(input.hasAttribute("externalErrorId")).toBeFalse();
+    };
+    expect(input.getAttribute("aria-describedby")).toBe("context region-description");
+    expect(input.hasAttribute("aria-invalid")).toBeFalse();
+    setError("Enter a region");
+    expect(input.getAttribute("aria-describedby")).toBe("context region-description 123:problem");
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(shell.dataset.invalid).toBe("true");
+    expect(dom.root.querySelector(".k2b-field__error")).toBeNull();
+    preserved();
+    setTarget("another:error");
+    setError("Use a known region");
+    expect(input.getAttribute("aria-describedby")).toBe("context region-description another:error");
+    expect(dom.document.getElementById("another:error")?.textContent).toBe("Use a known region");
+    preserved();
+    setTarget(undefined);
+    expect(input.getAttribute("aria-describedby")).toBe("context region-description region-error");
+    expect(dom.root.querySelector(".k2b-field__error")?.textContent).toBe("Use a known region");
+    preserved();
+    for (const invalid of ["", "two ids", "tab\tid", "line\nid", "return\rid", "form\fid"]) {
+      setTarget(invalid);
+      expect(input.getAttribute("aria-describedby")).toBe("context region-description region-error");
+      expect(dom.root.querySelector(".k2b-field__error")?.textContent).toBe("Use a known region");
+      preserved();
+    }
+    setTarget("123:problem");
+    setError(undefined);
+    expect(input.getAttribute("aria-describedby")).toBe("context region-description");
+    expect(input.hasAttribute("aria-invalid")).toBeFalse();
+    expect(shell.hasAttribute("data-invalid")).toBeFalse();
+    expect(dom.root.querySelector(".k2b-field__error")).toBeNull();
+    preserved();
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(edits).toBe(1);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

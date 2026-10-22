@@ -49,7 +49,8 @@ Optional event detail includes `meta`, `description`, `location`,
 a point in time, such as a deadline, as a small colored marker beside its title
 on the plain surface instead of a filled band; hover and selection tint it like
 an event, and a custom `renderEvent` output replaces the default marker.
-`href` or `getEventHref` makes an event a canonical link.
+`href` or `getEventHref` makes an event a canonical link. Hover tints an
+event that opens or links; it never moves the event or adds a shadow.
 `accessibleDetail` adds short text to the event's accessible name for state
 that its content shows only visually, such as a priority flag in a custom
 `renderEvent` output.
@@ -75,6 +76,10 @@ off. Put state that the line shows only as an icon into `accessibleDetail`.
 
 ## Views and navigation
 
+Weekend shading follows the locale's week data in month, week, and phone month
+views, with Saturday and Sunday as the fallback. Day and year views keep their
+existing backgrounds without weekend shading.
+
 `view` accepts:
 
 - `day` for one timed column;
@@ -95,7 +100,7 @@ stops beside the hour gutter, not under it.
 
 Limit the switcher with `views`. `getDateHref`, `getViewHref`, and
 `getEventHref` keep navigation functional in the server response.
-`onNavigate` progressively enhances those links after hydration.
+`onNavigate` progressively enhances those links after mount.
 
 ### Add a view
 
@@ -275,7 +280,9 @@ and the visible hours.
 - **The day view** is one scroll through the loaded days with each day's
   heading on top while the day is in view. Runs of empty days merge into one
   row, "Nothing planned", that opens them; today, the day of `date`, and a day
-  that Go to finds inside such a run never fold. The wheel slows
+  that Go to finds inside such a run never fold. When loaded days join a run
+  at either end, it stays the same row, so its focused "Nothing planned"
+  button keeps focus. The wheel slows
   down within 72 px of a day start, and a scroll that rests within 40 px (88 px
   after a finger) glides onto it; a line at the top of the heading fills while
   the start passes. The previous and next buttons glide to the day before or
@@ -327,7 +334,7 @@ and the visible hours.
   `data-calendar-drag-source`: it lifts while it is held, and the stylesheet
   turns off text selection and the system's long-press callout on it, so a
   link preview cannot take the hold over. A hold that ends without a drop
-  leaves the page scrolling as before.
+  leaves the page scrolling as before. `dragIn` stays the calendar's own drop into free time; [`DragSource` and `DropTarget`](../actions/drag-and-drop) handle drops elsewhere.
 - **Now** is a line across the day with the time beside it; the header of the
   day says what starts within the hour, such as "Planning in 12 min".
 
@@ -407,11 +414,11 @@ selection and compact status context.
 
 The day and week views mark their own scroller with `k2b-detail-trail`, so
 applications add nothing beside an
-[AppWorkspace detail panel](/en/ui/layout/workspace#floating-detail).
+[AppWorkspace detail panel](/en/ui/layout/workspace#detail-and-panel).
 Without `dayHours`, that is the hour scroller,
 `k2b-calendar-time-grid__scroll`; with `dayHours`, it is the strip of days
 in the week and the stream of days in the day view.
-Under the touch-tablet drawer, the week keeps the width of its days and
+Under an open waiting drawer, the week keeps the width of its days and
 scrolls sideways, with its day header and all-day row. Selecting an event
 scrolls its day out beside the drawer. With `dayHours`, the strip then
 settles on the next day start or day end at the drawer in the direction it
@@ -423,7 +430,7 @@ drawer.
 
 ## Interaction
 
-The following callbacks enable matching hydrated interactions:
+The following callbacks enable matching interactions in browser code:
 
 - `onEventDrop` moves an event;
 - `onEventResize` changes a timed event duration;
@@ -583,7 +590,7 @@ Defaults: `view="month"`, week starts Monday unless overridden, `visibleStartHou
 
 ## Accessibility
 
-Canonical links remain available before hydration. Date cells, navigation,
+Canonical links remain available before mount. Date cells, navigation,
 events, and interaction handles have text or accessible labels. Color is
 supplementary to event title, time, and metadata.
 A timed event's accessible name combines its title and time range in the
@@ -613,10 +620,10 @@ checkbox checks it off.
 
 All views, labels, dates, and links render on the server. Drag, resize,
 pointer-slot selection, day selection, the month menu and popovers, measured
-month lanes, prefetch, and callback navigation require hydration. With
+month lanes, prefetch, and callback navigation require browser code. With
 `dayHours` the server renders the shown day or week; the earlier loaded days,
 the first scroll position, the stops, the sideways strip, free-time actions,
-and dragging in require hydration.
+and dragging in require browser code.
 
 ## Example
 

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Browser } from "playwright";
 import { createDomTestHarness } from "../../packages/ui/test/dom";
-import { Browsers, installProbe, transferType } from "./browser";
+import { Browsers, installProbe, trackHostScripts, transferType } from "./browser";
 import { type BrowserResult, metricNames, metricsSchema } from "./model";
 
 test("transfer types group script/stylesheet/document separately from fonts and XHR", () => {
@@ -48,6 +48,10 @@ test("the mount probe counts initial empty clients as well as SSR islands, after
       expect(time).toBeGreaterThan(0);
       expect(time).toBeLessThanOrEqual(performance.now());
     }
+    // Mount windows start at the clear-and-render setter and end after the synchronous render.
+    expect(window.__cloudPerf.started.size).toBe(2);
+    for (const [element, started] of window.__cloudPerf.started)
+      expect(started).toBeLessThanOrEqual(window.__cloudPerf.mounted.get(element) ?? Number.NaN);
   } finally {
     if (innerHtml) Object.defineProperty(Element.prototype, "innerHTML", innerHtml);
     if (observer) Object.defineProperty(globalThis, "PerformanceObserver", observer);
@@ -119,7 +123,7 @@ test("the probe buffers resource, paint, shift and long-task entries and flushes
 
 test("interruption keeps completed profiles and the active profile's samples in the caller's array", async () => {
   const controller = new AbortController();
-  const browsers = new Browsers(controller.signal);
+  const browsers = new Browsers(controller.signal, "test-spki-no-browser-launched");
   const results: BrowserResult[] = [];
   const metrics = metricsSchema.parse(Object.fromEntries(metricNames.map((name) => [name, 100])));
   const interruption = new Error("test interruption");
@@ -136,9 +140,63 @@ test("interruption keeps completed profiles and the active profile's samples in 
       return { metrics, encodings: { js: ["br"], css: ["br"] } };
     },
   });
-  await expect(browsers.measure("https://localhost:4100/faq", "session", 2, results)).rejects.toThrow("test interruption");
+  const error = await browsers.measure("https://localhost:4100/faq", "session", 2, results).then(
+    () => undefined,
+    (reason: unknown) => reason,
+  );
+  expect(error).toBeInstanceOf(Error);
+  expect(String(error)).toContain("test interruption");
   expect(results).toHaveLength(2);
   expect(results[0]).toMatchObject({ profile: "desktop", status: "ok", samples: [metrics, metrics] });
   expect(results[0]?.metrics?.ttiMs).toEqual({ median: 100, min: 100, max: 100 });
   expect(results[1]).toMatchObject({ profile: "phone", status: "failed", reason: "test interruption", samples: [metrics], metrics: null });
+});
+
+test("host TTI tracks only main-frame scripts, while a new document resets its script window", () => {
+  type Request = { frame(): object; resourceType(): string; url(): string };
+  const listeners = new Map<string, Set<(request: Request) => void>>();
+  const host = {},
+    provider = {};
+  const source = {
+    mainFrame: () => host,
+    on(event: string, listener: (request: Request) => void) {
+      const entries = listeners.get(event) ?? new Set();
+      entries.add(listener);
+      listeners.set(event, entries);
+    },
+    off(event: string, listener: (request: Request) => void) {
+      listeners.get(event)?.delete(listener);
+    },
+  };
+  const emit = (event: string, request: Request) => {
+    for (const listener of listeners.get(event) ?? []) listener(request);
+  };
+  const request = (frame: object, type: string, name: string): Request => ({
+    frame: () => frame,
+    resourceType: () => type,
+    url: () => `https://localhost/${name}`,
+  });
+  const scripts = trackHostScripts(source);
+  const frameScript = request(provider, "script", "provider.js");
+  const hostScript = request(host, "script", "host.js");
+  emit("request", frameScript);
+  emit("request", request(host, "stylesheet", "host.css"));
+  expect(scripts.pending.size).toBe(0);
+  expect(scripts.urls.size).toBe(0);
+  const quietAt = scripts.last();
+  emit("requestfinished", frameScript);
+  expect(scripts.last()).toBe(quietAt);
+  emit("request", hostScript);
+  expect(scripts.pending.size).toBe(1);
+  expect([...scripts.urls]).toEqual(["https://localhost/host.js"]);
+  emit("requestfinished", hostScript);
+  expect(scripts.pending.size).toBe(0);
+  expect(scripts.urls.size).toBe(1);
+  scripts.reset();
+  expect(scripts.urls.size).toBe(0);
+  emit("request", hostScript);
+  emit("requestfailed", hostScript);
+  expect(scripts.pending.size).toBe(0);
+  scripts.stop();
+  expect([...listeners.values()].every((entries) => entries.size === 0)).toBe(true);
 });

@@ -116,6 +116,7 @@ export const attachmentMarkdown = (att: AttachmentRef): string =>
  * pills go inline.
  */
 export const insertAttachment = (view: EditorView, att: AttachmentRef): void => {
+  if (view.state.readOnly) return;
   const md = attachmentMarkdown(att);
   const { from, to } = view.state.selection.main;
   let text = md;

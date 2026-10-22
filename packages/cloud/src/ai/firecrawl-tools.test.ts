@@ -1,19 +1,116 @@
 import { describe, expect, test } from "bun:test";
+import { capabilityReviewSentence } from "../_internal/capability-sentences";
+import type { CapabilityActionCallReview } from "../contracts/capabilities";
+import type { RequestActor } from "../server";
+import { approvalAssurance } from "../services/approvals";
+import { AI_WEBSITE_APPROVAL_TOOL, aiWebsiteApprovalScope } from "./approvals";
 import {
   assertPublicHttpUrl,
+  authorizeWebRead,
   createCloudAiWebExtractTool,
   createCloudAiWebSearchTool,
   runCloudAiWebExtract,
   runCloudAiWebSearch,
 } from "./firecrawl-tools";
 
+const actor: RequestActor = {
+  kind: "user",
+  user: {
+    id: "11111111-1111-4111-8111-111111111111",
+    uid: "person",
+    roles: ["user"],
+    provider: "local",
+    profile: "user",
+    givenname: "Test",
+    sn: "User",
+    displayName: "Test User",
+    mail: null,
+    avatarHash: null,
+    ipa: null,
+    accountExpires: null,
+    lastLoginLocal: null,
+    memberofGroup: [],
+    memberofGroupIds: [],
+    manages: [],
+    managesGroupIds: [],
+  },
+};
+
 describe("Firecrawl AI tools", () => {
+  test("web reads retain their website approval target and assurance with the exact sends review", async () => {
+    for (const locale of ["de", "en"]) {
+      let captured: CapabilityActionCallReview | undefined;
+      const url = "https://example.com/private?value=one";
+      await authorizeWebRead("page", url, {
+        actor,
+        locale,
+        requestApproval: async () => {
+          throw new Error("Expected the website target");
+        },
+        requestApprovalFor: async (message, target, review) => {
+          captured = review;
+          expect(target).toEqual({
+            toolName: AI_WEBSITE_APPROVAL_TOOL,
+            approvalScope: aiWebsiteApprovalScope("https://example.com"),
+            always: false,
+          });
+          // A website target still offers this website in this chat; it keeps the standard assurance.
+          expect(approvalAssurance(target !== undefined)).toBe("standard");
+          expect(review?.ask).toBe("sends");
+          expect(review?.preview).toEqual({ kind: "fields", rows: [{ label: locale === "de" ? "Adresse" : "Address", value: url }] });
+          expect(review?.consequences?.map(({ text }) => text)).toEqual(message.split("\n").slice(1));
+          return true;
+        },
+      });
+      expect(captured && capabilityReviewSentence(captured, "question", { timeZone: "UTC" })).toBe(
+        locale === "de" ? "Seite auf „example.com“ lesen?" : "Read page on “example.com”?",
+      );
+    }
+  });
+  test("an address whose encoded form outgrows the review bounds still asks with the sends review", async () => {
+    const ask = async (url: string) => {
+      let review: CapabilityActionCallReview | undefined;
+      await authorizeWebRead("page", url, {
+        actor,
+        locale: "en",
+        requestApproval: async () => {
+          throw new Error("Expected the website target");
+        },
+        requestApprovalFor: async (_message, _target, question) => {
+          review = question;
+          return true;
+        },
+      });
+      if (!review) throw new Error("Expected a review");
+      expect(review.ask).toBe("sends");
+      return review.preview?.kind === "fields" ? review.preview.rows : [];
+    };
+    // Shown as written when its encoded form is too long, so the person still reads the whole address.
+    const umlauts = new URL(`https://example.com/${"ä".repeat(400)}`).href;
+    expect(umlauts.length).toBeGreaterThan(2_000);
+    expect(await ask(umlauts)).toEqual([{ label: "Address", value: `https://example.com/${"ä".repeat(400)}` }]);
+    // A written form with characters a review may not carry continues over numbered rows, every character kept.
+    const hidden = new URL(`https://example.com/?q=${"\u202e".repeat(250)}`).href;
+    const rows = await ask(hidden);
+    expect(rows.map((row) => row.label)).toEqual(["Address 1/2", "Address 2/2"]);
+    expect(rows.map((row) => row.value).join("")).toBe(hidden);
+  });
   test("rejects non-public URLs before extraction", () => {
     expect(() => assertPublicHttpUrl("ftp://example.com/file")).toThrow("http or https");
     expect(() => assertPublicHttpUrl("http://localhost:3000")).toThrow("not allowed");
     expect(() => assertPublicHttpUrl("http://127.0.0.1:3000")).toThrow("private IP");
     expect(() => assertPublicHttpUrl("http://10.0.0.1")).toThrow("private IP");
     expect(assertPublicHttpUrl("https://example.com/path")).toBe("https://example.com/path");
+  });
+
+  test("uses the platform hostname and literal policy with stable errors", () => {
+    for (const host of ["printer.local", "router.home.arpa", "metadata", "instance-data", "localhost.localdomain"]) {
+      expect(() => assertPublicHttpUrl(`https://${host}/`)).toThrow("URL host is not allowed.");
+    }
+    for (const host of ["[::ffff:127.0.0.1]", "[::ffff:7f00:1]", "[5f00::1]", "[2001:20::1]", "127.1", "2130706433", "0x7f000001"]) {
+      expect(() => assertPublicHttpUrl(`https://${host}/`)).toThrow("URL must not point to a private IP address.");
+    }
+    expect(assertPublicHttpUrl("https://[64:ff9b::808:808]/")).toBe("https://[64:ff9b::808:808]/");
   });
 
   test("normalizes search results and omits scraped content", async () => {

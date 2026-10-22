@@ -151,6 +151,8 @@ export const gatewayOpsMessages = i18n.define({
       scheduleSaved: "Schedule saved",
       scheduleSavedRefreshFailed: "Schedule saved, but the settings could not be refreshed",
       saveScheduleFailed: "Failed to save schedule",
+      scheduleUnreadable:
+        "The saved schedule cannot be read by this application, usually because it was saved with a different APP_SECRET. The field shows the schedule in use here; saving replaces the saved one.",
       deleteWebhookTitle: "Delete webhook",
       deleteWebhookConfirm: ({ name }: { name: string }) => `Delete “${name}”?`,
       deleteWebhookFailed: "Failed to delete webhook",
@@ -768,6 +770,7 @@ export const gatewayOpsMessages = i18n.define({
       noInputs: "No inputs.",
       noResult: "No result.",
       eventPayload: "Event payload",
+      eventPayloadExpired: "Expired. Cloud keeps event payloads for 30 days after dispatch.",
       technicalDetails: "Technical details",
       technicalDetailsDescription: "Identifiers, budgets, journal, and pinned definition",
       identity: "Identity",
@@ -1027,6 +1030,8 @@ export const gatewayOpsMessages = i18n.define({
       scheduleSaved: "Zeitplan gespeichert",
       scheduleSavedRefreshFailed: "Der Zeitplan wurde gespeichert, aber die Einstellungen konnten nicht aktualisiert werden",
       saveScheduleFailed: "Zeitplan konnte nicht gespeichert werden",
+      scheduleUnreadable:
+        "Der gespeicherte Zeitplan ist für diese Anwendung nicht lesbar, meist weil er mit einem anderen APP_SECRET gespeichert wurde. Das Feld zeigt den hier verwendeten Zeitplan; Speichern ersetzt den gespeicherten.",
       deleteWebhookTitle: "Webhook löschen",
       deleteWebhookConfirm: ({ name }) => `„${name}“ löschen?`,
       deleteWebhookFailed: "Webhook konnte nicht gelöscht werden",
@@ -1632,6 +1637,7 @@ export const gatewayOpsMessages = i18n.define({
       noInputs: "Keine Eingaben.",
       noResult: "Kein Ergebnis.",
       eventPayload: "Ereignisnutzlast",
+      eventPayloadExpired: "Abgelaufen. Cloud behält Ereignisdaten 30 Tage nach der Zustellung.",
       technicalDetails: "Technische Details",
       technicalDetailsDescription: "Kennungen, Budgets, Journal und gebundene Definition",
       identity: "Identität",

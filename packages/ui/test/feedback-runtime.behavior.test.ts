@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createComponent, createSignal, onCleanup } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
 const settle = async () => {
@@ -185,6 +185,74 @@ describe("@k2b/ui feedback runtime", () => {
       expect(dialogCore.isOpen(), entry.name).toBe(false);
     }
 
+    dom.cleanup();
+  });
+
+  test("a custom dialog's dismiss handler guards Escape and the header close button alike", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    delegateEvents(["click"], dom.document);
+    const { dialogCore } = await import("../src/feedback/dialog-core");
+    const { prompts } = await import("../src/feedback/prompts");
+    let busy = true;
+    let dismissals = 0;
+    let close: (result?: string) => void = () => {};
+    const result = prompts.dialog<string>(
+      (done, context) => {
+        close = done;
+        context.setDismissHandler(() => {
+          dismissals++;
+          if (!busy) done();
+        });
+        return document.createTextNode("Saving");
+      },
+      { title: "Guarded" },
+    );
+    await settle();
+    const dialog = dom.document.querySelector<HTMLDialogElement>("dialog");
+    dialog?.dispatchEvent(new Event("cancel", { cancelable: true }));
+    await settle();
+    expect(dismissals).toBe(1);
+    dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")?.click();
+    await settle();
+    expect(dismissals).toBe(2);
+    expect(dialogCore.isOpen()).toBe(true);
+
+    dialog?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    dialog?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await settle();
+    expect(dismissals).toBe(3);
+    expect(dialogCore.isOpen()).toBe(true);
+
+    busy = false;
+    dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close")?.click();
+    expect(await result).toBeUndefined();
+    expect(dialogCore.isOpen()).toBe(false);
+    close("late");
+    dom.cleanup();
+  });
+
+  test("custom dialogs without a dismiss handler preserve header close and Escape behavior", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    delegateEvents(["click"], dom.document);
+    const { dialogCore } = await import("../src/feedback/dialog-core");
+    const { prompts } = await import("../src/feedback/prompts");
+    for (const cancelBehavior of ["resolve-undefined", "ignore"] as const) {
+      const result = prompts.dialog(() => document.createTextNode("Content"), { title: "Plain", cancelBehavior });
+      await settle();
+      const headerClose = dom.document.querySelector<HTMLButtonElement>(".k2b-dialog__close");
+      expect(headerClose).not.toBeNull();
+      headerClose?.click();
+      expect(await result).toBeUndefined();
+      expect(dialogCore.isOpen()).toBe(false);
+    }
+    const result = prompts.dialog(() => document.createTextNode("Content"));
+    await settle();
+    const dialog = dom.document.querySelector("dialog");
+    expect(dialog).not.toBeNull();
+    dialog?.dispatchEvent(new Event("cancel", { cancelable: true }));
+    expect(await result).toBeUndefined();
     dom.cleanup();
   });
 

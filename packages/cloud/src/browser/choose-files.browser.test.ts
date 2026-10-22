@@ -3,15 +3,17 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { z } from "zod";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import { type CapabilityInvocationResult, type CapabilityQueryDefinition, defineCapabilities } from "../contracts/capabilities";
 import {
+  FileProviderContextListInputSchema,
   type FileProviderEntry,
   FileProviderListDataSchema,
   FileProviderListInputSchema,
   FileProviderReadInputSchema,
 } from "../contracts/file-provider";
+import { appAccentStyle } from "../ssr/app-appearance";
 
 // User activation for the device dialog, focus, full-screen geometry, and whether a state change moves the frame
 // depend on a real engine, so this runs the real chooser in a browser against invented provider answers.
@@ -80,6 +82,18 @@ const providerApp = (appId: string, appName: string, appIcon: string) => ({
   ),
 });
 const drive = providerApp("drive", "Drive", "ti ti-cloud");
+// Invoices accepts caller context and has invoices only for customer c1; it shows nothing without that customer.
+const invoices = {
+  ...providerApp("invoices", "Invoices", "ti ti-receipt"),
+  manifest: compileCapabilityManifest(
+    "invoices",
+    defineCapabilities({
+      protocolVersion: 2,
+      queries: { "folder.list": { ...listQuery, input: FileProviderContextListInputSchema }, "file.read": readQuery },
+      fileProvider: { list: "folder.list", read: "file.read" },
+    }),
+  ),
+};
 // IDs only have to be unique within one provider: Vault also has a file "notes".
 const vault = providerApp("vault", "Vault", "ti ti-lock");
 const notes = {
@@ -146,6 +160,12 @@ const answer = async (request: Request): Promise<Response> => {
   if (operation === "folder.list") {
     const { input } = (await request.json()) as { input: { parent?: string; query?: string } };
     queries.push(input);
+    if (app === "invoices") {
+      const refs = (input as { context?: { refs: { type: string; id: string }[] } }).context?.refs ?? [];
+      const customers = refs.filter((ref) => ref.type === "customers.customer" && ref.id === "c1").map((ref) => ref.id);
+      const items = customers.map((id) => file(`invoice-${id}`, `Invoice ${id}.pdf`, `invoice ${id}`));
+      return json({ data: { writable: false, items, next: null } });
+    }
     if (input.parent === "team") return json({ code: "FORBIDDEN", message: "No access" }, 403);
     if (input.parent === "broken" && brokenAnswers++ === 0) return json({ code: "APP_UNAVAILABLE", message: "Down" }, 503);
     const items = (trees[app]?.[input.parent ?? ""] ?? []).filter((entry) => !input.query || entry.name.includes(input.query));
@@ -384,6 +404,61 @@ describe("choosing files in a browser", () => {
     }
   }, 30_000);
 
+  test("a picked provider file uses the opener app's ink and keeps its row geometry, in light and dark", async () => {
+    catalogApps = [drive];
+    for (const dark of [false, true]) {
+      const { page, close } = await open(desktop, "?max=100");
+      try {
+        await page.evaluate((dark) => {
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.classList.toggle("light", !dark);
+        }, dark);
+        // The page shell renders `<body class="k2b-ui app-accent-scope" style="…">` for an app page.
+        await page.evaluate((style) => {
+          document.body.classList.add("app-accent-scope");
+          document.body.style.cssText = style ?? "";
+        }, appAccentStyle("#0f766e"));
+        await attach(page);
+        await page.keyboard.press("ArrowDown");
+        await page.keyboard.press("Enter");
+        await page.waitForFunction(() => document.querySelectorAll('dialog [role="gridcell"]').length === 3);
+        await page.keyboard.press("Enter");
+        await page.waitForFunction(() => document.querySelectorAll('dialog [role="gridcell"]').length === 5);
+        expect(await rowNames(page)).toEqual(["Reports", "notes.txt", "todo.txt", "plan.txt", "huge.zip"]);
+        await page.keyboard.press("ArrowDown");
+        expect(await focusedRow(page)).toContain("notes.txt");
+        const fileRow = rows(page).nth(1);
+        await settled(page);
+        const before = await fileRow.boundingBox();
+        expect(before).not.toBeNull();
+        await page.keyboard.press("Space");
+        const icon = fileRow.locator('.cloud-file-chooser__icon[data-selected="true"]');
+        await icon.waitFor({ state: "attached" });
+        expect(await fileRow.getAttribute("aria-selected")).toBe("true");
+        expect(await fileRow.boundingBox()).toEqual(before);
+        const colors = await icon.evaluate((element) => {
+          const probe = document.createElement("span");
+          probe.style.cssText = "position:absolute;visibility:hidden;color:var(--ui-app-accent-text)";
+          document.body.append(probe);
+          const appInk = getComputedStyle(probe).color;
+          // Outside the body scope, the probe reads the `:root` default.
+          document.documentElement.append(probe);
+          const defaultInk = getComputedStyle(probe).color;
+          document.body.append(probe);
+          probe.style.color = "var(--k2b-action)";
+          const actionInk = getComputedStyle(probe).color;
+          probe.remove();
+          return { selectedInk: getComputedStyle(element).color, appInk, defaultInk, actionInk };
+        });
+        expect(colors.selectedInk).toBe(colors.appInk);
+        expect(colors.selectedInk).not.toBe(colors.defaultInk);
+        expect(colors.selectedInk).not.toBe(colors.actionInk);
+      } finally {
+        await close();
+      }
+    }
+  }, 30_000);
+
   test("browses a provider by keyboard, disables what does not fit, and reads at most two files at once", async () => {
     catalogApps = [drive];
     for (const view of [desktop, phone]) {
@@ -560,6 +635,36 @@ describe("choosing files in a browser", () => {
       await row(page, "notes.txt").waitFor();
     } finally {
       await close();
+    }
+  }, 60_000);
+
+  test("context reaches only the provider that accepts it, which shows its customer's files or a calm empty root in place", async () => {
+    catalogApps = [drive, invoices];
+    const title = "No matching files for these recipients";
+    const other = await open(desktop, `?customer=c2&noMatching=${encodeURIComponent(title)}`);
+    try {
+      await attach(other.page);
+      const frame = await dialogBox(other.page);
+      await row(other.page, "Invoices").click();
+      await other.page.getByText(title).waitFor();
+      expect(queries.at(-1)).toEqual({ context: { refs: [{ type: "customers.customer", id: "c2" }] }, limit: 50 });
+      expect(await dialogBox(other.page)).toEqual(frame);
+      await other.page.getByRole("button", { name: "Choose another source" }).click();
+      await row(other.page, "Drive").click();
+      await row(other.page, "Home").waitFor();
+      // Drive's list input is closed and names no context, so it never receives one.
+      expect(queries.at(-1)).toEqual({ limit: 50 });
+    } finally {
+      await other.close();
+    }
+    const matching = await open(desktop, "?customer=c1");
+    try {
+      await attach(matching.page);
+      await row(matching.page, "Invoices").click();
+      await row(matching.page, "Invoice c1.pdf").waitFor();
+      expect(await rowNames(matching.page)).toEqual(["Invoice c1.pdf"]);
+    } finally {
+      await matching.close();
     }
   }, 60_000);
 

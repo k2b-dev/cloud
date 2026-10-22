@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import * as logging from "@k2b/cloud/services/logging";
+import { NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import * as messages from "@k2b/cloud/services/outgoing-mail/messages";
 import * as store from "@k2b/cloud/services/outgoing-mail/store";
 import { headers, report, status, structure } from "./fixtures";
@@ -106,6 +107,14 @@ test("error stores a short credential-free status, keeps the old cursor, logs on
   await pollProfileBounces(profile, () => box, new AbortController().signal);
   expect(saved.mock.calls).toEqual([[profile, { error: "open_failed" }]]);
   expect(errors).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify([saved.mock.calls, errors.mock.calls])).not.toContain("must-not-escape");
+  expect(box.close).toHaveBeenCalledTimes(1);
+});
+test("a blocked IMAP target stores a credential-free target_blocked status", async () => {
+  const box = mailbox();
+  box.open.mockRejectedValue(new NetworkTargetBlockedError("must-not-escape"));
+  await pollProfileBounces(profile, () => box, new AbortController().signal);
+  expect(saved.mock.calls).toEqual([[profile, { error: "target_blocked" }]]);
   expect(JSON.stringify([saved.mock.calls, errors.mock.calls])).not.toContain("must-not-escape");
   expect(box.close).toHaveBeenCalledTimes(1);
 });

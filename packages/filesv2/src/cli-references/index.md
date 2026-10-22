@@ -4,6 +4,8 @@ Files (`cld filesv2`) works with the user's personal and group storage in
 Cloud and FreeIPA. Check `cld apps list --json` and `cld filesv2 help` before
 using the commands.
 
+Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+
 ## Address files
 
 A file argument is `<area>:/path` or a file ID:
@@ -72,7 +74,7 @@ as `root.stableIds` in `admin inventory`. An older Files CLI plugin reads
 | `get <remote> [<local>]` | Downloads a file, or a folder as ZIP | `{path, bytes}` |
 | `zip <remote>... --out <local>` | Downloads several entries of one area as ZIP | `{path, bytes}` |
 | `put <local> <remote> [--parents] [--replace] [--expected-revision <rev>]` | Uploads one file | `{base, entry}` |
-| `mkdir [-p] <folder>` | Creates a folder | `{base, entry}` |
+| `mkdir [-p] <folder>...` | Creates folders in one area | One argument: `{base, entry}`; several: `{base, results}` |
 | `mv <source>... <destination>` | Renames or moves inside one area | `{base, entries, results}` |
 | `cp <source>... <folder>` | Copies into a folder of any area | `{base, entries, results}` |
 | `rm <entry>... --yes` | Moves entries to the trash | `{entries, results}` |
@@ -182,11 +184,57 @@ replacing. A stale `--expected-revision` is a `write_conflict`. Unmanaged
 `idempotency_conflict` means the
 upload ID was reused with different parameters; inspect the original operation.
 `operation_conflict` and `write_conflict` do not authorize overwriting.
-Retries and lease renewal are bounded; interruption before commit requests an
-abort. The CLI stores one logical upload ID in its active profile before
-requesting a session. Repeating the same command with unchanged local file
-metadata, target, and conflict policy reuses it. Terminal receipts last seven
-days; after that, an uncertain outcome needs inspection rather than a new ID.
+Retries and lease renewal are bounded. Target resolution, folder creation with
+`--parents`, and session opening have a 60 s deadline. To finish a large upload,
+`put` waits up to about four minutes for Cloud. A run that stops there resumes
+with the same upload identity when run again. Transfer control
+requests have a 30 s deadline; each segment PUT gets 60 s plus its body size at
+64 KiB/s (about 0.5 Mbit/s), the slowest supported uplink. The deadline covers
+the whole request, including its response body. A deadline ends that attempt.
+
+`put` retries network failures, stalled requests, and busy answers up to five
+times, waiting 2, 5, 15, 30, and 60 s, or a larger Retry-After. Every attempt
+reopens the same Filegate session with the same upload ID and resumes from
+acknowledged segments. HTTP 429 with Retry-After waits as requested without
+spending that budget, at most ten times per run; without Retry-After it
+counts as busy. Retry-After above five minutes is not waited out. Other
+server errors and final answers are not retried automatically. When the
+budget is exhausted, the command exits non-zero and keeps the upload ID, so
+rerunning the unchanged command resumes. A rerun starts a fresh retry budget.
+
+A Cloud deadline before commit reports "No response from Cloud within 60 seconds."
+A commit deadline reports "Cloud did not finish the upload in time. Run the command
+again to continue."
+Transfer failures report "No response from the file server.", "No connection
+to the file server.", or "The file server is busy. Try again later."
+The busy message covers HTTP 408, 502, 503, and 504. HTTP 429 reports
+"Too many uploads in a short time. Try again later." A Cloud network failure
+reports "No connection to Cloud." Other Cloud server errors keep the server's
+message with its status prefix. Other Filegate failures, including HTTP 500,
+report "Filegate upload failed." Cancellation reports "Upload cancelled."
+These messages follow the CLI language. SIGINT or SIGTERM also ends a retry
+wait immediately and reports cancellation.
+
+In text mode, `put` writes progress to stderr. A terminal shows acknowledged
+bytes and percent on one updating line, followed by finishing and done messages.
+A long file name is shortened so the line fits the terminal width.
+Each automatic wait adds one reason and retry delay on stderr, followed by
+another uploading phase line before progress resumes. Without a terminal,
+it prints the phase and wait lines. `--json` and `--jsonl` print no progress
+or wait lines. Standard output keeps the command result.
+
+Interruption before commit requests an abort. The key is kept until that abort
+is confirmed. The CLI stores one logical upload ID in its active profile before
+requesting a session. Temporary failures keep the session and ID. Running the
+same command again with unchanged local file metadata, target, and conflict
+policy resumes from acknowledged segments. A lost commit answer also keeps
+the ID, so retry can recover the result. Final start answers discard the ID.
+Final failures before commit discard an open session through a confirmed abort;
+a closed, unknown, or changed session drops the ID directly. A definite name or
+write conflict at commit also aborts the unpublished session and drops the ID
+only after confirmation. Other final commit answers drop the ID without aborting.
+Terminal receipts last seven days. Check the destination after an uncertain
+result before starting a different upload.
 
 ## Upload local files
 
@@ -279,9 +327,18 @@ cld filesv2 trash restore me <trash-id> --json
 cld filesv2 trash restore me <trash-id> --to /Documents/recovered.pdf --json
 ```
 
-`mkdir` creates one folder below an existing parent and fails on an existing
-name. `mkdir -p` (`--parents`) creates every missing folder and accepts an
-existing folder, but not an existing file.
+`mkdir` accepts one or more folders in the same area. Without `-p`, each parent
+must exist and an existing name fails. `mkdir -p` (`--parents`) creates missing
+ancestors in one batch and reuses existing folders, including folders inside
+read-only parents. Existing files fail. A batch includes at most 100 folders,
+counting ancestors. Both modes stop at the first failure and name the folders
+already created and those not attempted.
+
+Commas are literal in CLI names. For siblings, pass separate arguments or use
+shell expansion: `cld filesv2 mkdir -p team:/2026/{Q1,Q2}`. One argument keeps
+`{base, entry}` output; several return `{base, results}` with per-folder states
+(and ancestors with `-p`). Text output lists each requested folder as Created
+or Exists.
 
 The last `mv` argument is the destination. An existing folder, a trailing `/`,
 or several sources move the sources into that folder. Otherwise, the single
@@ -536,12 +593,15 @@ when the storage uses a prefix. Do not replace unknown values with zero.
 ### Configuration
 
 Read the configuration, edit the intended fields, then submit the complete
-configuration. `get` exposes `tokenConfigured`, never the backend token. The
-optional `collabora` block holds `url` (empty disables editing), `internalUrl`,
-`wopiOrigin`, and `documentFormat` (`odf` or `ooxml`). Each storage block
+configuration. `get` exposes `tokenConfigured` and `unreadable`, never the
+backend token. The optional `collabora` block holds `url` (empty disables
+editing), `internalUrl`, `wopiOrigin`, and `documentFormat` (`odf` or `ooxml`). Each storage block
 contains `enabled`, `root`, `prefix`, `homes`, `groups`, and `archive`; the
 top-level `url` is the Filegate backend URL. The Cloud block also contains
 `autoCreate` (default `false`) and `autoArchive` (default `true`).
+Top-level `activityRetentionDays` retains folder history for 365 days by
+default and accepts integers from 30 to 3650. Preserve it when editing
+other settings.
 
 ```bash
 cld filesv2 admin configuration get --json > ./filesv2.json
@@ -553,6 +613,19 @@ cld filesv2 admin configuration set --input-file ./filesv2.json --json
 arguments. Omit `token` or leave it empty to keep the saved token; a nonempty
 `token` replaces it. Saving replaces both storages' configuration; preserve
 unrelated settings. Paths and prerequisites are validated by the server.
+
+When `unreadable` is `true`, Files cannot read its saved configuration and both
+areas are disabled in the returned fallback. Saving without a nonempty `token`
+fails with HTTP 409 `configuration_unreadable`. Restore the correct `APP_SECRET`
+to read the original configuration, or submit a complete configuration with a
+new token to replace it explicitly. To remove the saved configuration and use
+disabled defaults:
+
+```bash
+cld filesv2 admin configuration reset --yes
+```
+
+Reset requires an administrator and does not delete files in Filegate.
 
 ### Templates
 

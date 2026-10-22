@@ -9,6 +9,9 @@ navigation, keyboard behavior, and the active panel. The application owns
 loading, form state, validation, persistence, and the surrounding dialog or
 page.
 
+The active category uses `--k2b-app-workspace-selected` with `--k2b-app-workspace-active`
+ink, without changing its text weight.
+
 ## Use SettingsModal
 
 Use `SettingsPage` for a full settings route. Use `SettingsModal` when one
@@ -272,7 +275,7 @@ label rather than relying on color.
 ## Runtime
 
 The active panel renders on the server. Tab selection, close controls, form
-callbacks, and saving require hydrated Solid code.
+callbacks, and saving require browser code.
 
 ## Example
 

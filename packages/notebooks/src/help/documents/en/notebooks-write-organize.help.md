@@ -145,7 +145,7 @@ Hide the navigation to focus on the note. Hide it also when others can see your 
 - **Hide:** Choose **Hide navigation** at the far left of the editor toolbar. You can also press **Cmd/Ctrl+Alt+S**, or type `>` in the Cloud search and run **Hide notebook navigation**. You can also drag the edge of the navigation almost all the way to the left.
 - **What disappears:** The sidebar disappears completely, and so does the page list of Book view.
 - **Show:** Choose **Show navigation** in the same place, or press **Cmd/Ctrl+Alt+S** again. You can also type `>` in the Cloud search and run **Show notebook navigation**.
-- **No toolbar:** Some places show no editor toolbar: Book view, an empty notebook, **Read-only**, the graph, and the attachments. There, the button is in the bottom-left corner.
+- **No toolbar:** Some places show no editor toolbar: Book view, an empty notebook, **Read-only**, and the attachments. There, the button is in the bottom-left corner. The graph has the button at the left end of its own toolbar.
 - **Stays hidden:** This browser stores the choice. It applies to every notebook, even after a reload and in other open tabs. A notebook with hidden navigation opens without it, so its note titles do not appear while the page loads.
 - **Reading width:** On a large screen, the text stays in a column as wide as in Book view, also in the editor and in **Read-only**. When you hide the navigation, the column moves to the middle. The lines do not get longer.
 - **Full width:** For longer lines, turn on **Full width** in the detail panel, or type `>` in the Cloud search and run **Turn on full width**. The text then fills the free space in the editor, in **Read-only**, and in Book view. Only you see it, and this browser stores the choice for every notebook and open tab. Full width works only on large screens, where the switch shows. When the navigation and the detail panel leave less room than the column, the lines get longer only after you close the panel.
@@ -241,10 +241,24 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 ## Connect notes with links, tags, and attachments {icon="link"}
 
 :::reference
+- **See how notes link:** Choose **Links** at the bottom of the navigation. **Network** shows every note of the notebook and the links between them. The open note has a ring in the app color. This also works with **View** access, in Book view.
+- **Circle:** All notes stand on one circle, grouped by area in page order. The area name is inside the circle. Links cross the circle in the color of the area they start from. Point at a note to keep only its links visible. Solid lines go out. Dashed lines come in. When there are many notes, some titles appear only when you point at a note or zoom in.
+- **Neighborhood:** The current note is in the middle. Notes it links to are on the right. Notes linking to it are on the left. The second step is on the outer ring. On a tall, narrow screen such as a phone, incoming links are above and outgoing links are below.
+- **Timeline:** Notes are rows, with the last change first. Groups start with **Today**, **Yesterday**, **This week**, and **Last week**, then months and years. Links are arcs on the left, in the color of the area they start from. Point at a row or focus it to see its links. Incoming links are dashed. This display scrolls instead of zooming. It opens at the open note.
+- **Depth:** Choose **1 step** or **2 steps** in **Neighborhood**.
+- **Move to center:** Focus a note and press **Space**. On a touchscreen, select a note and choose **Move to center**. This note becomes the middle.
+- **On a phone:** Links opens in **Neighborhood** unless you choose another display. Your choice stays in the address.
+- **No links here:** Choose **Show whole notebook** to see **Network**. If filters hide all links of the current note, choose **Reset filters**.
+- **Areas:** Each top-level page with sub-pages is an area with its own color. The other top-level pages are in **Top level**. The network does not move by itself. You can drag a note, and its neighbors follow a little.
+- **Point at a note:** The note and its neighbors stay visible, and the other notes fade. Links from the note are solid lines. Links to the note are dashed. The bottom-left corner shows the area, the number of links in each direction, and the last change.
+- **Filters and search:** Choose **All notes**, **Only linked**, or **Only unlinked**. Choose an area to hide or show it. **Find note** marks the notes with a matching title, and Enter goes to the first match. The address keeps these settings, so a reload or Back shows the same view.
+- **As list:** Shows the same notes and filters as a table: the area, the notes that a note links to, the notes that link to it, and the last change. Choose **Changed** to sort by the last change, newest first. Choose it again for the oldest first. The address keeps the order. On a phone, the list shows **Changed** only while it is sorted by it. Use **Timeline** to see the notes by last change.
+- **Keyboard:** Press Tab to go into the graph. In **Network** and **Neighborhood**, the arrow keys move to the next note in that direction. Page Down and Page Up go through the notes in page order. In **Circle**, the arrow keys go along the circle. Page Down and Page Up jump to the next or previous area. In **Timeline**, Arrow Up and Arrow Down go to the next or previous row. Enter opens the note, Home goes to the open note, and Esc clears the search. In all displays except **Timeline**, + and − zoom and 0 fits the graph.
+- **Touch screens:** In **Timeline**, choose a row to open the note. In the other displays, choose a note to select it. A bar at the bottom shows the note. Choose **Open** to open it. Pinch with two fingers to zoom.
 - **Note links:** The Markdown form is `[Label](note://shortId)`. The editor can insert links for you.
 - **Link to a heading:** Add the heading name in lowercase with hyphens. `[Label](note://shortId#backup-restore)` opens the heading "Backup & Restore". If the note has no such heading, it opens at the top.
 - **Tags:** Use tags such as #garden to group notes across the notebook. Tag filters match parsed tags, not any word.
-- **Attachments:** Images appear inline. Other files appear as links. Both use attach://shortId references.
+- **Attachments:** Images appear inline. Other files appear as links. Both use attach://shortId references. Add `=400x`, `=x300`, or `=400x300` after the address to set an image's size.
 - **How links look:** Links to notes, headings, and files are light gray labels with a colored type icon. PDFs are red, images violet, design files orange, notes blue-gray, and headings gray.
 - **Heading in another note:** The link shows that note first, as in "Color system › Accent color".
 - **File on its own line:** The link also shows the file size.
@@ -254,6 +268,7 @@ In the editor, the controls appear when you point at the diagram or focus it. Af
 - **Preview actions:** The preview has **Download**. PDFs add **Open in new tab**, and text and JSON files add **Copy**.
 - **Other files:** Notebooks downloads other files, such as archives, audio, and video, after you confirm. The same applies to very large files and to images that the note cannot display.
 - **Where this works:** You can open attachments in the editor, in Book view, in the details panel, and in the attachments view.
+- **All notebook files:** Open **Attachments** at the bottom of the notebook sidebar to list and search all files in the notebook.
 :::
 
 **Hub note with links**

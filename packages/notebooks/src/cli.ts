@@ -7,6 +7,7 @@ import {
   type CloudCliContext,
   type CloudCliText,
   cliAmbiguityText,
+  cloudResourceUrl,
   command,
   confirmFlag,
   createAccessCommands,
@@ -16,6 +17,7 @@ import {
   parseCliAddress,
   printRows,
   printStructured,
+  withCloudResourcePermalink,
 } from "@k2b/cloud/cli";
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import {
@@ -614,7 +616,12 @@ function notebooksCommands(locale?: string) {
       await writeManifest(root, manifest);
     }
     const synced = await syncMirror(ctx, { root, manifest, force });
-    const result = { root, notebook: synced.manifest.notebook, notes: synced.manifest.notes.length, ...synced.report };
+    const result = {
+      root,
+      notebook: withCloudResourcePermalink(ctx, "notebooks.notebook", synced.manifest.notebook),
+      notes: synced.manifest.notes.length,
+      ...synced.report,
+    };
     if (!printStructured(ctx, result)) {
       reportSync(ctx, synced.report);
       ctx.print(
@@ -726,17 +733,26 @@ function notebooksCommands(locale?: string) {
             const payload = await ctx.readJson<Page<Notebook>>(
               await ctx.fetch(withQuery("/api/notebooks", { q: flags.q, page: flags.page, per_page: flags.perPage })),
             );
-            printRows(ctx, payload, payload.data, [
-              { key: "id", label: "ID" },
-              { key: "name", label: t({ en: "NAME", de: "NAME" }) },
-              { key: "updatedAt", label: t({ en: "UPDATED", de: "GEÄNDERT" }) },
-            ]);
+            printRows(
+              ctx,
+              { ...payload, data: payload.data.map((notebook) => withCloudResourcePermalink(ctx, "notebooks.notebook", notebook)) },
+              payload.data,
+              [
+                { key: "id", label: "ID" },
+                { key: "name", label: t({ en: "NAME", de: "NAME" }) },
+                { key: "updatedAt", label: t({ en: "UPDATED", de: "GEÄNDERT" }) },
+              ],
+            );
             return;
           }
           const scope = await resolveScope(ctx, args.scope);
           const outline = await fetchOutline(ctx, scope.notebook.id);
           const data = buildTree(outline, scope.noteId).map(({ children: _children, ...entry }) => entry);
-          const payload = { notebook: scope.notebook, parentId: scope.noteId, data };
+          const payload = {
+            notebook: withCloudResourcePermalink(ctx, "notebooks.notebook", scope.notebook),
+            parentId: scope.noteId,
+            data: data.map((note) => withCloudResourcePermalink(ctx, "notebooks.note", note)),
+          };
           printRows(
             ctx,
             payload,
@@ -766,7 +782,16 @@ function notebooksCommands(locale?: string) {
         async run({ ctx, args }) {
           const scope = await resolveScope(ctx, args.scope);
           const data = buildTree(await fetchOutline(ctx, scope.notebook.id), scope.noteId);
-          if (printStructured(ctx, { notebook: scope.notebook, parentId: scope.noteId, data })) return;
+          const linkTree = (nodes: TreeNode[]): (TreeNode & { permalink: string })[] =>
+            nodes.map((node) => ({ ...withCloudResourcePermalink(ctx, "notebooks.note", node), children: linkTree(node.children) }));
+          if (
+            printStructured(ctx, {
+              notebook: withCloudResourcePermalink(ctx, "notebooks.notebook", scope.notebook),
+              parentId: scope.noteId,
+              data: linkTree(data),
+            })
+          )
+            return;
           const print = (nodes: TreeNode[], depth: number) => {
             for (const node of nodes) {
               ctx.print(`${"  ".repeat(depth)}- ${node.title} (${node.id})`);
@@ -833,7 +858,12 @@ function notebooksCommands(locale?: string) {
               throw new Error(t({ en: `@${name} has no index ${flags.index}.`, de: `@${name} hat keinen Index ${flags.index}.` }));
             const body = namedBlockBody(content, block);
             const result = {
-              note: { id: note.id, notebookId: note.notebookId, title: note.title, updatedAt: note.updatedAt },
+              note: withCloudResourcePermalink(ctx, "notebooks.note", {
+                id: note.id,
+                notebookId: note.notebookId,
+                title: note.title,
+                updatedAt: note.updatedAt,
+              }),
               block: {
                 name: block.name,
                 type: block.type,
@@ -850,7 +880,14 @@ function notebooksCommands(locale?: string) {
           const blocks = shiftBlockLines(summarizeNoteEditBlocks(content), offset);
           const { contentMd: _contentMd, ...meta } = note;
           const lineCount = content.split("\n").length;
-          const result = { note: meta, content, contentHash: noteContentHash(content), firstLine: offset + 1, lineCount, blocks };
+          const result = {
+            note: withCloudResourcePermalink(ctx, "notebooks.note", meta),
+            content,
+            contentHash: noteContentHash(content),
+            firstLine: offset + 1,
+            lineCount,
+            blocks,
+          };
           if (printStructured(ctx, result)) return;
           if (flags.blocks) {
             for (const item of blocks) ctx.print(`@${item.name} ${item.type} ${item.startLine}:${item.endLine} ${item.hash}`);
@@ -868,7 +905,7 @@ function notebooksCommands(locale?: string) {
         async run({ ctx, args }) {
           if (!looksLocal(args.note) && /^[^:]+:\/?$/.test(args.note)) {
             const notebook = await getNotebook(ctx, args.note.slice(0, args.note.indexOf(":")));
-            if (!printStructured(ctx, notebook)) {
+            if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.notebook", notebook))) {
               ctx.print(`${notebook.name} (${notebook.id})`);
               if (notebook.description) ctx.print(notebook.description);
               ctx.print(`${t({ en: "updated", de: "geändert" })}: ${notebook.updatedAt}`);
@@ -878,7 +915,8 @@ function notebooksCommands(locale?: string) {
           const target = await resolveNote(ctx, args.note);
           const { contentMd: _contentMd, ...note } = await loadNote(ctx, target);
           const mirrorPath = target.mirror?.entry.path;
-          if (printStructured(ctx, { ...note, ...(mirrorPath ? { mirrorPath } : {}) })) return;
+          if (printStructured(ctx, { ...withCloudResourcePermalink(ctx, "notebooks.note", note), ...(mirrorPath ? { mirrorPath } : {}) }))
+            return;
           ctx.print(`${note.title} (${note.id})`);
           ctx.print(`${t({ en: "notebook", de: "Notizbuch" })}: ${note.notebookId}`);
           ctx.print(`${t({ en: "updated", de: "geändert" })}: ${note.updatedAt}`);
@@ -932,7 +970,14 @@ function notebooksCommands(locale?: string) {
           );
           printRows(
             ctx,
-            payload,
+            {
+              ...payload,
+              data: payload.data.map((hit) => ({
+                ...hit,
+                note: withCloudResourcePermalink(ctx, "notebooks.note", hit.note),
+                notebook: withCloudResourcePermalink(ctx, "notebooks.notebook", hit.notebook),
+              })),
+            },
             payload.data.map((hit) => ({
               id: hit.note.id,
               title: hit.note.title,
@@ -968,12 +1013,25 @@ function notebooksCommands(locale?: string) {
         args: noteArg,
         async run({ ctx, args }) {
           const target = await resolveNote(ctx, args.note);
-          const payload = await ctx.readJson<{ data: Array<Record<string, unknown>> }>(await ctx.fetch(noteApi(target, "/backlinks")));
-          printRows(ctx, payload, payload.data, [
-            { key: "noteId", label: "ID" },
-            { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
-            { key: "notebookName", label: t({ en: "NOTEBOOK", de: "NOTIZBUCH" }) },
-          ]);
+          const payload = await ctx.readJson<{ data: Array<{ noteId: string; title: string; notebookName: string }> }>(
+            await ctx.fetch(noteApi(target, "/backlinks")),
+          );
+          printRows(
+            ctx,
+            {
+              ...payload,
+              data: payload.data.map((note) => ({
+                ...note,
+                permalink: cloudResourceUrl(ctx, { type: "notebooks.note", id: note.noteId }),
+              })),
+            },
+            payload.data,
+            [
+              { key: "noteId", label: "ID" },
+              { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
+              { key: "notebookName", label: t({ en: "NOTEBOOK", de: "NOTIZBUCH" }) },
+            ],
+          );
         },
       }),
       command("graph", {
@@ -981,7 +1039,16 @@ function notebooksCommands(locale?: string) {
         args: notebookArg,
         async run({ ctx, args }) {
           const notebook = await resolveNotebookRef(ctx, args.notebook);
-          ctx.json(await ctx.readJson<unknown>(await ctx.fetch(api(notebook.id, "/graph"))));
+          const graph = await ctx.readJson<{
+            data: {
+              nodes: { id: string; title: string; inDegree: number; parentId: string | null; position: number; updatedAt: string }[];
+              edges: { source: string; target: string }[];
+            };
+          }>(await ctx.fetch(api(notebook.id, "/graph")));
+          ctx.json({
+            ...graph,
+            data: { ...graph.data, nodes: graph.data.nodes.map((note) => withCloudResourcePermalink(ctx, "notebooks.note", note)) },
+          });
         },
       }),
 
@@ -1055,7 +1122,7 @@ function notebooksCommands(locale?: string) {
             const mirrorPath = synced ? mirrorPathOf(synced.manifest, response.note.id) : undefined;
             const result = {
               action: response.changed ? "updated" : "unchanged",
-              note: response.note,
+              note: withCloudResourcePermalink(ctx, "notebooks.note", response.note),
               contentHash: response.afterHash,
               ...(mirrorPath ? { mirrorPath } : {}),
             };
@@ -1095,11 +1162,14 @@ function notebooksCommands(locale?: string) {
           }
           const result = {
             action: "created",
-            note,
+            note: withCloudResourcePermalink(ctx, "notebooks.note", note),
             contentHash: noteContentHash(note.contentMd ?? content),
             ...(mirrorPath ? { mirrorPath } : {}),
           };
-          if (!printStructured(ctx, result)) ctx.print(`${t({ en: "Created", de: "Angelegt" })} ${mirrorPath ?? note.title} (${note.id})`);
+          if (!printStructured(ctx, result))
+            ctx.print(
+              `${t({ en: "Created", de: "Angelegt" })} ${mirrorPath ?? note.title} (${note.id}) ${cloudResourceUrl(ctx, { type: "notebooks.note", id: note.id })}`,
+            );
         },
       }),
       command("edit", {
@@ -1273,7 +1343,12 @@ function notebooksCommands(locale?: string) {
               throw error;
             }
             const { contentMd: _contentMd, ...meta } = note;
-            const result = { note: meta, ...edit, firstLine: offset + 1, blocks: shiftBlockLines(edit.blocks, offset) };
+            const result = {
+              note: withCloudResourcePermalink(ctx, "notebooks.note", meta),
+              ...edit,
+              firstLine: offset + 1,
+              blocks: shiftBlockLines(edit.blocks, offset),
+            };
             if (!printStructured(ctx, result)) ctx.print(edit.content);
             return;
           }
@@ -1284,7 +1359,12 @@ function notebooksCommands(locale?: string) {
             .catch(rethrowConflict);
           const synced = target.mirror ? await refreshMirror(ctx, target.mirror, response.note.id) : null;
           const mirrorPath = synced ? mirrorPathOf(synced.manifest, response.note.id) : undefined;
-          const result = { ...response, firstLine: offset + 1, blocks: shiftBlockLines(response.blocks, offset) };
+          const result = {
+            ...response,
+            note: withCloudResourcePermalink(ctx, "notebooks.note", response.note),
+            firstLine: offset + 1,
+            blocks: shiftBlockLines(response.blocks, offset),
+          };
           if (printStructured(ctx, { ...result, ...(mirrorPath ? { mirrorPath } : {}) })) return;
           ctx.print(
             `${response.changed ? t({ en: "Edited", de: "Bearbeitet" }) : t({ en: "Unchanged", de: "Unverändert" })} ${mirrorPath ?? response.note.title} (${response.note.id})`,
@@ -1294,8 +1374,8 @@ function notebooksCommands(locale?: string) {
       }),
       command("preview", {
         summary: t({
-          en: "Check query and TOC blocks without saving; diagnostics exit 1",
-          de: "Query- und TOC-Blöcke ohne Speichern prüfen; Diagnosen beenden mit 1",
+          en: "Check query, TOC and chart blocks without saving; diagnostics exit 1",
+          de: "Query-, TOC- und Diagrammblöcke ohne Speichern prüfen; Diagnosen beenden mit 1",
         }),
         args: noteArg,
         flags: inputFlags,
@@ -1472,7 +1552,12 @@ function notebooksCommands(locale?: string) {
             );
           const synced = source.mirror ? await refreshMirror(ctx, source.mirror) : null;
           const mirrorPath = synced ? mirrorPathOf(synced.manifest, current.id) : undefined;
-          if (!printStructured(ctx, { note: current, ...(mirrorPath ? { mirrorPath } : {}) }))
+          if (
+            !printStructured(ctx, {
+              note: withCloudResourcePermalink(ctx, "notebooks.note", current),
+              ...(mirrorPath ? { mirrorPath } : {}),
+            })
+          )
             ctx.print(`${t({ en: "Moved", de: "Verschoben" })} ${mirrorPath ?? current.title} (${current.id})`);
         },
       }),
@@ -1495,8 +1580,10 @@ function notebooksCommands(locale?: string) {
               body: JSON.stringify({ targetNotebookId: scope.notebook.id, targetParentId: scope.noteId }),
             }),
           );
-          if (!printStructured(ctx, copy))
-            ctx.print(`${t({ en: "Copied to", de: "Kopiert nach" })} ${scope.notebook.name}: ${copy.title} (${copy.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.note", copy)))
+            ctx.print(
+              `${t({ en: "Copied to", de: "Kopiert nach" })} ${scope.notebook.name}: ${copy.title} (${copy.id}) ${cloudResourceUrl(ctx, { type: "notebooks.note", id: copy.id })}`,
+            );
         },
       }),
       command("rm", {
@@ -1536,7 +1623,8 @@ function notebooksCommands(locale?: string) {
             }),
           );
           const locked = await ctx.readJson<Note>(await ctx.fetch(noteApi(target, "/lock"), { method: "POST" }));
-          if (!printStructured(ctx, locked)) ctx.print(`${t({ en: "Locked", de: "Gesperrt" })} ${locked.title} (${locked.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.note", locked)))
+            ctx.print(`${t({ en: "Locked", de: "Gesperrt" })} ${locked.title} (${locked.id})`);
         },
       }),
       command("attach", {
@@ -1632,7 +1720,10 @@ function notebooksCommands(locale?: string) {
                   body: JSON.stringify({ name: args.name, description: flags.description, icon: flags.icon, welcomeNote: false }),
                 }),
               );
-          if (!printStructured(ctx, notebook)) ctx.print(`${t({ en: "Created", de: "Angelegt" })} ${notebook.name} (${notebook.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.notebook", notebook)))
+            ctx.print(
+              `${t({ en: "Created", de: "Angelegt" })} ${notebook.name} (${notebook.id}) ${cloudResourceUrl(ctx, { type: "notebooks.notebook", id: notebook.id })}`,
+            );
         },
       }),
       command("templates", {
@@ -1702,7 +1793,8 @@ function notebooksCommands(locale?: string) {
           const updated = await ctx.readJson<Notebook>(
             await ctx.fetch(api(notebook.id), { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(body) }),
           );
-          if (!printStructured(ctx, updated)) ctx.print(`${t({ en: "Updated", de: "Aktualisiert" })} ${updated.name} (${updated.id})`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.notebook", updated)))
+            ctx.print(`${t({ en: "Updated", de: "Aktualisiert" })} ${updated.name} (${updated.id})`);
         },
       }),
       command("delete", {
@@ -1733,7 +1825,12 @@ function notebooksCommands(locale?: string) {
           const response = await ctx.fetch(api(notebook.id, "/export.zip"));
           if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
           await Bun.write(output, response);
-          if (!printStructured(ctx, { notebook: { id: notebook.id, name: notebook.name }, output }))
+          if (
+            !printStructured(ctx, {
+              notebook: withCloudResourcePermalink(ctx, "notebooks.notebook", { id: notebook.id, name: notebook.name }),
+              output,
+            })
+          )
             ctx.print(`${t({ en: "Exported to", de: "Exportiert nach" })} ${output}`);
         },
       }),
@@ -1750,7 +1847,7 @@ function notebooksCommands(locale?: string) {
           }>(await ctx.fetch(withQuery(noteApi(target, "/comments/page"), { page: flags.page, per_page: flags.perPage })));
           printRows(
             ctx,
-            payload,
+            { ...payload, items: payload.items.map((comment) => withCloudResourcePermalink(ctx, "notebooks.comment", comment)) },
             payload.items.map((item) => ({ ...item, content: item.content.replace(/\s+/g, " ").slice(0, 120) })),
             [
               { key: "id", label: "ID" },
@@ -1771,7 +1868,10 @@ function notebooksCommands(locale?: string) {
           const comment = await ctx.readJson<{ id: string }>(
             await ctx.fetch(noteApi(target, "/comments"), { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ content }) }),
           );
-          if (!printStructured(ctx, comment)) ctx.print(`${t({ en: "Added comment", de: "Kommentar hinzugefügt" })} ${comment.id}`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.comment", comment)))
+            ctx.print(
+              `${t({ en: "Added comment", de: "Kommentar hinzugefügt" })} ${comment.id} ${cloudResourceUrl(ctx, { type: "notebooks.comment", id: comment.id })}`,
+            );
         },
       }),
       command("comments update", {
@@ -1788,7 +1888,8 @@ function notebooksCommands(locale?: string) {
               body: JSON.stringify({ content }),
             }),
           );
-          if (!printStructured(ctx, comment)) ctx.print(`${t({ en: "Updated comment", de: "Kommentar geändert" })} ${comment.id}`);
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.comment", comment)))
+            ctx.print(`${t({ en: "Updated comment", de: "Kommentar geändert" })} ${comment.id}`);
         },
       }),
       command("comments delete", {
@@ -1852,7 +1953,7 @@ function notebooksCommands(locale?: string) {
               body: JSON.stringify({ yjsSnapshot: version.yjsSnapshot }),
             }),
           );
-          if (!printStructured(ctx, restored))
+          if (!printStructured(ctx, withCloudResourcePermalink(ctx, "notebooks.note", restored)))
             ctx.print(`${t({ en: "Restored into", de: "Wiederhergestellt in" })} ${restored.title} (${restored.id})`);
         },
       }),
@@ -1924,10 +2025,15 @@ function notebooksCommands(locale?: string) {
         async run({ ctx, args }) {
           const notebook = await resolveNotebookRef(ctx, args.notebook);
           const payload = await ctx.readJson<{ noteId: string; createdAt: string }[]>(await ctx.fetch(api(notebook.id, "/favorites")));
-          printRows(ctx, payload, payload, [
-            { key: "noteId", label: "ID" },
-            { key: "createdAt", label: t({ en: "ADDED", de: "HINZUGEFÜGT" }) },
-          ]);
+          printRows(
+            ctx,
+            payload.map((note) => ({ ...note, permalink: cloudResourceUrl(ctx, { type: "notebooks.note", id: note.noteId }) })),
+            payload,
+            [
+              { key: "noteId", label: "ID" },
+              { key: "createdAt", label: t({ en: "ADDED", de: "HINZUGEFÜGT" }) },
+            ],
+          );
         },
       }),
       ...(["add", "remove"] as const).map((action) =>

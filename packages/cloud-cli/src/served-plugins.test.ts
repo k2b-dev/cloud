@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildEchoPlugin } from "../test/fixtures/build-plugin";
+import { buildEchoPlugin, packInlinePlugin } from "../test/fixtures/build-plugin";
 import { type PluginCloudState, servedEchoPlugin, startPluginCloud } from "../test/fixtures/plugin-cloud";
 
 const cleanup: Array<() => Promise<unknown> | unknown> = [];
@@ -30,9 +30,9 @@ const setup = async (profiles: Record<string, PluginCloudState>) => {
       ),
     }),
   );
-  const run = async (args: string[]) => {
+  const run = async (args: string[], extraPath?: string) => {
     const child = Bun.spawn([process.execPath, "run", join(import.meta.dir, "index.ts"), ...args], {
-      env: { PATH: process.env.PATH ?? "", HOME: dir, XDG_CONFIG_HOME: dir, CLD_CONFIG: configPath },
+      env: { PATH: [extraPath, process.env.PATH ?? ""].filter(Boolean).join(":"), HOME: dir, XDG_CONFIG_HOME: dir, CLD_CONFIG: configPath },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -110,8 +110,8 @@ test("profiles lock their own verified plugin versions and share identical ones"
   expect(added.exitCode, added.stderr).toBe(0);
   expect((await cli.config()).skills).toEqual({ targets: ["~/agent-skills"] });
   const skill = await readFile(join(skills, "cloud-cli", "SKILL.md"), "utf8");
-  expect(skill).toContain("| a | echo | 1.0.0 | `references/echo/1.0.0/` |");
-  expect(skill).toContain("| b | echo | 2.0.0 | `references/echo/2.0.0/` |");
+  expect(skill).toContain("| a | echo | 1.0.0 | Echo the host CLI context (test plugin). | `references/echo/1.0.0/index.md` |");
+  expect(skill).toContain("| b | echo | 2.0.0 | Echo the host CLI context (test plugin). | `references/echo/2.0.0/index.md` |");
   expect(skill).toContain("cld <app> reference");
   expect(await readFile(join(skills, "cloud-cli", "references", "echo", "1.0.0", "index.md"), "utf8")).toBe("# Echo 1.0.0\n");
   expect(await readFile(join(skills, "cloud-cli", "references", "echo", "2.0.0", "index.md"), "utf8")).toBe("# Echo 2.0.0\n");
@@ -146,6 +146,181 @@ test("profiles lock their own verified plugin versions and share identical ones"
   expect(noTarget.exitCode).toBe(1);
   expect(noTarget.stderr).toContain("No skill target configured");
 }, 30_000);
+
+test("a release that ships the same bundle under a new version refreshes the version label", async () => {
+  const v1 = await servedEchoPlugin("1.0.0");
+  const cloud: PluginCloudState = { plugins: [v1], authorizations: [] };
+  const cli = await setup({ a: cloud });
+  expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
+  const skills = join(cli.dir, "agent-skills");
+  expect((await cli.run(["skills", "add", skills])).exitCode).toBe(0);
+  const installedConfig = await readFile(join(cli.dir, "config.json"), "utf8");
+  cloud.plugins = [{ ...v1, manifest: { ...v1.manifest, version: "1.1.0" } }];
+
+  const before = await cli.run(["plugins", "list", "--json"]);
+  expect(before.exitCode, before.stderr).toBe(0);
+  expect(JSON.parse(before.stdout).plugins[0]).toMatchObject({ installed: "1.0.0", available: "1.1.0", status: "update available" });
+  expect(await cli.run(["plugins", "update"])).toEqual({
+    exitCode: 0,
+    stdout: 'Updated echo 1.0.0 → 1.1.0 (profile "a"): version label refreshed, files unchanged.\n',
+    stderr: "",
+  });
+  expect((await cli.config()).profiles.a.plugins.echo).toMatchObject({ version: "1.1.0", digest: v1.manifest.digest });
+  const after = await cli.run(["plugins", "list", "--json"]);
+  expect(after.exitCode, after.stderr).toBe(0);
+  expect(JSON.parse(after.stdout).plugins[0]).toMatchObject({ installed: "1.1.0", available: "1.1.0", status: "ok" });
+  expect(await readFile(join(skills, "cloud-cli", "SKILL.md"), "utf8")).toContain(
+    "| a | echo | 1.1.0 | Echo the host CLI context (test plugin). | `references/echo/1.1.0/index.md` |",
+  );
+  expect(await readdir(join(skills, "cloud-cli", "references", "echo"))).toEqual(["1.1.0"]);
+  expect(await readFile(join(skills, "cloud-cli", "references", "echo", "1.1.0", "index.md"), "utf8")).toBe("# Echo 1.0.0\n");
+  expect(await cli.stored()).toEqual([v1.manifest.digest]);
+  expect((await cli.run(["plugins", "update"])).stdout).toBe('echo 1.1.0 is up to date (profile "a").\n');
+
+  await writeFile(join(cli.dir, "config.json"), installedConfig);
+  const json = await cli.run(["plugins", "update", "--json"]);
+  expect(json.exitCode, json.stderr).toBe(0);
+  expect(JSON.parse(json.stdout).plugins).toEqual([
+    {
+      profile: "a",
+      name: "echo",
+      app: "echo-app",
+      version: "1.1.0",
+      previous: "1.0.0",
+      status: "updated",
+      message: "version label refreshed; files unchanged",
+    },
+  ]);
+  await writeFile(join(cli.dir, "config.json"), installedConfig);
+  expect(await cli.run(["--locale", "de", "plugins", "update"])).toEqual({
+    exitCode: 0,
+    stdout: 'echo 1.0.0 → 1.1.0 aktualisiert (Profil "a"): nur die Versionsangabe, Dateien unverändert.\n',
+    stderr: "",
+  });
+}, 30_000);
+
+test("update --all continues past a profile whose token cannot be read", async () => {
+  const v1 = await servedEchoPlugin("1.0.0");
+  const v2 = await servedEchoPlugin("2.0.0");
+  const clouds: Record<string, PluginCloudState> = Object.fromEntries(
+    ["a", "b", "c"].map((name) => [name, { plugins: [v1], authorizations: [] }]),
+  );
+  const cli = await setup(clouds);
+  for (const profile of ["a", "b", "c"]) {
+    const installed = await cli.run(["--profile", profile, "plugins", "install", "echo"]);
+    expect(installed.exitCode, installed.stderr).toBe(0);
+    clouds[profile]!.plugins = [v2];
+  }
+  const bin = join(cli.dir, "bin");
+  await mkdir(bin);
+  await writeFile(
+    join(bin, "fd0"),
+    `#!/bin/sh
+case "$2" in
+  b-oauth-client-secret) printf '\nfd0 agent is locked\nmore detail\n' >&2; exit 1 ;;
+  c-token) printf 'token-c-SECRET' ;;
+esac
+`,
+  );
+  await chmod(join(bin, "fd0"), 0o700);
+  const config = await cli.config();
+  delete config.profiles.b.token;
+  config.profiles.b.fd0 = { name: "b-oauth-client-secret" };
+  delete config.profiles.c.token;
+  config.profiles.c.fd0 = { name: "c-token" };
+  const configPath = join(cli.dir, "config.json");
+  const reason = 'Cannot read the token from fd0 item "b-oauth-client-secret": fd0 agent is locked';
+  const failure = { profile: "b", status: "failed", message: reason };
+  for (const output of [undefined, "--json", "--jsonl"]) {
+    await writeFile(configPath, JSON.stringify(config));
+    const result = await cli.run(["--profile", "a", "plugins", "update", "--all", ...(output ? [output] : [])], bin);
+    expect(result.exitCode).toBe(1);
+    if (output === "--json") expect(JSON.parse(result.stdout).plugins).toContainEqual(failure);
+    else if (output === "--jsonl")
+      expect(
+        result.stdout
+          .trim()
+          .split("\n")
+          .map((line) => JSON.parse(line)),
+      ).toContainEqual(failure);
+    else {
+      expect(result.stdout).toContain('Updated echo 1.0.0 → 2.0.0 (profile "a").');
+      expect(result.stdout).toContain('Updated echo 1.0.0 → 2.0.0 (profile "c").');
+      expect(result.stderr).toBe(`cld: b: ${reason}\n`);
+    }
+    expect(result.stdout + result.stderr).not.toContain("token-c-SECRET");
+    const locked = (await cli.config()).profiles;
+    expect(locked.a.plugins.echo.version).toBe("2.0.0");
+    expect(locked.b.plugins.echo.version).toBe("1.0.0");
+    expect(locked.c.plugins.echo.version).toBe("2.0.0");
+  }
+  expect(await cli.run(["--profile", "b", "plugins", "update"], bin)).toEqual({ exitCode: 1, stdout: "", stderr: `${reason}\n` });
+  const german = await cli.run(["--locale", "de", "plugins", "update", "--all"], bin);
+  expect(german.exitCode).toBe(1);
+  expect(german.stderr).toBe('cld: b: Token aus fd0-Eintrag "b-oauth-client-secret" kann nicht gelesen werden: fd0 agent is locked\n');
+}, 30_000);
+
+test("token command failures omit the command text and its stdout", async () => {
+  const v1 = await servedEchoPlugin("1.0.0");
+  const cli = await setup({});
+  const config = await cli.config();
+  config.currentProfile = "a";
+  config.profiles.a = {
+    server: "http://127.0.0.1:1",
+    plugins: { echo: { app: v1.manifest.app, version: v1.manifest.version, digest: v1.manifest.digest } },
+  };
+  for (const [command, reason] of [
+    ["echo token-SECRET; echo nope >&2; exit 3", "nope"],
+    ["echo token-SECRET; exit 3", "the token command ended with exit code 3"],
+  ]) {
+    config.profiles.a.tokenCommand = command;
+    await writeFile(join(cli.dir, "config.json"), JSON.stringify(config));
+    const result = await cli.run(["plugins", "update"]);
+    expect(result).toEqual({ exitCode: 1, stdout: "", stderr: `Cannot read the token from the token command: ${reason}\n` });
+    expect(result.stdout + result.stderr).not.toContain("token-SECRET");
+    expect(result.stdout + result.stderr).not.toContain(command);
+  }
+});
+
+test("fd0 failures report the first stderr line and continue to the next profile without exposing stdout", async () => {
+  const v1 = await servedEchoPlugin("1.0.0");
+  const cli = await setup({});
+  const config = await cli.config();
+  config.currentProfile = "a";
+  for (const profile of ["a", "b"]) {
+    config.profiles[profile] = {
+      server: "http://127.0.0.1:1",
+      fd0: { name: `${profile}-token` },
+      plugins: { echo: { app: v1.manifest.app, version: v1.manifest.version, digest: v1.manifest.digest } },
+    };
+  }
+  await writeFile(join(cli.dir, "config.json"), JSON.stringify(config));
+  const bin = join(cli.dir, "bin");
+  await mkdir(bin);
+  await writeFile(join(bin, "fd0"), "#!/bin/sh\nprintf 'fd0-SECRET'\nprintf '\\nfd0 agent is locked\\nmore detail\\n' >&2\nexit 1\n");
+  await chmod(join(bin, "fd0"), 0o700);
+  expect(await cli.run(["plugins", "update", "--all"], bin)).toEqual({
+    exitCode: 1,
+    stdout: "",
+    stderr:
+      'cld: a: Cannot read the token from fd0 item "a-token": fd0 agent is locked\ncld: b: Cannot read the token from fd0 item "b-token": fd0 agent is locked\n',
+  });
+  expect(await cli.run(["plugins", "update"], bin)).toEqual({
+    exitCode: 1,
+    stdout: "",
+    stderr: 'Cannot read the token from fd0 item "a-token": fd0 agent is locked\n',
+  });
+  const json = await cli.run(["plugins", "update", "--all", "--json"], bin);
+  expect(json.exitCode).toBe(1);
+  expect(JSON.parse(json.stdout).plugins).toEqual(
+    ["a", "b"].map((profile) => ({
+      profile,
+      status: "failed",
+      message: `Cannot read the token from fd0 item "${profile}-token": fd0 agent is locked`,
+    })),
+  );
+  expect(json.stderr).toBe("");
+});
 
 test("profile rm signs a profile out, drops the plugin versions no other profile uses, and rewrites the skill", async () => {
   const [v1, v2] = [await servedEchoPlugin("1.0.0"), await servedEchoPlugin("2.0.0")];
@@ -532,13 +707,8 @@ test("installing a package plugin warns when its ID takes a shortcut's name", as
   expect((await cli.run(["plugins", "install", "echo"])).exitCode).toBe(0);
   expect((await cli.run(["me"])).exitCode).toBe(0);
   const directory = join(cli.dir, "package-me");
-  await mkdir(directory);
-  await writeFile(
-    join(directory, "package.json"),
-    JSON.stringify({ name: "test-package-me", version: "1.0.0", cld: { apiVersion: 1, entry: "cli.js" } }),
-  );
-  await writeFile(
-    join(directory, "cli.js"),
+  await packInlinePlugin(
+    directory,
     `export default {
     name: "me", summary: "Package fixture", requiresCloud: false,
     run: (ctx) => { ctx.print("package me"); return 0; },
@@ -565,19 +735,15 @@ test("built-ins and package module names win, while package short-name declarati
   expect((await cli.run(["constructor", "whoami"])).exitCode).toBe(0);
   expect((await cli.run(["e"])).exitCode).toBe(0);
 
-  const directory = join(cli.dir, "cloud", "cld", "plugins", "e");
-  await mkdir(directory, { recursive: true });
-  await writeFile(
-    join(directory, "package.json"),
-    JSON.stringify({ name: "test-package-e", version: "1.0.0", cld: { apiVersion: 1, entry: "cli.js" } }),
-  );
-  await writeFile(
-    join(directory, "cli.js"),
+  const directory = join(cli.dir, "package-e");
+  await packInlinePlugin(
+    directory,
     `export default {
     name: "e", summary: "Package fixture", alias: "pkg", shortcuts: { pack: "run" }, requiresCloud: false,
     help: () => "Package e help", run: (ctx) => { ctx.print("package " + ctx.args.join(" ")); return 0; },
   };`,
   );
+  expect((await cli.run(["plugins", "install", directory, "--yes"])).exitCode).toBe(0);
   expect((await cli.run(["e", "anything"])).stdout).toBe("package anything\n");
   expect((await cli.run(["e", "--help"])).stdout).toBe("Package e help\n");
   const help = await cli.run(["help"]);
@@ -595,11 +761,11 @@ test("built-ins and package module names win, while package short-name declarati
   expect(JSON.parse(listed.stdout).plugins).toContainEqual({
     profile: null,
     name: "e",
-    app: null,
+    app: "test-plugin",
     installed: "1.0.0",
     available: null,
     status: "ok",
-    source: "manual",
+    source: directory,
     alias: null,
     shortcuts: {},
     inactive: [],

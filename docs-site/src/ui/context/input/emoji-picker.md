@@ -5,6 +5,7 @@ from the emoji they used recently, or by browsing the groups. People who have
 skin tones choose one once. The keyboard reaches everything.
 `EmojiPicker.Popover` opens the picker next to a control, such as the emoji
 button of a [`Chat.Composer`](/en/ui/ai/chat) or "Add reaction" in a
+[`ReactionBar`](/en/ui/content/reaction-bar), including the one in
 [`MessageRow`](/en/ui/content/message-rows).
 
 ## Import
@@ -46,6 +47,9 @@ const [tone, setTone] = createSignal<EmojiSkinTone>(preferences.skinTone);
   stays inside the visible part of the viewport. When a phone's keyboard
   covers part of the page, the picker moves into the rest, and its grid gets
   shorter where the rest is lower than the picker.
+- While open, it sets `aria-expanded="true"` on its anchor and restores the
+  previous value (or removes the attribute) when it closes, moves to another
+  anchor, or unmounts; a progressive "Add reaction" therefore stays visible.
 - It closes after a pick, on Escape in an empty search field, on a click
   outside, and on a second press of its anchor, with a pointer or a key. Each
   time `onClose` asks the application to clear `anchor`.
@@ -103,7 +107,7 @@ nothing change only paint. On a coarse pointer, cells and controls are
 
 ## Runtime
 
-Search, keyboard use, and the popover need hydrated Solid client code; on the
+Search, keyboard use, and the popover require browser code; on the
 server the picker renders its frame with the loading state.
 
 The emoji names come from [Emojibase](https://emojibase.dev) (MIT), up to

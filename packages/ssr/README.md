@@ -23,6 +23,17 @@ re-rendering follow:
 - server and client must render the same markup from the same props, or the
   page shifts when the island mounts.
 
+## Island lifetime
+
+An island lives until the document unloads or the framework disposes the content
+around it. Disposal runs every Solid `onCleanup` and effect cleanup, including
+those of an error fallback. Use `onCleanup` to remove global listeners, clear
+timers, and release subscriptions.
+
+Just before cleanup, the wrapper dispatches a bubbling `ssr:island-dispose`
+event. Code that renders outside the wrapper, such as a portal, can close what
+the island opened. Disposal closes every open `@k2b/ui` dialog.
+
 ## Size & Philosophy
 
 This framework is intentionally minimal and focused on SSR + islands only.
@@ -66,7 +77,7 @@ SPA routing.
 - Monorepo support via `rootDir`
 - Public path mounting via `basePath` for microfrontends
 - Stable file-path-based island IDs (collision-safe across workspace packages)
-- Production module cache busting (`/_ssr/<buildTimestamp>/*.js`)
+- Production content-hashed module directories (`/_ssr/<contentHash>/<id>.js`)
 - Linked development source maps and validator-aware asset delivery
 - Stale generated island assets removed after successful builds
 - Visibility-aware development reload with cross-tab SSE coordination
@@ -211,8 +222,8 @@ NODE_ENV=development bun --watch --preload=./scripts/preload.ts src/server.ts
 
 ## Optional Navigation Helpers
 
-`@k2b/ssr/nav` is an opt-in browser helper for islands that want to
-update URL history after they have already updated client state.
+`@k2b/ssr/nav` provides opt-in history helpers and server-rendered page swaps.
+It has no route matching or client loaders.
 
 ```tsx
 import { createSignal, onCleanup, onMount } from "solid-js";
@@ -245,9 +256,9 @@ export default function Tabs() {
 
 `Link` renders a real `<a href>` during SSR. Enhanced clicks only run in the
 browser for same-origin, left-click navigation without modifier keys. Without
-`onNavigate`, the anchor keeps native document navigation and ignores `replace`
-and `scroll`. With `onNavigate`, the island owns data loading and state updates,
-then calls `nav.push()`, `nav.replaceWith()`, or `nav.fallback()`.
+`onNavigate`, the anchor keeps native document navigation, or a page swap
+when the host installed one, and ignores `replace` and `scroll`. With
+`onNavigate`, the island owns data loading and state updates, then calls `nav.push()`, `nav.replaceWith()`, or `nav.fallback()`.
 
 Use `listenPopState()` whenever `nav.push()` represents client state. Browser
 Back/Forward changes history but cannot infer how an island maps the URL back to
@@ -267,13 +278,228 @@ Navigation behavior:
 
 Available exports:
 
-- `Link`
+- `Link`, `installPageSwap()`, `swapPage()`, `onBeforeLeave()`
 - `navigate()`, `navigateTo()`, `documentNavigate()`, `currentPathWithQuery()`, `refreshCurrentPath()`
 - `captureScroll()`, `restoreScroll()`, `listenPopState()`, `startViewTransition()`
-- `LinkNavigateEvent`, `LinkProps`, `EnhancedNavigateOptions`, `NavigationScrollMode`, `PopStateNavigationEvent`, `ScrollSnapshot`
+- `BeforeLeaveEvent`, `LinkNavigateEvent`, `LinkProps`, `EnhancedNavigateOptions`, `NavigationScrollMode`, `PopStateNavigationEvent`, `ScrollSnapshot`
 
 Use `data-scroll-preserve="stable-key"` on scroll containers that should keep
 their scroll position across enhanced navigation.
+
+### Swap server-rendered pages
+
+A host can let links swap only the content column: nav fetches the next page
+as server HTML and replaces the column, while the rest of the document (a
+navigation rail, an open side panel) stays. Declare the parts in server HTML:
+
+```html
+<div data-nav-shell="mail:user-42:en:standard:3f9a" data-nav-scope="/mail" data-nav-attributes="data-mode">
+  <nav><a href="/mail/inbox">Inbox</a> <a href="/mail/export.zip" data-nav-document>Export</a></nav>
+  <main data-nav-root><h1>Inbox</h1><!-- server HTML and islands --></main>
+</div>
+```
+
+- `data-nav-shell`: one element, its value an opaque signature. Put
+  everything into it that must match for a swap, such as application, user,
+  locale, layout kind, and build. Nav only compares it.
+- `data-nav-scope`: a path prefix. `/mail` takes `/mail`, `/mail/x`, and
+  `/mail?x`, not `/mailbox`.
+- `data-nav-attributes`: optional names of shell attributes that the fetched
+  page sets or removes.
+- `data-nav-root`: one element inside the shell, replaced as a whole.
+- `data-nav-document`: keeps document navigation for one link. Use it (or
+  `download`) on in-scope links to non-HTML resources; otherwise the swap
+  fetch learns the type first and the server receives the request twice.
+
+Install it once, from an island outside the root:
+
+```tsx
+import { onCleanup, onMount } from "solid-js";
+import { installPageSwap } from "@k2b/ssr/nav";
+
+onMount(() => onCleanup(installPageSwap()));
+```
+
+`installPageSwap()` is idempotent per document and returns its uninstall
+function; on the server it does nothing. It listens for clicks on `window`, so
+island handlers run first and a prevented click is never swapped. Modifier
+keys, other buttons, `target`, `download`, `rel="external"`, other origins,
+links outside the scope, and hash links on the same page stay native.
+`swapPage(href, { replace })` starts the same swap from code.
+
+In a swap host, the loader imports modules used only outside the column
+first. A module with an instance in the column loads after them, also for its
+instances outside, because importing a module mounts every instance. So an
+island outside the column can install page swaps before column islands write
+history. Use the installer island only outside the column.
+`listenPopState()` stays safe in either installation order.
+
+A swap fetches the page, then loads its island modules, and only then disposes
+the old islands. It pushes history, replaces the column, sets the title and
+the declared attributes, mounts the new islands, scrolls to the top or to
+the hash, focuses the first heading of the column, and announces the title in
+a polite live region. A newer navigation aborts a pending swap: another swap,
+Back or Forward, a native link or form submission, an enhanced `Link` click,
+or a call to `navigate()` or `documentNavigate()`. A swap that starts while
+a `Link` handler still loads wins as well: that handler's `push`,
+`replaceWith`, and `fallback` then do nothing.
+
+Any failure loads the requested URL as a normal document: a status other than
+200, a response that is not HTML, a redirect out of the scope, a missing shell
+or root, a different signature, a different module prefix, `<base>`, or stylesheet set,
+and a module that fails to load or to evaluate. The old column stays until
+then. Inline scripts in the fetched page do not run, and only the title of
+its head is used.
+
+Back and Forward fetch another server page's column without a document load.
+Within the shown page, `listenPopState()` lets islands restore state from the
+URL without fetching. It never reports a traversal to another server page.
+Nav restores window scroll and keyed `data-scroll-preserve` regions from the
+arriving entry once, right after its islands mount; within a page, islands
+still own region scroll. For an asynchronous same-page list replacement, call
+`navigation.deferScrollRestore()` synchronously inside `listenPopState()`, then
+call its returned completion after committing the new DOM. Nav restores that
+entry's saved window and keyed regions once; no application history map is needed.
+A newer navigation, uninstall, or user input cancels the replay, and a stale
+completion does nothing. The application must still abort or ignore stale data
+responses before changing its DOM. Existing synchronous handlers are unchanged.
+Without an installed page swap the completion does nothing. Cross-page islands
+that load content after mounting still manage that later rendering themselves.
+A traversal that cannot swap reloads the arriving URL.
+
+```tsx
+onCleanup(listenPopState(({ url, deferScrollRestore }) => {
+  const restore = deferScrollRestore();
+  // This application helper ignores aborted/stale responses and resolves after its DOM commit.
+  void replaceList(url).then((committed) => { if (committed) restore(); });
+}));
+```
+
+While that replacement is pending, nav keeps the target entry's saved snapshot
+instead of recording the departing list under it, including another traversal
+or reload before the response arrives. Call the completion immediately after the
+DOM commit, even if user input cancelled the replay, so later scroll captures
+observe the new list.
+
+Add `data-scroll-page` to a keyed region to restore it on Back/Forward and
+reload recovery while starting push and replace swaps at the top or hash
+target, without copying the departing page's position.
+
+For a traversal that proceeds to a swap, nav dispatches `ssr:nav-popstate` on
+`window` with the `PopStateEvent` as `detail`, for code that keeps its own history
+bookkeeping, such as `@k2b/ui` dialogs. Shell code outside the swapped
+column, such as a panel or a rail, misses cross-page traversals through
+`popstate` and `listenPopState()` as well; it follows them through
+`ssr:nav-popstate`. Install before islands register raw `popstate` listeners. Prefer
+`listenPopState()`, which is safe in either order. Keep history state a plain
+object or `null`: nav preserves its fields and reserves `"@k2b/ssr/nav"` for
+`{ page, position, scroll? }`. Other state values stay unchanged and unmarked;
+returning to them fetches the server page or reloads the document.
+
+While installed, nav sets `history.scrollRestoration` to `"manual"`. Uninstall
+restores the previous value for the current entry only; entries created while
+installed stay manual. The history wrappers stay installed but become
+inert. Reloads retain page identity and scroll snapshots for up to 50 entries;
+`"@k2b/ssr/nav:scroll"` is reserved in sessionStorage. bfcache returns check the
+arriving entry. Dialog-only traversals remain with the dialog history owner.
+
+After every committed swap, nav dispatches `ssr:nav-swapped` on `window` with
+`detail: { root }` for the inserted column. It fires once after islands mount,
+scroll restores, focus moves, and the title is announced, for pushes, replaces,
+Back, and Forward. Failures and document loads emit nothing. Listener errors
+do not trigger document navigation.
+
+### Protect unsaved input
+
+Call `onBeforeLeave()` while an island renders or in `onMount` to protect
+unsaved input before an in-scope link click, `swapPage()`, or a Back/Forward
+swap leaves its page:
+
+```tsx
+import { createSignal } from "solid-js";
+import { onBeforeLeave } from "@k2b/ssr/nav";
+
+export default function Draft() {
+  const [dirty, setDirty] = createSignal(false);
+  onBeforeLeave((event) => {
+    if (dirty() && !window.confirm("Discard unsaved changes?")) {
+      event.preventDefault();
+    }
+  });
+  return <form onInput={() => setDirty(true)}><textarea aria-label="Draft" /></form>;
+}
+```
+
+The check ends with its Solid owner; the returned function also removes it.
+Only islands inside the current `data-nav-root` column are asked. Shell and
+rail islands stay mounted and are not asked. Without an owner, or with an
+owner outside an island, the check applies to every swap until disposed.
+Registration does nothing on the server.
+
+Checks run synchronously in registration order. Each gets its own event with
+an absolute `url` and, for Back/Forward, a signed `delta` (negative for Back).
+The first `preventDefault()` wins; later checks are not asked. A check that
+throws allows navigation and reports the error through `reportError()`, even
+if it prevented before throwing. Return values and promises are ignored.
+
+For your own async dialog, veto first and wait for `event.restored` before
+opening it. After confirmation, clear the dirty state and retry the navigation.
+Replace the check above with this one; `askToDiscardChanges()` is your dialog:
+
+```tsx
+import { onBeforeLeave, swapPage } from "@k2b/ssr/nav";
+
+onBeforeLeave((event) => {
+  if (!dirty()) return;
+  event.preventDefault();
+  void event.restored
+    .then(() => askToDiscardChanges())
+    .then((confirmed) => {
+      if (!confirmed) return;
+      setDirty(false);
+      // A history-backed dialog replaced the forward entries: only Back can traverse again.
+      if (event.delta !== undefined && event.delta < 0) history.go(event.delta);
+      else void swapPage(event.url.href);
+    });
+});
+```
+
+`event.restored` resolves when history is back on this page's entry: right away
+for a vetoed click or `swapPage()`, after rollback for Back/Forward; it never
+rejects and stays pending if nobody vetoes.
+
+A check must not write history itself: open history-backed dialogs after
+`event.restored`; if a check writes history during Back/Forward, nav loads the
+document.
+
+A vetoed click or `swapPage()` leaves the URL, history, column, and any older
+pending swap untouched. A vetoed Back/Forward aborts a pending swap and rolls
+history back to the shown entry. Nav absorbs the vetoed and rollback
+popstates: `listenPopState()`, raw listeners registered after nav, and
+`ssr:nav-popstate` see no navigation. Popstate and Navigation API listeners
+registered before nav, such as `@k2b/ui` dialog-core, still see both; a
+multi-step vetoed Back past an open history dialog therefore closes that
+dialog. While rollback is pending, all further popstates are absorbed without
+more checks. Nav uses an absolute
+`navigation.traverseTo()` target when the departure key is available, otherwise
+`history.go()` using marker positions.
+A failed rollback reloads, unless a newer swap committed meanwhile.
+With relative rollback, a rapid second traversal can force a reload.
+If the traversal delta is unknown or zero, nav cannot roll back and asks no
+checks.
+
+Document loads never ask: native links, `data-nav-document`, out-of-scope
+URLs, missing shells, `navigateTo()`, `documentNavigate()`, and
+`refreshCurrentPath()`. Island-owned `Link` navigation with `onNavigate`,
+`navigate()`, raw history writes, and same-page popstates are not swaps.
+bfcache `pageshow` swaps, further traversals during a pending cross-page
+traversal, and fragment claims that continue one do not ask again.
+
+Nav does not run or consult `beforeunload` handlers during a swap: there is
+no API to ask them, and a synthetic event shows no dialog. `onBeforeLeave` is
+the contract for swaps. Keep `beforeunload` for document loads, such as a
+reload, a closed tab, a link outside the scope, or a swap that fails after the
+checks allowed it and loads the document.
 
 ## Error handling in islands
 
@@ -415,7 +641,8 @@ Use the same configuration in development and production. Files outside `rootDir
 - `errorFallback` replaces the presentation of the default island error boundary. Islands are protected without it; see [Error handling in islands](#error-handling-in-islands).
 - `basePath` moves SSR assets and dev endpoints under that prefix, e.g. `/docs/_ssr`.
 - Development builds emit linked source maps by default. Use `"inline"` only when a tool requires embedded maps, or `"none"` to disable them.
-- In production, all modules share a build timestamp directory (`/_ssr/<version>/<id>.js`). Relative lazy imports inherit that directory, so each module has one URL. Files stay flat on disk; adapters serve only the current build version.
+- In production, all modules share a content-hashed directory (`/_ssr/<contentHash>/<id>.js`), stable across restarts and identical builds from the same build path (lazy chunk names depend on it). Relative lazy imports inherit that directory, so each module has one URL. Files stay flat on disk; adapters serve only the current version. Deploy the whole `_ssr` directory, including `_ssr/manifest.json`, next to the server bundle.
+- The production inline loader preloads rendered islands' shared static imports after the page's stylesheets; dynamic imports stay lazy. It creates modulepreload links at runtime so the HTML preload scanner does not compete with first paint.
 - All adapters stream island assets from `Bun.file`. Production assets under the versioned path and content-hashed development chunks are immutable; stable development entries and source maps use validators for inexpensive freshness checks.
 - Production adapters serve adjacent `.br` or `.gz` files when accepted by the request, preserving the original MIME type and varying caches by `Accept-Encoding`. Generate these siblings in the application build; the adapter does not compress responses at runtime. Development always serves the original file to avoid stale compressed copies.
 

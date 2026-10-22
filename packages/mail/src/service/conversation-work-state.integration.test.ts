@@ -6,11 +6,14 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { releaseDueSnoozes } from "./collaboration";
-import type { ConnectorEnvelope, ConnectorProtocolFacts } from "./connectors";
+import { type ConnectorEnvelope, type ConnectorProtocolFacts, MAX_IMAP_LITERAL_BYTES } from "./connectors";
+import { updateConversationCollaboration } from "./conversation-assignments";
 import { refreshConversationTimeline } from "./conversation-timeline";
+import { splitConversation } from "./conversations";
+import { loadMailboxTransportFence } from "./mailbox-transport-fence";
 import { createMailbox } from "./mailboxes";
 import { createBlobReadable } from "./message-blobs";
-import { hydrateMessageFromSource } from "./message-hydration";
+import { hydrateMessageFromSource, recordMissingMessageSources, releaseExpiredHydrationClaims } from "./message-hydration";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS } from "./message-protocol";
 import { ingestEnvelope } from "./sync-runtime";
 
@@ -165,6 +168,52 @@ suite("mail conversation work-state projection", () => {
     });
     return body;
   };
+
+  test("a split gives the moved link a new transaction and link order and clears its status decision", async () => {
+    const first = envelope({
+      uid: 151,
+      messageId: `<split-xid-first-${suffix}@example.test>`,
+      inReplyTo: null,
+      from: `split-xid-${suffix}@example.test`,
+      to: "support@example.test",
+      date: new Date("2026-10-01T10:00:00.000Z"),
+    });
+    const firstId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: first });
+    const reply = envelope({
+      uid: 152,
+      messageId: `<split-xid-reply-${suffix}@example.test>`,
+      inReplyTo: first.messageId,
+      from: `split-xid-${suffix}@example.test`,
+      to: "support@example.test",
+      date: new Date("2026-10-01T10:01:00.000Z"),
+    });
+    const replyId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: reply });
+    const conversation = await conversationForMessage(firstId);
+    expect((await conversationForMessage(replyId)).id).toBe(conversation.id);
+    const [before] = await sql<{ linked_xid: string; link_seq: string }[]>`
+      UPDATE mail.conversation_messages SET status_covered = true, hydrated_revision = 1
+      WHERE message_id = ${replyId}::uuid RETURNING linked_xid::text, link_seq::text
+    `;
+    expect(before?.linked_xid).toMatch(/^\d+$/);
+    expect(before?.link_seq).toMatch(/^\d+$/);
+    const split = await splitConversation({
+      context,
+      mailboxId,
+      conversationId: conversation.id,
+      input: { messageIds: [replyId], expectedRevision: conversation.revision, reason: "Separate request", confirm: true },
+    });
+    expect(split.ok).toBe(true);
+    if (!split.ok) throw new Error(split.error.message);
+    const [after] = await sql<{ linked_xid: string; link_seq: string; status_covered: boolean | null; hydrated_revision: number | null }[]>`
+      SELECT linked_xid::text, link_seq::text, status_covered, hydrated_revision FROM mail.conversation_messages WHERE message_id = ${replyId}::uuid
+    `;
+    expect(after?.linked_xid).toMatch(/^\d+$/);
+    expect(after?.linked_xid).not.toBe(before?.linked_xid);
+    expect(after?.link_seq).toMatch(/^\d+$/);
+    expect(BigInt(after!.link_seq)).toBeGreaterThan(BigInt(before!.link_seq));
+    expect(after?.status_covered).toBeNull();
+    expect(after?.hydrated_revision).toBeNull();
+  });
 
   test("projects verified inbound, automatic, and human replies deterministically", async () => {
     const initialMessageId = `<work-state-inbound-${suffix}@example.test>`;
@@ -487,4 +536,436 @@ suite("mail conversation work-state projection", () => {
     for await (const chunk of createBlobReadable(stored!.source_blob_id)) chunks.push(Buffer.from(chunk));
     expect(Buffer.concat(chunks)).toEqual(source);
   }, 30_000);
+
+  const conversationForMessage = async (messageId: string) => {
+    const [conversation] = await sql<
+      {
+        id: string;
+        revision: number;
+        work_status: string;
+        snoozed_until: Date | string | null;
+      }[]
+    >`
+      SELECT conversation.id, conversation.revision::int AS revision, conversation.work_status, conversation.snoozed_until
+      FROM mail.conversation_messages link
+      JOIN mail.conversations conversation ON conversation.id = link.conversation_id
+      WHERE link.message_id = ${messageId}::uuid
+    `;
+    if (!conversation) throw new Error("Message was not linked to a conversation");
+    return conversation;
+  };
+
+  const decideWorkState = async (
+    messageId: string,
+    input: { completion?: "done" | "open"; workStatus?: "waiting"; snoozedUntil?: string },
+  ) => {
+    const conversation = await conversationForMessage(messageId);
+    const updated = await updateConversationCollaboration({
+      context,
+      mailboxId,
+      conversationId: conversation.id,
+      locale: "en",
+      input: { expectedRevision: conversation.revision, ...input },
+    });
+    if (!updated.ok) throw new Error(updated.error.message);
+    return updated.data;
+  };
+
+  const reconciledActivities = (messageId: string) => sql<{ id: string }[]>`
+    SELECT id FROM mail.activity_events
+    WHERE mailbox_id = ${mailboxId}::uuid
+      AND action = 'conversation.work_state_changed' AND outcome = 'reconciled'
+      AND metadata ->> 'messageId' = ${messageId}
+  `;
+
+  let terminalFailureUid = 15000;
+  const terminalFailurePair = async (key: string, decision: "done" | "waiting" | "snooze" = "done", sizeBytes = 256) => {
+    const uid = terminalFailureUid;
+    terminalFailureUid += 3;
+    const first = envelope({
+      uid,
+      messageId: `<terminal-${key}-first-${suffix}@example.test>`,
+      inReplyTo: null,
+      from: `terminal-${key}-${suffix}@example.test`,
+      to: "support@example.test",
+      date: new Date("2026-10-01T11:00:00.000Z"),
+    });
+    const firstId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: first });
+    await hydrate(firstId, [`Message-ID: ${first.messageId}`, `From: ${first.addresses.from[0]!.address}`, "To: support@example.test"]);
+    await decideWorkState(
+      firstId,
+      decision === "snooze"
+        ? { snoozedUntil: new Date(Date.now() + 60 * 60_000).toISOString() }
+        : decision === "waiting"
+          ? { workStatus: "waiting", snoozedUntil: new Date(Date.now() + 60 * 60_000).toISOString() }
+          : { completion: "done" },
+    );
+    const second = envelope({
+      uid: uid + 1,
+      messageId: `<terminal-${key}-second-${suffix}@example.test>`,
+      inReplyTo: first.messageId,
+      from: first.addresses.from[0]!.address,
+      to: "support@example.test",
+      date: new Date("2026-10-01T11:01:00.000Z"),
+    });
+    second.sizeBytes = sizeBytes;
+    const secondId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: second });
+    expect((await conversationForMessage(secondId)).id).toBe((await conversationForMessage(firstId)).id);
+    return { first, firstId, second, secondId };
+  };
+
+  const failTooLarge = async (messageId: string) => {
+    await sql`UPDATE mail.message_contents SET size_bytes = ${MAX_IMAP_LITERAL_BYTES + 1} WHERE id = ${messageId}::uuid`;
+    await expect(hydrateMessageFromSource({ messageId, source: Readable.from([]) })).rejects.toMatchObject({ code: "MESSAGE_TOO_LARGE" });
+  };
+
+  const expectTerminalReopened = async (messageId: string) => {
+    const conversation = await conversationForMessage(messageId);
+    expect(conversation.work_status).toBe("needs_action");
+    expect(conversation.snoozed_until).toBeNull();
+    expect(await reconciledActivities(messageId)).toHaveLength(1);
+  };
+
+  for (const decision of ["done", "waiting", "snooze"] as const) {
+    test(`terminal oversized inbound reopens ${decision} and repair does not repeat its activity`, async () => {
+      const { second, secondId } = await terminalFailurePair(`oversized-${decision}`, decision, MAX_IMAP_LITERAL_BYTES + 1);
+      const before = await conversationForMessage(secondId);
+      await failTooLarge(secondId);
+      await expectTerminalReopened(secondId);
+      expect((await conversationForMessage(secondId)).revision).toBe(before.revision + 1);
+      const [link] = await sql<{ hydrated_revision: number }[]>`
+        SELECT hydrated_revision::int FROM mail.conversation_messages WHERE message_id = ${secondId}::uuid
+      `;
+      expect(link?.hydrated_revision).toBe(before.revision + 1);
+      await sql`
+        UPDATE mail.message_contents SET hydration_status = 'envelope', hydration_attempt = 0, size_bytes = 256
+        WHERE id = ${secondId}::uuid
+      `;
+      await hydrate(secondId, [
+        `Message-ID: ${second.messageId}`,
+        `In-Reply-To: ${second.inReplyTo}`,
+        `From: ${second.addresses.from[0]!.address}`,
+        "To: support@example.test",
+      ]);
+      await expectTerminalReopened(secondId);
+    }, 30_000);
+  }
+
+  test("terminal failure locks the mailbox before the conversation", async () => {
+    const { secondId } = await terminalFailurePair("mailbox-lock-order");
+    const conversation = await conversationForMessage(secondId);
+    let failing: Promise<void> | undefined;
+    try {
+      await sql.begin(async (tx) => {
+        await tx`SELECT id FROM mail.mailboxes WHERE id = ${mailboxId}::uuid FOR UPDATE`;
+        const [holder] = await tx<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        if (!holder) throw new Error("Lock holder backend was not found");
+        failing = failTooLarge(secondId);
+        void failing.catch(() => undefined);
+
+        const deadline = Date.now() + 5_000;
+        let waiting = 0;
+        while (Date.now() < deadline) {
+          const [activity] = await sql<{ waiting: number }[]>`
+            SELECT count(*)::int AS waiting FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND ${holder.pid}::int = ANY(pg_blocking_pids(pid))
+          `;
+          waiting = activity?.waiting ?? 0;
+          if (waiting > 0) break;
+          await Bun.sleep(20);
+        }
+        expect(waiting).toBeGreaterThan(0);
+
+        await tx`SET LOCAL lock_timeout = '3s'`;
+        await tx`SELECT id FROM mail.conversations WHERE id = ${conversation.id}::uuid FOR UPDATE`;
+      });
+      await failing;
+    } finally {
+      await failing?.catch(() => undefined);
+    }
+    await expectTerminalReopened(secondId);
+  }, 30_000);
+
+  test("terminal missing source reopens Done only on the fifth attempt", async () => {
+    const { secondId } = await terminalFailurePair("missing-source");
+    const fence = await loadMailboxTransportFence(remoteResourceId);
+    if (!fence) throw new Error("Mailbox transport fence was not found");
+    const before = await conversationForMessage(secondId);
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      expect(await recordMissingMessageSources([secondId], fence)).toEqual([secondId]);
+      if (attempt < 5) {
+        expect(await conversationForMessage(secondId)).toEqual(before);
+        expect(await reconciledActivities(secondId)).toHaveLength(0);
+      }
+    }
+    await expectTerminalReopened(secondId);
+    expect(await recordMissingMessageSources([secondId], fence)).toEqual([]);
+    await expectTerminalReopened(secondId);
+  }, 30_000);
+
+  test("terminal expired claim reopens Done only on the last attempt", async () => {
+    const { secondId } = await terminalFailurePair("expired-claim");
+    const before = await conversationForMessage(secondId);
+    for (const attempt of [4, 5]) {
+      await sql`
+        UPDATE mail.message_contents
+        SET
+          hydration_status = 'hydrating',
+          hydration_claim_id = gen_random_uuid(),
+          hydration_claimed_at = now() - interval '20 minutes',
+          hydration_attempt = ${attempt}
+        WHERE id = ${secondId}::uuid
+      `;
+      expect(await releaseExpiredHydrationClaims()).toContainEqual({ id: secondId, mailbox_id: mailboxId });
+      if (attempt < 5) {
+        expect(await conversationForMessage(secondId)).toEqual(before);
+        expect(await reconciledActivities(secondId)).toHaveLength(0);
+      }
+    }
+    await expectTerminalReopened(secondId);
+  }, 30_000);
+
+  test("terminal source stream failure reopens Done while a retryable failure leaves it unchanged", async () => {
+    const { secondId } = await terminalFailurePair("stream-failure");
+    const before = await conversationForMessage(secondId);
+    for (const previousAttempt of [0, 4]) {
+      await sql`UPDATE mail.message_contents SET hydration_attempt = ${previousAttempt} WHERE id = ${secondId}::uuid`;
+      const error = Object.assign(new Error("Test source interrupted"), { code: "TEST_SOURCE_INTERRUPTED" });
+      const source = Readable.from(
+        (async function* () {
+          yield Buffer.from("From: sender@example.test\r\n");
+          throw error;
+        })(),
+      );
+      await expect(hydrateMessageFromSource({ messageId: secondId, source })).rejects.toBe(error);
+      if (previousAttempt === 0) {
+        expect(await conversationForMessage(secondId)).toEqual(before);
+        expect(await reconciledActivities(secondId)).toHaveLength(0);
+      }
+    }
+    await expectTerminalReopened(secondId);
+  }, 30_000);
+
+  test("an older terminal failure keeps Done and does not bump its revision", async () => {
+    const { first, secondId } = await terminalFailurePair("older-failure");
+    const older = {
+      ...first,
+      inReplyTo: first.messageId,
+      references: [first.messageId!],
+      messageId: `<terminal-older-${suffix}@example.test>`,
+      internalDate: new Date("2026-10-01T10:59:00.000Z"),
+    };
+    older.remoteRef = { ...first.remoteRef, uid: String(Number(first.remoteRef.uid) + 2) };
+    const olderId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: older });
+    expect((await conversationForMessage(olderId)).id).toBe((await conversationForMessage(secondId)).id);
+    const before = await conversationForMessage(olderId);
+    await failTooLarge(olderId);
+    expect(await conversationForMessage(olderId)).toEqual(before);
+    expect(await reconciledActivities(olderId)).toHaveLength(0);
+    const [link] = await sql<{ hydrated_revision: string | null }[]>`
+      SELECT hydrated_revision FROM mail.conversation_messages WHERE message_id = ${olderId}::uuid
+    `;
+    expect(link?.hydrated_revision).toBeNull();
+  }, 30_000);
+
+  test("a person's Done covering an unloadable reply wins without a revision bump", async () => {
+    const { secondId } = await terminalFailurePair("covered");
+    await decideWorkState(secondId, { completion: "done" });
+    const before = await conversationForMessage(secondId);
+    await failTooLarge(secondId);
+    expect(await conversationForMessage(secondId)).toEqual(before);
+    expect(await reconciledActivities(secondId)).toHaveLength(0);
+  }, 30_000);
+
+  test("terminal failure without a visible change leaves the revision and hydrated revision alone", async () => {
+    const { secondId } = await terminalFailurePair("no-op");
+    await decideWorkState(secondId, { completion: "open" });
+    const before = await conversationForMessage(secondId);
+    expect(before.work_status).toBe("needs_action");
+    await failTooLarge(secondId);
+    expect(await conversationForMessage(secondId)).toEqual(before);
+    expect(await reconciledActivities(secondId)).toHaveLength(0);
+    const [link] = await sql<{ hydrated_revision: string | null }[]>`
+      SELECT hydrated_revision FROM mail.conversation_messages WHERE message_id = ${secondId}::uuid
+    `;
+    expect(link?.hydrated_revision).toBeNull();
+  }, 30_000);
+
+  test("an older outbound load cannot override a newer terminal inbound failure", async () => {
+    const { first, secondId } = await terminalFailurePair("older-outbound");
+    const outbound = envelope({
+      uid: Number(first.remoteRef.uid) + 2,
+      messageId: `<terminal-older-outbound-${suffix}@example.test>`,
+      inReplyTo: first.messageId,
+      from: "support@example.test",
+      to: first.addresses.from[0]!.address,
+      date: new Date("2026-10-01T11:00:30.000Z"),
+    });
+    const outboundId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: outbound });
+    expect((await conversationForMessage(outboundId)).id).toBe((await conversationForMessage(secondId)).id);
+    await failTooLarge(secondId);
+    await expectTerminalReopened(secondId);
+    await hydrate(outboundId, [
+      `Message-ID: ${outbound.messageId}`,
+      `In-Reply-To: ${first.messageId}`,
+      "From: support@example.test",
+      `To: ${outbound.addresses.to[0]!.address}`,
+    ]);
+    await expectTerminalReopened(secondId);
+    expect(await reconciledActivities(outboundId)).toHaveLength(0);
+  }, 30_000);
+
+  test("reopening counts a terminally failed reply to restore Needs action", async () => {
+    const { first, secondId } = await terminalFailurePair("reopen");
+    const outbound = envelope({
+      uid: Number(first.remoteRef.uid) + 2,
+      messageId: `<terminal-reopen-outbound-${suffix}@example.test>`,
+      inReplyTo: first.messageId,
+      from: "support@example.test",
+      to: first.addresses.from[0]!.address,
+      date: new Date("2026-10-01T11:00:30.000Z"),
+    });
+    outbound.remoteRef.folderStableKey = `work-state-sent-${suffix}`;
+    const outboundId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId: sentFolderId, message: outbound });
+    expect((await conversationForMessage(outboundId)).id).toBe((await conversationForMessage(secondId)).id);
+    await hydrate(outboundId, [
+      `Message-ID: ${outbound.messageId}`,
+      `In-Reply-To: ${first.messageId}`,
+      "From: support@example.test",
+      `To: ${outbound.addresses.to[0]!.address}`,
+    ]);
+    expect((await conversationForMessage(secondId)).work_status).toBe("waiting");
+    await failTooLarge(secondId);
+    expect((await conversationForMessage(secondId)).work_status).toBe("needs_action");
+    expect((await decideWorkState(secondId, { completion: "done" })).workStatus).toBe("done");
+    await decideWorkState(secondId, { completion: "open" });
+    expect((await conversationForMessage(secondId)).work_status).toBe("needs_action");
+  }, 30_000);
+
+  test("reopening lets an envelope-only reply reopen the conversation to Needs action", async () => {
+    const ownAddress = `reopen-outbound-${suffix}@example.test`;
+    await sql`
+      INSERT INTO mail.sender_identities (short_id, mailbox_id, label, display_name, from_address, is_default, status)
+      VALUES (${newShortId()}, ${mailboxId}::uuid, 'Reopen test', 'Support', ${ownAddress}, false, 'verified')
+    `;
+    const outbound = envelope({
+      uid: 13021,
+      messageId: `<reopen-outbound-${suffix}@example.test>`,
+      inReplyTo: `<reopen-parent-${suffix}@example.test>`,
+      from: ownAddress,
+      to: "customer@example.test",
+      date: new Date("2026-10-01T10:00:00.000Z"),
+    });
+    outbound.subject = `Re: Work-state reopen ${suffix}`;
+    outbound.remoteRef.folderStableKey = `work-state-sent-${suffix}`;
+    const outboundId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId: sentFolderId, message: outbound });
+    await hydrate(outboundId, [
+      `Message-ID: ${outbound.messageId}`,
+      `In-Reply-To: ${outbound.inReplyTo}`,
+      `From: ${ownAddress}`,
+      "To: customer@example.test",
+      `Subject: ${outbound.subject}`,
+    ]);
+    expect((await conversationForMessage(outboundId)).work_status).toBe("waiting");
+    const reply = envelope({
+      uid: 13022,
+      messageId: `<reopen-inbound-${suffix}@example.test>`,
+      inReplyTo: outbound.messageId,
+      from: "customer@example.test",
+      to: ownAddress,
+      date: new Date("2026-10-01T10:01:00.000Z"),
+    });
+    reply.subject = outbound.subject;
+    const replyId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: reply });
+    expect((await conversationForMessage(replyId)).id).toBe((await conversationForMessage(outboundId)).id);
+    expect((await decideWorkState(replyId, { completion: "done" })).workStatus).toBe("done");
+    expect((await decideWorkState(replyId, { completion: "open" })).workStatus).toBe("waiting");
+    await hydrate(replyId, [
+      `Message-ID: ${reply.messageId}`,
+      `In-Reply-To: ${outbound.messageId}`,
+      "From: customer@example.test",
+      `To: ${ownAddress}`,
+      `Subject: ${reply.subject}`,
+    ]);
+    expect((await conversationForMessage(replyId)).work_status).toBe("needs_action");
+    expect(await reconciledActivities(replyId)).toHaveLength(1);
+  }, 30_000);
+
+  for (const decision of ["Done", "snooze"] as const) {
+    test(`keeps Done or a snooze that a person set before Mail hydrated the message (${decision})`, async () => {
+      const key = decision.toLowerCase();
+      const sender = `before-hydration-${key}-${suffix}@example.test`;
+      const message = envelope({
+        uid: decision === "Done" ? 101 : 102,
+        messageId: `<before-hydration-${key}-${suffix}@example.test>`,
+        inReplyTo: null,
+        from: sender,
+        to: "support@example.test",
+        date: new Date("2026-10-01T08:00:00.000Z"),
+      });
+      const messageId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message });
+      const futureSnooze = new Date(Date.now() + 60 * 60_000).toISOString();
+      const decided = await decideWorkState(messageId, decision === "Done" ? { completion: "done" } : { snoozedUntil: futureSnooze });
+      expect(decided.workStatus).toBe(decision === "Done" ? "done" : "needs_action");
+      expect(decided.snoozedUntil).toBe(decision === "Done" ? null : futureSnooze);
+      await hydrate(messageId, [
+        `Message-ID: ${message.messageId}`,
+        `From: ${sender}`,
+        "To: support@example.test",
+        `Subject: ${message.subject}`,
+      ]);
+      const conversation = await conversationForMessage(messageId);
+      expect(conversation.work_status).toBe(decided.workStatus);
+      expect(conversation.snoozed_until ? new Date(conversation.snoozed_until).toISOString() : null).toBe(decided.snoozedUntil);
+      expect(await reconciledActivities(messageId)).toEqual([]);
+    }, 30_000);
+  }
+
+  for (const decision of ["Done", "snooze"] as const) {
+    const name =
+      decision === "Done"
+        ? "reopens a Done conversation for a message that arrives after the decision"
+        : "clears a snooze for a message that arrives after the decision";
+    test(name, async () => {
+      const key = decision.toLowerCase();
+      const sender = `after-decision-${key}-${suffix}@example.test`;
+      const firstMessageId = `<after-decision-${key}-first-${suffix}@example.test>`;
+      const first = envelope({
+        uid: decision === "Done" ? 111 : 121,
+        messageId: firstMessageId,
+        inReplyTo: null,
+        from: sender,
+        to: "support@example.test",
+        date: new Date("2026-10-01T09:00:00.000Z"),
+      });
+      const firstId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: first });
+      await hydrate(firstId, [`Message-ID: ${firstMessageId}`, `From: ${sender}`, "To: support@example.test", `Subject: ${first.subject}`]);
+      const futureSnooze = new Date(Date.now() + 60 * 60_000).toISOString();
+      const decided = await decideWorkState(firstId, decision === "Done" ? { completion: "done" } : { snoozedUntil: futureSnooze });
+      expect(decided.workStatus).toBe(decision === "Done" ? "done" : "needs_action");
+      expect(decided.snoozedUntil).toBe(decision === "Done" ? null : futureSnooze);
+      const second = envelope({
+        uid: decision === "Done" ? 112 : 122,
+        messageId: `<after-decision-${key}-second-${suffix}@example.test>`,
+        inReplyTo: firstMessageId,
+        from: sender,
+        to: "support@example.test",
+        date: new Date("2026-10-01T09:01:00.000Z"),
+      });
+      const secondId = await ingestEnvelope({ db: sql, mailboxId, remoteResourceId, folderId, message: second });
+      expect((await conversationForMessage(secondId)).id).toBe((await conversationForMessage(firstId)).id);
+      await hydrate(secondId, [
+        `Message-ID: ${second.messageId}`,
+        `In-Reply-To: ${firstMessageId}`,
+        `From: ${sender}`,
+        "To: support@example.test",
+        `Subject: ${second.subject}`,
+      ]);
+      const conversation = await conversationForMessage(secondId);
+      expect(conversation.work_status).toBe("needs_action");
+      expect(conversation.snoozed_until).toBeNull();
+      expect(await reconciledActivities(secondId)).toHaveLength(1);
+    }, 30_000);
+  }
 });

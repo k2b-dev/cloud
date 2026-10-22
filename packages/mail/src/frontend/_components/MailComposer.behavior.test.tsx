@@ -1,4 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
+import { setImmediate } from "node:timers";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { contactDirectory, defineCapabilities } from "@k2b/cloud/contracts";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { z } from "zod";
 import { createDomTestHarness, type DomTestHarness } from "../../../../ui/test/dom";
@@ -6,6 +9,7 @@ import {
   composePreviewInputSchema,
   type DraftEditableContent,
   draftEditableContentInputSchema,
+  MAX_DRAFT_ATTACHMENT_BYTES,
   type MailDraft,
   type MailDraftSeed,
   materializeDraftSeedInputSchema,
@@ -83,14 +87,53 @@ const initialDraft: MailDraft = {
   updatedAt: now,
 };
 
-// Live notifications stay offline; the lease and preview requests use the same mocked HTTP boundary as other composer tests.
+const initialSeed: MailDraftSeed = {
+  id: "10000000-0000-4000-8000-000000000001",
+  mailboxId: "Box001",
+  conversationId: null,
+  intent: "new",
+  sourceMessageId: null,
+  derivedFromMessageId: null,
+  derivationKind: null,
+  content: draftEditableContentInputSchema.strip().parse(initialDraft),
+  attachments: [],
+  origin: {
+    kind: "compose",
+    input: {
+      senderIdentityId: "Send01",
+      to: [],
+      cc: [],
+      bcc: [],
+      subject: "",
+      body: "",
+      intent: "new",
+      conversationId: null,
+      sourceMessageId: null,
+      includeSourceAttachments: false,
+    },
+  },
+  createdAt: now,
+};
+
+// Sockets stay offline unless a test explicitly opens one.
 class OfflineWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
+  static instances: OfflineWebSocket[] = [];
   readyState = OfflineWebSocket.CONNECTING;
-  onopen = null;
-  onmessage = null;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: unknown }) => void) | null = null;
+  constructor() {
+    OfflineWebSocket.instances.push(this);
+  }
+  open() {
+    this.readyState = OfflineWebSocket.OPEN;
+    this.onopen?.();
+  }
+  message(frame: unknown) {
+    this.onmessage?.({ data: JSON.stringify(frame) });
+  }
   onclose = null;
   onerror = null;
   send() {}
@@ -140,6 +183,7 @@ describe("MailComposer signature choice", () => {
     Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: OfflineWebSocket });
     installPopover();
     delegateEvents(["click"]);
+    OfflineWebSocket.instances = [];
     saves = [];
     previews = [];
     globalThis.fetch = Object.assign(
@@ -163,6 +207,7 @@ describe("MailComposer signature choice", () => {
           saves.push(json.draft);
           return Response.json({ ...initialDraft, ...json.draft });
         }
+        if (path.endsWith("/drafts/Draft1") && request.method === "GET") return Response.json(initialDraft);
         if (path.endsWith("/drafts/Draft1") && request.method === "PUT") {
           const json = z
             .object({ expectedRevision: z.number().int().positive(), draft: draftEditableContentInputSchema })
@@ -197,6 +242,7 @@ describe("MailComposer signature choice", () => {
       { id: "Sign03", name: "Sales signature" },
     ],
     seed?: MailDraftSeed,
+    settle?: () => Promise<void>,
   ) => {
     const [{ default: MailComposer }, { LocaleProvider }] = await Promise.all([import("./MailComposer"), import("@k2b/ui")]);
     dispose = render(
@@ -209,7 +255,7 @@ describe("MailComposer signature choice", () => {
             signatures={{ templates, personalDefaults: [{ senderIdentityId: "Send02", templateId: "Sign03" }] }}
             initialDraft={seed ? undefined : draft}
             initialSeed={seed}
-            initialPanes={{ version: 2, root: { type: "group", items: ["editor", "preview"], active: "preview" } }}
+            initialPanes={{ version: 2, root: { type: "group", items: ["editor", "preview"], active: settle ? "editor" : "preview" } }}
             returnHref="/app/mail/Box001"
             dateConfig={{ locale, timeZone: "UTC" }}
           />
@@ -217,7 +263,8 @@ describe("MailComposer signature choice", () => {
       ),
       dom.root,
     );
-    await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
+    if (settle) await settle();
+    else await waitFor(() => Boolean(dom.root.querySelector<HTMLButtonElement>("footer button.mail-compose-action:not(:disabled)")));
   };
   const trigger = () => dom.root.querySelector<HTMLButtonElement>("footer button.mail-composer-signature")!;
   const choose = (label: string, role: "menuitemradio" | "menuitem" = "menuitemradio") => {
@@ -227,6 +274,316 @@ describe("MailComposer signature choice", () => {
     expect(option).toBeDefined();
     option!.click();
   };
+
+  test("restoring a recovery copy renews an expired own lease and retries once", async () => {
+    jest.useFakeTimers();
+    setSystemTime(Date.parse(now));
+    const flush = async () => {
+      for (let i = 0; i < 80; i++) await Promise.resolve();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
+    const { prompts, toast } = await import("@k2b/ui");
+    const form = spyOn(prompts, "form").mockResolvedValue({ recoveryCopyId: "10000000-0000-4000-8000-000000000002" });
+    const errors = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const restoredNotice = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    const fetchWithFixtures = globalThis.fetch;
+    const restoreTokens: string[] = [];
+    const operations: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        const path = new URL(request.url).pathname;
+        if (path.endsWith("/recovery-copies"))
+          return Response.json([
+            {
+              id: "10000000-0000-4000-8000-000000000002",
+              draftId: "Draft1",
+              baseRevision: 1,
+              content: { ...draftEditableContentInputSchema.strip().parse(initialDraft), body: "Recovered text" },
+              createdBy: initialDraft.createdBy,
+              createdAt: now,
+              restoredAt: null,
+              resultingRevision: null,
+            },
+          ]);
+        if (path.endsWith("/restore")) {
+          const body = await request.json();
+          restoreTokens.push(body.leaseToken);
+          operations.push("restore");
+          return restoreTokens.length === 1
+            ? Response.json({ code: "DRAFT_LEASE_NOT_OWNED", message: "Lease expired" }, { status: 409 })
+            : Response.json({ ...initialDraft, body: "Recovered text", revision: 2 });
+        }
+        if (path.endsWith("/lease") && request.method === "POST") {
+          operations.push("acquire");
+          return Response.json({
+            token: operations.length === 1 ? "expired-token" : "renewed-token",
+            holder: { kind: "user", id: "Usr001", displayName: "Ada", avatarHash: null },
+            acquiredAt: now,
+            expiresAt: now,
+          });
+        }
+        return fetchWithFixtures(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount("en", { ...initialDraft, recoveryCopyCount: 1 }, undefined, undefined, flush);
+      const recover = Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Recover changes"));
+      expect(recover).toBeDefined();
+      recover!.click();
+      await flush();
+      expect(restoreTokens).toEqual(["expired-token", "renewed-token"]);
+      expect(operations).toEqual(["acquire", "restore", "acquire", "restore"]);
+      expect(dom.root.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("Recovered text");
+      expect(errors).not.toHaveBeenCalled();
+      expect(restoredNotice).toHaveBeenCalledTimes(1);
+    } finally {
+      form.mockRestore();
+      errors.mockRestore();
+      restoredNotice.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  test("the first autosave keeps the body enabled and focused while acquiring the seed draft lease", async () => {
+    jest.useFakeTimers();
+    setSystemTime(Date.parse(now));
+    const flush = async () => {
+      for (let i = 0; i < 80; i++) await Promise.resolve();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
+    const fetchWithFixtures = globalThis.fetch;
+    let grant: ((response: Response) => void) | undefined;
+    let heartbeats = 0;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        if (request.method === "POST" && new URL(request.url).pathname.endsWith("/lease")) {
+          return new Promise<Response>((resolve) => {
+            grant = resolve;
+          });
+        }
+        if (request.method === "PUT" && new URL(request.url).pathname.endsWith("/lease")) heartbeats++;
+        return fetchWithFixtures(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount("en", initialDraft, undefined, initialSeed, flush);
+      const editor = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
+      editor.focus();
+      editor.value = "First lines";
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      jest.advanceTimersByTime(700);
+      await flush();
+      expect(saves).toHaveLength(1);
+      expect(grant).toBeDefined();
+      expect(editor.disabled).toBe(false);
+      expect(dom.document.activeElement).toBe(editor);
+      // Text typed while the lease is pending survives a reload: the materialized draft keeps its journal.
+      editor.value = "First lines and more";
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+      expect(JSON.parse(localStorage.getItem("cloud:mail:draft:Box001:Draft1") ?? "null")?.content?.body).toBe("First lines and more");
+      grant?.(
+        Response.json({
+          token: "seed-token",
+          holder: { kind: "user", id: "Usr001", displayName: "Ada", avatarHash: null },
+          acquiredAt: now,
+          expiresAt: now,
+        }),
+      );
+      await flush();
+      expect(editor.disabled).toBe(false);
+      expect(dom.document.activeElement).toBe(editor);
+      expect(editor.value).toBe("First lines and more");
+      expect(saves.map((save) => save.body)).toEqual(["First lines", "First lines and more"]);
+      jest.advanceTimersByTime(10_000);
+      await flush();
+      expect(heartbeats).toBe(1);
+      expect(saves).toHaveLength(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("an own live invalidation keeps the focused body editor enabled", async () => {
+    jest.useFakeTimers();
+    setSystemTime(Date.parse(now));
+    const flush = async () => {
+      for (let i = 0; i < 80; i++) await Promise.resolve();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
+    const fetchWithFixtures = globalThis.fetch;
+    let finishHeartbeat: ((response: Response) => void) | undefined;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost"), init);
+        if (request.method === "PUT" && new URL(request.url).pathname.endsWith("/lease")) {
+          return new Promise<Response>((resolve) => {
+            finishHeartbeat = resolve;
+          });
+        }
+        return fetchWithFixtures(request);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await mount("en", initialDraft, undefined, undefined, flush);
+      const editor = dom.root.querySelector<HTMLTextAreaElement>("textarea");
+      expect(editor).not.toBeNull();
+      expect(editor!.disabled).toBe(false);
+      editor!.focus();
+      expect(dom.document.activeElement).toBe(editor);
+      const socket = OfflineWebSocket.instances.at(-1)!;
+      socket.open();
+      socket.message({ t: "ready", id: "1", cursor: "s6t.mail.4" });
+      socket.message({ t: "event", id: "1", cursor: "s6t.mail.5", data: { conversationId: null } });
+      await flush();
+      expect(finishHeartbeat).toBeDefined();
+      expect(editor!.disabled).toBe(false);
+      expect(dom.document.activeElement).toBe(editor);
+      finishHeartbeat?.(
+        Response.json({
+          token: "local-token",
+          holder: { kind: "user", id: "Usr001", displayName: "Ada Example", avatarHash: null },
+          acquiredAt: now,
+          expiresAt: now,
+        }),
+      );
+      await flush();
+      expect(editor!.disabled).toBe(false);
+      expect(dom.document.activeElement).toBe(editor);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test("Attach files passes localized context and resolves the click-time To, Cc and Bcc snapshot lazily", async () => {
+    const files = await import("@k2b/cloud/browser/files");
+    const capabilities = await import("@k2b/cloud/capabilities");
+    const chooseFiles = spyOn(files, "chooseFiles").mockResolvedValue([]);
+    const listCatalog = spyOn(capabilities, "listCapabilityCatalog").mockResolvedValue({
+      ok: true,
+      data: {
+        protocolVersion: 2,
+        apps: [
+          {
+            appId: "customers",
+            appName: "Customers",
+            appIcon: "ti ti-users",
+            appDescription: "",
+            manifest: compileCapabilityManifest(
+              "customers",
+              defineCapabilities({
+                protocolVersion: 2,
+                queries: {
+                  "customer.match": {
+                    title: "Match customers",
+                    description: "Resolve readable customers.",
+                    openWorld: false,
+                    input: contactDirectory.resolve.input,
+                    data: contactDirectory.resolve.data,
+                    run: async () => ({ ok: false, error: { code: "INTERNAL", message: "Not called", status: 500 } }),
+                  },
+                },
+              }),
+            ),
+          },
+        ],
+        page: { hasMore: false },
+      },
+    });
+    const invoke = spyOn(capabilities, "invokeCapabilityWithDataSchema").mockResolvedValue({
+      ok: true,
+      data: { data: { items: [{ ref: { type: "customers.customer", id: "c1" }, matchedEmails: ["recipient@example.test"] }] } },
+    });
+    try {
+      await mount("de", {
+        ...initialDraft,
+        cc: [{ name: null, address: "cc@example.test" }],
+        bcc: [{ name: null, address: "bcc@example.test" }],
+      });
+      const attach = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Dateien anhängen"]');
+      expect(attach).not.toBeNull();
+      attach!.click();
+      // chooseFiles must run in the click handler, before an import or a contact lookup.
+      expect(chooseFiles).toHaveBeenCalledTimes(1);
+      expect(listCatalog).not.toHaveBeenCalled();
+      expect(invoke).not.toHaveBeenCalled();
+      const options = chooseFiles.mock.calls[0]![0]!;
+      expect(options).toMatchObject({
+        multiple: true,
+        maxBytes: MAX_DRAFT_ATTACHMENT_BYTES,
+        noMatchingFiles: "Keine passenden Dateien für diese Empfänger",
+      });
+      expect(typeof options.context).toBe("function");
+      const toInput = dom.root.querySelector<HTMLInputElement>(".mail-recipient-input input");
+      expect(toInput).not.toBeNull();
+      toInput!.value = "changed@example.test";
+      toInput!.dispatchEvent(new Event("input", { bubbles: true }));
+      toInput!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      expect(dom.root.textContent).toContain("changed@example.test");
+      if (typeof options.context !== "function") throw new Error("Missing lazy context");
+      expect(await options.context(new AbortController().signal)).toEqual({ refs: [{ type: "customers.customer", id: "c1" }] });
+      expect(invoke.mock.calls[0]![0]).toMatchObject({
+        appId: "customers",
+        capabilityId: "customer.match",
+        kind: "query",
+        input: { emails: ["recipient@example.test", "cc@example.test", "bcc@example.test"], limit: 50 },
+      });
+    } finally {
+      chooseFiles.mockRestore();
+      listCatalog.mockRestore();
+      invoke.mockRestore();
+    }
+  });
+
+  test("attachment context failures show the localized message and preserve caller cancellation", async () => {
+    const files = await import("@k2b/cloud/browser/files");
+    const capabilities = await import("@k2b/cloud/capabilities");
+    const reload = await import("@k2b/cloud/browser/reload");
+    const chooseFiles = spyOn(files, "chooseFiles").mockResolvedValue([]);
+    const listCatalog = spyOn(capabilities, "listCapabilityCatalog").mockRejectedValue(new Error("Offline"));
+    try {
+      await mount("de");
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Dateien anhängen"]')!.click();
+      const options = chooseFiles.mock.calls[0]![0]!;
+      if (typeof options.context !== "function") throw new Error("Missing lazy context");
+      await expect(options.context(new AbortController().signal)).rejects.toThrow(
+        "Die Kontakte dieser Empfänger konnten nicht nachgeschlagen werden",
+      );
+      const importOnDemand = spyOn(reload, "importOnDemand").mockResolvedValue(undefined);
+      try {
+        await expect(options.context(new AbortController().signal)).rejects.toThrow(
+          "Die Kontakte dieser Empfänger konnten nicht nachgeschlagen werden",
+        );
+        const controller = new AbortController();
+        const reason = new Error("Caller cancelled");
+        controller.abort(reason);
+        await expect(options.context(controller.signal)).rejects.toBe(reason);
+      } finally {
+        importOnDemand.mockRestore();
+      }
+    } finally {
+      chooseFiles.mockRestore();
+      listCatalog.mockRestore();
+    }
+  });
+
+  test("Attach files without recipients keeps the chooser's generic empty title", async () => {
+    const files = await import("@k2b/cloud/browser/files");
+    const chooseFiles = spyOn(files, "chooseFiles").mockResolvedValue([]);
+    try {
+      await mount("en", { ...initialDraft, to: [], cc: [], bcc: [] });
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Attach files"]')!.click();
+      expect(chooseFiles).toHaveBeenCalledTimes(1);
+      expect(chooseFiles.mock.calls[0]![0]).not.toHaveProperty("noMatchingFiles");
+    } finally {
+      chooseFiles.mockRestore();
+    }
+  });
 
   test("shows the draft choice and sends null in the next autosave and preview after No signature", async () => {
     await mount();
@@ -300,35 +657,7 @@ describe("MailComposer signature choice", () => {
   });
 
   test("keeps a seed signature clean until a change, then materializes the chosen signature", async () => {
-    const content = draftEditableContentInputSchema.strip().parse(initialDraft);
-    const seed: MailDraftSeed = {
-      id: "10000000-0000-4000-8000-000000000001",
-      mailboxId: "Box001",
-      conversationId: null,
-      intent: "new",
-      sourceMessageId: null,
-      derivedFromMessageId: null,
-      derivationKind: null,
-      content,
-      attachments: [],
-      origin: {
-        kind: "compose",
-        input: {
-          senderIdentityId: "Send01",
-          to: [],
-          cc: [],
-          bcc: [],
-          subject: "",
-          body: "",
-          intent: "new",
-          conversationId: null,
-          sourceMessageId: null,
-          includeSourceAttachments: false,
-        },
-      },
-      createdAt: now,
-    };
-    await mount("en", initialDraft, undefined, seed);
+    await mount("en", initialDraft, undefined, initialSeed);
     expect(trigger().textContent).toContain("Personal signature");
     await Bun.sleep(800);
     expect(saves).toEqual([]);

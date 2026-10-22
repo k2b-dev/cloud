@@ -1,3 +1,4 @@
+import { middleware } from "@k2b/cloud/server";
 /**
  * Capability execution history API.
  *
@@ -49,6 +50,7 @@ const storeFilter = (query: FilterQuery) => ({
 });
 
 const app = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(rateLimit())
   .use(auth.requireRole("admin"))
 

@@ -3,17 +3,20 @@ import { getProcessSync, type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { UserSchema } from "@k2b/cloud/contracts";
 import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
-import { type ExecutionIdentity, Filegate, type Node, type WriteOptions } from "@k2b/filegate";
+import { type ExecutionIdentity, Filegate, FilegateError, type Node, type WriteOptions } from "@k2b/filegate";
 import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import { bindings } from "../data/bases";
+import { ROOT_LOCK_WAIT_MS, withRootLock, withUploadLock } from "../data/operations";
 import { resolveEntryRefId } from "../data/references";
 import type { DocumentFormat } from "../documents";
 import { migrate } from "../migrate";
 import { entryRefId } from "../resource-ref";
 import { createFilesService } from ".";
+import { connectFilegate } from "./filegate-facade";
 import { createTemplateService } from "./templates";
 
 const suite = suiteFor("database", "nats");
@@ -24,6 +27,8 @@ suite("Files service and durable bindings", () => {
   let lostMoveResponse = false;
   let failMove = false;
   let leases = 0;
+  const mkdirRequests: string[] = [];
+  let beforeMkdir: ((root: string, path: string) => void) | undefined;
   const downloadRequests: unknown[] = [];
   let sessionCounter = 0;
   let versionCounter = 0;
@@ -70,11 +75,16 @@ suite("Files service and durable bindings", () => {
   >();
   const privateSession = (id: string) => sessions.get(sessionKeys.get(id)!)!;
   let reconciliations = 0;
+  let identityLookups = 0;
+  let configurationLookups = 0;
+  let rootInfoLookups = 0;
   const scopedMetadata: Array<{ operation: string; path: string }> = [];
   let config = {
+    activityRetentionDays: 365,
     url: "http://filegate:4000",
     token: "backend-test-secret",
     tokenConfigured: true,
+    unreadable: false,
     cloud: {
       autoCreate: false,
       autoArchive: true,
@@ -227,7 +237,8 @@ suite("Files service and durable bindings", () => {
           if (!allowed(node, 1)) return Response.json({ error: "forbidden" }, { status: 403 });
         }
       }
-      if (!operation)
+      if (!operation) {
+        rootInfoLookups++;
         return Response.json({
           name: root,
           managed: root === "cloud",
@@ -241,6 +252,7 @@ suite("Files service and durable bindings", () => {
           available: 1_000_000,
           capacity: 2_000_000,
         });
+      }
       if (operation === "content")
         return nodes.has(`${root}:${req.searchParams.get("path")}`)
           ? new Response(contents.get(`${root}:${req.searchParams.get("path")}`) ?? "")
@@ -419,7 +431,9 @@ suite("Files service and durable bindings", () => {
         .parse(init?.body ? JSON.parse(String(init.body)) : {});
       if (operation === "directories" && init?.method === "POST") {
         const target = body.path!;
-        if (nodes.has(`${root}:${target}`)) return Response.json({ error: "already_exists", message: "exists" }, { status: 409 });
+        mkdirRequests.push(`${root}:${target}`);
+        beforeMkdir?.(root, target);
+        if (nodes.has(`${root}:${target}`)) return Response.json({ error: "path_conflict", message: "exists" }, { status: 409 });
         const made = directory(root, target, body.ownership?.uid ?? 0, body.ownership?.gid ?? 0, body.ownership?.dirMode ?? "0755");
         if (body.acl?.default) defaults.set(`${root}:${target}`, body.acl.default);
         return Response.json(made);
@@ -628,6 +642,10 @@ suite("Files service and durable bindings", () => {
   const service = createFilesService({
     identities: {
       ...accountIdentities,
+      async self(...args: Parameters<typeof accountIdentities.self>) {
+        identityLookups++;
+        return accountIdentities.self(...args);
+      },
       async reconcile(...args: Parameters<typeof accountIdentities.reconcile>) {
         reconciliations++;
         return accountIdentities.reconcile(...args);
@@ -638,15 +656,20 @@ suite("Files service and durable bindings", () => {
       return resolveDisplayNames(entries);
     },
     bindings,
-    readConfiguration: async () => config,
+    readConfiguration: async () => {
+      configurationLookups++;
+      return config;
+    },
     writeConfiguration: async (input) => {
-      config = { ...input, token: input.token || config.token, tokenConfigured: true };
+      config = { ...input, token: input.token || config.token, tokenConfigured: true, unreadable: false };
+    },
+    resetConfiguration: async () => {
+      throw new Error("Unexpected configuration reset");
     },
     publicOrigin: async () => "https://cloud.test",
     userById: async (id: string) => users.get(id) ?? null,
     transfer: transport,
-    connect: (configuration) =>
-      new Filegate({ baseUrl: configuration.url, transferBaseUrl: configuration.url, token: configuration.token, fetch: transport }),
+    connect: (configuration) => connectFilegate(configuration, transport),
   });
   /** WOPI resolves users by id; the test keeps every actor it created. */
   const users = new Map<string, Extract<RequestActor, { kind: "user" }>["user"]>();
@@ -703,12 +726,12 @@ suite("Files service and durable bindings", () => {
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await sql`DO $$ BEGIN CREATE TYPE auth.permission_level AS ENUM ('none','read','write','admin'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid, group_id uuid, service_account_id uuid, authenticated_only boolean NOT NULL DEFAULT false, permission auth.permission_level NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
     await migrate();
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
     await sql`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await sql`CREATE SCHEMA IF NOT EXISTS audit`.simple();
     await sql`CREATE TABLE IF NOT EXISTS audit.events(id bigserial primary key,action text,outcome text,actor_user_id uuid,actor_uid text,actor_provider text,actor_roles text[],target_type text,target_id text,target_label text,target_provider text,reason text,error_code text,error_message text,request_id text,metadata jsonb)`.simple();
-    await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
     await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS avatar_hash text`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.user_posix(user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,managed_by text,uid_number integer,primary_gid_number integer,primary_group_id uuid,home_directory text,login_shell text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.groups(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text,provider text,gid_number integer)`.simple();
@@ -722,6 +745,8 @@ suite("Files service and durable bindings", () => {
   });
   beforeEach(async () => {
     ipaIndexed = false;
+    mkdirRequests.length = 0;
+    beforeMkdir = undefined;
     executions.length = 0;
     sessions.clear();
     scopedMetadata.length = 0;
@@ -756,6 +781,9 @@ suite("Files service and durable bindings", () => {
     leases = 0;
     downloadRequests.length = 0;
     reconciliations = 0;
+    identityLookups = 0;
+    configurationLookups = 0;
+    rootInfoLookups = 0;
     displayNameLookups.length = 0;
     for (const root of ["cloud", "freeipa"]) {
       directory(root, ".", 0, 0, "0755");
@@ -767,21 +795,21 @@ suite("Files service and durable bindings", () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/report", 1001, 2001, "0640", false);
-    const bases = await service.bases(actor);
+    const bases = await service.bases(testCall(actor));
     expect(bases.items[0]?.status).toBe("existing");
     const baseId = bases.items[0]!.id;
-    const listed = await service.list(actor, { baseId });
+    const listed = await service.list(testCall(actor), { baseId });
     expect(listed.items[0]?.name).toBe("report");
-    expect((await service.download(actor, { baseId, path: "report" })).method).toBe("GET");
+    expect((await service.download(testCall(actor), { baseId, path: "report" })).method).toBe("GET");
     expect(leases).toBe(1);
     expect(downloadRequests).toEqual([{ path: "users/alice/report", expiresIn: 60, fileName: "report" }]);
-    await expect(service.download(actor, { baseId, path: "" })).rejects.toMatchObject({ code: "not_file" });
+    await expect(service.download(testCall(actor), { baseId, path: "" })).rejects.toMatchObject({ code: "not_file" });
     expect(leases).toBe(1);
     directory("freeipa", "users/alice/report", 999, 999, "0600", false);
-    await expect(service.download(actor, { baseId, path: "report" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.download(testCall(actor), { baseId, path: "report" })).rejects.toMatchObject({ code: "forbidden" });
     expect(leases).toBe(1);
     directory("freeipa", "users/alice", 1001, 2001, "0600");
-    await expect(service.download(actor, { baseId, path: "report" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.download(testCall(actor), { baseId, path: "report" })).rejects.toMatchObject({ code: "forbidden" });
   });
   test("indexed FreeIPA search uses Unix execution, rejects unreadable trees, hides trash and reports scan limits", async () => {
     const actor = await user("alice", "ipa");
@@ -792,69 +820,288 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Private/secret-report.txt", 999, 999, "0600", false);
     directory("freeipa", "users/alice/trash");
     directory("freeipa", "users/alice/trash/old-report.txt", 1001, 2001, "0640", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     ipaIndexed = true;
-    await expect(service.search(actor, { baseId, q: "report", groupFolders: false })).rejects.toMatchObject({ status: 403 });
+    await expect(service.search(testCall(actor), { baseId, q: "report", groupFolders: false })).rejects.toMatchObject({ status: 403 });
     nodes.delete("freeipa:users/alice/Private");
     nodes.delete("freeipa:users/alice/Private/secret-report.txt");
-    const result = await service.search(actor, { baseId, q: "report", groupFolders: false });
+    const result = await service.search(testCall(actor), { baseId, q: "report", groupFolders: false });
     expect(executions.filter((item) => item.operation === "search").every((item) => item.source !== null)).toBe(true);
     expect(result.query).toBe("report");
     expect(result.items.map((item) => item.path)).toEqual(["Reports", "Reports/q3-report.pdf"]);
-    expect((await service.search(actor, { baseId, path: "Reports", q: "REPORT" })).items).toHaveLength(1);
-    await expect(service.search(actor, { baseId, path: "trash", q: "old" })).rejects.toMatchObject({ code: "reserved_path" });
-    await expect(service.search(actor, { baseId, path: "Private", q: "secret" })).rejects.toMatchObject({ status: 404 });
+    expect((await service.search(testCall(actor), { baseId, path: "Reports", q: "REPORT" })).items).toHaveLength(1);
+    await expect(service.search(testCall(actor), { baseId, path: "trash", q: "old" })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.search(testCall(actor), { baseId, path: "Private", q: "secret" })).rejects.toMatchObject({ status: 404 });
     for (let i = 0; i < 10_001; i++) directory("freeipa", `users/alice/Reports/bulk-${i}.txt`, 1001, 2001, "0640", false);
-    await expect(service.search(actor, { baseId, path: "Reports", q: "bulk" })).rejects.toMatchObject({ code: "search_limited" });
+    await expect(service.search(testCall(actor), { baseId, path: "Reports", q: "bulk" })).rejects.toMatchObject({ code: "search_limited" });
   });
   test("global listing and search sorting filter before pagination and directory grouping crosses page boundaries", async () => {
     const actor = await user("browse", "local", true);
     config.cloud.autoCreate = true;
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     for (let index = 0; index < 61; index++) {
       directory("cloud", `users/browse/z-folder-${String(index).padStart(2, "0")}`);
       const file = directory("cloud", `users/browse/a-file-${String(index).padStart(2, "0")}.txt`, 1001, 2001, "0600", false);
       file.size = index;
       file.modified = new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString();
     }
-    const first = await service.list(actor, { baseId });
+    const first = await service.list(testCall(actor), { baseId });
     expect(first.items).toHaveLength(50);
     expect(first.items.every((item) => item.directory)).toBe(true);
-    const second = await service.list(actor, { baseId, after: first.next! });
+    const second = await service.list(testCall(actor), { baseId, after: first.next! });
     expect(second.items).toHaveLength(61);
     expect(second.items.slice(0, 11).every((item) => item.directory)).toBe(true);
     expect(second.items.slice(11).every((item) => !item.directory)).toBe(true);
-    const third = await service.list(actor, { baseId, after: second.next! });
+    const third = await service.list(testCall(actor), { baseId, after: second.next! });
     expect(third.items).toHaveLength(11);
     expect(third.items.every((item) => !item.directory)).toBe(true);
     expect(third.next).toBeNull();
-    const mixed = await service.list(actor, { baseId, groupFolders: false, sort: "name" });
+    const mixed = await service.list(testCall(actor), { baseId, groupFolders: false, sort: "name" });
     expect(mixed.items[0]?.name).toBe("a-file-00.txt");
-    const sorted = await service.search(actor, { baseId, q: "file", type: "files", sort: "size", order: "desc" });
+    const sorted = await service.search(testCall(actor), { baseId, q: "file", type: "files", sort: "size", order: "desc" });
     expect(sorted.items.map((item) => item.size)).toEqual(Array.from({ length: 50 }, (_, index) => 60 - index));
-    const more = await service.search(actor, { baseId, q: "file", type: "files", sort: "size", order: "desc", after: sorted.next! });
+    const more = await service.search(testCall(actor), {
+      baseId,
+      q: "file",
+      type: "files",
+      sort: "size",
+      order: "desc",
+      after: sorted.next!,
+    });
     expect(more.items.map((item) => item.size)).toEqual(Array.from({ length: 11 }, (_, index) => 10 - index));
-    await expect(service.list(actor, { baseId, after: first.next!, sort: "modified" })).rejects.toMatchObject({ code: "cursor_invalid" });
+    await expect(service.list(testCall(actor), { baseId, after: first.next!, sort: "modified" })).rejects.toMatchObject({
+      code: "cursor_invalid",
+    });
   });
   test("mkdir requires write access to the parent, keeps user ownership and rejects reserved or existing paths", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/ReadOnly", 999, 2001, "0750");
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const created = await service.mkdir(actor, { baseId, path: "Projects" });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const created = await service.mkdir(testCall(actor), { baseId, path: "Projects" });
     expect(created.entry).toMatchObject({ name: "Projects", path: "Projects", directory: true });
     expect(nodes.get("freeipa:users/alice/Projects")).toMatchObject({ uid: 1001, gid: 2001, mode: "0700" });
-    expect((await service.mkdir(actor, { baseId, path: "Projects/2026" })).entry.path).toBe("Projects/2026");
-    await expect(service.mkdir(actor, { baseId, path: "Projects" })).rejects.toMatchObject({ status: 409 });
-    await expect(service.mkdir(actor, { baseId, path: "trash" })).rejects.toMatchObject({ code: "reserved_path" });
-    await expect(service.mkdir(actor, { baseId, path: "trash/keep" })).rejects.toMatchObject({ code: "reserved_path" });
-    await expect(service.mkdir(actor, { baseId, path: "ReadOnly/new" })).rejects.toMatchObject({ code: "forbidden" });
-    await expect(service.mkdir(actor, { baseId, path: "Missing/new" })).rejects.toMatchObject({ code: "not_found" });
+    expect((await service.mkdir(testCall(actor), { baseId, path: "Projects/2026" })).entry.path).toBe("Projects/2026");
+    await expect(service.mkdir(testCall(actor), { baseId, path: "Projects" })).rejects.toMatchObject({ status: 409 });
+    await expect(service.mkdir(testCall(actor), { baseId, path: "trash" })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.mkdir(testCall(actor), { baseId, path: "trash/keep" })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.mkdir(testCall(actor), { baseId, path: "ReadOnly/new" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.mkdir(testCall(actor), { baseId, path: "Missing/new" })).rejects.toMatchObject({ code: "not_found" });
     const admin = await user("admin", "local", true);
     config.cloud.autoCreate = true;
-    const cloudBase = (await service.bases(admin)).items.find((base) => base.area === "cloud")!.id;
-    await service.mkdir(admin, { baseId: cloudBase, path: "Notes" });
+    const cloudBase = (await service.bases(testCall(admin))).items.find((base) => base.area === "cloud")!.id;
+    await service.mkdir(testCall(admin), { baseId: cloudBase, path: "Notes" });
     expect(nodes.get("cloud:users/admin/Notes")).toMatchObject({ mode: "0700" });
+  });
+  test("mkdirs orders and deduplicates nested folders and siblings, and reuses existing folders", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Testdaten");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const result = await service.mkdirs(testCall(actor), {
+      baseId,
+      paths: ["Testdaten/Test1", "Testdaten", "Testdaten/Test2", "Testdaten/Test1", "Testdaten/Test1/Child"],
+      dryRun: false,
+    });
+    expect(result.results.map(({ path, state }) => ({ path, state }))).toEqual([
+      { path: "Testdaten", state: "existing" },
+      { path: "Testdaten/Test1", state: "created" },
+      { path: "Testdaten/Test2", state: "created" },
+      { path: "Testdaten/Test1/Child", state: "created" },
+    ]);
+    expect(result.results.every((item) => item.entry?.directory)).toBe(true);
+    expect(mkdirRequests).toEqual([
+      "freeipa:users/alice/Testdaten/Test1",
+      "freeipa:users/alice/Testdaten/Test2",
+      "freeipa:users/alice/Testdaten/Test1/Child",
+    ]);
+    expect(nodes.get("freeipa:users/alice/Testdaten/Test1")).toMatchObject({ uid: 1001, gid: 2001, mode: "0700" });
+  });
+  test("mkdirs stops at a file conflict, preserving earlier creations and skipping the rest", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/File", 1001, 2001, "0600", false);
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const result = await service.mkdirs(testCall(actor), { baseId, paths: ["Created", "File", "Later", "File/Child"], dryRun: false });
+    expect(result.results).toMatchObject([
+      { path: "Created", state: "created" },
+      { path: "File", state: "failed", error: "path_conflict" },
+      { path: "Later", state: "skipped" },
+      { path: "File/Child", state: "skipped" },
+    ]);
+    expect(mkdirRequests).toEqual(["freeipa:users/alice/Created"]);
+    expect(nodes.has("freeipa:users/alice/Later")).toBe(false);
+  });
+  test("mkdirs authorizes the base once per request for multiple paths, including dry runs", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Existing");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    for (const dryRun of [true, false]) {
+      const before = identityLookups;
+      const configBefore = configurationLookups;
+      const infoBefore = rootInfoLookups;
+      const result = await service.mkdirs(testCall(actor), { baseId, paths: ["Existing", "New", "Sibling", "New/Child"], dryRun });
+      expect(result.results.map((item) => item.state)).toEqual([
+        "existing",
+        dryRun ? "planned" : "created",
+        dryRun ? "planned" : "created",
+        dryRun ? "planned" : "created",
+      ]);
+      expect(identityLookups - before).toBe(1);
+      expect(configurationLookups - configBefore).toBe(1);
+      expect(rootInfoLookups - infoBefore).toBe(1);
+    }
+  });
+  test("mkdirs reuses folders in read-only parents, but cannot create new siblings there", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/ReadOnly", 999, 2001, "0750");
+    directory("freeipa", "users/alice/ReadOnly/Existing");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const result = await service.mkdirs(testCall(actor), {
+      baseId,
+      paths: ["ReadOnly/Existing", "ReadOnly/New", "ReadOnly/Later"],
+      dryRun: false,
+    });
+    expect(result.results).toMatchObject([
+      { state: "existing", entry: { path: "ReadOnly/Existing" } },
+      { state: "failed", error: "create_forbidden" },
+      { state: "skipped" },
+    ]);
+    await expect(service.mkdir(testCall(actor), { baseId, path: "ReadOnly/New" })).rejects.toMatchObject({
+      code: "forbidden",
+      status: 403,
+    });
+    expect(mkdirRequests).toEqual([]);
+    expect(nodes.has("freeipa:users/alice/ReadOnly/New")).toBe(false);
+  });
+  test("mkdirs dry run checks independent paths, plans descendants, skips failed branches, and never creates", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Existing");
+    directory("freeipa", "users/alice/File", 1001, 2001, "0600", false);
+    directory("freeipa", "users/alice/ReadOnly", 999, 2001, "0750");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const before = [...nodes];
+    const result = await service.mkdirs(testCall(actor), {
+      baseId,
+      paths: [
+        "Existing",
+        "File",
+        "New",
+        "ReadOnly/Denied",
+        "File/Child",
+        "New/Child",
+        "Existing/Child",
+        "ReadOnly/Denied/Child",
+        "File/Child/Grandchild",
+        "New/Child/Grandchild",
+      ],
+      dryRun: true,
+    });
+    expect(result.results).toMatchObject([
+      { path: "Existing", state: "existing" },
+      { path: "File", state: "failed", error: "path_conflict" },
+      { path: "New", state: "planned" },
+      { path: "ReadOnly/Denied", state: "failed", error: "create_forbidden" },
+      { path: "File/Child", state: "skipped" },
+      { path: "New/Child", state: "planned" },
+      { path: "Existing/Child", state: "planned" },
+      { path: "ReadOnly/Denied/Child", state: "skipped" },
+      { path: "File/Child/Grandchild", state: "skipped" },
+      { path: "New/Child/Grandchild", state: "planned" },
+    ]);
+    expect([...nodes]).toEqual(before);
+    expect(mkdirRequests).toEqual([]);
+    for (const path of ["New/Child", "File/Child", "ReadOnly/Denied/Child", "New/Child/Grandchild"])
+      expect(scopedMetadata.some((item) => item.path === `users/alice/${path}`)).toBe(false);
+  });
+  test("mkdirs keeps read denial on a parent distinct from create denial", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Unreadable", 999, 2001, "0710");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    for (const dryRun of [true, false])
+      expect((await service.mkdirs(testCall(actor), { baseId, paths: ["Unreadable/New"], dryRun })).results).toMatchObject([
+        { path: "Unreadable/New", state: "failed", error: "forbidden" },
+      ]);
+    expect(mkdirRequests).toEqual([]);
+  });
+  test("mkdirs reports mapped Filegate errors and unresolved failures", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    for (const [error, code] of [
+      [new FilegateError(403, "permission_denied", "denied"), "forbidden"],
+      [new FilegateError(409, "conflict", "conflict"), "operation_conflict"],
+      [new Error("connection lost"), "operation_unresolved"],
+    ] as const) {
+      beforeMkdir = () => {
+        throw error;
+      };
+      expect((await service.mkdirs(testCall(actor), { baseId, paths: ["New", "Later"], dryRun: false })).results).toMatchObject([
+        { path: "New", state: "failed", error: code },
+        { path: "Later", state: "skipped" },
+      ]);
+      expect(nodes.has("freeipa:users/alice/New")).toBe(false);
+      expect(nodes.has("freeipa:users/alice/Later")).toBe(false);
+    }
+  });
+  test("mkdirs rejects invalid or reserved paths before any effect and never adds unrequested ancestors", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    for (const path of ["", "../Bad", "A//B", "A/.filegate", "trash/Bad", "A\\B", "A\x00B", "a".repeat(4097)]) {
+      await expect(service.mkdirs(testCall(actor), { baseId, paths: ["Good", path], dryRun: false })).rejects.toMatchObject({
+        code: path.startsWith("trash") ? "reserved_path" : "invalid_path",
+      });
+      expect(nodes.has("freeipa:users/alice/Good")).toBe(false);
+    }
+    const result = await service.mkdirs(testCall(actor), { baseId, paths: ["Missing/Child", "Other/Child"], dryRun: false });
+    expect(result.results).toMatchObject([{ state: "failed", error: "not_found" }, { state: "skipped" }]);
+    expect(mkdirRequests).toEqual([]);
+    await expect(
+      service.mkdirs(testCall(actor), { baseId, paths: Array.from({ length: 101 }, (_, i) => `F${i}`), dryRun: false }),
+    ).rejects.toMatchObject({ code: "invalid_selection" });
+  });
+  test("mkdirs validates each segment's UTF-8 byte length before any effect", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    for (const dryRun of [true, false]) {
+      for (const path of ["é".repeat(128), `Parent/${"é".repeat(128)}/Child`])
+        await expect(service.mkdirs(testCall(actor), { baseId, paths: ["Good", path], dryRun })).rejects.toMatchObject({
+          code: "invalid_path",
+        });
+      expect(nodes.has("freeipa:users/alice/Good")).toBe(false);
+      expect(mkdirRequests).toEqual([]);
+    }
+    const path = "é".repeat(127);
+    expect((await service.mkdirs(testCall(actor), { baseId, paths: [path], dryRun: false })).results).toMatchObject([
+      { path, state: "created", entry: { path } },
+    ]);
+    expect(mkdirRequests).toEqual([`freeipa:users/alice/${path}`]);
+  });
+  test("mkdirs rechecks a concurrent path conflict and reuses only a folder", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    beforeMkdir = (root, path) => {
+      directory(root, path);
+    };
+    const before = identityLookups;
+    expect((await service.mkdirs(testCall(actor), { baseId, paths: ["Concurrent"], dryRun: false })).results).toMatchObject([
+      { state: "existing", entry: { path: "Concurrent" } },
+    ]);
+    expect(identityLookups - before).toBe(1);
+    beforeMkdir = (root, path) => {
+      directory(root, path, 1001, 2001, "0600", false);
+    };
+    expect((await service.mkdirs(testCall(actor), { baseId, paths: ["File", "Later"], dryRun: false })).results).toMatchObject([
+      { state: "failed", error: "path_conflict" },
+      { state: "skipped" },
+    ]);
   });
   test("uploads open a bound Filegate session and publish only after the owner commits a complete transfer", async () => {
     const actor = await user("alice", "ipa");
@@ -862,8 +1109,8 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Reports");
     directory("freeipa", "users/alice/existing.txt", 1001, 2001, "0640", false);
     directory("freeipa", "users/alice/ReadOnly", 999, 2001, "0750");
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const opened = await service.upload(actor, {
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const opened = await service.upload(testCall(actor), {
       idempotencyKey: crypto.randomUUID(),
       baseId,
       path: "Reports/new.txt",
@@ -877,16 +1124,16 @@ suite("Files service and durable bindings", () => {
       url: `http://localhost:4000/v1/direct/${sessionKeys.get(opened.id)}.renewed`,
     });
     expect(privateSession(opened.id)?.ownership).toEqual({ uid: 1001, gid: 2001, mode: "0600" });
-    await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_incomplete" });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_incomplete" });
     privateSession(opened.id)!.received = 12;
-    expect((await service.uploadLease(actor, { baseId, id: opened.id })).url).toContain("renewed");
-    const committed = await service.commitUpload(actor, { baseId, id: opened.id });
+    expect((await service.uploadLease(testCall(actor), { baseId, id: opened.id })).url).toContain("renewed");
+    const committed = await service.commitUpload(testCall(actor), { baseId, id: opened.id });
     expect(committed.entry).toMatchObject({ path: "Reports/new.txt", size: 12, directory: false });
     expect(nodes.get("freeipa:users/alice/Reports/new.txt")).toMatchObject({ uid: 1001, gid: 2001, mode: "0600" });
     // Repeating the commit is idempotent and no longer talks to Filegate.
     sessions.delete(sessionKeys.get(opened.id)!);
-    expect((await service.commitUpload(actor, { baseId, id: opened.id })).entry.path).toBe("Reports/new.txt");
-    expect(await service.capabilityUploadStatus(actor, { baseId, id: opened.id })).toMatchObject({
+    expect((await service.commitUpload(testCall(actor), { baseId, id: opened.id })).entry.path).toBe("Reports/new.txt");
+    expect(await service.capabilityUploadStatus(testCall(actor), { baseId, id: opened.id })).toMatchObject({
       state: "completed",
       entry: { path: "Reports/new.txt" },
     });
@@ -896,16 +1143,16 @@ suite("Files service and durable bindings", () => {
         cancelled = true;
       },
     });
-    expect((await service.capabilityUpload(actor, { baseId, id: opened.id }, replayBody, new AbortController().signal)).entry.path).toBe(
-      "Reports/new.txt",
-    );
+    expect(
+      (await service.capabilityUpload(testCall(actor), { baseId, id: opened.id }, replayBody, new AbortController().signal)).entry.path,
+    ).toBe("Reports/new.txt");
     expect(cancelled).toBe(true);
-    await expect(service.uploadLease(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_closed" });
+    await expect(service.uploadLease(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_closed" });
     // Existing names are only replaced when the client asks for it.
     await expect(
-      service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "existing.txt", size: 1, onConflict: "error" }),
+      service.upload(testCall(actor), { idempotencyKey: crypto.randomUUID(), baseId, path: "existing.txt", size: 1, onConflict: "error" }),
     ).rejects.toMatchObject({ status: 409 });
-    const replace = await service.upload(actor, {
+    const replace = await service.upload(testCall(actor), {
       idempotencyKey: crypto.randomUUID(),
       baseId,
       path: "existing.txt",
@@ -914,26 +1161,128 @@ suite("Files service and durable bindings", () => {
     });
     expect(replace.path).toBe("existing.txt");
     await expect(
-      service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "Reports", size: 1, onConflict: "overwrite" }),
+      service.upload(testCall(actor), { idempotencyKey: crypto.randomUUID(), baseId, path: "Reports", size: 1, onConflict: "overwrite" }),
     ).rejects.toMatchObject({ code: "not_file" });
     await expect(
-      service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "ReadOnly/x.txt", size: 1, onConflict: "error" }),
+      service.upload(testCall(actor), {
+        idempotencyKey: crypto.randomUUID(),
+        baseId,
+        path: "ReadOnly/x.txt",
+        size: 1,
+        onConflict: "error",
+      }),
     ).rejects.toMatchObject({ code: "forbidden" });
     await expect(
-      service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "trash/x.txt", size: 1, onConflict: "error" }),
+      service.upload(testCall(actor), { idempotencyKey: crypto.randomUUID(), baseId, path: "trash/x.txt", size: 1, onConflict: "error" }),
     ).rejects.toMatchObject({ code: "reserved_path" });
     await expect(
-      service.upload(actor, { idempotencyKey: crypto.randomUUID(), baseId, path: "huge.bin", size: 5_000_000, onConflict: "error" }),
+      service.upload(testCall(actor), {
+        idempotencyKey: crypto.randomUUID(),
+        baseId,
+        path: "huge.bin",
+        size: 5_000_000,
+        onConflict: "error",
+      }),
     ).rejects.toMatchObject({ code: "insufficient_space" });
     // Another user cannot commit, renew or abort a session they did not open.
     const bob = await user("bob", "ipa");
     directory("freeipa", "users/bob");
-    await expect(service.commitUpload(bob, { baseId, id: replace.id })).rejects.toMatchObject({ code: "not_found" });
-    await expect(service.abortUpload(bob, { baseId, id: replace.id })).rejects.toMatchObject({ code: "not_found" });
-    await service.abortUpload(actor, { baseId, id: replace.id });
+    await expect(service.commitUpload(testCall(bob), { baseId, id: replace.id })).rejects.toMatchObject({ code: "not_found" });
+    await expect(service.abortUpload(testCall(bob), { baseId, id: replace.id })).rejects.toMatchObject({ code: "not_found" });
+    await service.abortUpload(testCall(actor), { baseId, id: replace.id });
     expect(privateSession(replace.id)?.state).toBe("aborted");
-    await expect(service.commitUpload(actor, { baseId, id: replace.id })).rejects.toMatchObject({ code: "upload_closed" });
-    await service.abortUpload(actor, { baseId, id: replace.id });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: replace.id })).rejects.toMatchObject({ code: "upload_closed" });
+    await service.abortUpload(testCall(actor), { baseId, id: replace.id });
+  });
+  test("private upload commits wait for a root lock released within the budget", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const upload = await service.upload(testCall(actor), {
+      baseId,
+      path: "waiting.txt",
+      size: 4,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    privateSession(upload.id).received = 4;
+    const entered = Promise.withResolvers<void>();
+    const holder = withRootLock("freeipa", async () => {
+      entered.resolve();
+      await Bun.sleep(300);
+    });
+    try {
+      await entered.promise;
+      expect((await service.commitUpload(testCall(actor), { baseId, id: upload.id })).entry).toMatchObject({
+        path: "waiting.txt",
+        size: 4,
+      });
+      expect(nodes.has("freeipa:users/alice/waiting.txt")).toBe(true);
+    } finally {
+      await holder;
+    }
+  });
+  test("private upload commits answer busy only after the five-second root lock wait", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const upload = await service.upload(testCall(actor), {
+      baseId,
+      path: "busy.txt",
+      size: 4,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    privateSession(upload.id).received = 4;
+    await withRootLock("freeipa", async () => {
+      const started = performance.now();
+      await expect(service.commitUpload(testCall(actor), { baseId, id: upload.id })).rejects.toMatchObject({
+        code: "operation_busy",
+        status: 503,
+      });
+      expect(performance.now() - started).toBeGreaterThanOrEqual(ROOT_LOCK_WAIT_MS - 100);
+      expect(performance.now() - started).toBeLessThan(ROOT_LOCK_WAIT_MS + 2_000);
+      expect(nodes.has("freeipa:users/alice/busy.txt")).toBe(false);
+      expect(privateSession(upload.id).state).toBe("open");
+    });
+  }, 15_000);
+  test("capability uploads answer busy immediately without consuming the body when their upload lock is held", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const upload = await service.upload(testCall(actor), {
+      baseId,
+      path: "busy-capability.txt",
+      size: 4,
+      onConflict: "error",
+      idempotencyKey: crypto.randomUUID(),
+    });
+    let consumed = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          consumed = true;
+          controller.enqueue(new TextEncoder().encode("1234"));
+          controller.close();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    try {
+      await withUploadLock(upload.id, async () => {
+        const started = performance.now();
+        await expect(
+          service.capabilityUpload(testCall(actor), { baseId, id: upload.id }, body, new AbortController().signal),
+        ).rejects.toMatchObject({
+          code: "operation_busy",
+          status: 409,
+        });
+        expect(performance.now() - started).toBeLessThan(1_000);
+        expect(consumed).toBe(false);
+      });
+    } finally {
+      await body.cancel();
+    }
   });
   test("file chooser pages show readable children per base and path, and saves create once and conflict by name", async () => {
     const actor = await user("alice", "ipa");
@@ -945,53 +1294,67 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Private", 999, 999, "0700");
     directory("freeipa", "users/alice/ReadOnly", 999, 2001, "0750");
     directory("freeipa", "users/alice/trash");
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const ref = (path: string) => entryRefId(baseId, path)!;
 
-    const top = await service.folder(actor, { id: ref(""), pageSize: 50 });
+    const top = await service.folder(testCall(actor), { id: ref(""), pageSize: 50 });
     expect(top).toMatchObject({ writable: true, next: null });
     // Unreadable folders and the trash never appear; readable ones do, even without write access.
     expect(top.items.map((item) => item.name)).toEqual(["ReadOnly", "Reports"]);
-    expect((await service.folder(actor, { id: ref("ReadOnly"), pageSize: 50 })).writable).toBe(false);
-    await expect(service.folder(actor, { id: ref("Private"), pageSize: 50 })).rejects.toMatchObject({ code: "forbidden" });
-    await expect(service.folder(actor, { id: ref("Reports/q3.pdf"), pageSize: 50 })).rejects.toMatchObject({ code: "not_directory" });
+    expect((await service.folder(testCall(actor), { id: ref("ReadOnly"), pageSize: 50 })).writable).toBe(false);
+    await expect(service.folder(testCall(actor), { id: ref("Private"), pageSize: 50 })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.folder(testCall(actor), { id: ref("Reports/q3.pdf"), pageSize: 50 })).rejects.toMatchObject({
+      code: "not_directory",
+    });
 
     const names: string[] = [];
     let after: string | undefined;
     do {
-      const page = await service.folder(actor, { id: ref("Reports"), after, pageSize: 1 });
+      const page = await service.folder(testCall(actor), { id: ref("Reports"), after, pageSize: 1 });
       expect(page.items.length).toBeLessThanOrEqual(1);
       names.push(...page.items.map((item) => item.name));
       after = page.next ?? undefined;
     } while (after);
     expect(names).toEqual(["notes.txt", "q3.pdf"]);
-    expect((await service.folder(actor, { id: ref("Reports"), q: " Q3 ", pageSize: 50 })).items.map((item) => item.path)).toEqual([
-      "Reports/q3.pdf",
-    ]);
+    expect((await service.folder(testCall(actor), { id: ref("Reports"), q: " Q3 ", pageSize: 50 })).items.map((item) => item.path)).toEqual(
+      ["Reports/q3.pdf"],
+    );
 
     // Another account cannot browse or save into this base, whatever ID it holds.
     const bob = await user("bob", "ipa");
     directory("freeipa", "users/bob");
-    await expect(service.folder(bob, { id: ref("Reports"), pageSize: 50 })).rejects.toMatchObject({ code: "not_found" });
-    await expect(service.folderLocation(bob, ref("Reports"))).rejects.toMatchObject({ code: "not_found" });
+    await expect(service.folder(testCall(bob), { id: ref("Reports"), pageSize: 50 })).rejects.toMatchObject({ code: "not_found" });
+    await expect(service.folderLocation(testCall(bob), ref("Reports"))).rejects.toMatchObject({ code: "not_found" });
 
-    const folder = await service.folderLocation(actor, ref("Reports"));
+    const folder = await service.folderLocation(testCall(actor), ref("Reports"));
     expect(folder).toEqual({ baseId, path: "Reports" });
-    expect(await service.folderLocation(actor, ref(""))).toEqual({ baseId, path: "" });
-    await expect(service.folderLocation(actor, ref("Private"))).rejects.toMatchObject({ code: "forbidden" });
+    expect(await service.folderLocation(testCall(actor), ref(""))).toEqual({ baseId, path: "" });
+    await expect(service.folderLocation(testCall(actor), ref("Private"))).rejects.toMatchObject({ code: "forbidden" });
     const save = (name: string, idempotencyKey: string) =>
-      service.upload(actor, { baseId: folder.baseId, path: `${folder.path}/${name}`, size: 12, onConflict: "error", idempotencyKey });
+      service.upload(testCall(actor), {
+        baseId: folder.baseId,
+        path: `${folder.path}/${name}`,
+        size: 12,
+        onConflict: "error",
+        idempotencyKey,
+      });
     const key = crypto.randomUUID();
     const opened = await save("q4.pdf", key);
     expect((await save("q4.pdf", key)).id).toBe(opened.id);
     privateSession(opened.id)!.received = 12;
-    await service.commitUpload(actor, { baseId, id: opened.id });
+    await service.commitUpload(testCall(actor), { baseId, id: opened.id });
     // Retrying the committed save answers with the same transfer instead of a second file or a conflict.
     expect(await save("q4.pdf", key)).toMatchObject({ id: opened.id, state: "committed" });
     await expect(save("q4.pdf", crypto.randomUUID())).rejects.toMatchObject({ code: "path_conflict", status: 409 });
     await expect(save("q3.pdf", crypto.randomUUID())).rejects.toMatchObject({ code: "path_conflict", status: 409 });
     await expect(
-      service.upload(actor, { baseId, path: "ReadOnly/new.pdf", size: 1, onConflict: "error", idempotencyKey: crypto.randomUUID() }),
+      service.upload(testCall(actor), {
+        baseId,
+        path: "ReadOnly/new.pdf",
+        size: 1,
+        onConflict: "error",
+        idempotencyKey: crypto.randomUUID(),
+      }),
     ).rejects.toMatchObject({ code: "forbidden" });
   });
   test("folder readmes ignore listing filters and pages, select casing deterministically and obey Unix read access", async () => {
@@ -1003,28 +1366,32 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/readme.md", 1001, 2001, "0600", false);
     directory("freeipa", "users/alice/README.md", 1001, 2001, "0600", false);
     for (let i = 0; i < 1001; i++) directory("freeipa", `users/alice/000-${i}`, 1001, 2001, "0600", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    expect((await service.list(actor, { baseId, type: "directories" })).readme?.name).toBe("README.md");
-    expect((await service.search(actor, { baseId, q: "000", scope: "folder" })).readme?.name).toBe("README.md");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    expect((await service.list(testCall(actor), { baseId, type: "directories" })).readme?.name).toBe("README.md");
+    expect((await service.search(testCall(actor), { baseId, q: "000", scope: "folder" })).readme?.name).toBe("README.md");
     nodes.delete("freeipa:users/alice/README.md");
-    expect((await service.list(actor, { baseId })).readme?.name).toBe("readme.md");
+    expect((await service.list(testCall(actor), { baseId })).readme?.name).toBe("readme.md");
     nodes.delete("freeipa:users/alice/readme.md");
-    expect((await service.list(actor, { baseId })).readme?.name).toBe("ReAdMe.Md");
+    expect((await service.list(testCall(actor), { baseId })).readme?.name).toBe("ReAdMe.Md");
     nodes.get("freeipa:users/alice/ReAdMe.Md")!.mode = "0000";
-    expect((await service.list(actor, { baseId })).readme).toBeNull();
+    expect((await service.list(testCall(actor), { baseId })).readme).toBeNull();
     for (let i = 1001; i < 10001; i++) directory("freeipa", `users/alice/000-${i}`, 1001, 2001, "0600", false);
-    expect((await service.list(actor, { baseId, type: "directories" })).readme).toBeNull();
+    expect((await service.list(testCall(actor), { baseId, type: "directories" })).readme).toBeNull();
   });
   test("capability transfers reject stale reads, incomplete bodies, concurrent writers and cancellation before commit", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/source.txt", 1001, 2001, "0600", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     await expect(
-      service.capabilityDownload(actor, { id: entryRefId(baseId, "source.txt")!, revision: "stale" }, new AbortController().signal),
+      service.capabilityDownload(
+        testCall(actor),
+        { id: entryRefId(baseId, "source.txt")!, revision: "stale" },
+        new AbortController().signal,
+      ),
     ).rejects.toMatchObject({ code: "write_conflict" });
     for (const length of [3, 5]) {
-      const upload = await service.upload(actor, {
+      const upload = await service.upload(testCall(actor), {
         idempotencyKey: crypto.randomUUID(),
         baseId,
         path: `bad-${length}`,
@@ -1033,7 +1400,7 @@ suite("Files service and durable bindings", () => {
       });
       await expect(
         service.capabilityUpload(
-          actor,
+          testCall(actor),
           { baseId, id: upload.id },
           new Blob([new Uint8Array(length)]).stream(),
           new AbortController().signal,
@@ -1042,7 +1409,7 @@ suite("Files service and durable bindings", () => {
       expect(privateSession(upload.id).state).toBe("open");
       expect(nodes.has(`freeipa:users/alice/bad-${length}`)).toBe(false);
     }
-    const upload = await service.upload(actor, {
+    const upload = await service.upload(testCall(actor), {
       idempotencyKey: crypto.randomUUID(),
       baseId,
       path: "cancelled.bin",
@@ -1056,7 +1423,7 @@ suite("Files service and durable bindings", () => {
     };
     try {
       await expect(
-        service.capabilityUpload(actor, { baseId, id: upload.id }, new Blob(["1234"]).stream(), controller.signal),
+        service.capabilityUpload(testCall(actor), { baseId, id: upload.id }, new Blob(["1234"]).stream(), controller.signal),
       ).rejects.toThrow();
       expect(privateSession(upload.id).state).toBe("open");
       expect(nodes.has("freeipa:users/alice/cancelled.bin")).toBe(false);
@@ -1068,7 +1435,7 @@ suite("Files service and durable bindings", () => {
       release = Promise.withResolvers<void>();
     privateSession(upload.id).received = 0;
     const first = service.capabilityUpload(
-      actor,
+      testCall(actor),
       { baseId, id: upload.id },
       new ReadableStream(
         {
@@ -1087,7 +1454,7 @@ suite("Files service and durable bindings", () => {
     await entered.promise;
     try {
       await expect(
-        service.capabilityUpload(actor, { baseId, id: upload.id }, new Blob(["1234"]).stream(), new AbortController().signal),
+        service.capabilityUpload(testCall(actor), { baseId, id: upload.id }, new Blob(["1234"]).stream(), new AbortController().signal),
       ).rejects.toMatchObject({ code: "operation_busy" });
     } finally {
       release.resolve();
@@ -1095,7 +1462,6 @@ suite("Files service and durable bindings", () => {
     expect((await first).entry.path).toBe("cancelled.bin");
   });
   test("capability upload locks reject concurrent writers without exhausting domain connections", async () => {
-    const { withUploadLock } = await import("../data/operations");
     const release = Promise.withResolvers<void>();
     const entered = Promise.withResolvers<void>();
     const id = crypto.randomUUID();
@@ -1115,7 +1481,6 @@ suite("Files service and durable bindings", () => {
     expect(await withUploadLock(id, async () => "released")).toBe("released");
   });
   test("a crashed lock holder frees the root and the upload after its lease expires", async () => {
-    const { withRootLock, withUploadLock } = await import("../data/operations");
     const id = crypto.randomUUID();
     const root = `crashed-${id}`;
     // Another process that acquired the same leases with a short TTL and never released them.
@@ -1138,11 +1503,35 @@ suite("Files service and durable bindings", () => {
     expect(await recovered(() => withUploadLock(id, async () => "ran"))).toBe("ran");
     expect(await recovered(() => withRootLock(root, async () => "ran"))).toBe("ran");
   });
+  test("root locks make one immediate attempt without a wait or with an already-spent budget", async () => {
+    const root = `fail-fast-${crypto.randomUUID()}`;
+    const spent = AbortSignal.abort();
+    await withRootLock(root, async () => {
+      const started = performance.now();
+      await expect(withRootLock(root, async () => "ran")).rejects.toThrow("operation_busy");
+      expect(performance.now() - started).toBeLessThan(1_000);
+      const abortedStarted = performance.now();
+      await expect(withRootLock(root, async () => "ran", spent)).rejects.toThrow("operation_busy");
+      expect(performance.now() - abortedStarted).toBeLessThan(1_000);
+    });
+    // An exhausted wait still tries once when the root is free.
+    expect(await withRootLock(root, async () => "ran", spent)).toBe("ran");
+  });
+  test("a caller signal never extends the root lock wait past the budget", async () => {
+    const root = `bounded-wait-${crypto.randomUUID()}`;
+    const neverAborts = new AbortController().signal;
+    await withRootLock(root, async () => {
+      const started = performance.now();
+      await expect(withRootLock(root, async () => "ran", neverAborts)).rejects.toThrow("operation_busy");
+      expect(performance.now() - started).toBeGreaterThanOrEqual(ROOT_LOCK_WAIT_MS - 100);
+      expect(performance.now() - started).toBeLessThan(ROOT_LOCK_WAIT_MS + 2_000);
+    });
+  }, 15_000);
   test("a commit whose response was lost is recovered from the Filegate session record", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const opened = await service.upload(actor, {
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const opened = await service.upload(testCall(actor), {
       idempotencyKey: crypto.randomUUID(),
       baseId,
       path: "lost.txt",
@@ -1150,10 +1539,10 @@ suite("Files service and durable bindings", () => {
       onConflict: "error",
     });
     lostCommitResponse = true;
-    await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toThrow("lost_response");
-    const recovered = await service.commitUpload(actor, { baseId, id: opened.id });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toThrow("lost_response");
+    const recovered = await service.commitUpload(testCall(actor), { baseId, id: opened.id });
     expect(recovered.entry).toMatchObject({ path: "lost.txt", size: 0 });
-    const gone = await service.upload(actor, {
+    const gone = await service.upload(testCall(actor), {
       idempotencyKey: crypto.randomUUID(),
       baseId,
       path: "expired.txt",
@@ -1161,15 +1550,15 @@ suite("Files service and durable bindings", () => {
       onConflict: "error",
     });
     privateSession(gone.id)!.state = "expired";
-    await expect(service.commitUpload(actor, { baseId, id: gone.id })).rejects.toMatchObject({ code: "upload_closed" });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: gone.id })).rejects.toMatchObject({ code: "upload_closed" });
   });
   test("private uploads reserve before creation and recover the original session and terminal receipt", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const input = { baseId, path: "receipt.txt", size: 0, onConflict: "error" as const, idempotencyKey: crypto.randomUUID() };
     lostCreateResponse = true;
-    await expect(service.upload(actor, input)).rejects.toThrow("lost_create_response");
+    await expect(service.upload(testCall(actor), input)).rejects.toThrow("lost_create_response");
     const [pending] = await sql`SELECT * FROM filesv2.uploads WHERE id=${input.idempotencyKey}`;
     expect(pending).toMatchObject({
       state: "open",
@@ -1178,96 +1567,98 @@ suite("Files service and durable bindings", () => {
       execution: { uid: 1001, gid: 2001 },
     });
     const count = sessions.size;
-    const opened = await service.upload(actor, input);
+    const opened = await service.upload(testCall(actor), input);
     expect(opened.id).toBe(input.idempotencyKey);
     expect(privateSession(opened.id).id).not.toBe(opened.id);
     expect(sessions.size).toBe(count);
-    await expect(service.upload(actor, { ...input, size: 1 })).rejects.toMatchObject({ code: "upload_changed" });
-    await expect(service.upload(actor, { ...input, onConflict: "overwrite" })).rejects.toMatchObject({ code: "upload_changed" });
-    await service.commitUpload(actor, { baseId, id: opened.id });
-    const repeated = await service.upload(actor, input);
+    await expect(service.upload(testCall(actor), { ...input, size: 1 })).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.upload(testCall(actor), { ...input, onConflict: "overwrite" })).rejects.toMatchObject({ code: "upload_changed" });
+    await service.commitUpload(testCall(actor), { baseId, id: opened.id });
+    const repeated = await service.upload(testCall(actor), input);
     expect(repeated).toMatchObject({ id: opened.id, state: "committed" });
     expect(repeated.url).toBeUndefined();
     expect(sessions.size).toBe(count);
     // Recovery can receive a terminal create replay with no lease at all.
     const terminalInput = { ...input, path: "already-published.txt", idempotencyKey: crypto.randomUUID() };
     lostCreateResponse = true;
-    await expect(service.upload(actor, terminalInput)).rejects.toThrow("lost_create_response");
+    await expect(service.upload(testCall(actor), terminalInput)).rejects.toThrow("lost_create_response");
     const terminal = privateSession(terminalInput.idempotencyKey);
     terminal.state = "committed";
     terminal.result = { ...directory("freeipa", "users/alice/already-published.txt", 1001, 2001, "0600", false), size: 0 };
     nodes.set("freeipa:users/alice/already-published.txt", terminal.result);
-    expect(await service.upload(actor, terminalInput)).toMatchObject({ id: terminalInput.idempotencyKey, state: "committed" });
-    expect((await service.commitUpload(actor, { baseId, id: terminalInput.idempotencyKey })).entry.path).toBe("already-published.txt");
+    expect(await service.upload(testCall(actor), terminalInput)).toMatchObject({ id: terminalInput.idempotencyKey, state: "committed" });
+    expect((await service.commitUpload(testCall(actor), { baseId, id: terminalInput.idempotencyKey })).entry.path).toBe(
+      "already-published.txt",
+    );
   });
   test("private upload recovery never recreates missing or old ambiguous receipts", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const input = { baseId, path: "unknown.txt", size: 0, onConflict: "error" as const, idempotencyKey: crypto.randomUUID() };
-    const opened = await service.upload(actor, input);
+    const opened = await service.upload(testCall(actor), input);
     sessions.delete(sessionKeys.get(opened.id)!);
-    await expect(service.upload(actor, input)).rejects.toMatchObject({ code: "receipt_unknown" });
-    await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "receipt_unknown" });
+    await expect(service.upload(testCall(actor), input)).rejects.toMatchObject({ code: "receipt_unknown" });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "receipt_unknown" });
     expect(sessions.size).toBe(0);
     const old = { ...input, path: "old.txt", idempotencyKey: crypto.randomUUID() };
     lostCreateResponse = true;
-    await expect(service.upload(actor, old)).rejects.toThrow("lost_create_response");
+    await expect(service.upload(testCall(actor), old)).rejects.toThrow("lost_create_response");
     await sql`UPDATE filesv2.uploads SET created_at=now()-interval '8 days' WHERE id=${old.idempotencyKey}`;
     const count = sessions.size;
-    await expect(service.upload(actor, old)).rejects.toMatchObject({ code: "receipt_unknown" });
+    await expect(service.upload(testCall(actor), old)).rejects.toMatchObject({ code: "receipt_unknown" });
     expect(sessions.size).toBe(count);
   });
   test("managed private uploads capture revisions and reject publication after another write", async () => {
     const actor = await user("alice", "local", true);
     directory("cloud", "users/alice", 0, 0, "0700");
-    await service.adopt(actor, { area: "cloud", kind: "users", identityId: id(actor) });
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
     directory("cloud", "users/alice/report.txt", 0, 0, "0600", false);
     const before = nodes.get("cloud:users/alice/report.txt")!;
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const input = { baseId, path: "report.txt", size: 12, onConflict: "overwrite" as const, idempotencyKey: crypto.randomUUID() };
-    const opened = await service.upload(actor, input);
+    const opened = await service.upload(testCall(actor), input);
     expect(privateSession(opened.id).options.precondition).toEqual({ ifMatch: before.revision });
     privateSession(opened.id).received = 12;
     nodes.set("cloud:users/alice/report.txt", { ...before, revision: "new-revision" });
-    await service.upload(actor, input);
+    await service.upload(testCall(actor), input);
     expect(privateSession(opened.id).options.precondition).toEqual({ ifMatch: before.revision });
-    await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ status: 412 });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ status: 412 });
     expect(nodes.get("cloud:users/alice/report.txt")!.revision).toBe("new-revision");
   });
   test("private upload retries and every action require the original execution and options", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const input = { baseId, path: "scoped.txt", size: 0, onConflict: "error" as const, idempotencyKey: crypto.randomUUID() };
-    const opened = await service.upload(actor, input);
+    const opened = await service.upload(testCall(actor), input);
     const session = privateSession(opened.id);
     session.options.onConflict = "overwrite";
-    await expect(service.uploadLease(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_changed" });
-    await expect(service.abortUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.uploadLease(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.abortUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_changed" });
     session.options.onConflict = "error";
     const [group] = await sql<
       { id: string }[]
     >`INSERT INTO auth.groups(name,provider,gid_number) VALUES('new-team','ipa',2002) RETURNING id`;
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${group!.id})`;
-    await expect(service.upload(actor, input)).rejects.toMatchObject({ code: "upload_changed" });
-    await expect(service.uploadLease(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_changed" });
-    await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_changed" });
-    await expect(service.abortUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.upload(testCall(actor), input)).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.uploadLease(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.abortUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "upload_changed" });
     expect(session.state).toBe("open");
   });
   test("managed upload overwrite for an absent target stays create-only on retries", async () => {
     const actor = await user("alice", "local", true);
     directory("cloud", "users/alice", 0, 0, "0700");
-    await service.adopt(actor, { area: "cloud", kind: "users", identityId: id(actor) });
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const input = { baseId, path: "new.txt", size: 0, onConflict: "overwrite" as const, idempotencyKey: crypto.randomUUID() };
-    const opened = await service.upload(actor, input);
+    const opened = await service.upload(testCall(actor), input);
     expect(privateSession(opened.id).options).toMatchObject({ onConflict: "error", precondition: { ifNoneMatch: true } });
     directory("cloud", "users/alice/new.txt", 0, 0, "0600", false);
-    expect((await service.upload(actor, input)).id).toBe(opened.id);
+    expect((await service.upload(testCall(actor), input)).id).toBe(opened.id);
     expect(privateSession(opened.id).options).toMatchObject({ onConflict: "error", precondition: { ifNoneMatch: true } });
-    await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ status: 412 });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ status: 412 });
     expect(nodes.get("cloud:users/alice/new.txt")!.size).toBe(12);
   });
   test("rename, move and duplicate stay inside the base, need a writable parent and never touch trash", async () => {
@@ -1278,24 +1669,47 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Archive", 999, 2001, "0750");
     directory("freeipa", "users/alice/Archive/old.txt", 999, 2001, "0640", false);
     directory("freeipa", "users/alice/trash");
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    expect((await service.rename(actor, { baseId, path: "Docs/a.txt", name: "b.txt" })).entry.path).toBe("Docs/b.txt");
-    await expect(service.rename(actor, { baseId, path: "Docs/b.txt", name: "../x.txt" })).rejects.toMatchObject({ code: "invalid_path" });
-    await expect(service.rename(actor, { baseId, path: "Docs", name: "trash" })).rejects.toMatchObject({ code: "reserved_path" });
-    await expect(service.rename(actor, { baseId, path: "Archive/old.txt", name: "new.txt" })).rejects.toMatchObject({ code: "forbidden" });
-    const moved = await service.move(actor, { baseId, paths: ["Docs/b.txt"], folder: "" });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    expect((await service.rename(testCall(actor), { baseId, path: "Docs/a.txt", name: "b.txt" })).entry.path).toBe("Docs/b.txt");
+    await expect(service.rename(testCall(actor), { baseId, path: "Docs/b.txt", name: "../x.txt" })).rejects.toMatchObject({
+      code: "invalid_path",
+    });
+    await expect(service.rename(testCall(actor), { baseId, path: "Docs", name: "trash" })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.rename(testCall(actor), { baseId, path: "Archive/old.txt", name: "new.txt" })).rejects.toMatchObject({
+      code: "forbidden",
+    });
+    const moved = await service.move(testCall(actor), { baseId, paths: ["Docs/b.txt"], folder: "" });
     expect(moved.entries.map((entry) => entry.path)).toEqual(["b.txt"]);
-    expect((await service.move(actor, { baseId, paths: ["Docs"], folder: "Docs" })).results).toMatchObject([
+    expect((await service.move(testCall(actor), { baseId, paths: ["Docs"], folder: "Docs" })).results).toMatchObject([
       { ok: false, error: "move_into_self" },
     ]);
-    expect((await service.move(actor, { baseId, paths: ["b.txt"], folder: "Archive" })).results).toMatchObject([
+    expect((await service.move(testCall(actor), { baseId, paths: ["b.txt"], folder: "Archive" })).results).toMatchObject([
       { ok: false, error: "forbidden" },
     ]);
-    await expect(service.move(actor, { baseId, paths: ["b.txt"], folder: "trash" })).rejects.toMatchObject({ code: "reserved_path" });
-    const duplicated = await service.copy(actor, { baseId, paths: ["b.txt"], targetBaseId: baseId, folder: "" });
+    await expect(service.move(testCall(actor), { baseId, paths: ["b.txt"], folder: "trash" })).rejects.toMatchObject({
+      code: "reserved_path",
+    });
+    const duplicated = await service.copy(testCall(actor), { baseId, paths: ["b.txt"], targetBaseId: baseId, folder: "" });
     expect(duplicated.entries[0]!.path).toMatch(/^b-[0-9a-f]{32}\.txt$/);
     expect(nodes.get(`freeipa:users/alice/${duplicated.entries[0]!.path}`)).toMatchObject({ uid: 1001, gid: 2001, mode: "0600" });
   });
+  test("moving three entries in one root shares one root-lock wait budget", async () => {
+    const actor = await user("alice", "ipa");
+    directory("freeipa", "users/alice");
+    directory("freeipa", "users/alice/Docs");
+    const paths = ["a.txt", "b.txt", "c.txt"];
+    for (const path of paths) directory("freeipa", `users/alice/${path}`, 1001, 2001, "0640", false);
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    await withRootLock("freeipa", async () => {
+      const started = performance.now();
+      const moved = await service.move(testCall(actor), { baseId, paths, folder: "Docs" });
+      const elapsed = performance.now() - started;
+      expect(moved.entries).toEqual([]);
+      expect(moved.results).toEqual(paths.map((path) => ({ path, ok: false, error: "operation_busy" })));
+      expect(elapsed).toBeGreaterThanOrEqual(ROOT_LOCK_WAIT_MS - 100);
+      expect(elapsed).toBeLessThan(ROOT_LOCK_WAIT_MS + 3_000);
+    });
+  }, 15_000);
   test("copies may cross bases but moves never leave a base", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
@@ -1305,16 +1719,16 @@ suite("Files service and durable bindings", () => {
     await sql`INSERT INTO auth.ipa_user_effective_groups VALUES(${id(actor)},'team')`;
     directory("freeipa", "groups/team", 10001, 2002, "2770");
     directory("freeipa", "groups/team/shared.txt", 999, 2002, "0660", false);
-    const bases = (await service.bases(actor)).items;
+    const bases = (await service.bases(testCall(actor))).items;
     const home = bases.find((base) => base.kind === "users")!.id;
     const team = bases.find((base) => base.kind === "groups")!.id;
     expect(group).toBeTruthy();
-    const copied = await service.copy(actor, { baseId: home, paths: ["private.txt"], targetBaseId: team, folder: "" });
+    const copied = await service.copy(testCall(actor), { baseId: home, paths: ["private.txt"], targetBaseId: team, folder: "" });
     expect(copied.base.id).toBe(team);
     expect(nodes.get("freeipa:groups/team/private.txt")).toMatchObject({ uid: 1001, gid: 2002, mode: "0660" });
     expect(nodes.has("freeipa:users/alice/private.txt")).toBeTrue();
     // The service has no cross-base move; a target folder always belongs to the source base.
-    await expect(service.move(actor, { baseId: team, paths: ["shared.txt"], folder: "../../users/alice" })).rejects.toThrow();
+    await expect(service.move(testCall(actor), { baseId: team, paths: ["shared.txt"], folder: "../../users/alice" })).rejects.toThrow();
     expect(nodes.has("freeipa:groups/team/shared.txt")).toBeTrue();
   });
   test("deleting moves entries into trash with a restorable record", async () => {
@@ -1323,26 +1737,26 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Docs");
     directory("freeipa", "users/alice/Docs/note.txt", 1001, 2001, "0640", false);
     directory("freeipa", "users/alice/Docs/note (1).txt", 1001, 2001, "0640", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const removed = await service.remove(actor, { baseId, paths: ["Docs/note.txt"] });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const removed = await service.remove(testCall(actor), { baseId, paths: ["Docs/note.txt"] });
     expect(removed.entries[0]).toMatchObject({ original: "Docs/note.txt", name: "note.txt", directory: false });
     expect(nodes.has("freeipa:users/alice/Docs/note.txt")).toBeFalse();
     expect(nodes.get("freeipa:users/alice/trash")).toMatchObject({ uid: 1001, gid: 2001, mode: "0700" });
     expect(nodes.has(`freeipa:users/alice/trash/${removed.entries[0]!.id}`)).toBeTrue();
-    expect((await service.list(actor, { baseId, path: "" })).items.map((item) => item.name)).toEqual(["Docs"]);
-    const listed = await service.trash(actor, { baseId });
+    expect((await service.list(testCall(actor), { baseId, path: "" })).items.map((item) => item.name)).toEqual(["Docs"]);
+    const listed = await service.trash(testCall(actor), { baseId });
     expect(listed.entries.map((entry) => entry.original)).toEqual(["Docs/note.txt"]);
-    await expect(service.remove(actor, { baseId, paths: ["trash/note.txt"] })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.remove(testCall(actor), { baseId, paths: ["trash/note.txt"] })).rejects.toMatchObject({ code: "reserved_path" });
     // A second delete of the same name lands beside the first, and restoring requires a free original path.
     directory("freeipa", "users/alice/Docs/note.txt", 1001, 2001, "0640", false);
-    const removedAgain = await service.remove(actor, { baseId, paths: ["Docs/note.txt"] });
+    const removedAgain = await service.remove(testCall(actor), { baseId, paths: ["Docs/note.txt"] });
     expect(nodes.has(`freeipa:users/alice/trash/${removedAgain.entries[0]!.id}`)).toBeTrue();
     expect(removedAgain.entries[0]!.id).not.toBe(removed.entries[0]!.id);
-    const restored = await service.restoreTrash(actor, { baseId, id: removed.entries[0]!.id });
+    const restored = await service.restoreTrash(testCall(actor), { baseId, id: removed.entries[0]!.id });
     expect(restored.entry.path).toBe("Docs/note.txt");
-    expect((await service.restoreTrash(actor, { baseId, id: removed.entries[0]!.id })).entry.path).toBe("Docs/note.txt");
-    const second = (await service.trash(actor, { baseId })).entries[0]!;
-    await expect(service.restoreTrash(actor, { baseId, id: second.id })).rejects.toMatchObject({ status: 409 });
+    expect((await service.restoreTrash(testCall(actor), { baseId, id: removed.entries[0]!.id })).entry.path).toBe("Docs/note.txt");
+    const second = (await service.trash(testCall(actor), { baseId })).entries[0]!;
+    await expect(service.restoreTrash(testCall(actor), { baseId, id: second.id })).rejects.toMatchObject({ status: 409 });
   });
   test("selections download as one signed archive of authorized entries", async () => {
     const actor = await user("alice", "ipa");
@@ -1350,15 +1764,15 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Docs");
     directory("freeipa", "users/alice/a.txt", 1001, 2001, "0640", false);
     directory("freeipa", "users/alice/secret.txt", 999, 999, "0600", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const lease = await service.bundle(actor, { baseId, paths: ["Docs", "a.txt"] });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const lease = await service.bundle(testCall(actor), { baseId, paths: ["Docs", "a.txt"] });
     expect(lease).toMatchObject({ method: "POST", manifest: "signed" });
     expect(archives[0]).toEqual([
       { root: "freeipa", path: "users/alice/Docs", archivePath: "Docs" },
       { root: "freeipa", path: "users/alice/a.txt", archivePath: "a.txt" },
     ]);
-    await expect(service.bundle(actor, { baseId, paths: ["a.txt", "secret.txt"] })).rejects.toMatchObject({ code: "forbidden" });
-    await expect(service.bundle(actor, { baseId, paths: ["trash"] })).rejects.toMatchObject({ code: "reserved_path" });
+    await expect(service.bundle(testCall(actor), { baseId, paths: ["a.txt", "secret.txt"] })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.bundle(testCall(actor), { baseId, paths: ["trash"] })).rejects.toMatchObject({ code: "reserved_path" });
     expect(archives).toHaveLength(1);
   });
   test("native FreeIPA tree copies reject unreadable descendants before publishing a destination", async () => {
@@ -1368,8 +1782,8 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Docs/readable.txt", 1001, 2001, "0600", false);
     directory("freeipa", "users/alice/Docs/secret.txt", 999, 999, "0600", false);
     directory("freeipa", "users/alice/Copies");
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const result = await service.copy(actor, { baseId, paths: ["Docs"], targetBaseId: baseId, folder: "Copies" });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const result = await service.copy(testCall(actor), { baseId, paths: ["Docs"], targetBaseId: baseId, folder: "Copies" });
     expect(result.entries).toEqual([]);
     expect(result.results).toMatchObject([{ path: "Docs", ok: false, error: "forbidden" }]);
     expect(nodes.has("freeipa:users/alice/Copies/Docs")).toBe(false);
@@ -1385,10 +1799,10 @@ suite("Files service and durable bindings", () => {
       { id: string }[]
     >`INSERT INTO auth.groups(name,provider,gid_number) VALUES('team','local',200003) RETURNING id`;
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${group!.id})`;
-    const team = await service.adopt(admin, { area: "cloud", kind: "groups", identityId: group!.id });
-    const home = (await service.bases(actor)).items.find((base) => base.area === "freeipa")!;
-    const toCloud = await service.copy(actor, { baseId: home.id, paths: ["private.txt"], targetBaseId: team.id, folder: "" });
-    const toFreeipa = await service.copy(actor, { baseId: team.id, paths: ["shared.txt"], targetBaseId: home.id, folder: "" });
+    const team = await service.adopt(testCall(admin), { area: "cloud", kind: "groups", identityId: group!.id });
+    const home = (await service.bases(testCall(actor))).items.find((base) => base.area === "freeipa")!;
+    const toCloud = await service.copy(testCall(actor), { baseId: home.id, paths: ["private.txt"], targetBaseId: team.id, folder: "" });
+    const toFreeipa = await service.copy(testCall(actor), { baseId: team.id, paths: ["shared.txt"], targetBaseId: home.id, folder: "" });
     expect(toCloud.results).toMatchObject([{ ok: true }]);
     expect(toFreeipa.results).toMatchObject([{ ok: true }]);
     expect(nodes.get("cloud:groups/team/private.txt")).toMatchObject({ uid: 0, gid: 0, mode: "0660" });
@@ -1399,66 +1813,75 @@ suite("Files service and durable bindings", () => {
     ]);
     directory("freeipa", "users/alice/secret.txt", 999, 999, "0600", false);
     expect(
-      (await service.copy(actor, { baseId: home.id, paths: ["secret.txt"], targetBaseId: team.id, folder: "" })).results,
+      (await service.copy(testCall(actor), { baseId: home.id, paths: ["secret.txt"], targetBaseId: team.id, folder: "" })).results,
     ).toMatchObject([{ ok: false, error: "forbidden" }]);
     expect(nodes.has("cloud:groups/team/secret.txt")).toBe(false);
     await sql`DELETE FROM auth.user_groups_v2 WHERE user_id=${id(actor)}`;
-    await expect(service.copy(actor, { baseId: home.id, paths: ["private.txt"], targetBaseId: team.id, folder: "" })).rejects.toMatchObject(
-      { code: "not_found" },
-    );
+    await expect(
+      service.copy(testCall(actor), { baseId: home.id, paths: ["private.txt"], targetBaseId: team.id, folder: "" }),
+    ).rejects.toMatchObject({ code: "not_found" });
   });
   test("pending native transfer responses never become a completed rename", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/old.txt", 1001, 2001, "0600", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     contents.set("__transfer_response_state__", "source_pending");
-    await expect(service.rename(actor, { baseId, path: "old.txt", name: "new.txt" })).rejects.toMatchObject({ code: "operation_pending" });
+    await expect(service.rename(testCall(actor), { baseId, path: "old.txt", name: "new.txt" })).rejects.toMatchObject({
+      code: "operation_pending",
+    });
   });
   test("versions are listed with comments, restored in place or as a copy, and deleted", async () => {
     const admin = await user("admin", "local", true);
     config.cloud.autoCreate = true;
-    const baseId = (await service.bases(admin)).items.find((base) => base.area === "cloud")!.id;
+    const baseId = (await service.bases(testCall(admin))).items.find((base) => base.area === "cloud")!.id;
     directory("cloud", "users/admin/report.txt", 0, 0, "0600", false);
-    expect(await service.versions(admin, { baseId, path: "report.txt" })).toEqual([]);
+    expect(await service.versions(testCall(admin), { baseId, path: "report.txt" })).toEqual([]);
     const filegate = new Filegate({ baseUrl: "http://filegate:4000", token: "backend-test-secret", fetch: transport }).root("cloud");
     const v1 = await filegate.snapshot("users/admin/report.txt", { metadata: { comment: "first" } });
-    const commented = await service.commentVersion(admin, { baseId, path: "report.txt", id: v1.id, comment: "final draft" });
+    const commented = await service.commentVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id, comment: "final draft" });
     expect(commented).toMatchObject({ id: v1.id, comment: "final draft", author: "admin" });
-    expect((await service.versions(admin, { baseId, path: "report.txt" }))[0]).toMatchObject({ id: v1.id, comment: "final draft" });
+    expect((await service.versions(testCall(admin), { baseId, path: "report.txt" }))[0]).toMatchObject({
+      id: v1.id,
+      comment: "final draft",
+    });
     const originalNode = structuredClone(nodes.get("cloud:users/admin/report.txt"));
     const originalHistory = structuredClone(versions.get("cloud:users/admin/report.txt"));
     const originalContent = contents.get("cloud:users/admin/report.txt");
-    const asCopy = await service.restoreVersionAs(admin, { baseId, path: "report.txt", id: v1.id, name: "report-v1.txt" });
+    const asCopy = await service.restoreVersionAs(testCall(admin), { baseId, path: "report.txt", id: v1.id, name: "report-v1.txt" });
     expect(executions.at(-1)).toEqual({ source: null, target: { mode: "service" }, operation: "copyVersion" });
     expect(asCopy.entry.path).toBe("report-v1.txt");
     expect(contents.get("cloud:users/admin/report-v1.txt")).toBe(originalHistory![0]!.content);
     expect(nodes.get("cloud:users/admin/report.txt")).toEqual(originalNode);
     expect(versions.get("cloud:users/admin/report.txt")).toEqual(originalHistory);
     expect(contents.get("cloud:users/admin/report.txt")).toBe(originalContent);
-    await expect(service.restoreVersionAs(admin, { baseId, path: "report.txt", id: v1.id, name: "report-v1.txt" })).rejects.toMatchObject({
+    await expect(
+      service.restoreVersionAs(testCall(admin), { baseId, path: "report.txt", id: v1.id, name: "report-v1.txt" }),
+    ).rejects.toMatchObject({
       status: 409,
     });
     expect(nodes.get("cloud:users/admin/report.txt")).toEqual(originalNode);
     expect(versions.get("cloud:users/admin/report.txt")).toEqual(originalHistory);
-    expect((await service.versions(admin, { baseId, path: "report.txt" })).some((version) => version.id === v1.id)).toBeTrue();
-    await expect(service.restoreVersionAs(admin, { baseId, path: "report.txt", id: v1.id, name: "report.txt" })).rejects.toMatchObject({
+    expect((await service.versions(testCall(admin), { baseId, path: "report.txt" })).some((version) => version.id === v1.id)).toBeTrue();
+    await expect(
+      service.restoreVersionAs(testCall(admin), { baseId, path: "report.txt", id: v1.id, name: "report.txt" }),
+    ).rejects.toMatchObject({
       code: "invalid_path",
     });
-    const restored = await service.restoreVersion(admin, { baseId, path: "report.txt", id: v1.id });
+    const restored = await service.restoreVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id });
     expect(restored.entry.modified).toBe(`restored:${v1.id}`);
-    expect((await service.versionDownload(admin, { baseId, path: "report.txt", id: v1.id })).url).toContain(v1.id);
-    await service.deleteVersion(admin, { baseId, path: "report.txt", id: v1.id });
-    expect((await service.versions(admin, { baseId, path: "report.txt" })).some((version) => version.id === v1.id)).toBeFalse();
-    await expect(service.versions(admin, { baseId, path: "trash/x" })).rejects.toMatchObject({ code: "reserved_path" });
+    expect((await service.versionDownload(testCall(admin), { baseId, path: "report.txt", id: v1.id })).url).toContain(v1.id);
+    await service.deleteVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id });
+    expect((await service.versions(testCall(admin), { baseId, path: "report.txt" })).some((version) => version.id === v1.id)).toBeFalse();
+    await expect(service.versions(testCall(admin), { baseId, path: "trash/x" })).rejects.toMatchObject({ code: "reserved_path" });
   });
   test("office documents are created from templates and edited through token-bound WOPI calls that re-check rights", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/Docs");
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    expect((await service.bases(actor)).editor).toBeNull();
-    await expect(service.createDocument(actor, { baseId, path: "Docs/Minutes", kind: "text" })).rejects.toMatchObject({
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    expect((await service.bases(testCall(actor))).editor).toBeNull();
+    await expect(service.createDocument(testCall(actor), { baseId, path: "Docs/Minutes", kind: "text" })).rejects.toMatchObject({
       code: "editor_disabled",
       status: 403,
     });
@@ -1468,18 +1891,18 @@ suite("Files service and durable bindings", () => {
       wopiOrigin: "http://gateway:3000",
       documentFormat: "odf",
     };
-    expect((await service.bases(actor)).editor).toEqual({ documentFormat: "odf" });
-    const created = await service.createDocument(actor, { baseId, path: "Docs/Minutes", kind: "text" });
+    expect((await service.bases(testCall(actor))).editor).toEqual({ documentFormat: "odf" });
+    const created = await service.createDocument(testCall(actor), { baseId, path: "Docs/Minutes", kind: "text" });
     expect(created.entry).toMatchObject({ name: "Minutes.odt", path: "Docs/Minutes.odt", directory: false });
     expect(nodes.get("freeipa:users/alice/Docs/Minutes.odt")).toMatchObject({ uid: 1001, gid: 2001, mode: "0600" });
     expect(contents.get("freeipa:users/alice/Docs/Minutes.odt")?.length).toBeGreaterThan(0);
-    await expect(service.createDocument(actor, { baseId, path: "Docs/Minutes", kind: "text" })).rejects.toMatchObject({
+    await expect(service.createDocument(testCall(actor), { baseId, path: "Docs/Minutes", kind: "text" })).rejects.toMatchObject({
       code: "path_conflict",
       status: 409,
     });
     directory("freeipa", "users/alice/Docs/notes.txt", 1001, 2001, "0640", false);
-    await expect(service.editor(actor, { baseId, path: "Docs/notes.txt" })).rejects.toMatchObject({ code: "editor_unsupported" });
-    const launch = await service.editor(actor, { baseId, path: "Docs/Minutes.odt" });
+    await expect(service.editor(testCall(actor), { baseId, path: "Docs/notes.txt" })).rejects.toMatchObject({ code: "editor_unsupported" });
+    const launch = await service.editor(testCall(actor), { baseId, path: "Docs/Minutes.odt" });
     if (launch.kind === "markdown") throw new Error("Expected office editor");
     expect(launch.canWrite).toBe(true);
     expect(launch.action.startsWith("http://localhost:9980/browser/abc/cool.html?WOPISrc=")).toBe(true);
@@ -1507,7 +1930,7 @@ suite("Files service and durable bindings", () => {
     expect(nodes.get("freeipa:users/alice/Docs/Minutes.odt")).toMatchObject({ uid: 1001, gid: 2001, mode: "0600" });
     // Saving a group-writable file owned by someone else keeps that owner and mode.
     directory("freeipa", "users/alice/Docs/Minutes.odt", 999, 2001, "0664", false);
-    const shared = await service.editor(actor, { baseId, path: "Docs/Minutes.odt" });
+    const shared = await service.editor(testCall(actor), { baseId, path: "Docs/Minutes.odt" });
     if (shared.kind === "markdown") throw new Error("Expected office editor");
     expect(shared.canWrite).toBe(true);
     await service.editorSave(shared.token, fileId, { read: async () => new Blob(["group edit"]), timestamp: null });
@@ -1521,7 +1944,7 @@ suite("Files service and durable bindings", () => {
     await expect(service.editorFileInfo(launch.token, entryRefId(baseId, "Docs/notes.txt")!)).rejects.toMatchObject({ code: "forbidden" });
     // Rights are read at call time: a file that becomes group-readable only opens read-only and refuses saves.
     directory("freeipa", "users/alice/Docs/Minutes.odt", 999, 2001, "0640", false);
-    const readOnly = await service.editor(actor, { baseId, path: "Docs/Minutes.odt" });
+    const readOnly = await service.editor(testCall(actor), { baseId, path: "Docs/Minutes.odt" });
     if (readOnly.kind === "markdown") throw new Error("Expected office editor");
     expect(readOnly.canWrite).toBe(false);
     expect((await service.editorFileInfo(readOnly.token, fileId)).UserCanWrite).toBe(false);
@@ -1543,16 +1966,16 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Docs/hr/salaries.txt", 999, 999, "0600", false);
     directory("freeipa", "users/alice/Docs/plan.txt", 1001, 2001, "0640", false);
     directory("freeipa", "users/alice/Docs/shared.txt", 999, 2001, "0640", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    expect((await service.move(actor, { baseId, paths: ["Docs/trash"], folder: "" })).results).toMatchObject([
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    expect((await service.move(testCall(actor), { baseId, paths: ["Docs/trash"], folder: "" })).results).toMatchObject([
       { ok: false, error: "reserved_path" },
     ]);
-    expect((await service.copy(actor, { baseId, paths: ["Docs/trash"], targetBaseId: baseId, folder: "" })).results).toMatchObject([
-      { ok: false, error: "reserved_path" },
-    ]);
+    expect(
+      (await service.copy(testCall(actor), { baseId, paths: ["Docs/trash"], targetBaseId: baseId, folder: "" })).results,
+    ).toMatchObject([{ ok: false, error: "reserved_path" }]);
     expect(nodes.has("freeipa:users/alice/trash")).toBe(false);
-    await expect(service.bundle(actor, { baseId, paths: ["Docs"] })).rejects.toMatchObject({ code: "forbidden" });
-    const share = await service.createShare(actor, {
+    await expect(service.bundle(testCall(actor), { baseId, paths: ["Docs"] })).rejects.toMatchObject({ code: "forbidden" });
+    const share = await service.createShare(testCall(actor), {
       baseId,
       kind: "download",
       paths: ["Docs"],
@@ -1564,13 +1987,15 @@ suite("Files service and durable bindings", () => {
     await expect(service.publicShareArchive(token)).rejects.toMatchObject({ code: "forbidden" });
     const visible = await service.publicShare(token, "download", { path: "Docs" });
     expect(visible.items.some((item) => item.path === "Docs/hr")).toBe(false);
-    expect((await service.bundle(actor, { baseId, paths: ["Docs/plan.txt", "Docs/shared.txt"] })).method).toBe("POST");
+    expect((await service.bundle(testCall(actor), { baseId, paths: ["Docs/plan.txt", "Docs/shared.txt"] })).method).toBe("POST");
     directory("freeipa", "users/alice/Docs/hr", 999, 2001, "0750");
     directory("freeipa", "users/alice/Docs/hr/salaries.txt", 999, 2001, "0640", false);
-    expect((await service.bundle(actor, { baseId, paths: ["Docs"] })).method).toBe("POST");
+    expect((await service.bundle(testCall(actor), { baseId, paths: ["Docs"] })).method).toBe("POST");
     // A shared file that alice may only read cannot have its versions rewritten by her.
-    await expect(service.restoreVersion(actor, { baseId, path: "Docs/shared.txt", id: "v1" })).rejects.toMatchObject({ code: "forbidden" });
-    await expect(service.versions(actor, { baseId, path: "Docs/shared.txt" })).resolves.toEqual([]);
+    await expect(service.restoreVersion(testCall(actor), { baseId, path: "Docs/shared.txt", id: "v1" })).rejects.toMatchObject({
+      code: "forbidden",
+    });
+    await expect(service.versions(testCall(actor), { baseId, path: "Docs/shared.txt" })).resolves.toEqual([]);
   });
   test("recent and favorites point at bindings the user can still reach", async () => {
     const actor = await user("alice", "ipa");
@@ -1579,29 +2004,29 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Docs/plan.odt", 1001, 2001, "0640", false);
     directory("freeipa", "users/alice/Docs/notes.txt", 1001, 2001, "0640", false);
     contents.set("freeipa:users/alice/Docs/plan.odt", "odt bytes");
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    expect(await service.recent(actor)).toEqual([]);
-    await service.download(actor, { baseId, path: "Docs/plan.odt" });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    expect(await service.recent(testCall(actor))).toEqual([]);
+    await service.download(testCall(actor), { baseId, path: "Docs/plan.odt" });
     // The download remembers the opened entry without awaiting it; poll instead of sleeping a fixed time.
-    const recentPaths = async () => (await service.recent(actor)).map((item) => item.entry.path);
+    const recentPaths = async () => (await service.recent(testCall(actor))).map((item) => item.entry.path);
     for (const deadline = Date.now() + 5_000; (await recentPaths()).length === 0 && Date.now() < deadline; )
       await new Promise((resolve) => setTimeout(resolve, 20));
     expect(await recentPaths()).toEqual(["Docs/plan.odt"]);
-    expect((await service.setFavorite(actor, { baseId, path: "Docs", favorite: true })).favorite).toBe(true);
-    expect((await service.entry(actor, { baseId, path: "Docs" })).favorite).toBe(true);
-    expect((await service.favorites(actor)).map((item) => `${item.base.name}:${item.entry.path}:${item.entry.directory}`)).toEqual([
-      "alice:Docs:true",
-    ]);
-    await service.rename(actor, { baseId, path: "Docs/plan.odt", name: "plan2.odt" });
-    expect(await service.recent(actor)).toEqual([]);
-    expect((await service.setFavorite(actor, { baseId, path: "Docs", favorite: false })).favorite).toBe(false);
-    expect(await service.favorites(actor)).toEqual([]);
+    expect((await service.setFavorite(testCall(actor), { baseId, path: "Docs", favorite: true })).favorite).toBe(true);
+    expect((await service.entry(testCall(actor), { baseId, path: "Docs" })).favorite).toBe(true);
+    expect(
+      (await service.favorites(testCall(actor))).map((item) => `${item.base.name}:${item.entry.path}:${item.entry.directory}`),
+    ).toEqual(["alice:Docs:true"]);
+    await service.rename(testCall(actor), { baseId, path: "Docs/plan.odt", name: "plan2.odt" });
+    expect(await service.recent(testCall(actor))).toEqual([]);
+    expect((await service.setFavorite(testCall(actor), { baseId, path: "Docs", favorite: false })).favorite).toBe(false);
+    expect(await service.favorites(testCall(actor))).toEqual([]);
     config.collabora = { url: "http://localhost:9980", internalUrl: "http://collabora:9980", wopiOrigin: "", documentFormat: "odf" };
     // Favorites of a base the user lost are hidden, not shown as reachable entries.
-    await service.setFavorite(actor, { baseId, path: "Docs/notes.txt", favorite: true });
+    await service.setFavorite(testCall(actor), { baseId, path: "Docs/notes.txt", favorite: true });
     await sql`UPDATE filesv2.bases SET lifecycle='archived' WHERE root='freeipa' AND path='users/alice'`;
     directory("freeipa", "users/alice", 999, 999, "0700");
-    expect(await service.favorites(actor)).toEqual([]);
+    expect(await service.favorites(testCall(actor))).toEqual([]);
   });
   test("share scopes stop at the first differing folder and shares end with their binding", async () => {
     const actor = await user("alice", "ipa");
@@ -1609,8 +2034,8 @@ suite("Files service and durable bindings", () => {
     for (const path of ["A", "A/B", "A/B/C", "A/X", "A/X/C", "A/C"]) directory("freeipa", `users/alice/${path}`);
     directory("freeipa", "users/alice/A/B/C/f1.txt", 1001, 2001, "0640", false);
     directory("freeipa", "users/alice/A/X/C/f2.txt", 1001, 2001, "0640", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const share = await service.createShare(actor, {
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const share = await service.createShare(testCall(actor), {
       baseId,
       kind: "download",
       paths: ["A/B/C/f1.txt", "A/X/C/f2.txt"],
@@ -1632,10 +2057,10 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/Docs");
     directory("freeipa", "users/alice/Docs/a.txt", 1001, 2001, "0640", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const password = "separate secret 123";
-    const download = await service.createShare(actor, { baseId, kind: "download", paths: ["Docs"], title: "Private", password });
-    const inbox = await service.createShare(actor, { baseId, kind: "inbox", folder: "Docs", title: "Private inbox", password });
+    const download = await service.createShare(testCall(actor), { baseId, kind: "download", paths: ["Docs"], title: "Private", password });
+    const inbox = await service.createShare(testCall(actor), { baseId, kind: "inbox", folder: "Docs", title: "Private inbox", password });
     expect(download.passwordProtected).toBe(true);
     expect(JSON.stringify(download)).not.toContain(password);
     const [stored] = await sql<{ password_hash: string }[]>`SELECT password_hash FROM filesv2.shares WHERE id=${download.id}::uuid`;
@@ -1672,7 +2097,7 @@ suite("Files service and durable bindings", () => {
     sessions.get(reservation!.filegate_session_id)!.received = 8;
     expect((await service.publicInboxCommit(inboxToken, opened.id, inboxAccess)).name).toBe("received.txt");
     await service.publicInboxAbort(inboxToken, opened.id, inboxAccess);
-    await service.revokeShare(actor, { id: download.id });
+    await service.revokeShare(testCall(actor), { id: download.id });
     await expect(service.publicShare(token, "download", {}, access)).rejects.toMatchObject({ code: "not_found" });
     await expect(service.unlockShare(token, "download", password)).rejects.toMatchObject({ code: "not_found" });
     await sql`UPDATE filesv2.shares SET expires_at=now()-interval '1 minute' WHERE id=${inbox.id}::uuid`;
@@ -1686,8 +2111,8 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "users/alice/Docs/Sub");
     directory("freeipa", "users/alice/Docs/Sub/b.txt", 1001, 2001, "0640", false);
     directory("freeipa", "users/alice/trash");
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const share = await service.createShare(actor, {
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const share = await service.createShare(testCall(actor), {
       baseId,
       kind: "download",
       paths: ["Docs/a.txt", "Docs/Sub/b.txt"],
@@ -1704,7 +2129,7 @@ suite("Files service and durable bindings", () => {
     });
     expect(share.url).toMatch(/^https:\/\/cloud\.test\/share\/filesv2\/s\/[A-Za-z0-9_-]{32}$/);
     await expect(
-      service.createShare(actor, { baseId, kind: "download", paths: ["trash/x"], folder: "", title: "t", expiresIn: "1d" }),
+      service.createShare(testCall(actor), { baseId, kind: "download", paths: ["trash/x"], folder: "", title: "t", expiresIn: "1d" }),
     ).rejects.toMatchObject({ code: "reserved_path" });
     const token = share.url!.split("/").at(-1)!;
     const view = await service.publicShare(token, "download");
@@ -1713,25 +2138,32 @@ suite("Files service and durable bindings", () => {
     await expect(service.publicShareDownload(token, "Docs/Sub")).rejects.toMatchObject({ code: "not_found" });
     await expect(service.publicShare(token, "inbox")).rejects.toMatchObject({ code: "not_found" });
     expect((await service.publicShareArchive(token)).manifest).toBe("signed");
-    expect((await service.listShares(actor)).items.map((item) => item.id)).toEqual([share.id]);
+    expect((await service.listShares(testCall(actor))).items.map((item) => item.id)).toEqual([share.id]);
     // Another member without read rights on the scope does not see the share.
     const bob = await user("bob", "ipa");
     await sql`UPDATE auth.user_posix SET uid_number=1002 WHERE user_id=${id(bob)}::uuid`;
     directory("freeipa", "users/bob");
-    expect((await service.listShares(bob)).items).toEqual([]);
-    await expect(service.revokeShare(bob, { id: share.id })).rejects.toMatchObject({ code: "not_found" });
-    const revoked = await service.revokeShare(actor, { id: share.id });
+    expect((await service.listShares(testCall(bob))).items).toEqual([]);
+    await expect(service.revokeShare(testCall(bob), { id: share.id })).rejects.toMatchObject({ code: "not_found" });
+    const revoked = await service.revokeShare(testCall(actor), { id: share.id });
     expect(revoked.state).toBe("revoked");
     await expect(service.publicShare(token, "download")).rejects.toMatchObject({ code: "not_found" });
-    expect((await service.listShares(actor)).items[0]?.accessCount).toBe(3);
+    expect((await service.listShares(testCall(actor))).items[0]?.accessCount).toBe(3);
   });
   test("an upload inbox accepts anonymous sessions into its folder without replacing existing files", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/Inbox");
     directory("freeipa", "users/alice/Inbox/report.pdf", 1001, 2001, "0640", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const inbox = await service.createShare(actor, { baseId, kind: "inbox", paths: [], folder: "Inbox", title: "Drop", expiresIn: "30d" });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const inbox = await service.createShare(testCall(actor), {
+      baseId,
+      kind: "inbox",
+      paths: [],
+      folder: "Inbox",
+      title: "Drop",
+      expiresIn: "30d",
+    });
     expect(inbox).toMatchObject({ kind: "inbox", scope: "Inbox", items: [] });
     const token = inbox.url!.split("/").at(-1)!;
     expect((await service.publicShare(token, "inbox")).title).toBe("Drop");
@@ -1754,7 +2186,7 @@ suite("Files service and durable bindings", () => {
     expect(committed.name).toBe("report-01.pdf");
     expect(nodes.has("freeipa:users/alice/Inbox/report.pdf") && nodes.has("freeipa:users/alice/Inbox/report-01.pdf")).toBeTrue();
     await expect(service.publicInboxCommit("x".repeat(32), opened.id)).rejects.toMatchObject({ code: "not_found" });
-    await service.revokeShare(actor, { id: inbox.id });
+    await service.revokeShare(testCall(actor), { id: inbox.id });
     await expect(
       service.publicInboxUpload(token, { idempotencyKey: crypto.randomUUID(), name: "late.txt", size: 1 }),
     ).rejects.toMatchObject({ code: "not_found" });
@@ -1774,10 +2206,10 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", "groups/team/notes.txt", 999, 2002, "0640", false);
     directory("freeipa", "groups/team/renamed.pdf", 999, 2002, "0640", false);
     contents.set("freeipa:groups/team/renamed.pdf", "<html><script>alert(1)</script>");
-    const bases = (await service.bases(actor)).items;
+    const bases = (await service.bases(testCall(actor))).items;
     const home = bases.find((base) => base.kind === "users")!.id;
     const team = bases.find((base) => base.kind === "groups")!.id;
-    const read = (baseId: string, path: string) => service.inlinePdf(actor, { baseId, path }, new AbortController().signal);
+    const read = (baseId: string, path: string) => service.inlinePdf(testCall(actor), { baseId, path }, new AbortController().signal);
 
     const owned = await read(home, "Q3 Report.pdf");
     expect(owned.name).toBe("Q3 Report.pdf");
@@ -1799,16 +2231,18 @@ suite("Files service and durable bindings", () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/photo.png", 1001, 2001, "0640", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    expect((await service.entry(actor, { baseId, path: "photo.png" })).entry.name).toBe("photo.png");
-    expect((await service.thumbnail(actor, { baseId, path: "photo.png", size: "small" })).method).toBe("GET");
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    expect((await service.entry(testCall(actor), { baseId, path: "photo.png" })).entry.name).toBe("photo.png");
+    expect((await service.thumbnail(testCall(actor), { baseId, path: "photo.png", size: "small" })).method).toBe("GET");
     expect(leases).toBe(1);
     directory("freeipa", "users/alice/photo.png", 999, 999, "0600", false);
-    await expect(service.entry(actor, { baseId, path: "photo.png" })).rejects.toMatchObject({ code: "forbidden" });
-    await expect(service.thumbnail(actor, { baseId, path: "photo.png", size: "large" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.entry(testCall(actor), { baseId, path: "photo.png" })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.thumbnail(testCall(actor), { baseId, path: "photo.png", size: "large" })).rejects.toMatchObject({
+      code: "forbidden",
+    });
     for (const path of ["trash/photo.png", "../other", ""]) {
-      await expect(service.entry(actor, { baseId, path })).rejects.toThrow();
-      await expect(service.thumbnail(actor, { baseId, path, size: "small" })).rejects.toThrow();
+      await expect(service.entry(testCall(actor), { baseId, path })).rejects.toThrow();
+      await expect(service.thumbnail(testCall(actor), { baseId, path, size: "small" })).rejects.toThrow();
     }
     expect(leases).toBe(1);
   });
@@ -1819,46 +2253,48 @@ suite("Files service and durable bindings", () => {
     for (const path of ["deep", "deep/one", "deep/one/two", "deep/one/two/three"]) directory("freeipa", `users/alice/${path}`);
     const deep = "deep/one/two/three/file.txt";
     directory("freeipa", `users/alice/${deep}`, 1001, 2001, "0600", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     scopedMetadata.length = 0;
-    await service.download(actor, { baseId, path: "top.txt" });
+    await service.download(testCall(actor), { baseId, path: "top.txt" });
     const shallowCalls = scopedMetadata.length;
     scopedMetadata.length = 0;
-    await service.download(actor, { baseId, path: deep });
+    await service.download(testCall(actor), { baseId, path: deep });
     expect(scopedMetadata.length).toBe(shallowCalls);
     expect(scopedMetadata.filter((call) => call.operation === "acl")).toEqual([{ operation: "acl", path: `users/alice/${deep}` }]);
     directory("freeipa", "users/alice/deep/one", 1001, 2001, "0600");
     const before = leases;
-    await expect(service.download(actor, { baseId, path: deep })).rejects.toMatchObject({ status: 403 });
-    await expect(service.entry(actor, { baseId, path: "deep/one/missing.txt" })).rejects.toMatchObject({ status: 403 });
+    await expect(service.download(testCall(actor), { baseId, path: deep })).rejects.toMatchObject({ status: 403 });
+    await expect(service.entry(testCall(actor), { baseId, path: "deep/one/missing.txt" })).rejects.toMatchObject({ status: 403 });
     expect(leases).toBe(before);
     directory("freeipa", ".", 0, 0, "0700");
-    expect((await service.bases(actor)).items[0]).toMatchObject({ status: "conflict", reason: "forbidden" });
+    expect((await service.bases(testCall(actor))).items[0]).toMatchObject({ status: "conflict", reason: "forbidden" });
   });
   test("Cloud adoption remains stable after POSIX allocation, provider off/on, and hides top-level trash", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "users/admin", 99, 99);
     directory("cloud", "users/admin/trash", 99, 99);
     directory("cloud", "users/admin/report", 99, 99, "0600", false);
-    expect((await service.bases(admin)).items[0]?.status).toBe("unassigned");
-    const base = await service.adopt(admin, { area: "cloud", kind: "users", identityId: id(admin) });
+    expect((await service.bases(testCall(admin))).items[0]?.status).toBe("unassigned");
+    const base = await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) });
     await sql`INSERT INTO auth.user_posix VALUES(${id(admin)},'local',200001,200001)`;
     await set("freeipa.enable", false);
-    expect((await service.list(admin, { baseId: base.id })).items.map((item) => item.name)).toEqual(["report"]);
-    await expect(service.download(admin, { baseId: base.id, path: "trash/report" })).rejects.toMatchObject({ code: "reserved_path" });
-    await expect(service.download(admin, { baseId: base.id, path: "../other" })).rejects.toMatchObject({ code: "invalid_path" });
+    expect((await service.list(testCall(admin), { baseId: base.id })).items.map((item) => item.name)).toEqual(["report"]);
+    await expect(service.download(testCall(admin), { baseId: base.id, path: "trash/report" })).rejects.toMatchObject({
+      code: "reserved_path",
+    });
+    await expect(service.download(testCall(admin), { baseId: base.id, path: "../other" })).rejects.toMatchObject({ code: "invalid_path" });
     config.cloud.enabled = false;
-    await expect(service.list(admin, { baseId: base.id })).rejects.toMatchObject({ code: "area_disabled" });
+    await expect(service.list(testCall(admin), { baseId: base.id })).rejects.toMatchObject({ code: "area_disabled" });
     config.cloud.enabled = true;
-    expect((await service.download(admin, { baseId: base.id, path: "report" })).method).toBe("GET");
+    expect((await service.download(testCall(admin), { baseId: base.id, path: "report" })).method).toBe("GET");
   });
   test("retained claim denies a reused username and concurrent identity claims cannot take over coordinates", async () => {
     const first = await user("alice", "ipa");
     directory("freeipa", "users/alice");
-    await service.bases(first);
+    await service.bases(testCall(first));
     await sql`DELETE FROM auth.users WHERE id=${id(first)}::uuid`;
     const second = await user("alice", "ipa");
-    expect((await service.bases(second)).items[0]?.reason).toBe("binding_conflict");
+    expect((await service.bases(testCall(second))).items[0]?.reason).toBe("binding_conflict");
     const a = {
       area: "cloud" as const,
       kind: "groups" as const,
@@ -1883,7 +2319,7 @@ suite("Files service and durable bindings", () => {
     >`INSERT INTO auth.groups(name,provider,gid_number) VALUES('team','local',200003) RETURNING id`;
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${team!.id})`;
     config.cloud.enabled = false;
-    const disabled = await service.bases(actor);
+    const disabled = await service.bases(testCall(actor));
     expect(disabled.issues).toEqual([]);
     expect(disabled.items.map((item) => [item.area, item.status])).toEqual([["freeipa", "existing"]]);
     config.cloud.enabled = true;
@@ -1891,7 +2327,7 @@ suite("Files service and durable bindings", () => {
       "linux.identity_config",
       JSON.stringify({ enabled: false, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
     );
-    const failing = await service.bases(actor);
+    const failing = await service.bases(testCall(actor));
     expect(failing.issues).toEqual([{ area: "cloud", code: "local_linux_disabled" }]);
     expect(failing.items.map((item) => item.area)).toEqual(["freeipa"]);
   });
@@ -1899,7 +2335,7 @@ suite("Files service and durable bindings", () => {
     const local = await user("bob");
     directory("cloud", "users/bob", 200001, 200001);
     await set("freeipa.enable", false);
-    const bob = await service.bases(local);
+    const bob = await service.bases(testCall(local));
     expect(bob.issues).toEqual([]);
     expect(bob.items.map((item) => [item.area, item.kind, item.name])).toEqual([["cloud", "users", "bob"]]);
     await set("freeipa.enable", true);
@@ -1909,7 +2345,7 @@ suite("Files service and durable bindings", () => {
       "linux.identity_config",
       JSON.stringify({ enabled: false, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
     );
-    const alice = await service.bases(ipa);
+    const alice = await service.bases(testCall(ipa));
     expect(alice.issues).toEqual([]);
     expect(alice.items.map((item) => [item.area, item.kind, item.name])).toEqual([["freeipa", "users", "alice"]]);
   });
@@ -1927,7 +2363,7 @@ suite("Files service and durable bindings", () => {
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${personal!.id}),(${id(actor)},${team!.id})`;
     await sql`INSERT INTO auth.user_posix(user_id,managed_by,uid_number,primary_gid_number,primary_group_id,home_directory,login_shell)
       VALUES(${id(actor)},'local',200001,200004,${personal!.id},'/home/quinn','/bin/bash')`;
-    const bases = await service.bases(actor);
+    const bases = await service.bases(testCall(actor));
     expect(bases.issues).toEqual([]);
     expect(bases.items.map((item) => [item.area, item.kind, item.name])).toEqual([
       ["cloud", "users", "quinn"],
@@ -1936,20 +2372,20 @@ suite("Files service and durable bindings", () => {
   });
   test("guest and global Cloud prerequisite denial occurs before leases", async () => {
     const guest = await user("guest", "local", false, "guest");
-    await expect(service.bases(guest)).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.bases(testCall(guest))).rejects.toMatchObject({ code: "forbidden" });
     const actor = await user("alice");
     await set(
       "linux.identity_config",
       JSON.stringify({ enabled: false, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" }),
     );
-    expect((await service.bases(actor)).issues).toContainEqual({ area: "cloud", code: "local_linux_disabled" });
+    expect((await service.bases(testCall(actor))).issues).toContainEqual({ area: "cloud", code: "local_linux_disabled" });
     expect(leases).toBe(0);
   });
   test("admin inventory preserves unknown totals, marks ineligible folders, and never returns token", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "groups/logical", 99, 99);
     await sql`INSERT INTO auth.groups(name,provider,gid_number) VALUES('logical','local',NULL)`;
-    const result = await service.admin(admin, { area: "cloud", kind: "groups", after: "fs:" });
+    const result = await service.admin(testCall(admin), { area: "cloud", kind: "groups", after: "fs:" });
     expect(result.root?.bytes).toBeNull();
     expect(result.items[0]?.reason).toBe("identity_ineligible");
     expect(JSON.stringify(result)).not.toContain("backend-test-secret");
@@ -1957,7 +2393,7 @@ suite("Files service and durable bindings", () => {
   });
   test("summary reads skip directory reconciliation and retain unknown root statistics", async () => {
     const admin = await user("admin", "local", true);
-    const result = await service.admin(admin, { area: "freeipa", kind: "users", includeEntries: "false" });
+    const result = await service.admin(testCall(admin), { area: "freeipa", kind: "users", includeEntries: "false" });
     expect(result.items).toEqual([]);
     expect(result.next).toBeNull();
     expect(result.root?.bytes).toBeNull();
@@ -1985,13 +2421,15 @@ suite("Files service and durable bindings", () => {
       writeConfiguration: async () => {
         throw new Error("Unexpected configuration write");
       },
+      resetConfiguration: async () => {
+        throw new Error("Unexpected configuration reset");
+      },
       publicOrigin: async () => "https://cloud.test",
       userById: async (id: string) => users.get(id) ?? null,
       transfer: transport,
-      connect: (configuration) =>
-        new Filegate({ baseUrl: configuration.url, transferBaseUrl: configuration.url, token: configuration.token, fetch: transport }),
+      connect: (configuration) => connectFilegate(configuration, transport),
     });
-    const result = await slowService.admin(admin, { area: "freeipa", kind: "users" });
+    const result = await slowService.admin(testCall(admin), { area: "freeipa", kind: "users" });
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({
       name: "alice",
@@ -2008,7 +2446,7 @@ suite("Files service and durable bindings", () => {
       SELECT ('10000000-0000-4000-8000-' || lpad(i::text,12,'0'))::uuid,'other-'||i,'local','user',false FROM generate_series(1,60) AS i`;
     await sql`INSERT INTO auth.users(id,uid,provider,profile,admin)
       VALUES('ffffffff-ffff-4fff-bfff-fffffffffffe','needle','local','user',false)`;
-    const result = await service.admin(admin, { area: "cloud", kind: "users", q: "needle", status: "missing" });
+    const result = await service.admin(testCall(admin), { area: "cloud", kind: "users", q: "needle", status: "missing" });
     expect(result.items.map((item) => item.name)).toEqual(["needle"]);
     expect(result.next).toBeNull();
   });
@@ -2019,7 +2457,7 @@ suite("Files service and durable bindings", () => {
     await sql`UPDATE auth.users SET display_name='Alice Example' WHERE id=${id(alice)}::uuid`;
     directory("cloud", "users/alice");
     directory("cloud", "users/ghost");
-    const result = await service.admin(admin, { area: "cloud", kind: "users" });
+    const result = await service.admin(testCall(admin), { area: "cloud", kind: "users" });
     expect(displayNameLookups).toHaveLength(1);
     expect(displayNameLookups[0]).toHaveLength(3);
     expect(Object.fromEntries(result.items.map((item) => [item.name, item.displayName]))).toEqual({
@@ -2030,14 +2468,14 @@ suite("Files service and durable bindings", () => {
     });
     expect(result.items.find((item) => item.name === "ghost")).toMatchObject({ identityId: null, status: "orphaned" });
     for (const q of ["alice example", "ALI"])
-      expect((await service.admin(admin, { area: "cloud", kind: "users", q })).items.map((item) => item.name)).toEqual(["alice"]);
+      expect((await service.admin(testCall(admin), { area: "cloud", kind: "users", q })).items.map((item) => item.name)).toEqual(["alice"]);
     await sql`INSERT INTO auth.groups(name,provider,gid_number) VALUES('team','local',200003)`;
-    const groups = await service.admin(admin, { area: "cloud", kind: "groups" });
+    const groups = await service.admin(testCall(admin), { area: "cloud", kind: "groups" });
     expect(groups.items.map((item) => [item.name, item.displayName])).toEqual([["team", "team"]]);
   });
   test("inventory display names are resolved only for administrators", async () => {
     const member = await user("member");
-    await expect(service.admin(member, { area: "cloud", kind: "users" })).rejects.toBeDefined();
+    await expect(service.admin(testCall(member), { area: "cloud", kind: "users" })).rejects.toBeDefined();
     expect(displayNameLookups).toHaveLength(0);
   });
   test("inventory cursors resume partial filesystem pages without losing or duplicating entries", async () => {
@@ -2048,7 +2486,7 @@ suite("Files service and durable bindings", () => {
     let after: string | undefined;
     let partialFilesystemPage = false;
     for (let pages = 0; pages < 10; pages++) {
-      const page = await service.admin(admin, { area: "cloud", kind: "users", after });
+      const page = await service.admin(testCall(admin), { area: "cloud", kind: "users", after });
       expect(page.items.length).toBeLessThanOrEqual(50);
       names.push(...page.items.map((item) => item.name));
       if (page.next?.startsWith("fs:") && page.next !== "fs:") {
@@ -2073,41 +2511,46 @@ suite("Files service and durable bindings", () => {
       { id: string }[]
     >`INSERT INTO auth.groups(name,provider,gid_number) VALUES('team','local',200003) RETURNING id`;
     await sql`INSERT INTO auth.user_groups_v2 VALUES(${id(actor)},${group!.id})`;
-    const base = await service.adopt(admin, { area: "cloud", kind: "groups", identityId: group!.id });
-    expect((await service.download(actor, { baseId: base.id, path: "file" })).method).toBe("GET");
+    const base = await service.adopt(testCall(admin), { area: "cloud", kind: "groups", identityId: group!.id });
+    expect((await service.download(testCall(actor), { baseId: base.id, path: "file" })).method).toBe("GET");
     await sql`DELETE FROM auth.user_groups_v2`;
-    await expect(service.download(actor, { baseId: base.id, path: "file" })).rejects.toMatchObject({ code: "not_found" });
+    await expect(service.download(testCall(actor), { baseId: base.id, path: "file" })).rejects.toMatchObject({ code: "not_found" });
   });
   test("auto provision is opt-in and retire prevents silent recreation", async () => {
     const admin = await user("admin", "local", true);
-    expect((await service.bases(admin)).items[0]?.status).toBe("missing");
+    expect((await service.bases(testCall(admin))).items[0]?.status).toBe("missing");
     config.cloud.autoCreate = true;
-    expect((await service.bases(admin)).items[0]?.status).toBe("existing");
+    expect((await service.bases(testCall(admin))).items[0]?.status).toBe("existing");
     expect(nodes.get("cloud:users/admin")?.mode).toBe("0700");
-    await service.retire(admin, { area: "cloud", kind: "users", name: "admin" });
+    await service.retire(testCall(admin), { area: "cloud", kind: "users", name: "admin" });
     nodes.delete("cloud:users/admin");
-    expect((await service.bases(admin)).items[0]?.status).toBe("retired");
+    expect((await service.bases(testCall(admin))).items[0]?.status).toBe("retired");
     expect(nodes.has("cloud:users/admin")).toBeFalse();
   });
   test("archive journal survives lost move response, restores without changing ownership and forbids old-name reuse", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "users/admin", 0, 0, "0700");
     directory("cloud", "users/admin/file", 0, 0, "0600", false);
-    await service.adopt(admin, { area: "cloud", kind: "users", identityId: id(admin) });
+    await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) });
     lostMoveResponse = true;
-    const archived = await service.archive(admin, { area: "cloud", kind: "users", name: "admin" });
+    const archived = await service.archive(testCall(admin), { area: "cloud", kind: "users", name: "admin" });
     expect(archived.state).toBe("complete");
     expect(nodes.has("cloud:users/admin")).toBeFalse();
     const [journal] = await sql<{ snapshot: Node }[]>`SELECT snapshot FROM filesv2.operations WHERE id=${archived.id}::uuid`;
     expect(journal!.snapshot.uid).toBe(0);
-    const archive = await service.archives(admin, { area: "cloud" });
+    const archive = await service.archives(testCall(admin), { area: "cloud" });
     expect(archive.items[0]?.state).toBe("archived");
-    await service.adminDelete(admin, { area: "cloud", archiveId: archived.id, path: "file", confirmPath: archived.path + "/file" });
+    await service.adminDelete(testCall(admin), {
+      area: "cloud",
+      archiveId: archived.id,
+      path: "file",
+      confirmPath: archived.path + "/file",
+    });
     const [base] = await sql<{ lifecycle: string }[]>`SELECT lifecycle FROM filesv2.bases WHERE identity_id=${id(admin)}::uuid`;
     expect(base?.lifecycle).toBe("archived");
-    await service.restore(admin, archived.id, { confirmPath: "users/admin" });
+    await service.restore(testCall(admin), archived.id, { confirmPath: "users/admin" });
     expect(nodes.get("cloud:users/admin")?.mode).toBe("0700");
-    expect((await service.bases(admin)).items[0]?.status).toBe("existing");
+    expect((await service.bases(testCall(admin))).items[0]?.status).toBe("existing");
   });
   test("maintenance archives only proven removed users and explicit logical groups, never guest conversion or renamed identity", async () => {
     const admin = await user("admin", "local", true);
@@ -2120,7 +2563,7 @@ suite("Files service and durable bindings", () => {
       ["renamed", renamed],
     ] as const) {
       directory("cloud", `users/${name}`, 0, 0, "0700");
-      await service.adopt(admin, { area: "cloud", kind: "users", identityId: id(actor) });
+      await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(actor) });
     }
     await sql`DELETE FROM auth.users WHERE id=${id(removed)}::uuid`;
     await sql`UPDATE auth.users SET profile='guest' WHERE id=${id(guest)}::uuid`;
@@ -2136,21 +2579,21 @@ suite("Files service and durable bindings", () => {
     const actor = await user("alice");
     directory("cloud", "users/alice", 0, 0, "0700");
     await expect(
-      service.deleteDirectory(actor, { area: "cloud", kind: "users", name: "alice", confirmPath: "users/alice" }),
+      service.deleteDirectory(testCall(actor), { area: "cloud", kind: "users", name: "alice", confirmPath: "users/alice" }),
     ).rejects.toMatchObject({ code: "admin_required" });
     await expect(
-      service.deleteDirectory(admin, { area: "cloud", kind: "users", name: "alice", confirmPath: "alice" }),
+      service.deleteDirectory(testCall(admin), { area: "cloud", kind: "users", name: "alice", confirmPath: "alice" }),
     ).rejects.toMatchObject({ code: "confirmation_mismatch" });
-    await service.deleteDirectory(admin, { area: "cloud", kind: "users", name: "alice", confirmPath: "users/alice" });
+    await service.deleteDirectory(testCall(admin), { area: "cloud", kind: "users", name: "alice", confirmPath: "users/alice" });
     expect(nodes.has("cloud:users/alice")).toBeFalse();
   });
   test("pending archive recovery refuses recreated source and changed server, then completes durable intent", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "users/admin", 0, 0, "0700");
-    await service.adopt(admin, { area: "cloud", kind: "users", identityId: id(admin) });
+    await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) });
     await sql`ALTER TABLE filesv2.operations ADD CONSTRAINT test_pause_finish CHECK (state<>'complete')`.simple();
     try {
-      await expect(service.archive(admin, { area: "cloud", kind: "users", name: "admin" })).rejects.toThrow();
+      await expect(service.archive(testCall(admin), { area: "cloud", kind: "users", name: "admin" })).rejects.toThrow();
     } finally {
       await sql`ALTER TABLE filesv2.operations DROP CONSTRAINT test_pause_finish`.simple();
     }
@@ -2160,22 +2603,22 @@ suite("Files service and durable bindings", () => {
     expect(pending?.state).toBe("pending");
     expect(nodes.has("cloud:users/admin")).toBeFalse();
     directory("cloud", "users/admin", 0, 0, "0700");
-    await expect(service.retry(admin, pending!.id)).rejects.toMatchObject({ code: "path_conflict" });
+    await expect(service.retry(testCall(admin), pending!.id)).rejects.toMatchObject({ code: "path_conflict" });
     expect(nodes.has("cloud:users/admin")).toBeTrue();
     nodes.delete("cloud:users/admin");
     config.url = "http://another-filegate:4000";
-    await expect(service.retry(admin, pending!.id)).rejects.toMatchObject({ code: "configuration_changed" });
+    await expect(service.retry(testCall(admin), pending!.id)).rejects.toMatchObject({ code: "configuration_changed" });
     config.url = "http://filegate:4000";
-    expect((await service.retry(admin, pending!.id)).state).toBe("complete");
-    expect((await service.retry(admin, pending!.id)).state).toBe("complete");
+    expect((await service.retry(testCall(admin), pending!.id)).state).toBe("complete");
+    expect((await service.retry(testCall(admin), pending!.id)).state).toBe("complete");
   });
   test("pending archive recovery compares snapshot ids only when Filegate still publishes one", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "users/admin", 0, 0, "0700");
-    await service.adopt(admin, { area: "cloud", kind: "users", identityId: id(admin) });
+    await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) });
     await sql`ALTER TABLE filesv2.operations ADD CONSTRAINT test_pause_finish CHECK (state<>'complete')`.simple();
     try {
-      await expect(service.archive(admin, { area: "cloud", kind: "users", name: "admin" })).rejects.toThrow();
+      await expect(service.archive(testCall(admin), { area: "cloud", kind: "users", name: "admin" })).rejects.toThrow();
     } finally {
       await sql`ALTER TABLE filesv2.operations DROP CONSTRAINT test_pause_finish`.simple();
     }
@@ -2185,22 +2628,22 @@ suite("Files service and durable bindings", () => {
     await sql`UPDATE filesv2.operations SET snapshot=snapshot || '{"id":"6c0f4a6e-9a43-4a8e-9d0c-6f3c1f7b2a10"}'::jsonb WHERE id=${pending!.id}::uuid`;
     const moved = nodes.get(`cloud:${pending!.target}`)!;
     nodes.set(`cloud:${pending!.target}`, { ...moved, id: "0b6f8f55-2d0e-4b6a-8f7e-3c2a1d9e4b21" });
-    await expect(service.retry(admin, pending!.id)).rejects.toMatchObject({ code: "source_changed" });
+    await expect(service.retry(testCall(admin), pending!.id)).rejects.toMatchObject({ code: "source_changed" });
     nodes.set(`cloud:${pending!.target}`, moved);
-    expect((await service.retry(admin, pending!.id)).state).toBe("complete");
+    expect((await service.retry(testCall(admin), pending!.id)).state).toBe("complete");
   });
   test("per-action archive destinations stay separate from active trees and survive default changes", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "users/admin", 0, 0, "0700");
-    await service.adopt(admin, { area: "cloud", kind: "users", identityId: id(admin) });
+    await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) });
     await expect(
-      service.archive(admin, { area: "cloud", kind: "users", name: "admin", archivePath: "users/archived" }),
+      service.archive(testCall(admin), { area: "cloud", kind: "users", name: "admin", archivePath: "users/archived" }),
     ).rejects.toMatchObject({ code: "overlapping_paths" });
-    const archived = await service.archive(admin, { area: "cloud", kind: "users", name: "admin", archivePath: "retained/2026" });
+    const archived = await service.archive(testCall(admin), { area: "cloud", kind: "users", name: "admin", archivePath: "retained/2026" });
     expect(archived.path.startsWith("retained/2026/")).toBeTrue();
     config.cloud.archive = "archive-new";
-    expect((await service.archives(admin, { area: "cloud" })).items[0]?.canRestore).toBeTrue();
-    await service.restore(admin, archived.id, { confirmPath: "users/admin" });
+    expect((await service.archives(testCall(admin), { area: "cloud" })).items[0]?.canRestore).toBeTrue();
+    await service.restore(testCall(admin), archived.id, { confirmPath: "users/admin" });
     expect(nodes.has("cloud:users/admin")).toBeTrue();
     config.cloud.archive = "archive";
   });
@@ -2208,37 +2651,39 @@ suite("Files service and durable bindings", () => {
     const admin = await user("admin", "local", true);
     const actor = await user("alice");
     directory("cloud", "users/alice", 0, 0, "0700");
-    await service.deleteDirectory(admin, { area: "cloud", kind: "users", name: "alice", confirmPath: "users/alice" });
+    await service.deleteDirectory(testCall(admin), { area: "cloud", kind: "users", name: "alice", confirmPath: "users/alice" });
     config.cloud.autoCreate = true;
-    expect((await service.bases(actor)).items[0]?.status).toBe("retired");
+    expect((await service.bases(testCall(actor))).items[0]?.status).toBe("retired");
     expect(nodes.has("cloud:users/alice")).toBeFalse();
-    await expect(service.provision(admin, { area: "cloud", kind: "users", identityId: id(actor) })).rejects.toMatchObject({
+    await expect(service.provision(testCall(admin), { area: "cloud", kind: "users", identityId: id(actor) })).rejects.toMatchObject({
       code: "retired",
     });
   });
   test("unknown orphan deletion leaves a path tombstone for a later same-name account", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "users/old-owner", 0, 0, "0700");
-    await service.deleteDirectory(admin, { area: "cloud", kind: "users", name: "old-owner", confirmPath: "users/old-owner" });
+    await service.deleteDirectory(testCall(admin), { area: "cloud", kind: "users", name: "old-owner", confirmPath: "users/old-owner" });
     const actor = await user("old-owner");
     config.cloud.autoCreate = true;
-    expect((await service.bases(actor)).items[0]?.status).toBe("retired");
-    await expect(service.provision(admin, { area: "cloud", kind: "users", identityId: id(actor) })).rejects.toMatchObject({
+    expect((await service.bases(testCall(actor))).items[0]?.status).toBe("retired");
+    await expect(service.provision(testCall(admin), { area: "cloud", kind: "users", identityId: id(actor) })).rejects.toMatchObject({
       code: "retired",
     });
     directory("cloud", "users/old-owner", 0, 0, "0700");
-    await expect(service.adopt(admin, { area: "cloud", kind: "users", identityId: id(actor) })).rejects.toMatchObject({ code: "retired" });
+    await expect(service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(actor) })).rejects.toMatchObject({
+      code: "retired",
+    });
   });
   test("repeating the original restore action rechecks identity eligibility before replaying a pending move", async () => {
     const admin = await user("admin", "local", true);
     const actor = await user("alice");
     directory("cloud", "users/alice", 0, 0, "0700");
-    await service.adopt(admin, { area: "cloud", kind: "users", identityId: id(actor) });
-    const archived = await service.archive(admin, { area: "cloud", kind: "users", name: "alice" });
+    await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(actor) });
+    const archived = await service.archive(testCall(admin), { area: "cloud", kind: "users", name: "alice" });
     failMove = true;
-    await expect(service.restore(admin, archived.id, { confirmPath: "users/alice" })).rejects.toThrow();
+    await expect(service.restore(testCall(admin), archived.id, { confirmPath: "users/alice" })).rejects.toThrow();
     await sql`UPDATE auth.users SET profile='guest' WHERE id=${id(actor)}::uuid`;
-    await expect(service.restore(admin, archived.id, { confirmPath: "users/alice" })).rejects.toMatchObject({
+    await expect(service.restore(testCall(admin), archived.id, { confirmPath: "users/alice" })).rejects.toMatchObject({
       code: "identity_incomplete",
     });
     expect(nodes.has("cloud:users/alice")).toBeFalse();
@@ -2248,8 +2693,8 @@ suite("Files service and durable bindings", () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/report.txt", 1001, 2001, "0600", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const upload = await service.upload(actor, {
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const upload = await service.upload(testCall(actor), {
       idempotencyKey: crypto.randomUUID(),
       baseId,
       path: "report.txt",
@@ -2258,15 +2703,15 @@ suite("Files service and durable bindings", () => {
     });
     privateSession(upload.id)!.received = 12;
     directory("freeipa", "users/alice/report.txt", 9999, 9999, "0600", false);
-    await expect(service.uploadLease(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "forbidden" });
-    await expect(service.commitUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.uploadLease(testCall(actor), { baseId, id: upload.id })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: upload.id })).rejects.toMatchObject({ code: "forbidden" });
     expect(privateSession(upload.id)!.state).toBe("open");
   });
   test("upload commits reject mismatched receipts and preserve unknown terminal outcomes", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const upload = await service.upload(actor, {
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const upload = await service.upload(testCall(actor), {
       idempotencyKey: crypto.randomUUID(),
       baseId,
       path: "new.txt",
@@ -2276,20 +2721,20 @@ suite("Files service and durable bindings", () => {
     const session = privateSession(upload.id)!;
     session.received = 12;
     session.path = "users/another/new.txt";
-    await expect(service.commitUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
     session.path = "users/alice/new.txt";
     session.state = "committed";
-    await expect(service.commitUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
     expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${upload.id}`)[0]!.state).toBe("open");
     session.result = directory("freeipa", "users/another/new.txt", 1001, 2001, "0600", false);
-    await expect(service.commitUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
     expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${upload.id}`)[0]!.state).toBe("open");
   });
   test("abort recovery validates committed receipts and preserves expired state", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const upload = await service.upload(actor, {
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const upload = await service.upload(testCall(actor), {
       idempotencyKey: crypto.randomUUID(),
       baseId,
       path: "new.txt",
@@ -2299,12 +2744,12 @@ suite("Files service and durable bindings", () => {
     const session = privateSession(upload.id)!;
     session.state = "committed";
     session.result = directory("freeipa", "users/another/new.txt", 1001, 2001, "0600", false);
-    await expect(service.abortUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
+    await expect(service.abortUpload(testCall(actor), { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_changed" });
     expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${upload.id}`)[0]!.state).toBe("open");
     session.result = directory("freeipa", "users/alice/new.txt", 1001, 2001, "0600", false);
-    await expect(service.abortUpload(actor, { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_closed" });
+    await expect(service.abortUpload(testCall(actor), { baseId, id: upload.id })).rejects.toMatchObject({ code: "upload_closed" });
     expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${upload.id}`)[0]!.state).toBe("committed");
-    const expired = await service.upload(actor, {
+    const expired = await service.upload(testCall(actor), {
       idempotencyKey: crypto.randomUUID(),
       baseId,
       path: "expired.txt",
@@ -2312,7 +2757,7 @@ suite("Files service and durable bindings", () => {
       onConflict: "error",
     });
     privateSession(expired.id)!.state = "expired";
-    await service.abortUpload(actor, { baseId, id: expired.id });
+    await service.abortUpload(testCall(actor), { baseId, id: expired.id });
     expect((await sql`SELECT state FROM filesv2.uploads WHERE id=${expired.id}`)[0]!.state).toBe("expired");
   });
   test("long resource references persist complete paths without bypassing current rights", async () => {
@@ -2323,31 +2768,33 @@ suite("Files service and durable bindings", () => {
     directory("freeipa", `users/alice/${segments.slice(0, 2).join("/")}`);
     const path = segments.join("/");
     directory("freeipa", `users/alice/${path}`, 1001, 2001, "0600", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const result = await service.entry(actor, { baseId, path });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const result = await service.entry(testCall(actor), { baseId, path });
     expect(result.resourceId).toStartWith("p:");
     expect(await resolveEntryRefId(result.resourceId!)).toEqual({ baseId, path });
-    expect((await service.entry(actor, { baseId, path })).resourceId).toBe(result.resourceId);
+    expect((await service.entry(testCall(actor), { baseId, path })).resourceId).toBe(result.resourceId);
     // The CLI addresses files by these IDs: persisted and inline IDs resolve to the same checked entry.
-    expect((await service.entryById(actor, result.resourceId!)).entry.path).toBe(path);
-    expect((await service.entryById(actor, entryRefId(baseId, segments[0]!)!)).entry.directory).toBe(true);
-    await expect(service.entryById(actor, `p:${"0".repeat(64)}`)).rejects.toMatchObject({ code: "not_found", status: 404 });
-    await expect(service.entryById(actor, "not-an-id")).rejects.toMatchObject({ code: "not_found", status: 404 });
+    expect((await service.entryById(testCall(actor), result.resourceId!)).entry.path).toBe(path);
+    expect((await service.entryById(testCall(actor), entryRefId(baseId, segments[0]!)!)).entry.directory).toBe(true);
+    await expect(service.entryById(testCall(actor), `p:${"0".repeat(64)}`)).rejects.toMatchObject({ code: "not_found", status: 404 });
+    await expect(service.entryById(testCall(actor), "not-an-id")).rejects.toMatchObject({ code: "not_found", status: 404 });
     directory("freeipa", `users/alice/${path}`, 9999, 9999, "0600", false);
-    await expect(service.entry(actor, (await resolveEntryRefId(result.resourceId!))!)).rejects.toMatchObject({ code: "forbidden" });
-    await expect(service.entryById(actor, result.resourceId!)).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.entry(testCall(actor), (await resolveEntryRefId(result.resourceId!))!)).rejects.toMatchObject({
+      code: "forbidden",
+    });
+    await expect(service.entryById(testCall(actor), result.resourceId!)).rejects.toMatchObject({ code: "forbidden" });
   });
   test("marks use live metadata, hide unreadable leaves and allow removal of missing entries", async () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/report.txt", 1001, 2001, "0600", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    await service.setFavorite(actor, { baseId, path: "report.txt", favorite: true });
-    expect((await service.favorites(actor))[0]!.entry.size).toBe(12);
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    await service.setFavorite(testCall(actor), { baseId, path: "report.txt", favorite: true });
+    expect((await service.favorites(testCall(actor)))[0]!.entry.size).toBe(12);
     directory("freeipa", "users/alice/report.txt", 9999, 9999, "0600", false);
-    expect(await service.favorites(actor)).toEqual([]);
+    expect(await service.favorites(testCall(actor))).toEqual([]);
     nodes.delete("freeipa:users/alice/report.txt");
-    await service.setFavorite(actor, { baseId, path: "report.txt", favorite: false });
+    await service.setFavorite(testCall(actor), { baseId, path: "report.txt", favorite: false });
     expect((await sql`SELECT * FROM filesv2.favorites`).length).toBe(0);
   });
   test("mark cleanup treats percent and underscore as literal path segments", async () => {
@@ -2357,9 +2804,10 @@ suite("Files service and durable bindings", () => {
       directory("freeipa", `users/alice/${name}`);
       directory("freeipa", `users/alice/${name}/child`, 1001, 2001, "0600", false);
     }
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    for (const path of ["a%_/child", "abX/child", "a%_extra/child"]) await service.setFavorite(actor, { baseId, path, favorite: true });
-    await service.rename(actor, { baseId, path: "a%_", name: "renamed" });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    for (const path of ["a%_/child", "abX/child", "a%_extra/child"])
+      await service.setFavorite(testCall(actor), { baseId, path, favorite: true });
+    await service.rename(testCall(actor), { baseId, path: "a%_", name: "renamed" });
     expect((await sql<{ path: string }[]>`SELECT path FROM filesv2.favorites ORDER BY path`).map((row) => row.path)).toEqual([
       "a%_extra/child",
       "abX/child",
@@ -2369,16 +2817,18 @@ suite("Files service and durable bindings", () => {
     const actor = await user("alice", "ipa");
     directory("freeipa", "users/alice");
     directory("freeipa", "users/alice/report.txt", 1001, 2001, "0600", false);
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    await expect(service.deleteVersion(actor, { baseId, path: "report.txt", id: "any" })).rejects.toMatchObject({ code: "admin_required" });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    await expect(service.deleteVersion(testCall(actor), { baseId, path: "report.txt", id: "any" })).rejects.toMatchObject({
+      code: "admin_required",
+    });
   });
 
   test("an unexpected pending native archive receipt never finalizes its durable intent", async () => {
     const admin = await user("admin", "local", true);
     directory("cloud", "users/admin", 0, 0, "0700");
-    await service.adopt(admin, { area: "cloud", kind: "users", identityId: id(admin) });
+    await service.adopt(testCall(admin), { area: "cloud", kind: "users", identityId: id(admin) });
     contents.set("__transfer_response_state__", "source_pending");
-    await expect(service.archive(admin, { area: "cloud", kind: "users", name: "admin" })).rejects.toMatchObject({
+    await expect(service.archive(testCall(admin), { area: "cloud", kind: "users", name: "admin" })).rejects.toMatchObject({
       code: "transfer_pending",
     });
     const [pending] = await sql<
@@ -2386,7 +2836,7 @@ suite("Files service and durable bindings", () => {
     >`SELECT id,state,error_code FROM filesv2.operations WHERE action='archive'`;
     expect(pending).toMatchObject({ state: "pending", error_code: "transfer_pending" });
     contents.delete("__transfer_response_state__");
-    await expect(service.retry(admin, pending!.id)).rejects.toMatchObject({ code: "transfer_pending" });
+    await expect(service.retry(testCall(admin), pending!.id)).rejects.toMatchObject({ code: "transfer_pending" });
     const [retained] = await sql<{ state: string }[]>`SELECT state FROM filesv2.operations WHERE id=${pending!.id}::uuid`;
     expect(retained?.state).toBe("pending");
   });
@@ -2397,7 +2847,7 @@ suite("Files service and durable bindings", () => {
     const uid = provider === "local" ? 0 : 1001;
     const gid = provider === "local" ? 0 : 2001;
     directory(root, "users/writer", uid, gid, "0700");
-    if (provider === "local") await service.adopt(actor, { area: "cloud", kind: "users", identityId: id(actor) });
+    if (provider === "local") await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
     const path = "users/writer/Minutes.odt";
     directory(root, path, uid, gid, "0600", false);
     contents.set(`${root}:${path}`, "original");
@@ -2407,8 +2857,8 @@ suite("Files service and durable bindings", () => {
       wopiOrigin: "http://gateway:3000",
       documentFormat: "odf",
     };
-    const baseId = (await service.bases(actor)).items[0]!.id;
-    const launch = await service.editor(actor, { baseId, path: "Minutes.odt" });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
+    const launch = await service.editor(testCall(actor), { baseId, path: "Minutes.odt" });
     if (launch.kind === "markdown") throw new Error("Expected office editor");
     const fileId = decodeURIComponent(launch.action.split("WOPISrc=")[1]!).split("/").at(-1)!;
     return { actor, root, uid, gid, path, baseId, launch, fileId, key: `${root}:${path}` };
@@ -2453,10 +2903,9 @@ suite("Files service and durable bindings", () => {
   });
 
   test("Cloud publications respect the shared root lock, release on failure, and retry safely", async () => {
-    const { withRootLock } = await import("../data/operations");
     const fixture = await editorFixture("ipa");
     const timestamp = (await service.editorFileInfo(fixture.launch.token, fixture.fileId)).LastModifiedTime;
-    const upload = await service.upload(fixture.actor, {
+    const upload = await service.upload(testCall(fixture.actor), {
       baseId: fixture.baseId,
       path: "Minutes.odt",
       size: 0,
@@ -2464,23 +2913,22 @@ suite("Files service and durable bindings", () => {
       idempotencyKey: crypto.randomUUID(),
     });
     await withRootLock(fixture.root, async () => {
-      await expect(
+      // Hold the lock past the bounded wait. Start all three publications before awaiting any of
+      // them, so the test spends one wait budget instead of three.
+      const attempts = await Promise.allSettled([
         service.editorSave(fixture.launch.token, fixture.fileId, { timestamp, read: async () => new Blob(["busy"]) }),
-      ).rejects.toMatchObject({ code: "operation_busy", status: 503 });
-      await expect(service.commitUpload(fixture.actor, { baseId: fixture.baseId, id: upload.id })).rejects.toMatchObject({
-        code: "operation_busy",
-        status: 503,
-      });
-      await expect(service.rename(fixture.actor, { baseId: fixture.baseId, path: "Minutes.odt", name: "Moved.odt" })).rejects.toMatchObject(
-        { code: "operation_busy", status: 503 },
-      );
+        service.commitUpload(testCall(fixture.actor), { baseId: fixture.baseId, id: upload.id }),
+        service.rename(testCall(fixture.actor), { baseId: fixture.baseId, path: "Minutes.odt", name: "Moved.odt" }),
+      ]);
+      for (const attempt of attempts)
+        expect(attempt).toMatchObject({ status: "rejected", reason: { code: "operation_busy", status: 503 } });
       expect(contents.get(fixture.key)).toBe("original");
     });
     expect(
       await service.editorSave(fixture.launch.token, fixture.fileId, { timestamp, read: async () => new Blob(["retried"]) }),
     ).toHaveProperty("modified");
     expect(contents.get(fixture.key)).toBe("retried");
-  });
+  }, 15_000);
 
   test("managed WOPI saves reject a concurrent write while reading the incoming document", async () => {
     const fixture = await editorFixture("local");
@@ -2520,7 +2968,9 @@ suite("Files service and durable bindings", () => {
       directory("cloud", target, 777, 778, "0640", false);
       contents.set(`cloud:${target}`, "created by another writer");
     };
-    await expect(service.createDocument(fixture.actor, { baseId: fixture.baseId, path: "New", kind: "text" })).rejects.toMatchObject({
+    await expect(
+      service.createDocument(testCall(fixture.actor), { baseId: fixture.baseId, path: "New", kind: "text" }),
+    ).rejects.toMatchObject({
       status: 412,
     });
     expect(directRequests.at(-1)?.precondition).toEqual({ ifNoneMatch: true });
@@ -2552,17 +3002,24 @@ suite("Files service and durable bindings", () => {
   test("Markdown opens without Collabora and conditional uploads reject stale drafts and changed retry intent", async () => {
     const actor = await user("markdown", "local", true);
     directory("cloud", "users/markdown");
-    await service.adopt(actor, { area: "cloud", kind: "users", identityId: id(actor) });
-    const baseId = (await service.bases(actor)).items[0]!.id;
+    await service.adopt(testCall(actor), { area: "cloud", kind: "users", identityId: id(actor) });
+    const baseId = (await service.bases(testCall(actor))).items[0]!.id;
     const node = directory("cloud", "users/markdown/notes.md", 0, 0, "0600", false);
-    const launch = await service.editor(actor, { baseId, path: "notes.md" });
+    const launch = await service.editor(testCall(actor), { baseId, path: "notes.md" });
     expect(launch.kind).toBe("markdown");
     expect(launch.canWrite).toBe(true);
     const key = crypto.randomUUID();
     await expect(
-      service.upload(actor, { baseId, path: "notes.md", size: 0, onConflict: "overwrite", idempotencyKey: key, expectedRevision: "old" }),
+      service.upload(testCall(actor), {
+        baseId,
+        path: "notes.md",
+        size: 0,
+        onConflict: "overwrite",
+        idempotencyKey: key,
+        expectedRevision: "old",
+      }),
     ).rejects.toMatchObject({ code: "write_conflict" });
-    const opened = await service.upload(actor, {
+    const opened = await service.upload(testCall(actor), {
       baseId,
       path: "notes.md",
       size: 0,
@@ -2571,7 +3028,7 @@ suite("Files service and durable bindings", () => {
       expectedRevision: node.revision,
     });
     await expect(
-      service.upload(actor, {
+      service.upload(testCall(actor), {
         baseId,
         path: "notes.md",
         size: 0,
@@ -2581,7 +3038,7 @@ suite("Files service and durable bindings", () => {
       }),
     ).rejects.toMatchObject({ code: "upload_changed" });
     directory("cloud", "users/markdown/notes.md", 0, 0, "0600", false);
-    await expect(service.commitUpload(actor, { baseId, id: opened.id })).rejects.toMatchObject({ code: "write_conflict" });
+    await expect(service.commitUpload(testCall(actor), { baseId, id: opened.id })).rejects.toMatchObject({ code: "write_conflict" });
     expect(privateSession(opened.id).state).toBe("open");
   });
   test("template snapshots and grants are independent of source files and destination permissions", async () => {
@@ -2590,74 +3047,73 @@ suite("Files service and durable bindings", () => {
     const reader = await user("catalog-reader", "ipa");
     directory("freeipa", "users/catalog-admin");
     directory("freeipa", "users/catalog-reader");
-    const sourceBase = (await service.bases(owner)).items[0]!.id;
-    const targetBase = (await service.bases(reader)).items[0]!.id;
+    const sourceBase = (await service.bases(testCall(owner))).items[0]!.id;
+    const targetBase = (await service.bases(testCall(reader))).items[0]!.id;
     directory("freeipa", "users/catalog-admin/protocol.md", 1001, 2001, "0600", false);
     contents.set("freeipa:users/catalog-admin/protocol.md", "original template");
     const templates = createTemplateService(service);
-    const subject = { type: "user" as const, userId: id(reader) };
-    const template = await templates.import(owner, {
+    const template = await templates.import(testCall(owner), {
       name: "Protocol",
       description: "Independent",
       source: { baseId: sourceBase, path: "protocol.md" },
     });
-    expect((await templates.list(reader, subject, { q: "" })).items).toHaveLength(0);
-    await expect(templates.use(reader, subject, template.id, { baseId: targetBase, path: "copy.md" })).rejects.toMatchObject({
+    expect((await templates.list(testCall(reader), { q: "" })).items).toHaveLength(0);
+    await expect(templates.use(testCall(reader), template.id, { baseId: targetBase, path: "copy.md" })).rejects.toMatchObject({
       code: "forbidden",
     });
-    const grant = await templates.grant(owner, template.id, { type: "user", userId: id(reader) });
-    expect((await templates.list(reader, subject, { q: "pro" })).items.map((x) => x.id)).toEqual([template.id]);
+    const grant = await templates.grant(testCall(owner), template.id, { type: "user", userId: id(reader) });
+    expect((await templates.list(testCall(reader), { q: "pro" })).items.map((x) => x.id)).toEqual([template.id]);
     nodes.delete("freeipa:users/catalog-admin/protocol.md");
     contents.delete("freeipa:users/catalog-admin/protocol.md");
-    await templates.use(reader, subject, template.id, { baseId: targetBase, path: "copy.md" });
+    await templates.use(testCall(reader), template.id, { baseId: targetBase, path: "copy.md" });
     expect(contents.get("freeipa:users/catalog-reader/copy.md")).toBe("original template");
-    await expect(templates.use(reader, subject, template.id, { baseId: targetBase, path: "copy.md" })).rejects.toMatchObject({
+    await expect(templates.use(testCall(reader), template.id, { baseId: targetBase, path: "copy.md" })).rejects.toMatchObject({
       status: 409,
     });
-    await templates.replace(owner, template.id, { filename: "updated.md", content: Buffer.from("updated").toString("base64") });
+    await templates.replace(testCall(owner), template.id, { filename: "updated.md", content: Buffer.from("updated").toString("base64") });
     expect(contents.get("freeipa:users/catalog-reader/copy.md")).toBe("original template");
     directory("freeipa", "users/catalog-reader/readonly", 999, 2001, "0550");
-    await expect(templates.use(reader, subject, template.id, { baseId: targetBase, path: "readonly/denied.md" })).rejects.toMatchObject({
+    await expect(templates.use(testCall(reader), template.id, { baseId: targetBase, path: "readonly/denied.md" })).rejects.toMatchObject({
       code: "forbidden",
     });
-    await templates.revoke(owner, template.id, grant.id);
-    expect((await templates.list(reader, subject, { q: "" })).items).toHaveLength(0);
-    await expect(templates.use(reader, subject, template.id, { baseId: targetBase, path: "denied.md" })).rejects.toMatchObject({
+    await templates.revoke(testCall(owner), template.id, grant.id);
+    expect((await templates.list(testCall(reader), { q: "" })).items).toHaveLength(0);
+    await expect(templates.use(testCall(reader), template.id, { baseId: targetBase, path: "denied.md" })).rejects.toMatchObject({
       code: "forbidden",
     });
-    await expect(templates.upload(reader, { name: "Denied", description: "", filename: "x", content: "" })).rejects.toThrow();
+    await expect(templates.upload(testCall(reader), { name: "Denied", description: "", filename: "x", content: "" })).rejects.toThrow();
     const [parent] = await sql<{ id: string }[]>`INSERT INTO auth.groups(name,provider) VALUES('catalog-parent','local') RETURNING id`;
     const [child] = await sql<{ id: string }[]>`INSERT INTO auth.groups(name,provider) VALUES('catalog-child','local') RETURNING id`;
     await sql`INSERT INTO auth.group_groups_v2(parent_group_id,child_group_id) VALUES(${parent!.id}::uuid,${child!.id}::uuid)`;
     await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${id(reader)}::uuid,${child!.id}::uuid)`;
-    await templates.grant(owner, template.id, { type: "group", groupId: parent!.id });
-    expect((await templates.list(reader, subject, { q: "" })).items).toHaveLength(1);
-    await templates.use(reader, subject, template.id, { baseId: targetBase, path: "nested.md" });
+    await templates.grant(testCall(owner), template.id, { type: "group", groupId: parent!.id });
+    expect((await templates.list(testCall(reader), { q: "" })).items).toHaveLength(1);
+    await templates.use(testCall(reader), template.id, { baseId: targetBase, path: "nested.md" });
     expect(contents.get("freeipa:users/catalog-reader/nested.md")).toBe("updated");
     await sql`DELETE FROM auth.group_groups_v2 WHERE parent_group_id=${parent!.id}::uuid`;
-    await expect(templates.use(reader, subject, template.id, { baseId: targetBase, path: "no-membership.md" })).rejects.toMatchObject({
+    await expect(templates.use(testCall(reader), template.id, { baseId: targetBase, path: "no-membership.md" })).rejects.toMatchObject({
       code: "forbidden",
     });
-    await templates.update(owner, template.id, {
+    await templates.update(testCall(owner), template.id, {
       name: "Renamed",
       description: "Atomic",
       file: { filename: "atomic.md", content: Buffer.from("atomic").toString("base64") },
     });
-    expect(await templates.get(owner, { type: "user", userId: id(owner) }, template.id, true)).toMatchObject({
+    expect(await templates.get(testCall(owner), template.id, true)).toMatchObject({
       name: "Renamed",
       filename: "atomic.md",
       size: 6,
     });
     await expect(
-      templates.upload(owner, {
+      templates.upload(testCall(owner), {
         name: "Too large",
         description: "",
         filename: "large.bin",
         content: Buffer.alloc(20 * 1024 * 1024 + 1).toString("base64"),
       }),
     ).rejects.toMatchObject({ code: "preview_too_large" });
-    expect((await templates.list(owner, { type: "user", userId: id(owner) }, { q: "Too large" }, true)).items).toHaveLength(0);
-    await templates.remove(owner, template.id);
+    expect((await templates.list(testCall(owner), { q: "Too large" }, true)).items).toHaveLength(0);
+    await templates.remove(testCall(owner), template.id);
     expect(contents.get("freeipa:users/catalog-reader/copy.md")).toBe("original template");
   });
 });

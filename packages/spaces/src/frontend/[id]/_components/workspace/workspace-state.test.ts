@@ -58,6 +58,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     endsAt: null,
     allDay: false,
     deadline: null,
+    deadlineAllDay: false,
     estimatedDurationMinutes: null,
     activeBlockerCount: 0,
     priority: null,
@@ -230,6 +231,27 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
   });
 
   describe("Spaces workspace SSR state", () => {
+    test.each(["list", "table", "kanban", "calendar"] as const)("resolves %s from the request before rendering head tabs", async (view) => {
+      const state = await loadSpacesWorkspaceState({
+        user: { id: USER_ID, roles: ["user"] },
+        spaceId: SPACE_ID,
+        spaceShortId: SPACE_SHORT_ID,
+        href: `/app/spaces/${SPACE_SHORT_ID}?view=${view}`,
+      });
+      expect(state).toMatchObject({ kind: "ok", currentView: view });
+    });
+
+    test("resolves a remembered view on the server when the URL has no override", async () => {
+      const state = await loadSpacesWorkspaceState({
+        user: { id: USER_ID, roles: ["user"] },
+        spaceId: SPACE_ID,
+        spaceShortId: SPACE_SHORT_ID,
+        href: `/app/spaces/${SPACE_SHORT_ID}`,
+        cookieHeader: `settings-app-spaces=${encodeURIComponent(JSON.stringify({ spaces: { [SPACE_SHORT_ID]: { view: "table" } } }))}`,
+      });
+      expect(state).toMatchObject({ kind: "ok", currentView: "table", query: "" });
+    });
+
     test("captures the live cursor after authorization and before snapshot queries", async () => {
       const state = await loadSpacesWorkspaceState({
         user: { id: USER_ID, roles: ["user"] },
@@ -389,6 +411,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       const recurrenceId = "2026-07-17T09:00:00.000Z";
       loadedItem = {
         ...item,
+        reactions: [{ emoji: "👍", count: 1, own: true, people: [] }],
         startsAt: "2026-07-01T09:00:00.000Z",
         endsAt: "2026-07-01T09:30:00.000Z",
         recurrence: {
@@ -415,6 +438,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
         allDay: false,
         isOverride: false,
       });
+      expect(state.selectedItemDetail?.item.reactions).toEqual([]);
       expect(state.selectedItemDetail?.commentTarget).toEqual({ itemId: ITEM_SHORT_ID, recurrenceId });
       expect(listedCommentRecurrenceId).toBe(recurrenceId);
     });
@@ -423,6 +447,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       const recurrenceId = "2026-07-17T09:00:00.000Z";
       loadedItem = {
         ...item,
+        reactions: [{ emoji: "👍", count: 1, own: true, people: [] }],
         startsAt: "2026-07-01T09:00:00.000Z",
         endsAt: "2026-07-01T09:30:00.000Z",
         recurrence: {
@@ -434,6 +459,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       loadedOverride = {
         ...loadedItem,
         id: OVERRIDE_ID,
+        reactions: [{ emoji: "❤️", count: 1, own: true, people: [] }],
         startsAt: "2026-07-17T11:00:00.000Z",
         endsAt: "2026-07-17T11:30:00.000Z",
         recurrence: null,
@@ -450,6 +476,7 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
 
       expect(detail.kind).toBe("ok");
       if (detail.kind !== "ok") return;
+      expect(detail.detail.item.reactions).toEqual([{ emoji: "❤️", count: 1, own: true, people: [] }]);
       expect(detail.detail.item.id).toBe(OVERRIDE_SHORT_ID);
       expect(detail.detail.recurringContext).toEqual({
         seriesItemId: ITEM_SHORT_ID,

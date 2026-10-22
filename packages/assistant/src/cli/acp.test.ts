@@ -815,3 +815,20 @@ describe("Assistant ACP", () => {
     expect(module.shortcuts).toEqual({ acp: "acp" });
   });
 });
+
+test("sends supplied resource permalinks as full Cloud addresses in ACP updates", async () => {
+  const text = "[Draft](/open/mail.draft/AbC123)";
+  const wire = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const h = await harness({
+    streams: [
+      [
+        { ...wire, seq: 1, type: "block_delta", blockId: "draft", blockKind: "text", delta: "[Draft](/open/" },
+        { ...wire, seq: 2, type: "block_delta", blockId: "draft", blockKind: "text", delta: "mail.draft/AbC123)" },
+        { ...wire, seq: 3, type: "turn_finished", status: "completed", error: null, messages: [] },
+      ],
+    ],
+  });
+  await h.send("Show the draft");
+  expect(h.text()).toContain("[Draft](https://cloud.test/open/mail.draft/AbC123)");
+  expect(h.text()).not.toContain(text);
+});

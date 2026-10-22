@@ -1,212 +1,158 @@
 import { describe, expect, test } from "bun:test";
+import type { RelativeDateContext } from "@k2b/stdlib";
+import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { PublicNoteComment } from "../../../../api/public-resources";
-import type { NamedBlockSummary } from "../../../../lib/named-blocks";
-import type { Backlink } from "../../../../service/links";
-import type { Attachment } from "../editor/attachments-client";
-import type { TaskProgress } from "./tasks";
-import type { TocItem } from "./toc";
+import { createDomTestHarness } from "../../../../../../ui/test/dom";
 import "./ssr-test-plugin";
 
-const { default: NotebookDetailPanel } = await import("./NotebookDetailPanel.island.tsx");
+const { LocaleProvider } = await import("@k2b/ui");
+const { default: NotebookDetailPanel } = await import("./NotebookDetailPanel.island");
+const base = "2026-10-16T19:30:00.000Z";
+const created = "2026-10-13T19:30:00.000Z";
+const edited = "2026-10-16T19:18:00.000Z";
+const dateConfig: RelativeDateContext = { locale: "de", timeZone: "UTC", base };
+const jana = { kind: "user" as const, id: "jana", displayName: "Jana Berger", avatarHash: null };
+const creator = { kind: "user" as const, id: "paul", displayName: "Paul Wagner", avatarHash: null };
+type Props = Parameters<typeof NotebookDetailPanel>[0];
 
-const now = "2026-08-09T10:00:00.000Z";
-const comment: PublicNoteComment = {
-  id: "comment1",
-  notebookId: "book01",
-  noteId: "note01",
-  authorUserId: "user-id",
-  authorDisplayName: "Ada Example",
-  authorAvatarHash: null,
-  content: "**Decision:** ship the handbook update.",
-  createdAt: now,
-  updatedAt: now,
-  canEdit: true,
-  canDelete: true,
+const renderPanel = (overrides: Partial<Props> = {}) =>
+  renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(NotebookDetailPanel, {
+          mode: "edit",
+          fullWidth: false,
+          initiallyOpen: true,
+          tocItems: [
+            { id: "title", level: 1, text: "Wareneingang" },
+            { id: "intro", level: 2, text: "Überblick" },
+            { id: "next", level: 3, text: "Anlieferung" },
+          ],
+          taskProgress: { done: 2, total: 4 },
+          attachments: [],
+          backlinks: [],
+          namedBlocks: [],
+          currentNotebookId: "book01",
+          notebookId: "book01",
+          noteId: "note01",
+          noteTitle: "Wareneingang",
+          contentMd: "# Wareneingang",
+          createdAt: created,
+          updatedAt: edited,
+          lockedAt: null,
+          historyIncomplete: false,
+          isLocked: false,
+          canWrite: true,
+          currentUserId: "me",
+          noteAuthors: { createdBy: creator, lastEditedBy: jana },
+          initialCommentsPage: { items: [], page: 1, perPage: 30, total: 0, hasNext: false },
+          dateConfig,
+          ...overrides,
+        });
+      },
+    }),
+  );
+const inspect = (overrides: Partial<Props>, check: (document: Document) => void) => {
+  const dom = createDomTestHarness();
+  try {
+    dom.root.innerHTML = renderPanel(overrides);
+    check(dom.document);
+  } finally {
+    dom.cleanup();
+  }
 };
-const tocItems: TocItem[] = [
-  { id: "overview", level: 1, text: "Overview" },
-  { id: "details", level: 2, text: "Details" },
-];
-const taskProgress: TaskProgress = { done: 2, total: 3 };
-const namedBlocks: NamedBlockSummary[] = [{ name: "inventory", type: "table", line: 8 }];
-const attachments: Attachment[] = [
-  {
-    id: "attach1",
-    kind: "file",
-    filename: "plan.pdf",
-    notebookId: "notebook-id",
-    mimeType: "application/pdf",
-    sizeBytes: 4096,
-    createdBy: "user-id",
-    createdAt: now,
-  },
-];
-const backlinks: Backlink[] = [
-  {
-    noteId: "source",
-    title: "Source note",
-    notebookId: "other1",
-    notebookName: "Other notebook",
-    updatedAt: now,
-  },
-];
-
-const renderPanel = (overrides: Partial<Parameters<typeof NotebookDetailPanel>[0]> = {}) =>
-  renderToString(() => (
-    <NotebookDetailPanel
-      mode="edit"
-      fullWidth={false}
-      initiallyOpen
-      tocItems={tocItems}
-      taskProgress={taskProgress}
-      attachments={attachments}
-      backlinks={backlinks}
-      namedBlocks={namedBlocks}
-      currentNotebookId="book01"
-      notebookId="book01"
-      noteId="note01"
-      noteTitle="Migration plan"
-      contentMd="# Migration plan"
-      createdAt={now}
-      updatedAt={now}
-      lockedAt={null}
-      historyIncomplete={false}
-      isLocked={false}
-      canWrite
-      currentUserId="user-id"
-      initialCommentsPage={{ items: [], page: 1, perPage: 30, total: 0, hasNext: false }}
-      dateConfig={{ locale: "en", timeZone: "UTC" }}
-      {...overrides}
-    />
-  ));
-
-const legacyDetailClasses = [
-  'class="detail-header',
-  'class="detail-stack',
-  'class="detail-section',
-  'class="detail-row',
-  'class="detail-facts',
-];
+const text = (element: Element | null) => element?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 
 describe("Notebook note detail panel", () => {
-  for (const mode of ["edit", "read"] as const) {
-    test(`${mode}: full width renders the personal SSR preference`, () => {
-      for (const fullWidth of [false, true]) {
-        const html = renderPanel({ mode, fullWidth });
-        expect(html).toContain('class="k2b-detail-panel__section notebooks-full-width-option"');
-        const input = html.match(/<input[^>]*role="switch"[^>]*>/)?.[0];
-        expect(input).toBeDefined();
-        expect(input?.includes("checked")).toBe(fullWidth);
-        expect(html).toContain("Only for you in this browser");
-      }
+  test.each(["write", "readonly", "book"] as const)("graph action preserves the explicit %s presentation", (presentationMode) => {
+    const html = renderPanel({ presentationMode });
+    expect(html).toContain(`href="/app/notebooks/book01?mode=graph&amp;note=note01&amp;from=${presentationMode}"`);
+  });
+
+  test("header attributes the last edit, with a frozen relative date", () => {
+    inspect({}, (document) => {
+      expect(text(document.querySelector(".k2b-detail-panel__supporting > p"))).toMatch(/^Jana Berger · bearbeitet .*12/);
+      expect(document.querySelector('time[datetime="2026-10-16T19:18:00.000Z"]')).not.toBeNull();
+      expect(text(document.querySelector("h2"))).toBe("Wareneingang");
+    });
+  });
+  test("calls the current editor Du", () => {
+    inspect({ currentUserId: jana.id }, (document) =>
+      expect(text(document.querySelector(".k2b-detail-panel__supporting > p"))).toMatch(/^Du · bearbeitet/),
+    );
+  });
+  test("locked notes retain comments but omit AI", () => {
+    const html = renderPanel({ isLocked: true, lockedAt: edited });
+    expect(html).toContain("Gesperrt");
+    expect(html).toContain("Kommentieren");
+    expect(html).not.toContain("Mit KI bearbeiten");
+  });
+  test("viewers have read-only context and no writing actions", () => {
+    const html = renderPanel({ mode: "read", canWrite: false });
+    expect(html).toContain("Nur lesen");
+    expect(html).not.toContain("Mit KI bearbeiten");
+    expect(html).not.toContain("Kommentieren");
+    expect(html).not.toContain("Duplizieren");
+  });
+  test("read mode omits AI", () => expect(renderPanel({ mode: "read" })).not.toContain("Mit KI bearbeiten"));
+  for (const props of [{}, { mode: "read" as const }, { canWrite: false }, { lockedAt: edited, isLocked: true }]) {
+    test(`Ansicht and permitted more actions render in ${JSON.stringify(props)}`, () => {
+      inspect(props, (document) => {
+        expect([...document.querySelectorAll("button")].some((button) => text(button) === "Ansicht")).toBe(true);
+        const menu = document.querySelector('[role="menu"][aria-label="Weitere Aktionen"]');
+        expect(menu).not.toBeNull();
+        for (const label of ["Inhalt kopieren", "Als Markdown herunterladen", "Als PDF exportieren…", "Versionsverlauf", "Im Graph zeigen"])
+          expect(text(menu)).toContain(label);
+        expect(text(menu).includes("Duplizieren")).toBe(props.canWrite !== false);
+        expect(document.querySelector('a[href="/app/notebooks/book01/notes/note01?mode=versions"]')).not.toBeNull();
+      });
     });
   }
-  test("offers presentation actions appropriate to mode, permission and lock", () => {
-    const edit = renderPanel();
-    expect(edit).toContain("/notes/note01?mode=book");
-    expect(edit).toContain("/notes/note01?mode=readonly");
-    const read = renderPanel({ mode: "read" });
-    expect(read).toContain("/notes/note01?mode=book");
-    expect(read).toContain("/notes/note01?mode=write");
-    expect(read).not.toContain("/notes/note01?mode=readonly");
-    expect(renderPanel({ mode: "read", lockedAt: now, isLocked: true })).not.toContain("/notes/note01?mode=write");
-    expect(renderPanel({ mode: "read", canWrite: false })).not.toContain("/notes/note01?mode=write");
-  });
-  test("formats relative dates with the request locale", () => {
-    const html = renderPanel({ dateConfig: { locale: "de-CH", timeZone: "UTC" } });
-
-    expect(html).toContain("9. Aug. 2026");
-  });
-
-  test("composes note context through the grouped shared detail panel contract", () => {
-    const html = renderPanel();
-
-    expect(html).toContain('class="k2b-detail-panel"');
-    expect(html).toContain("<h2>Migration plan</h2>");
-    expect(html).toContain('class="k2b-detail-panel__header-icon"');
-    expect(html).toContain('aria-label="Note actions"');
-    expect(html).toContain('class="k2b-detail-panel__summary"');
-    expect(html).toContain("Task progress");
-    expect(html).toContain('role="progressbar"');
-    expect(html).toContain('aria-label="Completed note tasks"');
-    expect(html).toContain('aria-label="Note structure"');
-    expect(html).toContain('aria-label="Related content"');
-    expect(html).toContain('aria-label="Note context"');
-    expect(html).toContain('style="padding-left: 0.75rem"');
-    expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="true"/g)).toHaveLength(4);
-    expect(html).toContain('data-layout="rows"');
-    expect(html).toContain('data-size="sm"');
-    expect(html).toContain('data-scroll-preserve="notebook-detail"');
-    expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
-    expect(html).toContain("notebook-detail-panel-header");
-    for (const className of legacyDetailClasses) expect(html).not.toContain(className);
-  });
-
-  test("preserves note commands and destination links", () => {
-    const html = renderPanel();
-
-    expect(html).toContain('aria-label="Show Markdown source"');
-    expect(html).toContain("Edit with AI");
-    expect(html).toContain('aria-label="Copy note content"');
-    expect(html).toContain('aria-label="Download note as Markdown"');
-    expect(html).toContain('aria-label="Download note as PDF"');
-    expect(html).toContain('href="/app/notebooks/book01/notes/note01?mode=versions"');
-    expect(html).toContain('href="/app/notebooks/book01?mode=graph&amp;note=note01"');
-    expect(html).toContain('href="#overview"');
-    expect(html).not.toContain("Copy script snippet");
-    expect(html).toContain("inventory");
-    expect(html).toContain("plan.pdf");
-    expect(html).toContain('href="/app/notebooks/other1/notes/source"');
-    expect(html).toContain('aria-label="Close note details"');
-  });
-
-  test("renders the shared discussion contract with SSR comments", () => {
-    const html = renderPanel({ initialCommentsPage: { items: [comment], page: 1, perPage: 30, total: 1, hasNext: false } });
-
-    expect(html).toContain("Comments");
-    expect(html).toContain("Add comment");
-    expect(html).toContain("Ada Example");
-    expect(html).toContain("<strong>Decision:</strong> ship the handbook update.");
-    expect(html).toContain('aria-label="Edit comment"');
-    expect(html).toContain('aria-label="Delete comment"');
-  });
-
-  test("keeps discussion writable when a note body is locked", () => {
-    const html = renderPanel({ mode: "read", lockedAt: now, isLocked: true, canWrite: true });
-
-    expect(html).toContain("Locked note");
-    expect(html).toContain("Comments");
-    expect(html).toContain("Add comment");
-    expect(html).not.toContain("Edit with AI");
-  });
-
-  test("keeps sparse read-only notes sparse and omits editor-only controls", () => {
-    const html = renderPanel({
-      mode: "read",
-      tocItems: [],
-      taskProgress: { done: 0, total: 0 },
-      attachments: [],
-      backlinks: [],
-      namedBlocks: [],
-      lockedAt: now,
-      isLocked: true,
-      canWrite: false,
+  test("empty comments read Noch keine with a comment action and no bare zero", () => {
+    inspect({}, (document) => {
+      const header = document.querySelector(".k2b-discussion__header");
+      expect(text(header)).toContain("KommentareNoch keine");
+      expect(text(header)).toContain("Kommentieren");
+      expect(header?.querySelector(".k2b-count-chip")).toBeNull();
+      expect(text(header)).not.toMatch(/\b0\b/);
     });
-
-    expect(html).toContain("Locked note");
-    expect(html).not.toContain("Task progress");
-    expect(html).not.toContain('aria-label="Note structure"');
-    expect(html).not.toContain('aria-label="Related content"');
-    expect(html).not.toContain("Comments");
-    expect(html).toContain('aria-label="Note context"');
-    expect(html).not.toContain('aria-label="Show Markdown source"');
-    expect(html).not.toContain("Edit with AI");
-    expect(html).toContain('aria-label="Copy note content"');
-    expect(html).toContain('aria-label="Download note as Markdown"');
-    expect(html).toContain('aria-label="Download note as PDF"');
-    expect(html).toContain("Info");
-    expect(html).toContain("Locked");
-    expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
+  });
+  for (const tocItems of [
+    [],
+    [{ id: "title", level: 1, text: "Wareneingang" }],
+    [{ id: "one", level: 2, text: "Only one" }],
+    [
+      { id: "title", level: 1, text: "Wareneingang" },
+      { id: "one", level: 2, text: "Only one" },
+    ],
+  ]) {
+    test(`hides Inhalt for ${tocItems.length} headings: ${tocItems.map((item) => item.id)}`, () => {
+      inspect({ tocItems }, (document) =>
+        expect([...document.querySelectorAll("h3")].some((heading) => text(heading) === "Inhalt")).toBe(false),
+      );
+    });
+  }
+  test("two headings below the title form an outline without H-level labels", () => {
+    inspect({}, (document) => {
+      const rows = [...document.querySelectorAll(".notebook-outline-row")];
+      expect(rows.map((row) => text(row))).toEqual(["Überblick", "Anlieferung"]);
+      expect(rows.some((row) => /\bH[1-6]\b/.test(text(row)))).toBe(false);
+    });
+  });
+  test("activity has no count and ends with the creator rather than a raw key", () => {
+    inspect({}, (document) => {
+      const activity = document.querySelector(".notebook-activity");
+      expect(activity?.querySelector(".k2b-count-chip")).toBeNull();
+      const rows = activity?.querySelectorAll(".k2b-detail-panel__action-title");
+      expect(text(rows?.[rows.length - 1] ?? null)).toBe("Paul Wagner hat die Notiz erstellt");
+      expect(text(activity)).not.toMatch(/note[. ]created/);
+    });
+  });
+  test("activity initially reserves four skeleton rows and the creation row", () => {
+    inspect({}, (document) => {
+      expect(document.querySelectorAll(".notebook-activity-skeleton")).toHaveLength(4);
+      expect(document.querySelectorAll(".notebook-activity .notebook-activity-row")).toHaveLength(1);
+    });
   });
 });

@@ -6,7 +6,6 @@ import {
   Button,
   ButtonLink,
   createHoverPreview,
-  Dropdown,
   FilterChip,
   HoverPreview,
   IconButton,
@@ -41,8 +40,15 @@ import { mailConversationListMessages } from "./mail-conversation-list-messages"
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
 import { mailListRowKey } from "./mail-list-projection";
-import { buildMailListHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
-import { createMailQuickLookLoader } from "./mail-quick-look";
+import {
+  buildMailListHref,
+  buildMailSearchClearHref,
+  buildMailSearchHref,
+  buildMailSelectionHref,
+  type MailListItem,
+  mailRouteUrl,
+} from "./mail-navigation";
+import { createMailQuickLookLoader, mailQuickLookKey } from "./mail-quick-look";
 import { summarizeMailSearchExpression } from "./mail-search-builder-model";
 
 const selectedQuickSearchFields = (url: URL): MailQuickSearchField[] => {
@@ -68,6 +74,8 @@ export default function MailConversationList(props: {
   query: string;
   search: ResolvedMailSearchRoute;
   title: string;
+  /** Where the list is already named, or null when its heading must stay visible. */
+  namedBy: "tabs" | "sidebar" | null;
   items: MailListItem[];
   leavingKeys?: ReadonlySet<string>;
   error: MailListError | null;
@@ -96,7 +104,6 @@ export default function MailConversationList(props: {
   onNavigate: (event: LinkNavigateEvent) => void | Promise<void>;
   onNavigateItem: (href: string, item: MailListItem, activation: "keyboard" | "pointer") => void | Promise<void>;
   onToggleSelectionMode: () => void;
-  onListModeChange: (mode: MailListMode) => void;
   onToggleSelection: (item: MailListItem, range: boolean) => void;
   onClearSelection: () => void;
   onAddTags?: () => void | Promise<void>;
@@ -107,6 +114,9 @@ export default function MailConversationList(props: {
   onManageTags: (item: MailListItem) => void | Promise<void>;
   onMergeItem?: (item: MailListItem) => void | Promise<void>;
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
+  /** A new search intent can supersede a pending mailbox switch before its debounce fires. */
+  onNavigationStart?: () => void;
+  onSearchControls?: (controls: { cancelPending: () => void }) => void;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
 }) {
@@ -150,6 +160,12 @@ export default function MailConversationList(props: {
     disabled: (conversationId) => props.selectionMode || conversationId === props.selectedConversationId,
   });
   const quickLookData = createMailQuickLookLoader(() => props.mailboxId);
+  // Prefetch and opening are one attempt for this pointer stay. A fast syncing
+  // answer (or error) must not start another request when the card opens or the
+  // pointer moves. A new stay, explicit keyboard opening, or item version may retry.
+  let hoverAttempt: string | null = null;
+  let activeAttempt: string | null = null;
+  const attemptKey = (item: MailListItem) => `${props.mailboxId}:${mailQuickLookKey(item)}`;
   // The request starts once the mouse rests on a row, before the card opens:
   // a sweep across rows or rows passing under a still pointer while the list
   // scrolls start none.
@@ -169,7 +185,13 @@ export default function MailConversationList(props: {
   };
   createEffect(() => {
     const item = conversationItem(quickLook.active());
-    if (item) quickLookData.load(item);
+    const key = item ? attemptKey(item) : null;
+    if (key === activeAttempt) return;
+    activeAttempt = key;
+    if (item && key !== hoverAttempt) {
+      hoverAttempt = key;
+      quickLookData.load(item);
+    }
   });
   const quickLookLabel = () => {
     const item = conversationItem(quickLook.active());
@@ -180,6 +202,7 @@ export default function MailConversationList(props: {
     void props.onNavigateItem(buildMailSelectionHref(requestUrl(), item), item, "pointer");
   };
   const [searchValue, setSearchValue] = createSignal(props.query);
+  let quickSearchPending = false;
   const [searchFields, setSearchFields] = createSignal<MailQuickSearchField[]>(selectedQuickSearchFields(requestUrl()));
   const [loadMoreElement, setLoadMoreElement] = createSignal<HTMLDivElement>();
   const [failedLoadHref, setFailedLoadHref] = createSignal<string | null>(null);
@@ -205,20 +228,31 @@ export default function MailConversationList(props: {
   const healthPresentation = createMemo(() => mailboxHealthPresentation(props.mailbox, locale()));
   const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has(MAIL_SEARCH_PARAMETER) || props.activeSavedViewId);
 
+  const clearSearch = () => {
+    quickSearch.cancel();
+    setSearchValue("");
+    const currentUrl = requestUrl();
+    if (currentUrl.searchParams.has("q")) {
+      // A new history entry, so Back after clearing returns to the search instead of repeating the starting view.
+      void props.onOpenHref(buildMailSearchClearHref(currentUrl));
+    } else if (quickSearchPending) {
+      // Supersede the pending search before it can put the cleared text back.
+      void props.onOpenHref(`${currentUrl.pathname}${currentUrl.search}`, true);
+    }
+  };
+
   const applyQuickSearch = (query: string, fields: MailQuickSearchField[], replace: boolean) => {
     const currentUrl = requestUrl();
-    const next = new URL(buildMailListHref(currentUrl, true), currentUrl.origin);
     const normalizedQuery = query.trim();
-    if (normalizedQuery) {
-      next.searchParams.set("q", normalizedQuery);
-      if (!isDefaultQuickSearch(fields)) next.searchParams.set(MAIL_QUICK_SEARCH_FIELDS_PARAMETER, fields.join(","));
-      next.searchParams.delete("savedView");
-      next.searchParams.delete("view");
-      next.searchParams.delete("folder");
-      next.searchParams.delete("scheduled");
+    if (!normalizedQuery) {
+      clearSearch();
+      return;
     }
-    const href = `${next.pathname}${next.search}`;
+    const search: Record<string, string> = { q: normalizedQuery };
+    if (!isDefaultQuickSearch(fields)) search[MAIL_QUICK_SEARCH_FIELDS_PARAMETER] = fields.join(",");
+    const href = buildMailSearchHref(currentUrl, search);
     if (href === `${currentUrl.pathname}${currentUrl.search}`) return;
+    quickSearchPending = true;
     void props.onOpenHref(href, replace);
   };
 
@@ -226,9 +260,17 @@ export default function MailConversationList(props: {
     (query: string, fields: MailQuickSearchField[], replace: boolean) => applyQuickSearch(query, fields, replace),
     300,
   );
+  props.onSearchControls?.({
+    cancelPending: () => {
+      quickSearch.cancel();
+      quickSearchPending = false;
+      setSearchValue(props.query);
+    },
+  });
 
   createEffect(() => {
     quickSearch.cancel();
+    quickSearchPending = false;
     setSearchValue(props.query);
     setSearchFields(selectedQuickSearchFields(requestUrl()));
   });
@@ -236,6 +278,7 @@ export default function MailConversationList(props: {
   const replaceLiveSearchRoute = () => requestUrl().searchParams.has("q");
 
   const updateSearchValue = (next: string) => {
+    if (next.trim() !== props.query.trim()) props.onNavigationStart?.();
     setSearchValue(next);
     if (!next.trim()) {
       quickSearch.trigger("", searchFields(), replaceLiveSearchRoute());
@@ -253,6 +296,7 @@ export default function MailConversationList(props: {
     const allowed = new Set<string>(MAIL_QUICK_SEARCH_FIELDS);
     const selected = next.filter((field): field is MailQuickSearchField => allowed.has(field));
     const normalized = selected.length > 0 ? selected : [...DEFAULT_MAIL_QUICK_SEARCH_FIELDS];
+    if (searchValue().trim() && normalized.join(",") !== searchFields().join(",")) props.onNavigationStart?.();
     setSearchFields(normalized);
     if (searchValue().trim()) quickSearch.trigger(searchValue(), normalized, replaceLiveSearchRoute());
     else quickSearch.cancel();
@@ -280,23 +324,13 @@ export default function MailConversationList(props: {
     });
     if (!result) return;
     const currentUrl = requestUrl();
-    const next = new URL(buildMailListHref(currentUrl, true), currentUrl.origin);
-    if (result.action === "apply") {
-      next.searchParams.set(MAIL_SEARCH_PARAMETER, result.serialized);
-      next.searchParams.delete("savedView");
-      next.searchParams.delete("view");
-      next.searchParams.delete("folder");
-      next.searchParams.delete("scheduled");
-    } else if (result.action === "saved") {
-      next.searchParams.set("savedView", result.view.id);
-      next.searchParams.delete("view");
-      next.searchParams.delete("folder");
-      next.searchParams.delete("scheduled");
-    } else {
-      next.searchParams.delete("savedView");
-    }
-    next.searchParams.delete("cursor");
-    void props.onOpenHref(`${next.pathname}${next.search}`);
+    const href =
+      result.action === "apply"
+        ? buildMailSearchHref(currentUrl, { search: result.serialized })
+        : result.action === "saved"
+          ? buildMailSearchHref(currentUrl, { savedView: result.view.id })
+          : buildMailSearchClearHref(currentUrl);
+    void props.onOpenHref(href);
   };
 
   const nextHref = () => {
@@ -346,7 +380,19 @@ export default function MailConversationList(props: {
           fallback={
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                <h1 data-mail-list-heading ref={listHeading} tabIndex={-1} class="truncate text-base font-semibold text-primary">
+                {/* Hide the heading only where tabs or a sidebar row already name the list. */}
+                <h1
+                  data-mail-list-heading
+                  ref={listHeading}
+                  tabIndex={-1}
+                  class={
+                    props.namedBy === "tabs"
+                      ? "sr-only"
+                      : props.namedBy === "sidebar"
+                        ? "mail-list-heading truncate text-base font-semibold text-primary"
+                        : "truncate text-base font-semibold text-primary"
+                  }
+                >
                   {props.title}
                 </h1>
                 <p class="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-dimmed">
@@ -375,36 +421,10 @@ export default function MailConversationList(props: {
                   </IconButton>
                 </Tooltip.Anchor>
               </Show>
-              <Dropdown.Root
-                position="bottom-right"
-                width="14rem"
-                items={[
-                  {
-                    label: messages().conversationView,
-                    icon: props.listMode === "conversations" ? "ti ti-check" : "ti ti-messages",
-                    action: () => props.onListModeChange("conversations"),
-                  },
-                  {
-                    label: messages().messageView,
-                    icon: props.listMode === "messages" ? "ti ti-check" : "ti ti-mail",
-                    action: () => props.onListModeChange("messages"),
-                  },
-                ]}
-              >
-                <Dropdown.Trigger
-                  iconOnly
-                  type="button"
-                  variant="ghost"
-                  label={messages().chooseListView}
-                  tooltip={props.listMode === "conversations" ? messages().conversationView : messages().messageView}
-                >
-                  <i class="ti ti-layout-list" aria-hidden="true" />
-                </Dropdown.Trigger>
-              </Dropdown.Root>
               <Tooltip.Anchor content={messages().searchFilters}>
                 <IconButton
                   type="button"
-                  class={structuredSummary() ? "text-[var(--app-accent)]" : undefined}
+                  class={structuredSummary() ? "app-accent-text" : undefined}
                   label={messages().searchFilters}
                   aria-pressed={Boolean(structuredSummary())}
                   aria-busy={searchBuilderLoading() ? "true" : undefined}
@@ -415,7 +435,12 @@ export default function MailConversationList(props: {
               </Tooltip.Anchor>
               <Show when={props.selectedConversationId || props.selectedMessageId}>
                 <Tooltip.Anchor content={messages().hideList}>
-                  <IconButton type="button" class="hidden lg:inline-flex" label={messages().hideList} onClick={props.onCollapse}>
+                  <IconButton
+                    type="button"
+                    class="hidden @min-[64rem]/k2b-app-area:inline-flex"
+                    label={messages().hideList}
+                    onClick={props.onCollapse}
+                  >
                     <i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -438,7 +463,18 @@ export default function MailConversationList(props: {
             onAction={props.onBulkAction}
           />
         </Show>
-        <form class="flex min-w-0 items-center gap-2" role="search" onSubmit={submitSearch}>
+        <form
+          class="flex min-w-0 items-center gap-2"
+          role="search"
+          onSubmit={submitSearch}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && event.target instanceof Element && event.target.matches('input[name="q"]') && searchValue()) {
+              // Prevent the native search input from clearing again after the view returns.
+              event.preventDefault();
+              clearSearch();
+            }
+          }}
+        >
           <div class="min-w-0 flex-1">
             <TextInput
               type="search"
@@ -450,10 +486,7 @@ export default function MailConversationList(props: {
               value={searchValue}
               onValueChange={updateSearchValue}
               clearable
-              onClear={() => {
-                setSearchValue("");
-                quickSearch.trigger("", searchFields(), replaceLiveSearchRoute());
-              }}
+              onClear={clearSearch}
               maxLength={500}
             />
           </div>
@@ -469,21 +502,6 @@ export default function MailConversationList(props: {
             iconOnly
           />
         </form>
-        <Show when={structuredSummary()}>
-          {(summary) => (
-            <button
-              type="button"
-              class="mail-search-summary"
-              aria-label={`${messages().editStructuredSearch}: ${summary()}`}
-              title={summary()}
-              aria-busy={searchBuilderLoading() ? "true" : undefined}
-              onClick={openAdvancedSearch}
-            >
-              <i class={searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-filter-check"} aria-hidden="true" />
-              <span class="mail-search-summary__text">{summary()}</span>
-            </button>
-          )}
-        </Show>
         <Show when={healthPresentation()}>
           {(health) => (
             <NoticeCard
@@ -513,7 +531,8 @@ export default function MailConversationList(props: {
           {(hint) => (
             <NoticeCard tone="neutral" data-mail-folder-only-hint>
               <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
-                <p class="min-w-0 flex-[1_1_14rem]">
+                {/* 13rem keeps the semibold folder action beside the text in a desktop list column. */}
+                <p class="min-w-0 flex-[1_1_13rem]">
                   <strong class="font-semibold text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
                   {messages().folderOnlyHintDetail}
                 </p>
@@ -564,7 +583,7 @@ export default function MailConversationList(props: {
               }
               action={
                 <ButtonLink
-                  href={props.error === "invalid_search" ? buildMailListHref(requestUrl(), true) : listHref()}
+                  href={props.error === "invalid_search" ? buildMailSearchClearHref(requestUrl()) : listHref()}
                   variant="secondary"
                   size="sm"
                   navigation="enhanced"
@@ -596,7 +615,7 @@ export default function MailConversationList(props: {
               action={
                 searchActive() ? (
                   <ButtonLink
-                    href={buildMailListHref(requestUrl(), true)}
+                    href={buildMailSearchClearHref(requestUrl())}
                     variant="secondary"
                     size="sm"
                     navigation="enhanced"
@@ -644,6 +663,10 @@ export default function MailConversationList(props: {
                       id: quickLook.id,
                       anchor: quickLook.anchor,
                       active: quickLook.active,
+                      begin: () => {
+                        cancelPrefetch();
+                        hoverAttempt = null;
+                      },
                       // Every mouse move restarts the rest, so the card usually opens with its data.
                       prefetch: (item, row, pointer) => {
                         cancelPrefetch();
@@ -652,12 +675,19 @@ export default function MailConversationList(props: {
                           prefetchTimer = undefined;
                           // The list may have moved another row under the still mouse before its scroll event.
                           const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
-                          if (hit && row.contains(hit) && roomForQuickLook()) quickLookData.load(item);
+                          if (!hit || !row.contains(hit) || !roomForQuickLook()) return;
+                          const key = attemptKey(item);
+                          if (key === hoverAttempt) return;
+                          hoverAttempt = key;
+                          quickLookData.load(item);
                         }, QUICK_LOOK_PREFETCH_DELAY);
                       },
                       release: (item) => {
                         cancelPrefetch();
-                        if (quickLook.active() !== item.conversationId) quickLookData.cancel(item);
+                        if (quickLook.active() !== item.conversationId) {
+                          if (hoverAttempt === attemptKey(item)) hoverAttempt = null;
+                          quickLookData.cancel(item);
+                        }
                       },
                     }}
                   />

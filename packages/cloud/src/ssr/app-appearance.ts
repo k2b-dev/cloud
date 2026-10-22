@@ -1,4 +1,5 @@
 import type { AppAppearance } from "../contracts/app";
+import { appColorStyle } from "./app-color";
 import { resolveRuntimeRoute } from "./app-navigation";
 import { helpPageAppId } from "./layout-help-url";
 import type { RuntimeContext } from "./runtime";
@@ -15,11 +16,11 @@ export const appAppearanceStyle = (appearance: AppAppearance | undefined): strin
   const angle = Number.isFinite(appearance.background?.angle) ? Math.max(0, Math.min(360, appearance.background?.angle ?? 135)) : 135;
   const strength = clampStrength(appearance.background?.strength, 20);
   const darkStrength = Math.round(strength / 2);
-  return `--app-accent:${appearance.accent};--app-canvas-from:${from};--app-canvas-via:${via};--app-canvas-to:${to};--app-canvas-angle:${angle}deg;--app-canvas-strength:${strength}%;--app-canvas-dark-strength:${darkStrength}%`;
+  return `--app-accent:${appearance.accent};${appColorStyle(appearance.accent)};--app-canvas-from:${from};--app-canvas-via:${via};--app-canvas-to:${to};--app-canvas-angle:${angle}deg;--app-canvas-strength:${strength}%;--app-canvas-dark-strength:${darkStrength}%`;
 };
 
 export const appAccentStyle = (accent: string | undefined): string | undefined =>
-  isHexColor(accent) ? `--app-accent:${accent}` : undefined;
+  isHexColor(accent) ? `--app-accent:${accent};${appColorStyle(accent)}` : undefined;
 
 /** Core's full-page Help of an app belongs to that app. */
 export const resolveCurrentApp = (apps: RuntimeContext["apps"], pathname: string) => {

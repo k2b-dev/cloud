@@ -248,6 +248,83 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("a read-only Combobox keeps focus, closes its list, and resumes searching when editable", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Combobox } = await import("../src/inputs/Combobox");
+    const [readOnly, setReadOnly] = createSignal(false);
+    const queries: string[] = [];
+    const edits: string[] = [];
+    const picks: string[] = [];
+    delegateEvents(["input", "click", "keydown"], dom.document);
+    const dispose = render(
+      () =>
+        createComponent(Combobox, {
+          label: "Add team",
+          get readOnly() {
+            return readOnly();
+          },
+          debounceMs: 0,
+          fetchData: async (query) => {
+            queries.push(query);
+            return [{ id: "platform", label: "Platform" }];
+          },
+          onQueryChange: (query) => edits.push(query),
+          onSelect: (option) => picks.push(option.id),
+        }),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.focus();
+      setSolidInputValue(input, "plat");
+      await Bun.sleep(0);
+      expect(input.getAttribute("aria-expanded")).toBe("true");
+      expect(queries).toEqual(["plat"]);
+
+      setReadOnly(true);
+      expect(dom.document.activeElement).toBe(input);
+      expect(input.disabled).toBe(false);
+      expect(input.tabIndex).toBe(0);
+      expect(input.readOnly).toBe(true);
+      expect(input.getAttribute("aria-readonly")).toBe("true");
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+      expect(dom.root.querySelector(".k2b-choice-popover")!.matches(":popover-open")).toBe(false);
+
+      setSolidInputValue(input, "ignored");
+      input.click();
+      for (const key of ["ArrowDown", "ArrowUp", "Escape", "Tab"]) {
+        const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+        input.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+      }
+      await Bun.sleep(0);
+      expect(input.value).toBe("plat");
+      expect(edits).toEqual(["plat"]);
+      expect(queries).toEqual(["plat"]);
+      expect(input.getAttribute("aria-expanded")).toBe("false");
+
+      setReadOnly(false);
+      expect(dom.document.activeElement).toBe(input);
+      expect(input.readOnly).toBe(false);
+      expect(input.hasAttribute("aria-readonly")).toBe(false);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      await Bun.sleep(0);
+      expect(input.getAttribute("aria-expanded")).toBe("true");
+      expect(queries).toEqual(["plat", "plat"]);
+      setSolidInputValue(input, "platform");
+      await Bun.sleep(0);
+      expect(queries).toEqual(["plat", "plat", "platform"]);
+      dom.root.querySelector<HTMLButtonElement>("[role=option]")!.click();
+      expect(picks).toEqual(["platform"]);
+      expect(input.value).toBe("");
+    } finally {
+      dispose();
+      popover.restore();
+      dom.cleanup();
+    }
+  });
+
   test("hides a Combobox listbox before publishing a selection", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);
@@ -277,6 +354,46 @@ describe("@k2b/ui choice and date browser behavior", () => {
     expect(openDuringSelect).toBe(false);
     expect(dom.root.querySelector('[role="combobox"]')?.getAttribute("aria-expanded")).toBe("false");
     expect(dom.root.querySelector<HTMLInputElement>('[role="combobox"]')?.value).toBe("");
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
+  test("Enter with open Combobox results never reaches an enclosing form", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Combobox } = await import("../src/inputs/Combobox");
+    const selected: string[] = [];
+    const dispose = render(
+      () =>
+        createComponent(Combobox, {
+          label: "Add team",
+          debounceMs: 0,
+          fetchData: async () => [{ id: "platform", label: "Platform" }],
+          onSelect: (option) => selected.push(option.id),
+        }),
+      dom.root,
+    );
+    const input = dom.root.querySelector<HTMLInputElement>('[role="combobox"]')!;
+    const enter = () => {
+      const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    // Closed results leave Enter to the form.
+    expect(enter()).toBe(false);
+    input.value = "pla";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await Bun.sleep(0);
+    // Typing opened the results without an active option: Enter neither submits nor selects.
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    expect(enter()).toBe(true);
+    expect(selected).toEqual([]);
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    expect(enter()).toBe(true);
+    expect(selected).toEqual(["platform"]);
 
     dispose();
     popover.restore();
@@ -827,6 +944,66 @@ describe("@k2b/ui choice and date browser behavior", () => {
     expect(apply.disabled).toBe(true);
     apply.click();
     expect(commits).toBe(0);
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
+  test("one click picks a complete one-day range, and a second day extends it", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { DateRangePicker } = await import("../src/inputs/DatePicker");
+    const commits: Array<{ start: string | null; end: string | null }> = [];
+    const dispose = render(
+      () =>
+        createComponent(DateRangePicker, {
+          label: "Window",
+          value: { start: "2026-10-05", end: "2026-10-06" },
+          dateConfig: { locale: "en", timeZone: "UTC" },
+          onValueCommit: (value) => commits.push(value),
+        }),
+      dom.root,
+    );
+    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-date-trigger")!;
+    const day = (key: string) => dom.root.querySelector<HTMLButtonElement>(`[data-date-day="${key}"]`)!;
+    const apply = () => dom.root.querySelector<HTMLButtonElement>(".k2b-date-apply")!;
+    const selected = () =>
+      Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[data-date-day][aria-selected="true"]')).map((cell) => cell.dataset.dateDay);
+    const pick = async (...keys: string[]) => {
+      trigger.click();
+      await Bun.sleep(0);
+      for (const key of keys) {
+        day(key).click();
+        await Bun.sleep(0);
+      }
+    };
+
+    // The first click is a whole one-day range: Apply is ready and the footer counts one day.
+    await pick("2026-10-22");
+    expect(selected()).toEqual(["2026-10-22"]);
+    expect(apply().disabled).toBe(false);
+    expect(dom.root.querySelector(".k2b-date-duration")?.textContent).toContain("1 day");
+    // A click on the same day keeps that one-day range.
+    day("2026-10-22").click();
+    await Bun.sleep(0);
+    expect(apply().disabled).toBe(false);
+    apply().click();
+    expect(commits.at(-1)).toEqual({ start: "2026-10-22", end: "2026-10-22" });
+
+    // A second day extends the range; an earlier day becomes the start, as before.
+    await pick("2026-10-22", "2026-10-25");
+    apply().click();
+    expect(commits.at(-1)).toEqual({ start: "2026-10-22", end: "2026-10-25" });
+    await pick("2026-10-25", "2026-10-22");
+    apply().click();
+    expect(commits.at(-1)).toEqual({ start: "2026-10-22", end: "2026-10-25" });
+
+    // After a range of several days, the next click starts a new one-day range.
+    await pick("2026-10-12", "2026-10-14", "2026-10-20");
+    expect(selected()).toEqual(["2026-10-20"]);
+    apply().click();
+    expect(commits.at(-1)).toEqual({ start: "2026-10-20", end: "2026-10-20" });
 
     dispose();
     popover.restore();

@@ -9,7 +9,6 @@ import {
   type ActorRef,
   type CommandState,
   type ComposeSafetyApproval,
-  draftEditableContentInputSchema,
   type MailCommand,
   type MailCommandInput,
   type MailCommandOutcome,
@@ -24,17 +23,18 @@ import { sha256Json } from "./canonical";
 import { commandTargetVisibleTo, commandVisibleTo, conversationCommandKinds } from "./command-authorization";
 import { enqueueMailCommand } from "./command-runtime";
 import { validateDraftComposeSafety } from "./compose-safety";
-import { renderComposeDraft } from "./compose-templates";
 import { checkCommandKeepProtection, isKeptMessage, keepError } from "./conversation-keep-rules";
 import { invalidateDraftLeaseAfterSend } from "./draft-leases";
 import { resolveMailExecution } from "./execution";
 import { mailLive } from "./live";
+import { loadInlineLogoContent } from "./mailbox-logos";
 import { createBlobReadable } from "./message-blobs";
 import { BASE_MAINTENANCE_KINDS, getOperatorActionEligibility } from "./operator-actions";
 import { OUTBOX_DISPATCH_GRACE_SECONDS } from "./outbound-delivery";
 import { materializeOutboundMessage, type OutboundMessageProjection } from "./outbound-message-projection";
-import { measureMimeStream, outboundDraftSnapshotSchema } from "./outbound-mime";
+import { measureMimeStream } from "./outbound-mime";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
+import { loadSendContent, sendContentChanged } from "./send-content";
 import {
   queuedSenderVerificationPayloadSchema,
   queuedSenderVerificationTargetSchema,
@@ -42,10 +42,6 @@ import {
 } from "./sender-verification";
 
 const log = logger("mail:commands");
-const internalDraftEditableContentInputSchema = draftEditableContentInputSchema.extend({
-  senderIdentityId: z.string().uuid(),
-  signatureTemplateId: z.string().uuid().nullable().optional(),
-});
 
 type DbCommand = {
   id: string;
@@ -169,40 +165,11 @@ type PreparedActorCommand = {
   sourceFolderId: string | null;
   draftId: string | null;
   expectedDraftRevision: number | null;
+  expectedContentHash: string | null;
   safetyApproval: ComposeSafetyApproval | null;
   scheduledAt: string | null;
   undoSeconds: number;
   requiredPermission: "write" | "admin";
-};
-
-type DraftForOutbox = {
-  conversation_id: string | null;
-  to_addresses: unknown;
-  cc_addresses: unknown;
-  bcc_addresses: unknown;
-  subject: string;
-  body_markdown: string;
-  body_format: "plain" | "markdown";
-  priority: "low" | "normal" | "high";
-  request_delivery_receipt: boolean;
-  request_read_receipt: boolean;
-  origin: "user" | "workflow";
-  delivery_class: "normal" | "automatic_reply";
-  revision: string | number;
-  intent: "new" | "reply" | "reply_all" | "forward";
-  display_name: string;
-  sender_identity_id: string;
-  signature_template_id: string | null;
-  from_address: string;
-  reply_to: string | null;
-  envelope_sender: string | null;
-  vcard: string | null;
-  identity_transport_revision: number | null;
-  identity_transport_capabilities: unknown;
-  identity_transport_verified_at: Date | string | null;
-  parent_message_id: string | null;
-  reference_ids: string[] | null;
-  attachments: unknown;
 };
 
 const actorDatabaseId = (actor: ActorRef): string | null => {
@@ -289,6 +256,7 @@ const prepareActorCommand = (input: ProviderMessageCommandInput): Result<Prepare
     sourceFolderId: null,
     draftId: null,
     expectedDraftRevision: null,
+    expectedContentHash: null,
     safetyApproval: null,
     scheduledAt: null,
     undoSeconds: 0,
@@ -393,6 +361,7 @@ const prepareActorCommand = (input: ProviderMessageCommandInput): Result<Prepare
     target: {
       draftId: input.draftId,
       expectedDraftRevision: input.expectedDraftRevision,
+      expectedContentHash: input.expectedContentHash,
       senderIdentityId: input.senderIdentityId,
     },
     payload: {
@@ -404,6 +373,7 @@ const prepareActorCommand = (input: ProviderMessageCommandInput): Result<Prepare
     senderIdentityId: input.senderIdentityId,
     draftId: input.draftId,
     expectedDraftRevision: input.expectedDraftRevision,
+    expectedContentHash: input.expectedContentHash,
     safetyApproval: input.safetyApproval ?? null,
     scheduledAt: input.scheduledAt ?? null,
     undoSeconds,
@@ -495,69 +465,21 @@ const createSendOutbox = async (params: {
 }): Promise<OutboundMessageProjection | null> => {
   const { prepared } = params;
   if (prepared.kind !== "send" || !prepared.draftId || !prepared.senderIdentityId) return null;
-  const [draft] = await params.db<DraftForOutbox[]>`
-    SELECT
-      d.conversation_id,
-      d.to_addresses,
-      d.cc_addresses,
-      d.bcc_addresses,
-      d.subject,
-      d.body_markdown,
-      d.body_format,
-      d.signature_template_id,
-      d.priority,
-      d.request_delivery_receipt,
-      d.request_read_receipt,
-      d.origin,
-      d.delivery_class,
-      d.revision,
-      d.intent,
-      si.display_name,
-      si.id AS sender_identity_id,
-      si.from_address,
-      si.reply_to,
-      si.envelope_sender,
-      si.vcard,
-      identity_transport.revision AS identity_transport_revision,
-      identity_transport.capabilities AS identity_transport_capabilities,
-      identity_transport.last_verified_at AS identity_transport_verified_at,
-      CASE WHEN d.intent IN ('reply', 'reply_all') THEN source.message_id ELSE NULL END AS parent_message_id,
-      CASE WHEN d.intent IN ('reply', 'reply_all') THEN source.reference_ids ELSE ARRAY[]::text[] END AS reference_ids,
-      COALESCE(
-        (
-          SELECT jsonb_agg(
-            jsonb_build_object(
-              'id', attachment.id,
-              'blobId', attachment.blob_id,
-              'filename', attachment.filename,
-              'contentType', attachment.content_type,
-              'byteLength', attachment.byte_length,
-              'contentHash', attachment.content_hash
-            ) ORDER BY attachment.position, attachment.id
-          )
-          FROM mail.draft_attachments attachment
-          WHERE attachment.draft_id = d.id AND attachment.removed_at IS NULL
-        ),
-        '[]'::jsonb
-      ) AS attachments
-    FROM mail.drafts d
-    JOIN mail.sender_identities si ON si.id = d.sender_identity_id
-    LEFT JOIN mail.sender_identity_transports identity_transport
-      ON identity_transport.sender_identity_id = si.id
-     AND identity_transport.status = 'active'
-     AND identity_transport.encrypted_secret IS NOT NULL
-    LEFT JOIN mail.message_contents source ON source.id = d.source_message_id
-    WHERE d.id = ${prepared.draftId}::uuid
-      AND d.mailbox_id = ${params.mailboxId}::uuid
-      AND d.sender_identity_id = ${prepared.senderIdentityId}::uuid
-      AND d.revision = ${prepared.expectedDraftRevision}
-      AND si.status = 'verified'
-    FOR UPDATE OF d, si
-  `;
-  if (!draft) {
-    const unavailable = err.badInput("Draft is no longer available");
-    throw Object.assign(new Error(unavailable.message), unavailable);
+  const send = await loadSendContent({
+    db: params.db,
+    mailboxId: params.mailboxId,
+    draftId: prepared.draftId,
+    senderIdentityId: prepared.senderIdentityId,
+    expectedRevision: prepared.expectedDraftRevision!,
+    actor: params.actor,
+    lock: true,
+  });
+  if (!send.ok) throw Object.assign(new Error(send.error.message), send.error);
+  if (send.data.contentHash !== prepared.expectedContentHash) {
+    const changed = sendContentChanged();
+    throw Object.assign(new Error(changed.message), changed);
   }
+  const draft = send.data.source;
   const safety = await validateDraftComposeSafety({
     db: params.db,
     mailboxId: params.mailboxId,
@@ -566,36 +488,8 @@ const createSendOutbox = async (params: {
     approval: prepared.safetyApproval ?? undefined,
   });
   if (!safety.ok) throw Object.assign(new Error(safety.error.message), safety.error);
-  const content = internalDraftEditableContentInputSchema.safeParse({
-    senderIdentityId: draft.sender_identity_id,
-    signatureTemplateId: draft.signature_template_id,
-    to: draft.to_addresses,
-    cc: draft.cc_addresses,
-    bcc: draft.bcc_addresses,
-    subject: draft.subject,
-    body: draft.body_markdown,
-    format: draft.body_format,
-    priority: draft.priority,
-    requestDeliveryReceipt: draft.request_delivery_receipt,
-    requestReadReceipt: draft.request_read_receipt,
-  });
-  if (!content.success) {
-    const invalid = err.badInput(content.error.issues[0]?.message ?? "Draft content is invalid");
-    throw Object.assign(new Error(invalid.message), invalid);
-  }
-  const rendered = await renderComposeDraft({
-    db: params.db,
-    mailboxId: params.mailboxId,
-    draft: content.data,
-    actor: params.actor,
-    renderLiquid: draft.origin === "user",
-  });
-  if (!rendered.ok) throw Object.assign(new Error(rendered.error.message), rendered.error);
   const senderDomain = draft.from_address.split("@")[1]?.toLowerCase() || "mail.invalid";
   const stableMessageId = `<${crypto.randomUUID()}@${senderDomain}>`;
-  const references = [...(draft.reference_ids ?? []), ...(draft.parent_message_id ? [draft.parent_message_id] : [])].filter(
-    (value, index, values) => value && values.indexOf(value) === index,
-  );
   const scheduledAt = prepared.scheduledAt ? new Date(prepared.scheduledAt) : new Date();
   if (!Number.isFinite(scheduledAt.getTime())) {
     throw Object.assign(new Error("Invalid scheduled send time"), { code: "INVALID_SCHEDULE" });
@@ -611,40 +505,15 @@ const createSendOutbox = async (params: {
     : new Date(
         effectiveScheduledAt.getTime() + (prepared.undoSeconds > 0 ? prepared.undoSeconds + OUTBOX_DISPATCH_GRACE_SECONDS : 0) * 1_000,
       );
-  const snapshot = outboundDraftSnapshotSchema.safeParse({
-    revision: Number(draft.revision),
-    from: { name: draft.display_name, address: draft.from_address },
-    replyTo: draft.reply_to,
-    envelopeFrom: draft.envelope_sender,
-    useNullEnvelopeSender: draft.delivery_class === "automatic_reply",
-    automaticReply: draft.delivery_class === "automatic_reply",
-    priority: draft.priority,
-    requestDeliveryReceipt: draft.request_delivery_receipt,
-    requestReadReceipt: draft.request_read_receipt,
-    receiptAddress: draft.from_address,
-    vcard: draft.vcard,
-    to: draft.to_addresses,
-    cc: draft.cc_addresses,
-    bcc: draft.bcc_addresses,
-    subject: draft.subject,
-    body: draft.body_markdown,
-    format: draft.body_format,
-    renderedText: rendered.data.text,
-    renderedHtml: rendered.data.html,
-    inReplyTo: draft.parent_message_id,
-    references,
-    attachments: draft.attachments,
-  });
-  if (!snapshot.success) {
-    const message = snapshot.error.issues[0]?.message ?? "Rendered message is too large";
-    throw Object.assign(new Error(message), err.badInput(message));
-  }
+  const snapshot = { data: send.data.snapshot };
   const mimeDate = new Date();
+  const inlineLogoContent = await loadInlineLogoContent(snapshot.data.inlineLogo, params.db);
   const byteLength = await measureMimeStream({
     snapshot: snapshot.data,
     messageId: stableMessageId,
     date: mimeDate,
     openAttachment: createBlobReadable,
+    inlineLogoContent,
   });
   const providerLimits = await loadBindingProviderLimits(params.db, params.selectedBindingId);
   const rawIdentityTransportCapabilities =
@@ -693,7 +562,8 @@ const createSendOutbox = async (params: {
       preflight_smtp_limit_bytes,
       preflight_checked_at,
       safety_review,
-      selected_identity_transport_revision
+      selected_identity_transport_revision,
+      inline_logo_version_id
     )
     VALUES (
       ${shortId},
@@ -723,7 +593,8 @@ const createSendOutbox = async (params: {
         warningIds: safety.data.warnings.map((warning) => warning.id),
         approved: safety.data.warnings.length === 0 || prepared.safetyApproval !== null,
       }}::jsonb,
-      ${draft.identity_transport_revision}
+      ${draft.identity_transport_revision},
+      ${snapshot.data.inlineLogo?.versionId ?? null}::uuid
     )
     RETURNING id
   `,
@@ -737,6 +608,7 @@ const createSendOutbox = async (params: {
     stableMessageId,
     conversationId: draft.conversation_id,
     snapshot: snapshot.data,
+    inlineLogoContent,
     internalDate: effectiveScheduledAt,
     byteLength,
   });
@@ -1071,6 +943,56 @@ export const createActorCommandsInTransaction = async (
   await params.afterCreate?.(tx, commands);
   return commands;
 };
+
+/** Resume a persisted send, including pre-fingerprint commands, without rendering new content. */
+export const adoptWorkflowSendCommand = async (params: {
+  mailboxId: string;
+  workflowVersionId: string;
+  input: Omit<Extract<ActorCommandInput, { kind: "send" }>, "expectedContentHash">;
+  beforeAdopt: (tx: typeof sql) => Promise<WorkflowCommandFence>;
+}): Promise<Result<MailCommand | null>> =>
+  sql.begin(async (tx) => {
+    const [mailbox] = await tx<{ id: string }[]>`
+      SELECT id FROM mail.mailboxes WHERE id=${params.mailboxId}::uuid AND deleted_at IS NULL FOR UPDATE`;
+    if (!mailbox) return fail(err.notFound("Mailbox"));
+    const fence = await params.beforeAdopt(tx);
+    const input = params.input;
+    if (
+      !Number.isSafeInteger(fence.workflowExecutionGeneration) ||
+      fence.workflowExecutionGeneration < 1 ||
+      !input.correlationId ||
+      input.idempotencyKey !== workflowEffectKey(input.correlationId, fence.workflowStepKey)
+    )
+      return fail(err.internal("Workflow command must use its current step's effect key"));
+    const [existing] = await tx<DbCommand[]>`
+      SELECT ${commandColumns} FROM mail.commands c
+      WHERE c.mailbox_id=${params.mailboxId}::uuid AND c.idempotency_key=${input.idempotencyKey}
+      FOR UPDATE`;
+    if (!existing) return ok(null);
+    if (
+      !commandActorMatches(existing, { kind: "workflow", workflowVersionId: params.workflowVersionId }) ||
+      existing.correlation_id !== input.correlationId
+    ) {
+      return fail(capabilityIdempotencyConflict("Idempotency key is already in use"));
+    }
+    // Old commands have no content hash. Keep their exact historical request format;
+    // a new command is still created only by the hash-required path below.
+    const storedTarget = parseRecord(existing.target);
+    const target = {
+      draftId: input.draftId,
+      expectedDraftRevision: input.expectedDraftRevision,
+      senderIdentityId: input.senderIdentityId,
+      ...(Object.hasOwn(storedTarget, "expectedContentHash") ? { expectedContentHash: storedTarget.expectedContentHash } : {}),
+    };
+    const payload = {
+      scheduledAt: input.scheduledAt ?? null,
+      undoSeconds: input.scheduledAt ? 0 : input.undoSeconds,
+      safetyApproval: input.safetyApproval ?? null,
+    };
+    return existing.kind === "send" && existing.request_hash === sha256Json({ kind: "send", target, payload })
+      ? ok(mapCommand(existing))
+      : fail(capabilityIdempotencyConflict("Idempotency key with a different mail command"));
+  });
 
 export const createWorkflowCommandInTransaction = (
   params: {

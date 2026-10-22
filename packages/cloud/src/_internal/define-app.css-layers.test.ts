@@ -57,6 +57,10 @@ const layerOrder = (css: string): string[] => {
 describe("document CSS layer order", () => {
   test("keeps Tailwind's property fallback layer below utilities", async () => {
     const html = await (await server.request("/")).text();
+    const htmlTag = html.match(/<html\b[^>]*>/)?.[0];
+    expect(htmlTag).toBeDefined();
+    expect(htmlTag).not.toContain("data-k2b-input");
+    expect(htmlTag).not.toContain("data-k2b-kbd");
     const declaration = html.match(/<style data-cloud-css-layers>([^<]*)<\/style>/)?.[1];
     expect(declaration).toBeDefined();
     // The declaration must precede every stylesheet so it fixes the order.

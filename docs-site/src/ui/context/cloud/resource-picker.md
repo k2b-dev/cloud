@@ -24,8 +24,15 @@ Available options are:
 
 - `title` and `placeholder` for task-specific copy;
 - `initialAppId` to start within one searchable application, shown as a removable scope chip;
+- `scope: { appId, tag?, label, icon? }` to narrow the search on the server by app and optional search tag, shown as a removable chip with its label and icon; takes precedence over `initialAppId`;
+- `query` to prefill the search text;
 - `excludeRefs` to hide resources already selected;
 - `requireReader` to show only Types with a canonical reader.
+
+An app scope starts searching at once, even with empty text. Scope filtering
+happens before the per-app result limit, so other resource kinds cannot crowd
+out matches as they can with the browser-only `resourceType` filter.
+`requireReader` still applies within the scope.
 
 ## Presentation
 
@@ -42,7 +49,10 @@ Desktop results share the dialog with a preview that starts at its top edge.
 From the first search character until the input is cleared, the dialog keeps
 its width, top position, and height; arriving results scroll inside it instead
 of resizing it.
-Small screens show one column with an optional **Details** view. The result list
+Small screens show one column with an optional **Details** view. Below 48rem
+the picker is a full-screen sheet: the whole width, from below the status bar
+to the bottom edge, rounded at the top, while global search keeps its floating
+card. The result list
 uses `ScrollArea` fades. Each application's results appear as it answers and
 are appended below earlier ones; a quiet line below the results names the
 applications still searching or one that did not answer, with **Try again**

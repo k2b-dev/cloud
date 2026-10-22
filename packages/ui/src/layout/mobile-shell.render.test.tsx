@@ -23,6 +23,15 @@ const items = [
 ];
 
 describe("TabBar", () => {
+  test("floating is explicit and the default and bar variants retain flat markup", () => {
+    const floating = renderToString(() => createComponent(TabBar, { label: "Apps", items, variant: "floating" }));
+    expect(floating).toContain('data-variant="floating"');
+    for (const variant of [undefined, "bar"] as const) {
+      const flat = renderToString(() => createComponent(TabBar, { label: "Apps", items, variant }));
+      expect(flat).not.toContain("data-variant");
+      expect(floating.replace(' data-variant="floating"', "")).toBe(flat);
+    }
+  });
   test("renders a labelled list of native links with the open page marked, at most five", () => {
     const html = renderToString(() => createComponent(TabBar, { label: "App", items }));
 
@@ -30,7 +39,7 @@ describe("TabBar", () => {
     expect(html.match(/<li>/g)?.length).toBe(5);
     expect(html).not.toContain("Chat");
     expect(html).toContain(
-      '<a href="/pwa/" aria-current="page" data-tab="start" data-k2b-title="Example Cloud"><i class="ti ti-home" aria-hidden="true"></i><span>Start</span></a>',
+      '<a href="/pwa/" aria-current="page" data-tab="start" data-k2b-title="Example Cloud"><i class="ti ti-home" aria-hidden="true"></i><span class="k2b-truncate-fade">Start</span></a>',
     );
     // Each link names the title of its page, which the shell shows while that page loads; the label by default.
     expect(html).toContain('<a href="/pwa/tasks" data-tab="tasks" data-k2b-title="Tasks">');

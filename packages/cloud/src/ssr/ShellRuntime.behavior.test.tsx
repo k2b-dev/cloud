@@ -37,6 +37,95 @@ const mount = () => {
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  test("installs swaps during render before shell mount work, only for a declared canvas", async () => {
+    const nav = await import("@k2b/ssr/nav");
+    const ui = await import("@k2b/ui");
+    for (const enabled of [false, true]) {
+      const dom = createDomTestHarness();
+      dom.root.innerHTML = `<div class="cloud-app-canvas" ${enabled ? 'data-nav-shell="fixture"' : ""}></div>`;
+      const order: string[] = [];
+      const stop = spyOn(nav, "installPageSwap").mockImplementation(() => {
+        order.push("install");
+        return () => order.push("cleanup");
+      });
+      const input = spyOn(ui, "installInputModeController").mockImplementation(() => {
+        order.push("mount");
+        return () => {};
+      });
+      const dispose = render(() => {
+        const result = createComponent(ShellRuntime!, {});
+        order.push("rendered");
+        return result;
+      }, dom.root);
+      try {
+        expect(order).toEqual(enabled ? ["install", "rendered", "mount"] : ["rendered", "mount"]);
+        dispose();
+        expect(order.includes("cleanup")).toBe(enabled);
+      } finally {
+        dispose();
+        stop.mockRestore();
+        input.mockRestore();
+        dom.cleanup();
+      }
+    }
+  });
+  test("a swapped page re-reads the saved workspace layout", async () => {
+    const ui = await import("@k2b/ui");
+    const dom = createDomTestHarness();
+    const reads: unknown[] = [];
+    const disposed: number[] = [];
+    let installs = 0;
+    const controller = spyOn(ui, "installAppWorkspaceController").mockImplementation((options) => {
+      const id = ++installs;
+      reads.push(options?.readState?.());
+      return () => disposed.push(id);
+    });
+    const dispose = render(() => createComponent(ShellRuntime!, { workspace: { appId: "mail" } }), dom.root);
+    try {
+      expect(installs).toBe(1);
+      // Another tab saved a wider sidebar; the arriving page was rendered with it.
+      dom.document.cookie = `cloud_workspace_mail=${ui.serializeAppWorkspaceLayoutState({ version: 2, sidebarWidth: 320 })}; Path=/`;
+      window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: dom.root } }));
+      expect(installs).toBe(2);
+      expect(disposed).toEqual([1]);
+      expect(reads.at(-1)).toMatchObject({ sidebarWidth: 320 });
+    } finally {
+      dispose();
+      controller.mockRestore();
+      dom.cleanup();
+    }
+  });
+  test("records input mode on every shell variant and stops after disposal", () => {
+    const dom = createDomTestHarness();
+    const html = dom.document.documentElement;
+    // Avoid timezone reload work so this test isolates the unconditional controller.
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    dom.document.cookie = `cloud.timezone=${encodeURIComponent(zone)}; Path=/`;
+    const dispose = render(() => createComponent(ShellRuntime!, {}), dom.root);
+    const pointer = (type: string, pointerType: string) => {
+      const event = new dom.window.Event(type, { bubbles: true });
+      Object.defineProperty(event, "pointerType", { value: pointerType });
+      dom.window.document.dispatchEvent(event);
+    };
+    try {
+      expect(html.hasAttribute("data-k2b-input")).toBe(false);
+      expect(html.hasAttribute("data-k2b-kbd")).toBe(false);
+      pointer("pointerdown", "touch");
+      expect(html.getAttribute("data-k2b-input")).toBe("touch");
+      pointer("pointermove", "mouse");
+      expect(html.getAttribute("data-k2b-input")).toBe("trackpad");
+      dispose();
+      pointer("pointerdown", "touch");
+      dom.document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      expect(html.getAttribute("data-k2b-input")).toBe("trackpad");
+      expect(html.hasAttribute("data-k2b-kbd")).toBe(false);
+    } finally {
+      dispose();
+      html.removeAttribute("data-k2b-input");
+      html.removeAttribute("data-k2b-kbd");
+      dom.cleanup();
+    }
+  });
   test("Help opens once when invoked twice while its module is loading", async () => {
     const dom = createDomTestHarness();
     const reload = await import("../browser/reload");
@@ -211,6 +300,8 @@ else {
       expect(row.dataset.trail).toBe("up");
       expect(row.querySelector(".k2b-page-title__text")?.textContent).toBe("One");
       expect(row.querySelector("[data-k2b-page-trail-up]")?.getAttribute("href")).toBe("/app/inventory/projects");
+      // The arriving island published its trail during mount, before the committed swap signal.
+      window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: row } }));
       layout.update({ breadcrumbs: [{ title: "Inventory", href: "/app/inventory" }] });
       expect(row.dataset.trail).toBe("title");
       expect(row.querySelector(".k2b-page-title__text")?.textContent).toBe("Inventory");

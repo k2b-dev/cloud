@@ -209,6 +209,8 @@ cld grids workflows create --name "Check in" --source-file workflow.yml --enable
 
 Use `--json` whenever another command or agent will consume the result. Normal text output is for human inspection and may omit nested fields.
 
+Resource objects in JSON/JSONL output carry `permalink`, an absolute Cloud link to share with the person; never build Cloud URLs yourself.
+
 ### Time and locale
 
 Date grouping, relative date filters, generated date sequences, and document dates use your system timezone, just as browser

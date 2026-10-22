@@ -46,9 +46,17 @@ suite("first-login legal acceptance (isolated Postgres and Valkey)", () => {
     await settings.set("security.rate_limit_per_second", 1000);
     router = new Hono<AuthContext>()
       .route("/", createIdentityPublicRoutes())
-      .route("/api/auth", createAuthRoutes({ sendMagicLink: unused, sendIpaLoginHint: unused, sendPasswordReset: unused }))
-      .route("/api/auth/app-approval/v1", createAppApprovalRoutes())
-      .post("/issue", async (c) => c.json({ token: await session.create(c, userId) }))
+      .route(
+        "/api/auth",
+        createAuthRoutes({
+          sendMagicLink: unused,
+          sendIpaLoginHint: unused,
+          sendPasswordReset: unused,
+          sendNewBrowserSignIn: async () => {},
+        }),
+      )
+      .route("/api/auth/app-approval/v1", createAppApprovalRoutes({ notify: async () => {} }))
+      .post("/issue", async (c) => c.json({ token: await session.create(c, userId, { method: "password", notify: async () => {} }) }))
       .get("/protected", auth.requireRole("authenticated"), (c) => c.json({ id: c.get("user").id }))
       .get("/pending", async (c) => c.json({ pending: !!(await legalConsent.pending(c)) }));
     server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: router.fetch });
@@ -123,7 +131,8 @@ suite("first-login legal acceptance (isolated Postgres and Valkey)", () => {
     if (!user) throw new Error("Missing fixture user");
     // Only the external credential proofs are stubbed. The HTTP handlers,
     // issuance, signed sessions, family lookup and consent enforcement are real.
-    const ipa = spyOn(authFlows.ipa, "login").mockResolvedValue({ ok: true, userId, user });
+    const [account] = await sql<Array<{ auth_epoch: string | number }>>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`;
+    const ipa = spyOn(authFlows.ipa, "login").mockResolvedValue({ ok: true, userId, user, authEpoch: Number(account!.auth_epoch) });
     const email = spyOn(authFlows.magicLink, "verify").mockResolvedValue({
       ok: true,
       userId,
@@ -147,7 +156,19 @@ suite("first-login legal acceptance (isolated Postgres and Valkey)", () => {
         },
       },
     });
-    const approval = spyOn(appApproval, "consumeLogin").mockResolvedValue(userId);
+    const deviceId = crypto.randomUUID();
+    const deviceKeys = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+    const jwk = await crypto.subtle.exportKey("jwk", deviceKeys.publicKey);
+    const publicKey = { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y };
+    await sql`INSERT INTO auth.app_devices(id,issuer,user_id,name,public_key,assisted,enrolled_by)
+      VALUES (${deviceId}::uuid,${issuer},${userId}::uuid,'Fixture',${JSON.stringify(publicKey)}::text::jsonb,false,${userId}::uuid)`;
+    const [epoch] = await sql<{ auth_epoch: string | number }[]>`SELECT auth_epoch FROM auth.users WHERE id = ${userId}::uuid`;
+    const approval = spyOn(appApproval, "consumeLogin").mockResolvedValue({
+      userId,
+      authEpoch: Number(epoch!.auth_epoch),
+      deviceId,
+      deviceName: "Jana’s phone",
+    });
     await settings.set("freeipa.enable", true);
     await settings.set("user.app_approval.enabled", true);
     try {

@@ -1,413 +1,565 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { IconButton, IconButtonLink, suppressTextSelection, Tooltip, useLocale } from "@k2b/ui";
-import { forceCenter, forceLink, forceManyBody, forceSimulation, type Simulation } from "d3-force";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import {
+  Button,
+  ButtonLink,
+  IconButton,
+  IconButtonLink,
+  Placeholder,
+  SegmentedControl,
+  SelectChip,
+  TextInput,
+  Toolbar,
+  Tooltip,
+  useLocale,
+} from "@k2b/ui";
+import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { NoteGraph } from "../../../../service/links";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
+import { NOTE_SOFT_NAVIGATED_EVENT } from "../detail/events";
+import {
+  createNavigationHidden,
+  keepFocusAfterShowingNavigation,
+  NOTEBOOK_NAVIGATION_ID,
+  setNavigationHidden,
+} from "../sidebar/navigation-visibility";
+import CircleDisplay from "./CircleDisplay";
+import GraphList from "./GraphList";
+import { GraphDisplaySwitcher, graphDisplayLabel } from "./graph-displays";
+import { layoutNetworkInSlices, type NetPoint } from "./layout-net";
+import { buildGraphModel, type GraphArea, type GraphLinksFilter, matchesQuery, visibleEdges, visibleNotes } from "./model";
+import NeighborhoodDisplay from "./NeighborhoodDisplay";
+import NetworkDisplay, { type GraphZoomControls } from "./NetworkDisplay";
+import TimelineDisplay from "./TimelineDisplay";
+import {
+  DEFAULT_GRAPH_DISPLAY,
+  GRAPH_QUERY_MAX,
+  type GraphViewState,
+  normalizeGraphViewState,
+  PHONE_GRAPH_DISPLAY,
+  PHONE_GRAPH_QUERY,
+  resolveGraphDisplay,
+  writeGraphViewState,
+} from "./view-state";
+
+const SEARCH_URL_DELAY_MS = 300;
+const URL_RETRY_MS = 1000;
 
 type Props = {
   notebookId: string;
-  /** Optional: id of the note the user came from — gets initial focus + highlight. */
+  notebookName: string;
+  /** The note the graph was opened from: it is labelled and ringed in the app's accent. */
   selectedNoteId: string | null;
   graph: NoteGraph;
+  from?: PresentationMode;
+  backHref?: string;
+  /** View state parsed from the URL on the server, so the first paint shows the same display, filters and search. */
+  view: GraphViewState;
+  /** Server time, the base for relative dates on both sides. */
+  now: string;
+  /** The viewer's timezone from the request date config, used for date groups. */
+  timeZone: string;
+  navigationHidden: boolean;
 };
 
 /**
- * Force-directed link graph for one notebook.
- *
- * d3-force runs the simulation; rendering is plain SolidJS SVG. Per-tick
- * position updates bypass Solid's reactivity and patch the DOM directly
- * via refs — at 60fps with 100+ nodes the granular signal approach burns
- * too much CPU.
- *
- * Interactions:
- *  - click on a node → navigate to that note
- *  - drag a node → fix its position, simulation re-settles around it
- *  - hover a node → it + its neighbours light up; the rest dims
- *  - mouse wheel on the canvas → zoom in/out (anchored on cursor)
- *  - drag the empty canvas → pan
+ * The Links graph of one notebook: a toolbar, filters, and the chosen display or the full-width list. The URL owns the
+ * view state; changes replace the history entry, and opening a note is a normal navigation, so Back returns to the
+ * same display, filters and search.
  */
-
-type SimNode = NoteGraph["nodes"][number] & {
-  // d3-force mutates these on the input nodes.
-  x?: number;
-  y?: number;
-  fx?: number | null;
-  fy?: number | null;
-  vx?: number;
-  vy?: number;
-};
-
-type SimLink = {
-  source: SimNode;
-  target: SimNode;
-};
-
-const NODE_BASE_RADIUS = 4;
-const NODE_RADIUS_PER_LINK = 1;
-const NODE_MAX_RADIUS = 10;
-const LINK_DISTANCE = 90;
-const CHARGE_STRENGTH = -260;
-const VIEWBOX_WIDTH = 800;
-const VIEWBOX_HEIGHT = 600;
-const MIN_ZOOM = 0.2;
-const MAX_ZOOM = 4;
-const ZOOM_STEP = 1.2;
-
-const radiusFor = (inDegree: number): number => Math.min(NODE_MAX_RADIUS, NODE_BASE_RADIUS + inDegree * NODE_RADIUS_PER_LINK);
-
 export default function NotebookGraph(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  const [hoveredId, setHoveredId] = createSignal<string | null>(null);
-  const [focusedId, setFocusedId] = createSignal<string | null>(null);
-  const [zoom, setZoom] = createSignal(1);
-  const [pan, setPan] = createSignal({ x: 0, y: 0 });
+  const model = buildGraphModel(props.graph, locale());
+  const hasLinks = model.edges.length > 0;
+  const [state, setState] = createSignal<GraphViewState>(props.view);
+  const [centreId, setCentreId] = createSignal(
+    props.selectedNoteId && model.byId.has(props.selectedNoteId) ? props.selectedNoteId : (model.notes[0]?.id ?? null),
+  );
+  let centreChanged = false;
+  const [phone, setPhone] = createSignal<boolean | null>(
+    typeof window === "undefined" ? null : window.matchMedia(PHONE_GRAPH_QUERY).matches,
+  );
+  const display = createMemo(() => resolveGraphDisplay(state().display, phone()));
+  const navigationHidden = createNavigationHidden(props.navigationHidden);
+  const [controls, setControls] = createSignal<GraphZoomControls | null>(null);
+  let focusNote: ((id?: string) => void) | undefined;
+  let navigationToggle: HTMLDivElement | undefined;
 
-  // d3-force will mutate these arrays. Make local copies so the prop stays
-  // pristine and the simulation state lives only here.
-  const simNodes: SimNode[] = props.graph.nodes.map((n) => ({ ...n }));
-  const nodeById = new Map<string, SimNode>(simNodes.map((n) => [n.id, n]));
-  const simLinks: SimLink[] = props.graph.edges.flatMap((e) => {
-    const source = nodeById.get(e.source);
-    const target = nodeById.get(e.target);
-    // Defensive: edges to a missing node would NaN the simulation. The
-    // backend already JOINs both endpoints inside the notebook, so this
-    // shouldn't fire — but filter rather than crash.
-    return source && target ? [{ source, target }] : [];
+  // The address follows the state. Typing in the search writes it once the typing pauses, since Safari limits how
+  // often a page may replace its history entry; a write it refuses is tried again, and leaving the page writes first.
+  let urlTimer: ReturnType<typeof setTimeout> | undefined;
+  const writeUrl = () => {
+    clearTimeout(urlTimer);
+    urlTimer = undefined;
+    const url = writeGraphViewState(new URL(window.location.href), state());
+    if (centreChanged && centreId()) {
+      // A note in the path wins over `note` on the server, so a recentred graph moves to the notebook's graph address.
+      url.pathname = url.pathname.replace(/\/notes\/[^/]+\/?$/, "");
+      url.searchParams.set("note", centreId()!);
+    }
+    try {
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+      urlTimer = setTimeout(writeUrl, URL_RETRY_MS);
+    }
+  };
+  const flushUrl = () => {
+    if (urlTimer !== undefined) writeUrl();
+  };
+  // The state is normalized with the URL's own limits first, so what renders is what a reload restores.
+  const update = (patch: Partial<GraphViewState>) => {
+    setState(normalizeGraphViewState({ ...state(), ...patch }));
+    if (Object.keys(patch).every((key) => key === "q")) {
+      clearTimeout(urlTimer);
+      urlTimer = setTimeout(writeUrl, SEARCH_URL_DELAY_MS);
+    } else writeUrl();
+  };
+  const recenter = (id: string) => {
+    if (!model.byId.has(id) || id === centreId()) return;
+    setCentreId(id);
+    centreChanged = true;
+    writeUrl();
+    // The shell must follow the graph's current note before a reload, too.
+    window.dispatchEvent(
+      new CustomEvent(NOTE_SOFT_NAVIGATED_EVENT, { detail: { noteId: id, href: `${location.pathname}${location.search}` } }),
+    );
+  };
+  onMount(() => {
+    const media = window.matchMedia(PHONE_GRAPH_QUERY);
+    const changed = () => setPhone(media.matches);
+    media.addEventListener("change", changed);
+    onCleanup(() => media.removeEventListener("change", changed));
+    window.addEventListener("pagehide", flushUrl);
+    onCleanup(() => {
+      window.removeEventListener("pagehide", flushUrl);
+      clearTimeout(urlTimer);
+    });
   });
 
-  // Adjacency map for hover-highlighting (built once — links don't change).
-  const neighbours = new Map<string, Set<string>>();
-  for (const node of simNodes) neighbours.set(node.id, new Set([node.id]));
-  for (const link of simLinks) {
-    neighbours.get(link.source.id)?.add(link.target.id);
-    neighbours.get(link.target.id)?.add(link.source.id);
-  }
-
-  // DOM refs — we update transform/x1/y1/… imperatively per tick.
-  const nodeGroups = new Map<string, SVGGElement>();
-  const edgeLines = new Map<SimLink, SVGLineElement>();
-
-  let svgRef: SVGSVGElement | undefined;
-  let simulation: Simulation<SimNode, SimLink> | undefined;
-  let clearPointerGesture: (() => void) | undefined;
-
-  const closeHref = () => {
-    const selected = simNodes.find((node) => node.id === props.selectedNoteId);
-    return selected ? buildNoteUrl(props.notebookId, selected.id) : `/app/notebooks/${props.notebookId}`;
-  };
-
-  const setClampedZoom = (next: number) => setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next)));
-
-  const openNode = (node: SimNode) => {
-    node.fx = null;
-    node.fy = null;
-    navigateTo(buildNoteUrl(props.notebookId, node.id));
-  };
-
-  const fitGraph = () => {
-    const positioned = simNodes.filter((node) => node.x !== undefined && node.y !== undefined);
-    if (positioned.length === 0) {
-      setZoom(1);
-      setPan({ x: 0, y: 0 });
+  // The search changes neither the visible notes nor the view; only the filters do.
+  const filterKey = createMemo(() => `${state().links}|${state().hide.join(",")}`);
+  // Without links there are no filters to show, so a saved filter in the address does not apply either.
+  const notes = createMemo(() => {
+    filterKey();
+    return hasLinks ? untrack(() => visibleNotes(model, { links: state().links, hide: state().hide })) : model.notes;
+  });
+  const visibleIds = createMemo(() => new Set(notes().map((note) => note.id)));
+  const edges = createMemo(() => visibleEdges(model, visibleIds()));
+  const query = () => state().q;
+  const hits = createMemo(() => (query().trim() ? notes().filter((note) => matchesQuery(note, query())) : []));
+  const currentId = centreId;
+  const current = () => (currentId() ? model.byId.get(currentId()!) : undefined);
+  const noteHref = (id: string) => buildNoteUrl(props.notebookId, id, props.from);
+  const open = (id: string, newTab = false) => {
+    if (newTab) {
+      window.open(noteHref(id), "_blank", "noopener");
       return;
     }
-
-    const minX = Math.min(...positioned.map((node) => node.x! - radiusFor(node.inDegree) - 24));
-    const maxX = Math.max(...positioned.map((node) => node.x! + radiusFor(node.inDegree) + 24));
-    const minY = Math.min(...positioned.map((node) => node.y! - radiusFor(node.inDegree) - 24));
-    const maxY = Math.max(...positioned.map((node) => node.y! + radiusFor(node.inDegree) + 32));
-    const width = Math.max(1, maxX - minX);
-    const height = Math.max(1, maxY - minY);
-    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min((VIEWBOX_WIDTH - 96) / width, (VIEWBOX_HEIGHT - 96) / height)));
-
-    setZoom(nextZoom);
-    setPan({
-      x: -((minX + maxX) / 2) * nextZoom,
-      y: -((minY + maxY) / 2) * nextZoom,
+    flushUrl();
+    navigateTo(noteHref(id));
+  };
+  // The layout runs once, when the network first shows, and is kept while the island lives, so returning from the list
+  // or from an empty filter does not arrange the notes again or undo a drag.
+  const layoutAbort = new AbortController();
+  onCleanup(() => layoutAbort.abort());
+  let layout: Promise<Map<string, NetPoint> | null> | undefined;
+  const networkLayout = () => {
+    layout ??= layoutNetworkInSlices(model, layoutAbort.signal);
+    return layout;
+  };
+  const closeHref = () =>
+    props.backHref ??
+    (current()
+      ? buildNoteUrl(props.notebookId, current()!.id, props.from)
+      : `/app/notebooks/${props.notebookId}${props.from ? `?mode=${props.from}` : ""}`);
+  // A way out of an empty state replaces the button that had focus. Focus moves to the graph that replaces it, or to
+  // the next empty state's first action, never to the page start.
+  let root!: HTMLDivElement;
+  let focusGraph = false;
+  const claimFocus = () => focusGraph;
+  const leaveEmpty = (patch: Partial<GraphViewState>) => {
+    focusGraph = !!document.activeElement?.closest(".notebook-graph__empty");
+    update(patch);
+    if (!focusGraph) return;
+    focusGraph = false;
+    queueMicrotask(() => {
+      if (!root.contains(document.activeElement)) root.querySelector<HTMLElement>(".notebook-graph__empty :is(button, a[href])")?.focus();
     });
   };
-
-  const applyPositionsToDom = () => {
-    for (const node of simNodes) {
-      const el = nodeGroups.get(node.id);
-      if (el && node.x !== undefined && node.y !== undefined) {
-        el.setAttribute("transform", `translate(${node.x.toFixed(2)},${node.y.toFixed(2)})`);
-      }
-    }
-    for (const link of simLinks) {
-      const el = edgeLines.get(link);
-      if (!el) continue;
-      const sx = link.source.x;
-      const sy = link.source.y;
-      const tx = link.target.x;
-      const ty = link.target.y;
-      if (sx === undefined || sy === undefined || tx === undefined || ty === undefined) continue;
-      el.setAttribute("x1", sx.toFixed(2));
-      el.setAttribute("y1", sy.toFixed(2));
-      el.setAttribute("x2", tx.toFixed(2));
-      el.setAttribute("y2", ty.toFixed(2));
-    }
+  const resetFilters = () => leaveEmpty({ links: "all", hide: [] });
+  const linkOptions = () => [
+    { value: "all" as const, label: t().graphLinksAll, icon: "ti ti-circles" },
+    { value: "linked" as const, label: t().graphLinksLinked, icon: "ti ti-affiliate" },
+    { value: "unlinked" as const, label: t().graphLinksUnlinked, icon: "ti ti-circle-dashed" },
+  ];
+  const toggleArea = (key: string) => {
+    const hide = state().hide;
+    update({ hide: hide.includes(key) ? hide.filter((item) => item !== key) : [...hide, key] });
   };
+  const areaName = (area: GraphArea) => (area.index === 0 ? t().graphTopLevel : area.title || t().untitled);
+  const navigationLabel = () => (navigationHidden() ? t().showNavigation : t().hideNavigation);
+  const showsGraph = () =>
+    !state().list &&
+    display() !== "timeline" &&
+    hasLinks &&
+    notes().length > 0 &&
+    (display() !== "neighborhood" || notes().some((note) => current()?.neighbours.has(note.id)));
 
-  // ── Pan / zoom ──────────────────────────────────────────
-  const onWheel = (event: WheelEvent) => {
-    event.preventDefault();
-    const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
-    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom() * factor));
-    // Anchor zoom on cursor position so the point under the cursor stays put.
-    if (svgRef) {
-      const rect = svgRef.getBoundingClientRect();
-      const cx = event.clientX - rect.left - rect.width / 2;
-      const cy = event.clientY - rect.top - rect.height / 2;
-      const ratio = next / zoom();
-      setPan((p) => ({ x: cx - (cx - p.x) * ratio, y: cy - (cy - p.y) * ratio }));
-    }
-    setZoom(next);
-  };
-
-  // Background pan.
-  const onCanvasPointerDown = (event: PointerEvent) => {
-    if (event.button !== 0 || (event.target !== svgRef && (event.target as Element).tagName !== "rect")) return;
-    const startX = event.clientX;
-    const startY = event.clientY;
-    const startPan = pan();
-    (event.target as Element).setPointerCapture(event.pointerId);
-
-    const move = (e: PointerEvent) => {
-      setPan({ x: startPan.x + (e.clientX - startX), y: startPan.y + (e.clientY - startY) });
-    };
-    clearPointerGesture?.();
-    const releaseTextSelection = suppressTextSelection(event.pointerId);
-    const finish = () => {
-      releaseTextSelection();
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", finish);
-      window.removeEventListener("pointercancel", finish);
-      clearPointerGesture = undefined;
-    };
-    clearPointerGesture = finish;
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", finish);
-    window.addEventListener("pointercancel", finish);
-  };
-
-  // ── Node drag ───────────────────────────────────────────
-  const DRAG_THRESHOLD_PX = 4;
-
-  const onNodePointerDown = (node: SimNode, event: PointerEvent) => {
-    event.stopPropagation();
-    if (!simulation || event.button !== 0) return;
-
-    // Snapshot the node's position at click time. `fx`/`fy` track *absolute*
-    // coords from this origin — using `node.x` (which the simulation rewrites
-    // every tick) compounds drift across pointermove events.
-    const origX = node.x ?? 0;
-    const origY = node.y ?? 0;
-    const startClientX = event.clientX;
-    const startClientY = event.clientY;
-    let didMove = false;
-    let releaseTextSelection: (() => void) | undefined;
-
-    simulation.alphaTarget(0.3).restart();
-    node.fx = origX;
-    node.fy = origY;
-
-    (event.currentTarget as Element).setPointerCapture(event.pointerId);
-
-    const move = (e: PointerEvent) => {
-      const dx = (e.clientX - startClientX) / zoom();
-      const dy = (e.clientY - startClientY) / zoom();
-      // Dead zone: ignore sub-threshold movement so hand jitter on a click
-      // doesn't get classified as a drag (which would suppress the
-      // click-to-navigate on pointer-up).
-      if (!didMove && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-      if (!didMove) releaseTextSelection = suppressTextSelection(e.pointerId);
-      didMove = true;
-      node.fx = origX + dx;
-      node.fy = origY + dy;
-    };
-
-    clearPointerGesture?.();
-    const finish = (navigate: boolean) => {
-      releaseTextSelection?.();
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", cancel);
-      clearPointerGesture = undefined;
-      simulation?.alphaTarget(0);
-      if (navigate && !didMove) {
-        openNode(node);
-      }
-      // If the user dragged, keep `fx`/`fy` so the node stays where they
-      // dropped it. The simulation will re-settle the rest around it.
-    };
-    const up = () => finish(true);
-    const cancel = () => finish(false);
-    clearPointerGesture = cancel;
-
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", cancel);
-  };
-
-  // ── Hover dimming ───────────────────────────────────────
-  const isDimmed = (id: string): boolean => {
-    const hover = hoveredId();
-    if (!hover) return false;
-    return !neighbours.get(hover)?.has(id);
-  };
-
-  const isLinkDimmed = (link: SimLink): boolean => {
-    const hover = hoveredId();
-    if (!hover) return false;
-    return link.source.id !== hover && link.target.id !== hover;
-  };
-
-  const isSelected = (id: string): boolean => id === props.selectedNoteId;
-
-  // ── Lifecycle ───────────────────────────────────────────
-  onMount(() => {
-    if (simNodes.length === 0) return;
-
-    // Seed the selected note at the centre so it doesn't whip across the
-    // canvas while the simulation cools.
-    if (props.selectedNoteId) {
-      const seed = simNodes.find((n) => n.id === props.selectedNoteId);
-      if (seed) {
-        seed.x = 0;
-        seed.y = 0;
-      }
-    }
-
-    simulation = forceSimulation<SimNode, SimLink>(simNodes)
-      .force(
-        "link",
-        forceLink<SimNode, SimLink>(simLinks)
-          .id((d) => d.id)
-          .distance(LINK_DISTANCE),
-      )
-      .force("charge", forceManyBody().strength(CHARGE_STRENGTH))
-      .force("center", forceCenter(0, 0))
-      .on("tick", applyPositionsToDom);
-  });
-
-  onCleanup(() => {
-    clearPointerGesture?.();
-    simulation?.stop();
-  });
+  const depthSegment = () => (
+    <>
+      <Toolbar.Separator />
+      <div class="notebook-graph__depth">
+        <span>{t().graphDepth}</span>
+        <SegmentedControl<"1" | "2">
+          size="sm"
+          ariaLabel={t().graphDepth}
+          value={state().depth === 1 ? "1" : "2"}
+          options={[
+            { value: "1", label: t().graphDepthOne },
+            { value: "2", label: t().graphDepthTwo },
+          ]}
+          onValueChange={(depth) => update({ depth: depth === "1" ? 1 : 2 })}
+        />
+      </div>
+    </>
+  );
+  const network = () => (
+    <NetworkDisplay
+      model={model}
+      notes={notes()}
+      edges={edges()}
+      currentId={currentId()}
+      query={query()}
+      notebookName={props.notebookName}
+      displayName={graphDisplayLabel("network", t())}
+      now={props.now}
+      filterKey={filterKey()}
+      layout={networkLayout}
+      onOpen={open}
+      onClearQuery={() => update({ q: "" })}
+      controls={setControls}
+      focusRequest={(focus) => {
+        focusNote = focus;
+      }}
+      claimFocus={claimFocus}
+    />
+  );
+  const circle = () => (
+    <CircleDisplay
+      model={model}
+      notes={notes()}
+      edges={edges()}
+      currentId={currentId()}
+      query={query()}
+      notebookName={props.notebookName}
+      displayName={graphDisplayLabel("circle", t())}
+      now={props.now}
+      filterKey={filterKey()}
+      onOpen={open}
+      onClearQuery={() => update({ q: "" })}
+      controls={setControls}
+      focusRequest={(focus) => {
+        focusNote = focus;
+      }}
+      claimFocus={claimFocus}
+    />
+  );
+  const neighborhood = () => (
+    <NeighborhoodDisplay
+      model={model}
+      notes={notes()}
+      edges={edges()}
+      currentId={currentId()}
+      query={query()}
+      notebookName={props.notebookName}
+      displayName={graphDisplayLabel("neighborhood", t())}
+      now={props.now}
+      filterKey={filterKey()}
+      depth={state().depth}
+      onCentre={recenter}
+      onNetwork={() => leaveEmpty({ display: "network" })}
+      onResetFilters={resetFilters}
+      noteHref={noteHref}
+      onOpen={open}
+      onClearQuery={() => update({ q: "" })}
+      controls={setControls}
+      focusRequest={(focus) => {
+        focusNote = focus;
+      }}
+      claimFocus={claimFocus}
+    />
+  );
 
   return (
-    <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface)]">
-      <Show when={simNodes.length > 0} fallback={<EmptyState />}>
-        <Tooltip.Anchor content={t().closeGraph}>
-          <IconButtonLink tooltip={false} href={closeHref()} size="sm" class="absolute left-2 top-2 z-10" label={t().closeGraph}>
-            <i class="ti ti-x" />
-          </IconButtonLink>
-        </Tooltip.Anchor>
-
-        <svg
-          ref={svgRef}
-          class="w-full h-full select-none touch-none cursor-grab active:cursor-grabbing"
-          viewBox="-400 -300 800 600"
-          preserveAspectRatio="xMidYMid meet"
-          onWheel={onWheel}
-          onPointerDown={onCanvasPointerDown}
-        >
-          {/* invisible rect captures background drags reliably */}
-          <rect x="-100000" y="-100000" width="200000" height="200000" fill="transparent" />
-
-          <g transform={`translate(${pan().x},${pan().y}) scale(${zoom()})`}>
-            {/* Edges — same fill color as nodes, slightly thinner stroke. */}
-            <For each={simLinks}>
-              {(link) => (
-                <line
-                  ref={(el) => edgeLines.set(link, el)}
-                  class={`stroke-zinc-400 dark:stroke-zinc-600 transition-opacity ${isLinkDimmed(link) ? "opacity-15" : "opacity-70"}`}
-                  stroke-width="1"
-                />
-              )}
-            </For>
-
-            {/* Nodes — borderless circles in the same neutral as the edges;
-                the selected note uses the shared accent palette. */}
-            <For each={simNodes}>
-              {(node) => {
-                const radius = radiusFor(node.inDegree);
-                return (
-                  <g
-                    ref={(el) => nodeGroups.set(node.id, el)}
-                    class={`cursor-pointer transition-opacity ${isDimmed(node.id) ? "opacity-25" : "opacity-100"}`}
-                    role="link"
-                    tabIndex={0}
-                    aria-label={t().openNote({ title: node.title || t().untitled })}
-                    onPointerDown={(e) => onNodePointerDown(node, e)}
-                    onPointerEnter={() => setHoveredId(node.id)}
-                    onPointerLeave={() => setHoveredId(null)}
-                    onFocus={() => setFocusedId(node.id)}
-                    onBlur={() => setFocusedId(null)}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      event.preventDefault();
-                      openNode(node);
-                    }}
-                  >
-                    <circle
-                      r={radius}
-                      class={`${isSelected(node.id) ? "fill-blue-200 dark:fill-blue-900" : "fill-zinc-400 dark:fill-zinc-600"} ${
-                        focusedId() === node.id ? "stroke-blue-500 stroke-2" : ""
-                      }`}
-                    />
-                    <text
-                      y={radius + 12}
-                      text-anchor="middle"
-                      class={`text-[11px] pointer-events-none ${
-                        isSelected(node.id) ? "fill-blue-700 dark:fill-blue-300 font-medium" : "fill-zinc-600 dark:fill-zinc-400"
-                      } ${hoveredId() === node.id ? "underline underline-offset-2" : ""}`}
-                    >
-                      {node.title || t().untitled}
-                    </text>
-                  </g>
-                );
+    <div ref={root} class="notebook-graph" data-display={display() ?? undefined} data-list={state().list ? "" : undefined}>
+      <Toolbar label={t().graphTools} class="notebook-graph__head">
+        {/* The navigation sidebar sits beside the graph from a 64 rem app host; below that, from md, the toggle only
+            brings a hidden navigation back. Phones keep the header's menu (app.css). */}
+        <div ref={navigationToggle} class="notebooks-navigation-toggle" data-navigation-hidden={navigationHidden() ? "" : undefined}>
+          <Tooltip.Anchor content={navigationLabel()}>
+            <IconButton
+              label={navigationLabel()}
+              tooltip={false}
+              size="sm"
+              aria-expanded={!navigationHidden()}
+              aria-controls={NOTEBOOK_NAVIGATION_ID}
+              onClick={() => {
+                const showing = navigationHidden();
+                setNavigationHidden(!showing);
+                if (showing && navigationToggle)
+                  keepFocusAfterShowingNavigation(navigationToggle, () =>
+                    root.querySelector<HTMLInputElement>(".notebook-graph__head input")?.focus(),
+                  );
               }}
-            </For>
-          </g>
-        </svg>
-
-        <div class="absolute bottom-2 right-2 z-10 flex flex-col gap-1 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-1 shadow-[var(--ui-shadow-float)]">
-          <Tooltip.Anchor content={t().zoomIn}>
-            <IconButton tooltip={false} label={t().zoomIn} size="sm" onClick={() => setClampedZoom(zoom() * ZOOM_STEP)}>
-              <i class="ti ti-plus" />
-            </IconButton>
-          </Tooltip.Anchor>
-          <Tooltip.Anchor content={t().zoomOut}>
-            <IconButton tooltip={false} label={t().zoomOut} size="sm" onClick={() => setClampedZoom(zoom() / ZOOM_STEP)}>
-              <i class="ti ti-minus" />
-            </IconButton>
-          </Tooltip.Anchor>
-          <Tooltip.Anchor content={t().fitGraph}>
-            <IconButton tooltip={false} label={t().fitGraph} size="sm" onClick={fitGraph}>
-              <i class="ti ti-focus-centered" />
+            >
+              <i
+                class={`ti ${navigationHidden() ? "ti-layout-sidebar-left-expand" : "ti-layout-sidebar-left-collapse"}`}
+                aria-hidden="true"
+              />
             </IconButton>
           </Tooltip.Anchor>
         </div>
-      </Show>
-    </div>
-  );
-}
+        <IconButtonLink href={closeHref()} size="sm" class="md:!hidden" label={t().closeGraph}>
+          <i class="ti ti-chevron-left" aria-hidden="true" />
+        </IconButtonLink>
+        <div class="notebook-graph__title">
+          <small>
+            {props.notebookName}
+            <Show when={current()}>
+              {(note) => <span class="max-md:hidden"> · {t().graphFrom({ title: note().title || t().untitled })}</span>}
+            </Show>
+          </small>
+          <strong>{t().graphTitle}</strong>
+        </div>
+        <div class="notebook-graph__display-switcher">
+          <Show
+            when={display() === null}
+            fallback={<GraphDisplaySwitcher value={display() ?? DEFAULT_GRAPH_DISPLAY} onChange={(display) => update({ display })} />}
+          >
+            <div class="notebook-graph__desktop-default">
+              <GraphDisplaySwitcher value={DEFAULT_GRAPH_DISPLAY} onChange={(display) => update({ display })} />
+            </div>
+            <div class="notebook-graph__phone-default">
+              <GraphDisplaySwitcher value={PHONE_GRAPH_DISPLAY} onChange={(display) => update({ display })} />
+            </div>
+          </Show>
+        </div>
+        <Show when={model.notes.length > 0}>
+          <TextInput
+            type="search"
+            class="notebook-graph__search"
+            icon="ti ti-search"
+            placeholder={t().graphFind}
+            maxLength={GRAPH_QUERY_MAX}
+            aria-label={t().graphFindLabel}
+            value={query()}
+            onValueChange={(q) => update({ q })}
+            suffix={
+              <span class="notebook-graph__hits" aria-live="polite" aria-atomic="true">
+                <Show when={query().trim()}>
+                  <span aria-hidden="true">{hits().length}</span>
+                  <span class="sr-only">{t().graphHits({ count: hits().length })}</span>
+                </Show>
+              </span>
+            }
+            // Enter jumps to the first match. Esc clears a search field natively, which reports an empty value.
+            onSubmit={() => {
+              const first = hits()[0];
+              if (!first && (state().list || !hasLinks)) return;
+              if (state().list) document.querySelector<HTMLAnchorElement>(".notebook-graph__list-title")?.focus();
+              else if (!hasLinks) document.querySelector<HTMLAnchorElement>(".notebook-graph__unlinked a[data-match]")?.focus();
+              else if (display() === "timeline") focusNote?.();
+              else focusNote?.(first?.id);
+            }}
+          />
+          <Tooltip.Anchor content={t().graphAsList}>
+            <IconButton
+              label={t().graphAsList}
+              tooltip={false}
+              size="sm"
+              aria-pressed={state().list}
+              data-pressed={state().list ? "" : undefined}
+              onClick={() => update({ list: !state().list })}
+            >
+              <i class="ti ti-list-details" aria-hidden="true" />
+            </IconButton>
+          </Tooltip.Anchor>
+        </Show>
+        <Tooltip.Anchor content={t().closeGraph}>
+          <IconButtonLink tooltip={false} href={closeHref()} size="sm" class="max-md:!hidden" label={t().closeGraph}>
+            <i class="ti ti-x" aria-hidden="true" />
+          </IconButtonLink>
+        </Tooltip.Anchor>
+      </Toolbar>
 
-const EmptyState = () => {
-  const locale = useLocale();
-  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
-  return (
-    <div class="absolute inset-0 flex items-center justify-center">
-      <div class="text-center text-xs text-dimmed flex flex-col items-center gap-2 max-w-sm">
-        <i class="ti ti-affiliate text-2xl" />
-        <p class="font-medium">{t().noGraph}</p>
-        <p>{t().noGraphDescription}</p>
+      {/* Without links there is nothing to filter or zoom, so the row is left out entirely. */}
+      <Show when={hasLinks}>
+        <Toolbar label={t().graphFilters} class="notebook-graph__filters">
+          <SelectChip<GraphLinksFilter>
+            aria-label={t().graphWhichNotes}
+            size="sm"
+            position="bottom-left"
+            value={state().links}
+            options={linkOptions()}
+            onValueChange={(links) => update({ links })}
+          />
+          <Show when={!state().list && display() === "neighborhood"}>{depthSegment()}</Show>
+          <Show when={!state().list && display() === null}>
+            <div class="notebook-graph__desktop-default">
+              <Show when={DEFAULT_GRAPH_DISPLAY === "neighborhood"}>{depthSegment()}</Show>
+            </div>
+            <div class="notebook-graph__phone-default">
+              <Show when={PHONE_GRAPH_DISPLAY === "neighborhood"}>{depthSegment()}</Show>
+            </div>
+          </Show>
+          <Toolbar.Separator />
+          <div class="notebook-graph__areas" role="group" aria-label={t().graphAreas}>
+            <For each={model.areas.filter((area) => area.count > 0)}>
+              {(area) => (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="notebook-graph__area"
+                  data-slot={area.slot}
+                  aria-pressed={!state().hide.includes(area.key)}
+                  onClick={() => toggleArea(area.key)}
+                >
+                  <span class="notebook-graph__dot" aria-hidden="true" />
+                  <span class="notebook-graph__area-name">{areaName(area)}</span>
+                  <span class="notebook-graph__count">{area.count}</span>
+                </Button>
+              )}
+            </For>
+          </div>
+          <Toolbar.Group label={t().graphZoom} class={`notebook-graph__zoom max-md:!hidden ${showsGraph() ? "" : "invisible"}`}>
+            <IconButton label={t().zoomOut} size="sm" disabled={!showsGraph()} onClick={() => controls()?.zoom(1 / 1.25)}>
+              <i class="ti ti-minus" aria-hidden="true" />
+            </IconButton>
+            <IconButton label={t().zoomIn} size="sm" disabled={!showsGraph()} onClick={() => controls()?.zoom(1.25)}>
+              <i class="ti ti-plus" aria-hidden="true" />
+            </IconButton>
+            <IconButton label={t().fitGraph} size="sm" disabled={!showsGraph()} onClick={() => controls()?.fit()}>
+              <i class="ti ti-focus-centered" aria-hidden="true" />
+            </IconButton>
+          </Toolbar.Group>
+        </Toolbar>
+      </Show>
+
+      <div class="notebook-graph__body">
+        <Switch>
+          <Match when={model.notes.length === 0}>
+            <div class="notebook-graph__empty">
+              <Placeholder variant="panel" icon="ti ti-affiliate" description={t().graphNoNotes} />
+            </div>
+          </Match>
+          <Match when={!hasLinks && !state().list}>
+            {/* Many unlinked notes can be taller than the canvas, so this state scrolls. */}
+            <div class="notebook-graph__empty">
+              <Placeholder
+                variant="panel"
+                icon="ti ti-affiliate"
+                title={t().graphNoLinks}
+                description={
+                  <>
+                    <p>
+                      {t().graphNoLinksDescription({ name: props.notebookName })} {t().graphNoLinksHintBefore} <code>/note</code>{" "}
+                      {t().graphNoLinksHintAfter}
+                    </p>
+                    <ul
+                      class="notebook-graph__unlinked"
+                      data-query={query().trim() ? "" : undefined}
+                      aria-label={t().graphUnlinkedNotes({ count: model.notes.length })}
+                    >
+                      <For each={model.notes}>
+                        {(note) => (
+                          <li data-slot={note.area.slot}>
+                            <a href={noteHref(note.id)} data-match={matchesQuery(note, query()) ? "" : undefined}>
+                              <span class="notebook-graph__dot" aria-hidden="true" />
+                              {note.title || t().untitled}
+                            </a>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </>
+                }
+                action={
+                  <ButtonLink variant="secondary" size="sm" href={closeHref()}>
+                    <i class="ti ti-arrow-left" aria-hidden="true" />
+                    {t().graphBackToNote}
+                  </ButtonLink>
+                }
+              />
+            </div>
+          </Match>
+          <Match when={notes().length === 0}>
+            <div class="notebook-graph__empty">
+              <Placeholder
+                variant="panel"
+                icon="ti ti-filter"
+                title={t().graphFilterEmpty}
+                description={
+                  model.areas.every((area) => area.count === 0 || state().hide.includes(area.key))
+                    ? t().graphFilterAllHidden
+                    : state().links === "unlinked"
+                      ? t().graphFilterAllLinked
+                      : t().graphFilterNoneLinked
+                }
+                action={
+                  <Button variant="secondary" size="sm" onClick={resetFilters}>
+                    {t().graphResetFilters}
+                  </Button>
+                }
+              />
+            </div>
+          </Match>
+          <Match when={state().list}>
+            <GraphList
+              model={model}
+              sort={state().sort}
+              onSortChange={(sort) => update({ sort })}
+              rows={query().trim() ? hits() : notes()}
+              visibleIds={visibleIds()}
+              caption={t().graphNoteCount({ notes: query().trim() ? hits().length : notes().length, links: edges().length })}
+              currentId={currentId()}
+              now={props.now}
+              noteHref={noteHref}
+              onOpen={open}
+            />
+          </Match>
+          <Match when={display() === "timeline"}>
+            <TimelineDisplay
+              model={model}
+              notes={notes()}
+              edges={edges()}
+              currentId={currentId()}
+              query={query()}
+              notebookName={props.notebookName}
+              now={props.now}
+              timeZone={props.timeZone}
+              noteHref={noteHref}
+              onOpen={open}
+              onClearQuery={() => update({ q: "" })}
+              controls={setControls}
+              focusRequest={(focus) => {
+                focusNote = focus;
+              }}
+              claimFocus={claimFocus}
+            />
+          </Match>
+          <Match when={true}>
+            <Show
+              when={display() === null}
+              fallback={display() === "circle" ? circle() : display() === "neighborhood" ? neighborhood() : network()}
+            >
+              <div class="notebook-graph__desktop-default">{DEFAULT_GRAPH_DISPLAY === "network" ? network() : neighborhood()}</div>
+              <div class="notebook-graph__phone-default">{PHONE_GRAPH_DISPLAY === "neighborhood" ? neighborhood() : network()}</div>
+            </Show>
+          </Match>
+        </Switch>
       </div>
     </div>
   );
-};
+}

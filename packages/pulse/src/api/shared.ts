@@ -59,19 +59,3 @@ export const projectResult = async <T, U>(result: Promise<Result<T>> | Result<T>
   const resolved = await result;
   return resolved.ok ? ok(await project(resolved.data)) : fail(resolved.error);
 };
-
-export const resolveSourceInput = async <T extends object>(baseId: string, input: T): Promise<Result<T>> => {
-  const value = "sourceId" in input ? input.sourceId : null;
-  if (typeof value !== "string" || !value) return ok(input);
-  const sourceId = await resolveBasePublicId("sources", baseId, value);
-  return sourceId ? ok({ ...input, sourceId }) : fail(err.notFound("Source"));
-};
-
-export const withResolvedSource = async <T extends object, U>(
-  baseId: string,
-  input: T,
-  run: (resolved: T) => Promise<Result<U>>,
-): Promise<Result<U>> => {
-  const resolved = await resolveSourceInput(baseId, input);
-  return resolved.ok ? run(resolved.data) : fail(resolved.error);
-};

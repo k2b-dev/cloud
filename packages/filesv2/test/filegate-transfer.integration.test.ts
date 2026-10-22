@@ -1,8 +1,17 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Filegate, FilegateError, type RootClient } from "@k2b/filegate";
 import { DirectSession, putDirect } from "@k2b/filegate/utils";
 import { suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
+import { apiError } from "../src/api/api-error";
+import { errorMessage } from "../src/api/messages";
+import { uploadFile } from "../src/cli-upload";
+import type { EntryResult } from "../src/contracts";
+import { filegateApiFetch } from "../src/service/filegate-facade";
+import { transferUpload, UploadTransferError, uploadResponseFailure } from "../src/upload-transfer";
 import { localFilegateToken } from "./private-database";
 
 // Runs against the configured test Filegate in its own prefix. Never use application fixtures.
@@ -93,6 +102,343 @@ suite("actual Filegate 7.0.0 transfer contract (isolated local prefix)", () => {
     expect(abort?.status).toBe(409);
     expect((await root.session(opened.session.id)).state).toBe("committed");
     expect(await (await root.contentRaw(path)).text()).toBe("abc");
+  });
+
+  test("the production Filegate wrapper keeps a delayed upload commit connected", async () => {
+    const nativeFetch = globalThis.fetch;
+    let forwardedCommits = 0;
+    let delayBeforeForward = true;
+    const transport: typeof fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+        if (init?.method === "POST" && /\/uploads\/sessions\/[^/]+\/commit$/.test(url.pathname)) {
+          const forward = () => {
+            forwardedCommits++;
+            return nativeFetch(input, init);
+          };
+          const response = delayBeforeForward ? undefined : await forward();
+          await new Promise<void>((resolve, reject) => {
+            const signal = init.signal;
+            signal?.throwIfAborted();
+            const abort = () => {
+              clearTimeout(timer);
+              reject(signal?.reason);
+            };
+            const timer = setTimeout(() => {
+              signal?.removeEventListener("abort", abort);
+              resolve();
+            }, 1000);
+            signal?.addEventListener("abort", abort, { once: true });
+          });
+          return response ?? forward();
+        }
+        return nativeFetch(input, init);
+      },
+      { preconnect: nativeFetch.preconnect },
+    );
+    const delayed = new Filegate({
+      baseUrl: testInfra.filegate!,
+      token: await localFilegateToken(),
+      fetch: filegateApiFetch(transport),
+    }).root("cloud");
+    const path = `${prefix}/delayed-commit.txt`;
+    const opened = await delayed.createSession(path, 3, { allowAbort: true, idempotencyKey: randomUUID() });
+    pending.add(opened.session.id);
+    await new DirectSession(opened.lease!.url, transfer).upload(new Blob(["abc"]));
+    const nativeTimeout = AbortSignal.timeout;
+    // Control: a pre-forward delay demonstrates the mechanism of the old short budget.
+    const short = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(ms === 600_000 || ms === 10_000 ? 200 : ms));
+    try {
+      await expect(delayed.commitSession(opened.session.id)).rejects.toMatchObject({ name: "TimeoutError" });
+    } finally {
+      short.mockRestore();
+    }
+    expect(forwardedCommits).toBe(0);
+    expect(await root.session(opened.session.id)).toMatchObject({ state: "open", received: 3 });
+    delayBeforeForward = false;
+    const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(ms === 10_000 ? 200 : ms));
+    try {
+      await delayed.commitSession(opened.session.id);
+    } finally {
+      timeout.mockRestore();
+    }
+    expect((await root.session(opened.session.id)).state).toBe("committed");
+    expect(forwardedCommits).toBe(1);
+    pending.delete(opened.session.id);
+    expect(await (await root.contentRaw(path)).text()).toBe("abc");
+  });
+
+  test.each([false, true])("Cloud transfer uploads exact bytes across segments (resume: %s)", async (resume) => {
+    const path = `${prefix}/${resume ? "cloud-resume" : "cloud-transfer"}.bin`;
+    const bytes = Uint8Array.from({ length: 8 * 1024 * 1024 + 17 }, (_, index) => index % 251);
+    const blob = new Blob([bytes]);
+    const opened = await root.createSession(path, blob.size, { allowAbort: true, idempotencyKey: randomUUID() });
+    pending.add(opened.session.id);
+    const chunkSize = opened.session.chunkSize;
+    expect(blob.size).toBeGreaterThan(chunkSize);
+    const direct = new DirectSession(opened.lease!.url, transfer);
+    if (resume) {
+      await direct.put(0, blob.slice(0, chunkSize));
+      expect((await direct.status()).received).toBe(chunkSize);
+    }
+    const controller = new AbortController();
+    const nativeFetch = globalThis.fetch;
+    const putSegments: number[] = [];
+    const requestSignals: (AbortSignal | null | undefined)[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        requestSignals.push(init?.signal);
+        expect(init?.credentials).toBe("omit");
+        expect(init?.redirect).toBe("error");
+        expect(new Headers(init?.headers).has("authorization")).toBe(false);
+        if (init?.method === "PUT") putSegments.push(Number(new URL(String(input)).searchParams.get("segment")));
+        return nativeFetch(input, init);
+      },
+      { preconnect: nativeFetch.preconnect },
+    );
+    try {
+      await transferUpload(
+        blob,
+        { ...opened.session, url: opened.lease!.url },
+        {
+          signal: controller.signal,
+          failure: "Upload failed",
+          renew: (id) => root.sessionLease(id, { expiresIn: 60, allowAbort: true }),
+        },
+      );
+      expect(requestSignals.length).toBeGreaterThan(0);
+      for (const signal of requestSignals) {
+        expect(signal).toBeInstanceOf(AbortSignal);
+        expect(signal).not.toBe(controller.signal);
+      }
+      expect(putSegments).toEqual(resume ? [1] : [0, 1]);
+    } finally {
+      controller.abort();
+      globalThis.fetch = nativeFetch;
+    }
+    await root.commitSession(opened.session.id);
+    pending.delete(opened.session.id);
+    expect(new Uint8Array(await (await root.contentRaw(path)).arrayBuffer())).toEqual(bytes);
+  });
+
+  test("Cloud transfer stops after one stalled segment and retains acknowledged bytes", async () => {
+    const blob = new Blob([new Uint8Array(8 * 1024 * 1024 + 17)]);
+    const opened = await root.createSession(`${prefix}/cloud-stalled.bin`, blob.size, { allowAbort: true, idempotencyKey: randomUUID() });
+    pending.add(opened.session.id);
+    expect(blob.size).toBeGreaterThan(opened.session.chunkSize);
+    const nativeFetch = globalThis.fetch;
+    const nativeTimeout = AbortSignal.timeout;
+    const deadlineMs = 3000;
+    const deadline = spyOn(AbortSignal, "timeout").mockImplementation((ms) => nativeTimeout(Math.min(ms, deadlineMs)));
+    const controller = new AbortController();
+    let hungPuts = 0;
+    let hungAt = 0;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "PUT" && new URL(String(input)).searchParams.get("segment") === "1") {
+          hungPuts++;
+          if (hungPuts === 1) hungAt = performance.now();
+          return new Promise<Response>((_, reject) => {
+            init.signal?.throwIfAborted();
+            init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+          });
+        }
+        return nativeFetch(input, init);
+      },
+      { preconnect: nativeFetch.preconnect },
+    );
+    try {
+      let caught: unknown;
+      try {
+        await transferUpload(
+          blob,
+          { ...opened.session, url: opened.lease!.url },
+          {
+            signal: AbortSignal.any([controller.signal, nativeTimeout(12_000)]),
+            failure: "Upload failed",
+            renew: (id) => root.sessionLease(id, { expiresIn: 60, allowAbort: true }),
+          },
+        );
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(UploadTransferError);
+      expect(caught).toHaveProperty("kind", "stalled");
+      expect(hungPuts).toBe(1);
+      expect(performance.now() - hungAt).toBeLessThan(deadlineMs + 2000);
+    } finally {
+      controller.abort();
+      globalThis.fetch = nativeFetch;
+      deadline.mockRestore();
+    }
+    const status = await root.session(opened.session.id);
+    expect(status.state).toBe("open");
+    expect(status.received).toBe(opened.session.chunkSize);
+  }, 15_000);
+
+  test.each(["network", "busy"] as const)(
+    "CLI retries %s on a real session within one call, resuming acknowledged segments without aborting",
+    async (kind) => {
+      const directory = await mkdtemp(join(tmpdir(), "filesv2-resume-"));
+      const local = join(directory, "resume.bin");
+      const path = `${prefix}/cli-${kind}-resume.bin`;
+      const bytes = Uint8Array.from({ length: 8 * 1024 * 1024 + 17 }, (_, index) => index % 251);
+      const defaults = new Map<string, string>();
+      const ctx = {
+        options: { profile: "test", server: "https://cloud.test", token: "test", output: "json" as const },
+        getDefault: async (key: string) => defaults.get(key),
+        setDefault: async (key: string, value: string | undefined) => {
+          if (value === undefined) defaults.delete(key);
+          else defaults.set(key, value);
+        },
+        error: () => {},
+      };
+      const openedIds: string[] = [];
+      const keys: string[] = [];
+      let chunkSize = 0;
+      let aborts = 0;
+      const result: EntryResult = {
+        base: {
+          id: "base",
+          area: "cloud",
+          kind: "users",
+          name: "Home",
+          status: "existing",
+          reason: null,
+          indexEnabled: false,
+          versioningEnabled: false,
+        },
+        entry: { name: "resume.bin", path, directory: false, size: bytes.length, modified: "" },
+      };
+      const api = {
+        scope: path,
+        open: async (size: number, _signal: AbortSignal, idempotencyKey: string) => {
+          keys.push(idempotencyKey);
+          const opened = await root.createSession(path, size, { allowAbort: true, idempotencyKey });
+          pending.add(opened.session.id);
+          openedIds.push(opened.session.id);
+          if (openedIds.length > 1) expect(opened.session.received).toBe(opened.session.chunkSize);
+          chunkSize = opened.session.chunkSize;
+          return { ...opened.session, url: opened.lease?.url };
+        },
+        renew: (id: string) => root.sessionLease(id, { allowAbort: true }),
+        commit: async (id: string) => {
+          await root.commitSession(id);
+          pending.delete(id);
+          return result;
+        },
+        abort: async (id: string) => {
+          aborts++;
+          await root.abortSession(id);
+        },
+      };
+      const nativeFetch = globalThis.fetch;
+      const failedAttempts = kind === "network" ? 1 : 2;
+      let failedPuts = 0;
+      const puts: number[] = [];
+      globalThis.fetch = Object.assign(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (init?.method === "PUT") {
+            const segment = Number(new URL(String(input)).searchParams.get("segment"));
+            if (openedIds.length <= failedAttempts && segment === 1) {
+              failedPuts++;
+              if (kind === "network") throw new TypeError("fetch failed");
+              return Response.json({ error: "upload_capacity", code: "upload_capacity" }, { status: 503 });
+            }
+            if (openedIds.length > failedAttempts) puts.push(segment);
+          }
+          return nativeFetch(input, init);
+        },
+        { preconnect: nativeFetch.preconnect },
+      );
+      try {
+        await writeFile(local, bytes);
+        await expect(uploadFile(ctx, local, api, { retryDelays: [1, 1, 1, 1, 1] })).resolves.toEqual(result);
+        expect(bytes.length).toBeGreaterThan(chunkSize);
+        expect(openedIds).toHaveLength(failedAttempts + 1);
+        expect(new Set(openedIds).size).toBe(1);
+        expect(new Set(keys).size).toBe(1);
+        expect(failedPuts).toBe(failedAttempts * 3);
+        expect(puts).toEqual([1]);
+        expect((await root.session(openedIds[0]!)).state).toBe("committed");
+        expect(new Uint8Array(await (await root.contentRaw(path)).arrayBuffer())).toEqual(bytes);
+        expect(defaults.size).toBe(0);
+        expect(aborts).toBe(0);
+      } finally {
+        globalThis.fetch = nativeFetch;
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+    15_000,
+  );
+
+  test("CLI discards a managed-root write conflict and preserves the concurrent writer", async () => {
+    expect((await root.info()).managed).toBe(true);
+    const directory = await mkdtemp(join(tmpdir(), "filesv2-conflict-"));
+    const local = join(directory, "conflict.txt");
+    const path = `${prefix}/cli-write-conflict.txt`;
+    const defaults = new Map<string, string>();
+    const ctx = {
+      options: { profile: "test", server: "https://cloud.test", token: "test", output: "json" as const },
+      getDefault: async (key: string) => defaults.get(key),
+      setDefault: async (key: string, value: string | undefined) => {
+        if (value === undefined) defaults.delete(key);
+        else defaults.set(key, value);
+      },
+      error: () => {},
+    };
+    let sessionId = "";
+    let aborts = 0;
+    try {
+      await writeFile(local, "stale");
+      let caught: unknown;
+      try {
+        await uploadFile(ctx, local, {
+          scope: path,
+          open: async (size, _signal, idempotencyKey) => {
+            const opened = await root.createSession(path, size, {
+              onConflict: "error",
+              precondition: { ifNoneMatch: true },
+              allowAbort: true,
+              idempotencyKey,
+            });
+            sessionId = opened.session.id;
+            pending.add(sessionId);
+            return { ...opened.session, url: opened.lease!.url };
+          },
+          renew: (id) => root.sessionLease(id, { allowAbort: true }),
+          commit: async (id) => {
+            await root.put(path, new Blob(["concurrent writer"]));
+            try {
+              await root.commitSession(id);
+            } catch (error) {
+              expect(error).toBeInstanceOf(FilegateError);
+              expect(error).toHaveProperty("status", 412);
+              const { code, status } = apiError(error);
+              throw await uploadResponseFailure(Response.json({ code, message: errorMessage(code, "en") }, { status }), "Upload failed");
+            }
+            throw new Error("Expected Filegate to reject publication");
+          },
+          abort: async (id) => {
+            aborts++;
+            await root.abortSession(id);
+          },
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught).toHaveProperty("cause", expect.any(UploadTransferError));
+      expect(caught).toHaveProperty("cause.kind", "final");
+      expect(caught).toHaveProperty("cause.code", "write_conflict");
+      expect(aborts).toBe(1);
+      expect((await root.session(sessionId)).state).toBe("aborted");
+      pending.delete(sessionId);
+      expect(defaults.size).toBe(0);
+      expect(await (await root.contentRaw(path)).text()).toBe("concurrent writer");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   test("abort retains an explicit terminal receipt and cannot be committed", async () => {

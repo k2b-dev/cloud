@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parseNetworkAllowlist } from "@k2b/cloud/shared";
 import { fetchPrometheusMetrics, parsePrometheusMetrics } from "./metrics-scraper";
 
 describe("Pulse Prometheus metrics scraper", () => {
@@ -13,6 +14,9 @@ process_resident_memory_bytes 123.5
     );
     expect(parsed).toEqual({
       skippedSamples: 0,
+      skippedSummaries: 0,
+      refusedHistograms: [],
+      sampleCount: 2,
       metrics: [
         {
           name: "http_requests_total",
@@ -71,12 +75,58 @@ value{note="line\\nquote\\"slash\\\\"} -1.25e3
     });
     const start = Date.now();
     try {
-      await expect(
-        fetchPrometheusMetrics({ endpointUrl: `http://127.0.0.1:${endpoint.port}/metrics`, bearerTokenEncrypted: null }, 100),
-      ).rejects.toThrow();
+      expect(
+        await fetchPrometheusMetrics({ endpointUrl: `http://127.0.0.1:${endpoint.port}/metrics`, bearerTokenEncrypted: null }, 100, {
+          allowlist: parseNetworkAllowlist(["127.0.0.0/8"]),
+        }),
+      ).toMatchObject({ ok: false, error: { message: "Metrics scrape timed out after 15 seconds" } });
       expect(Date.now() - start).toBeLessThan(2000);
     } finally {
       endpoint.stop(true);
     }
   });
+});
+
+const histogram = (buckets: string, count = 3, sum = 2) => `# TYPE duration histogram
+${buckets}
+duration_sum{method="GET"} ${sum}
+duration_count{method="GET"} ${count}`;
+test("#4 histogram buckets retain canonical le and all three components are counters", () => {
+  const parsed = parsePrometheusMetrics(histogram('duration_bucket{method="GET",le="1.000"} 1\nduration_bucket{method="GET",le="+Inf"} 3'));
+  expect(parsed.refusedHistograms).toEqual([]);
+  expect(parsed.metrics).toHaveLength(4);
+  expect(parsed.metrics.map((s) => s.type)).toEqual(Array(4).fill("counter"));
+  expect(parsed.metrics[0]?.dimensions?.le).toBe("1");
+  expect(parsed.metrics[1]?.dimensions?.le).toBe("+Inf");
+});
+test.each([
+  ["missing_inf", 'duration_bucket{method="GET",le="1"} 1', 3, 2],
+  ["not_cumulative", 'duration_bucket{method="GET",le="1"} 4\nduration_bucket{method="GET",le="+Inf"} 3', 3, 2],
+  ["count_mismatch", 'duration_bucket{method="GET",le="+Inf"} 3', 2, 2],
+  ["negative_sum", 'duration_bucket{method="GET",le="+Inf"} 3', 3, -1],
+] as const)("#4 %s refuses every sample of the family", (reason, buckets, count, sum) => {
+  const parsed = parsePrometheusMetrics(histogram(buckets, count, sum) + "\n# TYPE safe gauge\nsafe 1");
+  expect(parsed.metrics.map((m) => m.name)).toEqual(["safe"]);
+  expect(parsed.refusedHistograms).toEqual([{ family: "duration", reason }]);
+});
+test("#4 histogram validation is per label group and diagnostics are bounded", () => {
+  const parsed = parsePrometheusMetrics(
+    histogram('duration_bucket{method="GET",le="+Inf"} 3') + '\nduration_bucket{method="POST",le="1"} 0',
+  );
+  expect(parsed.metrics).toEqual([]);
+  expect(parsed.refusedHistograms).toEqual([{ family: "duration", reason: "missing_inf" }]);
+  const many = Array.from({ length: 21 }, (_, i) => `# TYPE h${i} histogram\nh${i}_bucket{le="1"} 0`).join("\n");
+  expect(parsePrometheusMetrics(many).refusedHistograms).toHaveLength(20);
+});
+test("#12 exact/prefix filters select families before the sample budget", () => {
+  const parsed = parsePrometheusMetrics(
+    "# TYPE excluded gauge\n" +
+      "excluded 1\n".repeat(50001) +
+      "\n# TYPE up gauge\nup 1\n# TYPE node_cpu_seconds_total counter\nnode_cpu_seconds_total 2\n" +
+      histogram('duration_bucket{method="GET",le="+Inf"} 3'),
+    undefined,
+    ["up", "node_*", "duration"],
+  );
+  expect(parsed.sampleCount).toBe(5);
+  expect(parsed.metrics.map((m) => m.name)).toEqual(["up", "node_cpu_seconds_total", "duration_bucket", "duration_sum", "duration_count"]);
 });

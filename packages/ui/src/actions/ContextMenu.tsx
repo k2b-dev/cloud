@@ -2,7 +2,8 @@ import { createMemo, createSignal, createUniqueId, type JSX, onCleanup, onMount,
 import { Portal } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { useUiMessages } from "../intl/messages";
-import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition, focusRowSegment } from "./Dropdown";
+import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition } from "./Dropdown";
+import { focusRowSegment } from "./menu-rows";
 
 export type ContextMenuProps = {
   items: readonly DropdownItem[];
@@ -34,6 +35,20 @@ const focusableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
 
 /** Right-click menu with keyboard invocation, one-open-at-a-time behavior, and viewport clamping. */
 export function ContextMenu(props: ContextMenuProps): JSX.Element {
+  return ContextMenuBase(props);
+}
+
+/**
+ * Package-internal, not exported from the package index: `openAt` lets GestureMenu open the menu at a held finger, and
+ * `title` names what was pressed above the entries, since the finger covers it.
+ */
+export function ContextMenuBase(
+  props: ContextMenuProps & {
+    openAt?: (open: (x: number, y: number) => void) => void;
+    title?: string;
+    closeWith?: (close: () => void) => void;
+  },
+): JSX.Element {
   const messages = useUiMessages();
   const generatedId = `k2b-context-${createUniqueId()}`;
   const menuId = `${generatedId}-menu`;
@@ -155,6 +170,13 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
     }
   };
 
+  props.openAt?.(open);
+  // A close from outside, such as a drag taking over the press, returns focus that sits in the menu to where it came from.
+  props.closeWith?.(() => {
+    if (isOpen() && menu?.contains(document.activeElement)) returnFocus(opener?.isConnected ? opener : host, hostRing);
+    close();
+  });
+
   onMount(() => {
     onCleanup(() => {
       detachOpenListeners();
@@ -205,6 +227,12 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
               style={{ left: `${point().x}px`, top: `${point().y}px` }}
               onPointerDown={(event) => event.stopPropagation()}
             >
+              {/* The menu carries the same name for assistive technology. */}
+              <Show when={props.title}>
+                <div class="k2b-context-menu__title" aria-hidden="true">
+                  {props.title}
+                </div>
+              </Show>
               <DropdownItems items={items()} close={close} />
             </div>
           </Portal>

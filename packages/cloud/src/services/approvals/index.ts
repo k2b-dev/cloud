@@ -1,14 +1,18 @@
 import { type SQL, sql } from "bun";
 import { capabilityRequestHash } from "../../capabilities/claims";
+import { restoreReviewSnapshot, serializeReviewSnapshot } from "../../capabilities/review-storage";
 import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
-import type { CapabilityActionReview } from "../../contracts/capabilities";
+import type { CapabilityActionReviewData } from "../../contracts/capabilities";
+import { CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
 import { isAppSessionActor } from "../../server/actor";
 import type { RequestActor, RequestCredentialKind } from "../../server/middleware/auth";
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
+import { compactApprovalDetailsSql } from "./content";
 
 export { countPending, listPending, presentPendingApproval } from "./list";
 export { migrateApprovals } from "./migrate";
+export { type ApprovalActionPolicy, loadApprovalActionPolicies, pendingApprovalCard } from "./question";
 
 // Derived from chat's AI_ACTION_BUDGET_MS and Studio's one-day abandonment of pending calls.
 export const APPROVAL_MAX_WAIT_MS = 24 * 60 * 60_000;
@@ -23,7 +27,8 @@ export type ApprovalAssurance = "standard" | "confirm";
  */
 export const approvalAssurance = (rememberable: boolean): ApprovalAssurance => (rememberable ? "standard" : "confirm");
 export const approvalArgsDigest = (input: unknown): string => capabilityRequestHash(input);
-export const approvalReviewDigest = (review: CapabilityActionReview | null | undefined): string => capabilityRequestHash(review ?? null);
+export const approvalReviewDigest = (review: CapabilityActionReviewData | null | undefined): string =>
+  capabilityRequestHash(review ?? null);
 export const approvalDecisionChannel = (input: {
   credentialKind?: RequestCredentialKind;
   actor?: RequestActor;
@@ -50,7 +55,7 @@ export type ApprovalRequestInput = {
   approverUserId: string;
   assurance: ApprovalAssurance;
   sentence: string;
-  review?: CapabilityActionReview | null;
+  review?: CapabilityActionReviewData | null;
   input: unknown;
   expiresInMs: number;
 };
@@ -67,11 +72,13 @@ export type ApprovalRequest = {
   approverUserId: string;
   assurance: ApprovalAssurance;
   sentence: string;
-  details: CapabilityActionReview | null;
+  details: CapabilityActionReviewData | null;
   argsDigest: string;
   reviewDigest: string;
   status: ApprovalStatus;
   decidedVia: ApprovalDecisionChannel | null;
+  decidedDeviceId: string | null;
+  approverAuthEpoch: string | null;
   decidedAt: Date | null;
   consumedAt: Date | null;
   createdAt: Date;
@@ -79,14 +86,26 @@ export type ApprovalRequest = {
 };
 // SQL aliases keep the public row shape identical for reads and locked transaction reads. A function, because a
 // fragment built at import time would bind the default sql handle before a test can choose its database.
-const columns = () => sql`id, app_id AS "appId", action, approval_scope AS "approvalScope",
+const columns = (compact = false) => sql`id, app_id AS "appId", action, approval_scope AS "approvalScope",
   requester_kind AS "requesterKind", requester_ref AS "requesterRef", requester_app_id AS "requesterAppId",
   requester_title AS "requesterTitle", subject_id AS "subjectId", approver_user_id AS "approverUserId",
-  assurance, sentence, details, args_digest AS "argsDigest", review_digest AS "reviewDigest", status,
+  assurance, sentence, ${compact ? compactApprovalDetailsSql("approvals.requests") : sql`details`} AS details, args_digest AS "argsDigest", review_digest AS "reviewDigest", status,
+  decided_device_id AS "decidedDeviceId", approver_auth_epoch::text AS "approverAuthEpoch",
   decided_via AS "decidedVia", decided_at AS "decidedAt", consumed_at AS "consumedAt",
   created_at AS "createdAt", expires_at AS "expiresAt"`;
 
 const transaction = <T>(db: SQL | undefined, run: (tx: SQL) => Promise<T>): Promise<T> => (db && db !== sql ? run(db) : sql.begin(run));
+
+const lockDecider = async (tx: SQL, userId: string, deviceId: string | null) => {
+  // User before device before request: sign-out everywhere updates the user first, then devices.
+  const [user] = await tx<{ epoch: string }[]>`SELECT auth_epoch::text AS epoch FROM auth.users WHERE id=${userId}::uuid FOR SHARE`;
+  const [device] =
+    deviceId === null
+      ? []
+      : await tx`SELECT 1 FROM auth.app_devices
+    WHERE id=${deviceId}::uuid AND user_id=${userId}::uuid AND revoked_at IS NULL FOR SHARE`;
+  return { epoch: user?.epoch ?? null, deviceActive: !!device };
+};
 
 export type ApprovalRequestResult = { ok: true; id: string } | { ok: false; code: "CONFLICT" };
 /**
@@ -103,10 +122,10 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
   return transaction(db, async (tx): Promise<ApprovalRequestResult> => {
     const [row] = await tx<{ id: string }[]>`
       INSERT INTO approvals.requests (app_id, action, approval_scope, requester_kind, requester_ref, requester_app_id,
-        requester_title, subject_id, approver_user_id, assurance, sentence, details, args_digest, review_digest, expires_at)
+        requester_title, subject_id, approver_user_id, approver_auth_epoch, assurance, sentence, details, args_digest, review_digest, expires_at)
       VALUES (${input.appId}, ${input.action}, ${input.approvalScope ?? null}, ${input.requester.kind}, ${input.requester.ref},
         ${input.requester.appId}, ${input.requester.title ?? null}, ${input.subjectId}::uuid, ${input.approverUserId}::uuid,
-        ${input.assurance}, ${input.sentence}, ${JSON.stringify(input.review ?? null)}::text::jsonb,
+        (SELECT auth_epoch FROM auth.users WHERE id=${input.approverUserId}::uuid), ${input.assurance}, ${input.sentence}, ${serializeReviewSnapshot(input.review ?? null)}::text::jsonb,
         ${approvalArgsDigest(input.input)}, ${approvalReviewDigest(input.review)}, now() + (${expiresInMs} * interval '1 millisecond'))
       ON CONFLICT (requester_kind, requester_ref) DO NOTHING
       RETURNING id
@@ -115,15 +134,21 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
     const [open] = await tx<{ id: string }[]>`SELECT id FROM approvals.requests
       WHERE requester_kind=${input.requester.kind} AND requester_ref=${input.requester.ref}
         AND status='pending' AND expires_at > now() AND subject_id=${input.subjectId}::uuid
+        AND approver_auth_epoch=(SELECT auth_epoch FROM auth.users WHERE id=${input.approverUserId}::uuid)
         AND approver_user_id=${input.approverUserId}::uuid AND app_id=${input.appId} AND action=${input.action}`;
     return open ? { ok: true, id: open.id } : { ok: false, code: "CONFLICT" };
   });
 };
 
-export const get = async (id: string, db?: SQL): Promise<ApprovalRequest | null> =>
+export const get = async (id: string, db?: SQL, compactReview = false): Promise<ApprovalRequest | null> =>
   transaction(db, async (tx) => {
-    const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests WHERE id=${id}::uuid`;
-    return row ?? null;
+    const [row] = await tx<ApprovalRequest[]>`SELECT ${columns(compactReview)} FROM approvals.requests WHERE id=${id}::uuid`;
+    return row
+      ? {
+          ...row,
+          details: row.details === null ? null : CapabilityActionReviewPresentationSchema.parse(restoreReviewSnapshot(row.details)),
+        }
+      : null;
   });
 
 export type ApprovalDecisionResult =
@@ -137,12 +162,9 @@ export const decide = async (
   db?: SQL,
 ): Promise<ApprovalDecisionResult> => {
   const result = await transaction(db, async (tx): Promise<ApprovalDecisionResult> => {
-    // Lock the device before the request so revocation and the decision serialize.
-    if (actor.deviceId !== undefined) {
-      const [device] = await tx`SELECT 1 FROM auth.app_devices
-        WHERE id=${actor.deviceId}::uuid AND user_id=${actor.userId}::uuid AND revoked_at IS NULL FOR SHARE`;
-      if (!device) return { ok: false, code: "NOT_FOUND" };
-    }
+    // Lock the approver and device before the request so revocation and decisions serialize.
+    const decider = await lockDecider(tx, actor.userId, actor.deviceId ?? null);
+    if (actor.deviceId !== undefined && !decider.deviceActive) return { ok: false, code: "NOT_FOUND" };
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };
@@ -151,8 +173,9 @@ export const decide = async (
     const [won] = rejectOnly
       ? []
       : await tx<ApprovalRequest[]>`
-      UPDATE approvals.requests SET status=${status}, decided_via=${actor.via}, decided_at=now()
+      UPDATE approvals.requests SET status=${status}, decided_via=${actor.via}, decided_device_id=${actor.deviceId ?? null}::uuid, decided_at=now()
       WHERE id=${id}::uuid AND approver_user_id=${actor.userId}::uuid AND status='pending' AND expires_at > now()
+        AND approver_auth_epoch=${decider.epoch}::bigint
       RETURNING ${columns()}
     `;
     if (won) {
@@ -178,7 +201,8 @@ export const decide = async (
     }
     if (row.status === "pending") {
       const [expired] = await tx<{ id: string }[]>`UPDATE approvals.requests SET status='expired'
-        WHERE id=${id}::uuid AND status='pending' AND expires_at <= now() RETURNING id`;
+        WHERE id=${id}::uuid AND status='pending'
+          AND (expires_at <= now() OR approver_auth_epoch IS DISTINCT FROM ${decider.epoch}::bigint) RETURNING id`;
       return { ok: false, code: expired || !rejectOnly ? "EXPIRED" : "REJECT_ONLY" };
     }
     if (
@@ -194,20 +218,35 @@ export const decide = async (
 
 export type ApprovalConsumeResult =
   | { ok: true }
-  | { ok: false; code: "NOT_FOUND" | "NOT_APPROVED" | "ALREADY_CONSUMED" | "INPUT_CHANGED" | "REVIEW_CHANGED" };
+  | { ok: false; code: "NOT_FOUND" | "NOT_APPROVED" | "ALREADY_CONSUMED" | "INPUT_CHANGED" | "REVIEW_CHANGED" | "REVOKED" };
 export const consume = async (
   id: string,
-  input: { input: unknown; review: CapabilityActionReview | null; requester: { kind: ApprovalRequesterKind; ref: string } },
+  input: { input: unknown; review: CapabilityActionReviewData | null; requester: { kind: ApprovalRequesterKind; ref: string } },
   db?: SQL,
 ): Promise<ApprovalConsumeResult> => {
   const argsDigest = approvalArgsDigest(input.input),
     reviewDigest = approvalReviewDigest(input.review);
   return transaction(db, async (tx): Promise<ApprovalConsumeResult> => {
+    const [initial] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
+      WHERE id=${id}::uuid AND requester_kind=${input.requester.kind} AND requester_ref=${input.requester.ref}`;
+    if (!initial) return { ok: false, code: "NOT_FOUND" };
+    if (initial.status === "consumed") return { ok: false, code: "ALREADY_CONSUMED" };
+    if (initial.status !== "approved") return { ok: false, code: "NOT_APPROVED" };
+    const decider = await lockDecider(tx, initial.approverUserId, initial.decidedDeviceId);
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND requester_kind=${input.requester.kind} AND requester_ref=${input.requester.ref} FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };
     if (row.status === "consumed") return { ok: false, code: "ALREADY_CONSUMED" };
     if (row.status !== "approved") return { ok: false, code: "NOT_APPROVED" };
+    if (
+      (row.decidedVia === "cloud_login" && row.decidedDeviceId === null) ||
+      (row.decidedDeviceId !== null && !decider.deviceActive) ||
+      row.approverAuthEpoch === null ||
+      row.approverAuthEpoch !== decider.epoch
+    ) {
+      await tx`UPDATE approvals.requests SET status='cancelled' WHERE id=${id}::uuid AND status='approved'`;
+      return { ok: false, code: "REVOKED" };
+    }
     if (row.argsDigest !== argsDigest || row.reviewDigest !== reviewDigest) {
       await tx`UPDATE approvals.requests SET status='cancelled' WHERE id=${id}::uuid AND status='approved'`;
       return { ok: false, code: row.argsDigest !== argsDigest ? "INPUT_CHANGED" : "REVIEW_CHANGED" };

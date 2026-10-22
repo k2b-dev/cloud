@@ -1,8 +1,9 @@
 import { expect, setDefaultTimeout, test } from "bun:test";
-import { toPgUuidArray } from "@k2b/cloud/services";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { requireConversation } from "../service/access";
 import {
   ChatSnapshotSchema,
@@ -274,15 +275,16 @@ suite("personal read state", () => {
   test("a 300-chat sidebar uses the bounded messages seq index without a message sequential scan", async () => {
     const viewer = await f.person(),
       other = await f.person();
+    const shortIds = Array.from({ length: 300 }, () => testShortId());
     const rows = await sql<
       { id: string; short_id: string }[]
     >`INSERT INTO chat.conversations (short_id, created_by_type, created_by_id, seq_head, rev, changed_rev, member_count)
-      SELECT left(${viewer.id}, 2) || lpad(n::text, 4, '0'), 'user', ${viewer.id}::uuid, 5, 5, 5, 1 FROM generate_series(1, 300) n RETURNING id, short_id`;
+      SELECT short_id, 'user', ${viewer.id}::uuid, 5, 5, 5, 1 FROM unnest(${toPgTextArray(shortIds)}::text[]) AS fixture(short_id) RETURNING id, short_id`;
     for (const row of rows) f.trackChat(row.short_id);
     const ids = toPgUuidArray(rows.map((row) => row.id));
     await sql`INSERT INTO auth.access (id, user_id, permission) SELECT id, ${viewer.id}::uuid, 'admin' FROM chat.conversations WHERE id = ANY(${ids}::uuid[])`;
     await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id) SELECT id, id, 'member', 'user', ${viewer.id}::uuid FROM chat.conversations WHERE id = ANY(${ids}::uuid[])`;
-    await sql`INSERT INTO chat.participants (conversation_id, principal_type, principal_id, origin, joined_seq, last_read_seq) SELECT id, 'user', ${viewer.id}::uuid, 'direct', 0, CASE WHEN right(short_id, 1)::int % 2 = 0 THEN 5 ELSE 0 END FROM chat.conversations WHERE id = ANY(${ids}::uuid[])`;
+    await sql`INSERT INTO chat.participants (conversation_id, principal_type, principal_id, origin, joined_seq, last_read_seq) SELECT c.id, 'user', ${viewer.id}::uuid, 'direct', 0, CASE WHEN fixture.n % 2 = 0 THEN 5 ELSE 0 END FROM chat.conversations c JOIN unnest(${toPgTextArray(shortIds)}::text[]) WITH ORDINALITY AS fixture(short_id, n) ON fixture.short_id = c.short_id WHERE c.id = ANY(${ids}::uuid[])`;
     await sql`INSERT INTO chat.messages (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md)
       SELECT c.short_id || lpad(n::text, 4, '0'), c.id, n, n, 'text', 'user', ${other.id}::uuid, 'Other', n::text, 'Message' FROM chat.conversations c CROSS JOIN generate_series(1, 5) n WHERE c.id = ANY(${ids}::uuid[])`;
     await sql`ANALYZE chat.conversations`;

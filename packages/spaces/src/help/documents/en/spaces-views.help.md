@@ -4,11 +4,14 @@ title: Use views and filters
 icon: ti ti-filter
 description: Choose between the List, Table, Kanban, and Calendar views, filter the items, and plan in the day and month views.
 order: 110
+kind: task
 ---
 
 Views show the same items in the shape that fits the current job. A good view reduces scanning effort and does not hide important complexity.
 
 ## Choose a view {icon="layout-list"}
+
+Choose **List**, **Table**, **Kanban**, or **Calendar** in the tabs in the page header. On a phone, the tabs sit at the top of the content, above the filters.
 
 :::reference
 - **List:** Best for quick triage, personal work queues, and short operational lists.
@@ -39,6 +42,8 @@ Views show the same items in the shape that fits the current job. A good view re
 
 ## Filter with intent {icon="search"}
 
+In **List**, **Table**, and **Kanban**, search and filter chips sit in the page header. **Reset** clears active filters and search. The calendar keeps its filters in its own toolbar.
+
 :::reference
 - **Search:** Use search when you remember a word in the title, the notes, or the visible item details.
 - **Chips:** Use filter chips for explicit state such as type, status, activity, assignee, priority, deadline, tags, Kanban column, sort, or grouping.
@@ -50,10 +55,10 @@ Views show the same items in the shape that fits the current job. A good view re
 ## Work on the Kanban board {icon="layout-kanban"}
 
 :::reference
-- **Filters:** The toolbar above the board searches and filters every column by assignment, priority, deadline, activity, and tags. **Assigned to me** shows only your work. While a filter is active, each column shows how many of its items match, for example **2/7**. A new task that does not match the filter only raises the count of its column until you clear the filter. Filters stay in the URL, as in the other views. They never change the board for anyone else.
+- **Filters:** Search and chips in the page header filter every column by assignment, priority, deadline, activity, and tags. **Assigned to me** shows only your work. While a filter is active, each column shows how many of its items match, for example **2/7**. A new task that does not match the filter only raises the count of its column until you clear the filter. Filters stay in the URL, as in the other views. They never change the board for anyone else.
 - **Move a card:** With **Edit** access, drag a card by its grip with a mouse or pen. On a touch screen, press and hold the card until it lifts, then drag it. A quick swipe still scrolls the board. With the keyboard, focus the grip and press **Space** to pick the card up. Use **Up** and **Down** to choose its place in the column and **Left** and **Right** to choose another status; the line on the board shows where it lands. Press **Space** again to drop it or **Escape** to cancel. Automatic columns are skipped.
 - **Fold a column:** Use the fold button in a column header to shrink a column that you do not need now. The column becomes a narrow strip with its name and count. Select the strip to open the column again. You can still drop a card on a folded column; the card lands at the top. This browser remembers folded columns for this Space and only for you.
-- **Keyboard shortcuts:** The keyboard button at the end of the toolbar opens a list of the shortcuts of the board.
+- **Keyboard shortcuts:** **… → Keyboard shortcuts** in the page header lists the shortcuts of the board.
 - **Activity:** When you drag a card into a done status, the activity shows the task as completed. When you drag it back to an open status, the activity shows it as reopened.
 - **Blocked and Overdue columns:** With **Edit** access, you can turn on two automatic columns in the Space settings under **Statuses**. **Blocked** gathers open tasks that wait for unfinished tasks. **Overdue** gathers open tasks whose deadline was before today. Such a task appears only there, with its status as a small badge. The count of its status column leaves it out. A task that is blocked and overdue stays under **Blocked** and shows an **Overdue** badge. Both columns are off for a new or existing Space.
 - **Work in an automatic column:** You cannot drop a card into **Blocked** or **Overdue**; they fill themselves. Drag a card out of one to change its status. Completing it moves it to the done column. Any other status keeps it in place with the new status badge, until it is no longer blocked or overdue. When you drag a card from a done column back to an open status, it returns to **Blocked** or **Overdue** if it is still blocked or overdue. Arrow keys, **M**, and **D** work there as in every column.
@@ -80,7 +85,7 @@ Views show the same items in the shape that fits the current job. A good view re
 - **Nights:** A night without entries is one slim row. A night with an entry is open at half height. In the week view, the nights of all days open together when one of them holds an entry. Choose the night bar or the moon to fold or open the night.
 - **Day view:** The days run down the page in one scroll. Each day keeps its heading at the top while it is in view. Empty days merge into one **Nothing planned** row. Choose the row to show the days. The view slows down at each day start. When you stop close to a day start, the view moves to it. More days load as you scroll.
 - **Week view:** The days run sideways in one strip: seven on a wide screen, three on a phone. Scroll sideways with a trackpad, with **Shift** and the mouse wheel, or with a finger. The strip stops at a day start. The arrows move by whole weeks. **Today** goes back to this week. A reload or a shared link opens the week of the day in the link, on a phone that day.
-- **Entries:** An event is a band as long as the event. The running event fills up and shows the time left, for example **27 min left**. A task with a deadline is a dashed line with its checkbox. Tasks due at about the same time sit side by side. If you can edit the Space, check the task off there, or press **Space** on it. Drag the line to move the deadline to another time. An event over several days is a bar in the all-day row. Where the week cuts the bar off, its end is torn. When there is room, the bar says where the event continues, for example **from 20** or **until 27**.
+- **Entries:** An event is a band as long as the event. The running event fills up and shows the time left, for example **27 min left**. An all-day task deadline appears in the all-day row. A timed deadline is a dashed line with its checkbox. Tasks due at about the same time sit side by side. If you can edit the Space, check the task off there, or press **Space** on it. Drag the line to move the deadline to another time. To move an all-day deadline, drag it to another day in the month view or change it in the task. It stays all-day. An event over several days is a bar in the all-day row. Where the week cuts the bar off, its end is torn. When there is room, the bar says where the event continues, for example **from 20** or **until 27**.
 - **Free time:** A gap of an hour or more shows its length, for example **1 hr free**. Choose a gap to create an event there. In the week view, free time shows when you point at a day or select it. Drag across empty time to create an event of that length.
 - **Plan a task:** Drag a task from the row below the day view into free time. The gap shows **fits** or how much time is missing. On a phone, touch and hold the task first. The task gets the time where you drop it and leaves the row. It keeps its deadline, also when you move it later.
 - **Today:** The arrow on **Today** points to today. When today is on the screen, a dot shows instead.

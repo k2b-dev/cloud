@@ -382,7 +382,7 @@ export default function MailboxSettings(props: {
                       description: messages().automaticFormatDescription,
                       icon: "ti ti-adjustments-horizontal",
                     },
-                    { id: "html", label: "HTML", description: messages().htmlFormatDescription, icon: "ti ti-code" },
+                    { id: "html", label: messages().htmlOriginalColors, description: messages().htmlFormatDescription, icon: "ti ti-code" },
                     { id: "plain", label: messages().plainText, description: messages().plainTextDescription, icon: "ti ti-align-left" },
                   ]}
                 />
@@ -453,6 +453,7 @@ export default function MailboxSettings(props: {
                   initialDefaults={compose().defaults}
                   initialStyle={compose().style}
                   identities={compose().identities}
+                  onDirtyChange={(dirty) => setChildDirty("logo", dirty)}
                   onTemplatesChange={(templates) =>
                     props.onContextChange((context) =>
                       context.compose ? { ...context, compose: { ...context.compose, templates } } : context,

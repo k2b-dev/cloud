@@ -75,7 +75,7 @@ The label must state what the checked value means. Do not rely on position, colo
 
 ## Runtime
 
-State changes require hydrated Solid client code. The native inputs remain visible to assistive technology.
+State changes require browser code. The native inputs remain visible to assistive technology.
 
 ## Example
 

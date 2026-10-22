@@ -13,12 +13,31 @@ import { Marked, Renderer, type Tokens } from "marked";
 import sanitizeHtml from "sanitize-html";
 import { renderPrettyTableHtml } from "../frontend/lib/pretty-table";
 import type { NoteQueryResult } from "../service/note-query";
-import { bookRendererMessages } from "./book-renderer-messages";
+import { bookRendererMessages, notebookBlockDiagnosticMessage } from "./book-renderer-messages";
+import { parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
 import { anchorHash, headingAnchor, parseNoteLink } from "./heading-anchors";
 import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
 import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
+import { parseSizedMarkdownImage } from "./markdown-image";
 import { extractNamedBlocks, type NamedDataValue, parseNamedDataBlockResult } from "./named-blocks";
-import { parseNotebookQueryBlocks, parseNotebookTocBlocks, type QueryBlock, type QueryField } from "./query-blocks";
+import { type NotePdfOmission, type NotePdfOmissionKind, notePdfOmissionLabel } from "./pdf-omissions";
+import {
+  type NotebookBlockDiagnostic,
+  parseNotebookQueryBlocks,
+  parseNotebookTocBlocks,
+  type QueryBlock,
+  type QueryField,
+} from "./query-blocks";
+
+export type BookImagePlacement = {
+  token: string;
+  href: string;
+  alt: string;
+  title: string | null;
+  width: number | null;
+  height: number | null;
+  omissionIndex: number;
+};
 
 export type BookHeading = { id: string; depth: number; text: string; line?: number };
 
@@ -40,10 +59,12 @@ export type NotebookBookInput = {
   locale: string;
   linkMode?: "book" | "write" | "readonly";
   /**
-   * Render for the PDF export: images appear as their label because the print
-   * preset loads no images yet, and math leaves out MathML the PDF drops.
+   * Render for PDF export: image slots are resolved to offline assets or visible
+   * placeholders by the service; math leaves out MathML the PDF drops.
    */
   print?: boolean;
+  /** Installation origin for links in exported PDFs; ignored by browser rendering. */
+  publicOrigin?: string;
   /** Short ID of the rendered note. In print, a link to this note stays inside the document. */
   noteId?: string;
   /** Authorized results from the service, keyed by the query's one-based source line. */
@@ -81,6 +102,9 @@ export const renderNotebookBook = (
   html: string;
   headings: BookHeading[];
   blocks: { line: number; html: string }[];
+  diagnostics: NotebookBlockDiagnostic[];
+  omissions: NotePdfOmission[];
+  images: BookImagePlacement[];
 } => {
   const markdown = input.markdown.replace(/\r\n?/g, "\n");
   const { locale, t } = bookRendererMessages.resolve([input.locale]);
@@ -91,16 +115,27 @@ export const renderNotebookBook = (
   const blockHtml = new Map<number, string>();
   const linkMode = input.linkMode ?? "book";
   const usedIds = new Set<string>();
-  const queries = new Map(parseNotebookQueryBlocks(markdown).blocks.map((block) => [block.line, block]));
-  const tocs = new Map(parseNotebookTocBlocks(markdown).blocks.map((block) => [block.line, block]));
+  const queryResult = parseNotebookQueryBlocks(markdown);
+  const tocResult = parseNotebookTocBlocks(markdown);
+  const queries = new Map(queryResult.blocks.map((block) => [block.line, block]));
+  const tocs = new Map(tocResult.blocks.map((block) => [block.line, block]));
+  const chartResult = parseNotebookChartBlocks(markdown);
+  const charts = new Map(chartResult.blocks.map((block) => [block.line, block.input]));
+  const chartSlots: string[] = [];
   const namedBlocks = extractNamedBlocks(markdown);
   const handles = new Map(namedBlocks.map((block) => [block.line, block]));
   const dataNames = new Map(namedBlocks.filter((block) => block.type === "data").map((block) => [block.startLine, block.name]));
   const slots: Array<() => string> = [];
   const mathSlots: string[] = [];
   const mathLabels: string[] = [];
-  // Markers never reach the output. Unpredictability also prevents a Markdown
-  // entity or escape from reconstructing an authored marker during parsing.
+  const imageSlots: Omit<BookImagePlacement, "omissionIndex">[] = [];
+  const imageSlot = (image: Omit<BookImagePlacement, "token" | "omissionIndex">) => {
+    const token = `${prefix}IMAGE${imageSlots.length}END`;
+    imageSlots.push({ ...image, token });
+    return token;
+  };
+  // Markers never reach the output, except print image slots, which the PDF service resolves.
+  // Unpredictability also prevents a Markdown entity or escape from reconstructing an authored marker during parsing.
   const prefix = `NOTEBOOKBOOKSLOT${crypto.randomUUID().replaceAll("-", "")}`;
   const anchorId = (base: string): string => {
     let id = base;
@@ -109,7 +144,19 @@ export const renderNotebookBook = (
     return id;
   };
   const slot = (render: () => string) => `${prefix}${slots.push(render) - 1}`;
-  const diagnostic = (line: number) => `<p class="notebook-book-diagnostic" role="status">${escape(t.invalidBlock({ line }))}</p>`;
+  // Collect only markers that survive into the rendered document, in output order.
+  // Inline labels discard comments, so math in an image alt cannot report a false omission.
+  // The same slot may be parsed again; each surviving marker is reported once.
+  const pendingOmissions: NotePdfOmission[] = [];
+  const omission = (code: NotePdfOmission["code"], kind: NotePdfOmissionKind, label: string) =>
+    `<!--${prefix}OMISSION${pendingOmissions.push({ code, kind, label: notePdfOmissionLabel(label) }) - 1}-->`;
+  const blockLabel = (line: number) => {
+    const name = dataNames.get(line - 1) ?? [...handles.values()].find((block) => block.startLine === line - 1)?.name;
+    return name ? `@${name}` : t.lineLabel({ line });
+  };
+  const diagnostic = (line: number, kind: NotePdfOmissionKind) =>
+    omission("invalid_block", kind, blockLabel(line)) +
+    `<p class="notebook-book-diagnostic" role="status">${escape(t.invalidBlock({ line }))}</p>`;
   const source = (code: string, language = "") =>
     `<pre><code${language ? ` class="language-${escape(language)}"` : ""}>${escape(code)}</code></pre>`;
 
@@ -128,9 +175,9 @@ export const renderNotebookBook = (
       });
       mathSlots.push(`<${displayMode ? "div" : "span"} class="notebook-book-math">${html}</${displayMode ? "div" : "span"}>`);
       mathLabels.push(latex);
-      return `${prefix}MATH${mathSlots.length - 1}END`;
+      return `${html.includes('class="katex-error"') ? omission("invalid_block", "math", latex) : ""}${prefix}MATH${mathSlots.length - 1}END`;
     } catch {
-      return `<code>${escape(latex)}</code>`;
+      return omission("invalid_block", "math", latex) + `<code>${escape(latex)}</code>`;
     }
   };
 
@@ -165,7 +212,11 @@ export const renderNotebookBook = (
   };
   const renderQuery = (query: QueryBlock): string => {
     const result = input.queryResults?.get(query.line);
-    if (!result || result.diagnostics.length) return `<p class="notebook-book-diagnostic" role="status">${escape(t.unavailableQuery)}</p>`;
+    if (!result || result.diagnostics.length)
+      return (
+        omission("not_rendered", "query", blockLabel(query.line)) +
+        `<p class="notebook-book-diagnostic" role="status">${escape(t.unavailableQuery)}</p>`
+      );
     if (!result.items.length) return `<p class="notebook-book-empty">${escape(t.emptyQuery)}</p>`;
     const link = (item: NoteQueryResult["items"][number]) => {
       const href = resolveUrl(item.href);
@@ -231,6 +282,7 @@ export const renderNotebookBook = (
         .replace(new RegExp(`<span class="${LIGATURE_CLASS}" title="([^"]*)">[^<]*</span>`, "g"), "$1"),
       { allowedTags: [], allowedAttributes: {} },
     )
+      .replace(new RegExp(`${prefix}IMAGE(\\d+)END`, "g"), (_raw, index: string) => escape(imageSlots[Number(index)]?.alt ?? ""))
       .replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathLabels[Number(index)] ?? "")
       .replace(
         /&(amp|lt|gt|quot|#39);/g,
@@ -280,7 +332,6 @@ export const renderNotebookBook = (
       locale,
     });
   };
-  const imageLabel = (alt: string) => `<span class="notebook-book-image-label">${escape(t.image({ alt }))}</span>`;
   // An attached image links to its file, so a reader can open it from the keyboard too; Book shows it in the lightbox.
   // The image's text names the link; an image without text keeps its empty alt, and the link takes the image label.
   const imageHtml = (href: string, url: string, alt: string, img: string) =>
@@ -289,7 +340,7 @@ export const renderNotebookBook = (
       : img;
   renderer.image = function ({ href, title, tokens }) {
     const alt = plainText(this.parser.parseInline(tokens));
-    if (input.print) return imageLabel(alt);
+    if (input.print) return imageSlot({ href, alt, title: title ?? null, width: null, height: null });
     const url = resolveUrl(href, true);
     if (!url) return escape(alt);
     return imageHtml(
@@ -302,8 +353,13 @@ export const renderNotebookBook = (
   renderer.code = ({ text: code, lang }) => {
     const language = lang?.split(/\s+/)[0]?.toLowerCase() ?? "";
     if (language === "math") return renderMath(code, true);
-    if (language === "mermaid")
-      return `<figure class="notebook-book-mermaid"><figcaption>${escape(t.diagramSource)}</figcaption>${source(code, "mermaid")}</figure>`;
+    if (language === "mermaid") {
+      const mark = input.print ? omission("not_rendered", "diagram", code.split("\n").find((line) => line.trim()) ?? "") : "";
+      return (
+        mark +
+        `<figure class="notebook-book-mermaid"><figcaption>${escape(t.diagramSource)}</figcaption>${source(code, "mermaid")}</figure>`
+      );
+    }
     const colored = /^(?:js|jsx|ts|tsx|javascript|typescript|script|json|java|cpp|c|go|rust|python|py)$/.test(language)
       ? highlight.presets.code(code)
       : /^(?:bash|sh|shell|zsh)$/.test(language)
@@ -317,9 +373,13 @@ export const renderNotebookBook = (
     // Preserve Marked's document-level reference links and the Book inline
     // extensions while the shared table renderer owns formula evaluation.
     const cells = new Map([...header, ...rows.flat()].map((cell) => [cell.text, cell.tokens]));
-    return renderPrettyTableHtml(
+    const html = renderPrettyTableHtml(
       { headers: header.map((cell) => cell.text), rows: rows.map((row) => row.map((cell) => cell.text)), align },
       { notebookId: input.notebookId, locale, renderInline: (value) => this.parser.parseInline(cells.get(value) ?? []) },
+    );
+    return html.replace(
+      /<span class="md-table-cell md-formula-error[^"]*"[^>]*>⚠ ([^<]*)<\/span>/g,
+      (cell, formula: string) => omission("invalid_block", "formula", plainText(formula)) + cell,
     );
   };
   const marked = new Marked({ gfm: true, breaks: true, renderer });
@@ -377,33 +437,41 @@ export const renderNotebookBook = (
         },
       },
       {
-        // CodeMirror already accepts Pandoc-style image dimensions.
+        // Share the sized-image dialect with the editor, including titles after the size.
         name: "bookSizedImage",
         level: "inline",
         start: (src) => src.indexOf("!["),
         tokenizer(src) {
-          const match = /^!\[([^\]\n]*)\]\(([^\s)]+)\s+=(\d+)?x(\d+)?\)/.exec(src);
-          return match && (match[3] || match[4])
+          const image = parseSizedMarkdownImage(src);
+          return image
             ? {
                 type: "bookSizedImage",
-                raw: match[0],
-                tokens: this.lexer.inlineTokens(match[1]!),
-                href: match[2],
-                width: match[3],
-                height: match[4],
+                raw: src.slice(0, image.length),
+                tokens: this.lexer.inlineTokens(image.alt),
+                href: image.href,
+                title: image.title,
+                width: image.width,
+                height: image.height,
               }
             : undefined;
         },
         renderer(token) {
           const alt = plainText(this.parser.parseInline(token.tokens ?? []));
-          if (input.print) return imageLabel(alt);
+          if (input.print)
+            return imageSlot({
+              href: String(token.href),
+              alt,
+              title: typeof token.title === "string" ? token.title : null,
+              width: typeof token.width === "number" ? token.width : null,
+              height: typeof token.height === "number" ? token.height : null,
+            });
           const url = resolveUrl(String(token.href), true);
           return url
             ? imageHtml(
                 String(token.href),
                 url,
                 alt,
-                `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${token.width ? ` width="${token.width}"` : ""}${token.height ? ` height="${token.height}"` : ""}>`,
+                `<img class="notebook-book-image" src="${escape(url)}" alt="${escape(alt)}" loading="lazy"${token.width !== null ? ` width="${token.width}"` : ""}${token.height !== null ? ` height="${token.height}"` : ""}${token.height !== null && token.width === null ? ` style="height: ${token.height}px"` : ""}${token.title !== null ? ` title="${escape(String(token.title))}"` : ""}>`,
               )
             : escape(alt);
         },
@@ -437,7 +505,7 @@ export const renderNotebookBook = (
       continue;
     }
     const notice = /^ {0,3}:::/.test(line) ? scanMarkdownInfoBlock(markdown.slice(lineOffsets[index])) : null;
-    const opener = notice ? null : /^ {0,3}:::(query|toc|data)[ \t]*$/.exec(line);
+    const opener = notice ? null : /^ {0,3}:::(query|toc|data|chart)[ \t]*$/.exec(line);
     if (!notice && !opener) {
       // Source positions are optional for nested Markdown, but never guessed.
       // Canonical heading IDs still cover every heading in the rendered TOC.
@@ -453,7 +521,7 @@ export const renderNotebookBook = (
       prepared.push(line);
       continue;
     }
-    const kind = notice ? "notice" : (opener?.[1] ?? "");
+    const kind = notice ? "callout" : (opener?.[1] ?? "");
     const start = index;
     const remaining = markdown.slice(lineOffsets[start]);
     const extent = notice ? notice.length : (notebookDirectiveLength(remaining) ?? remaining.length);
@@ -465,20 +533,43 @@ export const renderNotebookBook = (
       "",
       slot(() => {
         const preview = (html: string) => {
-          if (kind === "query" || kind === "toc") blockHtml.set(start + 1, html);
+          if (kind === "query" || kind === "toc" || kind === "chart") blockHtml.set(start + 1, html);
           return html;
         };
-        if (!closed) return preview(diagnostic(start + 1) + source(lines.slice(start, index).join("\n")));
+        if (kind === "chart") {
+          const chart = charts.get(start + 1);
+          const figure = chart ? renderNotebookChartFigure(chart, locale, { print: input.print }) : null;
+          if (figure) {
+            const marker = `${prefix}CHART${chartSlots.push(figure) - 1}END`;
+            return preview(marker);
+          }
+          const issue = chartResult.diagnostics.find((entry) => entry.line >= start + 1 && entry.line <= start + blockLines.length) ?? {
+            code: "chart-unsupported" as const,
+            line: start + 1,
+            path: "chart",
+          };
+          // One notice names the line and what is wrong there, above the source it refers to.
+          return preview(
+            omission("invalid_block", "chart", blockLabel(start + 1)) +
+              `<p class="notebook-book-diagnostic" role="status">${escape(`${t.invalidBlock({ line: issue.line })} ${notebookBlockDiagnosticMessage(issue, locale)}`)}</p>` +
+              source(blockLines.join("\n")),
+          );
+        }
+        if (!closed)
+          return preview(
+            diagnostic(start + 1, kind === "query" || kind === "toc" || kind === "data" ? kind : "callout") +
+              source(lines.slice(start, index).join("\n")),
+          );
         if (kind === "query") {
           const query = queries.get(start + 1);
           if (query && input.querySource) return preview(source(blockLines.join("\n")));
-          return preview(query ? renderQuery(query) : diagnostic(start + 1) + source(body));
+          return preview(query ? renderQuery(query) : diagnostic(start + 1, kind) + source(body));
         }
         if (kind === "toc")
-          return preview(tocs.has(start + 1) ? `<div data-book-toc="${start + 1}"></div>` : diagnostic(start + 1) + source(body));
+          return preview(tocs.has(start + 1) ? `<div data-book-toc="${start + 1}"></div>` : diagnostic(start + 1, kind) + source(body));
         if (kind === "data") {
           const data = parseNamedDataBlockResult(body);
-          if (data.diagnostics.length) return diagnostic(start + 1) + source(body);
+          if (data.diagnostics.length) return diagnostic(start + 1, kind) + source(body);
           const name = dataNames.get(start);
           const title = name ? `<div class="md-block-handle" id="${anchorId(`block-${name}`)}">@${escape(name)}</div>` : "";
           return `<div class="md-data-block">${title}${data.entries.length ? `<dl class="md-data-grid">${data.entries.map((entry) => `<div class="md-data-row"><dt class="md-data-key">${escape(text.humanize(entry.key))}</dt><dd class="md-data-value">${valueHtml(entry.value)}</dd></div>`).join("")}</dl>` : `<p class="notebook-book-empty">${escape(t.emptyData)}</p>`}</div>`;
@@ -522,9 +613,49 @@ export const renderNotebookBook = (
   // Headings are known only now. A PDF links only to an id it has, so a heading the note lacks opens its top, as in Book.
   const headingIds = new Set(headings.map(({ id }) => id));
   for (const anchor of printAnchors) if (!headingIds.has(anchor)) html = html.replaceAll(`href="${anchorHash(anchor)}"`, 'href="#top"');
-  html = sanitizeNotebookBookHtml(html, resolveUrl);
+  const omissions: NotePdfOmission[] = [];
+  const images: BookImagePlacement[] = [];
+  const seenOmissions = new Set<number>();
+  const seenImages = new Set<number>();
+  html = html.replace(
+    new RegExp(`<!--${prefix}OMISSION(\\d+)-->|${prefix}IMAGE(\\d+)END`, "g"),
+    (raw, omissionId: string | undefined, imageId: string | undefined) => {
+      if (imageId !== undefined) {
+        const key = Number(imageId);
+        if (!seenImages.has(key)) {
+          images.push({ ...imageSlots[key]!, omissionIndex: omissions.length });
+          seenImages.add(key);
+        }
+        return raw;
+      }
+      const key = Number(omissionId);
+      if (!seenOmissions.has(key)) {
+        omissions.push(pendingOmissions[key]!);
+        seenOmissions.add(key);
+      }
+      return "";
+    },
+  );
+  // Resolve navigation only after link presentation is chosen. Gotenberg opens a
+  // local file; relative Cloud links would otherwise become file:/// URIs.
+  const resolveLink = (raw: string): string | null => {
+    const url = resolveUrl(raw);
+    return input.print && input.publicOrigin && url && !url.startsWith("#") && !/^[a-z][a-z\d+.-]*:/i.test(url)
+      ? new URL(url, input.publicOrigin).href
+      : url;
+  };
+  html = sanitizeNotebookBookHtml(html, resolveLink);
   html = html.replace(new RegExp(`${prefix}MATH(\\d+)END`, "g"), (_raw, index: string) => mathSlots[Number(index)] ?? "");
-  return { html, headings, blocks: [...blockHtml].map(([line, html]) => ({ line, html: sanitizeNotebookBookHtml(html, resolveUrl) })) };
+  const restoreCharts = (html: string) =>
+    html.replace(new RegExp(`${prefix}CHART(\\d+)END`, "g"), (_raw, index: string) => chartSlots[Number(index)] ?? "");
+  return {
+    html: restoreCharts(html),
+    omissions,
+    images,
+    diagnostics: [...queryResult.diagnostics, ...tocResult.diagnostics, ...chartResult.diagnostics],
+    headings,
+    blocks: [...blockHtml].map(([line, html]) => ({ line, html: restoreCharts(sanitizeNotebookBookHtml(html, resolveLink)) })),
+  };
 };
 
 export const sanitizeNotebookBookHtml = (value: string, resolveUrl: (href: string) => string | null): string => {
@@ -540,7 +671,7 @@ export const sanitizeNotebookBookHtml = (value: string, resolveUrl: (href: strin
         { name: "data-link", multiple: false, values: ["web", "mail"] },
         { name: "data-reference", multiple: false, values: ["pdf", "image", "design", "file", "note", "heading", "task", "page"] },
       ],
-      img: ["src", "alt", "loading", "width", "height"],
+      img: ["src", "alt", "loading", "width", "height", "style"],
       input: ["type", "disabled", "checked"],
       span: ["style"],
       th: ["scope"],
@@ -551,7 +682,8 @@ export const sanitizeNotebookBookHtml = (value: string, resolveUrl: (href: strin
     allowedSchemes: ["http", "https", "mailto", "tel"],
     allowedSchemesByTag: { img: ["http", "https"] },
     allowProtocolRelative: false,
-    allowedStyles: { span: { width: [/^\d+(?:\.\d+)?%$/] } },
+    // A height-only size suffix sets the image's height; the shared `height: auto` would otherwise ignore it.
+    allowedStyles: { span: { width: [/^\d+(?:\.\d+)?%$/] }, img: { height: [/^\d+px$/] } },
     transformTags: {
       ...callouts.transformTags,
       a: (_tag, attrs) => {

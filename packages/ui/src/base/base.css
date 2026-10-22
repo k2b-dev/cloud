@@ -6,7 +6,7 @@
    Every rule and token sits in `@layer k2b-base`, so any unlayered rule of
    the page wins without a specificity fight. Four state rules are
    `!important` on purpose and stay in force: `[hidden]`, the hidden label of
-   a busy button, reduced motion, and what print hides.
+   a busy button, reduced motion, and what print hides or shows.
    `<html data-theme="dark">` switches the theme; the default is light. The
    tokens carry the same names and values as the `.k2b-ui` scope (a parity
    test keeps them equal).
@@ -41,8 +41,8 @@
     --k2b-surface-muted: light-dark(#f4f4f5, #20242a);
     --k2b-surface-elevated: light-dark(#ffffff, #181d24);
     --k2b-text: light-dark(#09090b, #fafafa);
-    --k2b-text-secondary: light-dark(#3f3f46, #e4e4e7);
-    --k2b-text-muted: light-dark(#52525b, #a1a1aa);
+    --k2b-text-secondary: light-dark(#27272a, #f1f1f3);
+    --k2b-text-muted: light-dark(#45454e, #bdbdc6);
     --k2b-placeholder-color: light-dark(#71717a, color-mix(in srgb, #a1a1aa 70%, #71717a));
     --k2b-border: light-dark(#e4e4e7, #29313a);
     --k2b-border-strong: light-dark(#d4d4d8, #3a4552);
@@ -64,11 +64,15 @@
     --k2b-danger-text: light-dark(#b91c1c, #fca5a5);
     /* light-dark() only takes colors, so the shadow switches with the theme attribute. */
     --k2b-shadow-float: 0 18px 48px rgb(9 9 11 / 0.18);
+    --k2b-shadow-side: -14px 0 36px rgb(9 9 11 / 0.16);
+    /* What an inspected mark's color mixes with: darker in light, lighter in dark. */
+    --k2b-chart-highlight-mix: light-dark(black, white);
   }
 
   :root[data-theme="dark"] {
     color-scheme: dark;
     --k2b-shadow-float: 0 22px 56px rgb(0 0 0 / 0.52);
+    --k2b-shadow-side: -16px 0 40px rgb(0 0 0 / 0.5);
   }
 
   *,
@@ -888,7 +892,10 @@
      tokens below. Cartesian geometry (`data-stretch`, with
      `preserveAspectRatio="none"` on the SVG and a `transform-origin` at each
      text's x and y) fills the width; text and markers keep their pixel size.
-     These rules mirror the `.k2b-chart` rules of styles.css. */
+     These rules mirror the `.k2b-chart` rules of styles.css. A
+     `<table class="k2b-chart__table" hidden>` right after `.k2b-chart` holds
+     the chart's values: `[hidden]` keeps it off the screen and out of the
+     accessibility tree, and print shows it (see print). */
   .k2b-chart {
     position: relative;
     display: block;
@@ -1008,6 +1015,129 @@
   .stdlib-chart-gauge-label { font-size: 12px; fill: currentColor; opacity: 0.72; }
   .stdlib-chart-gauge-unit { font-size: 11px; fill: currentColor; opacity: 0.6; }
 
+  /* Chart inspection as @k2b/ui/chart-inspection adds it to a `.k2b-chart`:
+     a tab stop on the chart, an invisible measuring anchor and a tooltip
+     popover next to `.k2b-chart__svg`. Inspection only paints marks and
+     shows the tooltip in the top layer, so nothing in the page moves.
+     These rules mirror the inspection and chart tooltip rules of styles.css. */
+  .k2b-chart[tabindex]:focus-visible {
+    border-radius: var(--k2b-radius-control);
+    outline-offset: 0;
+  }
+
+  .k2b-chart[tabindex][data-chart-kind="line"],
+  .k2b-chart[tabindex] [data-chart-datum] {
+    cursor: crosshair;
+  }
+
+  /* Labels and guide strokes leave hit testing to the data geometry below. */
+  .k2b-chart[tabindex] .k2b-chart__svg :is(.stdlib-chart-heatmap-label, .stdlib-chart-box-median, .stdlib-chart-box-whisker, .stdlib-chart-box-cap) {
+    pointer-events: none;
+  }
+
+  .k2b-chart [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle) {
+    stroke: var(--k2b-chart-inspection-color);
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
+    fill: var(--k2b-chart-inspection-color);
+  }
+
+  .k2b-chart [data-inspected][data-chart-role="value"] > :is(.stdlib-chart-gauge-value, .stdlib-chart-stat-value) {
+    text-decoration: underline;
+  }
+
+  /* Line charts: a dashed guide at the inspected x and at the pointer's y. */
+  .k2b-chart[data-inspecting="series"]::after {
+    content: "";
+    position: absolute;
+    top: var(--k2b-chart-plot-top, 0);
+    bottom: var(--k2b-chart-plot-bottom, 0);
+    left: var(--k2b-chart-inspection-x);
+    border-left: 1px dashed currentColor;
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  .k2b-chart[data-cursor-source="true"][data-inspecting="series"]::before {
+    content: "";
+    position: absolute;
+    left: var(--k2b-chart-plot-left, 0);
+    right: var(--k2b-chart-plot-right, 0);
+    top: var(--k2b-chart-inspection-y);
+    border-top: 1px dashed currentColor;
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  .k2b-chart__anchor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    pointer-events: none;
+  }
+
+  .k2b-chart__tooltip[popover] {
+    position: fixed;
+    inset: auto;
+    z-index: 100;
+    max-width: min(24rem, calc(100vw - 1rem));
+    max-height: calc(100dvh - 1rem);
+    margin: 0;
+    padding: 0.625rem 0.75rem;
+    overflow: auto;
+    border: 1px solid var(--k2b-border);
+    border-radius: 0.5rem;
+    background: var(--k2b-surface-elevated);
+    color: var(--k2b-text);
+    box-shadow: var(--k2b-shadow-float);
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    pointer-events: none;
+  }
+
+  .k2b-chart__tooltip:popover-open {
+    display: block;
+  }
+
+  .k2b-chart__tooltip-title {
+    display: block;
+    padding-bottom: 0.375rem;
+    font-weight: 600;
+  }
+
+  .k2b-chart__tooltip-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    line-height: 1.6;
+  }
+
+  .k2b-chart__tooltip-row > i {
+    flex: none;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 0.125rem;
+  }
+
+  .k2b-chart__tooltip-row > span {
+    flex: 1;
+    opacity: 0.75;
+  }
+
+  .k2b-chart__tooltip-row > b {
+    margin-left: 0.75rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+
   /* ---------------------------------------------------------------- states */
 
   :focus-visible {
@@ -1092,6 +1222,23 @@
 
     .k2b-chart__svg {
       max-height: none;
+    }
+
+    /* The value table that chart markup carries as a `hidden` sibling of
+       `.k2b-chart`: paper shows it below the chart. A long table breaks
+       between rows and repeats its header row on every page. */
+    .k2b-chart__table[hidden] {
+      display: table !important;
+      break-inside: auto;
+    }
+
+    .k2b-chart__table tr {
+      break-inside: avoid;
+    }
+
+    /* Denser rows than an app table: a value list for reference on paper. */
+    .k2b-chart__table :is(th, td) {
+      padding-block: 0.25rem;
     }
   }
 }

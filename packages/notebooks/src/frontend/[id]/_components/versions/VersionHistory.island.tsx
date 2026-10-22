@@ -15,9 +15,10 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { diffLines } from "diff";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { renderNotebookBook } from "@/lib/book-renderer";
+import { enhanceNotebookCharts } from "../../../lib/notebook-charts";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { readErrorMessage } from "../settings/utils";
@@ -333,7 +334,7 @@ export default function VersionHistory(props: Props) {
             <Show
               when={!props.isLocked}
               fallback={
-                <>
+                <div class="notebooks-version-locked">
                   <span class="text-xs text-dimmed flex items-center gap-1">
                     <i class="ti ti-lock text-xs" />
                     {t().locked}
@@ -350,7 +351,7 @@ export default function VersionHistory(props: Props) {
                     <i class="ti ti-copy" aria-hidden="true" />
                     {t().restoreAsCopy}
                   </Button>
-                </>
+                </div>
               }
             >
               <SplitButton
@@ -384,7 +385,7 @@ export default function VersionHistory(props: Props) {
         <div class="flex-1 flex items-center justify-center">
           <Show
             when={!versionPages.error()}
-            fallback={<Placeholder icon="ti ti-alert-circle" title={t().versionsCouldNotLoad} description={t().reloadPage} />}
+            fallback={<Placeholder state="error" title={t().versionsCouldNotLoad} description={t().reloadPage} />}
           >
             <Placeholder icon="ti ti-history" description={t().noVersions} />
           </Show>
@@ -511,7 +512,7 @@ export default function VersionHistory(props: Props) {
                 <Show when={!previewLoading() && previewMode() === "content" && !selectedVersionData()}>
                   <div class="flex h-full items-center justify-center">
                     <Placeholder
-                      icon="ti ti-alert-circle"
+                      state="error"
                       title={t().versionCouldNotLoad}
                       description={t().versionRequestFailed}
                       action={
@@ -533,7 +534,17 @@ export default function VersionHistory(props: Props) {
                     }
                   >
                     <div class="mx-auto w-full max-w-4xl p-4">
-                      <article class="notebook-book-content" innerHTML={selectedContentHtml()} />
+                      <article
+                        class="notebook-book-content"
+                        innerHTML={selectedContentHtml()}
+                        ref={(element) =>
+                          // User effects run after the render effect that writes the version's HTML.
+                          createEffect(() => {
+                            selectedContentHtml();
+                            onCleanup(enhanceNotebookCharts(element, locale()));
+                          })
+                        }
+                      />
                     </div>
                   </Show>
                 </Show>
@@ -541,7 +552,7 @@ export default function VersionHistory(props: Props) {
                 <Show when={!previewLoading() && previewMode() === "changes" && previewError()}>
                   <div class="flex h-full items-center justify-center">
                     <Placeholder
-                      icon="ti ti-alert-circle"
+                      state="error"
                       title={t().comparisonCouldNotLoad}
                       description={t().comparisonRequestFailed}
                       action={

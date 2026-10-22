@@ -52,6 +52,21 @@ const viewer = (id: string): LiveViewer => ({
 });
 const FrameSchema = z.object({ t: z.string(), id: z.string().optional(), data: z.unknown().optional(), code: z.string().optional() });
 
+const unusedMemberRequest = async () => {
+  throw new Error("Unused member request");
+};
+const memberApi = {
+  create: unusedMemberRequest,
+  updateDetails: unusedMemberRequest,
+  members: unusedMemberRequest,
+  previewMembers: unusedMemberRequest,
+  addMembers: unusedMemberRequest,
+  updateMember: unusedMemberRequest,
+  removeMember: unusedMemberRequest,
+  leave: unusedMemberRequest,
+  people: unusedMemberRequest,
+};
+
 class World {
   topic = createMemoryLiveTopic();
   people: string[];
@@ -247,6 +262,7 @@ class World {
   }
   api(person: string): ChatStoreApi {
     return {
+      ...memberApi,
       read: async () => {
         throw new Error("Unused write");
       },
@@ -419,9 +435,9 @@ const settle = async (ms = 20) => {
   await Bun.sleep(ms);
 };
 const until = async (condition: () => boolean, timeout = 2_000) => {
-  const deadline = Date.now() + timeout;
+  const deadline = performance.now() + timeout;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error("Chat tab did not converge in time");
+    if (performance.now() > deadline) throw new Error("Chat tab did not converge in time");
     await settle(5);
   }
 };

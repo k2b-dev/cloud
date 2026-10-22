@@ -10,7 +10,12 @@ Gib jeder Person und Gruppe nur den Zugriff, den sie in diesem Space braucht.
 
 ## Space-Einstellungen öffnen {icon="settings"}
 
-Wähle in der Seitenleiste des Space **Space-Einstellungen**. Die Einstellungen öffnen sich in einem Dialog. So kehrst du zur aktuellen Ansicht zurück, ohne den Space zu verlassen.
+:::steps
+1. Öffne **…** im Kopfbereich.
+2. Wähle **Space-Einstellungen**.
+:::
+
+Die Einstellungen öffnen sich in einem Dialog. Schließt du ihn, kehrst du zur aktuellen Ansicht zurück.
 
 Die Kategorien ordnen die Einstellungen nach Zuständigkeit und Auswirkung:
 
@@ -38,4 +43,14 @@ Verwende bevorzugt ein fein abgestuftes Token, das nur Issues und Pull Requests 
 
 ## Kalenderexport teilen {icon="calendar-share"}
 
-Nutze den Kalenderexport, wenn geplante Arbeit in einem externen Kalender erscheinen soll. Behandle eine Export-URL wie einen Zugriff, mit dem jemand die Termindetails lesen kann.
+Nutze den Kalenderexport, wenn geplante Arbeit in einem externen Kalender erscheinen soll. **iCal-Adresse kopieren** erscheint nur bei eingeschaltetem Kalenderexport.
+
+:::warning Kalenderlinks gewähren Zugriff
+Jede Person mit der Export-URL kann die exportierten Termindetails lesen.
+:::
+
+:::steps
+1. Öffne **…** im Kopfbereich.
+2. Wähle **iCal-Adresse kopieren**.
+3. Füge die kopierte Adresse als Abonnement in deinem Kalenderprogramm hinzu.
+:::

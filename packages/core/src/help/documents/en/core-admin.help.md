@@ -36,6 +36,8 @@ Keep another allowed administrator or your emergency token available.
 
 Disabling an account type denies later requests from existing sessions, user OAuth tokens, personal API keys, and user-bound background work. It does not delete accounts or stop FreeIPA sync. Allowing the type again makes credentials work again if they are otherwise valid. Emergency recovery explicitly allows all local **Login** accounts again. It does not change which types the sign-in page shows.
 
+In **Admin → Settings → Sign-in → Sign-in locations**, check the source and build date of the City and ASN databases. Upload your own `.mmdb` or `.mmdb.gz` file, or reset a type to the bundled snapshot. Uploads remain active until reset. A hint appears when the data is older than about six months. Files must use an IPv6 City or ASN database; follow the provider’s licence. The limits are 192 MiB unpacked and 128 MiB per upload request. DB-IP attribution appears while DB-IP data is active.
+
 ## Find the other settings groups {icon="settings"}
 
 :::reference
@@ -46,7 +48,7 @@ Disabling an account type denies later requests from existing sessions, user OAu
 - **Accounts & sign-in → Linux identities:** Reserve an ID range and set defaults for home and shell. While assignment is on, new local full accounts and promoted guests get Linux attributes automatically. Turning it on does not change older full accounts; use **Backfill existing accounts** for them. Turning assignment off hides the backfill table and keeps existing identities in Accounts. Linux identities do not enable computer sign-in or sudo.
 - **Accounts & sign-in → FreeIPA:** FreeIPA connection settings, sync rules, and group mapping.
 - **AI:** Configure model profiles and provider credentials, and check background work. Use **Skills** or **Projects** to restore access when nobody has **Manage** access to a shared resource any more. These recovery pages can give access or permanently delete resources that are no longer needed. An app does not install a deleted app Skill again until you choose **Restore**.
-- **Settings → Outgoing mail** and **Settings → PDF rendering:** SMTP delivery, sender credentials, the Gotenberg connection and its credentials, and render limits.
+- **Settings → Outgoing mail** and **Settings → PDF rendering:** SMTP delivery, sender credentials, the Gotenberg connection and its credentials, and render limits. Internal SMTP and bounce IMAP hosts require the operator to set `OUTGOING_MAIL_ALLOWED_TARGETS` in Core; the default permits only public targets.
 - **Settings → Email templates**, **Settings → Security**, and **Settings → Legal:** Transactional email templates, rate limits, defaults for access protection, Terms of Service, Privacy Policy, and Imprint.
 :::
 

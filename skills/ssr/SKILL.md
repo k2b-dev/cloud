@@ -1,6 +1,6 @@
 ---
 name: ssr
-description: Build apps with @k2b/ssr, the minimal SolidJS islands SSR framework for Bun. Use when creating pages, islands, client components, templates, opt-in @k2b/ssr/nav progressive navigation, or adapter setup with Hono, Bun, or Elysia, and when troubleshooting SSR asset loading, source maps, caching, dev reload connections, serialization, client re-render behavior, island error fallbacks, or enhanced same-origin links.
+description: Build apps with @k2b/ssr, the minimal SolidJS islands SSR framework for Bun. Use when creating pages, islands, client components, templates, opt-in @k2b/ssr/nav progressive navigation and server-rendered page swaps, or adapter setup with Hono, Bun, or Elysia, and when troubleshooting SSR asset loading, source maps, caching, dev reload connections, serialization, client re-render behavior, island error fallbacks, or enhanced same-origin links.
 ---
 
 # @k2b/ssr User Guide
@@ -20,7 +20,7 @@ skill for them.
 
 - `createConfig()` options, Hono `basePath`, the Bun and Elysia adapters, and development reload: [Configuration and adapters](references/configuration.md)
 - Island error boundaries, `errorFallback`, and the `ssr:island-error` event: [Island errors](references/island-errors.md)
-- Progressive same-origin links with `@k2b/ssr/nav`: [Navigation](references/navigation.md)
+- Progressive same-origin links, page swaps, and unsaved-input guards (`onBeforeLeave`) with `@k2b/ssr/nav`: [Navigation](references/navigation.md)
 
 ## Quick Start
 
@@ -125,6 +125,17 @@ Good:
 
 Put interactive behavior inside the island/client component. For server effects, pass serializable data such as IDs, URLs, action names, or initial state, then call an API route, submit a form, or update client state from inside the island.
 
+## Island lifetime
+
+An island lives until the document unloads or the framework disposes the content
+around it. Disposal runs every Solid `onCleanup` and effect cleanup, including
+those of an error fallback. Use `onCleanup` to remove global listeners, clear
+timers, and release subscriptions.
+
+Just before cleanup, the wrapper dispatches a bubbling `ssr:island-dispose`
+event. Code that renders outside the wrapper, such as a portal, can close what
+the island opened. Disposal closes every open `@k2b/ui` dialog.
+
 ## Island Error Boundaries
 
 Every island and client component instance is mounted in its own error
@@ -193,11 +204,13 @@ Do not return an async render function. The render function is called by `render
 
 - missing `rootDir` in a monorepo leads to missing island discovery
 - missing SSR route mounting leads to 404s for island chunks
+- `Missing .../_ssr/manifest.json` means the production island build is incomplete: rebuild with the same `@k2b/ssr` version and ship the whole `_ssr` directory next to the server bundle
 - placing `${scripts}` outside the rendered HTML body can break client loading
 - returning direct JSX from `ssr()` is invalid; return `() => <Page />`
 - passing callbacks or event handlers as island/client props fails because props must be serialized
-- treating `@k2b/ssr/nav` as a full router leads to stale server data; it only enhances anchors after client state is handled
+- expecting route matching or client loaders from `@k2b/ssr/nav` leads to stale server data; it enhances anchors after client state is handled, or swaps whole server pages when the host opts in (see [Navigation](references/navigation.md))
 - using `nav.push()` without reconciling `popstate` leaves island state stale after Back/Forward; use `listenPopState()`
+- relying on `beforeunload` alone loses unsaved input on a page swap; register `onBeforeLeave()` in the island and keep `beforeunload` for document loads
 - importing server-only modules into islands or client components can break browser bundling
 - a nested island/client build error means shared code belongs in a plain `.tsx` module; lazy-load that module instead of an island
 - named exports for islands/clients are not supported

@@ -5,7 +5,7 @@ section: Identity and access
 order: 357
 description: How Cloud records, decides, and uses one approval for exactly the Action a person saw.
 tags: [identity, approvals, capabilities, audit]
-updated: 2026-10-11
+updated: 2026-10-20
 ---
 
 # Action approvals
@@ -38,6 +38,8 @@ credential, such as `cld capabilities action` or a request to
 | Input and review digests | SHA-256 over the canonical Action input and over the review snapshot |
 | Status | `pending`, then `approved`, `rejected`, `expired`, or `cancelled`; `approved` becomes `consumed` when the Action runs |
 | Decided via | The decision channel: `web_session`, `app_session`, `oauth`, `api_key`, `invocation`, `acp_bridge`, or `cloud_login` |
+| Deciding device | The Cloud Login device that decided, if any; an approval from a device revoked since then is not used |
+| Approver's sign-out epoch | The approver's authentication epoch when Cloud asked; signing out everywhere moves it and ends the request |
 | Expiry | When an undecided request stops accepting a decision |
 
 The level follows what the call offers. An Action with
@@ -63,6 +65,21 @@ A person can decide the same request in these places:
   It shows the request, then asks for an explicit approve or reject choice.
 - **My account → Approvals** at `/me/approvals`, for all apps.
   Use `/me/approvals?app=mail` to filter by app.
+
+The approvals page uses the same card as the chat: a sentence with typed chips,
+Cloud's reason line, the preview, two answers, and one outcome line. The reason
+comes from the app's review or declared policy, not the model's explanation;
+legacy reviews and Actions without a policy use `app_asks`. Filling a missing
+reason in a displayed copy never changes the approval snapshot or its digest.
+
+The list and the band's detail panel reuse the chat's preview and reading
+controls. They show the stored review, including its locale and revision links.
+An excerpt without a link can expand in place; a preview with an `open` link
+opens the app's reviewed revision. These surfaces share the
+[review limits](/en/docs/platform/capabilities#describe-an-action-before-it-runs): opening the approvals
+page does not recover content omitted from the snapshot. The app must make
+the complete proposed content available at that link. A saved resource that
+does not yet contain the proposed edits cannot serve as that complete review.
 
 The lists contain only open, unexpired requests that a chat still waits for.
 They include Assistant chats and Studio code that asked through a chat.
@@ -107,6 +124,8 @@ against a client that holds the person's `cld` token and leaves the header out.
 - **Requests expire.** A chat request accepts a decision for 24 hours, like the
   turn that waits for it. A Studio capability call waits up to one day. No
   request waits longer than 24 hours.
+- **Signing out everywhere ends open requests.** They leave lists, counts,
+  and Cloud Login. A decision on such a request answers as expired.
 - **Ending the wait cancels the request.** When a turn ends, its open requests
   and the approvals no call used are cancelled. A Studio capability call that is
   still open after one day is abandoned, and its request with it.
@@ -129,14 +148,24 @@ notification are not notified.
 
 The title is **Approval waiting** for one request or **N approvals waiting**
 for several. The count includes all waiting requests from eligible turns.
+The body shows the newest request's plain question and reason. With several
+requests, a last line says how many more wait. The whole
+notification uses the question's language: the language of the turn that
+asked, or the app's base language when the app lacks that one. Email adds the link after those lines. Older events
+and failures to load the question keep the general approval notice.
 The notification opens `/me/approvals`. It has no decision buttons.
-Browser delivery is recommended. Users can change delivery in their
+A browser push shows only the title: the question names people and their
+addresses, so it stays off lock screens and paired devices. Browser delivery
+is recommended. Users can change delivery in their
 notification settings.
 
 Cloud also wakes paired Cloud Login phones for open requests asked outside
 Cloud's pages. Only devices that have read the Action inbox receive these
-pushes, at most once per device in 30 seconds. A push is a hint; the phone
-reads the signed request before the person decides.
+pushes, at most once per device in 30 seconds. A truncated `sends` question
+stays in the browser and sends no phone push; it still counts in the inbox's
+`moreActions`. See [Device text mapping](/en/docs/operations/app-approval#approve-an-action).
+A push is a hint; the phone reads the signed request before the person
+decides.
 
 ## Use an approval once, for what was shown
 
@@ -150,6 +179,7 @@ so no other call can use it.
 | --- | --- | --- |
 | Review and input unchanged | The Action runs | The Action runs |
 | The review changed, for example a draft got another recipient | Cloud asks again with the current review; nothing runs | The call fails with `CONFLICT`; the person can still decline |
+| The device that approved was revoked, or the person signed out everywhere | Cloud asks again; nothing runs | The call fails with `CONFLICT` |
 | The approval was already used, for example after a restart during the Action | The call ends with an error and does not run again; a new call asks again | The stored result is returned, or `CONFLICT` |
 
 Asking again about a changed review keeps the call's idempotency key, so an
@@ -189,11 +219,14 @@ after they expired.
 
 ## Remembered approvals stay separate
 
-**Approve for this chat**, **Always approve**, and allowed websites are still
-stored as preferences in Assistant and resolve a later call without a new
-request. Only a person in a signed-in browser session can remember a website.
-Scheduled tasks and mandates never ask and never use a remembered approval;
+Where allowed, **Yes, and don't ask again in this chat** remembers the reviewed
+scope for that chat. The browser no longer offers **Always approve**; earlier
+choices still apply until the next major release. These choices and allowed
+websites remain preferences in Assistant and resolve a later matching call
+without a new request. Only a person in a signed-in browser session can remember a website.
+Routines (scheduled tasks) and mandates never ask and never use a remembered approval;
 see [Background mandates](/en/docs/identity/background-mandates).
+Remembering and revoking a preference each write an [audit event](/en/docs/platform/audit-events#remembered-ai-approvals).
 
 ## Show approvals in your app
 
@@ -248,7 +281,17 @@ An actor without a user gets `403`. An unauthenticated caller gets `401`.
 | --- | --- | --- |
 | `GET /api/approvals` | Optional query fields `app`, `link`, and `cursor` | `{ items, nextCursor, count, elsewhere }` |
 | `GET /api/approvals/counts` | None | `{ total, apps }` |
+| `GET /api/approvals/:id/content` | UUID `id`, SHA-256 `digest` query | One complete pending review content object |
+| `GET /api/approvals/conversations/:conversationId/turns/:turnId/reviews/:callId` | Conversation and turn UUIDs, call ID, SHA-256 `digest` query | One historical chat review content object |
 | `POST /api/approvals/:id/decision` | UUID `id` and JSON `{ approved, remember? }` | `{ status: "approved" }` or `{ status: "rejected" }` |
+
+Full-content readers require the matching snapshot digest and normal user
+credentials. The pending-request reader also checks the approver, pending
+execution, expiry and current sign-out epoch. Historical chat reads require
+ownership of an unarchived conversation and the exact turn and call; they
+remain available after the approval is consumed. Missing or inaccessible
+snapshots return `404`. Responses are private and use `Cache-Control: no-store`.
+Lists omit the complete content and retain its `contentRef` instead.
 
 `app` matches the effect owner or requester app. `link` matches an exact review
 link href that starts with `/`. Both filters apply when both are present.

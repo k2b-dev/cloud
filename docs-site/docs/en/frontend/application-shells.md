@@ -5,7 +5,7 @@ section: Frontend
 order: 830
 description: Choose the shared shell that matches an application's information structure.
 tags: [shells, workspace, ui]
-updated: 2026-10-11
+updated: 2026-10-17
 ---
 
 # Application shells
@@ -16,6 +16,11 @@ authorize resources, or register the app in Cloud navigation.
 
 Wrap the shell in the shared [Layout](/en/docs/frontend/layout-and-navigation),
 then keep domain data and actions inside the application-owned content slots.
+
+With `defineApp({ pageSwap: true, ... })`, in-app navigation replaces the
+`Layout` content column while the rail, phone tab bar, panel slot, and provider
+document stay mounted. The panel keeps drafts and pending work across swaps.
+See [Page swaps](/en/docs/frontend/url-state-and-navigation#cloud-page-swaps).
 
 ## Choose a shell
 
@@ -89,25 +94,33 @@ Keep geometry IDs stable. Do not add another grid or resize handle.
 From 768 px, signed-in layouts expose Help and Search through the app bar.
 Their header controls exist only on phones.
 
+## Offer a page beside other apps
+
+Declare `panel: { href, label, icon, requiresRoles? }` in `defineApp()` to offer
+one application page in Cloud's panel slot. Render that route with
+`PanelLayout` from `@k2b/cloud/ssr`. From 1024 px, the open column narrows the
+app area, which Cloud supplies as the workspace's `k2b-app-area` host. At
+smaller widths it overlays the app as a drawer or phone sheet.
+See [Offer a panel](/en/docs/platform/panels) for authorization, opening,
+keyboard controls, loading, and persistence.
+
 ## Add contextual detail
 
-Below 768 px, Detail is a sheet over the lower 55% of the window, also on pages
-without `fullPage` that grow with their content. Main’s rows scroll above it;
-the grabber switches to full height. From 768 px, it occupies a full-height
-column beside the head and panes, with a 0.5 rem inset at the workspace's top,
-right, and bottom. Main keeps at least 320 px. Give Main 0.5 rem padding so
-its surfaces end one gap before the panel with their own rounded corners.
-From 1024 px the workspace lets the panel's shadow extend beyond its edges.
-On coarse pointers from 768 to 1023 px, a closable detail overlays Main as a
-drawer. The host’s app card from 1536 px surrounds this same workspace geometry.
+Below 768 px, Detail is a sheet over the lower 55% of the window; Main's rows
+scroll above it and the grabber switches to full height. From 768 px it is a
+column if it fits beside Main's minimum, otherwise it waits behind **Details**.
+The column shares the workspace surface, with an 8 px inset. Selecting an
+item opens a waiting Detail directly as a drawer, flush with the app card's
+edge. Escape parks it without closing the selection. Opening Cloud's panel
+parks the drawer; closing the panel restores the column if it fits.
 
-In an island or client component, pass `onClose` the panel’s existing close or
-deselect action. Escape and dismissal gestures then use that action too.
+Pass `onClose` the existing close or deselect action for column Escape and
+phone dismissal gestures. A waiting drawer parks without calling it.
 `onStep` steps through the items for J and K; return the Main element that
 shows the new item so Escape, F6 and the reveal follow it. A detail that
 the page renders on the server only cannot pass a function; mark the panel’s
-own close button or link with `data-workspace-detail-close`, and Escape and
-the gestures click it. Omit both for permanent context. The application still
+own close button or link with `data-workspace-detail-close`; column Escape
+and phone dismissal click it. Omit both for permanent context. The application still
 owns `open` and URL selection. The panel’s Escape, J, K, and F6 run after the
 page’s own keyboard handlers, so a handler that uses one of these keys for
 local state calls `preventDefault()`.
@@ -115,7 +128,8 @@ local state calls `preventDefault()`.
 Opening reserves the column immediately, then slides the panel in. Closing
 slides it out over 140 ms with the column still reserved, then returns the
 room in one step. The initial server-rendered panel appears without motion;
-reduced motion makes opening and closing instant.
+the OS reduced-motion setting or `data-k2b-motion="reduced"` on `<html>`
+makes opening and closing instant; see [Motion](/en/ui/motion).
 
 For DataTable, pass `scrollClass="k2b-detail-trail"` to keep column widths
 while the scroller narrows beside the panel. Closing returns the full width
@@ -124,11 +138,11 @@ without extra space. The trail is the clipping scroll viewport and carries
 `scroll={false}` on Main and no vertical scroller around it; a reserved
 scrollbar gutter would widen the gap before the panel beyond
 `--k2b-workspace-detail-inset`. Mark a board's horizontal scroller with
-`k2b-detail-trail` as well: under the tablet drawer, the marked scroller gets
+`k2b-detail-trail` as well: under an open waiting drawer, the marked scroller gets
 the drawer's width as space at its end, so its last column scrolls out from
 under the drawer.
 The week and day views of `Calendar` mark themselves.
-See [AppWorkspace](/en/ui/layout/workspace#floating-detail) for focus, keyboard
+See [AppWorkspace](/en/ui/layout/workspace#detail-and-panel) for focus, keyboard
 shortcuts, gestures, motion, and sizing.
 
 ## Choose a dialog
@@ -152,6 +166,8 @@ Inspect current examples in the [UI catalog](/ui).
 
 Cloud owns one mobile menu below 768 px. The header launcher opens the current
 workspace menu by default; **All apps** switches to the application grid.
+On pages with `WorkspaceNavigation`, the phone title becomes **Name ⌄** and
+opens that same menu. Pages without workspace navigation keep a plain title.
 The sheet header combines the workspace name and **All apps** in one segmented
 control. An application without its own navigation gets no header row: the
 sheet shows only the application grid, and the handle, backdrop, Escape, and
@@ -164,7 +180,9 @@ list panes side by side, and its sidebar is an overlay: the head at the
 top of the workspace holds the button that opens it and the page title.
 The overlay closes with Escape, a tap beside it, or a choice in the
 navigation, and focus returns to the button. A `mobile="stacked"` overview
-list stays above the content instead. From 1024 px the sidebar sits beside the
+list becomes one horizontally scrolling row of object chips above the content
+instead. **All** at its end opens the complete sidebar: a bottom sheet below
+48 rem and a centered dialog from 48 rem. From 1024 px the sidebar sits beside the
 work area. Applications need no code for the tablet range.
 
 For SSR link navigation, render the public island once alongside the outer

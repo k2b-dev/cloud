@@ -2,32 +2,56 @@
 id: pulse-start
 title: Start with Pulse
 icon: ti ti-activity-heartbeat
-description: Learn where to start for each task, and take the first path from a new base to a dashboard.
+kind: start
+description: Create a base, connect a source, and check collection health.
 order: 100
 ---
-Pulse turns incoming data into browsable facts, query results, and dashboards. The Pulse overview lists every base that you can access. There you create or open a base before you select any source or signal. Start from your question. The interface then shows the source, resource, signal, and filters that you need.
+Pulse collects metrics, events, and states in bases. Open a base to set up sources and check incoming data.
 
-## Start from the task {icon="square-plus"}
+## Read the overview
 
-:::reference
-- **Check whether data arrives:** Open **Sources** first. For each connection, it shows recent updates, errors, received data, and the use of API keys.
-- **Understand one observed thing:** Open **Resources** when you care about one host, container, device, customer, order, store, or app. This keeps metrics, states, and events in the same context.
-- **Inspect one named fact:** Open **Metrics**, **Events**, or **States** when you already know the name, such as `system.memory.usage` or `order.created`.
-- **Build a query:** Use the **Query explorer** to test one metric, event, or state query. Copy filters from **Inventory** instead of memorizing labels.
-- **Build a dashboard:** Use Dashboard DSL when the query is stable. Dashboards are text documents with controls, sections, rows, cards, widgets, and notes.
-:::
+A base opens on **Overview**. It shows what needs attention, up to four important numbers, and recent changes. It refreshes every 60 seconds while visible. **View** opens an alert's SQL and parameter values without running the query.
 
-## Go from a new base to a dashboard {icon="route"}
+Updated numbers stay in place. New or resolved attention items make the list longer or shorter and move the sections below it. A focused action stays focused while its item remains.
+
+Choose **Ask AI** to prepare a question about this base. The Assistant draft is not sent automatically. In **New source**, the same option helps prepare an adapter for your shop or another service.
+
+To add an important number, open the saved query list in **SQL** and enable **On overview**. You need edit access, and a base can show four pinned queries. The last result row supplies the value; an optional time column supplies its trend. If a refresh fails, Pulse keeps the last successful value and its time.
+
+## Connect a source
+
+Pulse needs a connected data store. If **Pulse is not set up yet** appears, contact your Cloud administrator.
 
 :::steps
-1. **Create a base:** Use one base for one product, environment, business area, or reporting context.
-2. **Connect a source:** Add a metrics endpoint or an HTTP ingest source. Wait until Pulse reports received data.
-3. **Browse what exists:** Use **Resources** when you know the object. Use **Metrics**, **Events**, or **States** when you know the signal name.
-4. **Open a query:** Start with a copied query snippet. Narrow it with `source`, `resource`, `resource_type`, or `where` filters.
-5. **Save the query:** Save stable queries that you expect to reuse.
-6. **Write the dashboard:** Copy useful, stable queries into Dashboard DSL. Add descriptions when a chart needs interpretation.
+1. Choose **New base** and enter a name for your product, environment, or business area.
+2. Open the base and choose **Sources → New source**.
+3. Choose a metrics endpoint or an HTTP ingest source and save it.
+4. Open the source to check its newest data time, errors, and scrape history.
 :::
 
-:::note One naming rule
-Signal names describe the fact, such as `orders.created` or `system.cpu.usage`. Source, resource, and dimensions describe where that fact came from. This is why the same model works for servers, sales, websites, energy systems, and app workflows.
-:::
+A metrics source fetches a Prometheus endpoint at its configured interval.
+An HTTP ingest source accepts batches sent with a source API key.
+Create labeled keys under **API keys** in the source details. Keep them in your collector's secret store.
+
+## Choose which metrics to collect
+
+For metrics sources, **Only these metrics (empty = all)** accepts family names or prefixes ending in `*`.
+Separate entries with commas or newlines. An empty field includes every family.
+Excluded families do not count toward sample or series limits.
+
+The source shows refused histograms, skipped summary samples, and recent throttling.
+Use these details to fix the endpoint or reduce the selected metrics.
+
+## Read measurements with SQL
+
+**View** access lets you query one base. **Edit** access lets you save and delete queries.
+Use `cld pulse sql --base <base> --file query.sql` to run SQL.
+Use `cld pulse queries list --base <base>` to find saved queries.
+Read `cld pulse reference sql.md` for parameters and export formats.
+
+Supply values with `--param name=value`. Keep SQL text and values separate.
+Ctrl-C cancels a running query. When Pulse is busy, wait for the stated retry delay.
+A result with 10,000 rows reached the limit. More rows can exist.
+Narrow the time range or group the data to get a complete answer.
+
+Open **SQL** in a base to run a query, inspect its table and time chart, or open a saved query. **Ask AI** opens an unsent Assistant draft with your base, SQL and parameter values. Base settings use a modal with General, Members, Retention, Usage and limits, and Clear and delete tabs.

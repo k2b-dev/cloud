@@ -1,6 +1,7 @@
 /** Article paths are independent of the deployment's documentation website. */
 export const settingsDocumentation: Readonly<Record<string, string>> = {
   general: "accounts/documentation",
+  places: "platform/places-and-maps",
   user: "operations/account-categories",
   registration: "accounts/registration",
   freeipa: "operations/freeipa",

@@ -16,6 +16,9 @@ test("global task dialogs provide live context through activity, run detail and 
     chatId: "chat01",
     chatTitle: "Morning chat",
     grants: [],
+    title: "Changed task prompt",
+    name: "Changed task prompt",
+    reason: null,
     prompt: "Changed task prompt",
     schedule: { kind: "cron", cron: "0 9 * * *" },
     timezone: "UTC",
@@ -42,7 +45,7 @@ test("global task dialogs provide live context through activity, run detail and 
     conversationId: "chat01",
     seq: 1,
     kind: "message",
-    message: { role: "user", content: [{ type: "text", text: "Original run instruction" }] },
+    message: { role: "user", content: [{ type: "text", text: "Routine task01 (2026-09-20T08:00:00Z):\n\nOriginal run instruction" }] },
     loopId: "run001",
     modelProfileId: null,
     providerModel: null,
@@ -98,8 +101,9 @@ test("global task dialogs provide live context through activity, run detail and 
     const result = openAssistantTaskRun(task.id, occurrence.id, live);
     await tick();
     expect(dom.document.body.textContent).toContain("Original run instruction");
+    expect(dom.document.body.textContent).not.toContain("Routine task01");
     expect(dom.document.body.textContent).not.toContain("Changed task prompt");
-    const manage = Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent?.includes("Manage task"));
+    const manage = Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent?.includes("Manage routine"));
     expect(manage).toBeDefined();
     const history = Array.from(dom.document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Run history");
     expect(history).toBeDefined();
@@ -127,6 +131,96 @@ test("global task dialogs provide live context through activity, run detail and 
     await tick();
     dialogCore.close();
     await activities;
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    await tick();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});
+
+test("an expired run or run history explains that its result stays in the chat, also when it expires while open", async () => {
+  const dom = createDomTestHarness();
+  dom.root.className = "k2b-ui";
+  const { dialogCore } = await import("@k2b/ui");
+  const { openAssistantTaskRun } = await import("./AssistantActivitiesDialog");
+  const { createAssistantLiveHub } = await import("./assistant-live");
+  const task: AiChatTaskView = {
+    id: "task01",
+    chatId: "chat01",
+    chatTitle: "Morning chat",
+    grants: [],
+    title: "Morning overview",
+    name: "Morning overview",
+    reason: null,
+    prompt: "Morning overview",
+    schedule: { kind: "cron", cron: "0 9 * * *" },
+    timezone: "UTC",
+    state: "active",
+    lastError: null,
+    createdAt: "2026-06-20T09:00:00Z",
+    updatedAt: "2026-06-20T09:00:00Z",
+  };
+  const occurrence: AiChatTaskOccurrenceView = {
+    id: "run001",
+    taskId: task.id,
+    scheduledFor: "2026-06-20T09:00:00Z",
+    trigger: "scheduled",
+    state: "completed",
+    error: null,
+    resultText: "Your morning overview is ready.",
+    createdAt: "2026-06-20T09:00:00Z",
+    startedAt: null,
+    completedAt: null,
+  };
+  let removed = false;
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async () =>
+        removed
+          ? Response.json({ error: { code: "NOT_FOUND", message: "Task run not found" } }, { status: 404 })
+          : Response.json({ task, occurrence, messages: [] }),
+      { preconnect: globalThis.fetch.preconnect },
+    ),
+  );
+  const unavailable = () => {
+    const placeholder = dom.document.querySelector(".k2b-placeholder");
+    expect(placeholder?.getAttribute("data-state")).toBe("empty");
+    expect(placeholder?.textContent).toContain("This run is no longer available");
+    expect(placeholder?.textContent).toContain("Its result stays in the chat.");
+    expect(dom.document.body.textContent).not.toContain("Could not load background activity");
+    expect(dom.document.body.textContent).not.toContain("Your morning overview is ready.");
+    expect(dom.document.querySelector(".assistant-activity-dialog__actions")).toBeNull();
+  };
+  try {
+    // Expires while the run is open: the live refresh answers 404 and must replace the stale run.
+    const live = createAssistantLiveHub();
+    const open = openAssistantTaskRun(task.id, occurrence.id, live);
+    await tick();
+    expect(dom.document.body.textContent).toContain("Your morning overview is ready.");
+    removed = true;
+    await live.resync().catch(() => undefined);
+    await tick();
+    unavailable();
+    dialogCore.close();
+    await open;
+    // Opened after removal, for example from the result message in the chat.
+    const later = openAssistantTaskRun(task.id, occurrence.id, createAssistantLiveHub());
+    await tick();
+    unavailable();
+    dialogCore.close();
+    await later;
+    // A one-off task's slot run outlives its transcript: the history explains the gap instead of staying blank.
+    removed = false;
+    void openAssistantTaskRun(task.id, occurrence.id, createAssistantLiveHub());
+    await tick();
+    const history = [...dom.document.querySelectorAll("button")].find((button) => button.textContent?.includes("Run history"));
+    history?.click();
+    await tick();
+    const historyPlaceholder = [...dom.document.querySelectorAll(".k2b-placeholder")].find((item) =>
+      item.textContent?.includes("No run history"),
+    );
+    expect(historyPlaceholder?.textContent).toContain("Run details are kept for 90 days after a run finishes.");
   } finally {
     while (dialogCore.isOpen()) dialogCore.close();
     await tick();

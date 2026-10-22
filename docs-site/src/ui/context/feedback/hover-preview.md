@@ -138,7 +138,7 @@ opened leaves the key to other handlers, such as an open modeless dialog.
 
 The card renders on the server as a closed native popover (`popover="auto"`),
 so outside clicks and other popovers dismiss it; it never dismisses another
-light-dismiss popover itself. Hydration registers the anchors
+light-dismiss popover itself. Browser code registers the anchors
 and positions the card in the top layer; it never changes the layout of the
 anchors or anything around them. The card uses the elevated surface, a strong
 border, and inner depth only: no outer shadow and no divider lines. It fades in

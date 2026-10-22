@@ -30,7 +30,7 @@ export default function DocumentSourcesDialog(props: { document: PublicDocument;
         <div class="flex flex-col gap-4">
           <p class="text-sm text-dimmed">{t().sourceRecordsHint}</p>
           <Show when={pages.loading()}>
-            <Placeholder icon="ti ti-loader" title={t().sourceRecords} />
+            <Placeholder state="loading" icon="ti ti-loader" title={t().sourceRecords} />
           </Show>
           <Show when={pages.error()}>
             {(error) => (

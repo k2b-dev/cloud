@@ -6,6 +6,21 @@ import { type ChatLiveEventSchema, ConversationSchema } from "../service/contrac
 import { rng } from "../service/rng.test-fixture";
 import { type ChatStoreApi, createChatStore } from "./chat-store";
 
+const unusedMemberRequest = async () => {
+  throw new Error("Unused member request");
+};
+const memberApi = {
+  create: unusedMemberRequest,
+  updateDetails: unusedMemberRequest,
+  members: unusedMemberRequest,
+  previewMembers: unusedMemberRequest,
+  addMembers: unusedMemberRequest,
+  updateMember: unusedMemberRequest,
+  removeMember: unusedMemberRequest,
+  leave: unusedMemberRequest,
+  people: unusedMemberRequest,
+};
+
 class ManualConnection implements LiveConnection {
   channels = new Map<string, (data: unknown) => Promise<void>>();
   subscribe<T>(channel: string, _scope: unknown, handlers: LiveSubscriptionHandlers<T>) {
@@ -68,6 +83,7 @@ test("real store converges to V5 under per-key FIFO, random cross-key order, dup
     };
     const connection = new ManualConnection();
     const api: ChatStoreApi = {
+      ...memberApi,
       conversations: async () => ({ items: [row()], nextCursor: null }),
       conversation: async () => row(),
       messages: async () => null,

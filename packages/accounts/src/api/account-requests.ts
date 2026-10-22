@@ -1,4 +1,4 @@
-import { type AuthContext, auth, getLocale, jsonResponse, requiresAdmin, respond, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, middleware, requiresAdmin, respond, v } from "@k2b/cloud/server";
 import { accountsAppService as accountsService } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
@@ -48,6 +48,7 @@ const AccountRequestListResponseSchema = z.object({
  * owned by core and lives at /api/me/account-request.
  */
 const app = new Hono<AuthContext>()
+  .use("*", middleware.noTransform())
   .use(auth.requireRole("admin"))
 
   .get(

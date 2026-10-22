@@ -7,14 +7,38 @@ import { defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { AuthContext } from "../server";
 import { createAiApprovalPreferenceRoutes } from "./approval-routes";
-import { AI_WEBSITE_APPROVAL_TOOL, type AiToolApprovalPreference, aiWebsiteApprovalScope } from "./approvals";
+import {
+  AI_WEBSITE_APPROVAL_TOOL,
+  type AiToolApprovalChangeContext,
+  type AiToolApprovalPreference,
+  aiWebsiteApprovalScope,
+} from "./approvals";
 import { aiCapabilityId } from "./capabilities";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const preferenceId = "22222222-2222-4222-8222-222222222222";
 
+const user: AuthContext["Variables"]["user"] = {
+  id: userId,
+  uid: "approval-user",
+  provider: "local",
+  roles: ["user"],
+  profile: "user",
+  givenname: "Approval",
+  sn: "User",
+  displayName: "Approval User",
+  mail: null,
+  avatarHash: null,
+  ipa: null,
+  accountExpires: null,
+  lastLoginLocal: null,
+  memberofGroup: [],
+  memberofGroupIds: [],
+  manages: [],
+  managesGroupIds: [],
+};
+
 const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
-  const user = { id: userId, roles: ["user"] } as AuthContext["Variables"]["user"];
   c.set("actor", { kind: "user", user });
   c.set("accessSubject", { type: "user", userId });
   c.set("user", user);
@@ -207,20 +231,27 @@ describe("AI approval preference routes", () => {
   });
 
   test("revokes only through the current user's ownership boundary", async () => {
-    let revoked: { actorUserId: string; id: string } | undefined;
+    let revoked: { actorUserId: string; id: string; change?: Pick<AiToolApprovalChangeContext, "actor" | "requestId"> } | undefined;
     const routes = createAiApprovalPreferenceRoutes({
       limit: pass,
       authenticate,
-      revokePreference: async (actorUserId, id) => {
-        revoked = { actorUserId, id };
+      revokePreference: async (actorUserId, id, change) => {
+        revoked = { actorUserId, id, change };
         return true;
       },
     });
 
-    const response = await routes.request(`/${preferenceId}`, { method: "DELETE" });
+    const response = await routes.request(`/${preferenceId}`, { method: "DELETE", headers: { "x-request-id": "approval-revoke-request" } });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ deleted: true });
-    expect(revoked).toEqual({ actorUserId: userId, id: preferenceId });
+    expect(revoked).toEqual({
+      actorUserId: userId,
+      change: {
+        actor: { kind: "user", user },
+        requestId: "approval-revoke-request",
+      },
+      id: preferenceId,
+    });
   });
 
   test("returns not found without exposing another user's preference", async () => {

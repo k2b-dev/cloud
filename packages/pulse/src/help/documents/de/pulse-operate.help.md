@@ -1,38 +1,78 @@
 ---
 id: pulse-operate
-title: Basis betreiben
+title: Empfang prüfen und eine Base wiederherstellen
 icon: ti ti-lifebuoy
-description: Prüfe Quellenstatus, Aufbewahrung, Zugriff und öffentliche Ansichten, sende Daten per HTTP-Datenaufnahme und behebe häufige Probleme.
+kind: reference
+description: Prüfe den Quellenstatus, wiederhole Datenaufnahme sicher und repariere fehlgeschlagene oder gesperrte Bases.
 order: 140
 ---
-Nutze diese Seite, wenn Daten fehlen, wenn sich der Zugriff ändern muss oder wenn eine öffentliche Ansicht nur ein Dashboard zeigen soll.
+Öffne **Quellen**, wenn erwartete Daten fehlen. Prüfe die Quelle, bevor du die Base änderst oder leerst.
 
-## Basis regelmäßig prüfen {icon="route"}
-
-:::reference
-- **Quellenstatus:** **Quellen** zeigen die letzten Aktualisierungen, Dauer, Fehler, empfangenen Daten und gegebenenfalls die Nutzung von API-Schlüsseln.
-- **Zugriff:** Der Zugriff auf eine Basis legt fest, wer sie ansehen, bearbeiten oder verwalten kann. Öffentliche Dashboards sind davon getrennte Leseansichten hinter einem Link.
-- **Öffentliche Ansichten:** Alle Personen mit dem öffentlichen Link können das Dashboard und seine Ergebnisse sehen. Die Browser der Basis, Quelleneinstellungen, gespeicherten Abfragen und API-Schlüssel sehen sie nicht. Wähle sinnvolle Standardwerte, weil Personen in öffentlichen Ansichten die Steuerelemente nicht bearbeiten können.
-- **Aufbewahrung:** Pulse kann detaillierte Daten, langfristige Zusammenfassungen und geschützte Ereignisfelder unterschiedlich lange aufbewahren. Geschützte Felder können vor dem übrigen Ereignis ablaufen.
-- **Daten löschen:** **Telemetriedaten löschen** verwirft die erfassten Daten. Basis, Quellen, API-Schlüssel, Zugriff, Dashboards, gespeicherte Abfragen und Einstellungen bleiben erhalten.
-- **Lange destruktive Vorgänge:** Das Leeren oder Löschen einer großen Basis kann nach deiner Bestätigung einige Zeit dauern. Eine angenommene Anfrage bedeutet, dass der Vorgang begonnen hat, nicht dass alle Daten bereits verschwunden sind.
-:::
-
-## Daten per HTTP-Datenaufnahme senden {icon="point"}
+## Lies den Quellenstatus
 
 :::reference
-- **Anfragen werden vollständig oder gar nicht angenommen:** Pulse lehnt eine Anfrage ab, die es nicht vollständig annehmen kann, statt nur einen Teil ihrer Daten zu speichern. Teile eine abgelehnte große Anfrage auf und wiederhole jeden Teil einzeln.
-- **API-Schlüssel gehören zu einer Quelle:** Pulse ordnet empfangene Signale der Quelle zu, der der API-Schlüssel gehört. Ein mit den Daten gesendeter Quellenwert ändert diese Zuordnung nicht.
-- **Sicher wiederholbare Anfragen:** Sende denselben `Idempotency-Key`, wenn du einen Batch erneut sendest. Pulse gibt mindestens 24 Stunden lang das ursprüngliche Ergebnis zurück und lehnt die Wiederverwendung mit anderem Inhalt ab.
-- **Metrikvarianten überschaubar halten:** Eine Metrik kann in einer Basis bis zu 10.000 Varianten haben. Lege Anfrage-IDs, Sitzungen, vollständige URLs, IP-Adressen und andere eindeutige Werte in Ereignissen ab, nicht in Metrikdimensionen.
+- **Neueste Daten:** Der letzte von der Quelle empfangene Zeitstempel. Vergleiche ihn mit der erwarteten Zeit.
+- **Drosselung:** Grenzen für Werte oder Bytes haben den Empfang kürzlich gestoppt. Verkleinere den Batch oder warte die Wiederholungsfrist ab.
+- **Abgelehnte Histogramme:** Eine Familie hat die Prüfung nicht bestanden. Prüfe ihre Buckets, Anzahl und Summe am Endpunkt.
+- **Übersprungene Summaries:** Pulse speichert keine Prometheus-Summary-Messwerte. Wähle stattdessen unterstützte Metrikfamilien.
+- **Fehler:** Prüfe den letzten Fehler und seinen Zeitpunkt. Der Abrufverlauf ergänzt Erfolg, empfangene Anzahlen, Dauer und Abschlusszeit.
 :::
 
-## Häufige Probleme beheben {icon="lifebuoy"}
+Bei einem internen Endpunkt lässt die Cloud-Administration dessen Host, Host:Port oder CIDR unter **Verwaltung → Pulse → Interne Ziele** zu.
+Eine Änderung von Schema, Host oder Port löscht das gespeicherte Bearer-Token, sofern du keinen Ersatz angibst.
+
+## Lege den erwarteten Datenempfang fest
+
+Bei einer sendenden Quelle öffnest du **Bearbeiten → Erwartete Daten**. Wähle einen regelmäßigen Abstand in Sekunden, eine tägliche Uhrzeit oder **Keine Erwartung**. Tägliche Uhrzeiten gelten in der Zeitzone der Base. Die Erwartung bezieht sich auf den neuesten Datenzeitpunkt, nicht auf den letzten Kontakt. Sie kann nicht belegen, dass die Daten eines ganzen Tages vollständig sind.
+
+Ändert jemand die Quelle während deiner Bearbeitung, behält Pulse deine Eingaben und sperrt weiteres Speichern. Schließe und öffne die Quelle erneut, um den aktuellen Stand zu prüfen. Bleibt das Ergebnis einer Neuanlage unklar, wähle **Quellen prüfen**, bevor du die Quelle erneut anlegst.
+
+## Lade die Übersicht erneut
+
+**Erneut versuchen** lädt eine fehlgeschlagene Übersicht neu. Bei einem Speicherausfall bleiben vorhandene Werte mit ihrem Zeitpunkt sichtbar; ein nicht verfügbarer Wert ist nicht null. Wurde dein Zugriff entfernt, bitte die Base-Administration um Zugriff. Ein erneuter Ladeversuch stellt ihn nicht wieder her.
+
+## Erhalte Alarmmeldungen
+
+Pulse prüft fällige Alarmregeln und die Aktualität der Quellen jede Minute, auch wenn niemand die Base geöffnet hat. Ein ausgelöster oder verschärfter Alarm, fehlende Daten, ein Prüfungsfehler oder die Rückkehr zum Normalzustand können Personen mit Zugriff **Verwalten** auf die Base benachrichtigen. Browser- und E-Mail-Zustellung richten sich nach deinen Cloud-Benachrichtigungseinstellungen. Wer den Zugriff **Verwalten** verliert, erhält auch keine bereits vorgemerkten Base-Alarme mehr.
+
+Benachrichtigungen verwenden die Installationssprache zum Zeitpunkt des Ereignisses. Browsertext, E-Mail und spätere Zustellversuche behalten diese Sprache. Eine Änderung der Installationssprache gilt für neue Ereignisse.
+
+## Wiederhole HTTP-Datenaufnahme sicher
+
+Sende Batches an `POST /api/pulse/ingest` mit dem Quellentoken als Bearer-Zugang.
+Sende einen `Idempotency-Key` ab dem ersten Versuch. Behalte Inhalt und Schlüssel für Wiederholungen unverändert.
 
 :::reference
-- **Es erscheinen keine Daten:** Prüfe zuerst die Quelle. Sie muss eine erfolgreiche Aktualisierung melden, bevor Ressourcen, Signale oder Dashboards Daten anzeigen können.
-- **Eine Abfrage liefert zu viele Treffer:** Öffne das **Inventar** oder die Signalseite. Ergänze dann Filter für `source`, `resource`, `resource_type` oder `where`.
-- **Ein Diagramm ist leer:** Prüfe Zeitraum und Aggregation. Zähler brauchen meist `rate` oder `increase`. Messwerte brauchen meist `avg` oder `latest`.
-- **Zeilen wirken dupliziert:** Öffne die Ressourcen- oder Signalseite. Wiederholte Zeilen sind meist Varianten mit unterschiedlichen Ressourcen oder Dimensionen.
-- **Eine Metrik hat zu viele Varianten:** Prüfe ihre Dimensionen. Behalte stabile Gruppierungsmerkmale. Verschiebe eindeutige Identitäten oder Ereignisdetails in die Identitätsfelder, Attribute, vertraulichen Felder oder die Payload eines Ereignisses.
+- **Batchgröße:** Höchstens 500 Metriken, 500 Ereignisse und 500 Zustände; insgesamt 1.500 Einträge und 5 MiB codiertes Batch-JSON.
+- **Anfrageschlüssel:** Pulse reserviert ihn vor dem Schreiben. Derselbe Schlüssel und Batch liefern 24 Stunden lang dasselbe erfolgreiche Ergebnis.
+- **Ausstehender Batch:** Wiederhole ihn mit demselben Schlüssel, um dieselben Zeilen zu schreiben. Anderer Inhalt mit diesem Schlüssel ergibt 409.
+- **Ohne Schlüssel:** Ein fehlgeschlagener Batch kann bereits teilweise gespeichert sein; der Fehler nennt das. Beim erneuten Senden können diese Teile doppelt gespeichert werden. Ein nachträglich ergänzter Schlüssel verhindert diese Duplikate nicht. Sende jeden Batch ab dem ersten Versuch mit einem `Idempotency-Key`, damit du ihn sicher wiederholen kannst.
+- **Quote:** Werte und Bytes teilen sich ein Kontingent pro Base über Quellen und Replikate hinweg. Ein Batch über dem Minutenkontingent kann bei vollem Kontingent angenommen werden. Sein voller Verbrauch verzögert weitere Batches, bis genügend Kontingent nachgefüllt ist. Eine 429-Antwort enthält `Retry-After`.
+- **Speicherausfall:** Eine 503-Antwort enthält `Retry-After`. Abrufe protokollieren den Fehler; die Cloud-Administration erhält eine Benachrichtigung pro Ausfall.
 :::
+
+Warte die angegebene Frist ab, bevor du einen Batch mit Schlüssel wiederholst. Ein Fehler wegen zukünftiger Zeitstempel nennt den betroffenen Eintrag.
+Der CLI-Befehl zur Datenaufnahme hat keinen Schlüsselschalter. Nutze den HTTP-Endpunkt mit Quellentoken, wenn du sichere Wiederholungen brauchst.
+`cld pulse source-tokens create --output-file <path>` speichert ein Token in einer neuen privaten Datei und gibt es nie aus.
+
+## Stelle Kapazität oder eine Base wieder her
+
+Die Base-Administration ändert Quellen, Zugriff und Aufbewahrung. Die Cloud-Administration verbindet den Speicher und setzt Base-Richtlinien, Grenzen und interne Ziele.
+Der Betreiber stellt eine eigene ClickHouse-Instanz bereit. Ohne sie erscheint **Pulse ist noch nicht eingerichtet**; andere Cloud-Apps bleiben verfügbar.
+
+:::reference
+- **Base-Speicher voll:** Neue Werte ergeben 409; Lesen bleibt möglich. Verkürze die Aufbewahrung oder lass die Cloud-Administration den Grenzwert erhöhen.
+- **Instanz mit weniger als 10% freiem Speicher:** Neue Werte ergeben 503 mit einer Wiederholungsfrist. Lesen bleibt möglich; die Cloud-Administration erhält eine Benachrichtigung.
+- **Kürzere Aufbewahrung:** Prüfe Stichtag, betroffene Zeilen und geschätzte Bytes vor der Bestätigung. Sensible Felder werden geleert; ihre Ereigniszeilen bleiben.
+- **Stundenwerte hängen hinterher:** Dieser Hinweis unter **Verwaltung → Pulse → Bases** bedeutet verzögerte Berechnung oder Versiegelung. Prüfe diese Jobs vor dem Leeren.
+- **Fehlgeschlagener Vorgang:** Eine neue Base muss zuerst aktiv werden. Wähle nach fehlgeschlagener Einrichtung, Leerung oder Löschung **Erneut versuchen**.
+- **Gesperrtes Schreiben:** Eine fehlende Datenbank oder ein abweichender Prüfpunkt braucht eine passende Wiederherstellung und **Erneut prüfen** durch die Cloud-Administration. Leeren bleibt solange gesperrt.
+:::
+
+:::warning Leeren und Neuanlegen verwerfen Messwerte
+Leeren behält Quellen, Tokens, Einstellungen und Zugriff. **Leer neu anlegen** durch die Cloud-Administration beginnt ebenfalls mit leeren Messdaten.
+Löschen widerruft Tokens und Datenbank-Lesezugriff und entfernt dann die Base. Du kannst diese Vorgänge in Pulse nicht rückgängig machen.
+:::
+
+Eine Base bleibt während der Löschung auf der Übersicht ihrer Administration, bis die Löschung abgeschlossen ist.
+Prüfe den Vorgangszustand, bevor du eine angenommene Anfrage als abgeschlossene Arbeit behandelst.

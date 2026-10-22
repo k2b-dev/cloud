@@ -93,7 +93,7 @@ await deleteProject("atlas");
 - `select`;
 - `tags`;
 - `boolean`;
-- `datetime`, with optional date-only mode;
+- `datetime`, with a date-only mode (`dateOnly`) or an optional time (`optionalTime`, see [date pickers](/en/ui/input/date-picker#add-a-time-only-when-needed));
 - `info`, which displays content and is excluded from the result.
 
 Fields share `label`, `description`, `placeholder`, `required`, `default`, and a `validate` function where applicable. Form-state validation checks required values, text-length and tag-count constraints, and the custom validator. Errors appear when the form is first submitted and follow each change after that. A required boolean field must be checked. Number bounds and PIN length configure their controls but do not create additional form-state error messages. The built-in messages follow the document locale ("At least 3 characters" / "Mindestens 3 Zeichen"); a `validate` result is shown as returned, so the app localizes it.
@@ -167,6 +167,13 @@ use context Commands so search and Layout Help share the active shortcuts.
 ## Custom dialogs
 
 `prompts.dialog` passes a typed `close(result)` callback to the component. Use it when the standard methods cannot express the content or actions.
+
+The second argument is the `DialogRender` context. Register a handler with
+`context.setDismissHandler` to guard Escape, backdrop clicks and the supplied
+header's close button while saving or checking unsaved changes. Call `close`
+when dismissal is allowed; explicit `close(result)` bypasses the guard. Disable
+custom Cancel buttons while busy, or route them through `context.requestDismiss`.
+Without a handler, existing dismissal behavior stays unchanged.
 
 Every prompt keeps its header, with the title and close button, in view. When the content is taller than the dialog, only the body scrolls; the action row of `alert`, `success`, `error`, `confirm`, `prompt`, `promptNumber`, and `form` stays below it. In `prompts.dialog`, the component keeps its natural height and scrolls under the header, together with any actions it renders. A root that sets `min-h-0` or its own overflow shrinks to the dialog instead. As a flex column, it can then scroll a list with `min-h-0`, such as `ScrollArea`, above an action row that stays in view. `PanelDialog` with `PanelDialog.Footer` provides that structure ready-made. A child that should fill a `full` dialog sets its own flex sizing, for example `flex-1 min-h-0`.
 
@@ -295,6 +302,7 @@ type FieldSchema =
   | (PromptFieldBase<string> & {
       type: "datetime";
       dateOnly?: boolean;
+      optionalTime?: boolean;
     })
   | {
       type: "info";
@@ -350,7 +358,11 @@ type DialogCore = {
 `undefined` by default; `cancelBehavior="ignore"` disables those dismissals.
 `initialFocus` defaults to `"first-input"` and applies in the next animation
 frame after the dialog opens. Focus that the content or a person moved before
-that frame stays where it went. `setDismissHandler` routes Escape
+that frame stays where it went. Until then, a dialog that opens over the page
+has the browser's own pick: the content's `autofocus` element, or else its
+first focusable element. A target that must take keys as the dialog opens,
+such as a document that Page Down scrolls, carries `autofocus` as well as
+being the `initialFocus` target. `setDismissHandler` routes Escape
 and backdrop through the application's async guard; that handler must call
 `close()` to complete dismissal. `dialogCore.close` addresses the top dialog.
 Opening requires a browser and throws without `document`.
@@ -386,11 +398,28 @@ answers the prompt with `undefined`, like Cancel.
 
 The dialog adds a same-URL history entry while it is open. Back, or the
 Android back gesture, closes it and every dialog opened after it; nested
-history dialogs close one Back at a time. Closing it any other way removes the
+history dialogs close one Back at a time. Closing it normally removes the
 entry again, and the returned promise settles only after that, so the caller
 can navigate or open the next dialog right away. Dialogs closed together leave
 the history in one step. After a reload, a leftover entry never reopens a
 dialog or its transient state.
+
+Application `popstate` listeners do not receive a Back or Forward that keeps
+the address and only moves between dialog or sheet entries and the page beneath
+them when the browser supports the Navigation API. Without it, only the
+synthetic Back on close is suppressed; user Back and Forward still reach listeners.
+A Back or Forward that changes the address still reaches them, also when
+the application pushed or replaced an address while a dialog was open; closing
+such a dialog then leaves that history alone.
+
+When islands are disposed, for example because navigation replaces the page
+content, every open dialog closes, top first, whichever code opened it. The
+dismiss guard does not apply. A dialog that waits for an earlier Back never
+opens once islands were disposed in the meantime. Disposal never moves
+history: the entries of these dialogs, and of history dialogs closed just
+before, stay in the browser for the router. The dialog core then treats them
+like page entries, so a later Back onto one closes only dialogs opened after
+it.
 
 Use the option for dialogs a person opens on purpose. Leave it off for
 confirmations inside another dialog, which Back closes together with their
@@ -409,7 +438,7 @@ Search results need unique, descriptive labels. A preview or icon may supplement
 
 ## Runtime
 
-Prompts are browser interactions and must be called from hydrated code. Their content is mounted through the shared `@k2b/ui` portal into one modal dialog stack at runtime.
+Prompts are browser interactions and must be called from browser code. Their content is mounted through the shared `@k2b/ui` portal into one modal dialog stack at runtime.
 
 Do not call a prompt during server rendering. Await it from an event handler, then start the mutation only after a confirmed result.
 

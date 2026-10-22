@@ -9,7 +9,7 @@ import { decodeJwt, generateKeyPair } from "jose";
 import { z } from "zod";
 import { type FixtureCorpus, fixtureHelpReader } from "../../test/help-reader";
 import { compileCapabilities } from "../_internal/capabilities";
-import { defineCapabilities } from "../contracts/capabilities";
+import { CAPABILITY_MAX_RESULT_BYTES, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { type AuthContext, auth, type RequestActor } from "../server";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
@@ -128,7 +128,7 @@ const help: FixtureCorpus = {
         title: "Erste Schritte",
         description: "Demo-Elemente erstellen und prüfen.",
         order: 10,
-        markdown: "# Erste Schritte\n\nErstelle ein Element und prüfe den aktuellen Zustand.",
+        markdown: "# Erste Schritte\n\nErstelle ein Element und prüfe den aktuellen Zustand.\n\nDrücke :kbd[mod+k].",
         searchText: "erste schritte element erstellen prüfen aktueller zustand",
       },
     ],
@@ -139,7 +139,7 @@ const help: FixtureCorpus = {
       title: "Getting started",
       description: "Create and inspect demo items.",
       order: 10,
-      markdown: "# Getting started\n\nCreate an item, then inspect its current state.",
+      markdown: '# Getting started\n\nCreate an item, then inspect its current state.\n\nPress :kbd[mod+k].\n\n**Hide**{icon="eye-off"}',
       searchText: "getting started create inspect demo items current state",
     },
   ],
@@ -228,6 +228,7 @@ const createMcpRoutes = (dependencies: McpTestDependencies = {}) =>
   createMcpRoutesBase({
     listApps: async () => [summary(app)],
     getOperatorLocale: async () => "en",
+    getOperatorTimeZone: async () => "UTC",
     getAppUrl: async () => "cloud.example",
     authenticate: authenticated,
     withActiveSigner,
@@ -276,6 +277,9 @@ describe("capability MCP projection", () => {
       help: fixtureHelpReader(async () => [help]),
       getCapability: async () => app,
       authenticate: authenticated,
+      getAppUrl: async () => "https://cloud.example",
+      fetch: async () =>
+        Response.json({ data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }], links: [{ rel: "open", href: "/app/demo/one" }] }),
     });
     const transport = new StreamableHTTPClientTransport(new URL("http://localhost/mcp/v1"), {
       requestInit: { headers: { authorization: "Bearer caller" } },
@@ -286,6 +290,21 @@ describe("capability MCP projection", () => {
     try {
       expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("demo__query__get");
       expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("cloud__resource__read");
+      for (const name of ["demo__query__get", "demo__action__create", "cloud__resource__read"]) {
+        const result = await client.callTool({
+          name,
+          arguments:
+            name === "cloud__resource__read"
+              ? { type: "demo.item", id: "one" }
+              : name === "demo__action__create"
+                ? { title: "SDK item", idempotencyKey: "sdk-created" }
+                : { id: "one" },
+        });
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toMatchObject({
+          refs: [{ type: "demo.item", id: "one", href: "https://cloud.example/open/demo.item/~one" }],
+        });
+      }
       expect((await client.listResources()).resources).toMatchObject([{ uri: "cloud://help/demo/getting-started" }]);
       expect((await client.readResource({ uri: "cloud://help/demo/getting-started" })).contents[0]).toMatchObject({
         mimeType: "text/markdown",
@@ -673,7 +692,11 @@ describe("capability MCP projection", () => {
       { jsonrpc: "2.0", id: 31, method: "resources/read", params: { uri: "cloud://help/demo/getting-started" } },
       "2025-11-25",
     );
-    expect(await read.json()).toMatchObject({ result: { contents: [{ text: expect.stringContaining("Create an item") }] } });
+    const resource = z.object({ result: z.object({ contents: z.array(z.object({ text: z.string() })) }) }).parse(await read.json());
+    expect(resource.result.contents[0]!.text).toContain("Ctrl+K (⌘K on Mac)");
+    expect(resource.result.contents[0]!.text).toContain("**Hide**");
+    expect(resource.result.contents[0]!.text).not.toContain('{icon="');
+    expect(resource).toMatchObject({ result: { contents: [{ text: expect.stringContaining("Create an item") }] } });
 
     const searched = await rpc(routes, {
       jsonrpc: "2.0",
@@ -698,6 +721,9 @@ describe("capability MCP projection", () => {
       params: { name: "cloud__help__read", arguments: { appId: "demo", documentId: "getting-started", query: "current state" } },
     });
     const readResult = (await toolRead.json()) as { result: { structuredContent: unknown; content: Array<Record<string, unknown>> } };
+    const toolMarkdown = z.object({ document: z.object({ markdown: z.string() }) }).parse(readResult.result.structuredContent)
+      .document.markdown;
+    expect(toolMarkdown).toContain("Ctrl+K (⌘K on Mac)");
     expect(readResult).toMatchObject({
       result: {
         structuredContent: { document: { markdown: expect.stringContaining("current state"), truncated: false } },
@@ -943,7 +969,10 @@ describe("capability MCP projection", () => {
     expect(response.status).toBe(200);
     const result = ((await response.json()) as { result: Record<string, any> }).result;
     expect(result.isError).toBeUndefined();
-    expect(result.structuredContent).toMatchObject({ data: { id: "created" } });
+    expect(result.structuredContent).toMatchObject({
+      data: { id: "created" },
+      refs: [{ type: "demo.item", id: "created", href: "https://cloud.example/open/demo.item/~created" }],
+    });
     expect(result.content).toContainEqual(
       expect.objectContaining({
         type: "resource_link",
@@ -970,7 +999,7 @@ describe("capability MCP projection", () => {
     expect(forwarded?.get("idempotency-key")).toBe("create-1");
   });
 
-  test("reads a typed resource ref through its current canonical reader", async () => {
+  test.each([false, true])("reads a resource ref (enriched: %s) through its canonical reader", async (enriched) => {
     let requestedUrl = "";
     let requestedBody: unknown;
     const routes = createMcpRoutes({
@@ -986,12 +1015,110 @@ describe("capability MCP projection", () => {
       jsonrpc: "2.0",
       id: 70,
       method: "tools/call",
-      params: { name: "cloud__resource__read", arguments: { type: "demo.item", id: "one" } },
+      params: {
+        name: "cloud__resource__read",
+        arguments: { type: "demo.item", id: "one", ...(enriched ? { title: "One", href: "https://cloud.test/open/demo.item/~one" } : {}) },
+      },
     });
 
-    expect(await response.json()).toMatchObject({ result: { structuredContent: { data: { id: "one" } } } });
+    expect(await response.json()).toMatchObject({
+      result: {
+        structuredContent: {
+          data: { id: "one" },
+          refs: [{ type: "demo.item", id: "one", href: "https://cloud.example/open/demo.item/~one" }],
+        },
+      },
+    });
     expect(requestedUrl).toContain("/queries/get");
     expect(requestedBody).toEqual({ input: { id: "one" } });
+  });
+
+  test("omits optional hrefs when enrichment would exceed the MCP result limit", async () => {
+    const refs = Array.from({ length: 100 }, (_, index) => ({ type: "demo.item", id: `${index}-${"ü".repeat(500)}` }));
+    const body = { data: { id: "" }, refs };
+    const resultBytes = () =>
+      new TextEncoder().encode(JSON.stringify({ structuredContent: body, content: [{ type: "text", text: JSON.stringify(body) }] }))
+        .byteLength;
+    body.data.id = "x".repeat(Math.floor((CAPABILITY_MAX_RESULT_BYTES - resultBytes() - 100) / 2));
+    expect(resultBytes()).toBeLessThan(CAPABILITY_MAX_RESULT_BYTES);
+    expect(resultBytes()).toBeGreaterThan(CAPABILITY_MAX_RESULT_BYTES - 200);
+    const routes = createMcpRoutes({ getCapability: async () => app, fetch: async () => Response.json(body) });
+    const response = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 73,
+      method: "tools/call",
+      params: { name: "demo__query__get", arguments: { id: "one" } },
+    });
+    const result = z
+      .object({
+        result: z.object({
+          isError: z.boolean().optional(),
+          structuredContent: z.object({ data: z.object({ id: z.string() }), refs: z.array(z.record(z.string(), z.unknown())) }),
+        }),
+      })
+      .parse(await response.json()).result;
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toEqual(body);
+  });
+
+  test("counts semantic resource links before keeping optional hrefs", async () => {
+    // About 30 KiB of hrefs: the body alone still fits with them, but not with the 44 KiB of resource_link items.
+    const refs = Array.from({ length: 5 }, (_, index) => ({ type: "demo.item", id: `${index}-${"ü".repeat(500)}` }));
+    const links = Array.from({ length: 20 }, (_, index) => ({ rel: "open", href: `/demo/${index}/${"y".repeat(1990)}` }));
+    const body = { data: { id: "" }, refs, links };
+    const plainBytes = () =>
+      new TextEncoder().encode(
+        JSON.stringify({
+          structuredContent: body,
+          content: [
+            { type: "text", text: JSON.stringify(body) },
+            ...links.map((link) => ({ type: "resource_link", uri: `${"o".repeat(200)}${link.href}`, name: link.rel })),
+          ],
+        }),
+      ).byteLength;
+    body.data.id = "x".repeat(Math.floor((CAPABILITY_MAX_RESULT_BYTES - plainBytes() - 10_000) / 2));
+    const routes = createMcpRoutes({ getCapability: async () => app, fetch: async () => Response.json(body) });
+    const response = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 74,
+      method: "tools/call",
+      params: { name: "demo__query__get", arguments: { id: "one" } },
+    });
+    const result = z
+      .object({
+        result: z.object({
+          isError: z.boolean().optional(),
+          structuredContent: z.record(z.string(), z.unknown()),
+          content: z.array(z.object({ type: z.string() })),
+        }),
+      })
+      .parse(await response.json()).result;
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toEqual(body);
+    expect(result.content.filter((item) => item.type === "resource_link")).toHaveLength(links.length);
+  });
+
+  test("preserves successful capability results when the registry goes offline during link enrichment", async () => {
+    let listings = 0;
+    const routes = createMcpRoutes({
+      getCapability: async () => app,
+      listApps: async () => {
+        if (++listings > 1) throw new Error("Registry went offline");
+        return [summary(app)];
+      },
+      authenticate: authenticated,
+      fetch: async () => Response.json({ data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }] }),
+    });
+    const response = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 72,
+      method: "tools/call",
+      params: { name: "demo__query__get", arguments: { id: "one" } },
+    });
+    expect(await response.json()).toMatchObject({
+      result: { structuredContent: { data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }] } },
+    });
+    expect(listings).toBe(2);
   });
 
   test("returns actionable resource-ref validation and reader errors", async () => {
@@ -1047,6 +1174,68 @@ describe("capability MCP projection", () => {
     expect(forwarded?.get("idempotency-key")).toBeNull();
   });
 
+  test("puts an Action receipt with addresses before JSON, leaving Queries and errors unchanged", async () => {
+    const receipt = {
+      text: "Sent to {person}.",
+      slots: { person: { kind: "person", people: [{ name: "Lea Berg", address: "lea.berg@example.com" }] } },
+    };
+    const body = { data: { id: "created" }, receipt };
+    let failed = false;
+    const routes = createMcpRoutes({
+      getCapability: async () => app,
+      fetch: async (input) =>
+        failed
+          ? Response.json({ code: "FORBIDDEN", message: "No access" }, { status: 403 })
+          : Response.json(String(input).includes("/queries/") ? { data: body.data } : body),
+    });
+    const call = async (name: string) =>
+      (
+        await (
+          await rpc(routes, {
+            jsonrpc: "2.0",
+            id: 84,
+            method: "tools/call",
+            params: { name, arguments: { id: "one" } },
+          })
+        ).json()
+      ).result;
+    const action = await call("demo__action__update");
+    expect(action.content).toEqual([
+      { type: "text", text: "Sent to Lea Berg <lea.berg@example.com>." },
+      { type: "text", text: JSON.stringify(body) },
+    ]);
+    expect(action.structuredContent).toEqual(body);
+    const query = await call("demo__query__get");
+    expect(query.content).toEqual([{ type: "text", text: JSON.stringify({ data: body.data }) }]);
+    failed = true;
+    const error = await call("demo__action__update");
+    expect(error).toEqual({
+      isError: true,
+      structuredContent: { code: "FORBIDDEN", message: "No access" },
+      content: [{ type: "text", text: JSON.stringify({ code: "FORBIDDEN", message: "No access" }) }],
+    });
+  });
+
+  test("drops optional receipt text when only the original Action result fits", async () => {
+    const body = { data: { id: "" }, receipt: { text: "Result delivered." } };
+    const bytes = () =>
+      new TextEncoder().encode(JSON.stringify({ structuredContent: body, content: [{ type: "text", text: JSON.stringify(body) }] }))
+        .byteLength;
+    body.data.id = "x".repeat(Math.floor((CAPABILITY_MAX_RESULT_BYTES - bytes() - 4) / 2));
+    expect(bytes()).toBeLessThanOrEqual(CAPABILITY_MAX_RESULT_BYTES);
+    const routes = createMcpRoutes({ getCapability: async () => app, fetch: async () => Response.json(body) });
+    const response = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 85,
+      method: "tools/call",
+      params: { name: "demo__action__update", arguments: { id: "one" } },
+    });
+    const result = (await response.json()).result;
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toEqual([{ type: "text", text: JSON.stringify(body) }]);
+    expect(result.structuredContent).toEqual(body);
+  });
+
   test("returns an actionable protocol error when a live tool disappears", async () => {
     const routes = createMcpRoutes({
       getCapability: async () => null,
@@ -1086,4 +1275,50 @@ describe("capability MCP projection", () => {
       message: "No access to this item",
     });
   });
+});
+
+test("MCP keeps its JSON socket raised until a tool response or error and resets it", async () => {
+  for (const fail of [false, true]) {
+    const calls: number[] = [];
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const routes = createMcpRoutes({
+      getCapability: async () => app,
+      fetch: async () => {
+        entered.resolve();
+        await release.promise;
+        if (fail) throw new Error("upstream unavailable");
+        return Response.json({ data: { id: "one" } });
+      },
+    });
+    const pending = routes.request(
+      "/mcp/v1",
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json, text/event-stream",
+          "content-type": "application/json",
+          "mcp-protocol-version": "2025-06-18",
+          authorization: "Bearer caller",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "demo__query__get", arguments: { id: "one" } },
+        }),
+      },
+      { timeout: (_request: Request, seconds: number) => calls.push(seconds) },
+    );
+    try {
+      await entered.promise;
+      expect(calls).toEqual([55]);
+    } finally {
+      release.resolve();
+    }
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect((await response.json()).result.isError ?? false).toBe(fail);
+    expect(calls).toEqual([55, 10]);
+  }
 });

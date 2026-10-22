@@ -19,11 +19,14 @@ import {
   aiChatTasks,
   aiConversations,
   aiSkills,
+  CHAT_TASK_REASON_CODES,
   ChatTaskGrantsSchema,
   ChatTaskIdSchema,
   ChatTaskOccurrenceIdSchema,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,
+  chatTaskNeedsNewTime,
+  chatTaskReasonSentence,
   isConversationResourceCursor,
   normalizeChatTaskSchedule,
   toAiChatTaskOccurrenceView,
@@ -36,17 +39,20 @@ import {
   capabilityIdempotencyConflict,
   capabilityPage,
   defineCapabilities,
+  geoContract,
   PrincipalSchema,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
 import { accessRevision, isAppSessionActor, resolveDisplayNames } from "@k2b/cloud/server";
-import { type AuditActor, accountsAppService, audit } from "@k2b/cloud/services";
+import { type AuditActor, accountsAppService, audit, coreGeo } from "@k2b/cloud/services";
+import { principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { aiChatTaskRuntime, reconcileAiChatTasks } from "./ai-chat-tasks-runtime";
 import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
+import { runGeoQuery } from "./geo-capability-result";
 import { taskGrantReview } from "./task-grant-presentation";
 
 const CORE_APP_ID = "core";
@@ -95,26 +101,44 @@ const CHAT_MESSAGE_TOOL_NAME = aiCapabilityId(CORE_APP_ID, "ai.chat.message");
 const ChatTaskCreateInputSchema = z
   .object({
     chatId: ChatIdSchema,
-    prompt: z.string().trim().min(1).max(10_000).describe("Exact prompt to deliver to this chat when the task runs."),
+    title: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe(
+        'Short name of the routine in the user\'s language, for example "Neue Rechnungen eintragen". People see it in notifications and lists.',
+      ),
+    prompt: z.string().trim().min(1).max(10_000).describe("Exact prompt to deliver to this chat when the routine runs."),
     grants: ChatTaskGrantsSchema.default([]).describe(
-      "Task grants: capability query/action, HTTP requests or Studio RSQL database operations. Fix input fields as narrowly as the request allows; empty fixedInput permits any inputs within current user access. Always-approval capabilities cannot be granted.",
+      "Routine grants: capability query/action, HTTP requests or Studio RSQL database operations. Fix input fields as narrowly as the request allows; empty fixedInput permits any inputs within current user access. Always-approval capabilities cannot be granted.",
     ),
-    schedule: ChatTaskScheduleInputSchema.describe("When this task should run."),
+    schedule: ChatTaskScheduleInputSchema.describe("When this routine should run."),
     timezone: z.string().min(1).max(100).describe("Exact IANA timezone from the current runtime context."),
   })
   .strict();
 const ChatTaskUpdateInputSchema = z
   .object({
     taskId: ChatTaskIdSchema,
-    prompt: z.string().trim().min(1).max(10_000).optional().describe("Replacement prompt delivered when the task runs."),
+    title: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe(
+        'Short name of the routine in the user\'s language, for example "Neue Rechnungen eintragen". People see it in notifications and lists.',
+      ),
+    prompt: z.string().trim().min(1).max(10_000).optional().describe("Replacement prompt delivered when the routine runs."),
     grants: ChatTaskGrantsSchema.optional().describe("Replacement full grant list; requires user review. Omit to retain existing grants."),
     schedule: ChatTaskScheduleInputSchema.optional().describe("Replacement one-time or recurring schedule."),
     timezone: z.string().min(1).max(100).optional().describe("Required with schedule; copy the current runtime IANA timezone."),
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.prompt === undefined && value.schedule === undefined && value.grants === undefined)
-      context.addIssue({ code: "custom", message: "Provide a prompt, schedule or grants" });
+    if (value.title === undefined && value.prompt === undefined && value.schedule === undefined && value.grants === undefined)
+      context.addIssue({ code: "custom", message: "Provide a title, prompt, schedule or grants" });
     if (value.schedule !== undefined && value.timezone === undefined)
       context.addIssue({ code: "custom", path: ["timezone"], message: "Provide the runtime timezone with a schedule" });
     if (value.schedule === undefined && value.timezone !== undefined)
@@ -122,14 +146,14 @@ const ChatTaskUpdateInputSchema = z
   });
 const ChatTaskIdInputSchema = z.object({ taskId: ChatTaskIdSchema }).strict();
 const ChatTaskReadInputSchema = z
-  .object({ id: ChatTaskIdSchema.describe("Scheduled-task ID returned by List scheduled AI tasks or a core.ai.task ref.") })
+  .object({ id: ChatTaskIdSchema.describe("Routine ID returned by List Assistant routines or a core.ai.task ref.") })
   .strict();
 const ChatTasksListInputSchema = z
   .object({
     chatId: ChatIdSchema.optional().describe("Optional AI conversation ID returned by chat search/read or a core.ai.chat ref."),
-    state: z.enum(["active", "paused", "completed", "needs_attention"]).optional().describe("Optional task lifecycle state."),
-    limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of tasks to return."),
-    cursor: z.string().regex(/^\d+$/).optional().describe("Opaque cursor returned by the previous task page."),
+    state: z.enum(["active", "paused", "completed", "needs_attention"]).optional().describe("Optional routine lifecycle state."),
+    limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of routines to return."),
+    cursor: z.string().regex(/^\d+$/).optional().describe("Opaque cursor returned by the previous routine page."),
   })
   .strict();
 const ChatTaskDataSchema = z
@@ -137,6 +161,9 @@ const ChatTaskDataSchema = z
     id: ChatTaskIdSchema,
     chatId: ChatIdSchema,
     chatTitle: z.string(),
+    title: z.string().nullable(),
+    name: z.string(),
+    reason: z.object({ code: z.enum(CHAT_TASK_REASON_CODES), sentence: z.string() }).nullable(),
     prompt: z.string(),
     grants: ChatTaskGrantsSchema,
     schedule: z.union([z.object({ kind: z.literal("once"), runAt: z.string() }), z.object({ kind: z.literal("cron"), cron: z.string() })]),
@@ -155,7 +182,7 @@ const ChatTaskDetailDataSchema = z
         id: ChatTaskOccurrenceIdSchema,
         scheduledFor: z.string(),
         trigger: z.enum(["scheduled", "manual"]),
-        state: z.enum(["queued", "running", "completed", "failed"]),
+        state: z.enum(["queued", "running", "completed", "failed", "stopped"]),
         error: z.string().nullable(),
         createdAt: z.string(),
         completedAt: z.string().nullable(),
@@ -171,7 +198,19 @@ const ChatTaskListItemDataSchema = ChatTaskDataSchema.extend({
 const appSessionTaskError = (context: Pick<CapabilityExecutionContext, "actor">) =>
   isAppSessionActor(context.actor) ? fail(err.forbidden("Use Cloud on the web for this.")) : null;
 
-const taskData = (task: AiChatTask): z.infer<typeof ChatTaskDataSchema> => ({
+const taskData = (task: AiChatTask, locale: string): z.infer<typeof ChatTaskDataSchema> => ({
+  title: task.title,
+  name: task.name,
+  reason:
+    task.reasonCode && task.reasonAt
+      ? {
+          code: task.reasonCode,
+          sentence: chatTaskReasonSentence(
+            { code: task.reasonCode, at: task.reasonAt, action: task.reasonAction ?? undefined },
+            { locale, timeZone: task.timezone },
+          ),
+        }
+      : null,
   id: task.shortId,
   chatId: task.chatId,
   chatTitle: task.chatTitle,
@@ -198,7 +237,7 @@ const referenceMessages = i18n.define({
       active: "Active",
       paused: "Paused",
       completed: "Completed",
-      needs_attention: "Needs attention",
+      needs_attention: "Needs you",
       recurring: "Recurring",
       chat: "AI conversation",
     },
@@ -206,7 +245,7 @@ const referenceMessages = i18n.define({
       active: "Aktiv",
       paused: "Pausiert",
       completed: "Abgeschlossen",
-      needs_attention: "Eingriff erforderlich",
+      needs_attention: "Braucht dich",
       recurring: "Wiederkehrend",
       chat: "KI-Chat",
     },
@@ -222,7 +261,7 @@ const taskReference = (task: AiChatTask, locale: string) => {
   return {
     type: "core.ai.task",
     id: task.shortId,
-    title: task.prompt.trim().slice(0, 500),
+    title: task.name,
     preview: `${t[task.state]} · ${schedule} · ${task.timezone}`,
     icon: "ti ti-calendar-clock",
   };
@@ -243,22 +282,24 @@ const chatReference = (chat: AiConversation) => ({
 });
 const taskUpdateSummary = (input: z.infer<typeof ChatTaskUpdateInputSchema>, task: AiChatTask, locale: string): string => {
   const { t } = coreCapabilityMessages(locale);
-  const chat = task.chatTitle;
-  if (input.prompt !== undefined && input.schedule !== undefined) return t.taskInstructionsAndScheduleChanged({ chat });
-  if (input.prompt !== undefined) return t.taskInstructionsChanged({ chat });
-  if (input.schedule !== undefined) return t.taskScheduleChanged({ chat });
-  return t.taskGrantsChanged({ chat });
+  const name = task.name;
+  if (input.title !== undefined && input.prompt === undefined && input.schedule === undefined && input.grants === undefined)
+    return t.taskRenamed({ name: task.name });
+  if (input.prompt !== undefined && input.schedule !== undefined) return t.taskInstructionsAndScheduleChanged({ name });
+  if (input.prompt !== undefined) return t.taskInstructionsChanged({ name });
+  if (input.schedule !== undefined) return t.taskScheduleChanged({ name });
+  return t.taskGrantsChanged({ name });
 };
 const invalidTaskState = (task: AiChatTask, action: "pause" | "resume" | "run"): string | null => {
   if (action === "pause")
-    return task.state === "active" || task.state === "paused" ? null : `Task ${task.shortId} cannot be paused while ${task.state}`;
+    return task.state === "active" || task.state === "paused" ? null : `Task “${task.name}” cannot be paused while ${task.state}`;
   if (action === "resume")
-    return task.state === "needs_attention" && task.schedule.kind === "once"
-      ? `Task ${task.shortId} needs a new future schedule before it can resume`
+    return chatTaskNeedsNewTime(task)
+      ? `Task “${task.name}” needs a new future schedule before it can resume`
       : task.state === "paused" || task.state === "needs_attention" || task.state === "active"
         ? null
-        : `Task ${task.shortId} cannot be resumed while ${task.state}`;
-  return task.state === "active" ? null : `Task ${task.shortId} cannot run while ${task.state}`;
+        : `Task “${task.name}” cannot be resumed while ${task.state}`;
+  return task.state === "active" ? null : `Task “${task.name}” cannot run while ${task.state}`;
 };
 
 const ChatsSearchInputSchema = z
@@ -566,6 +607,7 @@ const readableSkill = (
 ) => aiSkills.getByShortId(skillId, context.accessSubject, permission);
 
 const chatHref = (chatId: string): string => `/app/assistant?conversation=${encodeURIComponent(chatId)}`;
+const skillHref = (skillId: string): string => `/app/assistant?skill=${encodeURIComponent(skillId)}`;
 
 const chatSummary = (chat: AiConversation) => ({
   id: chat.shortId,
@@ -642,8 +684,8 @@ export const aiCapabilities = defineCapabilities({
       reader: "ai.chat.read",
     },
     "ai.task": {
-      title: "Scheduled AI task",
-      description: "A one-time or recurring prompt attached to an owned AI conversation.",
+      title: "Assistant routine",
+      description: "A one-time or recurring prompt attached to one of your AI conversations.",
       icon: "ti ti-calendar-clock",
       reader: "ai.task.read",
     },
@@ -655,6 +697,51 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "address.autocomplete": {
+      title: "Suggest addresses",
+      description:
+        "Return up to 5 address suggestions for 3–300 characters. Results carry provenance; keep attribution. Cache hits are free, otherwise costs credits within the operator budget.",
+      input: geoContract.autocomplete.input,
+      data: geoContract.autocomplete.data,
+      openWorld: true,
+      run: (input, context) => runGeoQuery(context, () => coreGeo.autocomplete(input, context)),
+    },
+    "address.geocode": {
+      title: "Locate an address",
+      description:
+        "Locate address text up to 300 characters or structured fields up to 200 each. Requests 5 provider candidates; confidence ≥ 0.5 is plausible. Returns one address, up to 5 candidates on ambiguity, or not found. Results carry provenance; keep attribution. Costs credits within the operator budget; cache hits are free.",
+      input: geoContract.geocode.input,
+      data: geoContract.geocode.data,
+      openWorld: true,
+      run: (input, context) => runGeoQuery(context, () => coreGeo.geocode(input, context)),
+    },
+    "address.reverse": {
+      title: "Find an address at coordinates",
+      description:
+        "Return an address at latitude/longitude. Results carry provenance; keep attribution. Costs credits within the operator budget; cache hits are free.",
+      input: geoContract.reverse.input,
+      data: geoContract.reverse.data,
+      openWorld: true,
+      run: (input, context) => runGeoQuery(context, () => coreGeo.reverse(input, context)),
+    },
+    "place.search": {
+      title: "Search places",
+      description:
+        "Return up to 20 places in 1–5 categories near a point, in a bbox/circle, or along polyline6. Along: at most 200 km per window, buffer 100–5,000 m (default 1,000). If truncated is true, narrow the distance window; an empty result then does not rule out matches. Includes available raw OSM opening hours, route position and straight-line distance. Results carry provenance; keep attribution. Costs credits within the operator budget; cache hits are free.",
+      input: geoContract.searchPlaces.input,
+      data: geoContract.searchPlaces.data,
+      openWorld: true,
+      run: (input, context) => runGeoQuery(context, () => coreGeo.searchPlaces(input, context)),
+    },
+    "geo.availability": {
+      title: "Check geo availability",
+      description:
+        "Return configuration status and the caller's person and Cloud budget exhaustion/reset times. Free: no provider call or budget charge.",
+      input: geoContract.availability.input,
+      data: geoContract.availability.data,
+      openWorld: false,
+      run: (_input, context) => runGeoQuery(context, () => coreGeo.availability(context)),
+    },
     "entities.search": {
       title: "Find access recipients",
       description:
@@ -720,7 +807,11 @@ export const aiCapabilities = defineCapabilities({
           const skill = await readableSkill(skillId, context, "admin");
           const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject));
           if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
-          return ok({ data: { skillId, accessRevision: accessRevision(grants), levels: ["read", "write", "admin"], grants } });
+          return ok({
+            data: { skillId, accessRevision: accessRevision(grants), levels: ["read", "write", "admin"], grants },
+            refs: [{ type: "core.ai.skill", id: skillId, title: skill.name }],
+            links: [{ rel: "open", href: skillHref(skillId) }],
+          });
         } catch (error) {
           if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
           throw error;
@@ -775,6 +866,7 @@ export const aiCapabilities = defineCapabilities({
           data: skillData(skill),
           summary: coreCapabilityMessages(context.locale).t.skillRead({ name: skill.name }),
           refs: [{ type: "core.ai.skill", id: skill.shortId }],
+          links: [{ rel: "open" as const, href: skillHref(skill.shortId) }],
         });
       },
     },
@@ -792,13 +884,14 @@ export const aiCapabilities = defineCapabilities({
           data: { skillId: skill.shortId, revision: skill.revision, path: reference.path, content: reference.content },
           summary: coreCapabilityMessages(context.locale).t.referenceRead({ path: reference.path, name: skill.name }),
           refs: [{ type: "core.ai.skill", id: skill.shortId }],
+          links: [{ rel: "open", href: skillHref(skill.shortId) }],
         });
       },
     },
     "ai.tasks.list": {
-      title: "List scheduled AI tasks",
+      title: "List Assistant routines",
       description:
-        "Normal entry for scheduled-task work. List the current user's tasks, optionally for a core.ai.chat ref or state; use returned core.ai.task refs with ai.task.read or task Actions.",
+        "Normal entry for routine work. List your routines, optionally for a core.ai.chat ref or state; use returned core.ai.task refs with ai.task.read or routine Actions.",
       input: ChatTasksListInputSchema,
       data: z.array(ChatTaskListItemDataSchema),
       openWorld: false,
@@ -808,16 +901,16 @@ export const aiCapabilities = defineCapabilities({
         const tasks = await aiChatTasks.list({ userId: context.user.id, ...input, offset, limit: input.limit + 1 });
         const items = tasks.slice(0, input.limit);
         return ok({
-          data: items.map((task) => ({ ...taskData(task), ref: { type: "core.ai.task" as const, id: task.shortId } })),
+          data: items.map((task) => ({ ...taskData(task, context.locale), ref: { type: "core.ai.task" as const, id: task.shortId } })),
           refs: items.map((task) => taskReference(task, context.locale)),
           page: capabilityPage(tasks.length > input.limit ? String(offset + input.limit) : undefined),
         });
       },
     },
     "ai.task.run.read": {
-      title: "Read a background task run",
+      title: "Read an Assistant routine run",
       description:
-        "Inspect one owned task run, including its normal-language result, errors and isolated execution history. Use task IDs and run IDs returned by ai.task.read. To repair a blocked task, use ai.task.update with reviewed grants and then ai.task.run.",
+        "Inspect one of your routine runs, including its normal-language result, errors and isolated execution history. Use routine IDs and run IDs returned by ai.task.read. To repair a blocked routine, use ai.task.update with reviewed grants and then ai.task.run.",
       input: z.object({ taskId: ChatTaskIdSchema, occurrenceId: ChatTaskOccurrenceIdSchema }).strict(),
       data: z
         .object({
@@ -828,7 +921,7 @@ export const aiCapabilities = defineCapabilities({
               taskId: ChatTaskIdSchema,
               scheduledFor: z.string(),
               trigger: z.enum(["scheduled", "manual"]),
-              state: z.enum(["queued", "running", "completed", "failed"]),
+              state: z.enum(["queued", "running", "completed", "failed", "stopped"]),
               error: z.string().nullable(),
               resultText: z.string().nullable(),
               createdAt: z.string(),
@@ -847,18 +940,19 @@ export const aiCapabilities = defineCapabilities({
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
           data: {
-            task: taskData(detail.task),
+            task: taskData(detail.task, context.locale),
             occurrence: toAiChatTaskOccurrenceView(detail.occurrence, detail.task.shortId),
             messages: detail.messages.map((message) => z.json().parse(message)),
           },
-          summary: detail.occurrence.resultText ?? detail.occurrence.error ?? t.taskRunState({ state: t[detail.occurrence.state] }),
+          summary: detail.occurrence.resultText ?? t.taskRunState({ state: t[detail.occurrence.state] }),
+          refs: [taskReference(detail.task, context.locale)],
         });
       },
     },
     "ai.task.read": {
-      title: "Read a scheduled AI task",
+      title: "Read an Assistant routine",
       description:
-        "Read one core.ai.task ref returned by ai.tasks.list or a task Action, including its parent core.ai.chat ref and recent runs.",
+        "Read one core.ai.task ref returned by ai.tasks.list or a routine Action, including its parent core.ai.chat ref and recent runs.",
       input: ChatTaskReadInputSchema,
       data: ChatTaskDetailDataSchema,
       openWorld: false,
@@ -869,7 +963,7 @@ export const aiCapabilities = defineCapabilities({
         const occurrences = (await aiChatTasks.listOccurrences({ userId: context.user.id, taskId: input.id })) ?? [];
         return ok({
           data: {
-            task: taskData(task),
+            task: taskData(task, context.locale),
             occurrences: occurrences.map((occurrence) => ({
               id: occurrence.shortId,
               scheduledFor: occurrence.scheduledFor,
@@ -882,7 +976,7 @@ export const aiCapabilities = defineCapabilities({
           },
           summary: coreCapabilityMessages(context.locale).t.taskRead({
             state: referenceMessages.resolve([context.locale]).t[task.state],
-            chat: task.chatTitle,
+            name: task.name,
           }),
           refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
@@ -1037,7 +1131,7 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             message: t.skillAccessChange({ name: skill.name, id: input.skillId }),
             details: [
-              { label: t.recipient, value: `${recipient!.displayName} — ${JSON.stringify(principal)}` },
+              { label: t.recipient, value: `${principalLabel(recipient!, context.locale)} — ${JSON.stringify(principal)}` },
               { label: t.before, value: previous ? level(previous.permission) : t.noAccess },
               { label: t.after, value: input.permission ? level(input.permission) : t.removeAccess },
               { label: t.appAccess, value: t.appAccessUnchanged },
@@ -1074,7 +1168,16 @@ export const aiCapabilities = defineCapabilities({
                   : await aiSkills.revokeAccess(skill.id, input.accessId, context.accessSubject, input.expectedAccessRevision)
                 : false;
           if (!changed) return fail(err.forbidden("The grant or permission is no longer available."));
-          return ok({ data: { changed: true }, refs: [{ type: "core.ai.skill", id: input.skillId }] });
+          const readable = await readableSkill(input.skillId, context);
+          return ok({
+            data: { changed: true },
+            ...(readable
+              ? {
+                  refs: [{ type: "core.ai.skill", id: input.skillId, title: skill.name }],
+                  links: [{ rel: "open" as const, href: skillHref(input.skillId) }],
+                }
+              : {}),
+          });
         } catch (error) {
           const result = skillRevisionError(error);
           if (result) return result;
@@ -1109,7 +1212,8 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(skill),
             summary: coreCapabilityMessages(context.locale).t.skillCreated({ name: skill.name }),
-            refs: [{ type: "core.ai.skill", id: skill.shortId }],
+            refs: [{ type: "core.ai.skill", id: skill.shortId, title: skill.name }],
+            links: [{ rel: "open", href: skillHref(skill.shortId) }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1163,7 +1267,8 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.skillUpdated({ name: updated.name }),
-            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+            refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
+            links: [{ rel: "open", href: skillHref(updated.shortId) }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1210,7 +1315,8 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.referenceSaved({ path: input.path, name: updated.name }),
-            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+            refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
+            links: [{ rel: "open", href: skillHref(updated.shortId) }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1257,7 +1363,8 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.referencesSaved({ count: input.references.length, name: updated.name }),
-            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+            refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
+            links: [{ rel: "open", href: skillHref(updated.shortId) }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1298,7 +1405,8 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(updated),
             summary: coreCapabilityMessages(context.locale).t.referenceRemoved({ path: input.path, name: updated.name }),
-            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+            refs: [{ type: "core.ai.skill", id: updated.shortId, title: updated.name }],
+            links: [{ rel: "open", href: skillHref(updated.shortId) }],
           });
         } catch (error) {
           const result = skillRevisionError(error);
@@ -1337,7 +1445,8 @@ export const aiCapabilities = defineCapabilities({
           summary: enabled
             ? coreCapabilityMessages(context.locale).t.skillEnabled({ name: skill.name })
             : coreCapabilityMessages(context.locale).t.skillDisabled({ name: skill.name }),
-          refs: [{ type: "core.ai.skill", id: skill.shortId }],
+          refs: [{ type: "core.ai.skill", id: skill.shortId, title: skill.name }],
+          links: [{ rel: "open", href: skillHref(skill.shortId) }],
         });
       },
     },
@@ -1388,9 +1497,9 @@ export const aiCapabilities = defineCapabilities({
       },
     },
     "ai.task.create": {
-      title: "Create a scheduled AI task",
+      title: "Create an Assistant routine",
       description:
-        "Create one reviewed autonomous task in an owned AI conversation. Discover the capabilities needed for the whole task first and propose their grants. Fix input fields such as a note or notebook ID where the user's task permits; leave them unrestricted when broader scope is needed. Code Mode works unattended with confirmed capability, HTTP and database grants; always-approval capabilities and interactive dialogs remain unavailable. Explain the proposed scope for user review. Resolve relative user wording to localAt before calling.",
+        "Create one reviewed autonomous routine in one of your AI conversations. Discover the capabilities needed for the whole routine first and propose their grants. Fix input fields such as a note or notebook ID where the user's request permits; leave them unrestricted when broader scope is needed. Code Mode works unattended with confirmed capability, HTTP and database grants; always-approval capabilities and interactive dialogs remain unavailable. Explain the proposed scope for user review. Resolve relative user wording to localAt before calling.",
       input: ChatTaskCreateInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1407,9 +1516,10 @@ export const aiCapabilities = defineCapabilities({
           const normalized = await normalizeChatTaskSchedule(input.schedule, input.timezone);
           const { t } = coreCapabilityMessages(context.locale);
           return ok({
-            message: t.taskCreate({ chat: `${chat.title} (${chat.shortId})` }),
+            message: t.taskCreate({ chat: chat.title }),
             details: [
-              { label: t.chat, value: `${chat.title} (${chat.shortId})` },
+              ...(input.title ? [{ label: t.name, value: input.title }] : []),
+              { label: t.chat, value: chat.title },
               { label: t.schedule, value: scheduleLabel(normalized.schedule, normalized.timezone, context.locale) },
               { label: t.instructions, value: input.prompt, display: "block" },
               await taskGrantReview(input.grants, context.locale),
@@ -1432,9 +1542,10 @@ export const aiCapabilities = defineCapabilities({
           });
           if (replay)
             return ok({
-              data: taskData(replay),
-              summary: coreCapabilityMessages(context.locale).t.taskCreated({ chat: replay.chatTitle }),
+              data: taskData(replay, context.locale),
+              summary: coreCapabilityMessages(context.locale).t.taskCreated({ name: replay.name }),
               refs: [taskReference(replay, context.locale), taskChatReference(replay, context.locale)],
+              links: [{ rel: "open", href: chatHref(replay.chatId) }],
             });
         } catch (error) {
           if (error instanceof AiChatTaskIdempotencyConflictError) return fail(capabilityIdempotencyConflict(error.message));
@@ -1453,6 +1564,8 @@ export const aiCapabilities = defineCapabilities({
             userId: context.user.id,
             chatId: input.chatId,
             prompt: input.prompt,
+            title: input.title,
+            locale: context.locale,
             grants: input.grants,
             ...normalized,
             idempotencyKey: context.idempotencyKey,
@@ -1465,16 +1578,17 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.notFound("Chat"));
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
-          data: taskData(task),
-          summary: coreCapabilityMessages(context.locale).t.taskCreated({ chat: task.chatTitle }),
+          data: taskData(task, context.locale),
+          summary: coreCapabilityMessages(context.locale).t.taskCreated({ name: task.name }),
           refs: [taskReference(task, context.locale), taskChatReference(task, context.locale)],
+          links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },
     "ai.task.update": {
-      title: "Update a scheduled AI task",
+      title: "Update an Assistant routine",
       description:
-        "Update the prompt, future schedule or capability grants of one owned task after reviewing the exact replacement. Read the task and failed run first when repairing missing rights. Fix inputs where practical, retain the intended broader scope where needed, and explicitly review expanded authority. Then resume or retry only after accounting for any writes already performed.",
+        "Update the prompt, future schedule or capability grants of one of your routines after reviewing the exact replacement. Read the routine and failed run first when repairing missing rights. Fix inputs where practical, retain the intended broader scope where needed, and explicitly review expanded authority. Then resume or retry only after accounting for any writes already performed.",
       input: ChatTaskUpdateInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1491,9 +1605,10 @@ export const aiCapabilities = defineCapabilities({
           const normalized = input.schedule ? await normalizeChatTaskSchedule(input.schedule, input.timezone) : null;
           const { t } = coreCapabilityMessages(context.locale);
           return ok({
-            message: t.taskUpdate({ id: task.shortId }),
+            message: t.taskUpdate({ name: task.name }),
             details: [
-              { label: t.chat, value: `${task.chatTitle} (${task.chatId})` },
+              ...(input.title ? [{ label: t.name, value: input.title }] : []),
+              { label: t.chat, value: task.chatTitle },
               {
                 label: t.schedule,
                 value: scheduleLabel(normalized?.schedule ?? task.schedule, normalized?.timezone ?? task.timezone, context.locale),
@@ -1521,21 +1636,23 @@ export const aiCapabilities = defineCapabilities({
           userId: context.user.id,
           taskId: input.taskId,
           prompt: input.prompt,
+          title: input.title,
           grants: input.grants,
           ...normalized,
         });
         if (!task) return fail(err.notFound("Task"));
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
-          data: taskData(task),
+          data: taskData(task, context.locale),
           summary: taskUpdateSummary(input, task, context.locale),
           refs: [taskReference(task, context.locale)],
+          links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },
     "ai.task.pause": {
-      title: "Pause a scheduled AI task",
-      description: "Pause one owned scheduled task after review.",
+      title: "Pause an Assistant routine",
+      description: "Pause one of your routines after review.",
       input: ChatTaskIdInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1550,7 +1667,7 @@ export const aiCapabilities = defineCapabilities({
         if (stateError) return fail(err.conflict(stateError));
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: t.taskPause({ id: task.shortId }),
+          message: t.taskPause({ name: task.name }),
           details: [
             { label: t.task, value: task.prompt, display: "block" },
             { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
@@ -1572,15 +1689,16 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.conflict("Task state changed; read it and retry"));
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
-          data: taskData(task),
-          summary: coreCapabilityMessages(context.locale).t.taskPaused({ chat: task.chatTitle }),
+          data: taskData(task, context.locale),
+          summary: coreCapabilityMessages(context.locale).t.taskPaused({ name: task.name }),
           refs: [taskReference(task, context.locale)],
+          links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },
     "ai.task.resume": {
-      title: "Resume a scheduled AI task",
-      description: "Resume one owned scheduled task after review.",
+      title: "Resume an Assistant routine",
+      description: "Resume one of your routines after review.",
       input: ChatTaskIdInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -1596,7 +1714,7 @@ export const aiCapabilities = defineCapabilities({
         if (stateError) return fail(err.conflict(stateError));
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: t.taskResume({ id: task.shortId }),
+          message: t.taskResume({ name: task.name }),
           details: [
             { label: t.task, value: task.prompt, display: "block" },
             { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
@@ -1619,17 +1737,18 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.conflict("Task state changed; read it and retry"));
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
-          data: taskData(task),
-          summary: coreCapabilityMessages(context.locale).t.taskResumed({ chat: task.chatTitle }),
+          data: taskData(task, context.locale),
+          summary: coreCapabilityMessages(context.locale).t.taskResumed({ name: task.name }),
           refs: [taskReference(task, context.locale)],
+          links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },
     "ai.task.run": {
-      title: "Run a scheduled AI task now",
+      title: "Run an Assistant routine now",
       description: "Queue one manual occurrence without changing the future schedule.",
       input: ChatTaskIdInputSchema,
-      data: z.object({ id: ChatTaskOccurrenceIdSchema, state: z.enum(["queued", "running", "completed", "failed"]) }),
+      data: z.object({ id: ChatTaskOccurrenceIdSchema, state: z.enum(["queued", "running", "completed", "failed", "stopped"]) }),
       destructive: false,
       openWorld: false,
       idempotency: "required",
@@ -1641,9 +1760,9 @@ export const aiCapabilities = defineCapabilities({
         if (stateError) return fail(err.conflict(stateError));
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: t.taskRun({ id: task.shortId }),
+          message: t.taskRun({ name: task.name }),
           details: [
-            { label: t.chat, value: `${task.chatTitle} (${task.chatId})` },
+            { label: t.chat, value: task.chatTitle },
             { label: t.instructions, value: task.prompt, display: "block" },
           ],
         });
@@ -1668,14 +1787,15 @@ export const aiCapabilities = defineCapabilities({
         void aiChatTaskRuntime.recover().catch(() => undefined);
         return ok({
           data: { id: occurrence.shortId, state: occurrence.state },
-          summary: coreCapabilityMessages(context.locale).t.taskQueued({ chat: task.chatTitle }),
+          summary: coreCapabilityMessages(context.locale).t.taskQueued({ name: task.name }),
           refs: [taskReference(task, context.locale)],
+          links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },
     "ai.task.delete": {
-      title: "Delete a scheduled AI task",
-      description: "Delete one task and all of its occurrence history after review.",
+      title: "Delete an Assistant routine",
+      description: "Delete one routine and all of its run history after review.",
       input: ChatTaskIdInputSchema,
       data: z.object({ deleted: z.literal(true) }),
       destructive: true,
@@ -1687,9 +1807,9 @@ export const aiCapabilities = defineCapabilities({
         if (!task) return fail(err.notFound("Task"));
         const { t } = coreCapabilityMessages(context.locale);
         return ok({
-          message: t.taskDelete({ id: task.shortId }),
+          message: t.taskDelete({ name: task.name }),
           details: [
-            { label: t.chat, value: `${task.chatTitle} (${task.chatId})` },
+            { label: t.chat, value: task.chatTitle },
             { label: t.instructions, value: task.prompt, display: "block" },
             { label: t.schedule, value: scheduleLabel(task.schedule, task.timezone, context.locale) },
           ],
@@ -1707,7 +1827,7 @@ export const aiCapabilities = defineCapabilities({
           result: deleted
             ? ok({
                 data: { deleted: true as const },
-                summary: coreCapabilityMessages(context.locale).t.taskDeleted({ chat: task.chatTitle }),
+                summary: coreCapabilityMessages(context.locale).t.taskDeleted({ name: task.name }),
               })
             : fail(err.notFound("Task")),
         });

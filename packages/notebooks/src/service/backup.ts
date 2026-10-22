@@ -1,12 +1,17 @@
 import { createHash } from "node:crypto";
 import { lazySync } from "@k2b/cloud";
 import { type LogEntry, logger, get as settingsGet, settingsService } from "@k2b/cloud/services";
+import { isNetworkTargetBlocked, NetworkTargetBlockedError } from "@k2b/cloud/services/network-security";
 import { parsePgJsonRecord } from "@k2b/cloud/services/postgres";
 import { decryptValue, encryptValue } from "@k2b/cloud/services/settings/crypto";
+import { parseNetworkAllowlistEnv } from "@k2b/cloud/shared";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { Worker } from "@k2b/sync";
 import { sql } from "bun";
+import { appEnv } from "../env";
 import { exportNotebookZip, type NotebookExport } from "./export";
+import { notebookServiceMessages } from "./messages";
+import { presignSnapshotObject, uploadSnapshotObjects } from "./snapshot-http";
 
 const DEFAULT_SNAPSHOT_CRON = "0 3 * * *";
 const SNAPSHOT_CRON_KEY = "notebooks.snapshot_cron";
@@ -287,6 +292,35 @@ const validateResolvedSnapshotConfig = (config: ResolvedSnapshotUpdate): Result<
   return validateSnapshotEndpoint(config.endpoint, config.region);
 };
 
+export const snapshotAllowlist = () =>
+  parseNetworkAllowlistEnv("NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS", appEnv.NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS);
+
+export const snapshotTargetBlocked = () => ({
+  code: "NOTEBOOK_SNAPSHOT_TARGET_BLOCKED",
+  status: 400 as const,
+  message: notebookServiceMessages.resolve(["en"]).t.snapshotTargetBlocked,
+});
+
+export const checkSnapshotTarget = async (
+  config: ResolvedSnapshotUpdate,
+  options?: Parameters<typeof isNetworkTargetBlocked>[2],
+): Promise<Result<void>> => {
+  const validation = validateResolvedSnapshotConfig(config);
+  if (!validation.ok || !config.enabled) return validation;
+  let target: URL;
+  try {
+    target = presignSnapshotObject(config, "notebooks/target-check");
+  } catch {
+    return fail(err.badInput("S3 endpoint and region must form a valid storage address."));
+  }
+  return (await isNetworkTargetBlocked(target.hostname, snapshotAllowlist(), {
+    ...options,
+    port: Number(target.port || (target.protocol === "https:" ? 443 : 80)),
+  }))
+    ? fail(snapshotTargetBlocked())
+    : ok(undefined);
+};
+
 export const getConfig = async (params: { notebookId: string }): Promise<NotebookSnapshotConfig> => {
   const row = await readConfigRow(params.notebookId);
   const { accessKeyId, secretAccessKey } = await decryptRowCredentials(row);
@@ -379,17 +413,21 @@ export const updateConfig = async (params: {
 }): Promise<Result<NotebookSnapshotConfig>> => {
   const current = await readConfigSecret(params.notebookId);
   const next = resolveSnapshotUpdate(current, params.data);
-  const validation = validateResolvedSnapshotConfig(next);
+  const validation = await checkSnapshotTarget(next);
   if (!validation.ok) return fail(validation.error);
 
   await persistSnapshotConfig({ notebookId: params.notebookId, userId: params.userId, config: next });
   return ok(await getConfig({ notebookId: params.notebookId }));
 };
 
-export const updateCron = async (cron: string): Promise<Result<{ cron: string }>> => {
+export const updateCron = async (cron: string, options?: { replaceUnreadable?: boolean }): Promise<Result<{ cron: string }>> => {
   const normalized = cron.trim();
   if (!normalized) return fail(err.badInput("Snapshot cron must not be empty."));
-  const saved = await settingsService.entry.update({ key: SNAPSHOT_CRON_KEY, value: normalized });
+  const saved = await settingsService.entry.update({
+    key: SNAPSHOT_CRON_KEY,
+    value: normalized,
+    replaceUnreadable: options?.replaceUnreadable,
+  });
   if (!saved.ok) return fail(saved.error);
   await snapshotRuntime.reschedule(normalized);
   log.info("Snapshot cron updated", { cron: normalized });
@@ -497,33 +535,14 @@ export const createNotebookBackupManifest = (params: {
 });
 
 export const defaultS3Uploader: NotebookBackupUploader = async (config, objects) => {
-  const client = new Bun.S3Client({
-    bucket: config.bucket,
-    endpoint: config.endpoint || undefined,
-    region: config.region,
-    accessKeyId: config.accessKeyId,
-    secretAccessKey: config.secretAccessKey,
-  });
-
-  const uploaded: NotebookBackupUploadResult[] = [];
-  for (const object of objects) {
-    try {
-      const bytes = await client.write(object.path, object.content, {
-        type: object.contentType,
-        acl: "private",
-      });
-      uploaded.push({ path: object.path, bytes });
-    } catch (error) {
-      const endpoint = config.endpoint || "provider default endpoint";
-      throw new Error(
-        `Failed to upload ${object.path} to bucket ${config.bucket} (${endpoint}, region ${config.region}). ${describeSnapshotError(
-          error,
-          S3_PROVIDER_HINT,
-        )}`,
-      );
-    }
+  try {
+    return await uploadSnapshotObjects(config, objects, { allowlist: snapshotAllowlist() });
+  } catch (error) {
+    if (error instanceof NetworkTargetBlockedError) throw error;
+    throw new Error(
+      `Failed to upload snapshots to bucket ${config.bucket} (${config.endpoint || "provider default endpoint"}, region ${config.region}). ${describeSnapshotError(error, S3_PROVIDER_HINT)}`,
+    );
   }
-  return uploaded;
 };
 
 export const runNotebookS3Backup = async (params: {
@@ -573,7 +592,8 @@ export const runNotebookS3Backup = async (params: {
       uploaded,
     });
   } catch (error) {
-    const detail = describeSnapshotError(error, S3_PROVIDER_HINT);
+    const blocked = error instanceof NetworkTargetBlockedError;
+    const detail = blocked ? snapshotTargetBlocked().message : describeSnapshotError(error, S3_PROVIDER_HINT);
     await writeSnapshotRunLogBestEffort("error", "Notebook S3 snapshot upload failed", {
       trigger: params.trigger ?? "manual",
       notebookId: params.notebookId,
@@ -584,7 +604,7 @@ export const runNotebookS3Backup = async (params: {
       latestZip: paths.latestZip,
       error: detail,
     });
-    return fail(err.internal(`S3 snapshot upload failed. ${detail}`));
+    return fail(blocked ? snapshotTargetBlocked() : err.internal(`S3 snapshot upload failed. ${detail}`));
   }
 };
 

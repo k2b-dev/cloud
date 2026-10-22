@@ -3,7 +3,7 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
-updated: 2026-10-11
+updated: 2026-10-19
 order: 30
 ---
 
@@ -12,6 +12,8 @@ order: 30
 Wähle **Verfassen** für eine neue Nachricht. Wähle in einer Unterhaltung **Antworten**, **Allen antworten**, **Weiterleiten** oder **Auswahl zitieren**. Mail erstellt zuerst einen gemeinsamen Entwurf und öffnet dann die Seite des Editors. Mail behält den Zweck des Entwurfs bei, deshalb heißt die letzte Aktionsschaltfläche **Senden**, **Antworten**, **Allen antworten** oder **Weiterleiten**.
 
 Wähle unter **Von** eine bestätigte Absenderidentität, füge Empfänger hinzu und gib Betreff und Text ein. **Cc/Bcc** zeigt die weiteren Empfängerfelder. Empfänger sehen die Bcc-Liste nie. Deine eigene Kopie in Gesendet behält sie, sodass jedes E-Mail-Programm zeigt, wen du in Bcc gesetzt hast.
+
+Während du in **An**, **Cc** oder **Bcc** tippst, schlägt Mail zuerst Kontakte aus dem Kontaktverzeichnis vor. Danach folgen Adressen, an die dieses Postfach geschrieben oder von denen es E-Mails erhalten hat. Diese Vorschläge funktionieren auch ohne die Contacts-App. Ein Briefsymbol kennzeichnet sie. Mit den Pfeiltasten markierst du einen Vorschlag, mit der Eingabetaste fügst du ihn hinzu. Wer nur zugewiesene Unterhaltungen sieht, bekommt keine Vorschläge aus dem Postfach.
 
 Der Editor ist vom Arbeitsbereich des Postfachs getrennt. **Zurück zum Postfach** speichert die letzten Änderungen, gibt die Bearbeitungssperre frei und kehrt zum Postfach zurück. **In neuem Fenster öffnen** verschiebt denselben Entwurf in ein eigenes Browserfenster. Dabei entsteht nie ein zweiter Entwurf.
 
@@ -25,12 +27,14 @@ Der Assistant-Chat kopiert die Nachricht nicht in einen separaten Mail-Entwurf u
 
 Wenn der Assistent diesen Entwurf senden möchte, zeigt eine Leiste über dem Entwurf die wartende Anfrage. Prüfe die Anfrage dort. Du kannst sie freigeben oder ablehnen, ohne zum Chat zurückzukehren.
 
+Die Frage zum Senden zeigt Absender, An, Cc und Bcc, Anhänge, Zeitpunkt und die Warnungen von Mail. Wähle **Vollständigen Vorschlag lesen** für die genaue vorgeschlagene Nachricht samt Signatur und Angaben zu erzeugten Anhängen. Nach dem Laden kannst du sie freigeben. Der Entwurfslink öffnet den aktuellen Entwurf, der sich inzwischen geändert haben kann. Ändert sich der Versandinhalt nach deiner Prüfung, stoppt Mail und reiht keine Nachricht ein: Öffne den Entwurf, prüfe ihn erneut und gib einen neuen Versuch frei. Mail wiederholt den Versuch nicht automatisch. Eine Signatur mit wechselnder Uhrzeit musst du gegebenenfalls vorher bearbeiten. Nach deiner Freigabe bestätigt „wird gesendet“ oder „geplant für“ den Auftrag, nicht die Zustellung.
+
 ## Cloud Mail für E-Mail-Links verwenden {icon="link"}
 
 Du kannst den aktuellen Browser bitten, Cloud Mail für normale `mailto:`-Links zu verwenden:
 
 :::steps
-1. Öffne **Postfachwerkzeuge → E-Mail-Links einrichten**.
+1. Öffne **… → E-Mail-Links einrichten**.
 2. Bestätige die Abfrage, wenn der Browser fragt.
 :::
 
@@ -56,13 +60,13 @@ Ein E-Mail-Link kann An, Cc, Bcc, Betreff und einen Text ohne Formatierung ausf�
 - **Nur Text** hat keine Vorschau. Eine eigenständige Nachricht bleibt in einem Editor. Ein Entwurf in einer Unterhaltung zeigt **Verfassen** und **Verlauf**.
 :::
 
-Mail sendet Markdown als lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Nur Text sendet keine HTML-Alternative. Kann die **Vorschau** die Nachricht nicht zeigen, etwa weil sie zu lang ist, nennt sie den Grund und bietet **Erneut versuchen** an. Du kannst die verfügbaren Bereiche anordnen. Mail hält das Layout passend, wenn ein anderer Entwurf andere Bereiche anbietet.
+Mail sendet Markdown als lesbares HTML mit dem E-Mail-Design des Postfachs und einer Textalternative. Jede zusätzliche Leerzeile zwischen deinen Absätzen fügt der gesendeten Nachricht eine leere Zeile hinzu, auch in Zitaten; Listen und Codeblöcke behalten ihre üblichen Abstände. Nur Text sendet keine HTML-Alternative. Kann die **Vorschau** die Nachricht nicht zeigen, etwa weil sie zu lang ist, nennt sie den Grund und bietet **Erneut versuchen** an. Du kannst die verfügbaren Bereiche anordnen. Mail hält das Layout passend, wenn ein anderer Entwurf andere Bereiche anbietet.
 
-Markdown kann auch einfaches HTML enthalten. Die E-Mail behält die Elemente `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` bis `h3`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul` und die Tabellenelemente. Andere Elemente wie `small` entfernt sie, ihr Text bleibt erhalten. Außerdem entfernt sie `class`, Inline-`style` und die meisten anderen Attribute. Links können Webseiten, E-Mail-Adressen (`mailto:`) und Telefonnummern öffnen, zum Beispiel `[+49 731 000000](tel:+49731000000)`. Die E-Mail zeigt keine Bilder oder Trennlinien. Sie zeigt Markdown-Zitate mit einer Linie links. Codeblöcke behalten ihre Zeilenumbrüche, aber nicht ihre Sprachbezeichnung. Entfernt Mail HTML oder ein Bild, listet die **Vorschau** es unter der Nachricht auf. Die **Vorschau** listet auch Werte des E-Mail-Designs des Postfachs auf, die E-Mails ignorieren. Bei einer sehr langen Nachricht verwendet Mail das eingebaute Design, wenn das E-Mail-Design des Postfachs die Darstellung zu komplex machen würde. Das siehst du in der **Vorschau**, und die Nachricht wird trotzdem gesendet. Das Aussehen aller Nachrichten ändert, wer das Postfach verwaltet, im E-Mail-Design des Postfachs. Inline-Stile können das nicht.
+Markdown kann auch einfaches HTML enthalten. Die E-Mail behält die Elemente `a`, `blockquote`, `br`, `code`, `div`, `em`, `h1` bis `h3`, `hr`, `li`, `ol`, `p`, `pre`, `span`, `strong`, `ul` und die Tabellenelemente. Andere Elemente wie `small` entfernt sie, ihr Text bleibt erhalten. Außerdem entfernt sie `class`, Inline-`style` und die meisten anderen Attribute. Links können Webseiten, E-Mail-Adressen (`mailto:`) und Telefonnummern öffnen, zum Beispiel `[+49 731 000000](tel:+49731000000)`. Die E-Mail entfernt direkt in den Text geschriebene Bilder. Eine Zeile nur mit `---`, `***` oder `___` wird zur Trennlinie, auch direkt unter einer Textzeile; Mail macht aus dieser Zeile keine Überschrift. Eine Signatur kann das Postfachlogo mit `{{ mailbox.logo }}` anzeigen. Sie zeigt Markdown-Zitate mit einer Linie links. Codeblöcke behalten ihre Zeilenumbrüche, aber nicht ihre Sprachbezeichnung. Entfernt Mail HTML oder ein Bild, listet die **Vorschau** es unter der Nachricht auf. Die **Vorschau** listet auch Werte des E-Mail-Designs des Postfachs auf, die E-Mails ignorieren. Bei einer sehr langen Nachricht verwendet Mail das eingebaute Design, wenn das E-Mail-Design des Postfachs die Darstellung zu komplex machen würde. Das siehst du in der **Vorschau**, und die Nachricht wird trotzdem gesendet. Das Aussehen aller Nachrichten ändert, wer das Postfach verwaltet, im E-Mail-Design des Postfachs. Inline-Stile können das nicht.
 
 Der Verlauf lädt erst, wenn du ihn öffnest. Mail klappt zuerst die neueste Nachricht auf. Du kannst mehrere Nachrichten unabhängig auf- und zuklappen, und Mail lädt frühere Zusammenfassungen seitenweise. Eine vollständige Nachricht lädt Mail erst, wenn du sie aufklappst. Links und Anhänge haben denselben Sicherheitsschutz wie in der Leseansicht.
 
-Dein Standardformat steht unter **Einstellungen → Schreiben → Format beim Verfassen**. Eine Änderung des Standards ändert keine vorhandenen Entwürfe.
+Dein Standardformat steht unter **… → Einstellungen → Schreiben → Format beim Verfassen**. Eine Änderung des Standards ändert keine vorhandenen Entwürfe.
 
 ## Einen vorhandenen Entwurf einer Unterhaltung fortsetzen {icon="pencil"}
 
@@ -73,6 +77,8 @@ Mail speichert den gemeinsamen Entwurf, während du arbeitest. Außerdem führt 
 Nur die Sitzung mit der aktuellen Bearbeitungssperre kann den Entwurf ändern. Mail lehnt Speichern, Änderungen an Anhängen und Verwerfen aus jeder anderen Sitzung, jedem Tab, Agenten oder CLI-Aufruf ab und nennt die bearbeitende Person. Hält niemand die Sperre, kann die nächste Sitzung den Entwurf wieder ändern. Deine eigene abgelaufene Sitzung blockiert dich also nie.
 
 Bearbeitet ein anderer Tab oder eine andere Person den Entwurf, nennt Mail diese Sitzung nach Möglichkeit. Du kannst schreibgeschützt weiterarbeiten oder die Bearbeitung gezielt in diesen Tab holen. Nach dem Schließen des Dialogs zeigt der Editor einen ruhigen Hinweis.
+
+Nach einem ausgeblendeten Tab, dem Ruhezustand oder einer langsamen Antwort setzt Mail die Bearbeitung selbst fort. Mail fragt nur nach, wenn ein anderer Tab, ein anderes Gerät oder eine andere Person den Entwurf gerade hält.
 
 :::warning Bearbeitung übernehmen macht die andere Sitzung schreibgeschützt
 Wähle **Bearbeitung übernehmen** nur, wenn die andere Sitzung die Bearbeitung verlieren soll.
@@ -116,6 +122,14 @@ Tippe im Text `/`, um ausschließlich Textbausteine zu suchen. Mail fügt den ge
 - **Privat:** Nur die Person, der die Vorlage gehört, sieht sie.
 - **Postfach:** Die Vorlage ist mit anderen im Team geteilt.
 
+Setze `{{ mailbox.logo }}` in eine Signatur, um das Postfachlogo in neuen Nachrichten, Antworten und Weiterleitungen anzuzeigen. Die Vorschau zeigt es ebenfalls. Mail sendet es als eingebettetes Bild, nie als entfernten Link. Im Klartext steht der Alternativtext; in Textbausteinen bleibt der Platzhalter leer. Ohne hochgeladenes Logo bleibt er leer und die Vorschau warnt dich. Eingereihte und geplante Nachrichten behalten ihr ursprüngliches Logo auch nach dem Ersetzen oder Entfernen. Die Entwurfskopie beim Anbieter hat keine Signatur und kein Logo.
+
+Verwende `{{ mailbox.logo }}` allein, ohne Filter. Eine Vorlage mit diesem Platzhalter darf keine Liquid-`capture`-Tags enthalten, auch nicht für anderen Text.
+
+Öffne in den Einstellungen des Postfachs **Schreiben → Logo**, um das Logo hochzuladen oder zu ersetzen, seine Anzeigebreite oder seinen Alternativtext zu ändern oder es nach Bestätigung zu entfernen. Dafür brauchst du Zugriff **Verwalten**. Mit Zugriff **Bearbeiten** siehst du das Logo und seine Werte, kannst sie aber nicht ändern. Eine Änderung der Breite oder des Alternativtexts speichert eine neue Version mit demselben Bild.
+
+Ein Postfachadmin lädt ein PNG oder JPEG alternativ mit `cld mail compose logo set --file logo.png` hoch: höchstens 100 KiB und 1200×400 Pixel. Die Anzeigebreite beträgt standardmäßig 200 px; `--width` erlaubt 1–600 px. Der Alternativtext ist standardmäßig der getrimmte Postfachname. `--alt` erlaubt 1–200 Zeichen ohne Steuerzeichen.
+
 Nutze diese Liquid-Variablen in deiner Vorlage:
 
 | Variable | Wert |
@@ -125,6 +139,7 @@ Nutze diese Liquid-Variablen in deiner Vorlage:
 | `sender.display_name` | Anzeigename der Absenderidentität. Ohne Namen erscheint ihre E-Mail-Adresse. |
 | `sender.email` | Von-Adresse der Absenderidentität. |
 | `sender.reply_to` | Antwortadresse der Absenderidentität. Leer, wenn keine gesetzt ist. |
+| `mailbox.logo` | Postfachlogo als eingebettetes Bild in Signaturen; ohne Logo und in Textbausteinen leer |
 | `mailbox.name` | Name des Postfachs. |
 | `mailbox.description` | Beschreibung des Postfachs. Leer, wenn keine gesetzt ist. |
 | `message.subject` | Betreff des Entwurfs. |
@@ -144,11 +159,13 @@ Trenne die Adressen in `message.to` und `message.cc` mit `join`:
 
 Mail warnt dich vor dem Senden vor Platzhaltern, die im Text stehen bleiben und unverändert versendet würden.
 
-Mit Zugriff **Verwalten** änderst du Vorlagen und Standards unter **Einstellungen → Schreiben**. Wähle dort **Design bearbeiten**, um den CSS-Editor des Postfachs zu öffnen. Seine Vorschau aktualisiert sich aus dem aktuellen, nicht gespeicherten CSS. Die **Vorschau** im Editor nutzt dieselbe Darstellung wie die Zustellung.
+Mit Zugriff **Verwalten** änderst du Vorlagen und Standards unter **… → Einstellungen → Schreiben**. Wähle dort **Design bearbeiten**, um den CSS-Editor des Postfachs zu öffnen. Seine Vorschau aktualisiert sich aus dem aktuellen, nicht gespeicherten CSS. Die **Vorschau** im Editor nutzt dieselbe Darstellung wie die Zustellung.
 
 ## Dateien anhängen {icon="paperclip"}
 
 Wähle **Dateien anhängen** und wähle eine oder mehrere Dateien aus, oder ziehe Dateien vom Desktop auf den Editor. Der Editor ist hervorgehoben, solange er die Dateien annehmen kann. Upload-Fortschritt und Fehler erscheinen neben den Anhängen des Entwurfs. Du kannst einen unvollständigen Upload wiederholen oder abbrechen und eine angehängte Datei vor dem Senden entfernen.
+
+Apps, die den Empfängerkontext verstehen, etwa eine Rechnungs-App, zeigen nur passende Dateien. Mail sucht die Empfänger in deinen Kontakt-Apps und gibt nur passende Kontaktreferenzen weiter, keine E-Mail-Adressen. Passt nichts, zeigt die App **Keine passenden Dateien für diese Empfänger**. Erreicht Mail deine Kontakt-Apps nicht, zeigt die App einen Fehler mit **Erneut versuchen**. Diese Referenzen geben keinen Zugriff auf Kontakte oder Dateien.
 
 Wurde die Seite während eines Uploads neu geladen oder geschlossen, zeigt der Entwurf diese Datei beim nächsten Öffnen als **Upload nicht abgeschlossen**. Brich den Upload ab und hänge die Datei erneut an.
 
@@ -193,7 +210,7 @@ Mail ändert die ursprüngliche Nachricht und Unterhaltung nie, und es wird nich
 
 ## Jetzt senden, rückgängig machen oder planen {icon="send"}
 
-Wähle die Hauptaktion, um die Zustellung jetzt einzureihen. **Versand rückgängig machen** unter **Einstellungen → Schreiben** kann die sofortige Zustellung um 0 bis 60 Sekunden verzögern. Bei einem Wert über null wartet Mail so viele Sekunden und bietet das Rückgängigmachen über **Geplant** an.
+Wähle die Hauptaktion, um die Zustellung jetzt einzureihen. **Versand rückgängig machen** unter **… → Einstellungen → Schreiben** kann die sofortige Zustellung um 0 bis 60 Sekunden verzögern. Bei einem Wert über null wartet Mail so viele Sekunden und bietet das Rückgängigmachen über **Geplant** an.
 
 So planst du die Zustellung:
 

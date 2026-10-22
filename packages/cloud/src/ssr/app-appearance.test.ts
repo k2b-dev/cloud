@@ -1,11 +1,26 @@
 import { expect, test } from "bun:test";
 import type { RuntimeAppMeta } from "../contracts/app";
-import { resolveCurrentApp } from "./app-appearance";
+import { appAccentStyle, appAppearanceStyle, resolveCurrentApp } from "./app-appearance";
 
 const apps: RuntimeAppMeta[] = [
   { id: "core", name: "Core", icon: "ti ti-cloud", description: "Core", routes: ["/", "/help"] },
   ...["spaces", "timetrack"].map((id) => ({ id, name: id, icon: "ti ti-apps", description: id, routes: [`/app/${id}`] })),
 ];
+
+test("accent scopes emit the six computed app color properties", () => {
+  expect(appAccentStyle("#14b8a6")).toBe(
+    "--app-accent:#14b8a6;--app-ink-light:#0d7b6f;--app-ink-dark:#14b8a6;--app-selected-light:#effaf9;--app-selected-dark:#112c2e;--app-selected-nav-light:#e8f8f6;--app-selected-nav-dark:#123133",
+  );
+});
+
+test("appearance helpers reject invalid accents before emitting any CSS", () => {
+  for (const accent of [undefined, "red", "#fff", "#12345g", "#123456;color:red"]) {
+    expect(appAccentStyle(accent)).toBeUndefined();
+    // @ts-expect-error Exercise unvalidated runtime input at the CSS emission boundary.
+    expect(appAppearanceStyle(accent === undefined ? undefined : { accent })).toBeUndefined();
+  }
+});
+
 test("only Core's exact full-page Help routes belong to the app named in the URL", () => {
   for (const id of ["spaces", "timetrack"]) {
     expect(resolveCurrentApp(apps, `/help/apps/${id}`)?.id).toBe(id);

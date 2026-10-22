@@ -481,6 +481,97 @@
   align-items: center;
 }
 
+/* Color guide: each host sets the selection hooks and the link accent from
+   its app color, the way Cloud maps them; the site theme picks the light or dark values. */
+.ui-color-hosts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 2rem 2.5rem;
+}
+
+.ui-color-host {
+  --k2b-app-workspace-active: var(--ui-color-ink-light);
+  --k2b-app-workspace-selected: var(--ui-color-nav-light);
+  --k2b-row-selected: var(--ui-color-row-light);
+  --k2b-link-accent: var(--ui-color-ink-light);
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.k2b-ui[data-theme="dark"] .ui-color-host,
+.k2b-ui.k2b-dark .ui-color-host,
+.dark .k2b-ui .ui-color-host {
+  --k2b-app-workspace-active: var(--ui-color-ink-dark);
+  --k2b-app-workspace-selected: var(--ui-color-nav-dark);
+  --k2b-row-selected: var(--ui-color-row-dark);
+  --k2b-link-accent: var(--ui-color-ink-dark);
+}
+
+.ui-color-host__head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ui-color-host__head h3 {
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+
+.ui-color-host__head code {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.ui-color-host__tile {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--k2b-app-workspace-active);
+  font-size: 1.125rem;
+}
+
+.ui-color-host__tile--model {
+  color: var(--k2b-ai-accent);
+}
+
+.ui-color-host__label {
+  margin: 0.75rem 0 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.ui-color-host__nav {
+  display: flex;
+  max-width: 18rem;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.ui-color-host__row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+/* A still picture of the shared keyboard focus ring. */
+.ui-color-host__focus {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
 .ui-workspace-demo,
 .ui-panes-demo,
 .ui-settings-demo,
@@ -1385,4 +1476,38 @@
   padding: 0.25rem 0.5rem;
   border-radius: var(--k2b-radius-surface);
   background: var(--k2b-surface);
+}
+
+/* Drag and drop demo: flat target chips above the rows; status lines keep
+   one line each, so nothing moves while a drag runs. */
+.ui-dnd-demo {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.ui-dnd-demo__targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ui-dnd-demo__target {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.9rem;
+  background: var(--k2b-surface-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.ui-dnd-demo__status {
+  margin: 0;
+  overflow: hidden;
+  color: var(--k2b-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

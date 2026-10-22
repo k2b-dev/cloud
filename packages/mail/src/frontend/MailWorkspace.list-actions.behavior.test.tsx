@@ -1,7 +1,18 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  beforeEach as pinClockBeforeEach,
+  afterEach as restoreClockAfterEach,
+  setSystemTime,
+  spyOn,
+  test,
+} from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
+import { MAIL_ACTION_OUTCOME_TTL_MS } from "../command-outcomes";
 import { type ConversationTriageInput, conversationTriageInputSchema, conversationTriageUndoInputSchema } from "../contracts";
 import type { MailboxPageData } from "../service/workspace";
 import { MAIL_BULK_CONCURRENCY } from "./_components/mail-bulk-actions";
@@ -300,6 +311,11 @@ describe("Mail list actions", () => {
           initialUserPreferences: readMailUserPreferencesFromCookieHeader("", MAILBOX_ID),
           initialTheme: readThemeFromCookieHeader(""),
           calendarIntegrationAvailable: false,
+          sidebar: {
+            mailboxes: [{ ...data.mailbox, receivingAddress: data.receivingAddress }],
+            pinnedMailboxIds: [],
+            hiddenMailboxIds: [],
+          },
         }),
       dom.root,
     );
@@ -442,6 +458,57 @@ describe("Mail list actions", () => {
     hold.resolve(Response.json({ commands: [{ id: commandId(1), outcome: "cancelled", inverse: null }] }));
     await settle();
     expect(rowIds()).toEqual(["one", "two", "three"]);
+  });
+  test("Undo after send announces Undone only after pending resolves to a queued inverse", async () => {
+    const reversed = deferred<Response>();
+    const polled = deferred<void>();
+    undoResponse = async () => {
+      if (undoRequests.length === 1) return Response.json({ commands: [{ id: commandId(1), outcome: "pending", inverse: null }] });
+      polled.resolve();
+      return reversed.promise;
+    };
+    // Screen-reader announcements land in the live region after a short delay.
+    const announced = async () => {
+      await Bun.sleep(150);
+      return dom.document.querySelector("[data-k2b-live]")?.textContent ?? "";
+    };
+    mount();
+    await menuAction("two", "Move to Trash");
+    await settle();
+    toastAction("Undo").click();
+    await settle();
+    expect(undoRequests).toEqual([[commandId(1)]]);
+    expect(await announced()).not.toContain("Undone");
+    // The runner's first poll waits a real second; hold its answer.
+    await polled.promise;
+    expect(undoRequests).toEqual([[commandId(1)], [commandId(1)]]);
+    expect(await announced()).not.toContain("Undone");
+    reversed.resolve(
+      Response.json({ commands: [{ id: commandId(1), outcome: "reversed", inverse: { id: commandId(2), state: "queued", code: null } }] }),
+    );
+    await settle();
+    expect(await announced()).toContain("Undone");
+  });
+  test("Undo still polls after the browser horizon so the server can answer at its later deadline", async () => {
+    let wallClock = Date.now();
+    const clock = spyOn(Date, "now").mockImplementation(() => wallClock);
+    undoResponse = async () => {
+      if (undoRequests.length === 1) {
+        wallClock += MAIL_ACTION_OUTCOME_TTL_MS;
+        return Response.json({ commands: [{ id: commandId(1), outcome: "pending", inverse: null }] });
+      }
+      return Response.json({ commands: [{ id: commandId(1), outcome: "unavailable", inverse: null }] });
+    };
+    try {
+      mount();
+      await menuAction("two", "Move to Trash");
+      await settle();
+      toastAction("Undo").click();
+      await Bun.sleep(1_100);
+      expect(undoRequests).toEqual([[commandId(1)], [commandId(1)]]);
+    } finally {
+      clock.mockRestore();
+    }
   });
   test("bulk Delete projects all three, ends selection, and one Undo restores their order", async () => {
     const hold = deferred<Response>();
@@ -647,3 +714,6 @@ describe("Mail list actions", () => {
     expect(dom.root.querySelector('[data-leaving="true"]')).toBeNull();
   });
 });
+
+pinClockBeforeEach(() => setSystemTime(new Date("2026-10-14T10:00:00.000Z")));
+restoreClockAfterEach(() => setSystemTime());

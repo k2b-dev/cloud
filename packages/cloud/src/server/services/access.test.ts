@@ -128,6 +128,30 @@ const cleanupFixture = async (fixture: Fixture) => {
 };
 
 suite("listUsersWithAccess", () => {
+  test("prioritizes exact search matches before limiting by name order", async () => {
+    const fixture = await createFixture();
+    try {
+      const query = `access-exact-${fixture.userIds.direct}`;
+      await sql`UPDATE auth.users SET uid = ${query}, display_name = 'Zulu' WHERE id = ${fixture.userIds.direct}::uuid`;
+      await sql`UPDATE auth.users SET display_name = ${`Aardvark ${query}`} WHERE id = ${fixture.userIds.group}::uuid`;
+      await sql`UPDATE auth.users SET display_name = ${query} WHERE id = ${fixture.userIds.nested}::uuid`;
+
+      // Name-only ordering would hide the exact login-name match behind the earlier substring match at this limit.
+      const users = await listUsersWithAccess({ accessIds: fixture.accessIds, search: ` ${query.toUpperCase()} `, limit: 1 });
+      expect(users.map((user) => user.id)).toEqual([fixture.userIds.direct]);
+
+      const displayNameMatches = await listUsersWithAccess({
+        accessIds: fixture.accessIds,
+        search: query,
+        excludeUserIds: [fixture.userIds.direct],
+        limit: 1,
+      });
+      expect(displayNameMatches.map((user) => user.id)).toEqual([fixture.userIds.nested]);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  }, 30_000);
+
   test("expands direct and recursive group access without exposing mail", async () => {
     const fixture = await createFixture();
     try {
@@ -317,6 +341,18 @@ suite("effective access", () => {
 });
 
 suite("resolveDisplayNames", () => {
+  test("missing principals and audiences carry no invented display name", async () => {
+    const missing = "11111111-1111-4111-8111-111111111111";
+    const entries = await resolveDisplayNames([
+      { principal: { type: "user" as const, userId: missing }, displayName: "stale" },
+      { principal: { type: "group" as const, groupId: missing } },
+      { principal: { type: "service_account" as const, serviceAccountId: missing } },
+      { principal: { type: "authenticated" as const } },
+      { principal: { type: "public" as const } },
+    ]);
+    expect(entries.map((entry) => entry.displayName)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+  });
+
   test("adds the service-account kind to service-account principals only", async () => {
     const fixture = await createFixture();
     const agentName = `Access agent ${crypto.randomUUID()}`;
@@ -337,4 +373,60 @@ suite("resolveDisplayNames", () => {
       await cleanupFixture(fixture);
     }
   }, 30_000);
+});
+
+// Isolate the SQL fixture from other suites, as in the account-lifecycle tests.
+test("resolveDisplayNames batches each kind once and leaves missing names absent", async () => {
+  const script = `
+    import { strict as assert } from "node:assert";
+    const calls = [];
+    globalThis.principalDisplaySql = async (parts) => {
+      const query = parts.join("?");
+      const kind = query.includes("FROM auth.users") ? "user" : query.includes("FROM auth.groups") ? "group" : query.includes("FROM auth.service_accounts") ? "service_account" : null;
+      assert.ok(kind, query);
+      calls.push(kind);
+      if (kind === "user") return [{ id: "11111111-1111-4111-8111-111111111111", display_name: "", uid: "ada.example", avatar_hash: "picture" }];
+      if (kind === "group") return [{ id: "11111111-1111-4111-8111-111111111111", name: "research" }];
+      return [{ id: "11111111-1111-4111-8111-111111111111", name: "Research agent", kind: "agent" }];
+    };
+    Bun.plugin({ name: "principal-display-sql-fixture", setup(build) {
+      build.onLoad({ filter: /server\\/services\\/access[.]ts$/ }, async ({ path }) => ({
+        contents: (await Bun.file(path).text()).replace('import { type SQLQuery, sql } from "bun";', 'const sql = globalThis.principalDisplaySql;'),
+        loader: "ts",
+      }));
+    } });
+    const { resolveDisplayNames } = await import(${JSON.stringify(new URL("./access.ts", import.meta.url).pathname)});
+    const present = "11111111-1111-4111-8111-111111111111", missing = "22222222-2222-4222-8222-222222222222";
+    const entries = [
+      { principal: { type: "user", userId: present } },
+      { principal: { type: "user", userId: missing }, displayName: "stale name" },
+      { principal: { type: "group", groupId: present } },
+      { principal: { type: "group", groupId: missing } },
+      { principal: { type: "service_account", serviceAccountId: present } },
+      { principal: { type: "service_account", serviceAccountId: missing } },
+      { principal: { type: "authenticated" }, displayName: "Old English audience" },
+      { principal: { type: "public" } },
+    ];
+    const result = await resolveDisplayNames(entries);
+    assert.deepEqual(calls, ["user", "group", "service_account"]);
+    assert.deepEqual(result.map(entry => entry.displayName), ["ada.example", undefined, "research", undefined, "Research agent", undefined, undefined, undefined]);
+    assert.equal(result[0].avatarHash, "picture");
+    assert.equal(result[4].serviceAccountKind, "agent");
+    assert.equal(entries[1].displayName, "stale name");
+    calls.length = 0;
+    assert.deepEqual(await resolveDisplayNames([]), []);
+    await resolveDisplayNames([{ principal: { type: "public" } }]);
+    assert.deepEqual(calls, []);
+  `;
+  const child = Bun.spawn([process.execPath, "--no-env-file", "--eval", script], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { PATH: process.env.PATH, DATABASE_URL: "postgres://fixture:fixture@127.0.0.1:1/fixture", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" },
+  });
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
 });

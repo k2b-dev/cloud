@@ -28,18 +28,27 @@ describe("queued settings reconciliation", () => {
       (state) => states.push(state),
     );
 
-    coverage.run("first failed");
-    coverage.run("second failed");
+    const completed: string[] = [];
+    const firstRun = coverage.run("first failed").then(() => {
+      completed.push("first");
+    });
+    const secondRun = coverage.run("second failed").then(() => {
+      completed.push("second");
+    });
+    expect(completed).toEqual([]);
     expect(calls).toBe(1);
     expect(states.at(-1)).toEqual({ reconciling: true, error: null });
 
     first.resolve();
     await flush();
+    await firstRun;
+    expect(completed).toEqual(["first"]);
     expect(calls).toBe(2);
     expect(states.at(-1)).toEqual({ reconciling: true, error: null });
 
     second.resolve();
-    await flush();
+    await secondRun;
+    expect(completed).toEqual(["first", "second"]);
     expect(states.at(-1)).toEqual({ reconciling: false, error: null });
   });
 
@@ -54,14 +63,33 @@ describe("queued settings reconciliation", () => {
       (state) => states.push(state),
     );
 
-    coverage.run("saved but not reloaded");
-    coverage.run("second save not reloaded");
-    await flush();
+    const firstRun = coverage.run("saved but not reloaded");
+    const secondRun = coverage.run("second save not reloaded");
+    await Promise.all([firstRun, secondRun]);
+    // A write queued while the visible error blocks draining also settles without rejecting.
+    await coverage.run("third save not reloaded");
     expect(states.at(-1)).toEqual({ reconciling: false, error: "saved but not reloaded" });
 
     await coverage.retry();
-    expect(calls).toBe(3);
+    expect(calls).toBe(4);
     expect(states.at(-1)).toEqual({ reconciling: false, error: null });
+  });
+
+  test("dispose settles every waiter even if its reload never completes", async () => {
+    const reload = deferred();
+    const states: Array<{ reconciling: boolean; error: string | null }> = [];
+    const coverage = createQueuedReconciliation(
+      () => reload.promise,
+      (state) => states.push(state),
+    );
+    const first = coverage.run("first");
+    const second = coverage.run("second");
+    coverage.dispose();
+    await Promise.all([first, second, coverage.run("after dispose")]);
+    const before = [...states];
+    reload.resolve();
+    await flush();
+    expect(states).toEqual(before);
   });
 });
 

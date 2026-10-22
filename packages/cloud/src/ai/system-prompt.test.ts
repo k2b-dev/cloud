@@ -124,7 +124,7 @@ describe("renderAiPlatformPrompt", () => {
 
     expect(prompt).toContain("Most replies need no offer.");
     expect(prompt).toContain("Make at most one offer");
-    expect(prompt).toContain("offer to save it as a scheduled task");
+    expect(prompt).toContain("offer to save it as a routine");
     expect(prompt).toContain("Do not search mail, chats, or other data only to justify an offer");
     expect(prompt).toContain("Do not start the offered work until the user agrees");
     expect(prompt).toContain("while you ask a question or wait for approval");
@@ -267,11 +267,11 @@ describe("composeAiSystemPrompt", () => {
     expect(suggestions).toContain(
       "Offer a new Skill only when no listed Skill already covers the approach; a single preference belongs in memory, not a Skill.",
     );
-    expect(suggestions.indexOf("offer to save it as a Skill or scheduled task.")).toBeLessThan(
+    expect(suggestions.indexOf("offer to save it as a Skill or routine.")).toBeLessThan(
       suggestions.indexOf("Offer a new Skill only when no listed Skill"),
     );
     expect(suggestions).toContain("The user corrected a result that their own Skill shaped: offer to add the correction to that Skill.");
-    expect(suggestions).toContain("offer to save it as a Skill or scheduled task.");
+    expect(suggestions).toContain("offer to save it as a Skill or routine.");
     expect(suggestions).toContain("do not claim how often something happened unless the user said it or this chat shows it");
     expect(suggestions).toContain("Built-in and shared Skills change for everyone, so change one only when the user asks for that.");
     expect(suggestions).toContain("load skill-creator and draft from this conversation; its create or update review is the confirmation");
@@ -283,7 +283,7 @@ describe("composeAiSystemPrompt", () => {
     const withoutCreator = composeAiSystemPrompt({ ...base, skillCreatorAvailable: false });
     expect(withoutCreator).toContain("# Suggestions");
     expect(withoutCreator).not.toContain("save the approach as a personal Skill");
-    expect(withoutCreator).toContain("offer to save it as a scheduled task.");
+    expect(withoutCreator).toContain("offer to save it as a routine.");
     expect(composeAiSystemPrompt({ ...base, interactive: false })).not.toContain("save the approach as a personal Skill");
     const withoutLoadSkill = composeAiSystemPrompt({ globalInstructions: "", user, omittedSkillCount: 3, skillCreatorAvailable: true });
     expect(withoutLoadSkill).toContain("# Skills");
@@ -371,7 +371,8 @@ describe("composeAiSystemPrompt", () => {
     expect(prompt).toContain("Prefer open over edit");
     expect(prompt).toContain("Without a supplied href, use plain text");
     expect(prompt).toContain("Never construct a Cloud URL");
-    expect(prompt).toContain("[Urgent invoice review 001](/app/mail/5guDsC?conversation=nTf34n)");
+    expect(prompt).toContain("Cloud adds an href to resource refs it can open");
+    expect(prompt).toContain("[Urgent invoice review 001](/open/mail.draft/~AbC123)");
   });
 
   it("orders platform, organization, turn, Project instructions, context and personalization", () => {
@@ -464,7 +465,7 @@ test("web prompt stays byte-identical with organization and selected Cloud Skill
     loadedSkills: [{ name: "invoice", revision: 2, instructions: "Read rules.", files: ["/skills/invoice/SKILL.md"] }],
   });
   expect(new Bun.CryptoHasher("sha256").update(prompt).digest("hex")).toBe(
-    "5e8543d1dee0f44107b0351c4bab6c817204844b24912caaf2d9b19a3e84f7a7",
+    "363fb23454d35ae86ac6eb5014467d2c6569fb94b293dfb63d7f9c987e3eeef4",
   );
 });
 
@@ -477,6 +478,7 @@ test("local client facts and raw instructions follow organization instructions",
   expect(prompt).toContain(
     "Client: terminal (cld)\nCloud: https://cloud.example.test\nWorkspace: /work\nOS: Linux\nShell: /bin/bash\nLocal tools: ask\nKeep {{ user.uid }} literal.",
   );
+  expect(prompt).toContain("Offer the supplied link for every Cloud resource you create, change, or name");
   expect(prompt.indexOf("# Local client")).toBeGreaterThan(prompt.indexOf("# Organization instructions"));
   expect(prompt).toContain('it replaces "What the user sees" above');
   const acp = composeAiSystemPrompt({

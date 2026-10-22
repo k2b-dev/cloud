@@ -85,6 +85,7 @@ export default function MailAttachmentLinksSettings(props: { mailboxId: string; 
           when={!linkPages.error()}
           fallback={
             <Placeholder
+              state="error"
               variant="panel"
               icon="ti ti-alert-triangle"
               title={messages().couldNotLoadSharedLinks}

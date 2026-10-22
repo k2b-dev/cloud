@@ -1,11 +1,13 @@
 import { expect, test } from "bun:test";
 import { type CloudCliContext, defineCliCommands } from "@k2b/cloud/cli";
+import { actionOriginMessages } from "./action-question";
 import { assistantChatCommands, assistantManagementCommands } from "./chat";
 import { resolveConversation } from "./turn";
 
 const context = (args: string[] = [], flags: CloudCliContext["flags"] = {}) => {
   const requests: unknown[] = [];
-  let conversation = { id: "chat", title: "New chat", titleSource: "default" };
+  const values: unknown[] = [];
+  let conversation = { id: "chat", shortId: "chat", title: "New chat", titleSource: "default" };
   const ctx: CloudCliContext = {
     args,
     flags,
@@ -31,11 +33,15 @@ const context = (args: string[] = [], flags: CloudCliContext["flags"] = {}) => {
     print: () => {},
     write: async () => {},
     error: () => {},
-    json: () => {},
-    jsonLine: () => {},
+    json: (value) => {
+      values.push(value);
+    },
+    jsonLine: (value) => {
+      values.push(value);
+    },
     table: () => {},
   };
-  return { ctx, requests };
+  return { ctx, requests, values };
 };
 const expectedRequests = (title: string) => [
   { path: "/api/ai/conversations", method: "POST", body: {} },
@@ -106,4 +112,127 @@ test("system-prompt --local includes this computer and the profile's local tools
   expect(params.get("os")).toBeTruthy();
   expect(params.get("shell")).toBe("/bin/bash");
   expect(params.get("localTools")).toBe("off");
+});
+
+test.each(["json", "jsonl"] as const)("chats create emits an absolute canonical permalink in %s", async (output) => {
+  const { ctx, values } = context(["chats", "create"]);
+  ctx.options.output = output;
+  await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantChatCommands] }).run(ctx);
+  expect(values).toMatchObject([{ id: "chat", permalink: "http://example.test/open/core.ai.chat/~chat" }]);
+});
+
+test.each(["pin", "unpin", "restore", "done", "reopen"])("chats %s returns an absolute permalink with the updated chat", async (action) => {
+  const { ctx, values } = context(["chats", action, "chat"]);
+  await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantChatCommands] }).run(ctx);
+  expect(values).toMatchObject([{ id: "chat", permalink: "http://example.test/open/core.ai.chat/~chat" }]);
+});
+
+test("actions list prints the shared question block with absolute links and exact commands; JSON stays raw", async () => {
+  const action = {
+    type: "approval_request" as const,
+    conversationId: "chat-7",
+    turnId: "turn-8",
+    callId: "call-9",
+    name: "mail.send",
+    args: { id: "draft-1" },
+    message: "Old clients retain this message.",
+    allowAlways: false,
+    allowChat: false,
+    app: { id: "mail", name: "Mail" },
+    chatTitle: "Maintenance",
+    review: {
+      locale: "en",
+      ask: "sends" as const,
+      sentence: {
+        action: "Send email {mail} to {to}",
+        running: "Sending {mail}",
+        done: "Sent {mail}",
+        confirm: "Send to Lea",
+        decline: "Don't send",
+        notRun: "Didn't send {mail}",
+      },
+      slots: {
+        mail: { kind: "object" as const, title: "Maintenance" },
+        to: { kind: "person" as const, people: [{ name: "Lea Berg", address: "lea.berg@example.com" }] },
+      },
+      preview: {
+        kind: "message" as const,
+        from: { name: "Team Ops", address: "ops@example.com" },
+        to: [{ name: "Lea Berg", address: "lea.berg@example.com" }],
+        subject: "Maintenance",
+        body: "Hello Lea,\nMaintenance is on Tuesday.",
+        format: "plain" as const,
+      },
+      links: [{ rel: "open" as const, href: "/mail/drafts/draft-1?revision=7" }],
+    },
+  };
+  for (const output of ["text", "json", "jsonl"] as const) {
+    const { ctx, values } = context(["actions", "list", "chat-7", "turn-8"]);
+    const printed: string[] = [];
+    const tables: unknown[] = [];
+    ctx.options.output = output;
+    ctx.fetch = async () => Response.json([action]);
+    ctx.print = (line = "") => printed.push(line);
+    ctx.table = (rows) => tables.push(rows);
+    await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantManagementCommands] }).run(ctx);
+    if (output === "json") {
+      expect(values).toEqual([[action]]);
+      expect(printed).toEqual([]);
+    } else if (output === "jsonl") {
+      expect(values).toEqual([
+        {
+          call: "call-9",
+          type: "approval_request",
+          name: "mail.send",
+          detail: action.message,
+        },
+      ]);
+    } else {
+      expect(printed).toEqual([
+        "? Send email “Maintenance” to Lea Berg <lea.berg@example.com>?",
+        "  I'm asking because this leaves Cloud.",
+        "  Mail · Chat “Maintenance”",
+        "  From:    Team Ops <ops@example.com>",
+        "  To:      Lea Berg <lea.berg@example.com>",
+        "  Subject: Maintenance",
+        "  Hello Lea,",
+        "  Maintenance is on Tuesday.",
+        "  Read all: http://example.test/mail/drafts/draft-1?revision=7",
+        "  Send to Lea: cld --profile test --server http://example.test assistant actions approve -- chat-7 turn-8 call-9",
+        "  Don't send:  cld --profile test --server http://example.test assistant actions reject -- chat-7 turn-8 call-9",
+      ]);
+      expect(tables).toEqual([]);
+    }
+  }
+});
+
+test("question origin labels cover both locales", () => {
+  expect(actionOriginMessages.check()).toEqual([]);
+  expect(actionOriginMessages.resolve(["de"]).t.chat({ title: "Wartung" })).toBe("Chat „Wartung“");
+  expect(actionOriginMessages.resolve(["en"]).t.expires({ at: "16 Oct, 23:14" })).toBe("open until 16 Oct, 23:14");
+});
+
+test("actions list sanitizes legacy question lines at the terminal boundary", async () => {
+  const { ctx } = context(["actions", "list", "chat", "turn"]);
+  const printed: string[] = [];
+  ctx.options.output = "text";
+  ctx.fetch = async () =>
+    Response.json([
+      {
+        type: "approval_request",
+        conversationId: "chat",
+        turnId: "turn",
+        callId: "call",
+        name: "send",
+        args: {},
+        message: "Mail: Send this\nTo: Lea\u001b[2J",
+        app: { id: "mail", name: "Mail" },
+        allowAlways: false,
+        allowChat: false,
+      },
+    ]);
+  ctx.print = (line = "") => printed.push(line);
+  await defineCliCommands({ name: "assistant", summary: "Assistant", commands: [...assistantManagementCommands] }).run(ctx);
+  expect(printed[0]).toBe("? Send this?");
+  expect(printed).toContain("  To: Lea\\u001b[2J");
 });

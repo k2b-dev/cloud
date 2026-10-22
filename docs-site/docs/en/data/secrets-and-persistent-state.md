@@ -4,8 +4,8 @@ navTitle: Secrets and state
 section: Data
 order: 440
 description: Store sensitive configuration and durable application state in the correct platform service.
-tags: [data, secrets, settings, valkey, storage, https, ssrf]
-updated: 2026-10-09
+tags: [data, secrets, encryption, settings, valkey, storage, https, ssrf]
+updated: 2026-10-20
 ---
 
 # Secrets and persistent state
@@ -109,13 +109,101 @@ const value = await secrets.decrypt<{
 Return metadata and a `configured` boolean to the browser. Never return the
 encrypted value as a substitute for redaction.
 
+`secrets.encrypt` uses the same key and format as encrypted settings: JSON
+encrypted with AES-256-GCM. Key material comes from trimmed `APP_SECRET`: an
+even-length hexadecimal value is used directly; any other value is hashed with
+SHA-256. Any application with the same `APP_SECRET` and database access can
+decrypt these values. This protects against database-only access, such as dumps
+and backups, but does not isolate secrets from other applications in the
+deployment.
+
+## Share a secret between applications
+
+All settings rows live in one deployment-wide table, but each key belongs to
+the one application that declares it in `defineApp({ settings })`. The typed
+`app.settings` API and request snapshot expose only that application's keys and
+platform settings. Writes to undeclared keys throw `Unknown setting`.
+
+Do not use a setting for a credential that several applications must read, such
+as storage credentials shared by a suite of standalone apps. Use an encrypted
+application table instead. One application owns the table: it creates the table
+in its migration and writes the rows. The other applications read the rows and
+decrypt them with `secrets.decrypt`.
+
+For example, the owner writes a credential and a reader reports missing or
+unreadable credentials as an explicit state:
+
+```ts
+import { sql } from "bun";
+import { secrets } from "@k2b/cloud/services";
+
+// Owner application, after its migration created the table.
+const encrypted = await secrets.encrypt({ apiKey: input.apiKey });
+await sql`
+  INSERT INTO storage.shared_credentials (name, value_encrypted)
+  VALUES (${input.name}, ${encrypted})
+  ON CONFLICT (name)
+  DO UPDATE SET value_encrypted = EXCLUDED.value_encrypted
+`;
+
+// Reader application, inside the server operation that needs the secret.
+async function readCredential(name: string) {
+  const [row] = await sql<{ value_encrypted: string }[]>`
+    SELECT value_encrypted FROM storage.shared_credentials
+    WHERE name = ${name}
+  `;
+  if (!row) return { status: "missing" };
+
+  try {
+    const credential = await secrets.decrypt<{ apiKey: string }>(
+      row.value_encrypted,
+    );
+    return { status: "ready", credential };
+  } catch {
+    // The writer used another APP_SECRET. Show this state
+    // instead of failing silently.
+    return { status: "unreadable" };
+  }
+}
+```
+
+The owner's migration must create `name` as a unique key and `value_encrypted`
+as a text column. Keep decrypted credentials on the server.
+
+> Every application that reads the table must run with exactly the same
+> `APP_SECRET` value as the writer. With a different value, `secrets.decrypt`
+> throws. Start readers only after the owner's setup has created the table.
+
 ## Keep the encryption key stable
 
-Every application instance must use the same `APP_SECRET`.
+Every application instance must use the same stable `APP_SECRET`. Cloud has no
+built-in rotation or previous-key fallback.
 
-Changing or losing it makes stored settings and encrypted application values
-unreadable. Back up the key separately from the database and restrict access to
-both.
+After a key change, `secrets.decrypt` throws for existing encrypted application
+values. Settings reads use `envFallback` or the default when a stored row cannot
+be decrypted or fails validation. Administration shows that row as unreadable.
+Writes over it fail with HTTP 409 `setting_unreadable` unless the caller
+explicitly replaces it. Reset deletes the stored row.
+
+At startup, Cloud leaves a setting row it cannot decrypt unchanged. It logs
+the key, never the value. Environment bootstrap, such as `app.url` from
+`APP_URL`, only fills settings that have no stored row. Reads under the wrong
+key still use `envFallback` or the default.
+
+Some applications also derive short-lived signatures from `APP_SECRET`, such as
+Grids pagination cursors and Files editor links. Those stop working after a key
+change.
+
+Rotating the key requires an offline migration:
+
+1. Stop every application.
+2. Decrypt every stored value with the old key and encrypt it with the new key:
+   all settings rows and every encrypted application column.
+3. Start all applications with the new `APP_SECRET` value.
+
+Cloud has no tool for this migration. Losing the old key makes existing
+encrypted values unrecoverable. Back up the key separately from the database
+and restrict access to both.
 
 Cloud refuses to start without `APP_SECRET`.
 
@@ -196,15 +284,114 @@ Before it opens a connection, `requestPublicHttps` throws for:
   (`HTTPS_REQUIRED`);
 - a `maxBytes` that is not a whole number of zero or more
   (`INVALID_BYTE_LIMIT`);
-- `localhost`, names under `.localhost` or `.internal`, and
-  `metadata.google.internal`;
+- `localhost`, `localhost.localdomain`, `metadata`, `metadata.google.internal`,
+  `instance-data`, and names under `.localhost`, `.internal`, `.local`, or
+  `.home.arpa`;
 - a name with any DNS answer in a private, loopback, link-local, shared,
-  documentation, multicast, or other reserved range, IPv4 addresses mapped
-  into IPv6 included. One such answer is enough.
+  documentation, multicast, or other reserved range. One such answer is enough;
+- a failed or empty DNS lookup, or an invalid address in its answers.
+
+Every IP literal form is classified, including shortened, decimal, octal, and
+hexadecimal IPv4, and IPv4-mapped, IPv4-compatible, NAT64, 6to4, and Teredo IPv6.
+Well-known NAT64 addresses are judged by their embedded IPv4 address.
 
 It then connects to the address it checked, without a second lookup, so a DNS
 answer that changes in between cannot move the request. TLS still verifies the
-certificate for the URL's host name.
+certificate for the URL's host name. A response above `maxBytes` is stopped
+with `HTTP_TOO_LARGE`, including when its declared content length already
+exceeds the limit. Connection and response failures use `HTTP_FAILED`.
+
+For transports `requestPublicHttps` cannot cover, such as IMAP, SMTP, or a
+plain-HTTP tester, resolve with `resolvePublicNetworkAddresses` from
+`@k2b/cloud/services/network-security`, catch `NetworkTargetBlockedError` for
+policy refusals, and connect through `pinnedNetworkLookup(addresses)`. With
+`node:http` or `node:https`, also pass `agent: false`, because a default agent
+can route through an environment proxy that resolves the name again. This keeps
+the connection on the checked addresses; never call `fetch()` with the URL.
+
+### Allow operator-approved internal targets
+
+When an application must reach internal services, declare an explicit allowlist
+in its environment registry. Only operators may set it. Never accept allowlist
+entries from an ordinary person, a base editor, or remote content. Pulse instead
+uses Cloud-admin-managed internal targets per base; its editors cannot widen them.
+
+`parseNetworkAllowlist(entries)` from `@k2b/cloud/shared` accepts exact DNS host
+names, strict dotted-quad IPv4, IPv6 literals (optionally bracketed), and CIDR
+networks. `host:port` and `[ipv6]:port` restrict a DNS name or IP to one port,
+from 1 to 65535 without leading zeros. Host names are lowercased and lose their
+trailing dot. Wildcards, schemes, paths, userinfo, IPv6 zone IDs, legacy IPv4
+forms, and CIDRs with ports are invalid.
+CIDR prefixes must be between 1 and the address family's width, with no host
+bits set; a `/0` network would allow every address and is refused. An invalid
+entry throws an error naming the entry and, for host bits, the correct network.
+Bare hosts, IPs and CIDRs allow every port; port-restricted entries apply only
+when the caller supplies that effective port. Entries never restrict paths.
+Keep releases as narrow as the use case allows.
+
+Use `parseNetworkAllowlistEnv(variable, entries)` from `@k2b/cloud/shared`
+for env registry values. It applies the same parser and prefixes errors with
+the variable name, so invalid operator configuration is clear at startup.
+
+For other transports, call `resolveAllowedNetworkAddresses(hostname, allowlist,
+lookup?, port?)`. Without `port`, only bare entries apply. SMTP, IMAP and
+Notebooks snapshots pass their selected port.
+
+For HTTP targets, use `createAllowedNetworkFetch(allowlist, deps?)` from
+`@k2b/cloud/services`. It returns `(input: string | URL | Request, init?: RequestInit)
+=> Promise<Response>`, normalizes method, headers and body through `Request`,
+and supports streaming uploads and responses, including SSE and exports.
+A body of known size goes out with `Content-Length`, like `fetch()`; only a
+`ReadableStream` body is sent chunked.
+Only HTTP and HTTPS are accepted; URL user information is refused before I/O.
+Each request passes its effective port (80 or 443 when omitted), resolves once
+through the guard and connects through
+`pinnedNetworkLookup` with `agent: false`, preserving the URL Host header and
+HTTPS server name. A `NetworkTargetBlockedError` propagates unchanged; failed
+and empty DNS lookups also refuse.
+
+The transport never follows redirects: `redirect: "error"` rejects a 3xx;
+otherwise it returns that response unchanged, even with `redirect: "follow"`.
+It sends `Accept-Encoding: identity` and rejects any non-identity response
+encoding. The returned real `Response` preserves status, status text and all
+headers, including repeated values; HEAD, 204 and 304 have null bodies.
+`init.signal` or the input Request's signal covers lookup, connection and body
+streaming; abort or body cancellation destroys the socket. Callers own deadlines,
+byte limits and retries: the helper adds none. Consume or cancel each response
+body. Optional `deps.lookup`, `deps.resolve` and `deps.request` support focused
+tests without changing the transport policy.
+
+Pass the parsed `NetworkAllowlist` to
+`resolveAllowedNetworkAddresses(hostname, allowlist, lookup?, port?)` from
+`@k2b/cloud/services/network-security`, then connect through
+`pinnedNetworkLookup` with `agent: false`. An exact host entry trusts every
+validated address returned for that name, including internal addresses. Without
+a host entry, every answer must be public or in an allowed network. A single
+unlisted internal answer refuses the request. Reserved names such as
+`localhost`, `.local`, and `.internal` names require an exact host entry, even
+when their addresses match an allowed network. Failed and empty lookups still
+refuse, including for listed names; they throw an ordinary error rather than
+`NetworkTargetBlockedError`. Invalid addresses and unsupported families refuse
+even for listed names.
+
+`isAllowlistedNetworkAddress(allowlist, address, port?)` performs pure IP network
+matching without DNS. IPv4-mapped IPv6 addresses also match their embedded IPv4
+against IPv4 entries. Other embeddings, including NAT64 `64:ff9b::/96`, 6to4,
+Teredo, and IPv4-compatible IPv6, require an IPv6 entry. Network entries never
+trust host names. `resolvePublicNetworkAddresses` retains the empty-allowlist
+policy. Pulse uses this contract for metrics sources and rechecks every
+redirect using a fresh read of the base’s Cloud-admin-managed targets and the
+hop’s effective port. Notebooks uses it for S3 snapshots:
+Bun signs locally, and a pinned transport sends the presigned PUT requests.
+
+For a save-time policy check, use
+`isNetworkTargetBlocked(hostname, allowlist, { resolve?, timeoutMs?, port? })` from
+`@k2b/cloud/services/network-security` (also exported by `@k2b/cloud/services`).
+It returns `true` only for `NetworkTargetBlockedError`. A failed lookup or the
+five-second default timeout returns `false`, so an unavailable service can be
+saved. The timer is cleared when the check finishes. This hint never permits a
+request: resolve, validate and pin again on every run, refusing failed or empty
+lookups. `resolve` and `timeoutMs` can be injected for focused tests.
 
 ### Read the result
 
@@ -215,8 +402,9 @@ headers: content-type, retry-after, etag and last-modified.
   means.
 - A redirect resolves with its status and an empty body. `Location` is not
   returned, so the caller cannot follow it either.
-- A compressed response, a body above `maxBytes`, and a connection or TLS
-  failure throw `HTTP_FAILED`, and so does a cancellation after the name
+- A body above `maxBytes` throws `HTTP_TOO_LARGE`.
+- A compressed response or a connection or TLS failure throws `HTTP_FAILED`,
+  and so does a cancellation after the name
   lookup. A failed lookup and an earlier cancellation throw other errors, so
   treat every thrown error as a failed request. Errors never contain the
   request's headers or credentials.
