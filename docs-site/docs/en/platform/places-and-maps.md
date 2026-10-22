@@ -477,9 +477,10 @@ import { AddressAutocomplete } from "@k2b/cloud/geo/ui";
 
 The field never fills other fields itself. `onPick` receives the chosen
 `GeoAddress` with `point` and `provenance`; keep both with the stored address
-and drop them when the person changes a location field later. The list always
-offers the typed text as its own entry: last on wide screens, first on phones
-so the on-screen keyboard cannot hide it. Arrow keys move, Enter takes the
+and drop them when the person changes a location field later. Next to
+suggestions, the list offers the typed text as its own entry: last on wide
+screens, first on phones so the on-screen keyboard cannot hide it; without
+suggestions it says that the typed text is saved as written. Arrow keys move, Enter takes the
 active entry, and Escape closes the list and keeps the typed text. The source
 line **Geoapify · OpenStreetMap** sits under the list.
 
