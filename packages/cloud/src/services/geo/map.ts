@@ -3,8 +3,8 @@ import { GEO_MAP_MAX_ZOOM, GEO_MAX_TILE_BYTES, GeoMapStyleInputSchema } from "..
 import { EMPTY_NETWORK_ALLOWLIST } from "../../shared/network-address";
 import { createAllowedNetworkFetch } from "../allowed-network-fetch";
 import { createGeoBucket, GEO_TIMEOUT_MS } from "./bucket";
-import { GeoError } from "./errors";
-import { type GeoFetch, GeoProviderError, geoNeverSent } from "./geoapify";
+import { GeoError, GeoProviderError } from "./errors";
+import { type GeoFetch, geoNeverSent } from "./geoapify";
 import { createGeoLedger } from "./ledger";
 import { type GeoContext, geoIdentity } from "./service";
 import { type GeoConfig, geoPlan, readGeoConfig } from "./settings";

@@ -179,7 +179,7 @@ export async function placesAndMapsBrowserFixture() {
       if (key.startsWith("bad-")) return c.json({ code: "geo_key_rejected" }, 422);
       if (key.startsWith("down-")) return c.json({ code: "geo_key_unverified" }, 502);
       const next = status();
-      next.key = { state: "set", setAt: new Date().toISOString(), setBy: lea };
+      next.key = { state: "set", setAt: "2026-10-20T12:00:00.000Z", setBy: lea };
       state = { ...state, status: next, usage: state.usage ?? PLACES_AND_MAPS_SCENARIOS.leer().usage };
       if (control.dropNextAnswer) {
         control.dropNextAnswer = false;
@@ -204,7 +204,7 @@ export async function placesAndMapsBrowserFixture() {
         monthlyCredits: Number(input.monthlyCredits),
         personDailyCredits: Number(input.personDailyCredits),
         ...(input.plan === "custom" ? { customRps: Number(input.customRps), customDailyCredits: Number(input.customDailyCredits) } : {}),
-        changedAt: new Date().toISOString(),
+        changedAt: "2026-10-20T12:00:00.000Z",
         changedBy: lea,
       };
       state = { ...state, status: next };

@@ -18,7 +18,8 @@ import * as settings from "../settings";
 import { decryptValue } from "../settings/crypto";
 import { SETTINGS_MAP, validateSettingValue } from "../settings/defaults";
 import { assertGeoBudgetPair } from "../settings/geo-budget";
-import { GeoapifyAdapter, GeoProviderError } from "./geoapify";
+import { GeoProviderError } from "./errors";
+import { GeoapifyAdapter } from "./geoapify";
 import { geoPeriods } from "./ledger";
 import { GEO_PLANS, readGeoConfig } from "./settings";
 

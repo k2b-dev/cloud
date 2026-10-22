@@ -17,25 +17,12 @@ import { EMPTY_NETWORK_ALLOWLIST } from "../../shared/network-address";
 import { createAllowedNetworkFetch } from "../allowed-network-fetch";
 import { GEO_TIMEOUT_MS } from "./bucket";
 import { GEO_MAX_JSON_BYTES, GEO_MAX_ROUTE_RESPONSE_BYTES } from "./cache";
-import { GeoError } from "./errors";
+import { GeoProviderError } from "./errors";
 import { parseGeoapifyRoute } from "./geoapify-route";
 
 const GEOAPIFY_ORIGIN = "https://api-eu.geoapify.com";
 const guardedFetch = createAllowedNetworkFetch(EMPTY_NETWORK_ALLOWLIST);
 export type GeoFetch = (url: URL, init: RequestInit) => Promise<Response>;
-export class GeoProviderError extends GeoError {
-  constructor(
-    code: "GEO_PROVIDER_FAILED" | "GEO_BUSY",
-    readonly charge: "none" | "known" | "unknown",
-    readonly keyRejected = false,
-    readonly referenceDistanceMeters?: number,
-  ) {
-    super(code, {
-      ...(code === "GEO_BUSY" ? { retryAfterSeconds: 1 } : {}),
-      ...(keyRejected ? { adminHint: "Geoapify rejected the key. Check geo.api_key in Core settings." } : {}),
-    });
-  }
-}
 const text = z.string().max(300).optional();
 const rawProperties = z.object({
   lat: z.number().min(-90).max(90),

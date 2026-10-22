@@ -2,8 +2,7 @@ import { z } from "zod";
 import type { GeoProvenance } from "../../contracts/geo";
 import type { GeoRouteLeg, GeoRouteOptions, GeoRouteResolvedStop } from "../../contracts/geo-route";
 import { GEO_MAX_ROUTE_RESPONSE_BYTES } from "./cache";
-import { GeoError } from "./errors";
-import { GeoProviderError } from "./geoapify";
+import { GeoError, GeoProviderError } from "./errors";
 import { compactRouteLine } from "./route-geometry";
 
 const coordinate = z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]);
