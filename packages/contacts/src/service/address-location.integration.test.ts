@@ -243,4 +243,139 @@ suite("Contacts address location", () => {
     expect(calls).toBe(1);
     expect((await get(contact.id)).addresses[0]!.location).toMatchObject({ status: "found", point: { lat: 48.47 } });
   });
+
+  test("a lookup claims only after the contact lock and timestamps the claim after waiting", async () => {
+    const contact = await create({ line1: "Frauenstraße 58" });
+    const holder = await sql.reserve();
+    let lookup: ReturnType<typeof locate> | undefined;
+    let cutoff: string | undefined;
+    let fresh: boolean | undefined;
+    let open = false;
+    try {
+      await holder`BEGIN`;
+      open = true;
+      await holder`SELECT id FROM contacts.contacts WHERE id = ${contact.id}::uuid FOR UPDATE`;
+      const [backend] = await holder<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      lookup = locate(reader, contact, async () => {
+        const [claim] = await sql<{ fresh: boolean }[]>`SELECT geo_lookup_at >= ${cutoff}::timestamptz AS fresh
+          FROM contacts.contact_addresses WHERE contact_id = ${contact.id}::uuid`;
+        fresh = claim!.fresh;
+        return { kind: "candidates", candidates: [sure(48.5)] };
+      });
+      lookup.catch(() => {});
+      const deadline = performance.now() + 5_000;
+      while (true) {
+        const [waiting] = await sql<{ blocked: boolean }[]>`SELECT EXISTS (
+          SELECT 1 FROM pg_stat_activity WHERE ${backend!.pid}::int = ANY(pg_blocking_pids(pid))
+            AND query LIKE '%contacts.contacts%'
+        ) AS blocked`;
+        if (waiting!.blocked) break;
+        if (performance.now() >= deadline) throw new Error("Claim did not wait for the parent contact lock");
+      }
+      // Keep PG's full timestamp precision: even a brief wait distinguishes transaction start from the claim statement.
+      const [boundary] = await holder<{ cutoff: string }[]>`SELECT clock_timestamp()::text AS cutoff`;
+      cutoff = boundary!.cutoff;
+      await holder`COMMIT`;
+      open = false;
+      expect(unwrap(await lookup)).toMatchObject({ state: "located", location: { status: "found" } });
+      expect(fresh).toBe(true);
+    } finally {
+      if (open) await holder`ROLLBACK`;
+      holder.release();
+      if (lookup) await Promise.allSettled([lookup]);
+    }
+  });
+
+  for (const outcome of ["found", "failed"] as const) {
+    test(`a ${outcome} lookup finishing during address replacement cannot be overwritten by its snapshot`, async () => {
+      const contact = await create({ line1: "Frauenstraße 56" });
+      const started = Promise.withResolvers<void>();
+      const finish = Promise.withResolvers<void>();
+      let calls = 0;
+      let settled = false;
+      const lookup = locate(reader, contact, async () => {
+        calls++;
+        started.resolve();
+        await finish.promise;
+        return outcome === "found" ? { kind: "candidates", candidates: [sure(48.48)] } : { kind: "failed" };
+      }).finally(() => {
+        settled = true;
+      });
+      // Keep failures observed even if setting up the SQL barrier fails.
+      lookup.catch(() => {});
+      const gate = await sql.reserve();
+      const barrier = `address_save_${crypto.randomUUID().replaceAll("-", "")}`;
+      let save: ReturnType<typeof contactsService.contact.update> | undefined;
+      let blocked = false;
+      try {
+        await started.promise;
+        await gate`SELECT pg_advisory_lock(hashtextextended(${barrier}, 0))`;
+        const [holder] = await gate<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        // A statement trigger pauses DELETE after the snapshot, before it locks any address row.
+        // A row trigger would also block the old completion and conceal the lost-update bug.
+        await sql.unsafe(`CREATE FUNCTION contacts.${barrier}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+          PERFORM pg_advisory_xact_lock(hashtextextended('${barrier}', 0)); RETURN NULL; END $$`);
+        await sql.unsafe(`CREATE TRIGGER ${barrier} BEFORE DELETE ON contacts.contact_addresses
+          FOR EACH STATEMENT EXECUTE FUNCTION contacts.${barrier}()`);
+        save = contactsService.contact.update({
+          ...writer,
+          bookId,
+          id: contact.id,
+          data: { addresses: [{ ...address, line1: "Frauenstraße 56", label: "Büro" }] },
+        });
+        save.catch(() => {});
+        let savePid: number | undefined;
+        const deadline = performance.now() + 5_000;
+        while (!savePid) {
+          const [waiting] = await sql<{ pid: number }[]>`SELECT pid FROM pg_stat_activity
+            WHERE wait_event = 'advisory' AND ${holder!.pid}::int = ANY(pg_blocking_pids(pid))`;
+          savePid = waiting?.pid;
+          if (performance.now() >= deadline) throw new Error("Save did not reach the pre-delete barrier");
+        }
+        finish.resolve();
+        // Observe actual PostgreSQL blocking, rather than guessing which write ran from elapsed time.
+        while (!settled && !blocked) {
+          const [waiting] = await sql<{ blocked: boolean }[]>`SELECT EXISTS (
+            SELECT 1 FROM pg_stat_activity WHERE ${savePid}::int = ANY(pg_blocking_pids(pid))
+              AND query LIKE '%contacts.contacts%'
+          ) AS blocked`;
+          blocked = waiting!.blocked;
+          if (performance.now() >= deadline) throw new Error("Lookup neither finished nor waited for the contact lock");
+        }
+        await gate`SELECT pg_advisory_unlock(hashtextextended(${barrier}, 0))`;
+        const saved = unwrap(await save);
+        expect(saved.addresses[0]!.id).not.toBe(contact.addresses[0]!.id);
+        const result = unwrap(await lookup);
+        const [row] = await sql<{ geo_lookup_at: Date | null; geo_lookup_hash: string | null }[]>`
+          SELECT geo_lookup_at, geo_lookup_hash FROM contacts.contact_addresses WHERE contact_id = ${contact.id}::uuid`;
+        expect(row).toEqual({ geo_lookup_at: null, geo_lookup_hash: null });
+        if (outcome === "found") {
+          expect(result).toMatchObject({ state: "located", location: { status: "found", point: { lat: 48.48 } } });
+          expect((await get(contact.id)).addresses[0]!.location).toMatchObject({ status: "found", point: { lat: 48.48 } });
+          expect(
+            unwrap(
+              await locate(reader, saved, async () => {
+                calls++;
+                return { kind: "failed" };
+              }),
+            ),
+          ).toMatchObject({ state: "located", location: { status: "found", point: { lat: 48.48 } } });
+          expect(calls).toBe(1);
+        } else {
+          expect(result).toEqual({ state: "failed" });
+          const retry = geocoder({ kind: "candidates", candidates: [sure(48.49)] });
+          expect(unwrap(await locate(reader, saved, retry.geocode))).toMatchObject({ state: "located", location: { status: "found" } });
+          expect(retry.calls).toHaveLength(1);
+        }
+        expect(blocked).toBe(true);
+      } finally {
+        finish.resolve();
+        await gate`SELECT pg_advisory_unlock(hashtextextended(${barrier}, 0))`;
+        gate.release();
+        await Promise.allSettled([lookup, ...(save ? [save] : [])]);
+        await sql.unsafe(`DROP TRIGGER IF EXISTS ${barrier} ON contacts.contact_addresses`);
+        await sql.unsafe(`DROP FUNCTION IF EXISTS contacts.${barrier}()`);
+      }
+    });
+  }
 });

@@ -4,7 +4,14 @@ import { err, fail, ok, type PageParams, type Paginated, paginate, type Result }
 import { sql } from "bun";
 import { newShortId, withShortIdRetry } from "../lib/short-id";
 import { resolveContactName, resolveStoredContactLabel } from "../shared";
-import { type AddressGeoColumns, addressGeoColumns, addressLocation, geoProvenanceJson, loadPreviousAddressGeo } from "./address-location";
+import {
+  type AddressGeoColumns,
+  addressGeoColumns,
+  addressLocation,
+  geoProvenanceJson,
+  loadPreviousAddressGeo,
+  lockContactAddressGeo,
+} from "./address-location";
 import { contactsLive, publishContactChange } from "./live";
 import { emptyToNull, isUuid, type SqlExecutor, toDateOnly, toPgUuidArray } from "./shared";
 import * as tags from "./tags";
@@ -551,7 +558,9 @@ const replacePhones = async (contactId: string, phones: ContactPhoneInput[], db:
   }
 };
 
-const replaceAddresses = async (contactId: string, addresses: ContactAddressInput[], db: SqlExecutor = sql): Promise<void> => {
+const replaceAddresses = async (contactId: string, addresses: ContactAddressInput[], db: SqlExecutor): Promise<void> => {
+  // Every caller supplies its transaction. Lock before the snapshot so lookup writes cannot be lost by replacement.
+  await lockContactAddressGeo(contactId, db);
   // Rows are replaced as a set; an unchanged address keeps its location, a changed one waits for a new lookup.
   const previousGeo = await loadPreviousAddressGeo(contactId, db);
   await db`
