@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
@@ -858,6 +858,7 @@ describe("Chat member input mode", () => {
           await remove.waitFor();
           await panel.getByRole("button", { name: t.closeChatInfo, exact: true }).focus();
           await page.mouse.move(0, 0);
+          await settled(page);
           const box = await row.boundingBox();
           const actionBox = await action.boundingBox();
           const opacity = async (value: string) => {
