@@ -605,6 +605,9 @@ for (const project of [false, true]) {
       replayedDraft: { content: [{ type: "text", text: "Remote draft B" }], revision: 1, updatedAt: now },
     });
     h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    const leave = { allowed: true };
+    h.window.dispatchEvent(new h.window.CustomEvent("cloud.panel.before-leave", { detail: leave }));
+    expect(leave.allowed).toBe(false);
     [...h.root.querySelectorAll<HTMLButtonElement>("button")]
       .find((button) => button.textContent?.trim() === "Entwürfe speichern")!
       .click();
