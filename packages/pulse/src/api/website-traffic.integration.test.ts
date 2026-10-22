@@ -99,6 +99,10 @@ suiteFor(
       idempotencyKey: "create-website-source",
     };
     let ingestServer: ReturnType<typeof Bun.serve> | undefined;
+    // The HTTP writer uses the process store. Keep its identifier guard aligned
+    // with the disposable ClickHouse namespace, without replacing the writer.
+    const originalPrefix = baseStore.prefix;
+    baseStore.prefix = store.prefix;
     const credentials = spyOn(baseStore, "readUserCredentials").mockImplementation((id) => store.readUserCredentials(id));
     try {
       await createBaseLifecycle(store)(base.id);
@@ -294,6 +298,7 @@ suiteFor(
     } finally {
       await ingestServer?.stop(true);
       credentials.mockRestore();
+      baseStore.prefix = originalPrefix;
       await sql`DELETE FROM auth.service_accounts WHERE app_id='pulse' AND created_by=${user!.id}::uuid`;
       await cleanupFixtureBase(base);
       await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
