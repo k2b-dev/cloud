@@ -367,6 +367,23 @@
   min-height: 0;
 }
 
+/* The approved detail uses plain, flush section headings and compact read-only facts. */
+.k2b-ui .k2b-app-workspace__detail .filesv2-inspector .k2b-detail-panel__body {
+  gap: 1rem;
+}
+.k2b-ui .filesv2-inspector-info .k2b-description-list__item {
+  min-height: 0;
+  grid-template-rows: auto;
+  padding-block: 3px;
+}
+.k2b-ui .filesv2-inspector-info .k2b-description-list__item dt {
+  padding-block-start: 0;
+}
+.k2b-ui .filesv2-inspector-versions .k2b-button.k2b-detail-panel__action {
+  min-height: 30px;
+  padding-block: 0.1875rem;
+}
+
 /* Details: the preview is a compact glimpse of the approved 150px, so versions and history stay in view. Media take
    that height; a text excerpt, a placeholder and its retry or download keep their natural size inside it. */
 .filesv2-inspector-preview {

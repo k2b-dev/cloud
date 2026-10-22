@@ -140,7 +140,6 @@ export default function ItemHistory(props: ItemHistoryProps) {
     <DetailPanel.Group label={h().history}>
       <DetailPanel.Section
         title={h().history}
-        icon="ti ti-history"
         tone="neutral"
         count={complete() && lines().length > 0 ? lines().length : undefined}
         actions={

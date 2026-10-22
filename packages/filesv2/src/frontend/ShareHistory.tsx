@@ -90,7 +90,7 @@ export default function ShareHistory(props: ShareHistoryProps) {
   return (
     <Show when={props.shares.length > 0}>
       <DetailPanel.Group label={h().publicLink}>
-        <DetailPanel.Section title={h().publicLink} icon="ti ti-world-share" tone="neutral" count={props.shares.length}>
+        <DetailPanel.Section title={h().publicLink} tone="neutral" count={props.shares.length}>
           <div class="filesv2-share-history">
             <For each={props.shares}>
               {(item) => (
