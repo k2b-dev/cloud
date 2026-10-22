@@ -1,8 +1,8 @@
 import { sql } from "bun";
-import { migrateAiMaps } from "./map-store";
 import { CapabilityActionReviewDataSchema } from "../contracts/capabilities";
 import { APPROVAL_MAX_WAIT_MS, approvalAssurance, approvalScopeFromToolName, approvals, migrateApprovals } from "../services/approvals";
 import { migrateChatTaskReasons } from "./chat-task-reasons-migrate";
+import { migrateAiMaps } from "./map-store";
 import { migrateAiMessageQueue } from "./message-queue";
 import { migrateAiModelAccess } from "./model-access-migrate";
 import { migrateAiQuotas } from "./quotas-migrate";

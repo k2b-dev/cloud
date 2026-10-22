@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { createCloudAiMapTool } from "./map-tool";
 import type { AccessSubject } from "../server";
 import { resolveAssistantAudioModel } from "./assistant-models";
 import { createCloudAiTranscribeAudioTool } from "./audio-tool";
@@ -57,6 +56,7 @@ import {
   CloudAiLocalWriteInputSchema,
   CloudAiLocalWriteOutputSchema,
 } from "./local-tool-contracts";
+import { createCloudAiMapTool } from "./map-tool";
 import { createCloudAiMarkdownToPdfTool } from "./markdown-pdf-tool";
 import { createAiTodoTool } from "./todo-tool";
 import { defineAiTool } from "./tools";

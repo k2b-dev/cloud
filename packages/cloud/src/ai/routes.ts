@@ -39,7 +39,6 @@ import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioM
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
-import { aiMapRoutes } from "./map-routes";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
 import { aiChatTasks } from "./chat-tasks";
@@ -66,6 +65,7 @@ import {
 } from "./http";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema } from "./local-tool-contracts";
 import { aiMaintenanceJobs } from "./maintenance";
+import { aiMapRoutes } from "./map-routes";
 import { AI_MEMORY_CONTENT_MAX_CHARS, aiMemories } from "./memories";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { createCloudAiMemoryTool } from "./memory-tool";
