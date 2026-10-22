@@ -494,7 +494,7 @@ function createVersions(base: () => BaseSummary, entry: () => FileEntry) {
   });
   /** `null` until the list of this exact file state arrived; then never an empty stand-in for "unknown". */
   const items = createMemo(() => (versions.data()?.key === key() ? (versions.data()?.items ?? null) : null));
-  const state = () => (!base().versioningEnabled ? "off" : items() ? "ready" : versions.error() ? "error" : "loading");
+  const state = () => (!base().versioningEnabled ? "off" : versions.error() ? "error" : items() ? "ready" : "loading");
   return { items, state, refresh: () => versions.refresh() };
 }
 type Versions = ReturnType<typeof createVersions>;
@@ -534,6 +534,7 @@ function EntryHistory(props: {
     !!entry.after.revision &&
     entry.after.revision === props.entry.revision;
   const versionOf = (entry: ActivityEntry) => {
+    if (props.versions.state() !== "ready") return null;
     const side = entry.after.visibility === "full" ? entry.after : entry.before.visibility === "full" ? entry.before : null;
     const number = side?.versionId ? versionNumbers().get(side.versionId) : undefined;
     if (number) return { current: number, restorable: null };
