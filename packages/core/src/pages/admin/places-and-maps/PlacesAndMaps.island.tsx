@@ -176,7 +176,6 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
       announce(Object.keys(errors).length > 1 ? t().notSavedFields : t().notSavedField, { politeness: "assertive" });
       return;
     }
-    const before = status()?.budget.changedAt ?? null;
     setSavePhase({ kind: "saving" });
     try {
       const response = await api.budget.$put({ json: input });
@@ -193,8 +192,17 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
     } catch {
       // A lost answer may hide a commit; read the stored values before saying anything.
     }
+    // Only the stored values themselves prove this save: another tab may have written in between.
     const after = await readStatus();
-    if (after && after.budget.changedAt !== before && after.budget.changedBy?.id === props.initial.actorId) return saved(after);
+    const stored = after?.budget;
+    if (
+      stored &&
+      stored.plan === input.plan &&
+      stored.monthlyCredits === input.monthlyCredits &&
+      stored.personDailyCredits === input.personDailyCredits &&
+      (input.plan !== "custom" || (stored.customRps === input.customRps && stored.customDailyCredits === input.customDailyCredits))
+    )
+      return saved(after);
     failSave();
   };
   const saved = (next: GeoAdminStatus) => {
@@ -249,8 +257,7 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
       return;
     }
     setKeyFieldError(undefined);
-    const before = status()?.key ?? null;
-    const hadKey = before?.state === "set";
+    const hadKey = status()?.key.state === "set";
     setKeyPhase({ kind: "checking" });
     const fail = (reason: "rejected" | "unverified" | "no-answer") => {
       setKeyPhase({ kind: "failed", reason, hadKey });
@@ -273,9 +280,9 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
     } catch {
       // Reconcile below: the key may have been stored before the answer was lost.
     }
+    // A stored key cannot be compared with the typed one, so a lost answer stays open; checking again is idempotent.
     const after = await readStatus();
-    if (after?.key.state === "set" && after.key.setAt !== before?.setAt && after.key.setBy?.id === props.initial.actorId)
-      return keySaved(after);
+    if (after) setStatus(after);
     fail("no-answer");
   };
   const keySaved = (next: GeoAdminStatus) => {

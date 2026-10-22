@@ -208,6 +208,10 @@ export async function placesAndMapsBrowserFixture() {
         changedBy: lea,
       };
       state = { ...state, status: next };
+      if (control.dropNextAnswer) {
+        control.dropNextAnswer = false;
+        return c.json({ message: "Synthetic lost answer" }, 504);
+      }
       return c.json(next);
     })
     .all("/api/*", (c) => c.json({ message: "Synthetic fixture: unknown route" }, 404));

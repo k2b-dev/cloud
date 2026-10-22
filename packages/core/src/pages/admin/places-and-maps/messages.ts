@@ -39,7 +39,7 @@ export const placesAndMapsMessages = i18n.define({
       unverifiedDetail: "Nothing was saved. Try again in a moment.",
       unverifiedDetailKeep: "Nothing was saved. The previous key stays active. Try again in a moment.",
       noAnswer: "Cloud did not answer.",
-      noAnswerDetail: "The key is not saved yet. Checking it again is safe.",
+      noAnswerDetail: "It is unclear whether the key was saved. Checking again is safe: Cloud checks and stores the same key once more.",
       checkAgain: "Check again",
       changeKey: "Change key",
       missingKey: "Paste the key first.",
@@ -89,7 +89,8 @@ export const placesAndMapsMessages = i18n.define({
       places: "Place search",
       route: "Routes",
       address: "Addresses and suggestions",
-      usageHint: "In Geoapify credits. The daily allowance comes from your plan and is only a soft limit there.",
+      usageHint:
+        "In credits by Geoapify's price list, counted by Cloud. The daily allowance comes from your plan and is only a soft limit there.",
       usageAfterKey: "Usage appears once a key is stored.",
       noUsage: "No usage this month yet.",
       usageFailed: "Usage could not be loaded.",
@@ -133,7 +134,8 @@ export const placesAndMapsMessages = i18n.define({
       unverifiedDetail: "Nichts wurde gespeichert. Versuche es gleich noch einmal.",
       unverifiedDetailKeep: "Nichts wurde gespeichert. Der bisherige Schlüssel bleibt aktiv. Versuche es gleich noch einmal.",
       noAnswer: "Cloud hat nicht geantwortet.",
-      noAnswerDetail: "Der Schlüssel ist noch nicht gespeichert. Erneut prüfen ist sicher.",
+      noAnswerDetail:
+        "Ob der Schlüssel gespeichert wurde, ist unklar. Erneut prüfen ist sicher: Cloud prüft und speichert denselben Schlüssel noch einmal.",
       checkAgain: "Erneut prüfen",
       changeKey: "Schlüssel ändern",
       missingKey: "Füge zuerst den Schlüssel ein.",
@@ -183,7 +185,8 @@ export const placesAndMapsMessages = i18n.define({
       places: "Ortssuche",
       route: "Routen",
       address: "Adressen und Vorschläge",
-      usageHint: "In Credits von Geoapify. Das Tageskontingent kommt aus deinem Tarif und ist dort nur eine weiche Grenze.",
+      usageHint:
+        "In Credits nach der Preisliste von Geoapify, von Cloud gezählt. Das Tageskontingent kommt aus deinem Tarif und ist dort nur eine weiche Grenze.",
       usageAfterKey: "Verbrauch erscheint, sobald ein Schlüssel hinterlegt ist.",
       noUsage: "Noch kein Verbrauch in diesem Monat.",
       usageFailed: "Der Verbrauch konnte nicht geladen werden.",

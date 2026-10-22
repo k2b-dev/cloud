@@ -117,17 +117,29 @@ test("replacing the key keeps the old one through refusal and outage, then saves
   }
 }, 60_000);
 
-test("a lost answer after saving a key is reconciled from the stored state", async () => {
+test("a lost answer stays open for a key and is settled by the stored values for a budget", async () => {
   const { page } = await open(views[0], "state=aus&locale=en");
   try {
     fixture.control.dropNextAnswer = true;
     await page.getByLabel("Geoapify key", { exact: true }).fill("ok-fresh-key");
     await page.getByRole("button", { name: "Check and save key", exact: true }).click();
+    // The key cannot be compared after the fact, so the page claims nothing and offers the safe repeat.
+    await root(page).getByText("Cloud did not answer.", { exact: true }).waitFor();
+    expect(await textOf(page)).toContain("It is unclear whether the key was saved.");
+    await page.getByRole("button", { name: "Check again", exact: true }).click();
     await page.getByRole("button", { name: "Replace", exact: true }).waitFor();
-    expect(await root(page).innerText()).toContain("by Lea Schulz");
-    // With a key, the budget opens and usage appears.
-    expect(await page.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(false);
+    expect(await textOf(page)).toContain("by Lea Schulz");
+
+    // The budget save landed although its answer was lost: the stored values match, so it counts as saved.
+    fixture.control.dropNextAnswer = true;
+    await page.getByLabel("Daily limit per person (credits)", { exact: true }).fill("400");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await root(page)
+      .getByText(/^Saved at /)
+      .waitFor();
+    expect(await page.getByLabel("Daily limit per person (credits)", { exact: true }).inputValue()).toBe("400");
   } finally {
+    fixture.control.dropNextAnswer = false;
     await page.close();
   }
 }, 30_000);

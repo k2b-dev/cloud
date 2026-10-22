@@ -5,6 +5,7 @@ import { createGeoAdmin, GeoAdminError } from "./admin";
 import { GEO_TEST_NOW, geoTestConfig } from "./geo.test-fixture";
 import { createGeoLedger } from "./ledger";
 import { migrate } from "./migrate";
+import { readGeoConfig } from "./settings";
 
 const admin = { id: "11111111-1111-4111-8111-111111111111", uid: "lea", provider: "local", roles: ["admin", "user"] };
 const person = { id: "22222222-2222-4222-8222-222222222222", uid: "max", provider: "local", roles: ["user"] };
@@ -160,6 +161,26 @@ suiteFor("database", "valkey")("Core geo administration", () => {
       personDailyCredits: 300,
     });
     expect(saved.budget).toMatchObject({ monthlyCredits: 50000, unreadable: [] });
+  });
+
+  test("saving a standard plan resets an unreadable hidden custom value, so geo turns back on", async () => {
+    const geo = service();
+    await geo.setKey(admin, "ok-key");
+    await sql`INSERT INTO settings.entries (key, value) VALUES ('geo.custom_rps', 'broken-ciphertext')`;
+    expect((await readGeoConfig()).apiKey).toBe("");
+    expect((await geo.status(admin)).budget.unreadable).toEqual(["customRps"]);
+    const saved = await geo.saveBudget(admin, {
+      plan: "free",
+      customRps: null,
+      customDailyCredits: null,
+      monthlyCredits: 90000,
+      personDailyCredits: 300,
+    });
+    expect(saved.budget).toMatchObject({ unreadable: [], customRps: 5 });
+    expect((await readGeoConfig()).apiKey).toBe("ok-key");
+    const [event] = await sql<{ metadata: { resets?: string[] } }[]>`
+      SELECT metadata FROM audit.events WHERE action = 'core.geo.budget_changed' ORDER BY id DESC LIMIT 1`;
+    expect(event?.metadata.resets).toEqual(["custom_rps"]);
   });
 
   test("usage reports this month, today against the plan allowance, shares and people at their limit", async () => {

@@ -76,27 +76,29 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
   const verify = options.verify ?? verifyGeoapifyKey();
   const now = options.now ?? (() => new Date());
 
-  const lastChange = async (action: string): Promise<{ at: Date; by: GeoAdminPerson | null } | null> => {
-    const [row] = await db<{ created_at: Date; actor_user_id: string | null; name: string | null }[]>`
-      SELECT e.created_at, e.actor_user_id, COALESCE(NULLIF(u.display_name, ''), u.uid) AS name
+  /**
+   * The person behind the stored value: the audit event written in the same transaction as the newest of these rows
+   * carries that transaction's exact timestamp. A later write without an audited person names nobody.
+   */
+  const changedBy = async (action: string, keys: readonly string[]): Promise<GeoAdminPerson | null> => {
+    const [row] = await db<{ actor_user_id: string; name: string | null }[]>`
+      SELECT e.actor_user_id, COALESCE(NULLIF(u.display_name, ''), u.uid) AS name
       FROM audit.events e LEFT JOIN auth.users u ON u.id = e.actor_user_id
-      WHERE e.action = ${action} ORDER BY e.created_at DESC LIMIT 1`;
-    if (!row) return null;
-    return { at: new Date(row.created_at), by: row.actor_user_id ? { id: row.actor_user_id, name: row.name ?? row.actor_user_id } : null };
+      WHERE e.action = ${action} AND e.actor_user_id IS NOT NULL
+        AND e.created_at = (SELECT max(updated_at) FROM settings.entries WHERE key = ANY(${toPgTextArray([...keys])}::text[]))
+      ORDER BY e.id DESC LIMIT 1`;
+    return row ? { id: row.actor_user_id, name: row.name ?? row.actor_user_id } : null;
   };
-  /** A person is named only when their audited change is the latest write; settings and audit share one transaction time. */
-  const changedBy = (event: Awaited<ReturnType<typeof lastChange>>, at: Date | null) =>
-    event && at && event.at.getTime() >= at.getTime() ? event.by : null;
 
   const status = async (actor: Actor): Promise<GeoAdminStatus> => {
     requireAdmin(actor);
-    const [config, states, rows, keyEvent, budgetEvent] = await Promise.all([
+    const [config, states, rows, keyBy, budgetBy] = await Promise.all([
       readGeoConfig(),
       settings.readStates([KEY, ...BUDGET_KEYS]),
       db<{ key: string; updated_at: Date }[]>`
         SELECT key, updated_at FROM settings.entries WHERE key = ANY(${toPgTextArray([KEY, ...BUDGET_KEYS])}::text[])`,
-      lastChange(KEY_ACTION),
-      lastChange(BUDGET_ACTION),
+      changedBy(KEY_ACTION, [KEY]),
+      changedBy(BUDGET_ACTION, BUDGET_KEYS),
     ]);
     const updated = new Map(rows.map((row) => [row.key, new Date(row.updated_at)]));
     const key = states.get(KEY);
@@ -105,7 +107,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
     const budgetTimes = BUDGET_KEYS.flatMap((name) => updated.get(name)?.getTime() ?? []);
     const budgetAt = budgetTimes.length ? new Date(Math.max(...budgetTimes)) : null;
     return {
-      key: { state: keyState, setAt: keyAt?.toISOString() ?? null, setBy: keyState === "set" ? changedBy(keyEvent, keyAt) : null },
+      key: { state: keyState, setAt: keyAt?.toISOString() ?? null, setBy: keyState === "set" ? keyBy : null },
       budget: {
         plan: config.plan,
         customRps: config.customRps,
@@ -114,7 +116,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
         personDailyCredits: config.personDailyCredits,
         unreadable: BUDGET_FIELDS.flatMap(([field, name]) => (states.get(name)?.stored === "unreadable" ? [field] : [])),
         changedAt: budgetAt?.toISOString() ?? null,
-        changedBy: changedBy(budgetEvent, budgetAt),
+        changedBy: budgetAt ? budgetBy : null,
       },
       plans: GEO_PLANS,
       timezone: config.timezone,
@@ -203,22 +205,30 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
           ]),
         ),
       };
+      // Geo stays off while any geo setting is unreadable. A standard plan hides the custom fields, so saving it
+      // resets their unreadable values to the defaults instead of leaving geo off behind a field nobody sees.
+      const states = await settings.readStates(BUDGET_FIELDS.map(([, name]) => name));
+      const resets = BUDGET_FIELDS.flatMap(([, name]) => (!(name in updates) && states.get(name)?.stored === "unreadable" ? [name] : []));
       await db.begin(async (tx) => {
         // Same lock and final-pair rule as every other writer of these settings.
-        await assertGeoBudgetPair(tx, updates, []);
+        await assertGeoBudgetPair(tx, updates, resets);
         // Saving the form is the explicit replacement of a value this installation cannot read.
         for (const [name, value] of Object.entries(updates)) await settings.set(name, value, tx, { replaceUnreadable: true });
+        for (const name of resets) await settings.remove(name, tx);
         await audit.record(
           {
             action: BUDGET_ACTION,
             outcome: "allowed",
             actor: auditActor(actor),
-            metadata: Object.fromEntries(Object.entries(updates).map(([name, value]) => [name.slice(4), value])),
+            metadata: {
+              ...Object.fromEntries(Object.entries(updates).map(([name, value]) => [name.slice(4), value])),
+              ...(resets.length ? { resets: resets.map((name) => name.slice(4)) } : {}),
+            },
           },
           tx,
         );
       });
-      await invalidate(Object.keys(updates));
+      await invalidate([...Object.keys(updates), ...resets]);
       return status(actor);
     },
   };
