@@ -2671,3 +2671,6 @@
 
 .notebook-pdf-dialog[data-map-document] .notebook-map-export__preview .notebook-map__number { color: #a16207; }
 .k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__actions .k2b-button[data-variant="primary"]:hover:not(:disabled) { background: var(--color-yellow-600); }
+
+/* Snapshot pins sit on white circles, including when the surrounding application is dark. */
+.k2b-ui .notebook-pdf-dialog[data-map-document] .notebook-map-export__preview .k2b-map-view { --k2b-map-accent-ink: #a16207; }

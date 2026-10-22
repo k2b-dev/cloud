@@ -492,6 +492,15 @@ test("pending map export gates both actions; closing cancels preparation without
           background: getComputedStyle(attribution).backgroundColor,
         })),
     ).toEqual({ color: "rgb(82, 82, 91)", background: "rgb(255, 255, 255)" });
+    expect(
+      await page
+        .locator(".notebook-map-export__preview .k2b-map-view__pin")
+        .first()
+        .evaluate((pin) => ({
+          color: getComputedStyle(pin).color,
+          background: getComputedStyle(pin).backgroundColor,
+        })),
+    ).toEqual({ color: "rgb(161, 98, 7)", background: "rgb(255, 255, 255)" });
     expect(await page.getByRole("button", { name: "PDF laden", exact: true }).last().isDisabled()).toBe(true);
     expect(await page.getByRole("button", { name: "Drucken", exact: true }).last().isDisabled()).toBe(true);
     expect(
