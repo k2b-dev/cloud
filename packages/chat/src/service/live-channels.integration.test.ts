@@ -165,8 +165,13 @@ suite("Chat batched live authorization", () => {
     expect(await chatLiveChannels.conversation.authorize("c:absent", viewers)).toEqual(new Set());
     expect(await chatLiveChannels.conversation.keys({ conversation: "absent" })).toEqual(["c:absent"]);
     expect(await chatLiveChannels.me.authorize(`p:${read.id}`, viewers)).toEqual(
-      new Set(viewers.filter((v) => v.accessSubject.type === "user" && v.accessSubject.userId === read.id).map((v) => v.id)),
+      new Set([viewer(read).id, delegatedViewer.id, boundUser(ownKey, ["read"]).id, boundUser(otherKey, ["read"]).id]),
     );
     expect(await chatLiveChannels.me.keys({}, keyViewer(standalone, ["read"]))).toBeNull();
+    const noScope = boundUser(ownKey, ["openid"]);
+    const wrongApp = boundUser({ ...ownKey, appId: "files" }, ["read"]);
+    expect(await chatLiveChannels.me.keys({}, noScope)).toBeNull();
+    expect(await chatLiveChannels.me.keys({}, wrongApp)).toBeNull();
+    expect(await chatLiveChannels.me.authorize(`p:${read.id}`, [noScope, wrongApp])).toEqual(new Set());
   });
 });

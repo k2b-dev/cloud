@@ -22,6 +22,8 @@ const chatReaders = async (key: string, viewers: readonly LiveViewer[]): Promise
   );
 };
 
+const canReadPersonal = (viewer: LiveViewer) => boundConversation(viewer.actor).ok && capPermission("read", viewer.actor) !== "none";
+
 export const chatLiveChannels = {
   conversation: {
     scope: z.object({ conversation: ShortIdSchema }).strict(),
@@ -48,11 +50,11 @@ export const chatLiveChannels = {
   me: {
     scope: z.object({}).strict(),
     keys: async (_scope: unknown, viewer: LiveViewer) =>
-      viewer.accessSubject.type === "user" ? [`p:${viewer.accessSubject.userId}`] : null,
+      viewer.accessSubject.type === "user" && canReadPersonal(viewer) ? [`p:${viewer.accessSubject.userId}`] : null,
     authorize: async (key: string, viewers: readonly LiveViewer[]) =>
       new Set(
         viewers
-          .filter((viewer) => viewer.accessSubject.type === "user" && key === `p:${viewer.accessSubject.userId}`)
+          .filter((viewer) => viewer.accessSubject.type === "user" && canReadPersonal(viewer) && key === `p:${viewer.accessSubject.userId}`)
           .map((viewer) => viewer.id),
       ),
   },

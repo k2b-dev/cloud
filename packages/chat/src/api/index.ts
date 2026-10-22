@@ -149,10 +149,10 @@ const app = new Hono<AuthContext>()
     validator("query", ConversationQuerySchema, invalidInput),
     async (c) => {
       // The transport validator decodes the cursor; the service validates its own public input.
-      const { cursor, archived } = c.req.valid("query");
+      const { cursor, archived, unread, ids } = c.req.valid("query");
       return respond(
         c,
-        chatService.conversations.list({ ...context(c), query: { archived, ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) } }),
+        chatService.conversations.list({ ...context(c), query: { archived, unread, ...(ids ? { ids: ids.join(",") } : {}), ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) } }),
       );
     },
   )

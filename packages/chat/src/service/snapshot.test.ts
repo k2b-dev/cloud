@@ -119,3 +119,11 @@ test("SSR propagates failed sidebar and snapshot reads to the page's error state
   spyOn(messages, "snapshot").mockResolvedValue({ ok: false, error: { code: "INTERNAL_ERROR", status: 500, message: "Snapshot failed" } });
   await expect(loadChatView(context, { conversationId: "abcdef" })).rejects.toThrow("Snapshot failed");
 });
+
+
+test("SSR applies archive and Unread filters before fetching the sidebar", async () => {
+  spyOn(chatLive, "cursor").mockResolvedValue("before-reads");
+  const list = spyOn(conversations, "list").mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
+  await loadChatView(context, { archived: true, unread: true });
+  expect(list).toHaveBeenCalledWith({ ...context, query: { archived: "true", unread: "true" } });
+});

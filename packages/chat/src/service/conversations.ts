@@ -11,7 +11,7 @@ import {
   type ServiceError,
   updateAccess,
 } from "@k2b/cloud/server";
-import { audit, toPgUuidArray } from "@k2b/cloud/services";
+import { audit, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
@@ -56,7 +56,7 @@ import {
 } from "./contracts";
 import { chatLive } from "./live";
 import { appendMessage, deletedPeople, personSnapshots } from "./message-store";
-import { projectRead, type ReadProjection, unreadQuery } from "./read-state";
+import { projectRead, type ReadProjection, readStartSql, unreadQuery } from "./read-state";
 import { deriveTitle, TITLE_NAME_LIMIT } from "./titles";
 
 const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_LIMIT, windowSecs: CREATE_WINDOW_SECONDS });
@@ -516,6 +516,7 @@ const list = (input: ChatContext & { query?: unknown }) =>
     if (!bound.ok) return fail(err.forbidden(messages(input).forbidden));
     if (capPermission("read", input.actor) === "none") return ok({ items: [], nextCursor: null });
     const cursor = parsed.data.cursor;
+    const ids = parsed.data.ids;
     const self = subjectPrincipal(input.accessSubject);
     const archived = parsed.data.archived === "true";
     const rows = await db<(ConversationRow & { permission_rank: number; cursor_at: string })[]>`
@@ -524,7 +525,9 @@ const list = (input: ChatContext & { query?: unknown }) =>
     FROM chat.conversations c JOIN chat.conversation_access ca ON ca.conversation_id = c.id JOIN auth.access a ON a.id = ca.access_id
     LEFT JOIN chat.participants p ON p.conversation_id = c.id AND p.principal_type = ${self.type} AND p.principal_id = ${self.id}::uuid
     WHERE ${readableMemberCondition(input.accessSubject, bound.data, db)}
+      AND ${ids ? db`c.short_id = ANY(${toPgTextArray(ids)}::text[])` : db`true`}
       AND (p.archived_at IS NOT NULL) = ${archived}
+      AND ${parsed.data.unread === "true" ? db`(p.unread_from_seq IS NOT NULL OR EXISTS(SELECT 1 FROM chat.messages m WHERE m.conversation_id = c.id AND m.kind = 'text' AND m.seq > ${readStartSql(db)} AND NOT (m.author_type = ${self.type} AND m.author_id = ${self.id}::uuid)))` : db`true`}
       AND ${
         cursor
           ? db`(COALESCE(p.pinned_rank, 2147483647) > ${cursor.rank} OR

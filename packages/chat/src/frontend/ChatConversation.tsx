@@ -45,6 +45,7 @@ export type ChatConversationProps = {
   actions?: JSX.Element;
   chatId: string;
   title: string;
+  backHref?: string;
   memberCount: number;
   items: readonly ChatFeedItem[];
   hasOlder: boolean;
@@ -147,7 +148,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     <section ref={frame} class="chat-conversation" aria-label={props.title}>
       <header class="chat-conversation__header">
         <span class="chat-conversation__back">
-          <IconButtonLink href="/app/chat" navigation="enhanced" onNavigate={props.onBack} label={t().backToChats} tooltip={false}>
+          <IconButtonLink href={props.backHref ?? "/app/chat"} navigation="enhanced" onNavigate={props.onBack} label={t().backToChats} tooltip={false}>
             <i class="ti ti-chevron-left" aria-hidden="true" />
           </IconButtonLink>
         </span>

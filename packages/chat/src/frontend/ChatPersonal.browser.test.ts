@@ -17,8 +17,11 @@ afterAll(async () => {
 });
 const add = (name: string, unread = 0) => harness.addChat({ name, members: [viewer, nora], count: 4, end: harness.now(), unread });
 const pin = async (context: BrowserContext, id: string) => {
-  const response = await context.request.put(`${harness.url}/api/chat/conversations/${id}/personal`, { data: { pinned: true } });
+  const response = await context.request.put(new URL(`/api/chat/conversations/${id}/personal`, harness.url).href, {
+    data: { pinned: true },
+  });
   expect(response.ok()).toBe(true);
+  expect((await response.json()).pinnedRank).toBeNumber();
 };
 const start = async (phone: boolean, locale: string, path = "/app/chat") => {
   const context = await browser.newContext({
@@ -39,7 +42,7 @@ const start = async (phone: boolean, locale: string, path = "/app/chat") => {
     },
     { locale },
   );
-  await page.goto(`${harness.url}${path}`);
+  await page.goto(new URL(path, harness.url).href);
   await page
     .getByRole("button", { name: chatMessages.resolve([locale]).t.newChat, exact: true })
     .filter({ visible: true })
@@ -104,7 +107,9 @@ for (const phone of [false, true]) {
         );
         expect(await visible(page).getByText("Unread design", { exact: true }).count()).toBe(1);
         await visible(page).getByRole("button", { name: t.allChats, exact: true }).click();
+        await page.waitForURL("**/app/chat");
         await visible(page).getByRole("button", { name: t.unreadChats, exact: true }).click();
+        await page.waitForURL("**?filter=unread");
         await visible(page).getByText(t.noUnreadChats, { exact: true }).waitFor();
         await page.reload();
         await visible(page).getByText(t.noUnreadChats, { exact: true }).waitFor();
@@ -144,7 +149,17 @@ for (const phone of [false, true]) {
             .some((element) => element.textContent?.indexOf("Beta")! < element.textContent?.indexOf("Alpha")!),
         );
         expect(await order(page)).toEqual(["Beta", "Alpha"]);
+        let rejectPreferences = true;
+        await page.route("**/api/chat/preferences", async (route) => {
+          if (route.request().method() === "PUT" && rejectPreferences) {
+            rejectPreferences = false;
+            await route.fulfill({ status: 503, json: { message: "Unavailable" } });
+          } else await route.continue();
+        });
         await visible(page).getByRole("button", { name: t.pinnedChats, exact: true }).click();
+        await visible(page).getByRole("alert").waitFor();
+        expect(await visible(page).getByRole("button", { name: t.pinnedChats, exact: true }).getAttribute("aria-expanded")).toBe("true");
+        await visible(page).getByRole("button", { name: t.retry, exact: true }).click();
         await page.waitForFunction(() =>
           [...document.querySelectorAll('[aria-expanded="false"]')].some(
             (element) => element.textContent?.includes("Pinned") || element.textContent?.includes("Angeheftet"),
@@ -177,19 +192,23 @@ test("sixteen pins scroll without a cap and pointer and keyboard drag both save"
     }));
     expect(box.content).toBeGreaterThan(box.height);
     expect(box.overflow).toBe("auto");
+    await pins.getByRole("link", { name: /Room 01/ }).focus();
     const handle = pins.getByRole("button", { name: "Move Room 01", exact: true });
     await handle.focus();
     await page.keyboard.press("Space");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.querySelector(".chat-list-pins")?.textContent?.startsWith("Room 02"));
+    expect(await handle.evaluate((element) => element === document.activeElement)).toBe(true);
+    await handle.and(page.locator('[aria-disabled="false"]')).waitFor();
+    await pins.getByRole("link", { name: /Room 01/ }).hover();
     const source = pins.getByRole("button", { name: "Move Room 01", exact: true });
     await source.hover();
     const from = await source.boundingBox(),
-      target = await pins.getByText("Room 03", { exact: true }).boundingBox();
+      target = await pins.locator("[data-dnd-droppable]", { has: page.getByText("Room 03", { exact: true }) }).boundingBox();
     await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2);
     await page.mouse.down();
-    await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height, { steps: 12 });
+    await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height * 0.75, { steps: 12 });
     await page.mouse.up();
     await page.waitForFunction(() => {
       const names = [...document.querySelectorAll(".chat-list-pins .k2b-app-workspace__sidebar-item-label")].map(

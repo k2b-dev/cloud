@@ -83,7 +83,7 @@ const memberApi = {
   leave: async () => ({ success: true as const, keptThroughGroup: false }),
   people: async () => ({ items: [], nextCursor: null }),
 };
-const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
+const fixture = (overrides: Partial<ChatStoreApi> = {}, options: { unread?: boolean; nextCursor?: string } = {}) => {
   const connection = new ManualConnection();
   const api: ChatStoreApi = {
     ...memberApi,
@@ -104,9 +104,10 @@ const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
   };
   const store = createChatStore(
     {
+      ...options,
       viewerId: "22222222-2222-4222-8222-222222222222",
       cursor: "cursor",
-      sidebar: { items: [conversation], nextCursor: null },
+      sidebar: { items: [conversation], nextCursor: options.nextCursor ?? null },
       open: { conversation, page: page(1) },
     },
     { api, connection },
@@ -432,7 +433,7 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
     {
       viewerId: "22222222-2222-4222-8222-222222222222",
       cursor: "before",
-      sidebar: { items: [conversation], nextCursor: null },
+      sidebar: { items: [conversation], nextCursor: options.nextCursor ?? null },
       open: { conversation, page: { ...page(2), items: [{ ...system, systemText: null }] } },
     },
     { api, connection },
@@ -1364,6 +1365,7 @@ test("personal archive events refresh membership-filtered rows and never resurre
     await connection.get("list").applyBatch([
       {
         type: "summary",
+        mention: false,
         conversationId: conversation.id,
         id: "0000000002",
         seq: 2,
@@ -1401,4 +1403,42 @@ test("a failed archive navigation leaves the active list mode intact for later l
   } finally {
     store.dispose();
   }
+});
+
+test("Unread retains read rows but rechecks their authorization on membership refresh", async () => {
+  let accessible = true;
+  const { store, connection } = fixture(
+    {
+      conversations: async (_cursor, _archived, _unread, ids) => ({ items: ids && accessible ? [conversation] : [], nextCursor: null }),
+      conversation: async () => (accessible ? conversation : null),
+    },
+    { unread: true },
+  );
+  try {
+    await connection.get("me").applyBatch([{ type: "personal" }]);
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+    accessible = false;
+    await connection.get("me").applyBatch([{ type: "membership", conversationId: conversation.id }]);
+    expect(store.sidebar).toEqual([]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("preferences events preserve loaded sidebar depth without querying conversations", async () => {
+  const next = { ...conversation, id: "ghijkl" };
+  let requests = 0;
+  const { store, connection } = fixture({
+    conversations: async () => { requests++; return { items: [next], nextCursor: null }; },
+  }, { nextCursor: "page2" });
+  try {
+    await store.loadMore();
+    const before = requests;
+    const ids = store.sidebar.map(row => row.id);
+    expect(ids).toEqual([conversation.id, next.id]);
+    await connection.get("me").applyBatch([{ type: "preferences", collapsed: ["pinned"] }]);
+    expect(store.collapsed).toEqual(["pinned"]);
+    expect(store.sidebar.map(row => row.id)).toEqual(ids);
+    expect(requests).toBe(before);
+  } finally { store.dispose(); }
 });

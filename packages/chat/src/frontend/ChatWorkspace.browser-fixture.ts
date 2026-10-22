@@ -113,7 +113,7 @@ const messageId = (chat: string, seq: number) => `${chat}${String(seq).padStart(
  * the live socket. Tests add messages from others with `receive`, which the server stores and delivers live like
  * the chat app does, and make the next sends fail with `failSends`.
  */
-export const startChatHarness = async () => {
+export const startChatHarness = async (options: { autoMount?: boolean } = {}) => {
   const started = performance.now();
   const now = () => new Date(chatTestNow.getTime() + (performance.now() - started));
   const [harness, css, fontAssets] = await Promise.all([
@@ -377,11 +377,11 @@ export const startChatHarness = async () => {
     return { items, seqHead: all.length, rev: chat.conversation.rev };
   };
   let collapsed: string[] = [];
-  const list = (archived = false) => ({
+  const list = (archived = false, unread = false, ids?: string[]) => ({
     items: [...chats.values()]
       .map((chat) => chat.conversation)
-      .filter((row) => row.member && row.archived === archived)
-      .sort((a, b) => (a.pinnedRank ?? 2147483647) - (b.pinnedRank ?? 2147483647) || b.lastActivityAt.localeCompare(a.lastActivityAt)),
+      .filter((row) => row.member && row.archived === archived && (!ids || ids.includes(row.id)) && (!unread || row.unread > 0 || row.read?.unreadFromSeq != null))
+      .sort((a,b) => (a.pinnedRank ?? 2147483647) - (b.pinnedRank ?? 2147483647) || b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id)),
     nextCursor: null,
   });
   const snapshot = (id: string, focus: string | null) => {
@@ -406,7 +406,7 @@ export const startChatHarness = async () => {
     const open = address.chat ? snapshot(address.chat, address.message ?? null) : null;
     return {
       cursor: `c.${cursor}`,
-      sidebar: list(address.archived),
+      sidebar: list(address.archived, address.filter === "unread"),
       archived: address.archived,
       filter: address.filter,
       collapsed: SidebarPreferencesSchema.parse({ collapsed }).collapsed,
@@ -480,11 +480,13 @@ export const startChatHarness = async () => {
             .sort((a, b) => a.conversation.pinnedRank! - b.conversation.pinnedRank!);
           const old = pins.indexOf(chat);
           const remaining = pins.filter((entry) => entry !== chat);
-          const index = patch.before
-            ? remaining.findIndex((entry) => entry.conversation.id === patch.before)
-            : patch.before === undefined && old >= 0
-              ? old
-              : remaining.length;
+          const index = patch.after
+              ? remaining.findIndex((entry) => entry.conversation.id === patch.after) + 1
+              : patch.before
+                ? remaining.findIndex((entry) => entry.conversation.id === patch.before)
+                : patch.before === undefined && old >= 0
+                  ? old
+                  : remaining.length;
           remaining.splice(index, 0, chat);
           remaining.forEach((entry, rank) => {
             entry.conversation.pinnedRank = rank;
@@ -522,7 +524,7 @@ export const startChatHarness = async () => {
         );
       }
       if (url.pathname === "/api/chat/conversations" && request.method === "GET")
-        return Response.json(list(url.searchParams.get("archived") === "true"));
+        return Response.json(list(url.searchParams.get("archived") === "true", url.searchParams.get("unread") === "true", url.searchParams.get("ids")?.split(",")));
       if (url.pathname === "/api/chat/conversations" && request.method === "POST") {
         const input = CreateConversationSchema.parse(await request.json());
         const replay = input.createKey && createIntents.get(input.createKey);
@@ -759,7 +761,11 @@ export const startChatHarness = async () => {
           // Every weight and the icon font load with the page, so a font swap never moves rows during a test.
           '<div aria-hidden="true" style="position:absolute;visibility:hidden"><b>a</b><b style="font-weight:600">a</b><span style="font-weight:500">a</span><em>a</em>' +
           '<span>a</span><i class="ti ti-check"></i></div>' +
-          '<script src="/harness.js"></script></body></html>',
+          '<script src="/harness.js"></script>' +
+          (options.autoMount
+            ? `<script>window.addEventListener('load',async()=>{const props=await(await fetch('/__props?path='+encodeURIComponent(location.pathname+location.search))).json();window.mountChat(props,new URLSearchParams(location.search).get('locale')||'en')})</script>`
+            : "") +
+          "</body></html>",
         { headers: { "Content-Type": "text/html" } },
       );
     },

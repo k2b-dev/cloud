@@ -148,3 +148,16 @@ describe("ChatWorkspace server render", () => {
     });
   }
 });
+
+
+test("SSR retains personal archive and Unread navigation and saved collapsed state", () => {
+  const html = render("en", {
+    ...props(), archived: true, filter: "unread", collapsed: ["pinned", "chats"],
+    chatId: conversation.id,
+    open: { conversation: { ...conversation, archived: true }, page: { items: [], rev: 1, seqHead: 0 }, focus: null },
+    sidebar: { items: [{ ...conversation, archived: true }], nextCursor: null },
+  });
+  expect(html).toContain(`/app/chat/archive?filter=unread`);
+  const collapsed = render("en", { ...props(), collapsed: ["pinned"], sidebar: { items: [{ ...conversation, pinnedRank: 0 }], nextCursor: null } });
+  expect(collapsed).toContain('aria-expanded="false"');
+});

@@ -12,6 +12,7 @@ import {
   ChangesPageSchema,
   ChatLiveEventSchema,
   ChatSnapshotSchema,
+  CONVERSATION_PAGE_SIZE,
   ConversationPageSchema,
   ConversationSchema,
   type CreateConversationSchema,
@@ -55,7 +56,7 @@ export type ChatStoreApi = {
   read(id: string, seq: number): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
   readAll(confirmed: boolean): Promise<z.infer<typeof ReadAllOutcomeSchema>>;
-  conversations(cursor?: string, archived?: boolean): Promise<ConversationPage>;
+  conversations(cursor?: string, archived?: boolean, unread?: boolean, ids?: string[]): Promise<ConversationPage>;
   conversation(id: string): Promise<Conversation | null>;
   messages(id: string, query?: { before?: number; after?: number }): Promise<MessagePage | null>;
   snapshot(id: string, message?: string): Promise<(OpenChatSnapshot & { focus: string | null }) | null>;
@@ -65,6 +66,7 @@ export type OpenChatSnapshot = { cursor: string; conversation: Conversation; pag
 export type ChatStoreSnapshot = {
   collapsed?: z.infer<typeof SidebarPreferencesSchema>["collapsed"];
   archived?: boolean;
+  unread?: boolean;
   viewerId: string;
   cursor: string;
   sidebar: ConversationPage;
@@ -168,10 +170,13 @@ export const createChatStoreApi = (): ChatStoreApi => {
       ),
     readAll: async (confirmed) =>
       requiredResponse(await client.conversations["read-all"].$post({ json: { confirmed } }), ReadAllOutcomeSchema),
-    conversations: async (cursor, archived) =>
+    conversations: async (cursor, archived, unread, ids) =>
       requiredResponse(
-        await client.conversations.$get({ query: { cursor, archived: archived ? "true" : "false" } }),
-        ConversationPageSchema,
+        await client.conversations.$get({
+          query: { cursor, archived: archived ? "true" : "false", unread: unread ? "true" : "false", ids: ids?.join(",") },
+        }),
+        CONVERSATION_PAGE_SIZE,
+  ConversationPageSchema,
       ),
     conversation: async (id) =>
       parseResponse(await client.conversations[":conversation"].$get({ param: { conversation: id } }), ConversationSchema),
@@ -226,6 +231,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   // Rows stay in server order: a contiguous prefix of the sidebar, the whole list when `complete`.
   let collapsed = snapshot.collapsed ?? [];
   let archived = snapshot.archived ?? false;
+  let unread = snapshot.unread ?? false;
   let rows = [...snapshot.sidebar.items];
   const unreadRev = new Map(rows.map((row) => [row.id, row.rev]));
   let nextCursor = snapshot.sidebar.nextCursor;
@@ -471,12 +477,28 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     sidebarWork = work.catch(() => {});
     return work;
   };
-  const reloadSidebar = async (nextArchived = archived) => {
-    const [page, preferences] = await Promise.all([api.conversations(undefined, nextArchived), api.preferences()]);
+  const reloadSidebar = async (nextArchived = archived, nextUnread = unread) => {
+    const same = nextArchived === archived && nextUnread === unread;
+    const depth = same ? rows.length : 0;
+    let page = await api.conversations(undefined, nextArchived, nextUnread);
+    const loaded = [...page.items];
+    while (loaded.length < depth && page.nextCursor) {
+      page = await api.conversations(page.nextCursor, nextArchived, nextUnread);
+      loaded.push(...page.items);
+    }
+    // Read rows remain visible for this visit to Unread, also after a live resync.
+    const retained: Conversation[] = [];
+    if (same && unread) {
+      const missing = rows.filter((previous) => !loaded.some((row) => row.id === previous.id)).map((row) => row.id);
+      for (let offset = 0; offset < missing.length; offset += CONVERSATION_PAGE_SIZE) {
+        const page = await api.conversations(undefined, nextArchived, false, missing.slice(offset, offset + CONVERSATION_PAGE_SIZE));
+        retained.push(...page.items);
+      }
+    }
     if (disposed) return;
     archived = nextArchived;
-    collapsed = preferences.collapsed;
-    rows = [...page.items];
+    unread = nextUnread;
+    rows = [...loaded, ...retained];
     unreadRev.clear();
     for (const row of rows) unreadRev.set(row.id, row.rev);
     nextCursor = page.nextCursor;
@@ -597,9 +619,20 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         apply: (events) =>
           sidebar(async () => {
             if (events.some(({ data }) => data.type === "membership" || data.type === "personal")) await reloadSidebar();
+            for (const { data } of events)
+              if (data.type === "preferences") {
+                collapsed = data.collapsed;
+                notify();
+              }
             for (const { data } of events) if (data.type === "read") await applyRead(data);
           }),
-        resync: () => sidebar(reloadSidebar),
+        resync: () =>
+          sidebar(async () => {
+            await reloadSidebar();
+            const preferences = await api.preferences();
+            collapsed = preferences.collapsed;
+            notify();
+          }),
         unavailable: stopped,
       },
     ),
@@ -618,10 +651,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     },
     personal: async (id: string, patch: Parameters<ChatStoreApi["personal"]>[1]) => {
       const result = await api.personal(id, patch);
-      await sidebar(reloadSidebar);
+      await sidebar(reloadSidebar).catch(() => {});
       return result;
     },
-    showArchive: (next: boolean) => sidebar(() => reloadSidebar(next)),
+    showArchive: (next: boolean, nextUnread = unread) => sidebar(() => reloadSidebar(next, nextUnread)),
     // A change the reader made shows at once: its chat's row is read again instead of waiting for the live event.
     // Refresh failures leave committed changes successful; live updates and resync repair the row.
     // A chat the reader left answers 404, which removes the row and ends an open view in "No access".
@@ -676,7 +709,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       if (disposed || nextCursor === null) return Promise.resolve();
       const work = sidebar(async () => {
         if (nextCursor === null) return;
-        const page = await api.conversations(nextCursor, archived);
+        const page = await api.conversations(nextCursor, archived, unread);
         if (disposed) return;
         const present = new Set(rows.map((row) => row.id));
         const appended = [...rows];

@@ -2,7 +2,7 @@ import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { dnd } from "@k2b/stdlib/solid";
 import { AppWorkspace, Dropdown, IconButton, useLocale } from "@k2b/ui";
-import { For, type JSX, Show } from "solid-js";
+import { createMemo, For, type JSX, Show } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import type { ConversationSchema, PersonalConversationSchema } from "../service/contracts";
@@ -42,11 +42,11 @@ export default function ChatList(props: {
   const config = () => ({ ...props.dateConfig, locale: locale() });
   const drag = dnd.create<{ title: string }, { title: string }, "before" | "after">({
     buildIntent: ({ over, pointer }) => (over && pointer.y > over.center.y ? "after" : "before"),
-    onDrop: ({ active, over, intent }) => {
+    onDrop: ({ active, over, intent, mode }) => {
       if (!over || active.id === over.id) return;
       const target = props.rows.findIndex((row) => row.id === over.id);
-      const before = intent === "after" ? (props.rows[target + 1]?.id ?? null) : over.id;
-      if (before !== active.id) props.onPersonal(active.id, { pinned: true, before });
+      const after = mode === "keyboard" ? target > props.rows.findIndex((row) => row.id === active.id) : intent === "after";
+      props.onPersonal(active.id, { pinned: true, ...(after ? { after: over.id } : { before: over.id }) });
     },
     announcements: {
       dragStart: (active) => t().pinPickedUp({ title: active.meta.title }),
@@ -55,110 +55,119 @@ export default function ChatList(props: {
       cancel: () => t().pinMoveCancelled,
     },
   });
+  const rowsById = createMemo(() => new Map(props.rows.map((row) => [row.id, row])));
   return (
     <>
-      <For each={props.rows}>
-        {(row) => (
-          <div
-            ref={(element) => {
-              drag.draggable(element, () => ({
-                id: row.id,
-                meta: { title: row.title },
-                disabled: row.pinnedRank === null || props.pending,
-                focusable: false,
-                keyboard: true,
-                handleSelector: "[data-pin-handle]",
-              }));
-              drag.droppable(element, () => ({
-                id: row.id,
-                meta: { title: row.title },
-                disabled: row.pinnedRank === null || props.pending,
-              }));
-            }}
-          >
-            <AppWorkspace.SidebarItem
-              href={props.href(row.id)}
-              navigation="enhanced"
-              onNavigate={(navigation) => props.onOpen(row.id, navigation)}
-              active={row.id === props.activeId}
-              actions={
-                <AppWorkspace.SidebarItemActions visibility="hover">
-                  <Show when={props.onReorder}>
-                    <IconButton
-                      label={t().movePinnedChat({ title: row.title })}
-                      size="xs"
-                      variant="ghost"
-                      data-pin-handle
-                      style={{ "touch-action": "none" }}
-                      disabled={props.pending}
-                    >
-                      <i class="ti ti-grip-vertical" aria-hidden="true" />
-                    </IconButton>
-                  </Show>
-                  <Dropdown.Root
-                    position="bottom-right"
-                    items={[
-                      {
-                        label: row.archived ? t().restoreChat : t().archiveChat,
-                        icon: "ti ti-archive",
-                        disabled: props.pending,
-                        action: () => props.onPersonal(row.id, { archived: !row.archived }),
-                      },
-                      {
-                        label: row.pinnedRank === null ? t().pinChat : t().unpinChat,
-                        icon: "ti ti-pin",
-                        disabled: props.pending,
-                        action: () => props.onPersonal(row.id, { pinned: row.pinnedRank === null }),
-                      },
-                      ...(props.onReorder
-                        ? [
-                            {
-                              label: t().moveUp,
-                              icon: "ti ti-arrow-up",
-                              disabled: props.pending || row.id === props.rows[0]?.id,
-                              action: () => props.onReorder?.(row.id, "up"),
-                            },
-                            {
-                              label: t().moveDown,
-                              icon: "ti ti-arrow-down",
-                              disabled: props.pending || row.id === props.rows.at(-1)?.id,
-                              action: () => props.onReorder?.(row.id, "down"),
-                            },
-                          ]
-                        : []),
-                      unreadMark(row) === undefined
-                        ? { label: t().markUnread, icon: "ti ti-mail", action: () => props.onMarkUnread(row.id) }
-                        : { label: t().markRead, icon: "ti ti-mail-opened", action: () => props.onMarkRead(row.id) },
-                    ]}
-                  >
-                    <Dropdown.Trigger
-                      iconOnly
-                      label={t().chatActions({ title: row.title })}
-                      tooltip={t().chatActions({ title: row.title })}
-                      size="xs"
-                    >
-                      <i class="ti ti-dots text-xs" />
-                    </Dropdown.Trigger>
-                  </Dropdown.Root>
-                </AppWorkspace.SidebarItemActions>
-              }
-              description={<span class="chat-list__preview">{lastMessageLine(row, props.viewerId, locale())}</span>}
+      <For each={props.rows.map((row) => row.id)}>
+        {(id) => {
+          // Personal/read updates replace projections; keep the row and its keyboard focus by conversation ID.
+          const row = createMemo<Conversation>((previous) => rowsById().get(id) ?? previous, rowsById().get(id)!);
+          return (
+            <div
+              ref={(element) => {
+                drag.draggable(element, () => ({
+                  id: row().id,
+                  meta: { title: row().title },
+                  disabled: row().pinnedRank === null || props.pending,
+                  focusable: false,
+                  keyboard: true,
+                  handleSelector: "[data-pin-handle]",
+                }));
+                drag.droppable(element, () => ({
+                  id: row().id,
+                  meta: { title: row().title },
+                  disabled: row().pinnedRank === null || props.pending,
+                }));
+              }}
             >
-              <AppWorkspace.SidebarItemIcon icon={row.icon ?? (row.memberCount <= 2 ? "ti ti-user" : "ti ti-users")} />
-              <AppWorkspace.SidebarItemLabel marquee={false}>{row.title}</AppWorkspace.SidebarItemLabel>
-              <AppWorkspace.SidebarItemMeta>
-                <span class="chat-list__meta">
-                  <time class="chat-list__time" datetime={row.lastActivityAt}>
-                    {listTime(row.lastActivityAt, props.now(), config())}
-                  </time>
-                  <span class="chat-list__unread">
-                    <AppWorkspace.SidebarItemStatus unread={row.id === props.activeId ? undefined : unreadMark(row)} />
+              <AppWorkspace.SidebarItem
+                href={props.href(row().id)}
+                navigation="enhanced"
+                onNavigate={(navigation) => props.onOpen(row().id, navigation)}
+                active={row().id === props.activeId}
+                actions={
+                  <AppWorkspace.SidebarItemActions visibility="hover">
+                    <Show when={props.onReorder}>
+                      <IconButton
+                        label={t().movePinnedChat({ title: row().title })}
+                        size="xs"
+                        variant="ghost"
+                        data-pin-handle
+                        style={{ "touch-action": "none" }}
+                        aria-disabled={props.pending}
+                      >
+                        <i class="ti ti-grip-vertical" aria-hidden="true" />
+                      </IconButton>
+                    </Show>
+                    <Dropdown.Root
+                      position="bottom-right"
+                      items={[
+                        {
+                          label: row().archived ? t().restoreChat : t().archiveChat,
+                          icon: "ti ti-archive",
+                          disabled: props.pending,
+                          action: () => props.onPersonal(row().id, { archived: !row().archived }),
+                        },
+                        {
+                          label: row().pinnedRank === null ? t().pinChat : t().unpinChat,
+                          icon: "ti ti-pin",
+                          disabled: props.pending,
+                          action: () => props.onPersonal(row().id, { pinned: row().pinnedRank === null }),
+                        },
+                        ...(props.onReorder
+                          ? [
+                              {
+                                label: t().moveUp,
+                                icon: "ti ti-arrow-up",
+                                disabled: props.pending || props.rows[0]?.id === row().id,
+                                action: () => props.onReorder?.(row().id, "up"),
+                              },
+                              {
+                                label: t().moveDown,
+                                icon: "ti ti-arrow-down",
+                                disabled: props.pending || props.rows.at(-1)?.id === row().id,
+                                action: () => props.onReorder?.(row().id, "down"),
+                              },
+                            ]
+                          : []),
+                        unreadMark(row()) === undefined
+                          ? { label: t().markUnread, icon: "ti ti-mail", action: () => props.onMarkUnread(row().id) }
+                          : { label: t().markRead, icon: "ti ti-mail-opened", action: () => props.onMarkRead(row().id) },
+                      ]}
+                    >
+                      <Dropdown.Trigger
+                        iconOnly
+                        label={t().chatActions({ title: row().title })}
+                        tooltip={t().chatActions({ title: row().title })}
+                        size="xs"
+                      >
+                        <i class="ti ti-dots text-xs" />
+                      </Dropdown.Trigger>
+                    </Dropdown.Root>
+                  </AppWorkspace.SidebarItemActions>
+                }
+                description={<span class="chat-list__preview">{lastMessageLine(row(), props.viewerId, locale())}</span>}
+              >
+                <AppWorkspace.SidebarItemIcon
+                  icon={row().icon ?? (row().memberCount <= 2 ? "ti ti-user" : "ti ti-users")}
+                />
+                <AppWorkspace.SidebarItemLabel marquee={false}>
+                  {row().title}
+                </AppWorkspace.SidebarItemLabel>
+                <AppWorkspace.SidebarItemMeta>
+                  <span class="chat-list__meta">
+                    <time class="chat-list__time" datetime={row().lastActivityAt}>
+                      {listTime(row().lastActivityAt, props.now(), config())}
+                    </time>
+                    <span class="chat-list__unread">
+                      <AppWorkspace.SidebarItemStatus unread={row().id === props.activeId ? undefined : unreadMark(row())} />
+                    </span>
                   </span>
-                </span>
-              </AppWorkspace.SidebarItemMeta>
-            </AppWorkspace.SidebarItem>
-          </div>
-        )}
+                </AppWorkspace.SidebarItemMeta>
+              </AppWorkspace.SidebarItem>
+            </div>
+          );
+        }}
       </For>
       <Show when={props.hasMore}>
         <AppWorkspace.SidebarItem icon="ti ti-dots" onClick={props.onMore}>

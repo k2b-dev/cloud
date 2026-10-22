@@ -6,11 +6,13 @@ import {
   announce,
   Button,
   Dropdown,
+  FilterToggle,
   IconButton,
   IconButtonLink,
   type MessageRowStatus,
   Placeholder,
   prompts,
+  ScrollArea,
   toast,
   useLocale,
   type VirtualFeedController,
@@ -155,7 +157,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const noAccess = () => route().chatId !== null && openChat() === null;
   const breadcrumbs = (title?: string) => [
     { title: t().start, href: "/" },
-    title ? { title: t().appName, href: "/app/chat" } : { title: t().appName },
+    title ? { title: t().appName, href: listHref(archived() ? "/app/chat/archive" : "/app/chat") } : { title: t().appName },
     ...(title ? [{ title }] : []),
   ];
   // The trail names the chat in the address. It follows live renames and lost access, and keeps its last title while
@@ -342,9 +344,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const applyListUrl = async (url: URL) => {
     const nextArchived = url.pathname === "/app/chat/archive" || url.searchParams.get("list") === "archive";
     const nextFilter = url.searchParams.get("filter") === "unread" ? "unread" : "all";
-    if (nextFilter !== filter() || nextArchived !== archived()) retainedUnread.clear();
-    if (nextArchived !== archived()) {
-      await store?.showArchive(nextArchived);
+    if (nextArchived !== archived() || nextFilter !== filter()) {
+      await store?.showArchive(nextArchived, nextFilter === "unread");
+      retainedUnread.clear();
       setArchived(nextArchived);
       sortRows();
     }
@@ -357,8 +359,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const url = new URL(next === "archive" ? "/app/chat/archive" : `/app/chat${next === "unread" ? "?filter=unread" : ""}`, location.href);
     try {
       await applyListUrl(url);
-      await open({ chatId: null, messageId: null, panel: null });
-      navigate(url.pathname + url.search, { scroll: "preserve" });
+      const current = route();
+      const target =
+        next !== "archive" && current.chatId
+          ? listHref(panelHref(current.chatId, current.panel, current.messageId))
+          : url.pathname + url.search;
+      if (next === "archive") await open({ chatId: null, messageId: null, panel: null });
+      navigate(target, { scroll: "preserve" });
     } catch {
       setListError(t().listFailed);
       setListRetry(() => () => void changeList(next));
@@ -367,7 +374,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
   };
   const personal = async (id: string, patch: z.infer<typeof PersonalConversationSchema>) => {
-    if (!store || listPending()) return;
+    if (!store) return;
+    if (listPending()) { toast(t().savingList); return; }
     setListPending(true);
     setListError(null);
     try {
@@ -381,14 +389,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
   };
   const collapse = async (section: z.infer<typeof SidebarPreferencesSchema>["collapsed"][number], isOpen: boolean) => {
-    if (!store || listPending()) return;
+    if (!store) return;
+    if (listPending()) {
+      toast(t().savingList);
+      return;
+    }
     setListPending(true);
     setListError(null);
+    const previous = collapsed();
     const next = isOpen ? collapsed().filter((value) => value !== section) : [...new Set([...collapsed(), section])];
+    setCollapsed(next);
     try {
       const saved = await store.savePreferences(next);
       setCollapsed(saved.collapsed);
     } catch {
+      setCollapsed(previous);
       setListError(t().personalFailed);
       setListRetry(() => () => void collapse(section, isOpen));
     } finally {
@@ -473,7 +488,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const backToList = async (navigation: LinkNavigateEvent) => {
     const depth = listDepth();
     if (depth > 0) history.go(-depth);
-    else if ((await open({ chatId: null, messageId: null, panel: null })) === "applied") navigation.push(undefined, { scroll: "preserve" });
+    else if ((await open({ chatId: null, messageId: null, panel: null })) === "applied")
+      navigation.push(listHref(archived() ? "/app/chat/archive" : "/app/chat"), { scroll: "preserve" });
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
@@ -510,8 +526,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const openChosen = async (id: string | undefined) => {
     if (!id) return;
     const fromList = route().chatId === null;
-    if ((await open({ chatId: id, messageId: null, panel: null })) === "applied")
+    if ((await open({ chatId: id, messageId: null, panel: null })) !== "applied") return;
+    try {
+      const chosen = store?.openConversation?.conversation;
+      await applyListUrl(new URL(chosen?.archived ? "/app/chat/archive" : "/app/chat", location.href));
       navigate(listHref(panelHref(id, null)), { scroll: "preserve", state: { chatFromList: fromList } });
+    } catch {
+      setListError(t().listFailed);
+      setListRetry(() => () => void openChosen(id));
+      toast.error(t().openFailed);
+    }
   };
   const newChat = async () => {
     if (!store) return;
@@ -571,12 +595,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       cursor: props.cursor,
       sidebar: props.sidebar,
       archived: props.archived,
+      unread: props.filter === "unread",
       collapsed: props.collapsed,
       ...(props.open ? { open: { conversation: props.open.conversation, page: props.open.page } } : {}),
     });
     store = live;
     setLiveStore(live);
     const sync = () => {
+      const focused = document.activeElement;
       prune();
       // The reader's own message moves its chat to the top: that is the reader's action, not a move under the pointer.
       const top = live.sidebar[0];
@@ -588,6 +614,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       setChat(live.openConversation);
       if (live.openConversation?.status === "no-access") setPanel(null);
       setLiveStopped(live.liveStatus === "stopped");
+      // Moving a keyed pin with insertBefore can blur its handle or menu trigger in the browser.
+      if (
+        focused instanceof HTMLElement &&
+        focused.isConnected &&
+        focused.closest(".chat-list-pins") &&
+        document.activeElement === document.body
+      ) {
+        // The blur hides hover actions, so reveal them through the row's visible link before restoring its control.
+        focused.closest(".k2b-app-workspace__sidebar-item")?.querySelector<HTMLAnchorElement>("a[href]")?.focus({ preventScroll: true });
+        focused.focus({ preventScroll: true });
+      }
     };
     onCleanup(live.subscribe(sync));
     sync();
@@ -632,10 +669,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     // The way up from a chat goes back to the list in place; a list opened before the chat is the previous entry.
     onCleanup(
       layout.handleUp((href) => {
-        if (new URL(href, location.href).pathname !== "/app/chat" || !route().chatId) return false;
+        if (!["/app/chat", "/app/chat/archive"].includes(new URL(href, location.href).pathname) || !route().chatId) return false;
         const depth = listDepth();
         if (depth > 0) history.go(-depth);
-        else void open({ chatId: null, messageId: null, panel: null }).then((result) => result === "applied" && navigate("/app/chat"));
+        else
+          void open({ chatId: null, messageId: null, panel: null }).then(
+            (result) => result === "applied" && navigate(listHref(archived() ? "/app/chat/archive" : "/app/chat")),
+          );
         return true;
       }),
     );
@@ -660,13 +700,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       .sort((a, b) => a.pinnedRank! - b.pinnedRank!);
   const reorder = (id: string, direction: "up" | "down") => {
     const pins = pinnedRows();
-    const index = pins.findIndex((row) => row.id === id);
-    if (index < 0 || (direction === "up" && index === 0) || (direction === "down" && index === pins.length - 1)) return;
-    void personal(id, { pinned: true, before: direction === "up" ? pins[index - 1]!.id : (pins[index + 2]?.id ?? null) });
+    const neighbor = pins[pins.findIndex((row) => row.id === id) + (direction === "up" ? -1 : 1)];
+    if (neighbor) void personal(id, { pinned: true, ...(direction === "up" ? { before: neighbor.id } : { after: neighbor.id }) });
   };
-  const list = (entries: readonly Conversation[], pinned = false): JSX.Element => (
+  const list = (entries: () => readonly Conversation[], pinned = false): JSX.Element => (
     <ChatList
-      rows={entries}
+      rows={entries()}
       href={(id) => listHref(chatHref(id))}
       activeId={openChat()?.id ?? null}
       viewerId={props.viewerId}
@@ -690,30 +729,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     </Dropdown.Root>
   );
 
-  const listContent = () => (
+  const archiveLink = () => (
+    <AppWorkspace.SidebarItem href={listHref("/app/chat/archive")} navigation="enhanced" active={archived()} icon="ti ti-archive" onNavigate={() => void changeList("archive")}>
+      {t().archive}
+    </AppWorkspace.SidebarItem>
+  );
+  const listContent = (includeArchive = true) => (
     <>
-      <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
-        {t().newChat}
-      </AppWorkspace.SidebarItem>
+      <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>{t().newChat}</AppWorkspace.SidebarItem>
       <div class="chat-list-filters" role="group" aria-label={t().chats}>
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-pressed={!archived() && filter() === "all"}
-          disabled={listLoading()}
-          onClick={() => void changeList("all")}
-        >
-          {t().allChats}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-pressed={!archived() && filter() === "unread"}
-          disabled={listLoading()}
-          onClick={() => void changeList("unread")}
-        >
-          {t().unreadChats}
-        </Button>
+        <FilterToggle label={t().allChats} icon="ti ti-messages" active={!archived() && filter() === "all"} disabled={listLoading() || listPending()} onClick={() => void changeList("all")} />
+        <FilterToggle label={t().unreadChats} icon="ti ti-mail" active={!archived() && filter() === "unread"} disabled={listLoading() || listPending()} onClick={() => void changeList("unread")} />
       </div>
       <Show when={listError()}>
         {(error) => (
@@ -746,7 +772,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 open={!collapsed().includes("pinned")}
                 onOpenChange={(open) => void collapse("pinned", open)}
               >
-                <div class="chat-list-pins">{list(pinnedRows(), true)}</div>
+                <ScrollArea class="chat-list-pins" scrollPreserveKey="chat-pins">{list(pinnedRows, true)}</ScrollArea>
               </AppWorkspace.SidebarSection>
             </Show>
             <AppWorkspace.SidebarSection
@@ -759,10 +785,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               <Show
                 when={listRows().some((row) => row.pinnedRank === null)}
                 fallback={
-                  <Placeholder variant="inline" align="left" description={filter() === "unread" ? t().noUnreadChats : t().noneYet} />
+                  <Show when={!hasMore() && !listLoading()}><Placeholder variant="inline" align="left" description={filter() === "unread" ? t().noUnreadChats : t().noneYet} /></Show>
                 }
               >
-                {list(listRows().filter((row) => row.pinnedRank === null))}
+                {list(() => listRows().filter((row) => row.pinnedRank === null))}
               </Show>
             </AppWorkspace.SidebarSection>
           </>
@@ -770,31 +796,24 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       >
         <AppWorkspace.SidebarSection title={t().archive}>
           <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().archiveEmpty} />}>
-            {list(listRows())}
+            {list(listRows)}
           </Show>
         </AppWorkspace.SidebarSection>
       </Show>
       <Show when={hasMore()}>
-        <AppWorkspace.SidebarItem disabled={listLoading()} icon="ti ti-dots" onClick={() => void more()}>
+        <AppWorkspace.SidebarItem disabled={listLoading() || listPending()} icon="ti ti-dots" onClick={() => void more()}>
           {t().showMoreChats}
         </AppWorkspace.SidebarItem>
       </Show>
-      <AppWorkspace.SidebarItem
-        href={listHref("/app/chat/archive")}
-        navigation="enhanced"
-        active={archived()}
-        icon="ti ti-archive"
-        onNavigate={() => void changeList("archive")}
-      >
-        {t().archive}
-      </AppWorkspace.SidebarItem>
+      <Show when={includeArchive}>{archiveLink()}</Show>
     </>
   );
   return (
     <AppWorkspace mobileSurface="flush" class="chat-workspace h-full">
       <AppWorkspace.Sidebar label={t().chats}>
         <AppWorkspace.SidebarDesktop>
-          <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">{listContent()}</AppWorkspace.SidebarBody>
+          <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">{listContent(false)}</AppWorkspace.SidebarBody>
+          <AppWorkspace.SidebarFooter>{archiveLink()}</AppWorkspace.SidebarFooter>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
@@ -827,6 +846,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       }
                       chatId={current().id}
                       title={current().title}
+                      backHref={listHref(archived() ? "/app/chat/archive" : "/app/chat")}
                       memberCount={current().memberCount}
                       items={items()}
                       hasOlder={openChat()?.hasOlder ?? false}

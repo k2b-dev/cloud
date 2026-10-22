@@ -95,11 +95,20 @@ export const PersonalConversationSchema = z
     archived: z.boolean().optional(),
     pinned: z.boolean().optional(),
     before: ShortIdSchema.nullable().optional(),
+    after: ShortIdSchema.optional(),
   })
-  .refine((value) => value.archived !== undefined || value.pinned !== undefined);
+  .refine((value) => value.archived !== undefined || value.pinned !== undefined)
+  .refine((value) => [value.before !== undefined, value.after !== undefined].filter(Boolean).length <= 1)
+  .refine((value) => value.pinned === true || (value.before === undefined && value.after === undefined));
 
 // JSON is URL-encoded by the caller. Strict parsing prevents unbounded or malformed cursor state.
 export const ConversationQuerySchema = z.object({
+  ids: z
+    .string()
+    .transform((value) => value.split(","))
+    .pipe(z.array(ShortIdSchema).max(CONVERSATION_PAGE_SIZE))
+    .optional(),
+  unread: z.enum(["true", "false"]).optional(),
   archived: z.enum(["true", "false"]).optional(),
   cursor: z
     .string()
@@ -286,6 +295,7 @@ export const ChatLiveEventSchema = z.discriminatedUnion("type", [
   ReadUpdateSchema.extend({ type: z.literal("read") }),
   z.object({ type: z.literal("membership"), conversationId: ShortIdSchema }),
   z.object({ type: z.literal("personal") }),
+  SidebarPreferencesSchema.extend({ type: z.literal("preferences") }),
   z.object({ type: z.literal("message"), message: MessageSchema }),
   MessageSchema.pick({ conversationId: true, id: true, seq: true, rev: true, kind: true, author: true, createdAt: true }).extend({
     type: z.literal("summary"),
