@@ -67,6 +67,7 @@ test("all six unreadable warnings fit desktop and phone in light and dark, in En
     for (const width of [390, 1280])
       for (const theme of ["light", "dark"])
         for (const locale of ["en", "de"]) {
+          preview.reset();
           const page = await browser.newPage({ viewport: { width, height: 900 } });
           try {
             await page.goto(`${preview.server.url}?surface=${surface}&theme=${theme}&locale=${locale}`);

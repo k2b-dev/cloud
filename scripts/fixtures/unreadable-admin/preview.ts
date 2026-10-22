@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { workspaceRoot } from "../../workspace";
 import { previewViews } from "./views";
 
 /** Fictional settings only: never connects to a Cloud installation or any infrastructure. */
@@ -6,18 +7,18 @@ export async function unreadableAdminPreview() {
   const build = Bun.spawn(
     [
       "bun",
-      resolve("packages/assistant/src/artifacts/workspace-browser-build.ts"),
-      resolve("packages/core/src/pages/admin/settings/_components/unreadable-admin.browser-harness.tsx"),
+      resolve(workspaceRoot, "packages/assistant/src/artifacts/workspace-browser-build.ts"),
+      resolve(workspaceRoot, "packages/core/src/pages/admin/settings/_components/unreadable-admin.browser-harness.tsx"),
     ],
-    { stdout: "pipe", stderr: "pipe" },
+    { cwd: workspaceRoot, stdout: "pipe", stderr: "pipe" },
   );
   const code = await new Response(build.stdout).text();
   if (await build.exited) throw new Error(await new Response(build.stderr).text());
-  const { default: tailwind } = await import(Bun.resolveSync("bun-plugin-tailwind", resolve("packages/ui")));
+  const { default: tailwind } = await import(Bun.resolveSync("bun-plugin-tailwind", resolve(workspaceRoot, "packages/ui")));
   const styles = await Bun.build({ entrypoints: [resolve(import.meta.dir, "styles.css")], plugins: [tailwind] });
   if (!styles.success) throw new AggregateError(styles.logs, "Could not build fixture styles");
   const css = await styles.outputs[0]!.text();
-  const assetRoot = resolve("packages/ui/dist");
+  const assetRoot = resolve(workspaceRoot, "packages/ui/dist");
   const assets = new Map<string, ReturnType<typeof Bun.file>>();
   for (const name of ["plex.css", "tabler.css"]) {
     const file = Bun.file(resolve(assetRoot, name));
