@@ -833,6 +833,76 @@ describe("ChatWorkspace browser read state", () => {
   }
 });
 
+describe("Chat member input mode", () => {
+  beforeEach(() => harness.reset());
+  for (const width of [1440, 820, 390]) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`member removal follows touch and trackpad mode without moving at ${width}px in ${theme}`, async () => {
+        const chat = harness.addChat({ members: [viewer, nora], count: 4, end: harness.now() });
+        harness.setPermission(chat, "admin");
+        const t = chatMessages.resolve(["en"]).t;
+        const { page, errors } = await load(
+          { viewport: { width, height: 900 }, hasTouch: width < 1024, isMobile: width < 1024, reducedMotion: "reduce" },
+          { chat, panel: "info" },
+          false,
+          undefined,
+          { theme },
+        );
+        try {
+          const panel = page.locator("#k2b-workspace-detail-chat-info");
+          await panel.waitFor({ state: "visible" });
+          await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+          const row = panel.locator(".chat-member-row").filter({ hasText: nora.name });
+          const action = row.locator(".chat-member-row__remove");
+          const remove = row.getByRole("button", { name: t.removeName({ name: nora.name }), exact: true });
+          await remove.waitFor();
+          await panel.getByRole("button", { name: t.closeChatInfo, exact: true }).focus();
+          await page.mouse.move(0, 0);
+          const box = await row.boundingBox();
+          const actionBox = await action.boundingBox();
+          const opacity = async (value: string) => {
+            const element = await action.elementHandle();
+            await page.waitForFunction(({ element, value }) => element !== null && getComputedStyle(element).opacity === value, {
+              element,
+              value,
+            });
+          };
+          const canHover = await page.evaluate(() => {
+            delete document.documentElement.dataset.k2bInput;
+            return matchMedia("(any-hover: hover)").matches;
+          });
+          await opacity(width < 640 || !canHover ? "1" : "0");
+          // The shared controller owns these attributes. Exercise its public CSS contract in both pointer environments.
+          for (const mode of ["touch", "trackpad", "touch"] as const) {
+            await page.evaluate((mode) => {
+              document.documentElement.dataset.k2bInput = mode;
+            }, mode);
+            await opacity(width < 640 || mode === "touch" ? "1" : "0");
+            expect(await row.boundingBox()).toEqual(box);
+            expect(await action.boundingBox()).toEqual(actionBox);
+          }
+          await page.evaluate(() => {
+            document.documentElement.dataset.k2bInput = "trackpad";
+          });
+          await remove.focus();
+          await opacity("1");
+          expect(await row.boundingBox()).toEqual(box);
+          await page.keyboard.press("Enter");
+          const dialog = page.getByRole("dialog");
+          await dialog.waitFor();
+          await dialog.getByRole("button", { name: t.cancel, exact: true }).click();
+          await dialog.waitFor({ state: "hidden" });
+          await focused(remove);
+          expect(await row.boundingBox()).toEqual(box);
+          expect(errors).toEqual([]);
+        } finally {
+          await page.context().close();
+        }
+      }, 30_000);
+    }
+  }
+});
+
 describe("ChatWorkspace start chats and members", () => {
   beforeEach(() => harness.reset());
   for (const { name, options } of viewports) {

@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Primary pointer substituted for current input mode | An action stays hidden from touch on a hybrid device, or never hides when a tablet uses a trackpad. | Test: Chat member actions follow touch and trackpad on desktop and tablet, stay visible on phones, and retain geometry and keyboard access. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |
 | Positional input-union compatibility | A manifest check rejects preserved input variants after additions or reordering, or accepts a `oneOf` change that makes old inputs match multiple variants. | Tests: Cloud `_internal/capabilities.test.ts` covers nested additive unions, required disjoint tags, removed or narrowed branches, overlaps, optional tags, and unchanged result-union restrictions. |
@@ -894,6 +895,13 @@ convention still needs a check or a test.
 - **Root cause:** Fibel pinned an older SDK, Solid restricted its nested Seroval to the 1.5 series, Sharp was pinned to 0.35.4, and older range-compatible Proxy-Addr and Source-Map-JS versions remained locked.
 - **Error class:** Checking direct dependency versions instead of every resolved copy and its upstream range.
 - **Guard:** The existing nightly `bun audit --audit-level=high` checks the resolved graph. Verify upstream advisories and consumer paths before updating: Fibel still needs a supported SDK release, and the disputed cache advisory has no confirmed behavior fix in 4.3.0. Keep those findings visible rather than adding overrides or weakening the audit.
+
+### Chat member actions ignored touch on hybrid devices
+
+- **What happened:** The remove action stayed hidden during touch input on a laptop, while a tablet with a mouse kept it visible ([#1287](https://github.com/k2b-dev/cloud/issues/1287)).
+- **Root cause:** The action used the primary-pointer hover query instead of the shared current-input attributes and any-hover fallback.
+- **Error class:** Primary pointer substituted for current input mode.
+- **Guard:** `ChatWorkspace.browser.test.ts` checks touch and trackpad modes at desktop, tablet and phone widths in both themes, unchanged action and row boxes, keyboard activation, cancellation and focus return.
 
 ## Add a lesson
 
