@@ -20,14 +20,17 @@ const buildHarness = async (server = false): Promise<string> => {
     files: {
       [entry]: server
         ? `import { createComponent } from "solid-js";
-import { renderToString, generateHydrationScript } from "solid-js/web";
+import { renderToString } from "solid-js/web";
 import Fixture from "./History.browser-harness";
 export const render = (source, locale) => renderToString(() => createComponent(Fixture, { source, locale }));
-export const hydrationScript = generateHydrationScript();`
+`
         : `import { createComponent } from "solid-js";
-import { hydrate } from "solid-js/web";
+import { render } from "solid-js/web";
 import Fixture from "./History.browser-harness";
-hydrate(() => createComponent(Fixture, { source: location.pathname + location.search, locale: document.documentElement.lang }), document.getElementById("root"));
+const target = document.getElementById("root");
+// Cloud islands currently replace their server HTML on mount (the @k2b/ssr mount contract).
+target.replaceChildren();
+render(() => createComponent(Fixture, { source: location.pathname + location.search, locale: document.documentElement.lang }), target);
 document.body.dataset.ready = "true";`,
     },
     target: server ? "node" : "browser",
@@ -42,7 +45,7 @@ document.body.dataset.ready = "true";`,
               filename: path,
               babelrc: false,
               configFile: false,
-              presets: [typescript, [solid, { generate: server ? "ssr" : "dom", hydratable: true }]],
+              presets: [typescript, [solid, { generate: server ? "ssr" : "dom", hydratable: false }]],
             });
             return { contents: result.code, loader: "js" };
           });
@@ -58,8 +61,7 @@ const temporary = mkdtempSync(join(tmpdir(), "files-history-browser-"));
 process.once("exit", () => rmSync(temporary, { recursive: true, force: true }));
 const serverModule = join(temporary, "server.mjs");
 writeFileSync(serverModule, await buildHarness(true));
-const { render: renderHistory, hydrationScript }: { render: (source: string, locale: string) => string; hydrationScript: string } =
-  await import(serverModule);
+const { render: renderHistory }: { render: (source: string, locale: string) => string } = await import(serverModule);
 const harness = await buildHarness();
 const assets: Record<string, [string, string | Buffer]> = {
   "/harness.js": ["text/javascript", harness],
@@ -75,7 +77,7 @@ afterAll(async () => {
   await browser?.close();
   rmSync(temporary, { recursive: true, force: true });
 });
-async function open(width: number, theme: "light" | "dark", search = "", lang = "de", hydrateInitially = true) {
+async function open(width: number, theme: "light" | "dark", search = "", lang = "de", mountInitially = true) {
   const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: "reduce" });
   const tab = await context.newPage();
   await tab.clock.setFixedTime(new Date(historyNow));
@@ -87,7 +89,7 @@ async function open(width: number, theme: "light" | "dark", search = "", lang = 
     if (url.pathname === "/app/filesv2")
       return route.fulfill({
         contentType: "text/html",
-        body: `<!doctype html><html lang="${lang}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"><style>html,body,#root {height:100%;margin:0}</style></head><body class="k2b-ui" data-theme="${theme}"><div id="root">${renderHistory(url.pathname + url.search, lang)}</div>${hydrationScript}${hydrateInitially ? '<script src="/harness.js"></script>' : ""}</body></html>`,
+        body: `<!doctype html><html lang="${lang}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"><style>html,body,#root {height:100%;margin:0}</style></head><body class="k2b-ui" data-theme="${theme}"><div id="root">${renderHistory(url.pathname + url.search, lang)}</div>${mountInitially ? '<script src="/harness.js"></script>' : ""}</body></html>`,
       });
     const json = (body: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     if (url.pathname === "/api/filesv2/activity") {
@@ -110,13 +112,13 @@ async function open(width: number, theme: "light" | "dark", search = "", lang = 
   });
   await tab.goto(`http://files-history.test/app/filesv2?view=activity${search ? `&q=${encodeURIComponent(search)}` : ""}`);
   await tab.locator(".filesv2-history").waitFor();
-  if (hydrateInitially) await tab.waitForFunction(() => document.body.dataset.ready === "true");
+  if (mountInitially) await tab.waitForFunction(() => document.body.dataset.ready === "true");
   await tab.evaluate(() => document.fonts.ready);
   return {
     context,
     tab,
     errors,
-    hydrate: async () => {
+    mount: async () => {
       await tab.addScriptTag({ url: "http://files-history.test/harness.js" });
       await tab.waitForFunction(() => document.body.dataset.ready === "true");
     },
@@ -184,12 +186,12 @@ test("a failed search keeps its address and retries in place", async () => {
 }, 30_000);
 
 for (const width of [1440, 390])
-  test(`history preserves the server result through hydration at ${width}px`, async () => {
-    const { context, tab, errors, hydrate } = await open(width, "light", "Angebote 2025", "de", false);
+  test(`history preserves the server result through the client mount at ${width}px`, async () => {
+    const { context, tab, errors, mount } = await open(width, "light", "Angebote 2025", "de", false);
     try {
       const serverText = await tab.locator(".filesv2-history-hit").first().innerText();
       const before = await metrics(tab);
-      await hydrate();
+      await mount();
       expect(await tab.locator(".filesv2-history-hit").first().innerText()).toBe(serverText);
       const after = await metrics(tab);
       expect(after.overflow).toBe(0);
