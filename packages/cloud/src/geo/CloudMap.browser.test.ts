@@ -3,11 +3,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { LocaleProvider } from "@k2b/ui";
+import { LocaleProvider, type MapViewHandle } from "@k2b/ui";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../../ui/test/browser";
+
+declare global {
+  interface Window {
+    cloudMapHandle?: MapViewHandle;
+  }
+}
 
 const directory = mkdtempSync(resolve(tmpdir(), "cloud-map-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: directory });
@@ -54,7 +60,7 @@ beforeAll(async () => {
     const props = JSON.parse(root.dataset.props);
     window.serverHeight = root.getBoundingClientRect().height;
     root.innerHTML = '';
-    render(() => createComponent(LocaleProvider, { locale: root.dataset.locale, get children() { return createComponent(CloudMap, props); } }), root);
+    render(() => createComponent(LocaleProvider, { locale: root.dataset.locale, get children() { return createComponent(CloudMap, { ...props, ref: handle => { window.cloudMapHandle = handle; } }); } }), root);
     window.clientHeight = root.getBoundingClientRect().height;
   `,
     },
@@ -141,6 +147,13 @@ for (const width of [390, 768, 1440])
         "https://www.openstreetmap.org/copyright",
       );
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.waitForSelector('.k2b-map-view[data-state="ready"]');
+      expect(
+        await page.evaluate(async () => {
+          const capture = await window.cloudMapHandle!.snapshot();
+          return { type: capture.data.type, width: capture.width, height: capture.height };
+        }),
+      ).toEqual({ type: "image/png", width: width - 32, height: 280 });
     } finally {
       await page.close();
     }

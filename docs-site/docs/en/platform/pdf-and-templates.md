@@ -5,7 +5,7 @@ section: Platform services
 order: 590
 description: Render documents from application data with shared template and PDF services.
 tags: [pdf, templates, gotenberg]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # PDF and templates
@@ -356,3 +356,61 @@ Invalid boxes, byte caps, and timeouts throw as programming errors.
 | `timed_out` | The caller aborted or the deadline ended, including queue time |
 
 An application image that uses this service ships sharp's libvips (about 18 MB).
+
+
+## Upload browser map snapshots
+
+Use `prepareGeoMapSnapshotAssets` from `@k2b/cloud/services/pdf` for browser
+map captures destined for offline PDF. The application first authenticates the
+request, authorizes the document, reads its canonical revision and enumerates
+its saved map blocks. Enforce a streaming HTTP body limit before `FormData`
+parsing; the helper bounds decoded input, not the HTTP parser's allocations.
+
+The multipart field `mapSnapshots` contains JSON:
+
+```json
+{"version":1,"revision":"revision-17","images":[{"id":"block-1","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","width":800,"height":400}]}
+```
+
+Each entry requires one binary `image/png` part named
+`geoMapSnapshotPart(id)`, exported from `@k2b/cloud/contracts/geo-snapshot`.
+IDs use 1..100 ASCII letters, digits, underscores or hyphens. Filenames supplied
+by the browser are ignored. `GeoMapSnapshotManifestSchema` validates the manifest.
+`geoMapSnapshotFingerprint(validatedGeoDocument)` hashes the complete saved JSON,
+including provenance and links, with stable object-key order. Use the same saved
+value on browser and server. Input and metadata are each bounded to the geo
+JSON envelope of 256 KiB. No URLs, paths, SVG or renderer HTML are accepted.
+
+```ts
+import { prepareGeoMapSnapshotAssets } from "@k2b/cloud/services/pdf";
+
+const maps = await prepareGeoMapSnapshotAssets(form, {
+  revision: savedRevision,
+  maps: expectedMapIdsAndFingerprints,
+  maxBytes: remainingPdfInputBudget,
+}, { signal: request.signal });
+// Each result: { id, name, data: Blob, type, width, height }.
+// Insert the generated name as img src and pass { name, data } as PDF assets.
+```
+
+The manifest must cover exactly the expected maps. Missing, duplicate, extra or
+stale images fail. Revision and fingerprints are binding application context,
+not values to trust from the submitted form. Re-check the saved revision before
+converting the PDF if it can change during preflight. Client pixels cannot be
+verified as truthful geography; use these assets only for that caller's export,
+never as another person's authoritative document or canonical map data.
+
+Total input and output bytes each fit `maxBytes`, capped at the existing
+32 MiB print image input budget. Each PNG has at most 16 MiP and dimensions
+1..16383 per side. Every header is checked before any decoding starts; images
+then pass sequentially through the existing isolated print-image workers.
+Opaque maps become JPEG, while transparent maps remain PNG. Always use the
+returned asset name and type. Budget these assets together with HTML and other
+PDF images. Re-encoding can exceed a budget even when source PNGs fit.
+
+Errors are `GeoMapSnapshotAssetError` with `code`: `invalid`, `stale`, `missing`,
+`too_large`, `unreadable`, `timed_out` or `aborted`. The 30-second default deadline
+covers the whole batch and worker queuing; `timeoutMs` accepts 1..240,000.
+Cancellation produces no assets. Keep failure visible and offer recovery;
+never silently omit a requested image. No user credentials are sent to image
+workers or Gotenberg, and no additional rendering runtime is required.

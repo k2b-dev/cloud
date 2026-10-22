@@ -271,7 +271,8 @@ attribution without effects, browser APIs, or map loading:
 
 It accepts the geometry, fitting, selection, height, class, and attribution
 props above. Its pins are labelled images, not buttons, because nothing can be
-selected. It has no live map, controls, status, or info tile.
+selected. It has no basemap, controls, status, or info tile. Use a complete
+browser snapshot when PDF or print needs the geographic map image.
 
 ## Runtime
 
@@ -306,3 +307,39 @@ that path needs no `img-src blob:`. The fallback for browsers without
 `createImageBitmap` uses an image element with an object URL and **does** need
 `img-src blob:`. The GeoJSON-only demo and browser fixture use no fetched
 images, sprites, glyphs, or tiles; their policy requires no image blob access.
+
+
+## Capture a complete static image
+
+Pass `ref={(handle) => { map = handle; }}` to obtain a browser-only
+`MapViewHandle`. `await map.snapshot({ signal, timeoutMs: 30_000 })` returns
+`{ data: Blob, width, height }`, with `image/png` bytes and integer CSS pixel
+dimensions, independent of device pixel ratio. `MapViewHandle`,
+`MapViewSnapshot`, `MapViewSnapshotOptions`, `MapSnapshotError` and
+`MapSnapshotErrorCode` are public exports from `@k2b/ui`.
+
+Capture waits for the existing map's style, tiles, glyphs, symbol placement,
+fonts and a fresh GPU frame. It composites the map canvas with route/area
+geometry, numbered pins, lettered stops, drop pins and attribution. Controls,
+notices, location indicator, scale bar and the selected place's info tile are
+excluded. Keep a linked attribution and accessible source list beside the image.
+The snapshot retains the current theme and camera. For a saved-document export,
+use a fitted map for that document, without transient selection or panning.
+
+Snapshots never start, reveal, refit or retry a map. Reveal lazy maps through
+the normal viewport path first; wait for `onStateChange('ready')` before capture.
+A resource failure rejects with `resource_failed`; the existing **Try again**
+control reloads the map. A static, empty or unsupported map rejects with
+`not_ready`. `changed` means camera, size, theme or renderer input changed during
+capture; capture the new settled view. Other codes are `disposed`, `busy`,
+`too_large`, `timed_out`, `aborted` and `capture_failed`. A failed capture never
+returns geometry-only success. Only one capture runs per map at a time.
+
+`MAP_SNAPSHOT_MAX_PIXELS` is 16 MiP (64 MiB RGBA), matching Cloud's isolated
+print image worker. The default deadline is 30 seconds and includes waiting;
+`timeoutMs` accepts integers from 1 to 240,000. Abort on navigation or document
+revision changes. Disposal aborts pending capture and releases the map as usual.
+Capture multiple maps sequentially to bound browser GPU and canvas memory.
+App-controlled print must await images and decoding. Native `beforeprint` cannot
+await capture: prepare images ahead of time or show the saved source list with
+a clear image-unavailable notice.

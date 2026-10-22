@@ -15,7 +15,8 @@ import {
   unprojectPoint,
 } from "./map-view-geometry";
 import { useMapViewMessages } from "./map-view-messages";
-import type { MapViewMarker, MapViewProps, MapViewStyle } from "./map-view-types";
+import { MapSnapshotError, rasterizeMapView, snapshotAborted, snapshotWait } from "./map-view-snapshot";
+import type { MapViewHandle, MapViewMarker, MapViewProps, MapViewStyle } from "./map-view-types";
 
 export type { MapViewProps } from "./map-view-types";
 
@@ -84,8 +85,95 @@ export function MapView(props: MapViewProps): JSX.Element {
   let visible = false;
   let mounted = false;
   let touched = false;
-  let replacingStyle = false;
   let generation = 0;
+  let revision = 0;
+  let idle = false;
+  let capturing = false;
+  const lifetime = new AbortController();
+  const handle: MapViewHandle = {
+    async snapshot(options = {}) {
+      const timeout = options.timeoutMs ?? 30_000;
+      if (!Number.isInteger(timeout) || timeout < 1 || timeout > 240_000) throw new RangeError("Invalid snapshot timeout");
+      if (disposed) throw new MapSnapshotError("disposed");
+      if (capturing) throw new MapSnapshotError("busy");
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(new MapSnapshotError("timed_out")), timeout);
+      const signal = AbortSignal.any([controller.signal, lifetime.signal, ...(options.signal ? [options.signal] : [])]);
+      const initial = revision;
+      const initialGeneration = generation;
+      const assertCurrent = () => {
+        if (signal.aborted) throw snapshotAborted(signal);
+        if (disposed) throw new MapSnapshotError("disposed");
+        if (state() === "error") throw new MapSnapshotError("resource_failed");
+        if (["static", "empty", "no-webgl"].includes(state())) throw new MapSnapshotError("not_ready");
+        if (revision !== initial || generation !== initialGeneration) throw new MapSnapshotError("changed");
+      };
+      capturing = true;
+      try {
+        assertCurrent();
+        await snapshotWait(document.fonts.ready, signal);
+        // An idle event includes symbol placement/fades, unlike the initial load event.
+        await new Promise<void>((resolve, reject) => {
+          let frameId = 0;
+          const stop = () => {
+            cancelAnimationFrame(frameId);
+            reject(snapshotAborted(signal));
+          };
+          const poll = () => {
+            try {
+              assertCurrent();
+              if (map && idle && map.isStyleLoaded() && map.areTilesLoaded() && !map.isMoving()) {
+                signal.removeEventListener("abort", stop);
+                resolve();
+              } else frameId = requestAnimationFrame(poll);
+            } catch (error) {
+              signal.removeEventListener("abort", stop);
+              reject(error);
+            }
+          };
+          signal.addEventListener("abort", stop, { once: true });
+          poll();
+        });
+        assertCurrent();
+        const instance = map!;
+        const result = await new Promise<Awaited<ReturnType<typeof rasterizeMapView>>>((resolve, reject) => {
+          const clean = () => {
+            instance.off("render", render);
+            instance.off("remove", removed);
+            signal.removeEventListener("abort", stop);
+          };
+          const stop = () => {
+            clean();
+            reject(snapshotAborted(signal));
+          };
+          const removed = () => {
+            clean();
+            reject(new MapSnapshotError(disposed ? "disposed" : state() === "error" ? "resource_failed" : "changed"));
+          };
+          const render = () => {
+            clean();
+            try {
+              assertCurrent();
+              if (!instance.isStyleLoaded() || !instance.areTilesLoaded() || instance.isMoving()) throw new MapSnapshotError("changed");
+              syncOverlay();
+              rasterizeMapView(root, instance.getCanvas(), signal).then(resolve, reject);
+            } catch (error) {
+              reject(error);
+            }
+          };
+          signal.addEventListener("abort", stop, { once: true });
+          instance.on("render", render);
+          instance.on("remove", removed);
+          instance.triggerRepaint();
+        });
+        assertCurrent();
+        return result;
+      } finally {
+        clearTimeout(timer);
+        capturing = false;
+      }
+    },
+  };
   let intersection: IntersectionObserver | undefined;
   let resize: ResizeObserver | undefined;
   let infoResize: ResizeObserver | undefined;
@@ -98,6 +186,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   };
   const removeMap = () => {
     generation++;
+    idle = false;
     const previous = map;
     map = undefined;
     previous?.remove();
@@ -105,7 +194,6 @@ export function MapView(props: MapViewProps): JSX.Element {
     setLiveScale(undefined);
     setChosenZoom(undefined);
     currentStyle = undefined;
-    replacingStyle = false;
   };
   // MapLibre wraps its center across the antimeridian; geometry is drawn in the world copy nearest the camera.
   const worldCopy = (live: LiveMap, f: MapFrame): number => Math.round((live.getCenter().lng + 180) / 360 - (f.minX + f.spanX / 2));
@@ -145,8 +233,8 @@ export function MapView(props: MapViewProps): JSX.Element {
     setState("loading");
     const fail = () => {
       if (disposed || attempt !== generation) return;
-      removeMap();
       setState("error");
+      removeMap();
     };
     let engine: typeof import("./map-view-live");
     try {
@@ -196,22 +284,32 @@ export function MapView(props: MapViewProps): JSX.Element {
         fail,
       );
       map = instance;
-      instance.on("error", (event) => {
+      instance.on("error", () => {
         // A missing paid resource must remain visible and recoverable, including failures after initial load.
-        if ("sourceId" in event || "tile" in event || state() === "loading" || replacingStyle) fail();
-      });
-      instance.on("style.load", () => {
-        replacingStyle = false;
+        fail();
       });
       instance.on("load", () => {
         if (disposed || attempt !== generation) return;
-        setState("ready");
         refit();
+        setState("ready");
+        syncOverlay();
+      });
+      instance.on("idle", () => {
+        if (map !== instance || disposed) return;
+        idle = true;
+        syncOverlay();
+      });
+      instance.on("dataloading", () => {
+        idle = false;
       });
       instance.on("movestart", (event) => {
+        idle = false;
         if (event.originalEvent) touch();
       });
-      instance.on("move", syncOverlay);
+      instance.on("move", () => {
+        revision++;
+        syncOverlay();
+      });
       // Pin separation is decided again once a zoom ends, not on every animation frame.
       instance.on("zoomend", () => {
         if (map === instance && touched) setChosenZoom(instance.getZoom());
@@ -253,6 +351,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   };
   onMount(() => {
     mounted = true;
+    props.ref?.(handle);
     const theme = () => setDark(!!root.closest('.dark, .k2b-dark, [data-theme="dark"]'));
     theme();
     for (let ancestor: Element | null = root; ancestor; ancestor = ancestor.parentElement) {
@@ -262,6 +361,7 @@ export function MapView(props: MapViewProps): JSX.Element {
     }
     setMeasuredWidth(root.clientWidth);
     resize = new ResizeObserver(() => {
+      revision++;
       setMeasuredWidth(root.clientWidth);
       map?.resize();
       refit();
@@ -291,6 +391,7 @@ export function MapView(props: MapViewProps): JSX.Element {
       frame,
       (value) => {
         if (!mounted) return;
+        revision++;
         if (!value) {
           removeMap();
           setState("empty");
@@ -305,8 +406,9 @@ export function MapView(props: MapViewProps): JSX.Element {
   createEffect(() => {
     const style = resolvedStyle();
     if (state() === "ready" && map && style !== currentStyle) {
+      revision++;
+      idle = false;
       currentStyle = style;
-      replacingStyle = true;
       map.setStyle(style);
     }
   });
@@ -317,11 +419,19 @@ export function MapView(props: MapViewProps): JSX.Element {
   });
   onCleanup(() => {
     disposed = true;
+    lifetime.abort(new MapSnapshotError("disposed"));
     intersection?.disconnect();
     resize?.disconnect();
     infoResize?.disconnect();
     for (const observer of themes) observer.disconnect();
     removeMap();
+  });
+  createEffect(() => {
+    // Deep reads also subscribe to in-place Solid store updates (tone/mark/labels included).
+    JSON.stringify([props.markers, props.lines, props.areas, props.ownLocation, props.selectedId, props.class]);
+    dark();
+    props.attribution;
+    revision++;
   });
   const zoom = (direction: "in" | "out") => {
     if (!map || state() !== "ready") return;

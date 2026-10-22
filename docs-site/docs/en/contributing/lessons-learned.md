@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Lessons learned
@@ -910,6 +910,13 @@ convention still needs a check or a test.
 - **Root cause:** Fibel pinned an older SDK, Solid restricted its nested Seroval to the 1.5 series, Sharp was pinned to 0.35.4, and older range-compatible Proxy-Addr and Source-Map-JS versions remained locked.
 - **Error class:** Checking direct dependency versions instead of every resolved copy and its upstream range.
 - **Guard:** The existing nightly `bun audit --audit-level=high` checks the resolved graph. Verify upstream advisories and consumer paths before updating: Fibel still needs a supported SDK release, and the disputed cache advisory has no confirmed behavior fix in 4.3.0. Keep those findings visible rather than adding overrides or weakening the audit.
+
+### Map readiness did not guarantee complete label resources
+
+- **What happened:** A failed glyph download could still reach MapLibre's idle state with locally substituted labels.
+- **Root cause:** MapLibre 6 catches glyph transport and PBF decoding failures inside its glyph manager without a map error event.
+- **Error class:** Renderer fallback mistaken for complete export resources.
+- **Guard:** MapView's per-map glyph protocol validates PBFs and reports failed downloads explicitly. Synthetic vector browser tests require a failed glyph request to reject capture, retain retry, and recover before a real raster succeeds.
 
 ## Add a lesson
 

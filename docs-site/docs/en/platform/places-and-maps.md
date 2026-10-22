@@ -409,3 +409,36 @@ Tile and glyph failures retain pins with **Try again**. `CloudMap` refreshes
 free availability after a failure and shows the person/day or Cloud/month
 reset time when a budget is exhausted. Core bundles its glyph files as server
 assets; production images need no runtime UI package or external font host.
+
+
+## Export a map image for print or PDF
+
+`CloudMap` forwards the public `MapView` browser `ref` handle. Capture its
+complete fitted view with `handle.snapshot({ signal })` after it is ready.
+The PNG includes the same flat Cloud basemap, road labels, saved geometry,
+pin marks and attribution. Capture introduces no provider request chain:
+it never starts, pans, refits or retries a map. Existing tile requests remain
+authenticated in Core, attributed to the original actor/access subject and
+subject to the same budgets. All provider traffic stays on the EU endpoint;
+no key or user credential reaches a renderer.
+
+Use a fitted saved-document map rather than a panned interactive view. Reveal
+lazy maps before capture. Missing tiles or glyphs fail visibly; retry the map,
+then capture again. The [MapView guide](/en/ui/content/map-view) describes the
+complete-resource barrier, dimensions, cancellation and error codes.
+
+For offline PDF, use `geoMapSnapshotFingerprint` from
+`@k2b/cloud/contracts/geo-snapshot` to bind each PNG to the complete validated
+saved GeoDocument. Submit binary images to an application-owned, authenticated
+endpoint with the saved document revision. The shared
+[PDF preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-snapshots)
+validates membership, fingerprints, dimensions, byte budgets and real decoding.
+The application still owns resource authorization, revision checks, omission
+reporting and linked attribution. A client's image is presentation input; it
+cannot attest that the geography is truthful and must never become canonical
+saved map data.
+
+There is no server-side map renderer in this contract. Headless API or CLI PDF
+exports without browser image uploads must report unavailable map images and
+retain saved-source lists, or fail explicitly when map images are required.
+`MapViewFrame` remains a geometry fallback and does not supply a basemap PNG.

@@ -3,35 +3,54 @@ import { addProtocol, LngLat, Map, type MapOptions, removeProtocol, setWorkerUrl
 // The build points this at a copy named map-view-worker.js, because @k2b/ssr serves only .js files.
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs" with { type: "file" };
 
-export function createMap(options: MapOptions, onResourceError: () => void): Map {
+import { validateMapGlyphs } from "./map-view-glyphs";
+
+let glyphProtocolId = 0;
+
+export function createMap(options: MapOptions, resourceFailed: () => void): Map {
   setWorkerUrl(new URL(workerUrl, import.meta.url).href);
-  // MapLibre catches glyph fetch failures and silently renders a fallback font. Use its
-  // public protocol hook so the host can retain geometry and offer a visible retry.
-  const protocol = `k2b-glyph-${crypto.randomUUID()}`;
-  addProtocol(protocol, async (params, controller) => {
+  // MapLibre 6 silently substitutes local glyphs when a glyph HTTP request fails. A map error
+  // listener cannot observe that failure. Use its public protocol hook to keep failure explicit,
+  // without a second request, global fetch patch, provider URL, or cross-map shared state.
+  const protocol = `k2b-map-glyph-${++glyphProtocolId}`;
+  const lifetime = new AbortController();
+  addProtocol(protocol, async (request, cancellation) => {
+    const signal = AbortSignal.any([lifetime.signal, cancellation.signal]);
     try {
-      const url = new URL(params.url).searchParams.get("url");
-      if (!url) throw new Error("Map glyph unavailable");
-      const response = await fetch(url, {
-        headers: params.headers,
-        credentials: params.credentials ?? "same-origin",
-        signal: controller.signal,
+      const response = await fetch(decodeURIComponent(request.url.slice(protocol.length + 3)), {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        credentials: request.credentials ?? "same-origin",
+        cache: request.cache,
+        referrerPolicy: request.referrerPolicy,
+        signal,
       });
-      if (!response.ok) throw new Error("Map glyph unavailable");
-      return { data: await response.arrayBuffer() };
+      if (!response.ok) {
+        void response.body?.cancel().catch(() => {});
+        throw new Error("Map glyph resource failed");
+      }
+      const data = await response.arrayBuffer();
+      signal.throwIfAborted();
+      validateMapGlyphs(data);
+      return { data };
     } catch {
-      if (!controller.signal.aborted) onResourceError();
-      throw new Error("Map glyph unavailable");
+      if (!signal.aborted) resourceFailed();
+      throw new Error("Map glyph resource failed");
     }
   });
+  const clean = () => {
+    lifetime.abort();
+    removeProtocol(protocol);
+  };
   let map: Map;
   try {
     map = new Map({
       ...options,
-      async transformRequest(url, type) {
+      transformRequest: async (url, type) => {
         const request = (await options.transformRequest?.(url, type)) ?? { url };
         return type === "Glyphs"
-          ? { ...request, url: `${protocol}://glyph?url=${encodeURIComponent(new URL(request.url, document.baseURI).href)}` }
+          ? { ...request, url: `${protocol}://${encodeURIComponent(new URL(request.url, location.href).href)}` }
           : request;
       },
       // MapLibre would move a wide or polar fit to keep the poles out of view; the server frame cannot know that rule,
@@ -41,11 +60,11 @@ export function createMap(options: MapOptions, onResourceError: () => void): Map
         zoom: Math.max(options.minZoom ?? -2, Math.min(options.maxZoom ?? 22, zoom)),
       }),
     });
-  } catch (cause) {
-    removeProtocol(protocol);
-    throw cause;
+  } catch (error) {
+    clean();
+    throw error;
   }
-  map.on("remove", () => removeProtocol(protocol));
+  map.on("remove", clean);
   map.touchZoomRotate.disableRotation();
   map.keyboard.disableRotation();
   // The shared overlay projects a flat, north-up Mercator plane even if a style requests a globe.

@@ -29,6 +29,7 @@ import {
   LocaleProvider,
   LogEntriesTable,
   MapView,
+  type MapViewHandle,
   type MapViewMarker,
   type MapViewOwnLocation,
   type MapViewStyle,
@@ -183,6 +184,31 @@ const mapDemoStyles = { light: mapDemoStyle(false), dark: mapDemoStyle(true) };
 const MapViewDemo = () => {
   const [selectedId, setSelectedId] = createSignal("museum");
   const [location, setLocation] = createSignal<MapViewOwnLocation>();
+  const [ready, setReady] = createSignal(false);
+  const [capturing, setCapturing] = createSignal(false);
+  const [image, setImage] = createSignal("");
+  const [captureError, setCaptureError] = createSignal("");
+  const controller = new AbortController();
+  let map: MapViewHandle | undefined;
+  onCleanup(() => {
+    controller.abort();
+    if (image()) URL.revokeObjectURL(image());
+  });
+  const capture = async () => {
+    if (!map || capturing()) return;
+    setCapturing(true);
+    setCaptureError("");
+    try {
+      const snapshot = await map.snapshot({ signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (image()) URL.revokeObjectURL(image());
+      setImage(URL.createObjectURL(snapshot.data));
+    } catch {
+      if (!controller.signal.aborted) setCaptureError("The map image could not be captured. Wait for the map, then try again.");
+    } finally {
+      setCapturing(false);
+    }
+  };
   return (
     <DemoCard
       id="map-view"
@@ -193,6 +219,10 @@ const MapViewDemo = () => {
       }
     >
       <MapView
+        ref={(handle) => {
+          map = handle;
+        }}
+        onStateChange={(state) => setReady(state === "ready")}
         height={360}
         style={mapDemoStyles}
         markers={mapDemoMarkers}
@@ -240,7 +270,16 @@ const MapViewDemo = () => {
             {marker.mark} {marker.label}
           </Button>
         ))}
+        <Button variant="outline" loading={capturing()} disabled={!ready()} onClick={() => void capture()}>
+          Capture map image
+        </Button>
       </div>
+      <Show when={captureError()}>
+        <p role="status">{captureError()}</p>
+      </Show>
+      <Show when={image()}>
+        <img src={image()} alt="Captured map with pins, route and attribution" class="w-full mt-3" />
+      </Show>
     </DemoCard>
   );
 };

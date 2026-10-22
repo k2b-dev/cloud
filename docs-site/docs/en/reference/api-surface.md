@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # API surface
@@ -492,3 +492,15 @@ render. Browser code uses `getContext()` and `onContextChange()` from
 `publishPageContext()`. `PanelPageContext` and its strict schema are exported
 from `@k2b/cloud/contracts`. See [Panels](/en/docs/platform/panels#page-context)
 for consent, ordering, and the rule that refs never grant access.
+
+
+### Map snapshot uploads
+
+`@k2b/cloud/contracts/geo-snapshot` exports `GeoMapSnapshotManifestSchema`,
+`GeoMapSnapshotImageSchema`, `GeoMapSnapshotIdSchema`, `GeoMapSnapshotManifest`,
+`geoMapSnapshotPart`, `geoMapSnapshotFingerprint` and the `GEO_SNAPSHOT_MAX_*`
+bounds. `@k2b/cloud/services/pdf` exports `prepareGeoMapSnapshotAssets`,
+`GeoMapSnapshotAssetError`, `GeoMapSnapshotAsset` and
+`GeoMapSnapshotAssetErrorCode`. See
+[Map images](/en/docs/platform/places-and-maps#export-a-map-image-for-print-or-pdf)
+and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-snapshots).

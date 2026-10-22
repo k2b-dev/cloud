@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Deployment requirements
@@ -1760,3 +1760,14 @@ apply, and each user holds at most 16 disposable check copies at a time. Disposa
 scopes left by crashed hosts and queues unreachable database namespaces for deletion.
 See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
 for data-copy and output limits. No new configuration is required.
+
+
+### Browser map images in PDF
+
+Map image exports reuse the browser's existing Cloud map and the isolated
+print-image decoder. They require no new service, provider key, network access
+for Gotenberg or credential forwarding. The application must bound its multipart
+request before parsing, authorize the saved document and bind uploaded images to
+its current revision. Headless exports without a browser capture retain an
+explicit map-image omission or fail when images are required. See
+[Upload browser map snapshots](/en/docs/platform/pdf-and-templates#upload-browser-map-snapshots).
