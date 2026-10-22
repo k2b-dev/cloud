@@ -1,4 +1,4 @@
-import { type AccessSubject, type AccessUser, listUsersWithAccess } from "@k2b/cloud/server";
+import { type AccessSubject, type AccessUser, listUsersWithAccess, recursiveServiceAccountGroupIdsSubquery } from "@k2b/cloud/server";
 import { logger, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { sql } from "bun";
@@ -132,6 +132,7 @@ type DbOverlapItem = {
 };
 
 type DbItemAssignee = {
+  service_account_kind: SpaceItemAssignee["serviceAccountKind"] | null;
   kind: SpaceItemAssignee["kind"];
   item_id: string;
   id: string;
@@ -346,7 +347,7 @@ const assignableUserDescription = (user: AccessUser): string => {
 
 const uniqueIds = (ids: string[] | undefined): string[] => [...new Set(ids ?? [])];
 
-/** Accounts need their own readable grant; public and authenticated access never make them assignable. */
+/** Accounts need a readable direct or local-group grant; broad audiences never make them assignable. */
 export const listServiceAccountsWithAccess = async (params: {
   spaceId: string;
   search?: string;
@@ -363,15 +364,17 @@ export const listServiceAccountsWithAccess = async (params: {
   const pattern = query ? `%${query.replace(/[\\%_]/g, "\\$&")}%` : null;
   // Match the people directory's existing query budget.
   const limit = Math.min(Math.max(params.limit ?? (ids.length || 20), 1), 500);
-  const rows = await db<{ id: string; name: string; kind: "standalone" | "agent" | "resource_bound" }[]>`
-    SELECT account.id, account.name, account.kind
+  const rows = await db<{ id: string; name: string; kind: "standalone" | "agent" | "resource_bound"; source: string }[]>`
+    SELECT account.id, account.name, account.kind,
+      CASE WHEN bool_or(access.service_account_id = account.id) THEN 'direct access'
+        ELSE 'via ' || min(COALESCE(NULLIF(g.name, ''), g.cn)) END AS source
     FROM auth.service_accounts account
-    WHERE EXISTS (
-        SELECT 1 FROM auth.access access
-        JOIN spaces.space_access space_access ON space_access.access_id = access.id
-        WHERE access.service_account_id = account.id AND space_access.space_id = ${params.spaceId}::uuid
-          AND access.permission IN ('read', 'write', 'admin')
-      )
+    JOIN auth.access access ON access.service_account_id = account.id
+      OR access.group_id IN (${recursiveServiceAccountGroupIdsSubquery(sql`account.id`)})
+    JOIN spaces.space_access space_access ON space_access.access_id = access.id
+    LEFT JOIN auth.groups g ON g.id = access.group_id
+    WHERE space_access.space_id = ${params.spaceId}::uuid
+      AND access.permission IN ('read', 'write', 'admin')
       AND account.status = 'active'
       AND (
         account.kind IN ('standalone', 'agent')
@@ -380,17 +383,20 @@ export const listServiceAccountsWithAccess = async (params: {
       )
       AND (${params.ids === undefined} OR account.id = ANY(${toPgUuidArray(ids)}::uuid[]))
       AND account.id <> ALL(${toPgUuidArray(excluded)}::uuid[])
-      AND (${pattern}::text IS NULL OR LOWER(account.name) LIKE ${pattern} ESCAPE '\\')
+    GROUP BY account.id
+    HAVING ${pattern}::text IS NULL OR LOWER(account.name) LIKE ${pattern} ESCAPE '\\'
+      OR bool_or(LOWER(COALESCE(NULLIF(g.name, ''), g.cn)) LIKE ${pattern} ESCAPE '\\')
     ORDER BY (${query ?? null}::text IS NOT NULL AND LOWER(account.name) = ${query ?? null}) DESC, account.name, account.id
     LIMIT ${limit}
   `;
   return rows.map((row) => ({
     kind: "service_account",
+    serviceAccountKind: row.kind,
     id: row.id,
     displayName: row.name,
     avatarHash: null,
     uid: row.name,
-    description: `${row.kind === "agent" ? "agent" : row.kind === "resource_bound" ? "Space API key" : "service account"} · direct access`,
+    description: `${row.kind === "agent" ? "agent" : row.kind === "resource_bound" ? "Space API key" : "service account"} · ${row.source}`,
   }));
 };
 
@@ -398,21 +404,24 @@ export const listServiceAccountsWithAccess = async (params: {
 export const listAssignableUsers = async (params: {
   spaceId: string;
   search?: string;
+  ids?: string[];
   excludeUserIds?: string[];
   limit?: number;
   kind?: SpaceAssignableUser["kind"];
 }): Promise<SpaceAssignableUser[]> => {
+  if (params.ids?.length === 0) return [];
   const limit = Math.min(Math.max(params.limit ?? 20, 1), 500);
   const [users, accounts] = await Promise.all([
     params.kind === "service_account"
       ? []
       : listSpaceAccessIds(params.spaceId).then((accessIds) =>
-          listUsersWithAccess({ accessIds, search: params.search, excludeUserIds: params.excludeUserIds, limit }),
+          listUsersWithAccess({ accessIds, search: params.search, userIds: params.ids, excludeUserIds: params.excludeUserIds, limit }),
         ),
     params.kind === "user"
       ? []
       : listServiceAccountsWithAccess({
           spaceId: params.spaceId,
+          ids: params.ids,
           search: params.search,
           excludeIds: params.excludeUserIds,
           limit,
@@ -659,7 +668,7 @@ const mapToItem = (row: DbItem): SpaceItem => ({
  */
 const getAssignees = async (itemId: string): Promise<SpaceItemAssignee[]> => {
   const rows = await sql<Omit<DbItemAssignee, "item_id">[]>`
-    SELECT COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+    SELECT COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, u.uid, sa.name) AS display_name, u.avatar_hash, sa.kind AS service_account_kind,
       CASE WHEN ia.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
     FROM spaces.item_assignees ia
     LEFT JOIN auth.users u ON ia.user_id = u.id
@@ -667,7 +676,13 @@ const getAssignees = async (itemId: string): Promise<SpaceItemAssignee[]> => {
     WHERE ia.item_id = ${itemId}
     ORDER BY display_name, id
   `;
-  return rows.map((r) => ({ kind: r.kind, id: r.id, displayName: r.display_name, avatarHash: r.avatar_hash }));
+  return rows.map((r) => ({
+    kind: r.kind,
+    serviceAccountKind: r.service_account_kind ?? undefined,
+    id: r.id,
+    displayName: r.display_name,
+    avatarHash: r.avatar_hash,
+  }));
 };
 
 /**
@@ -692,7 +707,7 @@ const getTags = async (itemId: string): Promise<SpaceTag[]> => {
 const getAssigneesByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceItemAssignee[]>> => {
   if (itemIds.length === 0) return new Map();
   const rows = await sql<DbItemAssignee[]>`
-    SELECT ia.item_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, sa.name) AS display_name, u.avatar_hash,
+    SELECT ia.item_id, COALESCE(u.id, sa.id) AS id, COALESCE(u.display_name, u.uid, sa.name) AS display_name, u.avatar_hash, sa.kind AS service_account_kind,
       CASE WHEN ia.user_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS kind
     FROM spaces.item_assignees ia
     LEFT JOIN auth.users u ON ia.user_id = u.id
@@ -704,7 +719,13 @@ const getAssigneesByItemIds = async (itemIds: string[]): Promise<Map<string, Spa
   for (const row of rows) {
     grouped.set(row.item_id, [
       ...(grouped.get(row.item_id) ?? []),
-      { kind: row.kind, id: row.id, displayName: row.display_name, avatarHash: row.avatar_hash },
+      {
+        kind: row.kind,
+        serviceAccountKind: row.service_account_kind ?? undefined,
+        id: row.id,
+        displayName: row.display_name,
+        avatarHash: row.avatar_hash,
+      },
     ]);
   }
   return grouped;
@@ -763,11 +784,19 @@ const claimedMatch = sql`EXISTS (SELECT 1 FROM spaces.task_work tw WHERE tw.item
 
 const getClaimsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceItemClaim>> => {
   if (itemIds.length === 0) return new Map();
-  const rows = await sql<{ item_id: string; claim: TaskWork["claim"]; display_name: string; avatar_hash: string | null }[]>`
+  const rows = await sql<
+    {
+      item_id: string;
+      claim: TaskWork["claim"];
+      service_account_kind: SpaceItemAssignee["serviceAccountKind"] | null;
+      display_name: string;
+      avatar_hash: string | null;
+    }[]
+  >`
     SELECT tw.item_id, tw.claim,
       COALESCE(NULLIF(u.display_name, ''), u.uid, sa.name,
         CASE tw.claim->'actor'->>'kind' WHEN 'user' THEN 'Former user' ELSE 'Former service account' END) AS display_name,
-      u.avatar_hash
+      u.avatar_hash, sa.kind AS service_account_kind
     FROM spaces.task_work tw
     LEFT JOIN auth.users u ON tw.claim->'actor'->>'kind' = 'user' AND u.id = (tw.claim->'actor'->>'id')::uuid
     LEFT JOIN auth.service_accounts sa ON tw.claim->'actor'->>'kind' = 'service_account' AND sa.id = (tw.claim->'actor'->>'id')::uuid
@@ -776,7 +805,17 @@ const getClaimsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceI
   return new Map(
     rows.flatMap((row) =>
       row.claim
-        ? [[row.item_id, { ...row.claim, displayName: row.display_name, avatarHash: row.avatar_hash }] satisfies [string, SpaceItemClaim]]
+        ? [
+            [
+              row.item_id,
+              {
+                ...row.claim,
+                serviceAccountKind: row.service_account_kind ?? undefined,
+                displayName: row.display_name,
+                avatarHash: row.avatar_hash,
+              },
+            ] satisfies [string, SpaceItemClaim],
+          ]
         : [],
     ),
   );

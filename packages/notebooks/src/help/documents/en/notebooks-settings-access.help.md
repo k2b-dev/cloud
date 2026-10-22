@@ -67,6 +67,12 @@ The setting covers only deleting and locking whole notes. People and agents with
 
 For these people, **Delete** and **Lock note** in the note menu stay visible but are turned off. They explain that in this notebook, only people with **Manage** access can delete or lock notes. The API, `cld notebooks rm`, and `cld notebooks lock` refuse with the same reason. A locked note keeps its versions readable. You cannot edit it or restore a version in place. You can restore a version as a copy.
 
+## Give an integration or agent access {icon="key"}
+
+Add its standalone service account or agent under **Sharing → Access**. The entry shows the account name and kind. With **Manage** access and an `admin` token scope, it can manage access through the API. A read-only token cannot change sharing.
+
+To hand management over, give the new account **Manage** access first. Then lower or remove your own entry. An agent or standalone service account can remain as the only manager. You cannot remove the last manager; add another manager before trying again. Resource API keys do not count as managers and stay confined to their own notebook.
+
 ## Find the right settings tab {icon="settings"}
 
 :::reference

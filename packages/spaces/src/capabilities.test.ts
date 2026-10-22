@@ -37,7 +37,7 @@ import {
   TemplateListInputSchema,
   TemplateUpdateInputSchema,
 } from "./capability-contracts";
-import type { SpaceComment, SpaceItem, SpaceItemTemplate, SpaceTag } from "./contracts";
+import type { SpaceAssignableUser, SpaceComment, SpaceItem, SpaceItemTemplate, SpaceTag } from "./contracts";
 import { spacesService } from "./service";
 import { type ResourceTable, spacesPublicResources } from "./service/public-resources";
 
@@ -970,6 +970,7 @@ describe("spaces capabilities", () => {
       {
         id: blockerUuid,
         kind: "service_account",
+        serviceAccountKind: "agent",
         displayName: "Spaces agent",
         avatarHash: null,
         uid: "Spaces agent",
@@ -984,8 +985,20 @@ describe("spaces capabilities", () => {
       ok: true,
       data: {
         data: [
-          { id: userId, kind: "user", displayName: user.displayName, description: "spaces-user · direct access" },
-          { id: blockerUuid, kind: "service_account", displayName: "Spaces agent", description: "agent · direct access" },
+          {
+            id: userId,
+            kind: "user",
+            serviceAccountKind: undefined,
+            displayName: user.displayName,
+            description: "spaces-user · direct access",
+          },
+          {
+            id: blockerUuid,
+            kind: "service_account",
+            serviceAccountKind: "agent",
+            displayName: "Spaces agent",
+            description: "agent · direct access",
+          },
         ],
       },
     });
@@ -1265,6 +1278,55 @@ describe("spaces capabilities", () => {
         links: [{ rel: "open", href: `/app/spaces/${spaceId}?item=${itemId}` }],
       },
     });
+  });
+
+  for (const serviceAccountKind of ["standalone", "agent"] as const) {
+    test(`review resolves a selected ${serviceAccountKind} beyond the first directory page`, async () => {
+      spyOn(spacesService.item, "get").mockResolvedValue(task);
+      spyOn(spacesService.space, "get").mockResolvedValue(space);
+      spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+      const selected = {
+        id: serviceAccountId,
+        kind: "service_account" as const,
+        serviceAccountKind,
+        displayName: "Zebra helper",
+        uid: "Zebra helper",
+        avatarHash: null,
+      };
+      const directory: SpaceAssignableUser[] = [
+        ...Array.from({ length: 100 }, (_, i) => ({
+          ...selected,
+          id: String(i),
+          displayName: `Aardvark ${i}`,
+          uid: `person-${i}`,
+          kind: "user" as const,
+        })),
+        selected,
+      ];
+      const lookup = spyOn(spacesService.item, "listAssignableUsers").mockImplementation(async ({ ids, limit = 20 }) =>
+        directory.filter((entry) => !ids || ids.includes(entry.id)).slice(0, limit),
+      );
+      const result = await spacesCapabilities.actions["task.update"].review!({ itemId, assigneeIds: [serviceAccountId] }, userContext);
+      expect(result).toMatchObject({
+        ok: true,
+        data: { details: expect.arrayContaining([{ label: "Assignees", value: "Zebra helper" }]) },
+      });
+      expect(lookup).toHaveBeenCalledWith({ spaceId: spaceUuid, ids: [serviceAccountId], limit: 100 });
+      expect(JSON.stringify(result)).not.toContain(serviceAccountId);
+    });
+  }
+
+  test("review never labels an unavailable assignee with a raw UUID", async () => {
+    spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.item, "listAssignableUsers").mockResolvedValue([]);
+    const result = await spacesCapabilities.actions["task.update"].review!({ itemId, assigneeIds: [serviceAccountId] }, userContext);
+    expect(result).toMatchObject({
+      ok: true,
+      data: { details: expect.arrayContaining([{ label: "Assignees", value: "Unavailable assignee" }]) },
+    });
+    expect(JSON.stringify(result)).not.toContain(serviceAccountId);
   });
 
   test("shows task text and deadlines directly in the action review", async () => {

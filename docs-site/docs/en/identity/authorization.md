@@ -553,7 +553,8 @@ Join only that resource's grants, require the operation's permission level,
 and keep active-state and resource-binding checks on candidates. The direct
 branch can include a resource-bound account only when its binding matches.
 User-delegated accounts are not independent recipients. Never expand public
-or authenticated grants into assignable accounts. Credential scopes still
+or authenticated grants into assignable accounts. Spaces uses these
+named-recipient rules for both people and machines; credential scopes still
 cap operations performed by the selected account.
 
 Keep grant editing and credential creation separate. The permission editor

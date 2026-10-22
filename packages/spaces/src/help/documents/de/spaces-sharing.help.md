@@ -35,6 +35,12 @@ Formulare mit einer Fußzeile zeigen die Anzahl der Änderungen. Prüfe diese Za
 - **Verwalten:** Zusätzlich Wormholes, GitHub-Token, Zugriff, API-Schlüssel, den Kalenderexport und das Löschen ändern.
 :::
 
+## Einer Integration oder einem Agenten Zugriff geben {icon="key"}
+
+Füge das eigenständige Dienstkonto oder den Agenten unter **Freigabe → Zugriff** hinzu. Der Eintrag zeigt Name und Kontoart. Mit Zugriff **Verwalten** und dem Token-Scope `admin` kann das Konto Freigaben über die API verwalten. Ein Token mit dem Scope `read` kann keine Freigaben ändern.
+
+Gib dem neuen Konto zuerst Zugriff **Verwalten**, bevor du deinen eigenen Zugriff herabsetzt oder entfernst. Ein Agent oder eigenständiges Dienstkonto kann als einziges verwaltendes Konto verbleiben. Den letzten verwaltenden Eintrag kannst du nicht entfernen; füge vorher einen weiteren hinzu. Ressourcenbezogene API-Schlüssel zählen dafür nicht und bleiben auf ihren Space beschränkt.
+
 ## GitHub-Token hinterlegen {icon="brand-github"}
 
 Das GitHub-Token ist optional und gehört zu einem Space. Spaces speichert es verschlüsselt und nutzt es nur für Vorschauen von GitHub-Links an Einträgen dieses Space. Spaces zeigt das Token nie wieder an.

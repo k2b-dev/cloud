@@ -188,7 +188,9 @@ const relationReviewDetails = async (
 ): Promise<ReviewDetails> => {
   const t = spacesMessages(context.locale);
   const [users, detail] = await Promise.all([
-    input.assigneeIds ? spacesService.item.listAssignableUsers({ spaceId: internalSpaceId, search: "", limit: 100 }) : Promise.resolve([]),
+    input.assigneeIds
+      ? spacesService.item.listAssignableUsers({ spaceId: internalSpaceId, ids: input.assigneeIds, limit: 100 })
+      : Promise.resolve([]),
     input.tagIds ? spacesService.space.getDetail({ id: internalSpaceId }) : Promise.resolve(null),
   ]);
   const userNames = new Map(users.map((user) => [user.id, user.displayName]));
@@ -201,7 +203,7 @@ const relationReviewDetails = async (
             label: t.assignees,
             value:
               i18n.formatList(
-                input.assigneeIds.map((id) => userNames.get(id) ?? id),
+                input.assigneeIds.map((id) => userNames.get(id) ?? t.unavailableAssignee),
                 context.locale,
               ) || t.none,
           },
@@ -422,9 +424,12 @@ const boundReactionNames = (reactions: SpaceItemReaction[]) =>
 
 const mapRelations = (item: SpaceItem) => ({
   reactions: item.reactions && boundReactionNames(item.reactions),
-  assignees: (item.assignees ?? [])
-    .slice(0, 100)
-    .map((entry) => ({ id: entry.id, kind: entry.kind, displayName: truncateText(entry.displayName, 200).text })),
+  assignees: (item.assignees ?? []).slice(0, 100).map((entry) => ({
+    id: entry.id,
+    kind: entry.kind,
+    serviceAccountKind: entry.serviceAccountKind,
+    displayName: truncateText(entry.displayName, 200).text,
+  })),
   tags: (item.tags ?? [])
     .slice(0, 100)
     .map((entry) => ({ id: entry.id, name: truncateText(entry.name, 100).text, color: truncateText(entry.color, 100).text })),
@@ -439,9 +444,12 @@ const mapRelations = (item: SpaceItem) => ({
 const mapListRelations = (item: SpaceItem) => ({
   // Lists carry counts only; item.read names the people.
   reactions: item.reactions?.map(({ emoji, count, own }) => ({ emoji, count, own })),
-  assignees: (item.assignees ?? [])
-    .slice(0, 3)
-    .map((entry) => ({ id: entry.id, kind: entry.kind, displayName: truncateText(entry.displayName, 100).text })),
+  assignees: (item.assignees ?? []).slice(0, 3).map((entry) => ({
+    id: entry.id,
+    kind: entry.kind,
+    serviceAccountKind: entry.serviceAccountKind,
+    displayName: truncateText(entry.displayName, 100).text,
+  })),
   assigneeCount: item.assignees?.length ?? 0,
   tags: (item.tags ?? [])
     .slice(0, 3)
@@ -870,6 +878,7 @@ const runSpaceAssigneeList = async (input: z.infer<typeof SpaceAssigneeListInput
     data: users.map((user) => ({
       id: user.id,
       kind: user.kind,
+      serviceAccountKind: user.serviceAccountKind,
       displayName: truncateText(user.displayName, 200).text,
       description: truncateText(user.description ?? "", 300).text,
     })),
@@ -1715,7 +1724,12 @@ const mapTemplate = (template: SpaceItemTemplate, timeZone: string, context: Cap
   description: template.description,
   priority: template.priority,
   tags: template.tags.map((tag) => ({ id: tag.id, name: tag.name, color: tag.color })),
-  assignees: template.assignees.map((assignee) => ({ id: assignee.id, kind: assignee.kind, displayName: assignee.displayName })),
+  assignees: template.assignees.map((assignee) => ({
+    id: assignee.id,
+    kind: assignee.kind,
+    serviceAccountKind: assignee.serviceAccountKind,
+    displayName: assignee.displayName,
+  })),
   assignCreator: template.assignCreator,
   checklist: template.checklist,
   estimatedDurationMinutes: template.estimatedDurationMinutes,

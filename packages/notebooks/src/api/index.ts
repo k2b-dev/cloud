@@ -662,7 +662,7 @@ const fallbackServiceMessage = (locale: string, status: number, current: string)
 };
 
 const localizeResult = <T>(result: Result<T>, locale: string): Result<T> => {
-  if (result.ok) return result;
+  if (result.ok || result.error.code === "LAST_MANAGER") return result;
   if (result.error.code === "NOTEBOOK_SNAPSHOT_TARGET_BLOCKED") {
     return fail({ ...result.error, message: notebookServiceMessages.resolve([locale]).t.snapshotTargetBlocked });
   }
@@ -2893,8 +2893,6 @@ const app = new Hono<AuthContext>()
       },
     }),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       let notebookId = c.req.param("id")!;
 
       const { notebook, error } = await checkNotebookAccess(c, notebookId, "admin");
@@ -2912,7 +2910,7 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Grant access",
-      description: "Grant access to a user, group, or public. Requires admin permission.",
+      description: "Grant access to a user, group, service account, all signed-in users, or public. Requires admin permission.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(AccessEntrySchema, "Created access entry"),
@@ -2923,8 +2921,6 @@ const app = new Hono<AuthContext>()
     }),
     v("json", GrantAccessSchema),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       let notebookId = c.req.param("id")!;
       const { principal, permission } = c.req.valid("json");
 
@@ -2938,6 +2934,7 @@ const app = new Hono<AuthContext>()
             notebookId,
             principal,
             permission,
+            caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) },
           }),
           getLocale(c),
         ),
@@ -2955,15 +2952,13 @@ const app = new Hono<AuthContext>()
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Access updated"),
-        400: jsonResponse(ErrorResponseSchema, "Cannot remove last admin"),
+        409: jsonResponse(ErrorResponseSchema, "Cannot remove the last manager"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Access entry not found"),
       },
     }),
     v("json", UpdateAccessSchema),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       let notebookId = c.req.param("id")!;
       const accessId = c.req.param("accessId")!;
       const { permission } = c.req.valid("json");
@@ -2972,18 +2967,16 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       notebookId = notebook!.id;
 
-      const guard = await notebooksService.notebook.access.guard({
-        notebookId,
-        accessId,
-      });
-      if (!guard.currentPermission) {
-        return respond(c, fail(notFoundMessage(messages(c).accessEntryNotFound)));
-      }
-
-      if (guard.currentPermission === "admin" && permission !== "admin" && guard.otherAdmins <= 0) {
-        return respond(c, fail(err.badInput(messages(c).lastAdmin)));
-      }
-      return respondMessage(c, notebooksService.notebook.access.update({ notebookId, accessId, permission }), messages(c).accessUpdated);
+      return respondMessage(
+        c,
+        notebooksService.notebook.access.update({
+          notebookId,
+          accessId,
+          permission,
+          caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) },
+        }),
+        messages(c).accessUpdated,
+      );
     },
   )
 
@@ -2993,18 +2986,17 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Notebooks"],
       summary: "Revoke access",
-      description: "Remove an access entry. Cannot remove the last admin. Requires admin permission.",
+      description: "Remove an access entry. Cannot remove the last manager. Requires admin permission.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Access revoked"),
-        400: jsonResponse(ErrorResponseSchema, "Cannot remove last access entry or admin"),
+        400: jsonResponse(ErrorResponseSchema, "Cannot remove last access entry"),
+        409: jsonResponse(ErrorResponseSchema, "Cannot remove the last manager"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Access entry not found"),
       },
     }),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       let notebookId = c.req.param("id")!;
       const accessId = c.req.param("accessId")!;
 
@@ -3012,26 +3004,12 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       notebookId = notebook!.id;
 
-      const guard = await notebooksService.notebook.access.guard({
-        notebookId,
-        accessId,
-      });
-      if (!guard.currentPermission) {
-        return respond(c, fail(notFoundMessage(messages(c).accessEntryNotFound)));
-      }
-
-      if (guard.total <= 1) {
-        return respond(c, fail(err.badInput(messages(c).lastAccess)));
-      }
-
-      if (guard.currentPermission === "admin" && guard.otherAdmins <= 0) {
-        return respond(c, fail(err.badInput(messages(c).lastAdmin)));
-      }
       return respondMessage(
         c,
         notebooksService.notebook.access.remove({
           notebookId,
           accessId,
+          caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) },
         }),
         messages(c).accessRevoked,
       );

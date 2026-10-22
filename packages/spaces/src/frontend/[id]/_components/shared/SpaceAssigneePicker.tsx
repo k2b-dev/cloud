@@ -3,6 +3,7 @@ import { Avatar, Combobox, type ComboboxOption, IconButton, StatusBadge } from "
 import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";
+import { assigneeIcon } from "@/presentation/assignees";
 import { useSpaceMessages } from "../../messages";
 import { AssigneeAvatar } from "./AssigneeAvatars";
 import ClaimAvatar from "./claim/ClaimAvatar";
@@ -62,13 +63,22 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
     if (!res.ok) throw new Error(t.loadAssigneesFailed);
     const users = await res.json();
     shown = new Map(
-      users.map((user) => [user.id, { id: user.id, kind: user.kind, displayName: user.displayName, avatarHash: user.avatarHash }]),
+      users.map((user) => [
+        user.id,
+        {
+          id: user.id,
+          kind: user.kind,
+          serviceAccountKind: user.serviceAccountKind,
+          displayName: user.displayName,
+          avatarHash: user.avatarHash,
+        },
+      ]),
     );
     return users.map((user) => ({
       id: user.id,
       label: user.displayName,
       description: user.description,
-      icon: user.kind === "user" ? "ti ti-user" : "ti ti-api",
+      icon: user.kind === "user" ? "ti ti-user" : assigneeIcon(user.serviceAccountKind),
     }));
   };
 

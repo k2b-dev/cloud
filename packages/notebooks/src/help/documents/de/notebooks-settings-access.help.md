@@ -67,6 +67,12 @@ Die Einstellung betrifft nur das Löschen und Sperren ganzer Notizen. Personen u
 
 Für diese Personen bleiben **Löschen** und **Notiz sperren** im Notizmenü sichtbar, sind aber ausgeschaltet. Sie erklären, dass in diesem Notizbuch nur Personen mit Zugriff **Verwalten** Notizen löschen oder sperren können. Die API, `cld notebooks rm` und `cld notebooks lock` lehnen mit demselben Grund ab. Eine gesperrte Notiz behält ihre Versionen lesbar. Du kannst sie nicht bearbeiten oder eine Version an ihrer Stelle wiederherstellen. Du kannst eine Version aber als Kopie wiederherstellen.
 
+## Einer Integration oder einem Agenten Zugriff geben {icon="key"}
+
+Füge das eigenständige Dienstkonto oder den Agenten unter **Freigabe → Zugriff** hinzu. Der Eintrag zeigt Name und Kontoart. Mit Zugriff **Verwalten** und dem Token-Scope `admin` kann das Konto Freigaben über die API verwalten. Ein Token mit dem Scope `read` kann keine Freigaben ändern.
+
+Gib dem neuen Konto zuerst Zugriff **Verwalten**, bevor du deinen eigenen Zugriff herabsetzt oder entfernst. Ein Agent oder eigenständiges Dienstkonto kann als einziges verwaltendes Konto verbleiben. Den letzten verwaltenden Eintrag kannst du nicht entfernen; füge vorher einen weiteren hinzu. Ressourcenbezogene API-Schlüssel zählen dafür nicht und bleiben auf ihr Notizbuch beschränkt.
+
 ## Den richtigen Bereich der Einstellungen finden {icon="settings"}
 
 :::reference

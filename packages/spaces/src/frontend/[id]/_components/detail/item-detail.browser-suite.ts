@@ -546,10 +546,16 @@ describe("Spaces item detail in a browser", () => {
       const agent = {
         id: "66666666-6666-4666-8666-666666666666",
         kind: "service_account" as const,
+        serviceAccountKind: "agent" as const,
         displayName: "Release agent",
         avatarHash: null,
       };
-      const claim = { ...task.claim!, actor: { kind: "service_account" as const, id: agent.id }, displayName: agent.displayName };
+      const claim = {
+        ...task.claim!,
+        actor: { kind: "service_account" as const, id: agent.id },
+        displayName: agent.displayName,
+        serviceAccountKind: agent.serviceAccountKind,
+      };
       for (const [state, item] of [
         ["working", { ...task, assignees: [tom, agent], claim }],
         ["idle", { ...task, assignees: [tom, agent], claim: null }],
@@ -559,8 +565,8 @@ describe("Spaces item detail in a browser", () => {
           const rows = peopleRows(page);
           expect(await rows.count()).toBe(2);
           const agentRow = rows.filter({ hasText: agent.displayName });
-          // The agent shows the service-account icon, never a picture or a person's initials.
-          expect(await agentRow.locator(".k2b-avatar i.ti-api").count()).toBe(1);
+          // The agent shows its robot icon, never a picture or a person's initials.
+          expect(await agentRow.locator(".k2b-avatar i.ti-robot").count()).toBe(1);
           // As an assignee, the agent can be removed like a person, also while it works on the task.
           expect(await agentRow.getByRole("button", { name: `${agent.displayName} entfernen` }).count()).toBe(1);
           if (state === "working") {

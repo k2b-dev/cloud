@@ -242,6 +242,7 @@ const localizeApiResponse = async (c: Context, next: () => Promise<void>) => {
     .json()
     .catch(() => null);
   if (!parsed || typeof parsed !== "object" || !("message" in parsed) || typeof parsed.message !== "string") return;
+  if ("code" in parsed && parsed.code === "LAST_MANAGER") return;
   const message = spacesApiErrorMessage(c.res.status, getLocale(c), parsed.message);
   if (message === parsed.message) return;
   const headers = new Headers(c.res.headers);
@@ -3041,8 +3042,6 @@ const app = new Hono<AuthContext>()
       },
     }),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
       if (error) return error;
 
@@ -3057,7 +3056,7 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Grant access",
-      description: "Grant access to a user, group, or public. Requires admin permission.",
+      description: "Grant access to a user, group, service account, all signed-in users, or public. Requires admin permission.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(AccessEntrySchema, "Created access entry"),
@@ -3068,8 +3067,6 @@ const app = new Hono<AuthContext>()
     }),
     v("json", GrantAccessSchema),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       const { principal, permission } = c.req.valid("json");
 
       const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
@@ -3080,6 +3077,7 @@ const app = new Hono<AuthContext>()
           spaceId: spaceId!,
           principal,
           permission,
+          caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) },
         }),
       );
     },
@@ -3095,21 +3093,29 @@ const app = new Hono<AuthContext>()
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Access updated"),
+        409: jsonResponse(ErrorResponseSchema, "Cannot remove the last manager"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Access entry not found"),
       },
     }),
     v("json", UpdateAccessSchema),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       const accessId = c.req.param("accessId") ?? "";
       const { permission } = c.req.valid("json");
 
       const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
       if (error) return error;
 
-      return respondMessage(c, spacesService.access.update({ spaceId: spaceId!, accessId, permission }), "accessUpdated");
+      return respondMessage(
+        c,
+        spacesService.access.update({
+          spaceId: spaceId!,
+          accessId,
+          permission,
+          caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) },
+        }),
+        "accessUpdated",
+      );
     },
   )
 
@@ -3123,20 +3129,27 @@ const app = new Hono<AuthContext>()
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Access revoked"),
+        409: jsonResponse(ErrorResponseSchema, "Cannot remove the last manager"),
         400: jsonResponse(ErrorResponseSchema, "Cannot remove last access entry"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Access entry not found"),
       },
     }),
     async (c) => {
-      const userResult = requireUserBackedActor(c);
-      if (!userResult.ok) return respond(c, userResult);
       const accessId = c.req.param("accessId") ?? "";
 
       const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
       if (error) return error;
 
-      return respondMessage(c, spacesService.access.remove({ spaceId: spaceId!, accessId }), "accessRevoked");
+      return respondMessage(
+        c,
+        spacesService.access.remove({
+          spaceId: spaceId!,
+          accessId,
+          caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) },
+        }),
+        "accessRevoked",
+      );
     },
   );
 
@@ -3183,7 +3196,15 @@ const adminApp = new Hono<AuthContext>()
       const { internalId: spaceId, error } = await requireExistingSpace(c, c.req.param("id") ?? "");
       if (error) return error;
       const { principal, permission } = c.req.valid("json");
-      return respond(c, spacesService.access.grant({ spaceId: spaceId!, principal, permission }));
+      return respond(
+        c,
+        spacesService.access.grant({
+          spaceId: spaceId!,
+          principal,
+          permission,
+          caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c), authority: "administration" },
+        }),
+      );
     },
   )
   .patch(
@@ -3191,11 +3212,11 @@ const adminApp = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces Admin"],
       summary: "Update Space access for recovery",
-      description: "Update an access entry while preserving at least one Space admin. Requires Cloud admin.",
+      description: "Update an access entry while preserving at least one manager. Requires Cloud admin.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Access updated"),
-        400: jsonResponse(ErrorResponseSchema, "Cannot remove the last Space admin"),
+        409: jsonResponse(ErrorResponseSchema, "Cannot remove the last manager"),
         403: jsonResponse(ErrorResponseSchema, "Cloud admin required"),
         404: jsonResponse(ErrorResponseSchema, "Space or access entry not found"),
       },
@@ -3206,7 +3227,16 @@ const adminApp = new Hono<AuthContext>()
       if (error) return error;
       const accessId = c.req.param("accessId") ?? "";
       const { permission } = c.req.valid("json");
-      return respondMessage(c, spacesService.access.update({ spaceId: spaceId!, accessId, permission }), "accessUpdated");
+      return respondMessage(
+        c,
+        spacesService.access.update({
+          spaceId: spaceId!,
+          accessId,
+          permission,
+          caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c), authority: "administration" },
+        }),
+        "accessUpdated",
+      );
     },
   )
   .delete(
@@ -3214,11 +3244,12 @@ const adminApp = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces Admin"],
       summary: "Revoke Space access for recovery",
-      description: "Revoke access while preserving at least one access entry and Space admin. Requires Cloud admin.",
+      description: "Revoke access while preserving at least one access entry and manager. Requires Cloud admin.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Access revoked"),
-        400: jsonResponse(ErrorResponseSchema, "Cannot remove the last access entry or Space admin"),
+        400: jsonResponse(ErrorResponseSchema, "Cannot remove the last access entry"),
+        409: jsonResponse(ErrorResponseSchema, "Cannot remove the last manager"),
         403: jsonResponse(ErrorResponseSchema, "Cloud admin required"),
         404: jsonResponse(ErrorResponseSchema, "Space or access entry not found"),
       },
@@ -3227,7 +3258,15 @@ const adminApp = new Hono<AuthContext>()
       const { internalId: spaceId, error } = await requireExistingSpace(c, c.req.param("id") ?? "");
       if (error) return error;
       const accessId = c.req.param("accessId") ?? "";
-      return respondMessage(c, spacesService.access.remove({ spaceId: spaceId!, accessId }), "accessRevoked");
+      return respondMessage(
+        c,
+        spacesService.access.remove({
+          spaceId: spaceId!,
+          accessId,
+          caller: { actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c), authority: "administration" },
+        }),
+        "accessRevoked",
+      );
     },
   )
   .delete(

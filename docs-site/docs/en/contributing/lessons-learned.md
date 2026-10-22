@@ -1013,6 +1013,20 @@ explicitly documented identity reason for an excluding shared picker.
 - **Error class:** Incomplete propagation of a shared identity contract.
 - **Guard:** The canonical membership migration and authoritative group resolver cover both machine kinds. Tests check grant use and revocation, recursive relations, named rows, and eligible choices before pagination.
 
+### Group recipients stopped at user-only consumers
+
+- **What happened:** Local machine members could inherit a group grant while application contexts and assignee lists still omitted their groups.
+- **Root cause:** Group-ID lookups accepted only users, and machine recipient queries required a direct grant.
+- **Error class:** Incomplete propagation of a shared identity contract.
+- **Guard:** Cloud owns authoritative machine group SQL; focused tests cover both account kinds through group resolution and Spaces eligibility, including revocation and binding limits.
+
+### Resource managers were blocked by a user-only route gate
+
+- **What happened:** A standalone account or agent could hold a resource's admin permission but could not manage its access through the API.
+- **Root cause:** The route required a user before reaching its permission-aware service.
+- **Error class:** Applying an identity-kind gate to resource authority.
+- **Guard:** Spaces, Notebooks, and Contacts token tests grant both account kinds management access, use it within scopes, preserve the last manager, and deny access after revocation. Personal credential-management routes retain their separate contract.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

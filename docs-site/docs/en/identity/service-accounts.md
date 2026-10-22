@@ -165,8 +165,9 @@ In Spaces, Notebooks, Contacts, Pulse, and Venue, actions that belong to a
 person stay user-only: creating a Space, Notebook, contact book, or venue, creating and revoking API keys, managing Pulse source tokens, personal
 views such as favorites and the Spaces work overview, editing or deleting
 comments (and, in Notebooks, writing comments), writing contact notes, and
-signing up for or cancelling Venue shifts. Managing access and listing API keys
-stay user-only in Spaces, Notebooks, and Contacts.
+signing up for or cancelling Venue shifts. Managing access in Spaces, Notebooks, and Contacts follows the admin grant
+and credential scope, including for agents and standalone accounts. Listing
+API keys stays user-only in those applications.
 Managing the resource itself follows the grant: deleting a Space, Notebook, or
 contact book, renaming, importing, or exporting a contact book, administering a
 mailbox (its settings, access, sender identities, automations, and restoring it

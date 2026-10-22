@@ -1,4 +1,4 @@
-import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
+import { CloudResourceRefSchema, ServiceAccountKindSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { CompletionInputSchema, WorkActorSchema } from "./work-contracts";
 
@@ -91,6 +91,7 @@ export type Recurrence = z.infer<typeof RecurrenceSchema>;
 export const SpaceItemAssigneeSchema = z.object({
   id: UuidSchema.describe("User or service account UUID"),
   kind: z.enum(["user", "service_account"]).describe("Assignee principal kind"),
+  serviceAccountKind: ServiceAccountKindSchema.optional().describe("Service account kind, when the assignee is a machine principal"),
   displayName: z.string().describe("Person display name or service account name"),
   avatarHash: z.string().nullable().describe("User avatar hash; null for service accounts"),
 });
@@ -105,6 +106,7 @@ export type SpaceAssignableUser = z.infer<typeof SpaceAssignableUserSchema>;
 export const SpaceItemClaimSchema = z.object({
   id: UuidSchema.describe("Claim ID; reuse it to release this exact claim"),
   actor: WorkActorSchema.describe("Account currently working on the task"),
+  serviceAccountKind: ServiceAccountKindSchema.optional(),
   displayName: z.string().describe("Display name of the claiming account"),
   avatarHash: z.string().nullable().describe("Avatar hash of the claiming user, null for service accounts"),
   claimedAt: z.string().describe("Claim timestamp (ISO)"),

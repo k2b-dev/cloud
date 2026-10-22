@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-10-19
+updated: 2026-10-22
 ---
 
 # Spaces
@@ -448,6 +448,24 @@ of the response, measured as JSON-encoded UTF-8, and rolls back the
 preparation. Reduce the event content or attendees and try again. A retry of a
 stored preparation that is too large needs a new idempotency key.
 
+## Share a Space with an integration or agent
+
+Grant a standalone service account or agent access under **Sharing → Access**.
+The entry shows its account name and kind. With **Manage** (`admin`) access
+and an `admin` credential scope, either kind can list, grant, change, and
+revoke access through `/api/spaces/:id/access`. A `read` or `write` scope
+cannot manage access, even when the account has **Manage** access.
+Revoking its grant removes the access that its existing tokens received from
+that grant. Resource API keys remain confined to their own Space.
+
+To hand management over, grant the new manager first, then lower or remove
+the old manager's entry. Standalone service accounts and agents can be the
+remaining manager. A change that removes the last manager returns
+`LAST_MANAGER` (HTTP 409); grant another manager before retrying.
+[Resource authorization](/en/docs/identity/authorization#keep-at-least-one-manager)
+defines which entries count. Creating resource API keys still requires a
+user-backed identity.
+
 ## Implementation tasks and agent handoffs
 
 Spaces supports flat implementation tasks with blockers, shared progress notes,
@@ -460,6 +478,11 @@ Assignees can be people or active service accounts, including agents. People
 need direct or group access to the Space; service accounts need their own
 direct access. A Space API key can be assigned only within its own Space, and
 personal automation keys cannot be assignees. Assignment never grants access.
+The picker, item and template assignees, and active claim holders keep the
+account's kind: agents show a robot icon, standalone service accounts a key,
+and Space API keys a box. Capability reviews resolve selected assignees by
+ID within this Space, including accounts beyond the first directory page.
+Unavailable selections show “Unavailable assignee” instead of an account ID.
 
 Claiming as a person or an agent also assigns you; the claim is the working
 state of one assignee. This applies to every account that may claim, also
