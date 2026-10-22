@@ -13,14 +13,14 @@ const app = (overrides: Partial<RuntimeAppMeta> = {}): RuntimeAppMeta => ({
 });
 
 describe("buildAdminGroups", () => {
-  it("makes the places settings reachable and active in both locales", () => {
-    const href = "/admin/settings?tab=places";
+  it("makes the places and maps page reachable and active in both locales", () => {
+    const href = "/admin/places-and-maps";
     for (const [locale, label] of [
-      ["en", "Places and addresses"],
-      ["de", "Orte und Adressen"],
+      ["en", "Places and maps"],
+      ["de", "Orte und Karten"],
     ] as const) {
       const links = buildAdminGroups([], locale).flatMap((group) => group.links);
-      expect(links).toContainEqual({ href, icon: "ti-map-pin", label });
+      expect(links).toContainEqual({ href, icon: "ti-map-2", label });
       expect(
         activeAdminHref(
           href,

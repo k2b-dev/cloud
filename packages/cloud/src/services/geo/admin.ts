@@ -1,9 +1,6 @@
 import { type SQL, sql } from "bun";
 import { HTTPException } from "hono/http-exception";
 import {
-  GEO_MAX_CREDITS,
-  GEO_MAX_KEY_LENGTH,
-  GEO_MAX_RPS,
   GEO_USAGE_GROUPS,
   type GeoAdminPerson,
   type GeoAdminStatus,
@@ -12,7 +9,8 @@ import {
   type GeoBudgetFieldError,
   type GeoBudgetInput,
   type GeoKeyError,
-  type GeoPlanId,
+  geoKeyProblem,
+  validateGeoBudget,
 } from "../../contracts/geo-admin";
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
@@ -25,13 +23,14 @@ import { GEO_PLANS, readGeoConfig } from "./settings";
 type Actor = { id: string; roles: readonly string[]; uid?: string; provider?: string };
 
 const KEY = "geo.api_key";
-const BUDGET_KEYS = {
-  plan: "geo.plan",
-  customRps: "geo.custom_rps",
-  customDailyCredits: "geo.custom_daily_credits",
-  monthlyCredits: "geo.monthly_budget_credits",
-  personDailyCredits: "geo.person_daily_credits",
-} as const satisfies Record<GeoBudgetField | "plan", string>;
+const PLAN_KEY = "geo.plan";
+const BUDGET_FIELDS: ReadonlyArray<[GeoBudgetField, string]> = [
+  ["customRps", "geo.custom_rps"],
+  ["customDailyCredits", "geo.custom_daily_credits"],
+  ["monthlyCredits", "geo.monthly_budget_credits"],
+  ["personDailyCredits", "geo.person_daily_credits"],
+];
+const BUDGET_KEYS = [PLAN_KEY, ...BUDGET_FIELDS.map(([, name]) => name)];
 const KEY_ACTION = "core.geo.key_set";
 const BUDGET_ACTION = "core.geo.budget_changed";
 /** A known place for the verification lookup; any answer that is not a key refusal proves the key works. */
@@ -58,38 +57,6 @@ const invalidate = async (keys: readonly string[]) => {
   }
 };
 const auditActor = (actor: Actor) => ({ userId: actor.id, uid: actor.uid, provider: actor.provider, roles: actor.roles });
-
-/** Validate one budget number; `null` when it is acceptable. */
-const checkNumber = (value: unknown, min: number, max: number): GeoBudgetFieldError | null => {
-  if (typeof value !== "number" || !Number.isInteger(value)) return { code: "not_whole_number" };
-  if (value < min) return { code: "too_small", min };
-  if (value > max) return { code: "too_large", max };
-  return null;
-};
-
-/** Check the whole form before anything is written; the same rules as the settings registry plus the pair rule. */
-export const validateGeoBudget = (input: GeoBudgetInput) => {
-  const errors: Partial<Record<GeoBudgetField, GeoBudgetFieldError>> = {};
-  const fields: Array<[GeoBudgetField, number, number]> = [
-    ["monthlyCredits", 0, GEO_MAX_CREDITS],
-    ["personDailyCredits", 0, GEO_MAX_CREDITS],
-    ...(input.plan === "custom"
-      ? ([
-          ["customRps", 1, GEO_MAX_RPS],
-          ["customDailyCredits", 1, GEO_MAX_CREDITS],
-        ] as Array<[GeoBudgetField, number, number]>)
-      : []),
-  ];
-  for (const [field, min, max] of fields) {
-    const error = checkNumber(input[field], min, max);
-    if (error) errors[field] = error;
-  }
-  const month = input.monthlyCredits,
-    day = input.personDailyCredits;
-  if (!errors.monthlyCredits && !errors.personDailyCredits && typeof month === "number" && typeof day === "number" && day > month)
-    errors.personDailyCredits = { code: "above_monthly", max: month };
-  return errors;
-};
 
 type Verify = (apiKey: string, signal?: AbortSignal) => Promise<void>;
 export const verifyGeoapifyKey =
@@ -123,11 +90,11 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
 
   const status = async (actor: Actor): Promise<GeoAdminStatus> => {
     requireAdmin(actor);
-    const budgetKeys = Object.values(BUDGET_KEYS);
-    const [states, rows, keyEvent, budgetEvent] = await Promise.all([
-      settings.readStates([KEY, ...budgetKeys, "app.timezone"]),
+    const [config, states, rows, keyEvent, budgetEvent] = await Promise.all([
+      readGeoConfig(),
+      settings.readStates([KEY, ...BUDGET_KEYS]),
       db<{ key: string; updated_at: Date }[]>`
-        SELECT key, updated_at FROM settings.entries WHERE key = ANY(${toPgTextArray([KEY, ...budgetKeys])}::text[])`,
+        SELECT key, updated_at FROM settings.entries WHERE key = ANY(${toPgTextArray([KEY, ...BUDGET_KEYS])}::text[])`,
       lastChange(KEY_ACTION),
       lastChange(BUDGET_ACTION),
     ]);
@@ -135,25 +102,22 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
     const key = states.get(KEY);
     const keyState = key?.stored === "unreadable" ? "unreadable" : key?.stored === "readable" && String(key.value).trim() ? "set" : "none";
     const keyAt = keyState === "none" ? null : (updated.get(KEY) ?? null);
-    const budgetTimes = budgetKeys.flatMap((name) => updated.get(name)?.getTime() ?? []);
+    const budgetTimes = BUDGET_KEYS.flatMap((name) => updated.get(name)?.getTime() ?? []);
     const budgetAt = budgetTimes.length ? new Date(Math.max(...budgetTimes)) : null;
-    const value = <T>(name: string) => states.get(name)?.value as T;
     return {
       key: { state: keyState, setAt: keyAt?.toISOString() ?? null, setBy: keyState === "set" ? changedBy(keyEvent, keyAt) : null },
       budget: {
-        plan: value<GeoPlanId>(BUDGET_KEYS.plan),
-        customRps: value<number>(BUDGET_KEYS.customRps),
-        customDailyCredits: value<number>(BUDGET_KEYS.customDailyCredits),
-        monthlyCredits: value<number>(BUDGET_KEYS.monthlyCredits),
-        personDailyCredits: value<number>(BUDGET_KEYS.personDailyCredits),
-        unreadable: (Object.entries(BUDGET_KEYS) as Array<[GeoBudgetField | "plan", string]>).flatMap(([field, name]) =>
-          field !== "plan" && states.get(name)?.stored === "unreadable" ? [field] : [],
-        ),
+        plan: config.plan,
+        customRps: config.customRps,
+        customDailyCredits: config.customDailyCredits,
+        monthlyCredits: config.monthlyCredits,
+        personDailyCredits: config.personDailyCredits,
+        unreadable: BUDGET_FIELDS.flatMap(([field, name]) => (states.get(name)?.stored === "unreadable" ? [field] : [])),
         changedAt: budgetAt?.toISOString() ?? null,
         changedBy: changedBy(budgetEvent, budgetAt),
       },
       plans: GEO_PLANS,
-      timezone: value<string>("app.timezone"),
+      timezone: config.timezone,
     };
   };
 
@@ -201,8 +165,8 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
     async setKey(actor: Actor, raw: string, signal?: AbortSignal): Promise<GeoAdminStatus> {
       requireAdmin(actor);
       const apiKey = raw.trim();
-      if (!apiKey) throw new GeoAdminError({ code: "geo_key_missing" }, 400);
-      if (apiKey.length > GEO_MAX_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(apiKey)) throw new GeoAdminError({ code: "geo_key_malformed" }, 400);
+      const problem = geoKeyProblem(apiKey);
+      if (problem) throw new GeoAdminError({ code: problem }, 400);
       await verify(apiKey, signal);
       signal?.throwIfAborted();
       const before = (await settings.readStates([KEY])).get(KEY)?.stored ?? "none";
@@ -231,12 +195,13 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
       const errors = validateGeoBudget(input);
       if (Object.keys(errors).length) throw new GeoAdminError({ code: "geo_budget_invalid", errors }, 400);
       const updates: Record<string, unknown> = {
-        [BUDGET_KEYS.plan]: input.plan,
-        [BUDGET_KEYS.monthlyCredits]: input.monthlyCredits,
-        [BUDGET_KEYS.personDailyCredits]: input.personDailyCredits,
-        ...(input.plan === "custom"
-          ? { [BUDGET_KEYS.customRps]: input.customRps, [BUDGET_KEYS.customDailyCredits]: input.customDailyCredits }
-          : {}),
+        [PLAN_KEY]: input.plan,
+        ...Object.fromEntries(
+          BUDGET_FIELDS.filter(([field]) => input.plan === "custom" || !field.startsWith("custom")).map(([field, name]) => [
+            name,
+            input[field],
+          ]),
+        ),
       };
       await db.begin(async (tx) => {
         // Same lock and final-pair rule as every other writer of these settings.

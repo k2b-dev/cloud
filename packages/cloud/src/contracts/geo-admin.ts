@@ -73,14 +73,55 @@ export type GeoBudgetInput = z.infer<typeof GeoBudgetInputSchema>;
 export type GeoBudgetField = "customRps" | "customDailyCredits" | "monthlyCredits" | "personDailyCredits";
 
 /** Stable field error codes; the page renders their text. */
-export type GeoBudgetFieldError =
-  | { code: "not_whole_number" }
-  | { code: "too_small"; min: number }
-  | { code: "too_large"; max: number }
-  | { code: "above_monthly"; max: number };
+export const GeoBudgetFieldErrorSchema = z.discriminatedUnion("code", [
+  z.object({ code: z.literal("not_whole_number") }),
+  z.object({ code: z.literal("too_small"), min: z.number() }),
+  z.object({ code: z.literal("too_large"), max: z.number() }),
+  z.object({ code: z.literal("above_monthly"), max: z.number() }),
+]);
+export type GeoBudgetFieldError = z.infer<typeof GeoBudgetFieldErrorSchema>;
+/** The 400 answer of a refused budget save. */
+export const GeoBudgetRefusalSchema = z.object({
+  code: z.literal("geo_budget_invalid"),
+  errors: z.partialRecord(z.enum(["customRps", "customDailyCredits", "monthlyCredits", "personDailyCredits"]), GeoBudgetFieldErrorSchema),
+});
 
 export type GeoKeyError =
   | { code: "geo_key_missing" }
   | { code: "geo_key_malformed" }
   | { code: "geo_key_rejected" }
   | { code: "geo_key_unverified" };
+
+/** Validate one budget number; `null` when it is acceptable. */
+const checkNumber = (value: unknown, min: number, max: number): GeoBudgetFieldError | null => {
+  if (typeof value !== "number" || !Number.isInteger(value)) return { code: "not_whole_number" };
+  if (value < min) return { code: "too_small", min };
+  if (value > max) return { code: "too_large", max };
+  return null;
+};
+
+/** Check the whole form before anything is written; the same rules as the settings registry plus the pair rule. */
+export const validateGeoBudget = (input: GeoBudgetInput) => {
+  const errors: Partial<Record<GeoBudgetField, GeoBudgetFieldError>> = {};
+  const fields: Array<[GeoBudgetField, number, number]> = [
+    ["monthlyCredits", 0, GEO_MAX_CREDITS],
+    ["personDailyCredits", 0, GEO_MAX_CREDITS],
+  ];
+  if (input.plan === "custom") fields.push(["customRps", 1, GEO_MAX_RPS], ["customDailyCredits", 1, GEO_MAX_CREDITS]);
+  for (const [field, min, max] of fields) {
+    const error = checkNumber(input[field], min, max);
+    if (error) errors[field] = error;
+  }
+  const month = input.monthlyCredits,
+    day = input.personDailyCredits;
+  if (!errors.monthlyCredits && !errors.personDailyCredits && typeof month === "number" && typeof day === "number" && day > month)
+    errors.personDailyCredits = { code: "above_monthly", max: month };
+  return errors;
+};
+
+/** Shape check before the provider sees a key: printable ASCII without spaces, as Geoapify issues them. */
+export const geoKeyProblem = (apiKey: string): "geo_key_missing" | "geo_key_malformed" | null => {
+  if (!apiKey) return "geo_key_missing";
+  if (apiKey.length > GEO_MAX_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(apiKey)) return "geo_key_malformed";
+  return null;
+};

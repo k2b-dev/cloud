@@ -16,9 +16,10 @@ people, agents, app sessions, and service accounts follow the same path.
 The Assistant discovers these Queries through the capability catalog; MCP and
 CLI clients use the same [capabilities](/en/docs/platform/capabilities).
 
-An operator must set `geo.api_key` under
-**Administration → Settings → Places and addresses**. This tab also contains
-the provider plan and credit budgets. All provider calls use
+An operator must enter the Geoapify key under
+**Administration → Places and maps** (`/admin/places-and-maps`). The page also
+holds the provider plan, the credit budgets, and this month's usage; see
+[Administer places and maps](#administer-places-and-maps). All provider calls use
 `https://api-eu.geoapify.com`. The endpoint cannot be changed. No provider key
 appears in geo responses. Use `CloudMap` for the shared light and dark map.
 
@@ -269,7 +270,7 @@ structured `details`:
 
 | Code | Details and recovery |
 | --- | --- |
-| `GEO_NOT_CONFIGURED` | Ask an administrator to set the key or repair/reset unreadable `geo.*` settings in Core settings → Places and addresses. No Valkey, budget, or provider work occurs. |
+| `GEO_NOT_CONFIGURED` | Ask an administrator to enter the key, or to replace an unreadable key or budget value, in Administration → Places and maps. No Valkey, budget, or provider work occurs. |
 | `GEO_FORBIDDEN` | Supply an authenticated actor and access subject. |
 | `GEO_BUDGET_EXHAUSTED` | `scope` (`person` or `cloud`) and `resetsAt`; wait for reset or ask the operator to review the limit. |
 | `GEO_BUSY` | `retryAfterSeconds`; wait, then retry. If it persists, check Valkey and provider capacity. A provider 429 also uses this code. |
@@ -285,6 +286,32 @@ Provider 429 errors also carry costs after a paid request. Provider bodies and
 transport error text are discarded. `geo.availability` is free, reads only
 the caller's counters, and makes no provider call. Missing keys or unreadable
 `geo.*` settings return `configured: false` without reading counters.
+
+## Administer places and maps
+
+Only administrators open **Administration → Places and maps**. The old link
+`/admin/settings?tab=places` leads there. Every part of the page uses the same
+admin API, `/api/admin/core/geo`; OAuth tokens need the `read` scope to view
+and `write` to change.
+
+| Request | Effect |
+| --- | --- |
+| `GET /` | Key state (`none`, `set`, `unreadable`) with when and by whom it was set, the plan, the budgets, the plan table, and `app.timezone`. Never the key. |
+| `GET /usage` | This month and today in credits, the share per function (`tiles`, `places`, `route`, `address`), and how many access subjects reached their daily limit today. |
+| `PUT /key` `{ apiKey }` | Checks the key with one reverse-geocoding lookup at the EU endpoint, then stores it. A refusal (`422 geo_key_rejected`) or an unreachable provider (`502 geo_key_unverified`) stores nothing; the previous key stays active. `400 geo_key_missing` or `geo_key_malformed` stop before the provider is called. |
+| `DELETE /key` | Removes the key; maps, place search, and address suggestions turn off for everyone. |
+| `PUT /budget` | Saves `plan`, `monthlyCredits`, and `personDailyCredits` (plus `customRps` and `customDailyCredits` for the custom plan) together. Each field must be a whole number within the setting's bounds, and the daily limit at most the monthly budget. A refusal returns `400 geo_budget_invalid` with a code per field and changes nothing. |
+
+The verification lookup costs about one credit at Geoapify and is not counted
+in Cloud's budget. The general settings API refuses `geo.api_key`, so a key
+always passes this check before it replaces another.
+
+The page shows the month and today as bars. Today compares Cloud's use with
+the plan's daily allowance, which Geoapify treats as a soft limit. Usage is
+counted in Cloud's reference credits from the formulas above, not read from
+Geoapify's billing. The budgets stop Cloud from admitting new paid calls; they
+do not guarantee the provider's invoice.
+
 
 ## Keep attribution with results
 
