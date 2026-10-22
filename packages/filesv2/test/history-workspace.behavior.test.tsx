@@ -606,4 +606,61 @@ describe("Files history in the workspace", () => {
       json: { path: file.path, id: "v-2", expectedRevision: file.revision },
     });
   });
+
+  test("versions count the current file after the saved ones, as the history does, and phones open them from Info", async () => {
+    const file: FileEntry = { name: "Proof.bin", path: "Kunden/Proof.bin", directory: false, size: 1, modified: NOW, revision: "rev-3" };
+    const request = { baseId: home.id, path: file.path, scope: "item" as const };
+    const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&path=Kunden&file=${encodeURIComponent(file.path)}`;
+    const dom = mount(
+      snapshotOf({
+        source,
+        directory: { base: home, path: "Kunden", items: [file], next: null },
+        detail: { base: home, entry: file },
+        history: { source: JSON.stringify(request), page: page([]) },
+      }),
+    );
+    await flush();
+    const inspector = () => dom.root.querySelector("#filesv2-inspector, [id*='filesv2-inspector']")!;
+    const toggle = () => inspector().querySelector<HTMLButtonElement>(".filesv2-inspector-info [aria-controls]")!;
+    const section = () => inspector().querySelector<HTMLElement>(".filesv2-inspector-versions")!;
+    const titles = () => [...section().querySelectorAll(".k2b-detail-panel__action-title")].map((title) => title.textContent?.trim());
+    // While the list loads, neither Info nor the section claims a count.
+    expect(toggle().getAttribute("aria-controls")).toBe(section().id);
+    expect(toggle().textContent?.trim()).toBe("Loading details…");
+    expect(section().querySelector(".k2b-count-chip, .k2b-detail-panel__none")).toBeNull();
+    pending("shares").resolve(Response.json({ items: [], next: null }));
+    pending("versions").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+    await flush();
+    // A failed list is no empty list.
+    expect(toggle().textContent?.trim()).toBe("Versions not loaded.");
+    expect(section().textContent).toContain("Versions not loaded.");
+    expect(section().textContent).not.toContain("No earlier versions");
+    expect(section().querySelector(".k2b-count-chip, .k2b-detail-panel__none")).toBeNull();
+    button(section(), "Try again")!.click();
+    await flush();
+    pending("versions").resolve(
+      Response.json([
+        { id: "v-1", created: "2026-10-13T08:30:00.000Z", size: 1, pinned: false, comment: null, author: null },
+        { id: "v-2", created: "2026-10-19T15:20:00.000Z", size: 1, pinned: false, comment: null, author: null },
+      ]),
+    );
+    await flush();
+    // Info and the list share one request per file state.
+    expect(apiRequests.filter((item) => item.kind === "versions")).toHaveLength(2);
+    expect(toggle().textContent?.trim()).toBe("3");
+    expect(section().querySelector(".k2b-count-chip")?.textContent).toBe("3");
+    expect(titles()[0]).toBe("Version 3 · current");
+    expect(
+      titles()
+        .slice(1)
+        .map((title) => title?.split(" · ")[0]),
+    ).toEqual(["Version 2", "Version 1"]);
+    // Phones show the list once the count opens it; wider panels always show it.
+    expect(section().hasAttribute("data-open")).toBe(false);
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    toggle().click();
+    await flush();
+    expect(section().getAttribute("data-open")).toBe("true");
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+  });
 });

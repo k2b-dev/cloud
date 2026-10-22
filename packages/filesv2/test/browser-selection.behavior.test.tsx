@@ -134,7 +134,7 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
   await flush();
   const button = () => dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")!;
   expect(button().getAttribute("aria-pressed")).toBe("false");
-  const bar = () => [...button().closest(".k2b-detail-panel__primary-actions")!.querySelectorAll("button:not([role='menuitem'])")];
+  const bar = () => [...button().closest(".filesv2-inspector-actions")!.querySelectorAll("button:not([role='menuitem'])")];
   expect(bar().map((action) => action.getAttribute("aria-label") ?? action.textContent?.trim())).toEqual([
     "Preview",
     "Download",
@@ -209,7 +209,7 @@ test("details keep every action: a compact bar, the rest in one menu with the sa
   };
   await flush();
   const bar = () =>
-    [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__primary-actions button:not([role='menuitem'])")].map(
+    [...dom.root.querySelectorAll<HTMLButtonElement>(".filesv2-inspector-actions button:not([role='menuitem'])")].map(
       (action) => action.getAttribute("aria-label") ?? action.textContent?.trim(),
     );
   const menu = () => [...dom.root.querySelectorAll<HTMLButtonElement>(".filesv2-inspector-menu [role='menuitem']")];
@@ -226,6 +226,21 @@ test("details keep every action: a compact bar, the rest in one menu with the sa
   ]);
   // The long list no longer pushes versions and history down.
   expect(dom.root.querySelector(".k2b-detail-panel__body .k2b-detail-panel__action")).toBeNull();
+  // The approved order: identity, preview, the bar, then Info; the header keeps only identity and close.
+  const lead = dom.root.querySelector(".filesv2-inspector-lead")!;
+  expect([...lead.children].map((child) => child.className)).toEqual(["filesv2-inspector-preview", "filesv2-inspector-actions"]);
+  expect(lead.nextElementSibling?.classList.contains("filesv2-inspector-info")).toBe(true);
+  expect(dom.root.querySelector(".k2b-detail-panel__header .filesv2-favorite")).toBeNull();
+  // Phones keep only the change date and the version count; this storage keeps no versions, which Info says.
+  const only = (form: string) =>
+    [...dom.root.querySelectorAll(`.filesv2-inspector-info [data-inspector-only="${form}"]`)].map(
+      (value) => value.closest(".k2b-description-list__item")?.querySelector("dt")?.textContent,
+    );
+  expect(only("desktop")).toEqual(["Location", "Size"]);
+  expect(only("phone")).toEqual(["Versions"]);
+  expect(dom.root.querySelector('.filesv2-inspector-info [data-inspector-only="phone"]')?.textContent).toBe(
+    "Versions are not enabled for this storage.",
+  );
   for (const label of ["Rename", "Duplicate", "Move to…", "Copy to…", "Move to trash"]) item(label).click();
   expect(calls).toEqual(["rename", "duplicate", "move", "copy", "trash"]);
 
@@ -233,7 +248,7 @@ test("details keep every action: a compact bar, the rest in one menu with the sa
   setBusy(true);
   await flush();
   expect(
-    [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__primary-actions button:not([role='menuitem'])")]
+    [...dom.root.querySelectorAll<HTMLButtonElement>(".filesv2-inspector-actions button:not([role='menuitem'])")]
       .filter((action) => action.disabled)
       .map((action) => action.getAttribute("aria-label") ?? action.textContent?.trim()),
   ).toEqual(["Preview", "Download", "Share publicly", "Add to favorites"]);
@@ -256,6 +271,12 @@ test("details keep every action: a compact bar, the rest in one menu with the sa
   });
   await flush();
   expect(bar()).toEqual(["Open", "Download", "Add to favorites", "Actions"]);
+  // A folder starts with the bar, has no versions, and phones hide its Info.
+  expect([...dom.root.querySelector(".filesv2-inspector-lead")!.children].map((child) => child.className)).toEqual([
+    "filesv2-inspector-actions",
+  ]);
+  expect(dom.root.querySelector(".filesv2-inspector-info")?.classList.contains("filesv2-inspector-info--folder")).toBe(true);
+  expect(dom.root.querySelector(".filesv2-inspector-versions, [data-inspector-only='phone']")).toBeNull();
   expect(menu().map((action) => [action.textContent?.trim(), action.disabled])).toEqual([
     ["Rename", true],
     ["Duplicate", false],
