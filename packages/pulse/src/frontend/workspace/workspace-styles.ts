@@ -1,7 +1,7 @@
 /** Pulse's phone composition: base and title, object chips, then the shared main surface. */
 export const pulseWorkspaceStyles = `
 .pulse-workspace__mobile-header{display:none}
-.pulse-sidebar__identity{flex:none;padding:16px 12px 8px;font-size:14px;font-weight:600}
+.pulse-sidebar__identity{flex:none;padding:16px 12px 8px;font-size:16px;font-weight:600}
 @container k2b-app-area (max-width:767px){
   .k2b-ui .pulse-workspace{height:auto;flex:1;min-height:0}
   .pulse-workspace__mobile-header{display:block;flex:none;padding:4px 16px 0}
