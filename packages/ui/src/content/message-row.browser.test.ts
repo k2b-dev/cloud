@@ -409,11 +409,11 @@ describe(`MessageRow in ${browserName}`, () => {
       const geometry = await page.evaluate(() => {
         const feed = document.querySelector(".k2b-virtual-feed__viewport")!.getBoundingClientRect();
         const item = document.querySelector<HTMLElement>('[data-key="m4"]')!.getBoundingClientRect();
-        return { feed: [feed.left, feed.width], item: [item.left, item.width] };
+        return { feedLeft: feed.left, feedWidth: feed.width, itemLeft: item.left, itemWidth: item.width };
       });
-      expect(geometry.item[1]).toBe(760);
+      expect(geometry.itemWidth).toBe(760);
       // Centered in the feed less its stable scrollbar gutter.
-      expect(Math.abs(geometry.item[0] - geometry.feed[0] - (geometry.feed[1] - 760) / 2)).toBeLessThanOrEqual(8);
+      expect(Math.abs(geometry.itemLeft - geometry.feedLeft - (geometry.feedWidth - 760) / 2)).toBeLessThanOrEqual(8);
 
       for (const key of ["m3", "m6"]) {
         await rowOf(page, key).locator(".k2b-message-row__bubble").hover();
