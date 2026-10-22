@@ -225,6 +225,9 @@ class World {
             return read;
           })()
         : null,
+      archived: false,
+      pinnedRank: null,
+      member: true,
       withGuests: false,
       peerDeactivated: false,
       lastMessage: (() => {
@@ -263,6 +266,11 @@ class World {
   api(person: string): ChatStoreApi {
     return {
       ...memberApi,
+      personal: async () => {
+        throw new Error("Unused personal write");
+      },
+      preferences: async () => ({ collapsed: [] }),
+      savePreferences: async (collapsed) => ({ collapsed }),
       read: async () => {
         throw new Error("Unused write");
       },
@@ -458,6 +466,9 @@ const check = (store: ReturnType<typeof createChatStore>, person: string) => {
       purpose: row.purpose,
       title: row.title,
       memberCount: row.memberCount,
+      archived: false,
+      pinnedRank: null,
+      member: true,
       withGuests: false,
       peerDeactivated: false,
       permission: row.permission,

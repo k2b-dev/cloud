@@ -36,3 +36,7 @@ To start from a particular message, open that message's menu and choose **Mark u
 :::
 
 Press **Esc** in an open chat to mark that chat read.
+
+## Filter the list {icon="filter"}
+
+Choose **Unread** above the list to show chats with new messages or your unread mark. A chat stays in that view after you read it, until you leave the filter. **All** returns to the whole list. The address keeps your filter when you reload or go back.

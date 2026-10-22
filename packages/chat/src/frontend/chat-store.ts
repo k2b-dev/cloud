@@ -24,9 +24,11 @@ import {
   MessageSchema,
   PeoplePageSchema,
   type PermissionSchema,
+  type PersonalConversationSchema,
   ReadAllOutcomeSchema,
   ReadUpdateSchema,
   readStart,
+  SidebarPreferencesSchema,
   SuccessSchema,
   UNREAD_CAP,
 } from "../service/contracts";
@@ -38,6 +40,9 @@ type MessagePage = z.infer<typeof MessagePageSchema>;
 type ChangesPage = z.infer<typeof ChangesPageSchema>;
 type Summary = Extract<z.infer<typeof ChatLiveEventSchema>, { type: "summary" }>;
 export type ChatStoreApi = {
+  personal(id: string, patch: z.infer<typeof PersonalConversationSchema>): Promise<Conversation>;
+  preferences(): Promise<z.infer<typeof SidebarPreferencesSchema>>;
+  savePreferences(collapsed: z.infer<typeof SidebarPreferencesSchema>["collapsed"]): Promise<z.infer<typeof SidebarPreferencesSchema>>;
   create(input: z.input<typeof CreateConversationSchema>): Promise<z.infer<typeof CreateOutcomeSchema>>;
   updateDetails(id: string, patch: { name?: string | null; icon?: string | null; purpose?: string | null }): Promise<Conversation>;
   members(id: string, query: { q?: string; cursor?: string }): Promise<z.infer<typeof MemberPageSchema>>;
@@ -50,7 +55,7 @@ export type ChatStoreApi = {
   read(id: string, seq: number): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
   readAll(confirmed: boolean): Promise<z.infer<typeof ReadAllOutcomeSchema>>;
-  conversations(cursor?: string): Promise<ConversationPage>;
+  conversations(cursor?: string, archived?: boolean): Promise<ConversationPage>;
   conversation(id: string): Promise<Conversation | null>;
   messages(id: string, query?: { before?: number; after?: number }): Promise<MessagePage | null>;
   snapshot(id: string, message?: string): Promise<(OpenChatSnapshot & { focus: string | null }) | null>;
@@ -58,6 +63,8 @@ export type ChatStoreApi = {
 };
 export type OpenChatSnapshot = { cursor: string; conversation: Conversation; page: MessagePage };
 export type ChatStoreSnapshot = {
+  collapsed?: z.infer<typeof SidebarPreferencesSchema>["collapsed"];
+  archived?: boolean;
   viewerId: string;
   cursor: string;
   sidebar: ConversationPage;
@@ -102,6 +109,14 @@ export const createChatStoreApi = (): ChatStoreApi => {
     return schema.parse(await response.json());
   };
   return {
+    personal: async (id, patch) =>
+      requiredResponse(
+        await client.conversations[":conversation"].personal.$put({ param: { conversation: id }, json: patch }),
+        ConversationSchema,
+      ),
+    preferences: async () => requiredResponse(await client.preferences.$get(), SidebarPreferencesSchema),
+    savePreferences: async (collapsed) =>
+      requiredResponse(await client.preferences.$put({ json: { collapsed } }), SidebarPreferencesSchema),
     create: async (input) => requiredResponse(await client.conversations.$post({ json: input }), CreateOutcomeSchema),
     updateDetails: async (id, patch) =>
       requiredResponse(
@@ -153,7 +168,11 @@ export const createChatStoreApi = (): ChatStoreApi => {
       ),
     readAll: async (confirmed) =>
       requiredResponse(await client.conversations["read-all"].$post({ json: { confirmed } }), ReadAllOutcomeSchema),
-    conversations: async (cursor) => requiredResponse(await client.conversations.$get({ query: { cursor } }), ConversationPageSchema),
+    conversations: async (cursor, archived) =>
+      requiredResponse(
+        await client.conversations.$get({ query: { cursor, archived: archived ? "true" : "false" } }),
+        ConversationPageSchema,
+      ),
     conversation: async (id) =>
       parseResponse(await client.conversations[":conversation"].$get({ param: { conversation: id } }), ConversationSchema),
     messages: async (id, query) =>
@@ -205,6 +224,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const connection = dependencies.connection ?? liveConnection("/api/chat/live");
   const listeners = new Set<() => void>();
   // Rows stay in server order: a contiguous prefix of the sidebar, the whole list when `complete`.
+  let collapsed = snapshot.collapsed ?? [];
+  let archived = snapshot.archived ?? false;
   let rows = [...snapshot.sidebar.items];
   const unreadRev = new Map(rows.map((row) => [row.id, row.rev]));
   let nextCursor = snapshot.sidebar.nextCursor;
@@ -450,9 +471,11 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     sidebarWork = work.catch(() => {});
     return work;
   };
-  const reloadSidebar = async () => {
-    const page = await api.conversations();
+  const reloadSidebar = async (nextArchived = archived) => {
+    const [page, preferences] = await Promise.all([api.conversations(undefined, nextArchived), api.preferences()]);
     if (disposed) return;
+    archived = nextArchived;
+    collapsed = preferences.collapsed;
     rows = [...page.items];
     unreadRev.clear();
     for (const row of rows) unreadRev.set(row.id, row.rev);
@@ -475,9 +498,16 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   };
   // Server order is last activity, then ID, both descending. Only unknown rows past an incomplete prefix stay out.
   const place = (row: Conversation) => {
+    if (!row.member || row.archived !== archived) {
+      rows = rows.filter((other) => other.id !== row.id);
+      return;
+    }
     const rest = rows.filter((other) => other.id !== row.id);
     const index = rest.findIndex(
-      (other) => row.lastActivityAt > other.lastActivityAt || (row.lastActivityAt === other.lastActivityAt && row.id > other.id),
+      (other) =>
+        (row.pinnedRank ?? 2147483647) < (other.pinnedRank ?? 2147483647) ||
+        ((row.pinnedRank ?? 2147483647) === (other.pinnedRank ?? 2147483647) &&
+          (row.lastActivityAt > other.lastActivityAt || (row.lastActivityAt === other.lastActivityAt && row.id > other.id))),
     );
     if (index >= 0) rest.splice(index, 0, row);
     else if (complete || rest.length < rows.length) rest.push(row);
@@ -566,7 +596,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: (events) =>
           sidebar(async () => {
-            if (events.some(({ data }) => data.type === "membership")) await reloadSidebar();
+            if (events.some(({ data }) => data.type === "membership" || data.type === "personal")) await reloadSidebar();
             for (const { data } of events) if (data.type === "read") await applyRead(data);
           }),
         resync: () => sidebar(reloadSidebar),
@@ -576,6 +606,22 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   );
   if (snapshot.open) open({ ...snapshot.open, cursor: snapshot.cursor });
   return {
+    get collapsed() {
+      return collapsed;
+    },
+    preferences: () => api.preferences(),
+    savePreferences: async (next: Parameters<ChatStoreApi["savePreferences"]>[0]) => {
+      const saved = await api.savePreferences(next);
+      collapsed = saved.collapsed;
+      notify();
+      return saved;
+    },
+    personal: async (id: string, patch: Parameters<ChatStoreApi["personal"]>[1]) => {
+      const result = await api.personal(id, patch);
+      await sidebar(reloadSidebar);
+      return result;
+    },
+    showArchive: (next: boolean) => sidebar(() => reloadSidebar(next)),
     // A change the reader made shows at once: its chat's row is read again instead of waiting for the live event.
     // Refresh failures leave committed changes successful; live updates and resync repair the row.
     // A chat the reader left answers 404, which removes the row and ends an open view in "No access".
@@ -630,7 +676,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       if (disposed || nextCursor === null) return Promise.resolve();
       const work = sidebar(async () => {
         if (nextCursor === null) return;
-        const page = await api.conversations(nextCursor);
+        const page = await api.conversations(nextCursor, archived);
         if (disposed) return;
         const present = new Set(rows.map((row) => row.id));
         const appended = [...rows];

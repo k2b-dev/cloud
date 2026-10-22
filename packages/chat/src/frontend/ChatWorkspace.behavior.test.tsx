@@ -28,6 +28,9 @@ const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   memberCount: 2,
   unread: 0,
   read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+  archived: false,
+  pinnedRank: null,
+  member: true,
   withGuests: false,
   peerDeactivated: false,
   permission: "write",
@@ -131,6 +134,7 @@ describe("ChatWorkspace interactions", () => {
     const fetchChat = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (url.pathname === "/api/chat/preferences") return Response.json({ collapsed: [] });
         const snapshot = /^\/api\/chat\/conversations\/([^/]+)\/snapshot$/.exec(url.pathname);
         if (snapshot) {
           const pending = pendingSnapshots.get(snapshot[1]!);

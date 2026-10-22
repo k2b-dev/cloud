@@ -1408,4 +1408,107 @@ suite("chat conversations, people, and directory groups", () => {
       expect(await preview.json()).toEqual(await add.json());
     }
   });
+  test("personal archive survives incoming messages and restores its saved pin position without changing membership", async () => {
+    const owner = await user(),
+      other = await user();
+    const headers = await cookie(owner),
+      otherHeaders = await cookie(other);
+    const first = await fixture(owner, [{ id: other, permission: "write" }]);
+    const second = await fixture(owner);
+    const personal = (id: string, patch: unknown, caller = headers) => request(caller, `/${id}/personal`, "PUT", patch);
+    expect((await personal(first.shortId, { pinned: true })).status).toBe(200);
+    expect((await personal(second.shortId, { pinned: true })).status).toBe(200);
+    const archived = ConversationSchema.parse(await (await personal(first.shortId, { archived: true })).json());
+    expect(archived).toMatchObject({ archived: true, pinnedRank: 0, member: true });
+    const sent = await request(otherHeaders, `/${first.shortId}/messages`, "POST", { clientId: "archive-message", body: "Still archived" });
+    expect(sent.status).toBe(201);
+    expect(ConversationSchema.parse(await (await request(headers, `/${first.shortId}`)).json()).archived).toBe(true);
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items.map((row) => row.id)).toEqual([second.shortId]);
+    expect(ConversationPageSchema.parse(await (await request(headers, "?archived=true")).json()).items.map((row) => row.id)).toEqual([
+      first.shortId,
+    ]);
+    expect(ConversationPageSchema.parse(await (await request(otherHeaders)).json()).items.map((row) => row.id)).toContain(first.shortId);
+    expect((await personal(first.shortId, { archived: false })).status).toBe(200);
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items.map((row) => row.id)).toEqual([
+      first.shortId,
+      second.shortId,
+    ]);
+    const [count] = await sql<
+      { count: number }[]
+    >`SELECT count(*)::int AS count FROM chat.conversation_access WHERE conversation_id = ${first.id}::uuid AND role = 'member'`;
+    expect(count!.count).toBe(2);
+  });
+
+  test("personal pin order is saved, retry-safe, unbounded at fifteen, and validates neighbors before writes", async () => {
+    const owner = await user(),
+      outsider = await user();
+    const headers = await cookie(owner);
+    const chats = [];
+    for (let i = 0; i < 18; i++) chats.push(await fixture(owner));
+    const pin = (id: string, patch: unknown, caller = headers) => request(caller, `/${id}/personal`, "PUT", patch);
+    const results = await Promise.all(chats.map((chat) => pin(chat.shortId, { pinned: true })));
+    expect(results.every((response) => response.status === 200)).toBe(true);
+    const page = () =>
+      request(headers)
+        .then((response) => response.json())
+        .then((body) => ConversationPageSchema.parse(body));
+    const original = (await page()).items.map((row) => row.id);
+    expect(original).toHaveLength(18);
+    expect(new Set((await page()).items.map((row) => row.pinnedRank)).size).toBe(18);
+    const last = original.at(-1)!;
+    expect((await pin(last, { pinned: true, before: original[0] })).status).toBe(200);
+    expect((await pin(last, { pinned: true, before: original[0] })).status).toBe(200);
+    expect((await pin(last, { pinned: true })).status).toBe(200);
+    expect((await page()).items.map((row) => row.id)).toEqual([last, ...original.slice(0, -1)]);
+    expect((await pin(last, { archived: true, pinned: true, before: last })).status).toBe(400);
+    expect((await page()).items[0]!.archived).toBe(false);
+    expect((await pin(last, { pinned: true, before: "ZZZZZZ" })).status).toBe(400);
+    expect((await pin(last, { pinned: false })).status).toBe(200);
+    expect((await page()).items.find((row) => row.id === last)!.pinnedRank).toBeNull();
+    expect((await pin(last, { archived: true }, await cookie(outsider))).status).toBe(404);
+  });
+
+  test("sidebar pages preserve pins ahead of activity and archive pagination is separate", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const chats = [];
+    for (let i = 0; i < 53; i++) chats.push(await fixture(owner));
+    const oldest = chats[0]!;
+    await sql`UPDATE chat.conversations SET last_activity_at = '2020-01-01T00:00:00Z'::timestamptz WHERE id = ${oldest.id}::uuid`;
+    expect((await request(headers, `/${oldest.shortId}/personal`, "PUT", { pinned: true })).status).toBe(200);
+    const first = ConversationPageSchema.parse(await (await request(headers)).json());
+    expect(first.items[0]!.id).toBe(oldest.shortId);
+    expect(first.items).toHaveLength(50);
+    expect(first.nextCursor).not.toBeNull();
+    const second = ConversationPageSchema.parse(await (await request(headers, `?cursor=${encodeURIComponent(first.nextCursor!)}`)).json());
+    expect(second.items).toHaveLength(3);
+    expect(new Set([...first.items, ...second.items].map((row) => row.id)).size).toBe(53);
+    for (const chat of chats) expect((await request(headers, `/${chat.shortId}/personal`, "PUT", { archived: true })).status).toBe(200);
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items).toEqual([]);
+    const archived = ConversationPageSchema.parse(await (await request(headers, "?archived=true")).json());
+    const remainder = ConversationPageSchema.parse(
+      await (await request(headers, `?archived=true&cursor=${encodeURIComponent(archived.nextCursor!)}`)).json(),
+    );
+    expect(new Set([...archived.items, ...remainder.items].map((row) => row.id)).size).toBe(53);
+  });
+
+  test("collapsed sections are persisted per account and anonymous requests cannot read or write them", async () => {
+    const owner = await user(),
+      other = await user();
+    const pref = (headers: Headers, method = "GET", body?: unknown) =>
+      server.request("https://cloud.example.test/api/chat/preferences", {
+        method,
+        headers: { "x-forwarded-for": uniqueCallerAddress(), ...headers, "content-type": "application/json" },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    const ownerHeaders = await cookie(owner);
+    const saved = await pref(ownerHeaders, "PUT", { collapsed: ["pinned", "chats"] });
+    expect(saved.status).toBe(200);
+    expect(await (await pref(ownerHeaders)).json()).toEqual({ collapsed: ["pinned", "chats"] });
+    expect(await (await pref(await cookie(other))).json()).toEqual({ collapsed: [] });
+    expect((await pref(ownerHeaders, "PUT", { collapsed: ["invented"] })).status).toBe(400);
+    expect((await pref({})).status).toBe(401);
+    expect((await pref({}, "PUT", { collapsed: [] })).status).toBe(401);
+    await sql`DELETE FROM chat.account_prefs WHERE principal_id = ${owner}::uuid`;
+  });
 });

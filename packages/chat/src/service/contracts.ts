@@ -78,9 +78,29 @@ export const LeaveSchema = z.strictObject({
 });
 export const ConversationParamSchema = z.object({ conversation: ShortIdSchema });
 export const MemberParamSchema = ConversationParamSchema.extend({ accessId: z.uuid().transform((id) => id.toLowerCase()) });
-export const ConversationCursorSchema = z.object({ at: z.iso.datetime({ offset: true }), id: ShortIdSchema });
+export const ConversationCursorSchema = z.object({
+  at: z.iso.datetime({ offset: true }),
+  id: ShortIdSchema,
+  rank: z.number().int().min(0).default(2147483647),
+});
+export const SidebarSectionSchema = z.enum(["pinned", "channels", "chats"]);
+export const SidebarPreferencesSchema = z.object({
+  collapsed: z
+    .array(SidebarSectionSchema)
+    .max(SidebarSectionSchema.options.length)
+    .transform((sections) => [...new Set(sections)]),
+});
+export const PersonalConversationSchema = z
+  .strictObject({
+    archived: z.boolean().optional(),
+    pinned: z.boolean().optional(),
+    before: ShortIdSchema.nullable().optional(),
+  })
+  .refine((value) => value.archived !== undefined || value.pinned !== undefined);
+
 // JSON is URL-encoded by the caller. Strict parsing prevents unbounded or malformed cursor state.
 export const ConversationQuerySchema = z.object({
+  archived: z.enum(["true", "false"]).optional(),
   cursor: z
     .string()
     .max(160)
@@ -144,6 +164,9 @@ export const ReadAllOutcomeSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("done"), marked: z.number().int(), more: z.boolean() }),
 ]);
 export const ConversationSchema = z.object({
+  archived: z.boolean(),
+  pinnedRank: z.number().int().nonnegative().nullable(),
+  member: z.boolean(),
   unread: z.number().int().min(0).max(UNREAD_CAP),
   read: ReadStateSchema.nullable(),
   id: ShortIdSchema,
@@ -262,6 +285,7 @@ export const ChangesPageSchema = z.object({
 export const ChatLiveEventSchema = z.discriminatedUnion("type", [
   ReadUpdateSchema.extend({ type: z.literal("read") }),
   z.object({ type: z.literal("membership"), conversationId: ShortIdSchema }),
+  z.object({ type: z.literal("personal") }),
   z.object({ type: z.literal("message"), message: MessageSchema }),
   MessageSchema.pick({ conversationId: true, id: true, seq: true, rev: true, kind: true, author: true, createdAt: true }).extend({
     type: z.literal("summary"),

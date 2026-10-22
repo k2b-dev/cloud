@@ -24,12 +24,14 @@ import {
   PeoplePageSchema,
   PeopleQuerySchema,
   PermissionSchema,
+  PersonalConversationSchema,
   READ_ALL_BATCH,
   READ_ALL_CONFIRM_FROM,
   ReadAllSchema,
   ReadSchema,
   readStart,
   SendMessageSchema,
+  SidebarPreferencesSchema,
   SuccessSchema,
   type SystemMessage,
   UNREAD_CAP,
@@ -323,6 +325,9 @@ export const startChatHarness = async () => {
         memberCount: members.length,
         unread: 0,
         read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+        archived: false,
+        pinnedRank: null,
+        member: true,
         withGuests: false,
         peerDeactivated: false,
         rev: 0,
@@ -371,8 +376,12 @@ export const startChatHarness = async () => {
       : all.filter((message) => (before ? message.seq < Number(before) : true)).slice(-50);
     return { items, seqHead: all.length, rev: chat.conversation.rev };
   };
-  const list = () => ({
-    items: [...chats.values()].map((chat) => chat.conversation).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
+  let collapsed: string[] = [];
+  const list = (archived = false) => ({
+    items: [...chats.values()]
+      .map((chat) => chat.conversation)
+      .filter((row) => row.member && row.archived === archived)
+      .sort((a, b) => (a.pinnedRank ?? 2147483647) - (b.pinnedRank ?? 2147483647) || b.lastActivityAt.localeCompare(a.lastActivityAt)),
     nextCursor: null,
   });
   const snapshot = (id: string, focus: string | null) => {
@@ -390,6 +399,27 @@ export const startChatHarness = async () => {
     };
   };
 
+  const viewProps = (
+    address: { chat?: string; message?: string; panel?: string; archived?: boolean; filter?: "all" | "unread" },
+    options: { guest?: boolean } = {},
+  ): ChatWorkspaceProps => {
+    const open = address.chat ? snapshot(address.chat, address.message ?? null) : null;
+    return {
+      cursor: `c.${cursor}`,
+      sidebar: list(address.archived),
+      archived: address.archived,
+      filter: address.filter,
+      collapsed: SidebarPreferencesSchema.parse({ collapsed }).collapsed,
+      open: open && { conversation: open.conversation, page: open.page, focus: open.focus },
+      chatId: address.chat ?? null,
+      guest: options.guest ?? false,
+      panel: open && address.panel === "info" ? "info" : null,
+      viewerId: viewer.id,
+      dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+      now: now().toISOString(),
+    };
+  };
+
   const server = Bun.serve<unknown, never>({
     port: 0,
     hostname: "127.0.0.1",
@@ -397,6 +427,19 @@ export const startChatHarness = async () => {
       const url = new URL(request.url);
       if (url.pathname === "/api/chat/live")
         return bun.upgrade(request, { data: undefined }) ? undefined : new Response("upgrade failed", { status: 400 });
+      if (url.pathname === "/__props") {
+        const target = new URL(url.searchParams.get("path") ?? "/app/chat", "https://chat.test");
+        const match = /^\/app\/chat\/c\/([^/]+)(?:\/m\/([^/]+))?/.exec(target.pathname);
+        return Response.json(
+          viewProps({
+            chat: match?.[1],
+            message: match?.[2],
+            panel: target.searchParams.get("panel") ?? undefined,
+            archived: target.pathname === "/app/chat/archive" || target.searchParams.get("list") === "archive",
+            filter: target.searchParams.get("filter") === "unread" ? "unread" : "all",
+          }),
+        );
+      }
       if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/fonts.css") return new Response(fontAssets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
@@ -419,6 +462,35 @@ export const startChatHarness = async () => {
             .map((group) => ({ kind: "group", group: { id: group.id, name: group.name, description: null } })),
         ];
         return Response.json({ items: items.slice(0, 10), pagination: { total: items.length, page: 1, per_page: 10, has_next: false } });
+      }
+      if (url.pathname === "/api/chat/preferences") {
+        if (request.method === "PUT") collapsed = SidebarPreferencesSchema.parse(await request.json()).collapsed;
+        return Response.json({ collapsed });
+      }
+      const personalMatch = /^\/api\/chat\/conversations\/([^/]+)\/personal$/.exec(url.pathname);
+      if (personalMatch && request.method === "PUT") {
+        const chat = chats.get(personalMatch[1]!);
+        if (!chat) return Response.json({ message: "Not found" }, { status: 404 });
+        const patch = PersonalConversationSchema.parse(await request.json());
+        if (patch.archived !== undefined) chat.conversation.archived = patch.archived;
+        if (patch.pinned === false) chat.conversation.pinnedRank = null;
+        if (patch.pinned === true) {
+          const pins = [...chats.values()]
+            .filter((entry) => entry.conversation.pinnedRank !== null)
+            .sort((a, b) => a.conversation.pinnedRank! - b.conversation.pinnedRank!);
+          const old = pins.indexOf(chat);
+          const remaining = pins.filter((entry) => entry !== chat);
+          const index = patch.before
+            ? remaining.findIndex((entry) => entry.conversation.id === patch.before)
+            : patch.before === undefined && old >= 0
+              ? old
+              : remaining.length;
+          remaining.splice(index, 0, chat);
+          remaining.forEach((entry, rank) => {
+            entry.conversation.pinnedRank = rank;
+          });
+        }
+        return Response.json(chat.conversation);
       }
       if (url.pathname === "/api/chat/people" && request.method === "GET") {
         const { search, cursor } = PeopleQuerySchema.parse(Object.fromEntries(url.searchParams));
@@ -449,7 +521,8 @@ export const startChatHarness = async () => {
           }),
         );
       }
-      if (url.pathname === "/api/chat/conversations" && request.method === "GET") return Response.json(list());
+      if (url.pathname === "/api/chat/conversations" && request.method === "GET")
+        return Response.json(list(url.searchParams.get("archived") === "true"));
       if (url.pathname === "/api/chat/conversations" && request.method === "POST") {
         const input = CreateConversationSchema.parse(await request.json());
         const replay = input.createKey && createIntents.get(input.createKey);
@@ -763,6 +836,7 @@ export const startChatHarness = async () => {
     /** Sets the viewer's archived flag reported by duplicate-chat matches. */
     archive: (chat: string, archived: boolean) => {
       chats.get(chat)!.archived = archived;
+      chats.get(chat)!.conversation.archived = archived;
     },
     /** Returns the current member entries for assertions. */
     members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
@@ -773,6 +847,7 @@ export const startChatHarness = async () => {
     readElsewhere: read,
     /** Isolates scenarios; IDs stay unique so a closing page cannot report against a later chat. */
     reset: () => {
+      collapsed = [];
       chats.clear();
       createIntents.clear();
       people.clear();
@@ -808,20 +883,7 @@ export const startChatHarness = async () => {
     revoke,
     messageId,
     /** The island's props for an address, as the server renders them. */
-    props: (address: { chat?: string; message?: string; panel?: string }, options: { guest?: boolean } = {}): ChatWorkspaceProps => {
-      const open = address.chat ? snapshot(address.chat, address.message ?? null) : null;
-      return {
-        cursor: `c.${cursor}`,
-        sidebar: list(),
-        open: open && { conversation: open.conversation, page: open.page, focus: open.focus },
-        chatId: address.chat ?? null,
-        guest: options.guest ?? false,
-        panel: open && address.panel === "info" ? "info" : null,
-        viewerId: viewer.id,
-        dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
-        now: now().toISOString(),
-      };
-    },
+    props: viewProps,
     stop: () => server.stop(true),
   };
 };

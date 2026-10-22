@@ -40,11 +40,13 @@ import {
   MessageViewSchema,
   PeoplePageSchema,
   PeopleQuerySchema,
+  PersonalConversationSchema,
   ReadAllOutcomeSchema,
   ReadAllSchema,
   ReadSchema,
   ReadUpdateSchema,
   SendMessageSchema,
+  SidebarPreferencesSchema,
   SnapshotQuerySchema,
   SuccessSchema,
   UpdateConversationSchema,
@@ -89,6 +91,31 @@ const app = new Hono<AuthContext>()
       );
     },
   )
+  .get(
+    "/preferences",
+    auth.requireRole("authenticated"),
+    description("Read your sidebar preferences", SidebarPreferencesSchema),
+    async (c) => respond(c, chatService.personal.preferences(context(c))),
+  )
+  .put(
+    "/preferences",
+    auth.requireRole("authenticated"),
+    description("Save your sidebar preferences", SidebarPreferencesSchema),
+    validator("json", SidebarPreferencesSchema, invalidInput),
+    async (c) => respond(c, chatService.personal.savePreferences({ ...context(c), input: c.req.valid("json") })),
+  )
+  .put(
+    "/conversations/:conversation/personal",
+    auth.requireRole("authenticated"),
+    description("Archive or order your pinned chat", ConversationSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", PersonalConversationSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.personal.update({ ...context(c), conversationId: c.req.valid("param").conversation, input: c.req.valid("json") }),
+      ),
+  )
   .use("/conversations", auth.requireRole("authenticated"))
   .use("/conversations/*", auth.requireRole("authenticated"))
   .post(
@@ -122,8 +149,11 @@ const app = new Hono<AuthContext>()
     validator("query", ConversationQuerySchema, invalidInput),
     async (c) => {
       // The transport validator decodes the cursor; the service validates its own public input.
-      const cursor = c.req.valid("query").cursor;
-      return respond(c, chatService.conversations.list({ ...context(c), query: cursor ? { cursor: JSON.stringify(cursor) } : {} }));
+      const { cursor, archived } = c.req.valid("query");
+      return respond(
+        c,
+        chatService.conversations.list({ ...context(c), query: { archived, ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) } }),
+      );
     },
   )
   .post(

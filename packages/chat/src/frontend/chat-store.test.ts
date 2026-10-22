@@ -13,6 +13,9 @@ const conversation = ConversationSchema.parse({
   memberCount: 2,
   unread: 0,
   read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+  archived: false,
+  pinnedRank: null,
+  member: true,
   withGuests: false,
   peerDeactivated: false,
   lastMessage: null,
@@ -84,6 +87,11 @@ const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
   const connection = new ManualConnection();
   const api: ChatStoreApi = {
     ...memberApi,
+    personal: async () => {
+      throw new Error("Unused personal write");
+    },
+    preferences: async () => ({ collapsed: [] }),
+    savePreferences: async (collapsed) => ({ collapsed }),
     read: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 1 }),
     markUnread: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: 1, joinedSeq: 0, unread: 0, asOfRev: 1 }),
     readAll: async () => ({ outcome: "done", marked: 0, more: false }),
@@ -406,6 +414,11 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
   });
   const api: ChatStoreApi = {
     ...memberApi,
+    personal: async () => {
+      throw new Error("Unused personal write");
+    },
+    preferences: async () => ({ collapsed: [] }),
+    savePreferences: async (collapsed) => ({ collapsed }),
     read: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 1 }),
     markUnread: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: 1, joinedSeq: 0, unread: 0, asOfRev: 1 }),
     readAll: async () => ({ outcome: "done", marked: 0, more: false }),
@@ -442,6 +455,11 @@ const storeAt = (rev: number, api: Partial<ChatStoreApi>, sidebar = { items: [co
     {
       api: {
         ...memberApi,
+        personal: async () => {
+          throw new Error("Unused personal write");
+        },
+        preferences: async () => ({ collapsed: [] }),
+        savePreferences: async (collapsed) => ({ collapsed }),
         read: async () => {
           throw new Error("Unused write");
         },
@@ -1326,5 +1344,61 @@ test("HTTP errors retain server messages, optional rate-limit codes and required
     await expect(createChatStoreApi().previewMembers(conversation.id, [])).rejects.toBeInstanceOf(ChatRequestError);
   } finally {
     globalThis.fetch = original;
+  }
+});
+
+test("personal archive events refresh membership-filtered rows and never resurrect an archived row on new activity", async () => {
+  let archived = false;
+  const { store, connection } = fixture({
+    personal: async (_id, patch) => {
+      archived = patch.archived ?? archived;
+      return { ...conversation, archived };
+    },
+    conversation: async () => ({ ...conversation, archived }),
+    conversations: async (_cursor, mode) => ({ items: archived === !!mode ? [{ ...conversation, archived }] : [], nextCursor: null }),
+  });
+  try {
+    await store.personal(conversation.id, { archived: true });
+    expect(store.sidebar).toEqual([]);
+    expect(store.openConversation?.conversation?.archived).toBe(true);
+    await connection.get("list").applyBatch([
+      {
+        type: "summary",
+        conversationId: conversation.id,
+        id: "0000000002",
+        seq: 2,
+        rev: 2,
+        kind: "text",
+        author: message(2).author,
+        createdAt: message(2).createdAt,
+        preview: "Still archived",
+      },
+    ]);
+    expect(store.sidebar).toEqual([]);
+    await store.showArchive(true);
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+    archived = false;
+    await connection.get("me").applyBatch([{ type: "personal" }]);
+    expect(store.sidebar).toEqual([]);
+    await store.showArchive(false);
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a failed archive navigation leaves the active list mode intact for later live events", async () => {
+  const { store, connection } = fixture({
+    conversations: async (_cursor, archived) => {
+      if (archived) throw new Error("Unavailable archive");
+      return { items: [conversation], nextCursor: null };
+    },
+  });
+  try {
+    await expect(store.showArchive(true)).rejects.toThrow("Unavailable archive");
+    await connection.get("me").applyBatch([{ type: "personal" }]);
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+  } finally {
+    store.dispose();
   }
 });

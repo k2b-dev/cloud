@@ -204,3 +204,10 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+
+/* Fifteen unchanged two-line rows fit before this personal section scrolls. */
+.chat-list-pins { max-height: calc(15 * 3.25rem); overflow-y: auto; overscroll-behavior: contain; }
+.chat-list-filters { display: flex; gap: .25rem; padding: .25rem; }
+.chat-list-filters [aria-pressed="true"] { background: var(--k2b-surface-muted); font-weight: 600; }
+.chat-list-error, .chat-list-status { padding: .5rem; font-size: .875rem; }
+.chat-list-error { color: var(--k2b-danger-text); }

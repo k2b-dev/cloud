@@ -83,3 +83,9 @@ Deactivated accounts keep their name.
 
 If the last manager's account is deleted, an active member who has been in the
 chat longest takes over management. A message explains the change.
+
+## Organize your chats {icon="pin"}
+
+In a chat's list menu, choose **Pin chat** to put it in **Pinned**. Use **Move up** and **Move down**, or drag its grip, to change the order. On the grip, Space starts a move, the arrow keys choose a position, Enter places it, and Escape cancels. More than 15 pins scroll in their section; there is no limit on the number of pins. Collapsing a section stays saved across your devices.
+
+**Archive chat** hides a chat from your list without leaving it. New messages keep it archived. Open **Archive** at the foot of the list and choose **Restore** in its menu to bring it back, including its saved pin position. Archiving changes only your own list.

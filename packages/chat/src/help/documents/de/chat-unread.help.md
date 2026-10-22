@@ -36,3 +36,7 @@ Um bei einer bestimmten Nachricht zu beginnen, öffne ihr Menü und wähle **Ab 
 :::
 
 Drücke **Esc** in einem offenen Chat, um diesen Chat als gelesen zu markieren.
+
+## Liste filtern {icon="filter"}
+
+Wähle **Ungelesen** über der Liste, um Chats mit neuen Nachrichten oder deiner Ungelesen-Markierung zu sehen. Ein Chat bleibt nach dem Lesen in dieser Ansicht, bis du den Filter verlässt. **Alle** zeigt wieder die ganze Liste. Die Adresse behält deinen Filter beim Neuladen und Zurückgehen.
