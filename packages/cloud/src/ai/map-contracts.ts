@@ -15,6 +15,16 @@ import {
   GeoRouteUpdateDataSchema,
 } from "../contracts/geo-route";
 
+/** Provider website text is optional and is not guaranteed to be a valid URL. */
+export const aiMapWebsite = (value: string | undefined): string | undefined => {
+  try {
+    const url = new URL(value ?? "");
+    return url.protocol === "https:" || url.protocol === "http:" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 const label = z.string().trim().min(1).max(160);
 const web = z.object({ placeId: z.string().max(2048), description: z.string().max(600), url: z.url().max(2000) }).strict();
 // A map may accumulate two full Places result pages. Subsequent searches replace the secondary group.

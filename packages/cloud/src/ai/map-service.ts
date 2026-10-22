@@ -154,7 +154,7 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
       if (command.type === "search" && command.insert) map.picker = places;
       else {
         const group = { title: command.search.title, places };
-        map.groups = command.type === "places" ? [group] : [map.groups[0] ?? group, group];
+        map.groups = command.type === "places" || !map.groups[0] ? [group] : [map.groups[0], group];
         const ids = new Set(map.groups.flatMap((g) => g.places.map((p) => p.id)));
         map.web = map.web.filter((w) => ids.has(w.placeId));
       }
@@ -172,7 +172,7 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
       if (map.route) throw new Error("MAP_ROUTE_EDIT_REQUIRES_PREVIEW");
       const place = placeById(map, command.destinationId, ctx);
       map.kind = "route";
-      map.title = place.name;
+      map.title = place.name.slice(0, 160);
       map.plan = {
         stops: [
           { id: "location", label: ctx.caller.locale?.startsWith("de") ? "Mein Standort" : "My location", point: command.point },
@@ -233,7 +233,7 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
       const result = data(
         await geo.updateRoute({ route: map.route, changes, distanceAllowanceMeters: command.distanceAllowanceMeters }, ctx.caller),
       );
-      map.preview = { result, changes, title: titleOfChange(changes, ctx) };
+      map.preview = { result, changes, title: titleOfChange(changes, ctx).slice(0, 160) };
       delete map.picker;
     } else if (command.type === "accept") {
       if (!map.preview || !map.route) throw new AiMapConflict();

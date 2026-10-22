@@ -202,11 +202,12 @@ describe("native Assistant map transitions", () => {
       expect(input.along).toEqual({ polyline6: original.route!.polyline6, fromKm: 40, toKm: 80 });
       return mapSuccess({ places: [], provenance: mapAddress().provenance });
     };
-    await applyAiMap(
+    const searched = await applyAiMap(
       { map: original },
       { type: "search", search: { title: "Unterwegs", categories: ["restaurant"], along: { fromKm: 40, toKm: 80 } } },
       f.ctx,
     );
+    expect(searched.map.groups).toHaveLength(1);
   });
   test("provider failure keeps data and retry; cost overrun is never automatically retried", async () => {
     const f = context();
@@ -249,11 +250,31 @@ describe("native Assistant map transitions", () => {
     expect(next.map.issue?.code).toBe("GEO_NOT_CONFIGURED");
     expect(f.calls).toEqual([]);
   });
+  test("full-length provider names keep route actions and previews within the saved title contract", async () => {
+    const f = context();
+    const places = mapFixture();
+    const place = places.groups[0]!.places[0]!;
+    place.name = "M".repeat(300);
+    const routed = await applyAiMap({ map: places }, { type: "location", destinationId: place.id, point: { lat: 48, lon: 10 } }, f.ctx);
+    expect(routed.map.title).toHaveLength(160);
+    const preview = await applyAiMap(
+      { map: { ...mapFixture("route"), picker: [place] } },
+      { type: "preview", change: { type: "insert", placeId: place.id } },
+      f.ctx,
+    );
+    expect(preview.map.preview?.title).toHaveLength(160);
+    expect(preview.map.preview?.changes).toMatchObject({ stop: { label: place.name } });
+  });
   test("Notebook serialization uses shared schema and retains every group and complete route", () => {
     const map = mapFixture();
     map.groups.push({ title: "Cafés", places: mapPlaces(20, "cafe") });
     map.route = mapFixture("route").route;
+    map.groups[0]!.places[0]!.website = "https://[";
+    const unicodeWebsite = `https://example.com/${"ä".repeat(400)}`;
+    map.groups[0]!.places[1]!.website = unicodeWebsite;
     const markdown = aiMapNotebookContent(map);
+    expect(markdown).not.toContain("https://[");
+    expect(markdown).toContain(unicodeWebsite);
     expect(markdown.match(/:::map/g)).toHaveLength(3);
     expect(markdown).toContain('"distanceAllowanceMeters":500000');
     expect(markdown).toContain('"computedAt":"2026-10-19T14:31:00.000Z"');

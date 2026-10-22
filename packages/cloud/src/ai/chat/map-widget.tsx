@@ -7,7 +7,7 @@ import type { GeoCategorySchema } from "../../contracts/geo";
 import type { GeoRouteOptions } from "../../contracts/geo-route";
 import { CloudMap } from "../../geo/CloudMap";
 import { geoNavigationHref, geoNavigationPlatform } from "../../geo/navigation";
-import { type AiMap, type AiMapCommand, AiMapReferenceSchema, AiMapSchema, AiMapToolResultSchema } from "../map-contracts";
+import { type AiMap, type AiMapCommand, AiMapReferenceSchema, AiMapSchema, AiMapToolResultSchema, aiMapWebsite } from "../map-contracts";
 import { mapOpeningHours } from "../map-opening-hours";
 import type { AiTurnBlock } from "../protocol";
 import { mapMessages } from "./map-messages";
@@ -16,7 +16,6 @@ import { MapNotebookSave } from "./map-notebook";
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 const responseSchema = z.object({ map: AiMapSchema, canAdmin: z.boolean().optional() });
 const eventName = "cloud:assistant-map";
-const safeWebsite = (url: string | undefined) => (url && /^https?:\/\//i.test(url) ? url : undefined);
 export const mapAnchor = (id: string) => `assistant-map-${id}`;
 
 /** Native result at the shared chat result seam, including follow-up links. Never an HTML artifact. */
@@ -612,7 +611,7 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
             <div class="text-dimmed">{categoryLabel(p().categories)}</div>
             <div>◷ {mapOpeningHours(p().openingHours, map().viewedAt ?? p().provenance.computedAt, map().timeZone, locale())}</div>
             <div>{p().address.formatted}</div>
-            <Show when={safeWebsite(p().website)}>
+            <Show when={aiMapWebsite(p().website)}>
               {(href) => (
                 <a href={href()} target="_blank" rel="noopener noreferrer">
                   {new URL(href()).hostname}

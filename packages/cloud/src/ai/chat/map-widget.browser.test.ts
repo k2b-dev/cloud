@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { startMapBrowserFixture } from "../map-browser.test-fixture";
@@ -41,7 +41,9 @@ const dimensions = async (page: Page) =>
     return { top: b.top, height: b.height, width: b.width };
   });
 test("places use numbered pins, keyboard/list/map selection and unknown hours", async () => {
+  fixture.get("places-keyboard").map.groups[0]!.places[5]!.website = "https://[";
   const { page, context } = await open("places-keyboard");
+  const errors = pageErrors(page);
   try {
     expect(await page.locator(".ai-map__place").count()).toBe(6);
     const list = page.getByRole("listbox", { name: "Orte" });
@@ -53,14 +55,21 @@ test("places use numbered pins, keyboard/list/map selection and unknown hours", 
     expect(await page.locator(".ai-map__info").innerText()).toContain("heute 10:00–17:00 Uhr");
     await page.locator('[data-id="museum-2"]').click();
     expect(await page.locator(".ai-map__place").nth(2).getAttribute("aria-selected")).toBe("true");
+    expect(errors).toEqual([]);
   } finally {
     await context.close();
   }
 });
-test.each([1440, 390])("follow-up retains original map, conversation and measured dimensions through reload at %i", async (width) => {
-  const scenario = `places-followup-${width}`;
-  const { page, context } = await open(scenario, width);
-  try {
+describe.each([1440, 390])("saved map follow-up at %i", (width) => {
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    opened = await open(`places-followup-${width}`, width);
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("retains original map, conversation and measured dimensions through reload", async () => {
+    const { page } = opened;
     const before = await dimensions(page);
     expect(before.height).toBe(width === 1440 ? 811 : 960);
     await page.evaluate(() =>
@@ -81,9 +90,7 @@ test.each([1440, 390])("follow-up retains original map, conversation and measure
       await page.getByRole("button", { name: "Alle 10 Orte" }).click();
       expect(await page.locator(".ai-map__place:visible").count()).toBe(10);
     }
-  } finally {
-    await context.close();
-  }
+  });
 });
 test.each([1440, 390])(
   "insert search, selected stop, real delta, discard, accept and timestamped undo keep route dimensions at %i",
@@ -261,6 +268,7 @@ test("whole and per-leg preferences calculate a real preview and retain the leg 
     await page.getByRole("button", { name: "Etappe ohne Autobahn", exact: true }).click();
     await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
     expect(await page.locator(".ai-map__leg").nth(1).innerText()).toContain("ohne Autobahn");
+    expect(await page.locator(".ai-map__leg").first().innerText()).not.toContain("ohne Autobahn");
   } finally {
     await context.close();
   }
@@ -271,6 +279,7 @@ test("optimize and move keep old letters until accept and render both stop order
   try {
     await page.getByRole("button", { name: "Reihenfolge optimieren", exact: true }).click();
     await page.getByRole("button", { name: "Neue Reihenfolge übernehmen", exact: true }).waitFor();
+    expect(await page.locator(".ai-map__facts [data-gain=true]").innerText()).toContain("-12 min");
     expect(await page.locator(".ai-map__order li").allTextContents()).toEqual([
       "Ulm",
       "Bad Urach",
@@ -302,6 +311,8 @@ test("along-route window reaches server search and navigation link retains desti
     await page.getByRole("button", { name: "Unterwegs essen", exact: true }).click();
     await page.getByRole("button", { name: "Suchen", exact: true }).click();
     await page.locator(".ai-map__route-place").waitFor();
+    expect(await page.getByRole("button", { name: /km 44/ }).innerText()).toContain("0,3 km");
+    expect(fixture.get("route-along").map.groups).toHaveLength(1);
     expect(fixture.commands.at(-1)).toMatchObject({ type: "search", search: { along: { fromKm: 40, toKm: 80 } } });
     expect(await page.getByRole("link", { name: "In Navi-App öffnen", exact: true }).getAttribute("href")).toContain("openstreetmap.org");
     expect(await page.locator(".ai-map__provenance").innerText()).toContain("Zeiten ohne Verkehr");

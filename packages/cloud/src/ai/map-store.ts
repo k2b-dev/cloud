@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { z } from "zod";
+import { toPgTextArray } from "../services/postgres";
 import type { AiMap, AiMapCommand } from "./map-contracts";
 import { AiMapSchema, aiMapToolResult } from "./map-contracts";
 import type { AiStoredMessage } from "./types";
@@ -95,7 +96,7 @@ export async function projectAiMaps(messages: AiStoredMessage[], compact = false
     (SELECT MIN(seq) FROM ai.messages WHERE conversation_id=ai.maps.conversation_id AND
       ((role='tool_result' AND message->>'name'='map' AND message->'result'->>'anchor'='true' AND message->'result'->'map'->>'id'=ai.maps.id::text)
        OR (role='assistant' AND EXISTS(SELECT 1 FROM jsonb_array_elements(message->'content') block WHERE block->>'type'='tool_call' AND block->>'id'=ai.maps.snapshot->>'originCallId')))) AS anchor_seq
-    FROM ai.maps WHERE conversation_id=ANY(${conversations}::uuid[]) AND (id=ANY(${mapIds}::uuid[]) OR snapshot->>'originCallId'=ANY(${callIds}::text[]))`;
+    FROM ai.maps WHERE conversation_id=ANY(${toPgTextArray(conversations)}::uuid[]) AND (id=ANY(${toPgTextArray(mapIds)}::uuid[]) OR snapshot->>'originCallId'=ANY(${toPgTextArray(callIds)}::text[]))`;
   const viewedAt = new Date().toISOString();
   const maps = rows.map((row) => ({
     conversationId: row.conversation_id,

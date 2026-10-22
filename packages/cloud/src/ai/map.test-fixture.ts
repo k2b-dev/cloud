@@ -133,7 +133,11 @@ export const mapGeoFixture = () => {
     },
     searchPlaces: async (input) => {
       calls.push("places");
-      return mapSuccess({ places: mapPlaces(input.limit === 5 ? 5 : 4, "cafe"), provenance: mapProvenance });
+      const places = mapPlaces(input.limit === 5 ? 5 : 4, "cafe").map((place, index) => ({
+        ...place,
+        ...(input.along ? { atMeters: 44000 + index * 4000, distanceToRouteMeters: 300 + index * 10 } : {}),
+      }));
+      return mapSuccess({ places, provenance: mapProvenance });
     },
     calculateRoute: async () => {
       calls.push("calculate");
@@ -151,17 +155,37 @@ export const mapGeoFixture = () => {
         const [stop] = route.stops.splice(i, 1);
         route.stops.splice(input.changes.toIndex, 0, stop!);
       }
-      route.distanceMeters += 4000;
-      route.durationSeconds += 720;
+      const saving = input.changes.type === "optimize" || input.changes.type === "move";
+      const delta = { distanceMeters: saving ? -4000 : 4000, durationSeconds: saving ? -720 : 720 };
+      route.distanceMeters += delta.distanceMeters;
+      route.durationSeconds += delta.durationSeconds;
       route.polyline6 = fixturePolyline(route.stops.map((s) => s.point));
       route.inputHash = "b".repeat(64);
-      route.legs = route.stops.slice(1).map((s, i) => ({
-        ...input.route.legs[Math.min(i, input.route.legs.length - 1)]!,
-        fromStopId: route.stops[i]!.id,
-        toStopId: s.id,
-        polyline6: fixturePolyline([route.stops[i]!.point, s.point]),
-        ...(input.changes.type === "options" ? { options: input.changes.options } : {}),
-      }));
+      const changed: number[] = [];
+      route.legs = route.stops.slice(1).map((s, i) => {
+        const from = route.stops[i]!;
+        const previous = input.route.legs.find((leg) => leg.fromStopId === from.id && leg.toStopId === s.id);
+        const optionsChange =
+          input.changes.type === "options" &&
+          (!input.changes.leg || (input.changes.leg.fromStopId === from.id && input.changes.leg.toStopId === s.id));
+        if (!previous || optionsChange) changed.push(i);
+        return {
+          ...(previous ?? input.route.legs[Math.min(i, input.route.legs.length - 1)]!),
+          fromStopId: from.id,
+          toStopId: s.id,
+          polyline6: fixturePolyline([from.point, s.point]),
+          ...(optionsChange && input.changes.type === "options" ? { options: input.changes.options } : {}),
+        };
+      });
+      // Fictional leg numbers still add up to the displayed result and preserve unchanged legs.
+      for (const metric of ["distanceMeters", "durationSeconds"] as const) {
+        let remaining = route[metric] - route.legs.reduce((sum, leg, i) => sum + (changed.includes(i) ? 0 : leg[metric]), 0);
+        changed.forEach((i, index) => {
+          const share = Math.floor(remaining / (changed.length - index));
+          route.legs[i]![metric] = share;
+          remaining -= share;
+        });
+      }
       const result: z.infer<typeof GeoRouteUpdateDataSchema> = {
         route,
         before: {
@@ -170,7 +194,7 @@ export const mapGeoFixture = () => {
           durationSeconds: input.route.durationSeconds,
         },
         after: { stopIds: route.stops.map((s) => s.id), distanceMeters: route.distanceMeters, durationSeconds: route.durationSeconds },
-        delta: { distanceMeters: 4000, durationSeconds: 720 },
+        delta,
       };
       return mapSuccess(result);
     },
