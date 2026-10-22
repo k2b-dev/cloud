@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { JSX } from "solid-js";
+import { createSignal, type JSX } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
-import type { ActivityChain, ActivityEntry, ActivityPage, ShareAccessCounts } from "../src/activity-contracts";
+import type { ActivityChain, ActivityEntry, ActivityPage, ShareAccessCounts, ShareAccessPeriod } from "../src/activity-contracts";
 import type { ShareView } from "../src/contracts";
 import type { ActivityFilters, ActivityRequest } from "../src/frontend/ActivityView";
 import type { HistoryActions, RestoreOutcome } from "../src/frontend/history-actions";
@@ -403,7 +403,7 @@ describe("Files history components", () => {
   });
 
   test("link facts show counts and shortened networks, page further networks, and keep a failed revoke visible", async () => {
-    const { default: ShareHistory } = await import("../src/frontend/ShareHistory");
+    const { default: ShareHistory, createShareAccess } = await import("../src/frontend/ShareHistory");
     const share = {
       id: "11111111-1111-4111-8111-111111111111",
       kind: "download",
@@ -437,21 +437,30 @@ describe("Files history components", () => {
       },
     };
     const requests: ShareAccessRequest[] = [];
-    const dom = await mount(() => (
-      <ShareHistory
-        env={env}
-        shares={[{ share, creatorName: "Mia Schulz" }]}
-        period={{ from: "2026-09-21", to: "2026-10-20" }}
-        initial={{ [share.id]: first }}
-        load={async (request) => {
-          requests.push(request);
-          return { ...first, networks: { ...first.networks, next: null, items: [network("203.0.113.0/24", 148)] } };
-        }}
-        onRevoke={async () => {
-          throw new Error("Der Link konnte nicht widerrufen werden.");
-        }}
-      />
-    ));
+    const period = { from: "2026-09-21", to: "2026-10-20" };
+    const load = async (request: ShareAccessRequest) => {
+      requests.push(request);
+      return { ...first, networks: { ...first.networks, next: null, items: [network("203.0.113.0/24", 148)] } };
+    };
+    const dom = await mount(() => {
+      const links = createShareAccess({
+        shares: () => [{ share, creatorName: "Mia Schulz" }],
+        period: () => period,
+        initial: { [share.id]: first },
+        load,
+      });
+      return (
+        <ShareHistory
+          env={env}
+          shares={links()}
+          period={period}
+          load={load}
+          onRevoke={async () => {
+            throw new Error("Der Link konnte nicht widerrufen werden.");
+          }}
+        />
+      );
+    });
     await flush();
     const text = () => dom.root.textContent ?? "";
     expect(requests).toEqual([]);
@@ -481,7 +490,7 @@ describe("Files history components", () => {
   });
   test("rows use the approved avatar sizes, a finding without a Cloud entry reads as a warning, and link figures stay flat", async () => {
     const { HistoryAvatar } = await import("../src/frontend/ActivityView");
-    const { default: ShareHistory } = await import("../src/frontend/ShareHistory");
+    const { default: ShareHistory, createShareAccess } = await import("../src/frontend/ShareHistory");
     const share = {
       id: "22222222-2222-4222-8222-222222222222",
       kind: "download",
@@ -503,13 +512,16 @@ describe("Files history components", () => {
       <>
         <HistoryAvatar actor={{ kind: "person", label: "Mia Schulz", person: null, agent: null, icon: null }} size="sm" />
         <HistoryAvatar actor={{ kind: "observed", label: "ohne Eintrag", person: null, agent: null, icon: "ti ti-server" }} size="xs" />
-        <ShareHistory
-          env={env}
-          shares={[{ share, creatorName: null }]}
-          period={{ from: "2026-09-21", to: "2026-10-20" }}
-          initial={{ [share.id]: counts }}
-          load={async () => counts}
-        />
+        {(() => {
+          const period = { from: "2026-09-21", to: "2026-10-20" };
+          const links = createShareAccess({
+            shares: () => [{ share, creatorName: null }],
+            period: () => period,
+            initial: { [share.id]: counts },
+            load: async () => counts,
+          });
+          return <ShareHistory env={env} shares={links()} period={period} load={async () => counts} />;
+        })()}
       </>
     ));
     await flush();
@@ -651,65 +663,199 @@ describe("Files history components", () => {
     expect(buttonNamed(dom.root, "Jetzt prüfen")).toBeDefined();
   });
 
-  test("link access lists its newest periods, loads older ones by cursor, and names page networks only when exact", async () => {
-    const { default: ShareHistory } = await import("../src/frontend/ShareHistory");
-    const share = {
-      id: "44444444-4444-4444-8444-444444444444",
-      kind: "download",
-      title: "Druckdaten",
-      state: "active",
-      expiresAt: null,
-    } as ShareView;
-    const period = (date: string, pages: number) => ({
-      date,
-      granularity: "hour" as const,
-      pages,
-      downloads: 1,
-      passwordFailed: 0,
-      knownNetworks: 2,
-      overflow: false,
-    });
-    const counts: ShareAccessCounts = {
-      from: "2026-09-21",
-      to: "2026-10-20",
-      pages: 96,
-      downloads: 4,
-      passwordFailed: 0,
-      pageNetworks: 21,
-      timeline: {
-        items: ["2026-10-18T20:00:00.000Z", "2026-10-18T19:00:00.000Z", "2026-10-17T08:00:00.000Z", "2026-10-16T08:00:00.000Z"].map(
-          (date) => period(date, 24),
-        ),
-        next: "2026-10-16T08:00:00.000Z",
-      },
-      networks: { known: 21, overflow: false, incomplete: true, rolledUp: false, next: null, items: [] },
-    };
+  const accessShare = (id: string, title: string) => ({ id, kind: "download", title, state: "active", expiresAt: null }) as ShareView;
+  const accessPeriod = (date: string, patch: Partial<ShareAccessPeriod> = {}): ShareAccessPeriod => ({
+    date,
+    granularity: "hour",
+    pages: 0,
+    downloads: 0,
+    passwordFailed: 0,
+    knownNetworks: null,
+    overflow: false,
+    ...patch,
+  });
+  const accessCounts = (items: ShareAccessPeriod[], next: string | null = null): ShareAccessCounts => ({
+    from: "2026-09-21",
+    to: "2026-10-20",
+    timeline: { items, next },
+    pageNetworks: null,
+    pages: 99,
+    downloads: 2,
+    passwordFailed: 0,
+    networks: { known: 21, overflow: false, incomplete: true, rolledUp: false, next: null, items: [] },
+  });
+  const rowTimes = (root: ParentNode) =>
+    [...root.querySelectorAll(".filesv2-history-rows > li time")].map((time) => time.getAttribute("datetime"));
+
+  test("link access joins the item history newest first, keeps four rows, and loads older access by cursor with one request per link", async () => {
+    const { default: ItemHistory } = await import("../src/frontend/ItemHistory");
+    const { default: ShareHistory, createShareAccess } = await import("../src/frontend/ShareHistory");
+    const share = accessShare("55555555-5555-4555-8555-555555555555", "Druckdaten für Hoffmann");
+    const folder = current("vertrieb/Druckdaten");
+    const items = [
+      entry({
+        action: "file.upload",
+        time: "2026-10-16T12:20:00.000Z",
+        after: current("vertrieb/Druckdaten/Proof.pdf", { directory: false }),
+      }),
+      entry({ action: "share.create", time: "2026-10-01T07:12:00.000Z", after: folder }),
+      entry({ action: "folder.create", time: "2026-09-30T14:45:00.000Z", after: folder }),
+    ];
     const requests: ShareAccessRequest[] = [];
-    const dom = await mount(() => (
-      <ShareHistory
-        env={env}
-        shares={[{ share, creatorName: null }]}
-        period={{ from: counts.from, to: counts.to }}
-        initial={{ [share.id]: counts }}
-        load={async (request) => {
-          requests.push(request);
-          return { ...counts, timeline: { items: [period("2026-10-01T08:00:00.000Z", 3)], next: null } };
-        }}
-      />
-    ));
+    const load = async (request: ShareAccessRequest) => {
+      requests.push(request);
+      return request.timelineAfter
+        ? accessCounts([
+            accessPeriod("2026-10-15T00:00:00.000Z"),
+            accessPeriod("2026-09-01T00:00:00.000Z", { granularity: "day", pages: 5 }),
+          ])
+        : accessCounts(
+            [
+              accessPeriod("2026-10-18T20:00:00.000Z", { pages: 96, knownNetworks: 21, downloads: 3 }),
+              accessPeriod("2026-10-17T08:00:00.000Z", { downloads: 2 }),
+              accessPeriod("2026-10-15T08:00:00.000Z", { pages: 3 }),
+            ],
+            "2026-10-15T08:00:00.000Z",
+          );
+    };
+    const period = { from: "2026-09-21", to: "2026-10-20" };
+    const dom = await mount(() => {
+      const links = createShareAccess({ shares: () => [{ share, creatorName: "Mia Schulz" }], period: () => period, load });
+      return (
+        <>
+          <ShareHistory env={env} shares={links()} period={period} load={load} />
+          <ItemHistory
+            env={env}
+            directory
+            source="druckdaten"
+            initial={{ source: "druckdaten", page: page(items) }}
+            load={async () => page(items)}
+            links={{ items: links(), state: "complete" }}
+          />
+        </>
+      );
+    });
     await flush();
     const text = () => dom.root.textContent ?? "";
-    expect(text()).toContain("Die Seite wurde 96-mal aus 21 Netzen aufgerufen.");
-    expect(text()).toContain("Nicht jedes Netz dieses Zeitraums ist bekannt.");
+    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip")].map((chip) => chip.textContent);
+    // Facts and history read one query: one first-page request for the link, none for the SSR activity page.
+    expect(requests).toEqual([{ shareId: share.id }]);
+    // The access timeline may still hold rows newer than the older changes, so those wait; the history does not count.
+    expect(rowTimes(dom.root)).toEqual([
+      "2026-10-18T20:00:00.000Z",
+      "2026-10-17T08:00:00.000Z",
+      "2026-10-16T12:20:00.000Z",
+      "2026-10-15T08:00:00.000Z",
+    ]);
+    expect(chips()).toEqual(["1"]);
+    expect(dom.root.querySelectorAll("[data-kind='link-access']")).toHaveLength(3);
+    expect(dom.root.querySelectorAll("[data-kind='link-access'] .k2b-avatar")).toHaveLength(3);
+    expect(dom.root.querySelector("[data-kind='link-access'] button")).toBeNull();
+    expect(text()).toContain("Die Seite des Links wurde 96-mal aus 21 Netzen aufgerufen");
     expect(text()).toContain("18.10., 22:00 bis 23:00");
-    expect(dom.root.querySelectorAll(".filesv2-share-facts__periods li")).toHaveLength(3);
+    expect(text()).toContain("Link „Druckdaten für Hoffmann“");
+    expect(text()).toContain("3 Downloads freigegeben");
+    expect(text()).toContain("Über den Link wurden 2 Downloads freigegeben");
+    expect(text()).toContain("Die Seite des Links wurde 3-mal aufgerufen");
+    // Facts keep their place: figures, networks and no timeline of their own.
+    expect(dom.root.querySelector(".filesv2-share-facts__periods")).toBeNull();
+    expect(text()).not.toContain("Zugriffe nach Zeit");
+    expect(buttonNamed(dom.root, "2 ältere anzeigen")).toBeUndefined();
     buttonNamed(dom.root, "Ältere anzeigen")!.click();
     await flush();
-    expect(dom.root.querySelectorAll(".filesv2-share-facts__periods li")).toHaveLength(4);
-    buttonNamed(dom.root, "Ältere Zugriffe laden")!.click();
+    expect(requests).toEqual([{ shareId: share.id }, { shareId: share.id, timelineAfter: "2026-10-15T08:00:00.000Z" }]);
+    // Empty buckets stay out; a rolled-up day names the whole day; everything loaded now counts.
+    expect(rowTimes(dom.root)).toEqual([
+      "2026-10-18T20:00:00.000Z",
+      "2026-10-17T08:00:00.000Z",
+      "2026-10-16T12:20:00.000Z",
+      "2026-10-15T08:00:00.000Z",
+      "2026-10-01T07:12:00.000Z",
+      "2026-09-30T14:45:00.000Z",
+      "2026-09-01T00:00:00.000Z",
+    ]);
+    expect(text()).toContain("01.09., ganzer Tag");
+    expect(chips()).toEqual(["1", "7"]);
+    expect(buttonNamed(dom.root, "Ältere anzeigen")).toBeUndefined();
+    buttonNamed(dom.root, "Weniger anzeigen")!.click();
     await flush();
-    expect(requests).toEqual([{ shareId: share.id, timelineAfter: "2026-10-16T08:00:00.000Z" }]);
-    expect(dom.root.querySelectorAll(".filesv2-share-facts__periods li")).toHaveLength(5);
-    expect(buttonNamed(dom.root, "Ältere Zugriffe laden")).toBeUndefined();
+    expect(rowTimes(dom.root)).toHaveLength(4);
+    expect(buttonNamed(dom.root, "3 ältere anzeigen")).toBeDefined();
+  });
+
+  test("failed or pending link access never reads as an empty or complete history, recovers in place, and aborts when the link leaves", async () => {
+    const { default: ItemHistory } = await import("../src/frontend/ItemHistory");
+    const { createShareAccess } = await import("../src/frontend/ShareHistory");
+    const first = accessShare("66666666-6666-4666-8666-666666666666", "Druckdaten");
+    const second = accessShare("77777777-7777-4777-8777-777777777777", "Angebote");
+    const upload = entry({
+      action: "file.upload",
+      time: "2026-10-16T12:20:00.000Z",
+      after: current("vertrieb/Druckdaten/Proof.pdf", { directory: false }),
+    });
+    const calls: { request: ShareAccessRequest; signal: AbortSignal; reply: ReturnType<typeof deferred<ShareAccessCounts>> }[] = [];
+    const [shares, setShares] = createSignal<{ share: ShareView; creatorName: string | null }[]>([{ share: first, creatorName: null }]);
+    const [state, setState] = createSignal<"loading" | "partial" | "complete">("loading");
+    const dom = await mount(() => {
+      const links = createShareAccess({
+        shares,
+        period: () => ({ from: "2026-09-21", to: "2026-10-20" }),
+        load: (request, signal) => {
+          const reply = deferred<ShareAccessCounts>();
+          calls.push({ request, signal, reply });
+          return reply.promise;
+        },
+      });
+      return (
+        <ItemHistory
+          env={env}
+          directory
+          source="druckdaten"
+          initial={{ source: "druckdaten", page: page([upload]) }}
+          load={async () => page([upload])}
+          links={{ items: links(), state: state() }}
+        />
+      );
+    });
+    await flush();
+    const text = () => dom.root.textContent ?? "";
+    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip")].map((chip) => chip.textContent);
+    // Known changes show at once; pending links keep the history uncounted and busy, never "no entries".
+    expect(rowTimes(dom.root)).toEqual(["2026-10-16T12:20:00.000Z"]);
+    expect(chips()).toEqual([]);
+    expect(dom.root.querySelector(".filesv2-item-history")?.getAttribute("aria-busy")).toBe("true");
+    setState("complete");
+    calls[0]!.reply.reject(new Error("forbidden"));
+    await flush();
+    expect(dom.root.querySelector("[role='alert']")?.textContent).toContain("Zugriffe nicht geladen.");
+    expect(rowTimes(dom.root)).toEqual(["2026-10-16T12:20:00.000Z"]);
+    expect(chips()).toEqual([]);
+    expect(text()).not.toContain("Noch keine Einträge");
+    buttonNamed(dom.root, "Erneut versuchen")!.click();
+    await flush();
+    expect(calls).toHaveLength(2);
+    calls[1]!.reply.resolve(accessCounts([accessPeriod("2026-10-18T20:00:00.000Z", { pages: 4 })]));
+    await flush();
+    expect(rowTimes(dom.root)).toEqual(["2026-10-18T20:00:00.000Z", "2026-10-16T12:20:00.000Z"]);
+    expect(chips()).toEqual(["2"]);
+    expect(dom.root.querySelector("[role='alert']")).toBeNull();
+    // Further link pages unloaded: rows stay, the count goes.
+    setState("partial");
+    await flush();
+    expect(chips()).toEqual([]);
+    setState("complete");
+    // A link that leaves the loaded list aborts its request, and its late answer never appears.
+    setShares([{ share: second, creatorName: null }]);
+    await flush();
+    expect(calls).toHaveLength(3);
+    expect(calls[2]!.request).toEqual({ shareId: second.id });
+    expect(rowTimes(dom.root)).toEqual(["2026-10-16T12:20:00.000Z"]);
+    setShares([]);
+    await flush();
+    expect(calls[2]!.signal.aborted).toBe(true);
+    calls[2]!.reply.resolve(accessCounts([accessPeriod("2026-10-19T08:00:00.000Z", { pages: 7 })]));
+    await flush();
+    expect(rowTimes(dom.root)).toEqual(["2026-10-16T12:20:00.000Z"]);
+    expect(chips()).toEqual(["1"]);
   });
 });

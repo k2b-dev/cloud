@@ -251,6 +251,14 @@ bound. Daily rows retain no overflow evidence. Follow `timeline.next` with
 `timelineAfter` and the same dates to read older aggregates. Both cursors are
 independent. Reads create no activity or audit action.
 
+The file inspector shows these aggregates to the link's creator or an
+administrator as rows in the item's history, ordered with recorded changes by
+bucket start. They stay aggregates, not activity entries, and the Activity API
+never returns them. One request per loaded link serves both the link facts and
+the history; older aggregates load only on request. A row appears once every
+source that could still hold a newer row has loaded past it. The history shows
+a count only after all its sources and link pages are loaded.
+
 Administrators use `GET /api/filesv2/admin/activity/bases?q=…&after=…` for
 history filter labels. It returns `{items,next}` with at most 50 recorded
 bindings, including archived locations. Each item has `id` (the public base ID),
