@@ -30,6 +30,7 @@
     "./server": "./src/server/index.ts",
     "./server/*": "./src/server/*",
     "./browser": "./src/server/api-client.ts",
+    "./browser/shared-text": "./src/browser/shared-text.ts",
     "./browser/app-approval": "./src/browser/app-approval.ts",
     "./browser/app-badges": "./src/browser/app-badges.ts",
     "./browser/live": "./src/browser/live.ts",

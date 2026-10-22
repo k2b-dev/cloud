@@ -5,6 +5,7 @@ import { SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
 import { minimalTextDiff } from "./text-diff";
 import type {
   SharedTextActor,
+  SharedTextChange,
   SharedTextContributor,
   SharedTextEditResult,
   SharedTextSnapshot,
@@ -48,7 +49,128 @@ export const createDoc = (stored: SharedTextStoredState): Y.Doc => {
   }
 };
 
+const validateChanges = (text: string, changes: readonly SharedTextChange[], maxLength: number): SharedTextChange[] => {
+  const sorted = [...changes].sort((a, b) => a.from - b.from || a.to - b.to);
+  let length = text.length;
+  const splitsCharacter = (at: number) =>
+    at > 0 && at < text.length && /[\uD800-\uDBFF]/.test(text[at - 1]!) && /[\uDC00-\uDFFF]/.test(text[at]!);
+  for (let index = 0; index < sorted.length; index++) {
+    const change = sorted[index]!;
+    const previous = sorted[index - 1];
+    if (
+      !Number.isSafeInteger(change.from) ||
+      !Number.isSafeInteger(change.to) ||
+      change.from < 0 ||
+      change.to < change.from ||
+      change.to > text.length ||
+      (previous && (change.from < previous.to || change.from === previous.from))
+    )
+      throw new RangeError("Shared text changes must have distinct, non-overlapping original-source ranges");
+    if (splitsCharacter(change.from) || splitsCharacter(change.to) || !change.insert.isWellFormed())
+      throw new RangeError("Shared text changes must preserve Unicode characters");
+    length += change.insert.length - (change.to - change.from);
+  }
+  if (length > maxLength) throw new RangeError("Shared text changes exceed maxLength");
+  return sorted.filter((change) => text.slice(change.from, change.to) !== change.insert);
+};
+
 export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, store: SharedTextStore<Saved, Context>) => {
+  const write = async (
+    docId: string,
+    options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal },
+    update: (current: {
+      text: string;
+      contributors: SharedTextContributor[];
+      state(): Uint8Array;
+    }) => string | readonly SharedTextChange[] | Promise<string | readonly SharedTextChange[]>,
+    maxLength?: number,
+  ): Promise<SharedTextEditResult<Saved>> => {
+    if (maxLength !== undefined && (!Number.isSafeInteger(maxLength) || maxLength < 0))
+      throw new RangeError("maxLength must be a nonnegative safe integer");
+    const requestedAt = Date.now();
+    const stored = await store.load(docId, { signal: options.signal });
+    if (!stored) return { status: "notFound" };
+    const handle = topic();
+    const target = await handle.latestCursor({ tenantId: docId });
+    const doc = createDoc(stored);
+    try {
+      let contributors: SharedTextContributor[] = [];
+      try {
+        if (target) contributors = await replay({ docId, after: stored.cursor, until: target, doc, signal: options.signal });
+      } catch (error) {
+        // A cancelled request is not a sync failure: it throws like every other abort before publication.
+        options.signal?.throwIfAborted();
+        return { status: "syncFailed", error };
+      }
+      options.signal?.throwIfAborted();
+      if (maxLength !== undefined && (doc.store.pendingStructs || doc.store.pendingDs))
+        return { status: "syncFailed", error: new Error("Shared text has unresolved update dependencies") };
+      const ytext = doc.getText(SHARED_TEXT_NAME);
+      const text = ytext.toString();
+      const next = await update({ text, contributors, state: () => Y.encodeStateAsUpdate(doc) });
+      let changes: readonly SharedTextChange[];
+      if (maxLength === undefined) {
+        if (typeof next !== "string") throw new TypeError("edit must return text");
+        if (next === text) return { status: "unchanged", text };
+        const diff = minimalTextDiff(text, next);
+        changes = [{ from: diff.index, to: diff.index + diff.deleteCount, insert: diff.insert }];
+      } else {
+        if (typeof next === "string") throw new TypeError("change must return disjoint edits");
+        changes = validateChanges(text, next, maxLength);
+      }
+      if (!changes.length) return { status: "unchanged", text };
+      // A request cancelled while the callback ran must not publish a write.
+      options.signal?.throwIfAborted();
+      const beforeEditState = Y.encodeStateVector(doc);
+      doc.transact(() => {
+        for (let index = changes.length - 1; index >= 0; index--) {
+          const change = changes[index]!;
+          if (change.to > change.from) ytext.delete(change.from, change.to - change.from);
+          if (change.insert.length) ytext.insert(change.from, change.insert);
+        }
+      }, "cli-edit");
+      const actor = options.actor;
+      const published = await handle.publish({
+        tenantId: docId,
+        ...(maxLength !== undefined ? { expectedAfter: target } : {}),
+        data: {
+          kind: "sync",
+          payload: toBase64(Y.encodeStateAsUpdate(doc, beforeEditState)),
+          originNodeId: sharedTextNodeId,
+          originPeerId: null,
+          ...(actor ? { actor } : {}),
+        },
+      });
+      let persistedDoc: Y.Doc | undefined;
+      try {
+        persistedDoc = createDoc(stored);
+        await replay({ docId, after: stored.cursor, until: published.cursor, doc: persistedDoc, signal: options.signal });
+        const persistedText = persistedDoc.getText(SHARED_TEXT_NAME).toString();
+        const credited = new Map(contributors.map((contributor) => [`${contributor.kind}:${contributor.id}`, contributor]));
+        if (actor) credited.set(`${actor.kind}:${actor.id}`, { ...actor, lastContributedAt: new Date(requestedAt) });
+        const saved = await store.save(
+          docId,
+          {
+            state: Y.encodeStateAsUpdate(persistedDoc),
+            text: persistedText,
+            cursor: published.cursor,
+            restoreRevision: stored.restoreRevision,
+            requestedAt,
+            actor,
+            contributors: [...credited.values()],
+          },
+          options.context,
+        );
+        return { status: "edited", text: persistedText, cursor: published.cursor, saved };
+      } catch (error) {
+        return { status: "persistFailed", cursor: published.cursor, error };
+      } finally {
+        persistedDoc?.destroy();
+      }
+    } finally {
+      doc.destroy();
+    }
+  };
   return {
     async read(docId: string, options: { signal?: AbortSignal } = {}): Promise<SharedTextSnapshot | null> {
       const stored = await store.load(docId, options);
@@ -64,79 +186,26 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
         doc.destroy();
       }
     },
-    async edit(
+    edit(
       docId: string,
       options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal },
       update: (current: { text: string; contributors: SharedTextContributor[]; state(): Uint8Array }) => string | Promise<string>,
     ): Promise<SharedTextEditResult<Saved>> {
-      const requestedAt = Date.now();
-      const stored = await store.load(docId, { signal: options.signal });
-      if (!stored) return { status: "notFound" };
-      const handle = topic();
-      const target = await handle.latestCursor({ tenantId: docId });
-      const doc = createDoc(stored);
-      try {
-        let contributors: SharedTextContributor[] = [];
-        try {
-          if (target) contributors = await replay({ docId, after: stored.cursor, until: target, doc, signal: options.signal });
-        } catch (error) {
-          // A cancelled request is not a sync failure: it throws like every other abort before publication.
-          options.signal?.throwIfAborted();
-          return { status: "syncFailed", error };
-        }
-        options.signal?.throwIfAborted();
-        const ytext = doc.getText(SHARED_TEXT_NAME);
-        const text = ytext.toString();
-        const next = await update({ text, contributors, state: () => Y.encodeStateAsUpdate(doc) });
-        if (next === text) return { status: "unchanged", text };
-        // A request cancelled while the callback ran must not publish a write.
-        options.signal?.throwIfAborted();
-        const diff = minimalTextDiff(text, next);
-        const beforeEditState = Y.encodeStateVector(doc);
-        doc.transact(() => {
-          if (diff.deleteCount > 0) ytext.delete(diff.index, diff.deleteCount);
-          if (diff.insert.length > 0) ytext.insert(diff.index, diff.insert);
-        }, "cli-edit");
-        const actor = options.actor;
-        const published = await handle.publish({
-          tenantId: docId,
-          data: {
-            kind: "sync",
-            payload: toBase64(Y.encodeStateAsUpdate(doc, beforeEditState)),
-            originNodeId: sharedTextNodeId,
-            originPeerId: null,
-            ...(actor ? { actor } : {}),
-          },
-        });
-        let persistedDoc: Y.Doc | undefined;
-        try {
-          persistedDoc = createDoc(stored);
-          await replay({ docId, after: stored.cursor, until: published.cursor, doc: persistedDoc, signal: options.signal });
-          const persistedText = persistedDoc.getText(SHARED_TEXT_NAME).toString();
-          const credited = new Map(contributors.map((contributor) => [`${contributor.kind}:${contributor.id}`, contributor]));
-          if (actor) credited.set(`${actor.kind}:${actor.id}`, { ...actor, lastContributedAt: new Date(requestedAt) });
-          const saved = await store.save(
-            docId,
-            {
-              state: Y.encodeStateAsUpdate(persistedDoc),
-              text: persistedText,
-              cursor: published.cursor,
-              restoreRevision: stored.restoreRevision,
-              requestedAt,
-              actor,
-              contributors: [...credited.values()],
-            },
-            options.context,
-          );
-          return { status: "edited", text: persistedText, cursor: published.cursor, saved };
-        } catch (error) {
-          return { status: "persistFailed", cursor: published.cursor, error };
-        } finally {
-          persistedDoc?.destroy();
-        }
-      } finally {
-        doc.destroy();
-      }
+      return write(docId, options, update);
+    },
+    /** Disjoint original-source changes, accepted only while the captured tenant head is unchanged. */
+    async change(
+      docId: string,
+      options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal; maxLength: number },
+      update: (current: {
+        text: string;
+        contributors: SharedTextContributor[];
+        state(): Uint8Array;
+      }) => readonly SharedTextChange[] | Promise<readonly SharedTextChange[]>,
+    ): Promise<SharedTextEditResult<Saved>> {
+      if (!Number.isSafeInteger(options.maxLength) || options.maxLength < 0)
+        throw new RangeError("maxLength must be a nonnegative safe integer");
+      return write(docId, options, update, options.maxLength);
     },
   };
 };
