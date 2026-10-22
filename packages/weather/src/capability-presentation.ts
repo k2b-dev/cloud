@@ -75,6 +75,12 @@ export const weatherCapabilityPresentation: CapabilityPresentationCatalog = {
               "Optionales Bundesland oder Region; Kopieren Sie normalerweise den Status aus dem Ergebnis der ausgewählten Stadt, sofern vorhanden.",
             lat: "Der Breitengrad wurde aus dem Ergebnis der ausgewählten Stadt oder einer anderen vertrauenswürdigen Koordinatenquelle kopiert.",
             lon: "Längengrad, kopiert aus dem Ergebnis der ausgewählten Stadt oder einer anderen vertrauenswürdigen Koordinatenquelle.",
+            provenance: "Herkunft der ausgewählten Adresse aus Core beibehalten.",
+            "provenance.provider": "Anbieter der Adressdaten.",
+            "provenance.attribution": "Quellenangabe der Adressdaten.",
+            "provenance.attribution.text": "Ausgeschriebene Quellenangabe.",
+            "provenance.attribution.links": "Links zu den Datenquellen.",
+            "provenance.computedAt": "Zeitpunkt der Adressabfrage.",
           },
         },
         "location.delete": {
