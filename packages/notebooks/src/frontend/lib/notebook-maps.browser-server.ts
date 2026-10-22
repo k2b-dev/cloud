@@ -4,10 +4,13 @@ import { basename, resolve } from "node:path";
 import type { GeoAddress } from "@k2b/cloud/contracts/geo";
 import { serializeGeoDocument } from "@k2b/cloud/geo/document";
 import { createConfig } from "@k2b/ssr";
-import { appAccentStyle } from "../../../../cloud/src/ssr/app-appearance";
 import { renderNotebookBook } from "../../lib/book-renderer";
 import { fictionalMap, fictionalRouteMap, mapProvenance } from "../../lib/map.test-fixture";
 import { buildNotePdfHtml } from "../../service/note-pdf";
+
+// Fixed fixture values from Cloud’s yellow app appearance, as supplied on the real page body.
+const notebookAccent =
+  "--app-accent:#eab308;--app-ink-light:#886805;--app-ink-dark:#eab308;--app-selected-light:#fefaee;--app-selected-dark:#2f2b18;--app-selected-nav-light:#fdf7e6;--app-selected-nav-dark:#363018";
 export async function createNotebookMapFixtureServer(port = 0) {
   const directory = mkdtempSync(resolve(tmpdir(), "notebook-maps-browser-"));
   const { plugin } = createConfig({ dev: true, rootDir: directory });
@@ -118,7 +121,7 @@ export async function createNotebookMapFixtureServer(port = 0) {
           mapState: { availability, canAdmin: url.searchParams.get("admin") === "1" },
         }).html;
         return new Response(
-          `<!doctype html><html lang="de" class="${url.searchParams.get("theme") === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css} body{margin:0;font-family:var(--k2b-font-sans);color:var(--k2b-text);background:var(--k2b-surface-canvas)}.fixture{container-type:inline-size;container-name:k2b-app-area;max-width:760px;margin:auto}.fixture article{--notebook-book-inset:16px;max-width:728px;margin:auto} #saved{display:none}</style></head><body class="k2b-ui app-accent-scope" style="${appAccentStyle("#eab308")}"><main class="fixture"><article class="notebook-book-content" id="notebook-book-content">${html}</article><pre id="saved"></pre><script type="application/json" id="fixture-markdown">${JSON.stringify(fixtureMarkdown).replaceAll("<", "\\u003c")}</script></main><script type="module" src="/entry.js"></script></body></html>`,
+          `<!doctype html><html lang="de" class="${url.searchParams.get("theme") === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css} body{margin:0;font-family:var(--k2b-font-sans);color:var(--k2b-text);background:var(--k2b-surface-canvas)}.fixture{container-type:inline-size;container-name:k2b-app-area;max-width:760px;margin:auto}.fixture article{--notebook-book-inset:16px;max-width:728px;margin:auto} #saved{display:none}</style></head><body class="k2b-ui app-accent-scope" style="${notebookAccent}"><main class="fixture"><article class="notebook-book-content" id="notebook-book-content">${html}</article><pre id="saved"></pre><script type="application/json" id="fixture-markdown">${JSON.stringify(fixtureMarkdown).replaceAll("<", "\\u003c")}</script></main><script type="module" src="/entry.js"></script></body></html>`,
           { headers: { "content-type": "text/html" } },
         );
       }

@@ -2640,7 +2640,6 @@
   line-height: 1.45;
   --k2b-text-muted: #52525b;
   --k2b-action: #1d4ed8;
-  --ui-app-accent-text: #a16207;
 }
 .notebook-pdf-dialog[data-map-document] .notebook-map-export__preview > * { margin-block: 0; flex-shrink: 0; }
 .notebook-pdf-dialog[data-map-document] .notebook-map-export__preview h1 { font-size: 20px; line-height: 1.45; }
@@ -2665,8 +2664,10 @@
   border-radius: 8px;
 }
 .k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__actions .k2b-button[data-variant="primary"] {
-  --k2b-action-solid: var(--app-accent, #eab308);
-  --k2b-action-solid-hover: color-mix(in srgb, var(--app-accent, #eab308) 90%, #000);
+  background: var(--app-accent, #eab308);
   --k2b-focus-on-fill: #18181b;
   color: #18181b;
 }
+
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview .notebook-map__number { color: #a16207; }
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__actions .k2b-button[data-variant="primary"]:hover:not(:disabled) { background: var(--color-yellow-600); }
