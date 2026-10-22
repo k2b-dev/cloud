@@ -6,10 +6,15 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { appHostCss } from "../../../../ui/test/app-host-fixture";
 import type { Contact, ContactAddressLocateResult } from "../../service";
+import type { ContactAddressInput } from "../../service/types";
 import "./ssr-test-plugin";
 
 /** Fictional fixtures only. Jana Berger and her address appear in the approved mockup. */
 const now = "2026-10-22T10:00:00.000Z";
+const addressLocationKey = (address: Pick<ContactAddressInput, "line1" | "postalCode" | "city" | "stateRegion" | "countryCode">) =>
+  [address.line1, address.postalCode, address.city, address.stateRegion, address.countryCode]
+    .map((value) => (value ?? "").trim().toLowerCase().replace(/\s+/g, " "))
+    .join("\n");
 const provenance = {
   provider: "geoapify" as const,
   attribution: { text: "Geoapify · OpenStreetMap" as const, links: ["https://geoapify.com", "https://www.openstreetmap.org/copyright"] },
@@ -99,7 +104,11 @@ export const availability = {
 } satisfies Record<string, GeoAvailabilityData>;
 
 export type Scenario = {
-  view: "detail" | "form" | "address";
+  view: "detail" | "form" | "workspace";
+  initialAddressId?: string | null;
+  href?: string;
+  contacts?: Contact[];
+  readonly?: boolean;
   contact: Contact;
   availability?: GeoAvailabilityData;
 };
@@ -113,10 +122,13 @@ export type StubState = {
   locateRequests: number;
   /** Bodies of contact saves. */
   saves: unknown[];
+  saveStatus: number;
+  holdSave: boolean;
 };
 
 const { default: ContactDetailPanel } = await import("./ContactDetailPanel.island.tsx");
 const { LocaleProvider } = await import("@k2b/ui");
+const { default: ContactAddressWorkspace } = await import("./ContactAddressWorkspace.browser-fixture.tsx");
 const detailProps = (scenario: Scenario) => ({
   initialContact: scenario.contact,
   initialContactId: scenario.contact.id,
@@ -133,16 +145,25 @@ const detailProps = (scenario: Scenario) => ({
   timeZone: "Europe/Berlin",
 });
 const serverMarkup = (scenario: Scenario) =>
-  scenario.view === "detail"
+  scenario.view === "workspace"
     ? renderToString(() =>
         createComponent(LocaleProvider, {
           locale: "de",
           get children() {
-            return createComponent(ContactDetailPanel, detailProps(scenario));
+            return createComponent(ContactAddressWorkspace, { scenario });
           },
         }),
       )
-    : "";
+    : scenario.view === "detail"
+      ? renderToString(() =>
+          createComponent(LocaleProvider, {
+            locale: "de",
+            get children() {
+              return createComponent(ContactDetailPanel, detailProps(scenario));
+            },
+          }),
+        )
+      : "";
 
 const entrySource = `
   import { createComponent } from "solid-js";
@@ -150,19 +171,23 @@ const entrySource = `
   import { LocaleProvider } from "@k2b/ui";
   import ContactDetailPanel from "./ContactDetailPanel.island";
   import ContactUpsertForm from "./ContactUpsertForm";
-  import ContactAddressEditor from "./ContactAddressEditor";
+  import ContactAddressWorkspace from "./ContactAddressWorkspace.browser-fixture";
   const root = document.querySelector("#root");
   const scenario = JSON.parse(root.dataset.scenario);
+  await document.fonts.ready;
   window.serverHeight = root.getBoundingClientRect().height;
+  const editorSnapshot = () => Array.from(document.querySelectorAll(".contacts-address-editor input"), input => ({value: input.value, box: input.getBoundingClientRect().toJSON()}));
+  window.serverEditor = editorSnapshot();
   root.innerHTML = "";
   render(() => createComponent(LocaleProvider, { locale: "de", get children() {
-    if (scenario.view === "address")
-      return createComponent(ContactAddressEditor, { contact: scenario.contact, index: 0, geoAvailability: scenario.availability, onCancel() {}, onSaved() {} });
+    if (scenario.view === "workspace")
+      return createComponent(ContactAddressWorkspace, { scenario });
     return scenario.view === "detail"
       ? createComponent(ContactDetailPanel, scenario.props)
       : createComponent(ContactUpsertForm, { mode: "edit", bookId: "team", initialContact: scenario.contact, title: "Jana Berger bearbeiten", geoAvailability: scenario.availability });
   } }), root);
   window.clientHeight = root.getBoundingClientRect().height;
+  window.clientEditor = editorSnapshot();
 `;
 
 /** Serves the real Contacts detail and editor with stub Core and Contacts APIs in a browser page. */
@@ -201,6 +226,9 @@ export const startContactsGeoHarness = async () => {
   if (!build.success) throw new AggregateError(build.logs, "Contacts geo browser build failed");
   const assets = new Map(await Promise.all(build.outputs.map(async (asset) => [basename(asset.path), await asset.arrayBuffer()] as const)));
   const tabler = resolve(Bun.resolveSync("@tabler/icons-webfont/package.json", ui), "../dist");
+  const fontPreset = Bun.resolveSync("@k2b/ui/fonts/plex.css", ui);
+  const fontDirectory = resolve(fontPreset, "../fonts");
+  const fonts = (await Bun.file(fontPreset).text()).replaceAll("./fonts/", "/fonts/");
   const css = await appHostCss(resolve(import.meta.dir, "../../styles/app.css"));
   const state: StubState = {
     autocomplete: "ok",
@@ -209,7 +237,11 @@ export const startContactsGeoHarness = async () => {
     autocompleteRequests: [],
     locateRequests: 0,
     saves: [],
+    saveStatus: 200,
+    holdSave: false,
   };
+  let releaseSave: () => void = () => {};
+  const savedContacts = new Map<string, Contact>();
   let releaseLocate: () => void = () => {};
   const scenarios = new Map<string, Scenario>();
 
@@ -219,11 +251,21 @@ export const startContactsGeoHarness = async () => {
     async fetch(request) {
       const url = new URL(request.url);
       if (url.pathname === "/") {
-        const scenario = scenarios.get(url.searchParams.get("scenario") ?? "");
+        const storedScenario = scenarios.get(url.searchParams.get("scenario") ?? "");
+        const selectedId = url.searchParams.get("contact");
+        const scenario = storedScenario && {
+          ...storedScenario,
+          href: `${url.pathname}${url.search}`,
+          initialAddressId: url.searchParams.get("address"),
+          contact:
+            savedContacts.get(selectedId ?? "") ??
+            storedScenario.contacts?.find((contact) => contact.id === selectedId) ??
+            storedScenario.contact,
+        };
         if (!scenario) return new Response("Unknown scenario", { status: 404 });
         const data = JSON.stringify({ ...scenario, props: detailProps(scenario) }).replaceAll("'", "&#39;");
         return new Response(
-          `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><link rel="stylesheet" href="/tabler/tabler-icons.min.css"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui"><main style="max-width:${scenario.view === "detail" ? 640 : 760}px;margin:0 auto;padding:16px;height:100dvh;display:flex;flex-direction:column"><div id="root" style="flex:1;min-height:0;display:flex;flex-direction:column" data-scenario='${data}'>${serverMarkup(scenario)}</div></main><script type="module" src="/entry.js"></script></body></html>`,
+          `<!doctype html><html lang="de" class="${request.headers.get("cookie")?.includes("theme=dark") ? "dark" : "light"}"><head><meta charset="utf-8"><link rel="stylesheet" href="/tabler/tabler-icons.min.css"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\n${fonts}</style></head><body class="k2b-ui"><main style="max-width:${scenario.view === "workspace" ? "none" : scenario.view === "detail" ? "640px" : "760px"};margin:0 auto;padding:${scenario.view === "workspace" ? 0 : 16}px;height:100dvh;display:flex;flex-direction:column"><div id="root" style="flex:1;min-height:0;display:flex;flex-direction:column" data-scenario='${data}'>${serverMarkup(scenario)}</div></main><script type="module" src="/entry.js"></script></body></html>`,
           { headers: { "Content-Type": "text/html" } },
         );
       }
@@ -247,19 +289,80 @@ export const startContactsGeoHarness = async () => {
       if (url.pathname.endsWith("/locate") && request.method === "POST") {
         state.locateRequests += 1;
         if (state.holdLocate) await new Promise<void>((resolve) => (releaseLocate = resolve));
+        const match = url.pathname.match(/\/contacts\/([^/]+)\/addresses\/([^/]+)\/locate$/);
+        const contactId = match?.[1];
+        const contact = contactId
+          ? (savedContacts.get(contactId) ??
+            [...scenarios.values()]
+              .flatMap((scenario) => scenario.contacts ?? [scenario.contact])
+              .find((contact) => contact.id === contactId))
+          : undefined;
+        if (contact && state.locate !== "error" && state.locate.state === "located") {
+          const location = state.locate.location;
+          savedContacts.set(contact.id, {
+            ...contact,
+            addresses: contact.addresses.map((address) => (address.id === match?.[2] ? { ...address, location } : address)),
+          });
+        }
         return state.locate === "error" ? Response.json({ message: "Failed" }, { status: 500 }) : Response.json(state.locate);
       }
+      if (url.pathname.startsWith("/fonts/")) return new Response(Bun.file(resolve(fontDirectory, basename(url.pathname))));
       if (url.pathname.startsWith("/tabler/")) return new Response(Bun.file(resolve(tabler, url.pathname.slice("/tabler/".length))));
       if (url.pathname === "/api/contacts/books/team/tags") return Response.json([]);
-      if (url.pathname === "/api/contacts/books/team/contacts/jana" && request.method === "PATCH") {
-        state.saves.push(await request.json());
-        return Response.json(jana(found));
+      const contactMatch = url.pathname.match(/^\/api\/contacts\/books\/team\/contacts\/([^/]+)$/);
+      const contactId = contactMatch?.[1];
+      const storedContact = contactId
+        ? (savedContacts.get(contactId) ??
+          [...scenarios.values()]
+            .flatMap((scenario) => scenario.contacts ?? [scenario.contact])
+            .find((contact) => contact.id === contactId))
+        : undefined;
+      if (storedContact && request.method === "PATCH") {
+        const body: { addresses: ContactAddressInput[] } = await request.json();
+        state.saves.push(body);
+        if (state.holdSave) await new Promise<void>((resolve) => (releaseSave = resolve));
+        if (state.saveStatus !== 200)
+          return Response.json(
+            { message: state.saveStatus === 409 ? "Kontakt wurde inzwischen geändert" : "Speichern fehlgeschlagen" },
+            { status: state.saveStatus },
+          );
+        const updated = {
+          ...storedContact,
+          addresses: body.addresses.map((address, index) => {
+            const previous = storedContact.addresses[index];
+            if (!previous) throw new Error("The focused address fixture cannot append addresses");
+            return {
+              ...previous,
+              ...address,
+              location: address.location
+                ? { status: "found" as const, ...address.location }
+                : (storedContact.addresses.find((previous) => addressLocationKey(previous) === addressLocationKey(address))?.location ??
+                  null),
+            };
+          }),
+          updatedAt: "2026-10-22T10:01:00.000Z",
+        };
+        savedContacts.set(storedContact.id, updated);
+        return Response.json(updated);
       }
+      if (storedContact) return Response.json(storedContact);
+      if (url.pathname.startsWith("/api/contacts/favorites/")) return Response.json({ favorite: false });
+      if (url.pathname.endsWith("/notes")) return Response.json({ items: [], page: 1, perPage: 30, total: 0, hasNext: false });
       if (url.pathname === "/api/geo/style")
         return Response.json({
           version: 8,
           sources: {},
-          layers: [{ id: "land", type: "background", paint: { "background-color": "#f1efe9" } }],
+          layers: [
+            {
+              id: "land",
+              type: "background",
+              paint: { "background-color": url.searchParams.get("theme") === "dark" ? "#20252a" : "#f1efe9" },
+            },
+          ],
+        });
+      if (/^\/map-view-worker(?:-[a-z0-9]+)?\.js$/.test(url.pathname))
+        return new Response(Bun.file(resolve(ui, "dist/browser/content/map-view-worker.js")), {
+          headers: { "Content-Type": "application/javascript" },
         });
       const asset = assets.get(url.pathname.slice(1));
       return asset ? new Response(asset, { headers: { "Content-Type": "application/javascript" } }) : Response.json({}, { status: 404 });
@@ -268,11 +371,19 @@ export const startContactsGeoHarness = async () => {
   return {
     url: (name: string, scenario: Scenario) => {
       scenarios.set(name, scenario);
-      return `${server.url.origin}/?scenario=${encodeURIComponent(name)}&contact=jana&contactBook=team`;
+      return `${server.url.origin}/?scenario=${encodeURIComponent(name)}&contact=${scenario.contact.id}&contactBook=team${scenario.initialAddressId ? `&address=${scenario.initialAddressId}` : ""}`;
     },
     state,
+    reset: () => {
+      savedContacts.clear();
+      scenarios.clear();
+    },
+    setContact: (contact: Contact) => savedContacts.set(contact.id, contact),
     releaseLocate: () => releaseLocate(),
+    releaseSave: () => releaseSave(),
     stop: async () => {
+      releaseLocate();
+      releaseSave();
       await server.stop(true);
       rmSync(directory, { recursive: true, force: true });
     },

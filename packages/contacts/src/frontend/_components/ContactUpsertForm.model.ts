@@ -371,6 +371,13 @@ const normalizeBirthday = (value: string): string | null => {
   return birthday || null;
 };
 
+/** Validate address-only edits without involving unrelated contact fields. */
+export const buildAddressPayload = (rows: EditableAddress[]) => {
+  const addresses = normalizeAddresses(rows);
+  validateAddresses(addresses);
+  return addresses;
+};
+
 export const buildContactPayload = (draft: ContactUpsertDraft): CreateContactInput => {
   const emails = normalizeEmails(draft.emails);
   const phones = normalizePhones(draft.phones);

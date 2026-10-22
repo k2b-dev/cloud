@@ -201,7 +201,7 @@ export default function ContactsList(props: Props) {
                     </span>
                   </span>
 
-                  <span class="hidden w-52 shrink-0 flex-col items-end gap-0.5 text-xs text-dimmed xl:flex">
+                  <span class="contacts-list__contact-points hidden w-52 shrink-0 flex-col items-end gap-0.5 text-xs text-dimmed xl:flex">
                     <Show when={email()}>
                       <span class="max-w-full truncate" title={email() ?? undefined}>
                         {email()}

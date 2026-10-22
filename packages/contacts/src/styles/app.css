@@ -11,3 +11,144 @@
   background: var(--ui-app-selected-nav);
   color: var(--ui-app-accent-text);
 }
+
+/* The focused address form takes the contact's place beside the existing list. */
+.k2b-app-workspace:has(.contacts-address-editor, .contacts-address-editor-unavailable) {
+  --k2b-workspace-detail-contacts-detail-panel-width: 760px;
+}
+
+.k2b-app-workspace:has(.contacts-address-editor, .contacts-address-editor-unavailable) .contacts-list__contact-points {
+  display: none;
+}
+
+.contacts-address-editor {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 760px;
+  flex-direction: column;
+  gap: 22px;
+  overflow-y: auto;
+  padding: 18px 28px 60px;
+}
+
+.contacts-address-editor__heading h2 {
+  margin-bottom: 4px;
+  color: var(--k2b-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.contacts-address-editor__heading h2:focus {
+  outline: none;
+}
+
+.contacts-address-editor__heading p {
+  margin-bottom: 12px;
+}
+
+.k2b-ui .contacts-address-editor .contacts-address-editor__phone-back {
+  display: none;
+}
+
+.contacts-address-editor__street > p {
+  min-height: 18px;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.contacts-address-editor__street:has(.contacts-address-editor__empty-hint) .k2b-text-input__icon {
+  display: none;
+}
+
+.k2b-ui .contacts-address-editor .k2b-input-shell,
+.k2b-ui .contacts-address-editor .k2b-combobox__input {
+  min-height: 38px;
+}
+
+.k2b-ui .contacts-address-editor .k2b-button {
+  min-height: 36px;
+}
+
+.contacts-address-editor__fields {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 22px 14px;
+}
+
+.contacts-address-editor__wide {
+  grid-column: 1 / -1;
+}
+
+@container k2b-app-area (max-width: 47.999rem) {
+  .contacts-address-editor {
+    padding: 18px 16px 120px;
+  }
+
+  .contacts-address-editor__titlebar {
+    display: flex;
+    min-height: 58px;
+    align-items: center;
+    gap: 10px;
+    margin: -18px -16px 18px;
+    padding-inline: 16px;
+  }
+
+  .contacts-address-editor__titlebar h2 {
+    margin: 0;
+    font-size: 20px;
+  }
+
+  .k2b-ui .contacts-address-editor .contacts-address-editor__phone-back {
+    display: inline-flex;
+    width: 32px;
+    padding-inline: 0;
+  }
+
+  .contacts-address-editor__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .contacts-address-editor__street > p:not(.contacts-address-editor__empty-hint) {
+    min-height: 36px;
+  }
+}
+
+.k2b-ui .k2b-app-workspace__detail[data-workspace-detail-phone]:has(.contacts-address-editor, .contacts-address-editor-unavailable) {
+  gap: 0;
+  padding-inline: 0;
+}
+
+/* Keep the list's existing 20rem minimum and give the editor the remaining
+   column even where the normal detail would wait for its preferred width. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-app-workspace:has(.contacts-address-editor, .contacts-address-editor-unavailable, [data-contacts-address-context]) {
+    --k2b-workspace-detail-column: clamp(0px, 100% - 20rem, var(--k2b-workspace-detail-track));
+  }
+}
+
+@media (min-width: 48rem) {
+ @container k2b-workspace (width < 50.5rem) {
+  .k2b-ui .k2b-app-workspace__detail[data-width="lg"]:not([hidden]):is(:has(.contacts-address-editor, .contacts-address-editor-unavailable), [data-contacts-address-context]) {
+    --k2b-workspace-detail-waiting: 0;
+    display: flex;
+    top: var(--k2b-workspace-detail-inset);
+    right: var(--k2b-workspace-detail-inset);
+    bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
+    left: auto;
+    width: calc(100% - var(--k2b-workspace-detail-inset));
+    grid-area: detail;
+    background: var(--k2b-surface);
+  }
+
+  .contacts-address-editor__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+ }
+}

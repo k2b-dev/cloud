@@ -8,6 +8,7 @@ export const shouldHandleContactDetailClick = detailPanel.shouldHandleClick;
 export type ContactDetailPayload = DetailSelectPayload<Contact> & {
   bookId: string | null;
   favorite?: boolean;
+  addressId?: string | null;
 };
 
 type TransitionDoc = Document & {
@@ -27,10 +28,17 @@ const withViewTransition = (callback: () => void) => {
 export const getSelectedContactFromUrl = () => ({
   contactId: detailPanel.getUrlParam("contact"),
   bookId: detailPanel.getUrlParam("contactBook"),
+  addressId: detailPanel.getUrlParam("address"),
 });
 
 /** Dispatches detail selection updates to all listening contacts islands. */
-const dispatchContactDetailSelect = (contact: Contact | null, contactId: string | null, bookId: string | null, favorite?: boolean) => {
+const dispatchContactDetailSelect = (
+  contact: Contact | null,
+  contactId: string | null,
+  bookId: string | null,
+  favorite?: boolean,
+  addressId?: string | null,
+) => {
   window.dispatchEvent(
     new CustomEvent(CONTACT_DETAIL_EVENT, {
       detail: {
@@ -38,6 +46,7 @@ const dispatchContactDetailSelect = (contact: Contact | null, contactId: string 
         itemKey: contactId,
         bookId,
         favorite,
+        addressId,
       } as ContactDetailPayload,
     }),
   );
@@ -46,14 +55,21 @@ const dispatchContactDetailSelect = (contact: Contact | null, contactId: string 
 /** Reconciles mounted list/detail islands after another owner commits the URL. */
 export const syncContactDetailFromUrl = () => {
   const selected = getSelectedContactFromUrl();
-  dispatchContactDetailSelect(null, selected.contactId, selected.bookId);
+  dispatchContactDetailSelect(null, selected.contactId, selected.bookId, undefined, selected.addressId);
 };
 
 type ContactHistoryMode = "push" | "replace";
 
-const commitSelectedContactUrl = (contactId: string | null, bookId: string | null, historyMode: ContactHistoryMode) => {
+const commitSelectedContactUrl = (
+  contactId: string | null,
+  bookId: string | null,
+  historyMode: ContactHistoryMode,
+  addressId?: string | null,
+) => {
   const url = new URL(window.location.href);
   url.searchParams.delete("contactOutcome");
+  if (contactId && bookId && addressId) url.searchParams.set("address", addressId);
+  else url.searchParams.delete("address");
   if (contactId) {
     url.searchParams.set("contact", contactId);
   } else {
@@ -74,10 +90,11 @@ export const setSelectedContactInUrl = (config: {
   contact?: Contact | null;
   favorite?: boolean;
   history?: ContactHistoryMode;
+  addressId?: string | null;
 }) => {
   withViewTransition(() => {
-    commitSelectedContactUrl(config.contactId, config.bookId, config.history ?? "push");
-    dispatchContactDetailSelect(config.contact ?? null, config.contactId, config.bookId, config.favorite);
+    commitSelectedContactUrl(config.contactId, config.bookId, config.history ?? "push", config.addressId);
+    dispatchContactDetailSelect(config.contact ?? null, config.contactId, config.bookId, config.favorite, config.addressId);
   });
 };
 

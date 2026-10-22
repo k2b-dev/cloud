@@ -17,6 +17,9 @@ export const detailMessages = i18n.define({
       composeToContactDescription: "Opens Mail with this contact as the recipient.",
       // Shared
       unnamedContact: "Unnamed contact",
+      addressUnavailableTitle: "Address unavailable",
+      addressUnavailableDescription: "This address was removed or you cannot edit it. Return to the contact to see the current details.",
+      backToContact: "Back to contact",
       cancel: "Cancel",
       retry: "Retry",
       tryAgain: "Try again",
@@ -217,6 +220,10 @@ export const detailMessages = i18n.define({
       composeToContactDescription: "Öffnet Mail mit diesem Kontakt als Empfänger.",
       // Shared
       unnamedContact: "Kontakt ohne Namen",
+      addressUnavailableTitle: "Adresse nicht verfügbar",
+      addressUnavailableDescription:
+        "Diese Adresse wurde entfernt oder du darfst sie nicht bearbeiten. Kehre zum Kontakt zurück, um die aktuellen Angaben zu sehen.",
+      backToContact: "Zurück zum Kontakt",
       cancel: "Abbrechen",
       retry: "Erneut versuchen",
       tryAgain: "Erneut versuchen",

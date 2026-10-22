@@ -159,10 +159,13 @@ export default ssr<AuthContext>(async (c) => {
             id="contacts-detail-panel"
             open={hasDesktopDetailSelection}
             width="lg"
+            maxWidth={760}
+            phone={c.req.query("address") ? "page" : "sheet"}
             viewTransitionName="contacts-detail-panel-shell"
           >
             <ContactDetailPanel
               initialContact={selectedPublicContact}
+              initialAddressId={c.req.query("address") ?? null}
               initialContactId={initialSelectedContactId}
               initialBookId={initialSelectedBookId}
               initialNotesPage={initialNotesPage}

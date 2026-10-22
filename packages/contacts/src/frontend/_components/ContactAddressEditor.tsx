@@ -1,139 +1,165 @@
 import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { announce, Button, InlineGuidance, PanelDialog, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, onCleanup, Show } from "solid-js";
+import { announce, Button, InlineGuidance, TextInput, useLocale } from "@k2b/ui";
+import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact } from "../../service";
 import { resolveContactName } from "../../shared";
 import { readErrorMessage } from "./api";
 import { AddressStreetField } from "./ContactUpsertForm.fields";
-import { buildContactPayload, contactToUpsertDraft, editAddressField } from "./ContactUpsertForm.model";
+import { buildAddressPayload, contactToUpsertDraft, editAddressField } from "./ContactUpsertForm.model";
 import { contactFormErrorMessage, contactFormMessages, contactRowLabels } from "./contact-form-messages";
 import { detailMessages } from "./detail-messages";
 
 type Props = {
   contact: Contact;
-  /** Position of the address in the contact. */
-  index: number;
+  addressId: string;
   geoAvailability?: GeoAvailabilityData;
   onCancel: () => void;
   onSaved: (contact: Contact) => void;
+  onReload: () => void;
 };
 
-/** Focused editor for one address, opened from its map. The rest of the contact is sent unchanged. */
+/** One address in the contact workspace, guarded by the revision read on entry. */
 export default function ContactAddressEditor(props: Props) {
   const locale = useLocale();
   const t = () => contactFormMessages.resolve([locale()]).t;
   const detail = () => detailMessages.resolve([locale()]).t;
-  const draft = contactToUpsertDraft(props.contact, contactRowLabels(t()));
-  const [row, setRow] = createSignal(draft.addresses[props.index]!);
+  const contact = props.contact;
+  const index = contact.addresses.findIndex((address) => address.id === props.addressId);
+  const draft = contactToUpsertDraft(contact, contactRowLabels(t()));
+  const [row, setRow] = createSignal(draft.addresses[index]!);
+  const [conflict, setConflict] = createSignal(false);
+  let disposed = false;
+  let heading: HTMLHeadingElement | undefined;
+  onMount(() => heading?.focus({ preventScroll: true }));
   const [saveError, setSaveError] = createSignal<string | null>(null);
   const edit = (field: Parameters<typeof editAddressField>[1], value: string) =>
     setRow((current) => editAddressField(current, field, value));
 
-  type AddressPatch = { addresses: NonNullable<ReturnType<typeof buildContactPayload>["addresses"]>; expectedUpdatedAt: string };
+  type AddressPatch = { addresses: ReturnType<typeof buildAddressPayload>; expectedUpdatedAt: string };
   const saveMutation = mutations.create<Contact, AddressPatch>({
     mutation: async (payload, { abortSignal }) => {
       const response = await apiClient.books[":bookId"].contacts[":contactId"].$patch(
-        { param: { bookId: props.contact.bookId, contactId: props.contact.id }, json: payload },
+        { param: { bookId: contact.bookId, contactId: contact.id }, json: payload },
         { init: { signal: abortSignal } },
       );
+      if (response.status === 409) setConflict(true);
       if (!response.ok) throw new Error(await readErrorMessage(response, detail().updateContactFailed));
       return await response.json();
     },
     onSuccess: (contact) => {
+      if (disposed) return;
       props.onSaved(contact);
       announce(detail().contactUpdated);
     },
     onError: (error) => setSaveError(error.message),
   });
-  onCleanup(() => saveMutation.abort());
+  onCleanup(() => {
+    disposed = true;
+    saveMutation.abort();
+  });
 
   const save = () => {
-    if (saveMutation.loading()) return;
+    if (saveMutation.loading() || conflict()) return;
     setSaveError(null);
     try {
-      // Only the addresses travel, guarded by the revision this dialog read: a concurrent edit answers 409.
-      const { addresses } = buildContactPayload({
-        ...draft,
-        addresses: draft.addresses.map((current, index) => (index === props.index ? row() : current)),
+      // Only the addresses travel, guarded by the revision this editor read: a concurrent edit answers 409.
+      const [edited] = buildAddressPayload([row()]);
+      if (!edited) throw new Error(t().validationAddressFields);
+      const addresses = contact.addresses.map((address, rowIndex) => {
+        if (rowIndex === index) return edited;
+        const { label, recipientName, companyName, line1, line2, postalCode, city, stateRegion, countryCode } = address;
+        return { label, recipientName, companyName, line1, line2, postalCode, city, stateRegion, countryCode };
       });
-      void saveMutation.mutate({ addresses: addresses ?? [], expectedUpdatedAt: props.contact.updatedAt });
+      void saveMutation.mutate({ addresses, expectedUpdatedAt: contact.updatedAt });
     } catch (error) {
       setSaveError(contactFormErrorMessage(error, t(), t().prepareFailed));
     }
   };
 
   return (
-    <PanelDialog>
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <PanelDialog.Header
-          title={t().editAddressTitle}
-          subtitle={[row().label, resolveContactName(props.contact, detail().unnamedContact)].filter(Boolean).join(" · ")}
-          icon="ti ti-map-pin"
-          close={props.onCancel}
-        />
-        <PanelDialog.Body>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div class="sm:col-span-3">
-              <AddressStreetField row={row()} setRow={setRow} geoAvailability={props.geoAvailability} />
-            </div>
-            <div class="sm:col-span-3">
-              <TextInput
-                label={t().addressLine2}
-                placeholder={t().addressLine2Placeholder}
-                icon="ti ti-home"
-                value={() => row().line2}
-                onValueChange={(value) => edit("line2", value)}
-              />
-            </div>
-            <TextInput
-              label={t().postalCode}
-              placeholder={t().postalCodePlaceholder}
-              icon="ti ti-map-pin"
-              required
-              value={() => row().postalCode}
-              onValueChange={(value) => edit("postalCode", value)}
-            />
-            <TextInput
-              label={t().city}
-              placeholder={t().cityPlaceholder}
-              icon="ti ti-building-community"
-              required
-              value={() => row().city}
-              onValueChange={(value) => edit("city", value)}
-            />
-            <TextInput
-              label={t().countryCode}
-              placeholder={t().countryCodePlaceholder}
-              icon="ti ti-flag"
-              value={() => row().countryCode}
-              onValueChange={(value) => edit("countryCode", value)}
-            />
-          </div>
-        </PanelDialog.Body>
-        <PanelDialog.Footer>
-          <div class="flex w-full flex-col gap-2">
-            <div class="h-16 shrink-0 overflow-y-auto" tabindex={saveError() ? 0 : undefined}>
-              <Show when={saveError()}>
-                {(error) => (
-                  <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
-                    {error()}
-                  </InlineGuidance>
-                )}
-              </Show>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <Button size="sm" loading={saveMutation.loading()} disabled={saveMutation.loading()} onClick={save}>
-                {t().save}
-              </Button>
-              <Button variant="secondary" size="sm" onClick={props.onCancel}>
-                {t().cancel}
-              </Button>
-            </div>
-          </div>
-        </PanelDialog.Footer>
+    <form
+      class="contacts-address-editor"
+      aria-label={t().editAddressTitle}
+      onSubmit={(event) => {
+        event.preventDefault();
+        save();
+      }}
+    >
+      <div class="contacts-address-editor__heading">
+        <div class="contacts-address-editor__titlebar">
+          <Button class="contacts-address-editor__phone-back" variant="ghost" aria-label={detail().backToContact} onClick={props.onCancel}>
+            <i class="ti ti-chevron-left" aria-hidden="true" />
+          </Button>
+          <h2 ref={heading} tabindex="-1">
+            {t().editAddressTitle}
+          </h2>
+        </div>
+        <p class="text-sm text-dimmed">{[row().label, resolveContactName(contact, detail().unnamedContact)].filter(Boolean).join(" · ")}</p>
       </div>
-    </PanelDialog>
+      <fieldset class="contacts-address-editor__fields" disabled={saveMutation.loading()}>
+        <div class="contacts-address-editor__wide contacts-address-editor__street">
+          <AddressStreetField row={row()} setRow={setRow} geoAvailability={props.geoAvailability} />
+          <Show when={props.geoAvailability?.configured === false}>
+            <p class="contacts-address-editor__empty-hint" aria-hidden="true" />
+          </Show>
+        </div>
+        <div class="contacts-address-editor__wide">
+          <TextInput
+            icon={false}
+            label={t().focusedAddressLine2}
+            placeholder={t().focusedAddressLine2Placeholder}
+            value={() => row().line2}
+            onValueChange={(value) => edit("line2", value)}
+          />
+        </div>
+        <TextInput
+          icon={false}
+          label={t().focusedPostalCode}
+          placeholder={t().postalCodePlaceholder}
+          required
+          value={() => row().postalCode}
+          onValueChange={(value) => edit("postalCode", value)}
+        />
+        <TextInput
+          icon={false}
+          label={t().city}
+          placeholder={t().cityPlaceholder}
+          required
+          value={() => row().city}
+          onValueChange={(value) => edit("city", value)}
+        />
+        <TextInput
+          icon={false}
+          label={t().focusedCountry}
+          required
+          placeholder={t().countryCodePlaceholder}
+          value={() => row().countryCode}
+          onValueChange={(value) => edit("countryCode", value)}
+        />
+      </fieldset>
+      <div class="flex flex-wrap items-center gap-2">
+        <Button type="submit" loading={saveMutation.loading()} disabled={saveMutation.loading() || conflict()}>
+          {t().save}
+        </Button>
+        <Button variant="secondary" onClick={props.onCancel} data-workspace-detail-close="">
+          {t().cancel}
+        </Button>
+      </div>
+      <Show when={saveError()}>
+        {(error) => (
+          <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+            {error()}
+            <Show when={conflict()}>
+              <p>{t().addressConflictHint}</p>
+              <Button variant="secondary" onClick={props.onReload}>
+                {t().reloadContact}
+              </Button>
+            </Show>
+          </InlineGuidance>
+        )}
+      </Show>
+    </form>
   );
 }

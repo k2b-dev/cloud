@@ -8,7 +8,6 @@ import type { Contact, ContactRef, ContactTree, ContactTreeNode } from "../../se
 import { resolveContactName } from "../../shared";
 import AddMemberDialog from "./AddMemberDialog";
 import { readErrorMessage } from "./api";
-import ContactAddressEditor from "./ContactAddressEditor";
 import ContactUpsertForm from "./ContactUpsertForm";
 import { contactOutcomeHref } from "./contact-outcome";
 import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySource } from "./contact-query-source";
@@ -190,21 +189,14 @@ export const createContactDetailActions = (config: {
     announce(t().contactUpdated);
   };
 
-  const openAddressEditor = async (selectedContact: Contact, index: number) => {
-    const updated = await dialogCore.open<Contact | undefined>(
-      (close) => (
-        <ContactAddressEditor
-          contact={selectedContact}
-          index={index}
-          geoAvailability={config.geoAvailability}
-          onCancel={() => close(undefined)}
-          onSaved={(contact) => close(contact)}
-        />
-      ),
-      panelDialogOptions,
-    );
-    if (!updated || disposed) return;
-    setSelectedContactInUrl({ contactId: updated.id, bookId: updated.bookId, contact: updated });
+  const openAddressEditor = (selectedContact: Contact, addressId: string) => {
+    if (disposed || !canEdit() || selectedContact.bookId !== config.bookId()) return;
+    setSelectedContactInUrl({
+      contactId: selectedContact.id,
+      bookId: selectedContact.bookId,
+      contact: selectedContact,
+      addressId,
+    });
   };
 
   const selectOrgTreeNode = (node: ContactTreeNode, fallbackBookId: string) => {

@@ -179,7 +179,7 @@ export default function ContactAddressMap(props: Props) {
           <i class="ti ti-directions" aria-hidden="true" /> {t().planRoute}
         </ButtonLink>
         <Show when={props.canEdit}>
-          <Button variant="secondary" size="sm" onClick={() => props.onEdit()}>
+          <Button variant="secondary" size="sm" onClick={() => props.onEdit()} data-contact-address-edit={props.address.id}>
             <i class="ti ti-pencil" aria-hidden="true" /> {t().editAddress}
           </Button>
         </Show>
