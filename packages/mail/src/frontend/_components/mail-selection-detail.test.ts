@@ -12,7 +12,11 @@ const state: ConversationRowState = {
 };
 const row = mailTestRow("one", { ...state, unread: false, flagged: false });
 const all = () => true;
-const detail = (overrides: Partial<ConversationRowState> = {}) => ({ conversationRowState: { ...state, ...overrides } });
+const detail = (overrides: Partial<ConversationRowState> = {}) => ({
+  conversationRowState: { ...state, ...overrides },
+  collaborationState: null,
+  conversationLocalTags: null,
+});
 
 describe("mailRowOlderThanDetail", () => {
   test("matches the complete state even with only 100 message bodies (#1510)", () => {
@@ -67,6 +71,13 @@ describe("mailRowOlderThanDetail", () => {
   });
 
   test("a failed state read requests recovery rather than certifying a stale row", () => {
-    expect(mailRowOlderThanDetail(row, { conversationRowState: null }, all)).toBe(true);
+    expect(mailRowOlderThanDetail(row, { ...detail(), conversationRowState: null }, all)).toBe(true);
   });
+});
+
+test("a newer revision in another detail section still invalidates the row", () => {
+  expect(mailRowOlderThanDetail(row, { ...detail(), collaborationState: { revision: 4 }, conversationLocalTags: null }, all)).toBe(true);
+  expect(
+    mailRowOlderThanDetail(row, { ...detail(), collaborationState: null, conversationLocalTags: { conversationRevision: 4 } }, all),
+  ).toBe(true);
 });

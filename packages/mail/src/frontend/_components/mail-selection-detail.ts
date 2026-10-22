@@ -63,7 +63,10 @@ export const emptyMailSelection = (): MailSelection => ({
 /** Compare the full conversation state in the detail response using the list's folder and search scopes. */
 export const mailRowOlderThanDetail = (
   item: Pick<MailListItem, "revision" | "messageCount" | "flagged" | "unread" | "unreadFolderIds" | "activeFolderIds"> | undefined,
-  detail: Pick<MailSelectionDetail, "conversationRowState">,
+  detail: Pick<MailSelectionDetail, "conversationRowState"> & {
+    collaborationState: { revision: number } | null;
+    conversationLocalTags: { conversationRevision: number } | null;
+  },
   listed: (folderId: string | null) => boolean,
   unreadFolders: ReadonlySet<string> | null = null,
 ): boolean => {
@@ -76,7 +79,9 @@ export const mailRowOlderThanDetail = (
   const sameFolders = (left: readonly string[], right: readonly string[]) =>
     left.length === right.length && left.every((folderId) => right.includes(folderId));
   return (
-    state.revision > item.revision ||
+    // Independent detail reads may observe a later revision than the aggregate did.
+    Math.max(state.revision, detail.collaborationState?.revision ?? 0, detail.conversationLocalTags?.conversationRevision ?? 0) >
+      item.revision ||
     state.messageCount !== item.messageCount ||
     !sameFolders(active, item.activeFolderIds) ||
     !sameFolders(unread, item.unreadFolderIds) ||
