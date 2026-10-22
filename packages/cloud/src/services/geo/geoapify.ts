@@ -12,11 +12,13 @@ import {
   type GeoProvenance,
   type GeoReverseInput,
 } from "../../contracts/geo";
+import type { GeoRouteOptions, GeoRouteResolvedStop } from "../../contracts/geo-route";
 import { EMPTY_NETWORK_ALLOWLIST } from "../../shared/network-address";
 import { createAllowedNetworkFetch } from "../allowed-network-fetch";
 import { GEO_TIMEOUT_MS } from "./bucket";
-import { GEO_MAX_JSON_BYTES } from "./cache";
+import { GEO_MAX_JSON_BYTES, GEO_MAX_ROUTE_RESPONSE_BYTES } from "./cache";
 import { GeoError } from "./errors";
+import { parseGeoapifyRoute } from "./geoapify-route";
 
 const GEOAPIFY_ORIGIN = "https://api-eu.geoapify.com";
 const guardedFetch = createAllowedNetworkFetch(EMPTY_NETWORK_ALLOWLIST);
@@ -26,6 +28,7 @@ export class GeoProviderError extends GeoError {
     code: "GEO_PROVIDER_FAILED" | "GEO_BUSY",
     readonly charge: "none" | "known" | "unknown",
     readonly keyRejected = false,
+    readonly referenceDistanceMeters?: number,
   ) {
     super(code, {
       ...(code === "GEO_BUSY" ? { retryAfterSeconds: 1 } : {}),
@@ -120,18 +123,21 @@ export const geoNeverSent = (error: unknown): boolean => {
 };
 export class GeoapifyAdapter {
   constructor(private readonly options: { fetch?: GeoFetch; now?: () => Date } = {}) {}
-  private async request(
+  private async requestJson(
     fn: GeoFunction,
     params: URLSearchParams,
     key: string,
     locale: string,
     callerSignal?: AbortSignal,
     body?: unknown,
-  ): Promise<RawProperties[]> {
-    const url = new URL(fn === "places" ? "/v2/places" : `/v1/geocode/${fn === "geocode" ? "search" : fn}`, GEOAPIFY_ORIGIN);
+  ): Promise<unknown> {
+    const url = new URL(
+      fn === "route" ? "/v1/routing" : fn === "places" ? "/v2/places" : `/v1/geocode/${fn === "geocode" ? "search" : fn}`,
+      GEOAPIFY_ORIGIN,
+    );
     const lang = new Intl.Locale(locale).language;
     params.set("lang", lang);
-    params.set("format", "geojson");
+    params.set("format", fn === "route" ? "json" : "geojson");
     // Places v2 has one GeoJSON representation and does not accept a format parameter.
     if (fn === "places") params.delete("format");
     url.search = params.toString();
@@ -163,16 +169,38 @@ export class GeoapifyAdapter {
           [401, 403].includes(response.status),
         );
       }
-      // Same cap as the public result: no unbounded provider response or JSON allocation.
-      const json = await readBoundedJson(response, GEO_MAX_JSON_BYTES);
+      // Bound raw provider responses; routing geometry is compacted to the smaller public result budget.
+      const json = await readBoundedJson(response, fn === "route" ? GEO_MAX_ROUTE_RESPONSE_BYTES : GEO_MAX_JSON_BYTES);
       if (signal.aborted) throw new GeoProviderError("GEO_PROVIDER_FAILED", "unknown");
       if (!json.ok || JSON.stringify(json.data).includes(JSON.stringify(key).slice(1, -1)))
-        throw new GeoProviderError("GEO_PROVIDER_FAILED", "known");
-      const parsed = collection.safeParse(json.data);
-      if (!parsed.success) throw new GeoProviderError("GEO_PROVIDER_FAILED", "known");
-      return parsed.data.features.map((feature) => feature.properties);
+        throw new GeoProviderError("GEO_PROVIDER_FAILED", fn === "route" ? "unknown" : "known");
+      return json.data;
     }
     throw new GeoProviderError("GEO_PROVIDER_FAILED", "none");
+  }
+  private async request(fn: GeoFunction, params: URLSearchParams, key: string, locale: string, signal?: AbortSignal, body?: unknown) {
+    const parsed = collection.safeParse(await this.requestJson(fn, params, key, locale, signal, body));
+    if (!parsed.success) throw new GeoProviderError("GEO_PROVIDER_FAILED", "known");
+    return parsed.data.features.map((feature) => feature.properties);
+  }
+  async route(
+    stops: readonly GeoRouteResolvedStop[],
+    options: GeoRouteOptions,
+    optimize: boolean,
+    key: string,
+    locale: string,
+    signal?: AbortSignal,
+  ) {
+    const params = new URLSearchParams({
+      waypoints: stops.map((stop) => `${stop.point.lat},${stop.point.lon}`).join("|"),
+      mode: options.mode === "bike" ? "bicycle" : options.mode === "walk" ? "walk" : "drive",
+      units: "metric",
+      traffic: "free_flow",
+      intermediate_waypoint_mode: "stopover",
+      optimize_stops: String(optimize),
+    });
+    if (options.avoid?.length) params.set("avoid", options.avoid.join("|"));
+    return parseGeoapifyRoute(await this.requestJson("route", params, key, locale, signal), stops, options, optimize, this.provenance());
   }
   private provenance() {
     return geoProvenance((this.options.now ?? (() => new Date()))());

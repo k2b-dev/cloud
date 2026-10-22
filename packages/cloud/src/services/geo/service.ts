@@ -22,6 +22,7 @@ import { GeoError, limitExceeded } from "./errors";
 import { GeoapifyAdapter, GeoProviderError } from "./geoapify";
 import { createGeoLedger, geoPeriods } from "./ledger";
 import { cutGeoWindow, decodePolyline6, locateOnGeoLine, simplifyGeoLine } from "./polyline";
+import { createGeoRouteService } from "./route-service";
 import { type GeoConfig, geoPlan, readGeoConfig } from "./settings";
 
 export type GeoContext = Partial<Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale" | "signal" | "requestId">>;
@@ -168,7 +169,9 @@ export const createGeoService = (
       await release();
     }
   };
+  const routes = createGeoRouteService({ configured, adapter, cache, bucket, ledger, now, recordTransition });
   return {
+    ...routes,
     async autocomplete(input: GeoAutocompleteInput, context: GeoContext) {
       const settings = await configured(context);
       const value = parse(GeoAutocompleteInputSchema, input);

@@ -4,7 +4,7 @@ import { requestCacheRedis } from "../request-cache-redis";
 import { busy, GeoError } from "./errors";
 
 export type GeoRedis = { send(command: string, args: string[]): Promise<unknown> };
-export const GEO_TIMEOUT_MS = { autocomplete: 2500, geocode: 5000, reverse: 5000, places: 8000, tiles: 10000 } as const;
+export const GEO_TIMEOUT_MS = { autocomplete: 2500, geocode: 5000, reverse: 5000, places: 8000, route: 15000, tiles: 10000 } as const;
 // One token bucket for all paid APIs; a separate lease set for each function.
 const ACQUIRE = `
 local clock = redis.call('TIME')

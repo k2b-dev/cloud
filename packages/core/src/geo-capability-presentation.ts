@@ -18,6 +18,26 @@ export const geoCapabilityPresentation = {
       "Liefert den Cloud-Kartenstil mit lokalen Kachel- und Schrift-URLs. Kacheln kosten 0,25 Credits im Betreiberbudget. Die Namensnennung bleibt sichtbar.",
     input: { theme: "Helle oder dunkle Karte; Beschriftungen nutzen die Sprache der Anfrage." },
   },
+  "route.calculate": {
+    title: "Route berechnen",
+    description:
+      "Berechnet 2–26 Stopps mit Auto, Fahrrad oder zu Fuß, mit Meidewünschen und Optionen je Etappe. Beim Optimieren bleiben Start und Ziel fest. Liefert Meter, Sekunden, polyline6 und Herkunft. Mehrdeutige Adressen erfordern eine Auswahl. Reserviert vorab die ganze Kette mit einem Referenz-Streckenrahmen (ohne Angabe 500 km je Etappe); Überschreitungen werden gebucht und stoppen die Kette. Keine garantierte Grenze der Anbieterrechnung. Namensnennung beibehalten.",
+    input: {
+      plan: "Routenplan mit 2–26 Stopps, Optionen, Etappenoptionen und optionaler Optimierung.",
+      "plan.distanceAllowanceMeters":
+        "Referenz-Streckenrahmen in Metern je Etappe; ohne Angabe 500000. Überschreitungen werden gebucht und stoppen die Kette.",
+    },
+  },
+  "route.update": {
+    title: "Routenänderung vorschlagen",
+    description:
+      "Ändert eine mitgelieferte Route zustandslos: Stopp an gewählter oder bester von bis zu drei Stellen einfügen, verschieben, Zwischenstopps optimieren oder Optionen insgesamt/je Etappe ändern. Etappenoptionen folgen beim Umsortieren ihrem Startstopp. Liefert Route, vorher/nachher und Unterschied. Einfügen minimiert zusätzliche Sekunden, danach Meter. Bekannte Überschreitungen werden gebucht; kein automatischer Wiederholungsversuch. Namensnennung beibehalten.",
+    input: {
+      route: "Vollständige gespeicherte Route einschließlich Herkunft und Etappen.",
+      changes: "Genau eine vorgeschlagene Änderung.",
+      distanceAllowanceMeters: "Optionaler neuer Referenz-Streckenrahmen in Metern je Etappe; ohne Angabe gilt der bisherige Rahmen.",
+    },
+  },
   "address.autocomplete": {
     title: "Adressen vorschlagen",
     description:

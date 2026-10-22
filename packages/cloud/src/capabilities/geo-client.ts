@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import { geoContract } from "../contracts/geo";
 import { geoMapContract } from "../contracts/geo-map";
+import { geoRouteContract } from "../contracts/geo-route";
 import { type CapabilityCaller, invokeCapabilityWithDataSchema } from "./server";
 
 /** Calls Core using the caller's interactive identity, invocation transport, or durable mandate. */
@@ -9,6 +10,18 @@ export const geoClient = {
     invokeCapabilityWithDataSchema(
       { kind: "query", appId: "core", capabilityId: geoMapContract.style.id, input },
       geoMapContract.style.data,
+      caller,
+    ),
+  calculateRoute: (input: z.input<typeof geoRouteContract.calculateRoute.input>, caller: CapabilityCaller) =>
+    invokeCapabilityWithDataSchema(
+      { kind: "query", appId: "core", capabilityId: geoRouteContract.calculateRoute.id, input },
+      geoRouteContract.calculateRoute.data,
+      caller,
+    ),
+  updateRoute: (input: z.input<typeof geoRouteContract.updateRoute.input>, caller: CapabilityCaller) =>
+    invokeCapabilityWithDataSchema(
+      { kind: "query", appId: "core", capabilityId: geoRouteContract.updateRoute.id, input },
+      geoRouteContract.updateRoute.data,
       caller,
     ),
   autocomplete: (input: z.input<typeof geoContract.autocomplete.input>, caller: CapabilityCaller) =>
