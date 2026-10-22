@@ -399,6 +399,21 @@ describe("recoverable trash lifecycle", () => {
     expect((await f.service.restoreTrash(testCall(actor), { baseId: base.id, id })).entry.path).toBe("manual.txt");
     expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
   });
+  test("a conflicting filesystem-only restore leaves no stale adoption snapshot", async () => {
+    const f = fixture();
+    const path = "home/alice/trash/manual.txt";
+    f.nodes.set(path, node(path));
+    const id = `fs:${Buffer.from("trash/manual.txt").toString("base64url")}`;
+    await expect(f.service.restoreTrash(testCall(actor), { baseId: base.id, id, path: "report.txt" })).rejects.toMatchObject({
+      code: "path_conflict",
+    });
+    expect(f.rows.size).toBe(0);
+    expect(f.calls).not.toContain("intent");
+    f.nodes.set(path, { ...node(path), size: 9, modified: "2026-09-20T10:00:00Z" });
+    const restored = await f.service.restoreTrash(testCall(actor), { baseId: base.id, id, path: "recovered.txt" });
+    expect(restored.entry.path).toBe("recovered.txt");
+    expect(f.calls.filter((call) => call === "move")).toHaveLength(1);
+  });
   test("rechecks location identity after taking the root lock", async () => {
     const f = fixture();
     f.setBeforeLock(async () => {

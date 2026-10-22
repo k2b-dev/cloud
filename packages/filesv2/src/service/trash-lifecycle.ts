@@ -336,7 +336,10 @@ export function createTrashLifecycle(authorize: TrashAuthority, store = trash, l
               await current.check(joinPath(current.basePath, path), node.directory ? 5 : 4);
               if (!input.path) throw new FilesError("restore_destination_required");
               userPath(input.path);
-              await authorize(actor, input.baseId, input.path, "write-parent");
+              const destination = await authorize(actor, input.baseId, input.path, "write-parent");
+              sameLocation(current, destination);
+              // A refused target must not register a snapshot of an otherwise untracked trash item.
+              if (await stat(current.root, joinPath(current.basePath, input.path))) throw new FilesError("path_conflict", 409);
               call.requestAbort?.throwIfAborted();
               row = await store.create({
                 id: crypto.randomUUID(),
