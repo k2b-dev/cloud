@@ -30,7 +30,12 @@ export const GeoAddressSchema = z
     point: GeoPointSchema.describe("Resolved geographic point."),
     formatted: z.string().max(600).describe("Formatted provider address."),
     confidence: z.number().min(0).max(1).nullable().describe("Provider match confidence, or null when unavailable."),
-    buildingConfidence: z.number().min(0).max(1).nullable().describe("Provider certainty that this point is the requested building; null without a house-number match."),
+    buildingConfidence: z
+      .number()
+      .min(0)
+      .max(1)
+      .nullable()
+      .describe("Provider certainty that this point is the requested building; null without a house-number match."),
     provenance: GeoProvenanceSchema.describe("Provider source and required attribution."),
   })
   .strict();

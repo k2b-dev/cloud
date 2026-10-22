@@ -28,6 +28,7 @@ export const mapAddress = (index = 0): GeoAddress => ({
   formatted: `${index + 1} Beispielgasse, Ulm`,
   point: { lat: 48.398 + index * 0.0015, lon: 9.989 + index * 0.002 },
   confidence: 1,
+  buildingConfidence: 1,
   provenance: mapProvenance,
 });
 export const mapPlaces = (count = 6, prefix = "museum"): GeoPlace[] =>
