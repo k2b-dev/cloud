@@ -17,7 +17,7 @@ import { useHistoryMessages } from "./history-messages";
 import { itemHistoryRequest, itemHistorySource, sharePeriod } from "./history-requests";
 import ItemHistory from "./ItemHistory";
 import { useFilesMessages } from "./messages";
-import ShareHistory from "./ShareHistory";
+import ShareHistory, { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
 import { referenceHref } from "./urls";
 
 /** Identity, quick preview, facts, actions and versions of one entry; a summary for several. */
@@ -463,6 +463,11 @@ function EntryHistory(props: {
       return { share, creatorName: share.createdBy || null };
     });
   });
+  const loadAccess = (request: ShareAccessRequest, signal: AbortSignal) => loadShareAccess(request, period(), signal, h().accessFailed);
+  // One access query per loaded link feeds both its facts and the item's history.
+  const links = createShareAccess({ shares: itemShares, period, load: loadAccess });
+  const linksState = () =>
+    shares.pages().length === 0 && !shares.error() ? "loading" : shares.hasMore() || shares.error() ? "partial" : "complete";
   const revoke = async (share: ShareView) => {
     const source = shareSource();
     const result = await revokeShare(share, t().revokeFailed);
@@ -477,13 +482,7 @@ function EntryHistory(props: {
       <Show when={props.history}>
         {(history) => (
           <>
-            <ShareHistory
-              env={history().env}
-              shares={itemShares()}
-              period={period()}
-              load={(request, signal) => loadShareAccess(request, period(), signal, h().accessFailed)}
-              onRevoke={revoke}
-            />
+            <ShareHistory env={history().env} shares={links()} period={period()} load={loadAccess} onRevoke={revoke} />
             <Show when={shares.loading() || shares.error() || shares.hasMore()}>
               <div role="group" aria-label={h().publicLink}>
                 <Show when={shares.loading() && itemShares().length === 0}>
@@ -531,6 +530,7 @@ function EntryHistory(props: {
               history().initial?.source === itemHistorySource(request()) ? { source: source(), page: history().initial!.page } : null
             }
             load={(cursor, signal) => loadItemHistory(request(), cursor, signal, h().historyFailed)}
+            links={{ items: links(), state: linksState() }}
             activityHref={history().activityHref(props.base.id, props.entry.path, props.entry.directory ? "folder" : "item")}
             onChanged={() => props.onChanged(props.entry.path)}
           />

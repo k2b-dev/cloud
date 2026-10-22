@@ -1,22 +1,69 @@
-import { query } from "@k2b/stdlib/solid";
+import { type InfiniteQueryResult, query } from "@k2b/stdlib/solid";
 import { Button, DetailPanel, prompts, Skeleton, toast, useLocale } from "@k2b/ui";
-import { createSignal, For, Match, Show, Switch } from "solid-js";
-import type { ShareAccessCounts } from "../activity-contracts";
+import { type Accessor, createMemo, createSignal, For, Match, mapArray, Show, Switch } from "solid-js";
+import type { ShareAccessCounts, ShareAccessPeriod } from "../activity-contracts";
 import type { ShareView } from "../contracts";
+import { HistoryAvatar, MetaLine } from "./ActivityView";
 import { useBrowserMessages } from "./browser-messages";
-import { formatDate, formatTime, type HistoryEnvironment } from "./history-actions";
-import { useHistoryMessages } from "./history-messages";
+import { formatDate, formatTime, type HistoryEnvironment, type MetaPart } from "./history-actions";
+import { type HistoryMessages, useHistoryMessages } from "./history-messages";
 
 export type ShareAccessRequest = { shareId: string; networkAfter?: string; timelineAfter?: string };
 
+export type ShareAccessLoad = (request: ShareAccessRequest, signal: AbortSignal) => Promise<ShareAccessCounts>;
+
+/**
+ * One public link with its access counts. The first page holds the link's facts and newest access periods; further
+ * pages follow the timeline cursor. The facts and the item's history read this one query, so neither repeats a request.
+ */
+export type ShareAccess = {
+  share: ShareView;
+  creatorName: string | null;
+  access: InfiniteQueryResult<ShareAccessCounts>;
+};
+
+/**
+ * Access queries for exactly the links the parent loaded. Only shares the person created, or every share for an
+ * administrator, reach this; nothing here widens it. Each link loads once when it appears; a removed link or a new
+ * period aborts its request.
+ */
+export function createShareAccess(options: {
+  shares: Accessor<readonly { share: ShareView; creatorName: string | null }[]>;
+  /** Calendar dates of the counted window, inclusive; the load adds them to every request. */
+  period: Accessor<{ from: string; to: string }>;
+  initial?: Readonly<Record<string, ShareAccessCounts>>;
+  load: ShareAccessLoad;
+}): Accessor<readonly ShareAccess[]> {
+  const ids = createMemo(() => options.shares().map((item) => item.share.id));
+  const queries = createMemo(
+    mapArray(ids, (shareId) => {
+      const source = () => JSON.stringify([shareId, options.period().from, options.period().to]);
+      const initial = options.initial?.[shareId];
+      const access = query.createInfinite({
+        source,
+        initial: initial ? { source: source(), pages: [initial] } : undefined,
+        loadPage: (_key, { cursor, abortSignal }) => options.load(cursor ? { shareId, timelineAfter: cursor } : { shareId }, abortSignal),
+        getNextCursor: (page: ShareAccessCounts) => page.timeline.next,
+      });
+      return [shareId, access] as const;
+    }),
+  );
+  return createMemo(() => {
+    const byId = new Map(queries());
+    return options.shares().flatMap((item) => {
+      const access = byId.get(item.share.id);
+      return access ? [{ ...item, access }] : [];
+    });
+  });
+}
+
 export type ShareHistoryProps = {
   env: HistoryEnvironment;
-  /** Only shares the person created, or every share for an administrator. The parent decides; nothing here widens it. */
-  shares: readonly { share: ShareView; creatorName: string | null }[];
-  /** Calendar dates of the counted window, inclusive; the parent adds them to every request. */
+  shares: readonly ShareAccess[];
+  /** Calendar dates of the counted window, inclusive. */
   period: { from: string; to: string };
-  initial?: Readonly<Record<string, ShareAccessCounts>>;
-  load: (request: ShareAccessRequest, signal: AbortSignal) => Promise<ShareAccessCounts>;
+  /** Further network pages of one link. */
+  load: ShareAccessLoad;
   /** Existing revoke action; without it the button is not shown. */
   onRevoke?: (share: ShareView) => Promise<void>;
 };
@@ -40,9 +87,9 @@ export default function ShareHistory(props: ShareHistoryProps) {
                 <ShareFacts
                   share={item.share}
                   creatorName={item.creatorName}
+                  access={item.access}
                   env={props.env}
                   period={props.period}
-                  initial={props.initial?.[item.share.id]}
                   load={props.load}
                   onRevoke={props.onRevoke}
                 />
@@ -56,27 +103,26 @@ export default function ShareHistory(props: ShareHistoryProps) {
 }
 
 type Network = ShareAccessCounts["networks"]["items"][number];
-type Period = ShareAccessCounts["timeline"]["items"][number];
-const PERIOD_ROWS = 3;
 
 function ShareFacts(props: {
   share: ShareView;
   creatorName: string | null;
+  access: ShareAccess["access"];
   env: HistoryEnvironment;
   period: { from: string; to: string };
-  initial?: ShareAccessCounts;
-  load: ShareHistoryProps["load"];
+  load: ShareAccessLoad;
   onRevoke?: ShareHistoryProps["onRevoke"];
 }) {
   const h = useHistoryMessages();
   const b = useBrowserMessages();
   const locale = useLocale();
   const source = () => JSON.stringify([props.share.id, props.period.from, props.period.to]);
-  const facts = query.create({
-    source,
-    initial: props.initial ? { source: source(), data: props.initial } : undefined,
-    load: (_key, { abortSignal }) => props.load({ shareId: props.share.id }, abortSignal),
-  });
+  // The first page holds the facts; older timeline pages only extend the item's history.
+  const facts = {
+    data: () => props.access.pages()[0],
+    error: () => props.access.error(),
+    refresh: () => props.access.refresh(),
+  };
   // Further network pages, most used first as the reader orders them; a network is never a person.
   const [more, setMore] = createSignal<{ source: string; items: Network[]; next: string | null } | null>(null);
   const [moreLoading, setMoreLoading] = createSignal(false);
@@ -111,40 +157,6 @@ function ShareFacts(props: {
     } finally {
       setMoreLoading(false);
     }
-  };
-  // Access over time: the reader's newest UTC buckets, more on request; one page of 50 at a time.
-  const [olderPeriods, setOlderPeriods] = createSignal<{ source: string; items: Period[]; next: string | null } | null>(null);
-  const [periodsExpanded, setPeriodsExpanded] = createSignal(false);
-  const [periodsLoading, setPeriodsLoading] = createSignal(false);
-  const [periodsFailed, setPeriodsFailed] = createSignal(false);
-  const olderPeriodPage = () => (olderPeriods()?.source === source() ? olderPeriods() : null);
-  const periods = (): Period[] => [...(facts.data()?.timeline.items ?? []), ...(olderPeriodPage()?.items ?? [])];
-  const periodsNext = () => (olderPeriodPage() ? olderPeriodPage()!.next : (facts.data()?.timeline.next ?? null));
-  const shownPeriods = () => (periodsExpanded() ? periods() : periods().slice(0, PERIOD_ROWS));
-  const loadOlderPeriods = async () => {
-    const cursor = periodsNext();
-    if (!cursor || periodsLoading()) return;
-    const key = source();
-    setPeriodsLoading(true);
-    setPeriodsFailed(false);
-    try {
-      const page = await props.load({ shareId: props.share.id, timelineAfter: cursor }, new AbortController().signal);
-      if (key !== source()) return;
-      setOlderPeriods({ source: key, items: [...(olderPeriodPage()?.items ?? []), ...page.timeline.items], next: page.timeline.next });
-    } catch {
-      if (key === source()) setPeriodsFailed(true);
-    } finally {
-      setPeriodsLoading(false);
-    }
-  };
-  const periodLabel = (period: Period) => {
-    const date = formatDate(period.date, locale(), props.env);
-    if (period.granularity === "day") return date;
-    const end = new Date(Date.parse(period.date) + 3_600_000).toISOString();
-    return h()
-      .periodHour.replace("{date}", date)
-      .replace("{from}", formatTime(period.date, locale(), props.env))
-      .replace("{to}", formatTime(end, locale(), props.env));
   };
   const revoke = async () => {
     if (!props.onRevoke || revoking()) return;
@@ -253,40 +265,6 @@ function ShareFacts(props: {
                   </p>
                 </Show>
               </Show>
-              <Show when={periods().length > 0}>
-                <p class="filesv2-share-facts__subtitle">{h().accessOverTime}</p>
-                <ul class="filesv2-share-facts__periods">
-                  <For each={shownPeriods()}>
-                    {(period) => (
-                      <li>
-                        <time datetime={period.date}>{periodLabel(period)}</time>
-                        <span>
-                          {h().periodCounts.replace("{pages}", String(period.pages)).replace("{downloads}", String(period.downloads))}
-                          <Show when={period.knownNetworks !== null}>
-                            {` · ${h().periodNetworks.replace("{count}", String(period.knownNetworks))}`}
-                          </Show>
-                        </span>
-                      </li>
-                    )}
-                  </For>
-                </ul>
-                <Show when={!periodsExpanded() && periods().length > PERIOD_ROWS}>
-                  <Button size="xs" variant="text" aria-expanded="false" onClick={() => setPeriodsExpanded(true)}>
-                    {h().showOlderUnknown}
-                  </Button>
-                </Show>
-                <Show when={(periodsExpanded() || periods().length <= PERIOD_ROWS) && (periodsNext() || periodsFailed())}>
-                  <Button size="xs" variant="text" loading={periodsLoading()} onClick={() => void loadOlderPeriods()}>
-                    {periodsFailed() ? h().retry : h().loadOlderAccess}
-                  </Button>
-                </Show>
-                <Show when={periodsFailed()}>
-                  <p class="filesv2-item-history__line" role="alert">
-                    <i class="ti ti-alert-triangle" aria-hidden="true" />
-                    {h().accessFailed}
-                  </p>
-                </Show>
-              </Show>
             </>
           )}
         </Match>
@@ -307,5 +285,67 @@ function ShareFacts(props: {
         )}
       </Show>
     </div>
+  );
+}
+
+/** "18.10., 22:00 to 23:00" for an hourly bucket; a rolled-up day names the whole day. Never a request time. */
+export function periodLabel(period: ShareAccessPeriod, h: HistoryMessages, locale: string, env: HistoryEnvironment) {
+  const date = formatDate(period.date, locale, env);
+  if (period.granularity === "day") return h.periodDay.replace("{date}", date);
+  const end = new Date(Date.parse(period.date) + 3_600_000).toISOString();
+  return h.periodHour
+    .replace("{date}", date)
+    .replace("{from}", formatTime(period.date, locale, env))
+    .replace("{to}", formatTime(end, locale, env));
+}
+
+/** Whether a period holds anything to say; empty buckets stay out of the history. */
+export const periodHasAccess = (period: ShareAccessPeriod) => period.pages + period.downloads + period.passwordFailed > 0;
+
+/**
+ * One access period of a public link as a history row: the link avatar, what visitors did, the bucket's time range and
+ * the link. Counts and shortened networks only; a network is never a person, and the row has no action.
+ */
+export function AccessRow(props: { share: ShareView; period: ShareAccessPeriod; env: HistoryEnvironment }) {
+  const h = useHistoryMessages();
+  const locale = useLocale();
+  const networks = () =>
+    props.period.knownNetworks === null
+      ? null
+      : props.period.overflow
+        ? h().moreThanNetworks.replace("{count}", String(props.period.knownNetworks))
+        : String(props.period.knownNetworks);
+  const text = () => {
+    const period = props.period;
+    if (period.pages > 0) {
+      const count = networks();
+      return count === null
+        ? h().accessPages.replace("{pages}", String(period.pages))
+        : h().accessPagesNetworks.replace("{pages}", String(period.pages)).replace("{networks}", count);
+    }
+    if (period.downloads > 0) return h().accessDownloads.replace("{count}", String(period.downloads));
+    return h().accessPasswords.replace("{count}", String(period.passwordFailed));
+  };
+  const meta = (): MetaPart[] => {
+    const period = props.period;
+    const parts: MetaPart[] = [
+      { kind: "time", iso: period.date, text: periodLabel(period, h(), locale(), props.env) },
+      { kind: "text", text: props.share.title ? h().linkNamed.replace("{title}", props.share.title) : h().publicLink },
+    ];
+    if (period.pages > 0 && period.downloads > 0)
+      parts.push({ kind: "text", text: h().periodDownloads.replace("{count}", String(period.downloads)) });
+    if ((period.pages > 0 || period.downloads > 0) && period.passwordFailed > 0)
+      parts.push({ kind: "text", text: h().periodPasswords.replace("{count}", String(period.passwordFailed)) });
+    return parts;
+  };
+  return (
+    <article class="filesv2-history-row" data-variant="detail" data-kind="link-access">
+      <HistoryAvatar actor={{ kind: "visitor", label: h().linkVisitor, person: null, agent: null, icon: "ti ti-link" }} size="xs" />
+      <div class="filesv2-history-row__text">
+        <p class="filesv2-history-row__sentence">{text()}</p>
+        <MetaLine parts={meta()} />
+      </div>
+      <div class="filesv2-history-row__action" />
+    </article>
   );
 }
