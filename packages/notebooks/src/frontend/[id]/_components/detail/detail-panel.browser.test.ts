@@ -30,7 +30,8 @@ beforeAll(async () => {
     entrypoints: [resolve(import.meta.dir, "detail-panel.browser-harness.tsx")],
     target: "browser",
     conditions: ["browser"],
-    format: "iife",
+    // The PDF dialog includes MapLibre's import.meta worker URLs.
+    format: "esm",
     plugins: [
       {
         name: "solid-detail-panel-test",
@@ -77,7 +78,7 @@ beforeAll(async () => {
       if (path.startsWith("/api/")) return new Response("Unexpected harness API", { status: 404 });
       if (path === "/harness.js") return new Response(bundle, { headers: { "content-type": "application/javascript; charset=utf-8" } });
       return new Response(
-        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" style="height:100dvh;display:flex;flex-direction:column"></div><script src="/harness.js"></script></body></html>`,
+        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" style="height:100dvh;display:flex;flex-direction:column"></div><script type="module" src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
