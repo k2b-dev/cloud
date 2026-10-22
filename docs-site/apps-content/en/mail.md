@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Mail
@@ -426,6 +426,19 @@ including messages the automation already processed on arrival, so their steps
 run again. After a retry backfill, the automation menu in Mail settings offers
 **Retry failed messages** to continue with another retry. **Automations >
 Activity** shows how the new runs ended.
+
+## Format outgoing messages
+
+Markdown messages keep horizontal rules (`---`), strikethrough (`~~old~~`),
+and left, center, or right table-column alignment in previews and sent HTML.
+Table separators use `:---`, `:---:`, or `---:` for alignment. The same rules
+apply to signatures, inserted snippets, and copies in the provider's Drafts
+folder. A mailbox's custom CSS can override the default table alignment.
+
+Mail displays formulas such as `=SUM(Amount)` as text and never calculates
+them. Math source such as `$x^2$` also stays literal. The text alternative
+keeps formula source; a draft in plain-text format keeps its body unchanged.
+Notebooks continues to calculate its table formulas.
 
 ## Write signatures and snippets
 

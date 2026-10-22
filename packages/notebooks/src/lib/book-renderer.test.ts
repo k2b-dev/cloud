@@ -345,6 +345,8 @@ describe("Notebook Book HTML", () => {
   });
 
   test("tables use the existing formula engine and progress semantics", () => {
+    // Mail's opt-in renderer must not alter Notebook's formula output in the same process.
+    expect(markdown.renderSync("| Value |\n| --- |\n| =2*2 |", { links: "plain", output: "email" })).toContain("=2*2");
     const { html } = render("| Item | Value | Twice |\n| --- | ---: | ---: |\n| A | 2 | =Value*2 |\n| B | 3 | =Value*2 |");
     expect(html).toContain('class="md-table"');
     expect(html).toContain("md-formula-ok");

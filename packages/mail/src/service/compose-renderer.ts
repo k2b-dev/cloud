@@ -126,7 +126,10 @@ h3 { font-size: 17px; line-height: 1.35; margin: 18px 0 8px; }
 a { color: #0f766e; text-decoration: underline; }
 ul, ol { margin: 0 0 12px; padding-left: 24px; }
 table { border-collapse: collapse; margin: 12px 0; width: 100%; }
-th, td { border: 1px solid #d4d4d8; overflow-wrap: break-word; padding: 6px 8px; text-align: left; word-break: normal; }
+th, td { border: 1px solid #d4d4d8; overflow-wrap: break-word; padding: 6px 8px; word-break: normal; }
+:where(th, td) { text-align: left; }
+:where(th[align="center"], td[align="center"]) { text-align: center; }
+:where(th[align="right"], td[align="right"]) { text-align: right; }
 th a, td a, th code, td code { overflow-wrap: anywhere; }
 code { background-color: #f4f4f5; border-radius: 3px; font-family: monospace; padding: 1px 3px; }
 blockquote { border-left: 3px solid #d4d4d8; color: #52525b; margin: 0 0 12px; padding-left: 12px; }
@@ -545,7 +548,7 @@ const withoutDashSetextHeadings = (source: string): string => {
 
 /** Mail's Markdown-to-email-HTML rule shared by sending, Preview and provider draft copies. */
 export const mailMarkdownHtml = (source: string): string =>
-  sanitizeHtml(markdown.renderSync(withoutDashSetextHeadings(source), { links: "plain" }), EMAIL_HTML_SANITIZE_OPTIONS);
+  sanitizeHtml(markdown.renderSync(withoutDashSetextHeadings(source), { links: "plain", output: "email" }), EMAIL_HTML_SANITIZE_OPTIONS);
 
 /** Rewrites only block separators and quotes; every other token keeps its raw source. Null means too many spacers. */
 const withBlankLinePlaceholders = (source: string, placeholder: string, quietBefore?: number): { source: string; count: number } | null => {
@@ -907,7 +910,7 @@ const sanitizedElements = (elements: HtmlElement[]): HtmlElement[] | null => {
 /**
  * Reports what the email renderer removes from HTML written into a Markdown body or template: unsupported
  * elements, attributes such as `class` and `style`, and link addresses it does not allow. Markdown images
- * are reported like `<img>`; other Markdown formatting that email leaves out, such as strikethrough, is not.
+ * are reported like `<img>`; supported Markdown formatting needs no warning.
  * The body is analyzed as written, so a draft, its preview, and a template with the same source report the
  * same list.
  */

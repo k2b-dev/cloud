@@ -18,6 +18,16 @@ describe("email HTML sanitizer", () => {
     );
   });
 
+  test("keeps strikethrough and table alignment without admitting event handlers or unsafe links", () => {
+    expect(sanitizeEmailHtml('<del class="x" onclick="alert(1)">old</del>')).toBe("<del>old</del>");
+    expect(sanitizeEmailHtml('<table><tr><th align="center">A</th><td align="right" onclick="alert(1)">B</td></tr></table>')).toBe(
+      '<table><tr><th align="center">A</th><td align="right">B</td></tr></table>',
+    );
+    expect(sanitizeEmailHtml('<del><a href="javascript:alert(1)">old</a></del><script>alert(1)</script>')).toBe(
+      "<del><a>old</a></del>",
+    );
+  });
+
   test("keeps phone links like web and mail links", () => {
     for (const href of ["tel:+49731000000", "tel:+49 731 000000", "tel:+49-731-000000;ext=12", "tel:(0731)%20000.000", "TEL:110"]) {
       expect(sanitizeEmailHtml(`<a href="${href}">Call</a>`)).toBe(`<a href="${href}">Call</a>`);
