@@ -14,7 +14,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, createUniqueId, For, Match, onCleanup, Show, Switch } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import type { BaseSummary, EntryResult, FileEntry, FileVersion, SharePage, ShareView } from "../contracts";
@@ -34,8 +34,10 @@ import ShareHistory, { createShareAccess, type ShareAccessRequest } from "./Shar
 import { referenceHref } from "./urls";
 
 /**
- * Identity, one action bar, a compact preview, facts, versions and history of one entry; a summary for several.
+ * Identity, a compact preview, one action bar, facts, versions and history of one entry; a summary for several.
  * The bar keeps the open action, download, share and favorite in view; every other action sits in its menu.
+ * Phones show the approved short form: no preview, Info only with the change date and the version count, which opens
+ * the versions in place, and no Info for a folder.
  */
 export default function FileInspector(props: {
   base: BaseSummary;
@@ -65,6 +67,7 @@ export default function FileInspector(props: {
 }) {
   const t = useBrowserMessages();
   const f = useFilesMessages();
+  const h = useHistoryMessages();
   const identity = (path: string) => JSON.stringify([props.base.id, props.base.locationKey, path]);
   const [favoriteOverride, setFavoriteOverride] = createSignal<{ key: string; favorite: boolean } | null>(null);
   const [favoritePending, setFavoritePending] = createSignal<string | null>(null);
@@ -231,149 +234,204 @@ export default function FileInspector(props: {
               </>
             }
           >
-            {(item) => (
-              <>
-                <DetailPanel.Header
-                  icon={fileIcon(item())}
-                  title={<span class="break-all">{item().name}</span>}
-                  subtitle={
-                    <span>
-                      {kindLabel(item())}
-                      <Show when={!item().directory}>
-                        {" · "}
-                        <Format.Bytes value={item().size} />
+            {(item) => {
+              // One versions request feeds the Info count on phones and the versions list.
+              const versions = createVersions(() => props.base, item);
+              const versionsId = createUniqueId();
+              const [versionsOpen, setVersionsOpen] = createSignal(false);
+              const versionsLabel = () =>
+                versions.state() === "ready"
+                  ? String((versions.items()?.length ?? 0) + 1)
+                  : versions.state() === "error"
+                    ? h().versionsFailed
+                    : t().loadingDetails;
+              const toggleVersions = () => {
+                const open = !versionsOpen();
+                setVersionsOpen(open);
+                if (open) requestAnimationFrame(() => document.getElementById(versionsId)?.scrollIntoView({ block: "nearest" }));
+              };
+              return (
+                <>
+                  <DetailPanel.Header
+                    icon={fileIcon(item())}
+                    title={<span class="break-all">{item().name}</span>}
+                    subtitle={
+                      <span>
+                        {kindLabel(item())}
+                        <Show when={!item().directory}>
+                          {" · "}
+                          <Format.Bytes value={item().size} />
+                        </Show>
+                      </span>
+                    }
+                    actions={close}
+                  />
+                  <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
+                    <div class="filesv2-inspector-lead">
+                      {/* A compact glimpse; the bar's Preview, a click on an image, or the menu opens it large. */}
+                      <Show when={!item().directory && previewKind(item())}>
+                        <div class="filesv2-inspector-preview" role="group" aria-label={t().preview}>
+                          <Show
+                            keyed
+                            when={
+                              previewKind(item()) === "image"
+                                ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])
+                                : null
+                            }
+                            fallback={
+                              <Show keyed when={revision(item())}>
+                                {(key) => (
+                                  <FilePreview
+                                    variant="plain"
+                                    previewLines={5}
+                                    onExpandPreview={() => void expand(item())}
+                                    baseId={props.base.id}
+                                    locationKey={props.base.locationKey}
+                                    entry={item()}
+                                    onDownload={() => props.onDownload([item()])}
+                                    onNotPdf={() => setNotPdf(key)}
+                                  />
+                                )}
+                              </Show>
+                            }
+                          >
+                            <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
+                              <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
+                            </button>
+                          </Show>
+                        </div>
                       </Show>
-                    </span>
-                  }
-                  actions={close}
-                  primaryActions={
-                    <>
-                      <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onOpen(item())}>
-                        <i
-                          class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"}
-                          aria-hidden="true"
-                        />
-                        {item().directory
-                          ? t().open
-                          : props.editable?.(item())
-                            ? props.canEdit === false || item().actions?.write === false
-                              ? t().openReadOnly
-                              : t().edit
-                            : t().preview}
-                      </Button>
-                      <Tooltip.Anchor content={f().download}>
-                        <IconButton
-                          size="sm"
-                          variant="ghost"
-                          label={f().download}
-                          disabled={props.busy}
-                          onClick={() => props.onDownload([item()])}
-                        >
-                          <i class="ti ti-download" aria-hidden="true" />
-                        </IconButton>
-                      </Tooltip.Anchor>
-                      <Show when={props.onShare && item().actions?.share !== false}>
-                        <Tooltip.Anchor content={t().shareSelection}>
+                      <div class="filesv2-inspector-actions">
+                        <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onOpen(item())}>
+                          <i
+                            class={item().directory ? "ti ti-folder-open" : props.editable?.(item()) ? "ti ti-pencil" : "ti ti-eye"}
+                            aria-hidden="true"
+                          />
+                          {item().directory
+                            ? t().open
+                            : props.editable?.(item())
+                              ? props.canEdit === false || item().actions?.write === false
+                                ? t().openReadOnly
+                                : t().edit
+                              : t().preview}
+                        </Button>
+                        <Tooltip.Anchor content={f().download}>
                           <IconButton
                             size="sm"
                             variant="ghost"
-                            label={t().shareSelection}
+                            label={f().download}
                             disabled={props.busy}
-                            onClick={() => props.onShare?.(item())}
+                            onClick={() => props.onDownload([item()])}
                           >
-                            <i class="ti ti-share" aria-hidden="true" />
+                            <i class="ti ti-download" aria-hidden="true" />
                           </IconButton>
                         </Tooltip.Anchor>
-                      </Show>
-                      <Tooltip.Anchor content={favorite(item()) ? t().removeFavorite : t().addFavorite}>
-                        <IconButton
-                          size="sm"
-                          variant="ghost"
-                          class="filesv2-favorite"
-                          data-favorite={favorite(item()) ? "true" : undefined}
-                          label={favorite(item()) ? t().removeFavorite : t().addFavorite}
-                          aria-pressed={favorite(item())}
-                          disabled={props.busy || !!favoritePending()}
-                          onClick={() => void toggleFavorite(item(), !favorite(item()))}
-                        >
-                          <i class="ti ti-star filesv2-favorite__star" aria-hidden="true" />
-                          <Show when={favorite(item())}>
-                            <i class="ti ti-x filesv2-favorite__remove" aria-hidden="true" />
-                          </Show>
-                        </IconButton>
-                      </Tooltip.Anchor>
-                      <Dropdown.Root items={menuItems(item())} label={t().actions} menuClass="filesv2-inspector-menu" phone="sheet">
-                        <Dropdown.Trigger iconOnly size="sm" label={t().actions}>
-                          <i class="ti ti-dots" aria-hidden="true" />
-                        </Dropdown.Trigger>
-                      </Dropdown.Root>
-                    </>
-                  }
-                />
-                <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
-                  {/* A compact glimpse; the bar's Preview, a click on an image, or the menu opens it large. */}
-                  <Show when={!item().directory && previewKind(item())}>
-                    <div class="filesv2-inspector-preview" role="group" aria-label={t().preview}>
-                      <Show
-                        keyed
-                        when={
-                          previewKind(item()) === "image"
-                            ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])
-                            : null
-                        }
-                        fallback={
-                          <Show keyed when={revision(item())}>
-                            {(key) => (
-                              <FilePreview
-                                variant="plain"
-                                previewLines={5}
-                                onExpandPreview={() => void expand(item())}
-                                baseId={props.base.id}
-                                locationKey={props.base.locationKey}
-                                entry={item()}
-                                onDownload={() => props.onDownload([item()])}
-                                onNotPdf={() => setNotPdf(key)}
-                              />
-                            )}
-                          </Show>
-                        }
-                      >
-                        <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
-                          <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
-                        </button>
-                      </Show>
+                        <Show when={props.onShare && item().actions?.share !== false}>
+                          <Tooltip.Anchor content={t().shareSelection}>
+                            <IconButton
+                              size="sm"
+                              variant="ghost"
+                              label={t().shareSelection}
+                              disabled={props.busy}
+                              onClick={() => props.onShare?.(item())}
+                            >
+                              <i class="ti ti-share" aria-hidden="true" />
+                            </IconButton>
+                          </Tooltip.Anchor>
+                        </Show>
+                        <Tooltip.Anchor content={favorite(item()) ? t().removeFavorite : t().addFavorite}>
+                          <IconButton
+                            size="sm"
+                            variant="ghost"
+                            class="filesv2-favorite"
+                            data-favorite={favorite(item()) ? "true" : undefined}
+                            label={favorite(item()) ? t().removeFavorite : t().addFavorite}
+                            aria-pressed={favorite(item())}
+                            disabled={props.busy || !!favoritePending()}
+                            onClick={() => void toggleFavorite(item(), !favorite(item()))}
+                          >
+                            <i class="ti ti-star filesv2-favorite__star" aria-hidden="true" />
+                            <Show when={favorite(item())}>
+                              <i class="ti ti-x filesv2-favorite__remove" aria-hidden="true" />
+                            </Show>
+                          </IconButton>
+                        </Tooltip.Anchor>
+                        <Dropdown.Root items={menuItems(item())} label={t().actions} menuClass="filesv2-inspector-menu" phone="sheet">
+                          <Dropdown.Trigger iconOnly size="sm" label={t().actions}>
+                            <i class="ti ti-dots" aria-hidden="true" />
+                          </Dropdown.Trigger>
+                        </Dropdown.Root>
+                      </div>
                     </div>
-                  </Show>
-                  <DetailPanel.Summary title={t().info}>
-                    <DescriptionList
-                      layout="rows"
-                      size="sm"
-                      items={[
-                        {
-                          term: t().location,
-                          description: (
-                            <span class="break-words" title={`${props.base.name} / ${item().path}`}>
-                              {place(item())}
-                            </span>
-                          ),
-                        },
-                        { term: f().modified, description: <Format.DateTime value={item().modified} /> },
-                        ...(!item().directory ? [{ term: f().size, description: <Format.Bytes value={item().size} /> }] : []),
-                      ]}
+                    <DetailPanel.Summary
+                      title={t().info}
+                      class={item().directory ? "filesv2-inspector-info filesv2-inspector-info--folder" : "filesv2-inspector-info"}
+                    >
+                      {/* Rows marked for one form only; phones keep the change date and the version count. */}
+                      <DescriptionList
+                        layout="rows"
+                        size="sm"
+                        items={[
+                          {
+                            term: t().location,
+                            description: (
+                              <span class="break-words" data-inspector-only="desktop" title={`${props.base.name} / ${item().path}`}>
+                                {place(item())}
+                              </span>
+                            ),
+                          },
+                          { term: f().modified, description: <Format.DateTime value={item().modified} /> },
+                          ...(!item().directory
+                            ? [
+                                {
+                                  term: f().size,
+                                  description: (
+                                    <span data-inspector-only="desktop">
+                                      <Format.Bytes value={item().size} />
+                                    </span>
+                                  ),
+                                },
+                                {
+                                  term: t().versions,
+                                  description: (
+                                    <span data-inspector-only="phone">
+                                      <Show when={versions.state() !== "off"} fallback={t().versionsUnavailable}>
+                                        <Button
+                                          size="xs"
+                                          variant="text"
+                                          aria-label={`${h().showVersions} (${versionsLabel()})`}
+                                          aria-expanded={versionsOpen()}
+                                          aria-controls={versionsId}
+                                          onClick={toggleVersions}
+                                        >
+                                          {versionsLabel()}
+                                        </Button>
+                                      </Show>
+                                    </span>
+                                  ),
+                                },
+                              ]
+                            : []),
+                        ]}
+                      />
+                    </DetailPanel.Summary>
+                    <EntryHistory
+                      base={props.base}
+                      entry={item()}
+                      resourceId={details.data()?.result.resourceId}
+                      busy={props.busy}
+                      onChanged={props.onChanged}
+                      onOpen={props.onOpen}
+                      locale={locale()}
+                      history={props.history}
+                      versions={versions}
+                      versionsId={versionsId}
+                      versionsOpen={versionsOpen()}
                     />
-                  </DetailPanel.Summary>
-                  <EntryHistory
-                    base={props.base}
-                    entry={item()}
-                    resourceId={details.data()?.result.resourceId}
-                    busy={props.busy}
-                    onChanged={props.onChanged}
-                    locale={locale()}
-                    history={props.history}
-                  />
-                </DetailPanel.Body>
-              </>
-            )}
+                  </DetailPanel.Body>
+                </>
+              );
+            }}
           </Show>
         }
       >
@@ -414,6 +472,29 @@ export default function FileInspector(props: {
   );
 }
 
+/** The saved versions of a file, read once for the Info count and the versions list. */
+function createVersions(base: () => BaseSummary, entry: () => FileEntry) {
+  const t = useBrowserMessages();
+  const key = () => JSON.stringify([base().id, base().locationKey, entry().path, entry().modified]);
+  const versions = query.create({
+    source: key,
+    enabled: () => base().versioningEnabled && !entry().directory,
+    load: async (key, { abortSignal }) => {
+      const response = await apiClient.bases[":baseId"].versions.$get(
+        { param: { baseId: base().id }, query: { path: entry().path } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) return apiFailure(response, t().detailsFailed);
+      return { key, items: (await response.json()) as FileVersion[] };
+    },
+  });
+  /** `null` until the list of this exact file state arrived; then never an empty stand-in for "unknown". */
+  const items = createMemo(() => (versions.data()?.key === key() ? (versions.data()?.items ?? null) : null));
+  const state = () => (!base().versioningEnabled ? "off" : items() ? "ready" : versions.error() ? "error" : "loading");
+  return { items, state, refresh: () => versions.refresh() };
+}
+type Versions = ReturnType<typeof createVersions>;
+
 /**
  * Order of the detail as approved: public links, versions of a file, then the item's history. Versions and history
  * share one version list, so history rows can name "Version 2" with the number the list shows.
@@ -424,14 +505,17 @@ function EntryHistory(props: {
   resourceId?: string;
   busy?: boolean;
   onChanged: (selectPath?: string | null) => void;
+  onOpen: (entry: FileEntry) => void;
   locale: string;
   history?: InspectorHistory;
+  versions: Versions;
+  versionsId: string;
+  versionsOpen: boolean;
 }) {
   const h = useHistoryMessages();
   const t = useBrowserMessages();
-  const [versions, setVersions] = createSignal<readonly FileVersion[]>([]);
-  // Numbers count the versions the list holds, oldest first; the current content comes after them.
-  const ordered = createMemo(() => [...versions()].sort((a, b) => a.created.localeCompare(b.created)));
+  // Numbers count the saved versions, oldest first; the current content comes after them.
+  const ordered = createMemo(() => [...(props.versions.items() ?? [])].sort((a, b) => a.created.localeCompare(b.created)));
   const versionNumbers = createMemo(() => new Map(ordered().map((version, index) => [version.id, index + 1])));
   /**
    * An entry names a version only by an exact version ID, or as the current content when its new revision is the
@@ -533,15 +617,19 @@ function EntryHistory(props: {
         )}
       </Show>
       <Show when={!props.entry.directory}>
-        <VersionsSection
-          base={props.base}
-          entry={props.entry}
-          busy={props.busy}
-          onChanged={props.onChanged}
-          locale={props.locale}
-          onVersions={setVersions}
-          number={(version) => versionNumbers().get(version.id)}
-        />
+        {/* Phones open this list from the version count in Info; wider panels always show it. */}
+        <div id={props.versionsId} class="filesv2-inspector-versions" data-open={props.versionsOpen ? "true" : undefined}>
+          <VersionsSection
+            base={props.base}
+            entry={props.entry}
+            busy={props.busy}
+            onChanged={props.onChanged}
+            onOpen={props.onOpen}
+            locale={props.locale}
+            versions={props.versions}
+            number={(version) => versionNumbers().get(version.id)}
+          />
+        </div>
       </Show>
       <Show when={props.history}>
         {(history) => (
@@ -569,32 +657,18 @@ function VersionsSection(props: {
   entry: FileEntry;
   busy?: boolean;
   onChanged: (selectPath?: string | null) => void;
+  onOpen: (entry: FileEntry) => void;
   locale: string;
-  onVersions?: (versions: readonly FileVersion[]) => void;
+  versions: Versions;
   number?: (version: FileVersion) => number | undefined;
 }) {
   const h = useHistoryMessages();
   const t = useBrowserMessages();
   const f = useFilesMessages();
   const [busy, setBusy] = createSignal(false);
-  const versions = query.create({
-    source: () => JSON.stringify([props.base.id, props.base.locationKey, props.entry.path, props.entry.modified]),
-    enabled: () => props.base.versioningEnabled,
-    load: async (key, { abortSignal }) => {
-      const response = await apiClient.bases[":baseId"].versions.$get(
-        { param: { baseId: props.base.id }, query: { path: props.entry.path } },
-        { init: { signal: abortSignal } },
-      );
-      if (!response.ok) return apiFailure(response, t().detailsFailed);
-      return { key, items: (await response.json()) as FileVersion[] };
-    },
-  });
-  const items = createMemo(() =>
-    versions.data()?.key === JSON.stringify([props.base.id, props.base.locationKey, props.entry.path, props.entry.modified])
-      ? (versions.data()?.items ?? [])
-      : [],
-  );
-  createEffect(() => props.onVersions?.(items()));
+  const items = () => props.versions.items() ?? [];
+  // Newest first, below the current file, as the approved list reads.
+  const listed = createMemo(() => [...items()].sort((a, b) => b.created.localeCompare(a.created)));
   const run = async (work: () => Promise<void>) => {
     if (busy() || props.busy) return;
     setBusy(true);
@@ -623,7 +697,7 @@ function VersionsSection(props: {
       });
       if (!response.ok) await apiFailure(response, f().unavailable);
       toast.success(t().versionCommented);
-      await versions.refresh();
+      await props.versions.refresh();
     });
   };
   const restore = (version: FileVersion) =>
@@ -677,53 +751,80 @@ function VersionsSection(props: {
         title={t().versions}
         icon="ti ti-versions"
         tone="neutral"
-        count={props.base.versioningEnabled ? items().length : undefined}
+        count={props.versions.state() === "ready" ? items().length + 1 : undefined}
       >
-        <Show when={props.base.versioningEnabled} fallback={<p class="text-xs text-dimmed">{t().versionsUnavailable}</p>}>
-          <Show
-            when={!versions.loading() || items().length}
-            fallback={<Placeholder state="loading" align="left" class="px-0 py-1" description={t().loadingDetails} />}
-          >
-            <Show when={items().length} fallback={<p class="text-xs text-dimmed">{t().noVersions}</p>}>
-              <div class="flex flex-col gap-1">
-                <For each={items()}>
-                  {(version) => (
-                    <DetailPanel.Action
-                      type="button"
-                      title={
-                        props.number?.(version)
-                          ? `${h().versionN.replace("{n}", String(props.number(version)))} · ${when(version.created)}`
-                          : t().versionLabel(when(version.created))
-                      }
-                      description={version.comment ? `${version.comment}${version.author ? ` · ${version.author}` : ""}` : undefined}
-                      leading={<i class="ti ti-history" aria-hidden="true" />}
-                      trailing={<Format.Bytes value={version.size} />}
-                      disabled={busy() || props.busy}
-                      onClick={() => (props.entry.actions?.write === false ? void downloadVersion(version) : void comment(version))}
-                      menuLabel={`${t().actions}: ${when(version.created)}`}
-                      menuItems={[
-                        {
-                          disabled: props.entry.actions?.write === false,
-                          label: t().commentVersion,
-                          icon: "ti ti-message",
-                          action: () => void comment(version),
-                        },
-                        { label: t().downloadVersion, icon: "ti ti-download", action: () => void downloadVersion(version) },
-                        {
-                          disabled: props.entry.actions?.write === false,
-                          label: t().restoreVersion,
-                          icon: "ti ti-arrow-back-up",
-                          action: () => void restore(version),
-                        },
-                        { label: t().restoreVersionAs, icon: "ti ti-file-plus", action: () => void restoreAs(version) },
-                      ]}
-                    />
-                  )}
-                </For>
-              </div>
+        <Switch>
+          <Match when={props.versions.state() === "off"}>
+            <p class="text-xs text-dimmed">{t().versionsUnavailable}</p>
+          </Match>
+          <Match when={props.versions.state() === "error"}>
+            <Placeholder
+              state="error"
+              align="left"
+              class="px-0 py-1"
+              description={h().versionsFailed}
+              action={
+                <Button size="xs" variant="text" onClick={() => void props.versions.refresh()}>
+                  {t().retry}
+                </Button>
+              }
+            />
+          </Match>
+          <Match when={props.versions.state() === "loading"}>
+            <Placeholder state="loading" align="left" class="px-0 py-1" description={t().loadingDetails} />
+          </Match>
+          <Match when={props.versions.state() === "ready"}>
+            <div class="flex flex-col gap-1">
+              {/* The file as it is now, numbered after the saved versions as the history counts it. */}
+              <DetailPanel.Action
+                type="button"
+                title={`${h().versionN.replace("{n}", String(items().length + 1))} · ${h().versionCurrent}`}
+                description={when(props.entry.modified)}
+                leading={<i class="ti ti-file" aria-hidden="true" />}
+                trailing={<Format.Bytes value={props.entry.size} />}
+                disabled={props.busy}
+                onClick={() => props.onOpen(props.entry)}
+              />
+              <For each={listed()}>
+                {(version) => (
+                  <DetailPanel.Action
+                    type="button"
+                    title={
+                      props.number?.(version)
+                        ? `${h().versionN.replace("{n}", String(props.number(version)))} · ${when(version.created)}`
+                        : t().versionLabel(when(version.created))
+                    }
+                    description={version.comment ? `${version.comment}${version.author ? ` · ${version.author}` : ""}` : undefined}
+                    leading={<i class="ti ti-history" aria-hidden="true" />}
+                    trailing={<Format.Bytes value={version.size} />}
+                    disabled={busy() || props.busy}
+                    onClick={() => (props.entry.actions?.write === false ? void downloadVersion(version) : void comment(version))}
+                    menuLabel={`${t().actions}: ${when(version.created)}`}
+                    menuItems={[
+                      {
+                        disabled: props.entry.actions?.write === false,
+                        label: t().commentVersion,
+                        icon: "ti ti-message",
+                        action: () => void comment(version),
+                      },
+                      { label: t().downloadVersion, icon: "ti ti-download", action: () => void downloadVersion(version) },
+                      {
+                        disabled: props.entry.actions?.write === false,
+                        label: t().restoreVersion,
+                        icon: "ti ti-arrow-back-up",
+                        action: () => void restore(version),
+                      },
+                      { label: t().restoreVersionAs, icon: "ti ti-file-plus", action: () => void restoreAs(version) },
+                    ]}
+                  />
+                )}
+              </For>
+            </div>
+            <Show when={!items().length}>
+              <p class="text-xs text-dimmed">{t().noVersions}</p>
             </Show>
-          </Show>
-        </Show>
+          </Match>
+        </Switch>
       </DetailPanel.Section>
     </DetailPanel.Group>
   );

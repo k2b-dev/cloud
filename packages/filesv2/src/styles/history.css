@@ -393,6 +393,39 @@
 .k2b-ui .filesv2-inspector-preview .filesv2-preview > .k2b-video-player {
   max-height: 150px;
 }
+/* The approved order: preview, then the action bar 12px below it; a folder starts with the bar. */
+.filesv2-inspector-lead {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.filesv2-inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+@media (any-pointer: coarse) {
+  .filesv2-inspector-actions {
+    row-gap: 0.625rem;
+  }
+}
+/* Info rows that belong to one form only; the shared list has no per-row class. */
+@media (min-width: 48rem) {
+  .k2b-ui .filesv2-inspector-info .k2b-description-list .k2b-description-list__item:has([data-inspector-only="phone"]) {
+    display: none;
+  }
+}
+/* Phones show the approved short form: no preview, no folder Info, the change date and version count only, and the
+   versions list once the count opens it. The hidden preview may still load; it is never shown. */
+@media (max-width: 47.999rem) {
+  .filesv2-inspector-preview,
+  .filesv2-inspector-versions:not([data-open]),
+  .k2b-ui .k2b-detail-panel__summary.filesv2-inspector-info--folder,
+  .k2b-ui .filesv2-inspector-info .k2b-description-list .k2b-description-list__item:has([data-inspector-only="desktop"]) {
+    display: none;
+  }
+}
 
 /* Old address of a moved item */
 .filesv2-history-moved {
@@ -462,9 +495,11 @@
   gap: 0.25rem;
   margin: 0.375rem 0 0.25rem;
 }
+/* Numbers sit on one line at the top of each column; a label that wraps grows downwards only. */
 .filesv2-share-facts__stats div {
   display: flex;
   flex-direction: column-reverse;
+  justify-content: flex-end;
   min-width: 0;
 }
 .filesv2-share-facts__stats dd {
