@@ -349,6 +349,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/workflows/testing` | Supported, tests | Workflow process fixtures | [Test workflows](/en/docs/automation/workflow-observability-and-testing) |
 | `@k2b/cloud/services/image-metadata` | Supported, server-only | Strip metadata from content image uploads without re-encoding | [Image upload privacy](/en/docs/platform/image-upload-privacy) |
 | `@k2b/cloud/services/document-extraction` | Supported, server-only | Convert authorized document bytes to bounded untrusted Markdown | [Document extraction](/en/docs/platform/document-extraction) |
+| `@k2b/cloud/services/pdf` | Supported, server-only | Prepare bounded map images for PDF and print exports | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/services/outbox` | Supported, server-only | `createPgOutbox`: deliver the rows of an application's own outbox table after commit, in order per key | [Migrations and transactions](/en/docs/data/migrations-and-transactions#deliver-an-outbox) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |
@@ -366,6 +367,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/cli/apps` | Platform-owned | Built-in application commands | — |
 | `@k2b/cloud/cli/admin` | Platform-owned | Built-in administration commands | — |
 | `@k2b/cloud/contracts/notifications` | Supported | Browser-safe notification contracts | [Notifications](/en/docs/platform/notifications) |
+| `@k2b/cloud/contracts/geo-snapshot` | Supported, browser and server | Validate map snapshot manifests and image bounds | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/contracts/*` | Advanced | Named contract modules; prefer the barrel | — |
 | `@k2b/cloud/config/*` | Advanced | Named configuration modules; prefer the barrel | — |
 
