@@ -73,91 +73,98 @@ describe("PermissionEditor service accounts", () => {
   }
 
   for (const locale of ["en", "de"] as const) {
-    test(`${locale}: rows, picker results, and a new grant show the same kind`, async () => {
-      const dom = createDomTestHarness();
-      installPopoverApi(dom);
-      dom.document.documentElement.lang = locale;
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = Object.assign(
-        async () =>
-          Response.json({
-            items: kinds.map((kind) => ({
-              kind: "service_account",
-              serviceAccount: { id: `found-${kind}`, name: `Found ${kind}`, kind, ...binding(kind) },
-            })),
-          }),
-        { preconnect: originalFetch.preconnect },
-      );
-      const { default: PermissionEditor } = await import("./PermissionEditor");
-      delegateEvents(["input", "click"]);
-      const rowOf = (name: string) =>
-        Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes(name));
-      const granted: { principal: Principal; kind?: ServiceAccountKind }[] = [];
-      const returned: AccessEntry[] = [];
-      const dispose = render(
-        () => (
-          <PermissionEditor
-            initialEntries={[...kinds.map(serviceEntry), serviceEntry()]}
-            allowAuthenticated={false}
-            allowServiceAccounts
-            // A deferred draft builds its entry from the display metadata the picker hands over.
-            grantAccess={async (principal, permission, display) => {
-              granted.push({ principal, kind: display?.serviceAccountKind });
-              const entry: AccessEntry = { id: "access-new", principal, permission, createdAt: "2026-09-30T00:00:00.000Z", ...display };
-              returned.push(entry);
-              return entry;
-            }}
-            updateAccess={async () => {}}
-            revokeAccess={async () => {}}
-          />
-        ),
-        dom.root,
-      );
-      try {
-        for (const kind of kinds) {
-          const row = rowOf(`Granted ${kind}`)!;
-          expect(row.querySelector(`i.${icons[kind]}`)).not.toBeNull();
-          expect(row.textContent).toContain(`(${labels[locale][kind]})`);
+    for (const selectedKind of ["standalone", "agent"] as const) {
+      test(`${locale} ${selectedKind}: default picker searches service accounts and keeps their names and kinds`, async () => {
+        const dom = createDomTestHarness();
+        installPopoverApi(dom);
+        dom.document.documentElement.lang = locale;
+        const originalFetch = globalThis.fetch;
+        const requestedKinds: string[] = [];
+        globalThis.fetch = Object.assign(
+          async (input: string | URL | Request) => {
+            requestedKinds.push(new URL(input instanceof Request ? input.url : input.toString()).searchParams.get("kinds") ?? "");
+            return Response.json({
+              items: kinds.map((kind) => ({
+                kind: "service_account",
+                serviceAccount: { id: `found-${kind}`, name: `Found ${kind}`, kind, ...binding(kind) },
+              })),
+            });
+          },
+          { preconnect: originalFetch.preconnect },
+        );
+        const { default: PermissionEditor } = await import("./PermissionEditor");
+        delegateEvents(["input", "click"]);
+        const rowOf = (name: string) =>
+          Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes(name));
+        const granted: { principal: Principal; kind?: ServiceAccountKind }[] = [];
+        const returned: AccessEntry[] = [];
+        const dispose = render(
+          () => (
+            <PermissionEditor
+              initialEntries={[...kinds.map(serviceEntry), serviceEntry()]}
+              allowAuthenticated={false}
+              // A deferred draft builds its entry from the display metadata the picker hands over.
+              grantAccess={async (principal, permission, display) => {
+                granted.push({ principal, kind: display?.serviceAccountKind });
+                const entry: AccessEntry = { id: "access-new", principal, permission, createdAt: "2026-09-30T00:00:00.000Z", ...display };
+                returned.push(entry);
+                return entry;
+              }}
+              updateAccess={async () => {}}
+              revokeAccess={async () => {}}
+            />
+          ),
+          dom.root,
+        );
+        try {
+          for (const kind of kinds) {
+            const row = rowOf(`Granted ${kind}`)!;
+            expect(row.querySelector(`i.${icons[kind]}`)).not.toBeNull();
+            expect(row.textContent).toContain(`(${labels[locale][kind]})`);
+          }
+          // An entry whose consumer did not resolve the kind makes no claim about it.
+          const unknown = rowOf("Granted unknown")!;
+          expect(unknown.querySelector("i.ti-key")).not.toBeNull();
+          expect(unknown.textContent).not.toContain("(");
+
+          const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+          input.value = "fo";
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          await waitFor(() => dom.root.querySelectorAll("[role=option]").length === kinds.length, "the service-account results");
+          expect(requestedKinds).toContain("user,group,service_account");
+          const options = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=option]"));
+          for (const kind of kinds) {
+            const option = options.find((element) => element.textContent?.includes(`Found ${kind}`))!;
+            expect(option.querySelector(`i.${icons[kind]}`)).not.toBeNull();
+            // Resource-bound accounts often share a name, so their result shows the binding instead.
+            expect(option.querySelector("small")?.textContent).toBe(
+              kind === "resource_bound" ? "contacts · book · book-1" : labels[locale][kind],
+            );
+          }
+
+          options.find((element) => element.textContent?.includes(`Found ${selectedKind}`))!.click();
+          await waitFor(() => rowOf(`Found ${selectedKind}`)?.hasAttribute("aria-busy") === false, "the granted agent row");
+          expect(granted).toEqual([
+            { principal: { type: "service_account", serviceAccountId: `found-${selectedKind}` }, kind: selectedKind },
+          ]);
+          const added = rowOf(`Found ${selectedKind}`)!;
+          expect(added.querySelector(`i.${icons[selectedKind]}`)).not.toBeNull();
+          expect(added.textContent).toContain(`(${labels[locale][selectedKind]})`);
+
+          // The editor changes its own copy; the entry the caller returned stays as the caller made it.
+          const edit = locale === "de" ? "Bearbeiten" : "Edit";
+          Array.from(added.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+            .find((item) => item.textContent?.startsWith(edit))!
+            .click();
+          await waitFor(() => rowOf(`Found ${selectedKind}`)?.textContent?.includes(edit) === true, "the new level");
+          expect(returned.map((entry) => entry.permission)).toEqual(["read"]);
+        } finally {
+          dispose();
+          globalThis.fetch = originalFetch;
+          dom.cleanup();
         }
-        // An entry whose consumer did not resolve the kind makes no claim about it.
-        const unknown = rowOf("Granted unknown")!;
-        expect(unknown.querySelector("i.ti-key")).not.toBeNull();
-        expect(unknown.textContent).not.toContain("(");
-
-        const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
-        input.value = "fo";
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        await waitFor(() => dom.root.querySelectorAll("[role=option]").length === kinds.length, "the service-account results");
-        const options = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role=option]"));
-        for (const kind of kinds) {
-          const option = options.find((element) => element.textContent?.includes(`Found ${kind}`))!;
-          expect(option.querySelector(`i.${icons[kind]}`)).not.toBeNull();
-          // Resource-bound accounts often share a name, so their result shows the binding instead.
-          expect(option.querySelector("small")?.textContent).toBe(
-            kind === "resource_bound" ? "contacts · book · book-1" : labels[locale][kind],
-          );
-        }
-
-        options.find((element) => element.textContent?.includes("Found agent"))!.click();
-        await waitFor(() => rowOf("Found agent")?.hasAttribute("aria-busy") === false, "the granted agent row");
-        expect(granted).toEqual([{ principal: { type: "service_account", serviceAccountId: "found-agent" }, kind: "agent" }]);
-        const added = rowOf("Found agent")!;
-        expect(added.querySelector("i.ti-robot")).not.toBeNull();
-        expect(added.textContent).toContain(`(${labels[locale].agent})`);
-
-        // The editor changes its own copy; the entry the caller returned stays as the caller made it.
-        const edit = locale === "de" ? "Bearbeiten" : "Edit";
-        Array.from(added.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
-          .find((item) => item.textContent?.startsWith(edit))!
-          .click();
-        await waitFor(() => rowOf("Found agent")?.textContent?.includes(edit) === true, "the new level");
-        expect(returned.map((entry) => entry.permission)).toEqual(["read"]);
-      } finally {
-        dispose();
-        globalThis.fetch = originalFetch;
-        dom.cleanup();
-      }
-    });
+      });
+    }
   }
 
   test("a kind this bundle does not know shows a key without a label", async () => {

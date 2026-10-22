@@ -49,6 +49,7 @@ export type AccessCommandAdapter<TResource extends AccessResource> = {
   scopes?: readonly [string, ...string[]];
   allowPublic?: boolean;
   allowAuthenticated?: boolean;
+  /** Defaults to true; false preserves an explicitly restricted resource contract. */
   allowServiceAccounts?: boolean;
   examples?: {
     list?: readonly string[];
@@ -217,7 +218,7 @@ export const resolveAccessPrincipal = async (
       "--group",
       ...(options.allowAuthenticated === false ? [] : ["--authenticated"]),
       ...(options.allowPublic === true ? ["--public"] : []),
-      ...(options.allowServiceAccounts === true ? ["--service-account"] : []),
+      ...(options.allowServiceAccounts !== false ? ["--service-account"] : []),
     ];
     throw new Error(`Pass exactly one principal flag: ${allowedFlags.join(", ")}.`);
   }
@@ -225,8 +226,8 @@ export const resolveAccessPrincipal = async (
   if (flags.authenticated && options.allowAuthenticated === false) {
     throw new Error("This resource does not allow authenticated-audience grants.");
   }
-  if (flags.serviceAccount && options.allowServiceAccounts !== true) {
-    throw new Error("Service-account grants are hidden by default. Enable allowServiceAccounts for this access command.");
+  if (flags.serviceAccount && options.allowServiceAccounts === false) {
+    throw new Error("This resource does not allow service-account access grants.");
   }
   if (flags.authenticated) return { type: "authenticated" };
   if (flags.public) return { type: "public" };
@@ -348,11 +349,11 @@ const accessIdFlag = {
 
 export const createAccessCommands = <TResource extends AccessResource>(adapter: AccessCommandAdapter<TResource>) => {
   const allowed = normalizeAllowedPermissions(adapter.allowedPermissions);
-  const searchableKinds = adapter.allowServiceAccounts ? PRINCIPAL_KINDS : (["user", "group"] as const);
+  const searchableKinds = adapter.allowServiceAccounts !== false ? PRINCIPAL_KINDS : (["user", "group"] as const);
   const principalFlagOptions = {
     includePublicFlag: adapter.allowPublic === true,
     includeAuthenticatedFlag: adapter.allowAuthenticated !== false,
-    includeServiceAccountFlag: adapter.allowServiceAccounts === true,
+    includeServiceAccountFlag: adapter.allowServiceAccounts !== false,
   };
   const resolve = (ctx: CloudCliContext, args: string[]) => adapter.resolveResource(ctx, args);
   const scopeFlag: { scope?: ReturnType<typeof flag.string> } = adapter.scopes

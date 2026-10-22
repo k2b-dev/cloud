@@ -473,8 +473,9 @@ Pass `existing` to exclude already selected principals. Users and groups are
 searched through Accounts after two characters; personal Linux groups are left
 out, so people are granted directly. All signed-in users are
 available by default; `allowAuthenticated={false}` removes that option.
-Public and service-account selection require `allowPublic` and
-`allowServiceAccounts` respectively. This picker grants no access itself.
+Service accounts and agents are included by default. Set
+`allowServiceAccounts={false}` only for a documented identity requirement.
+Public selection requires `allowPublic`. This picker grants no access itself.
 
 ### Keep the editor mounted across refetches
 

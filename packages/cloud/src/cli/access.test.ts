@@ -279,17 +279,17 @@ describe("access CLI helper", () => {
     expect(state.revokes).toEqual([]);
   });
 
-  test("search principals rejects service accounts unless enabled", async () => {
+  test("search principals respects an explicit service-account exclusion", async () => {
     const state = { entries: [], grants: [] as Principal[], updates: [] as string[], revokes: [] as string[] };
-    const mod = createModule(state);
+    const mod = createModule(state, { allowServiceAccounts: false });
     const { ctx } = createContext(["access", "search-principals", "svc"], { kind: "service_account" }, () => Response.json({}));
 
     await expect(mod.run(ctx)).rejects.toThrow("--kind must contain only: user, group.");
   });
 
-  test("search principals allows service accounts when enabled", async () => {
+  test("search principals includes service accounts by default", async () => {
     const state = { entries: [], grants: [] as Principal[], updates: [] as string[], revokes: [] as string[] };
-    const mod = createModule(state, { allowServiceAccounts: true });
+    const mod = createModule(state);
     let requestedPath = "";
     const { ctx } = createContext(["access", "search-principals", "svc"], { kind: "service_account" }, (path) => {
       requestedPath = path;

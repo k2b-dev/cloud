@@ -911,6 +911,16 @@ convention still needs a check or a test.
 - **Error class:** Checking direct dependency versions instead of every resolved copy and its upstream range.
 - **Guard:** The existing nightly `bun audit --audit-level=high` checks the resolved graph. Verify upstream advisories and consumer paths before updating: Fibel still needs a supported SDK release, and the disputed cache advisory has no confirmed behavior fix in 4.3.0. Keep those findings visible rather than adding overrides or weakening the audit.
 
+### Sharing pickers hid supported machine principals
+
+Resource APIs accepted standalone and agent grants, but sharing pickers omitted them
+unless each application opted in. Existing-row tests did not exercise discovery.
+
+**Guard:** the shared picker and access CLI include machine principals by default.
+Behavior tests search and select both kinds by name; token integration tests grant,
+use and revoke Pulse and Venue access. The `principal-picker-kinds` check requires an
+explicitly documented identity reason for an excluding shared picker.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

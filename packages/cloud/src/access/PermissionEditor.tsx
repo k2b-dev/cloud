@@ -70,8 +70,8 @@ type PermissionEditorProps = {
    *  true; resources with an explicit principal allowlist can disable it. */
   allowAuthenticated?: boolean;
 
-  /** Allow granting service accounts. Off by default so ordinary
-   *  permission pickers stay user/group focused. */
+  /** Allow granting service accounts. Defaults to true, including agents.
+   *  Disable only when the resource documents a user-backed identity requirement. */
   allowServiceAccounts?: boolean;
 
   /** Which levels the UI offers — and what they're called. Bare strings

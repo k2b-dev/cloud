@@ -31,6 +31,7 @@ export default function PrincipalPicker(props: {
   existing?: Principal[];
   allowPublic?: boolean;
   allowAuthenticated?: boolean;
+  /** Defaults to true; disable only for a documented user-backed workflow. */
   allowServiceAccounts?: boolean;
   disabled?: boolean;
   readOnly?: boolean;
@@ -68,7 +69,7 @@ export default function PrincipalPicker(props: {
     if (search.length >= 2) {
       const url = new URL("/api/accounts/entities", window.location.origin);
       url.searchParams.set("search", search);
-      url.searchParams.set("kinds", props.allowServiceAccounts ? "user,group,service_account" : "user,group");
+      url.searchParams.set("kinds", props.allowServiceAccounts !== false ? "user,group,service_account" : "user,group");
       url.searchParams.set("per_page", "10");
       const users = props.existing?.flatMap((p) => (p.type === "user" ? [p.userId] : [])) ?? [];
       const groups = props.existing?.flatMap((p) => (p.type === "group" ? [p.groupId] : [])) ?? [];
@@ -134,10 +135,10 @@ export default function PrincipalPicker(props: {
       readOnly={props.readOnly}
       placeholder={
         props.allowAuthenticated !== false || props.allowPublic
-          ? props.allowServiceAccounts
+          ? props.allowServiceAccounts !== false
             ? t().addAll
             : t().addAudience
-          : props.allowServiceAccounts
+          : props.allowServiceAccounts !== false
             ? t().addService
             : t().addBasic
       }
