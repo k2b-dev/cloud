@@ -1,6 +1,7 @@
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { clipboard, query } from "@k2b/stdlib/solid";
 import {
+  Avatar,
   Button,
   DescriptionList,
   DetailPanel,
@@ -25,6 +26,7 @@ import { useBrowserMessages } from "./browser-messages";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { apiFailure, contentLease, fileIcon, inlinePdfHref, previewKind } from "./file-preview";
+import { formatWhen, type HistoryEnvironment } from "./history-actions";
 import { loadItemHistory, loadItemShares, loadShareAccess, restoreVersion, revokeShare } from "./history-api";
 import { useHistoryMessages } from "./history-messages";
 import { itemHistoryRequest, itemHistorySource, sharePeriod } from "./history-requests";
@@ -237,6 +239,22 @@ export default function FileInspector(props: {
             {(item) => {
               // One versions request feeds the Info count on phones and the versions list.
               const versions = createVersions(() => props.base, item);
+              const currentAuthor = () => {
+                const history = props.history?.initial;
+                const request = itemHistoryRequest(props.base, {
+                  ...item(),
+                  resourceId: item().resourceId ?? details.data()?.result.resourceId,
+                });
+                if (!item().revision || history?.source !== itemHistorySource(request)) return null;
+                const change = history.page.items.find(
+                  (change) =>
+                    change.state === "done" &&
+                    ["file.create", "file.upload", "file.overwrite", "file.edit", "version.restore"].includes(change.action) &&
+                    change.after.visibility === "full" &&
+                    change.after.revision === item().revision,
+                );
+                return change?.actor.kind === "user" ? change.actor.name : null;
+              };
               const versionsId = createUniqueId();
               const [versionsOpen, setVersionsOpen] = createSignal(false);
               const versionsLabel = () =>
@@ -380,7 +398,15 @@ export default function FileInspector(props: {
                               </span>
                             ),
                           },
-                          { term: f().modified, description: <Format.DateTime value={item().modified} /> },
+                          {
+                            term: f().modified,
+                            description: (
+                              <>
+                                <Format.DateTime value={item().modified} />
+                                <Show when={currentAuthor()}>{(name) => <span>, {name()}</span>}</Show>
+                              </>
+                            ),
+                          },
                           ...(!item().directory
                             ? [
                                 {
@@ -425,6 +451,7 @@ export default function FileInspector(props: {
                       locale={locale()}
                       history={props.history}
                       versions={versions}
+                      currentAuthor={currentAuthor()}
                       versionsId={versionsId}
                       versionsOpen={versionsOpen()}
                       onShowVersions={() => {
@@ -513,6 +540,7 @@ function EntryHistory(props: {
   locale: string;
   history?: InspectorHistory;
   versions: Versions;
+  currentAuthor?: string | null;
   versionsId: string;
   versionsOpen: boolean;
   onShowVersions: () => void;
@@ -633,6 +661,8 @@ function EntryHistory(props: {
             onOpen={props.onOpen}
             locale={props.locale}
             versions={props.versions}
+            currentAuthor={props.currentAuthor}
+            env={props.history?.env}
             number={(version) => versionNumbers().get(version.id)}
           />
         </div>
@@ -670,7 +700,9 @@ function VersionsSection(props: {
   onChanged: (selectPath?: string | null) => void;
   onOpen: (entry: FileEntry) => void;
   locale: string;
+  env?: HistoryEnvironment;
   versions: Versions;
+  currentAuthor?: string | null;
   number?: (version: FileVersion) => number | undefined;
 }) {
   const h = useHistoryMessages();
@@ -757,7 +789,10 @@ function VersionsSection(props: {
       link.click();
       link.remove();
     });
-  const when = (iso: string) => new Date(iso).toLocaleString(props.locale, { dateStyle: "medium", timeStyle: "short" });
+  const when = (iso: string) =>
+    props.env
+      ? formatWhen(iso, props.locale, h(), props.env)
+      : new Date(iso).toLocaleString(props.locale, { dateStyle: "medium", timeStyle: "short" });
   return (
     <DetailPanel.Group label={t().versions}>
       <DetailPanel.Section
@@ -796,9 +831,19 @@ function VersionsSection(props: {
                     ? `${h().versionN.replace("{n}", String(items().length + 1))} · ${h().versionCurrent}`
                     : h().versionCurrent
                 }
-                description={when(props.entry.modified)}
-                leading={<i class="ti ti-file" aria-hidden="true" />}
-                trailing={<Format.Bytes value={props.entry.size} />}
+                leading={
+                  <Avatar
+                    name={props.currentAuthor ?? h().versionCurrent}
+                    icon={props.currentAuthor ? undefined : "ti ti-file"}
+                    size="xs"
+                    style={{ width: "20px", height: "20px" }}
+                  />
+                }
+                trailing={
+                  <time dateTime={props.entry.modified} title={when(props.entry.modified)}>
+                    {when(props.entry.modified)}
+                  </time>
+                }
                 disabled={props.busy}
                 onClick={() => props.onOpen(props.entry)}
               />
@@ -808,12 +853,17 @@ function VersionsSection(props: {
                     type="button"
                     title={
                       props.number?.(version)
-                        ? `${h().versionN.replace("{n}", String(props.number(version)))} · ${when(version.created)}`
+                        ? h().versionN.replace("{n}", String(props.number(version)))
                         : t().versionLabel(when(version.created))
                     }
                     description={version.comment ? `${version.comment}${version.author ? ` · ${version.author}` : ""}` : undefined}
-                    leading={<i class="ti ti-history" aria-hidden="true" />}
-                    trailing={<Format.Bytes value={version.size} />}
+                    // Filegate's author metadata names the comment editor, not the content author.
+                    leading={<Avatar name={t().versions} icon="ti ti-history" size="xs" style={{ width: "20px", height: "20px" }} />}
+                    trailing={
+                      <time dateTime={version.created} title={when(version.created)}>
+                        {when(version.created)}
+                      </time>
+                    }
                     disabled={busy() || props.busy || props.versions.state() !== "ready"}
                     onClick={() => (props.entry.actions?.write === false ? void downloadVersion(version) : void comment(version))}
                     menuLabel={`${t().actions}: ${when(version.created)}`}
