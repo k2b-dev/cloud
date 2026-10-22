@@ -1,6 +1,6 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { AppWorkspace, createNavigation } from "@k2b/ui";
-import { createSignal, For, onCleanup, Show, type JSX } from "solid-js";
+import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import type { Dashboard } from "../../dashboard-contracts";
 import { usePulseMessages } from "../use-messages";

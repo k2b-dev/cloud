@@ -16,7 +16,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { usePulseMessages } from "../use-messages";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./routes";
 import SavedQueriesView from "./SavedQueriesView";

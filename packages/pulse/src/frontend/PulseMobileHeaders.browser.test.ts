@@ -41,7 +41,7 @@ for (const view of ["overview", "sources", "sql"] as const) {
           }),
         );
         await tab.goto(`${origin}${buildPulseWorkspaceHref({ baseId: props.initialBaseId, state: props.initialRouteState })}`);
-        await tab.evaluate(() => document.fonts.ready);
+        await tab.waitForFunction(() => document.fonts.status === "loaded");
         const header = tab.locator(".pulse-workspace__mobile-header");
         const geometry = async () => {
           expect(await header.isVisible()).toBe(width < 768);
