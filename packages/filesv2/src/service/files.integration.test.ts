@@ -280,6 +280,7 @@ suite("Files service and durable bindings", () => {
             onConflict: z.enum(["error", "overwrite", "rename"]).optional(),
             ownership: z.object({ uid: z.number().optional(), gid: z.number().optional(), mode: z.string().optional() }).optional(),
             precondition: z.object({ ifMatch: z.string().optional(), ifNoneMatch: z.literal(true).optional() }).optional(),
+            metadata: z.record(z.string(), z.unknown()).optional(),
             idempotencyKey: z.string().optional(),
           })
           .parse(init?.body ? JSON.parse(String(init.body)) : {});
@@ -332,7 +333,12 @@ suite("Files service and durable bindings", () => {
           const execution = executionHeader
             ? z.object({ uid: z.number(), gid: z.number(), groups: z.array(z.number()).optional() }).parse(JSON.parse(executionHeader))
             : undefined;
-          const options = { onConflict: input.onConflict, ownership: input.ownership, precondition: input.precondition };
+          const options = {
+            onConflict: input.onConflict,
+            ownership: input.ownership,
+            precondition: input.precondition,
+            metadata: input.metadata,
+          };
           sessions.set(id, {
             id,
             root,
