@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { dates } from "@k2b/stdlib";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -129,6 +129,10 @@ describe("Venue clarity behavior", () => {
     test.skip("runs in the dedicated browser-conditions test process", () => {});
     return;
   }
+
+  // Relative fixture dates must keep the summer-time offset assumed by slot().
+  beforeEach(() => setSystemTime(new Date("2026-09-28T10:00:00Z")));
+  afterEach(() => setSystemTime());
 
   test("the sign-up dialog lists every shift of its window and loads the next one on request", async () => {
     const dom = createDomTestHarness();
