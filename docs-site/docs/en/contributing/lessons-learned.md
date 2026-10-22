@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Lessons learned
@@ -920,3 +920,4 @@ with "Suspected:"; the fix pull request replaces it with the confirmed cause.
 When the guard does not exist yet, write "Pending in #n" with the issue that
 tracks it, or "None, because …". A pull request that adds a guard for a class
 updates that class's row in the table.
+| Complete row state inferred from a bounded detail page | Changes to older messages disappear when the browser compares a whole conversation with only its newest 100 message bodies. | Tests: Mail `api/workspace-detail.integration.test.ts` reads all placements of a 101-message thread, including deleted placements and current access; `MailWorkspace.conversation-open.behavior.test.tsx` marks the older unread message read on open. Convention: return aggregate state with the authorised detail response ([#1510](https://github.com/k2b-dev/cloud/issues/1510)). |
