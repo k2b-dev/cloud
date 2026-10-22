@@ -1,3 +1,4 @@
+export { captureTextAnchor, resolveTextAnchor } from "./anchors";
 export { compareStreamCursor, maxStreamCursor, parseStreamCursor } from "./cursor";
 export {
   applySharedTextEvent,

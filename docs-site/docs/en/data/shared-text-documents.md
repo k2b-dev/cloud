@@ -173,6 +173,27 @@ accepted log write needs persistence, not another publication.
 unchanged head. Choose `change` when the action or repair depends on the whole
 captured structure remaining current through publication.
 
+## Target a surviving character
+
+Import `captureTextAnchor` and `resolveTextAnchor` from
+`@k2b/cloud/browser/shared-text` in a browser, or `@k2b/cloud/shared-text`
+on the server. `captureTextAnchor(ytext, index)` returns an encoded Yjs
+relative position for an existing character. It rejects invalid offsets and
+end boundaries. Transport those bytes with the application's normal encoding.
+
+`resolveTextAnchor(ytext, bytes)` returns the current offset only while that
+same character survives in that Y.Text, or `null`. A deleted character does
+not resolve to its neighbour, an identical replacement, or an undo-created
+replacement. Unknown identities, other shared types, and malformed encodings
+also return `null`.
+
+For a structural action, capture delimiter witnesses synchronously in the
+browser and resolve them inside `change` against its replayed state. Then
+validate that they still bound the intended row, column, or other structure.
+These helpers check character identity, not document permissions or structural
+meaning. The application still rejects stale context and unconfirmed local
+anchors; never fall back to a submitted ordinal after resolution fails.
+
 ## Snapshots
 
 Use `sharedText.snapshots({ log, job, store, input?, logger? })` to persist
