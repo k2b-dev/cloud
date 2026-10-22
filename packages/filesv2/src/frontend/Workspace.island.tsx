@@ -21,6 +21,7 @@ import { type HistoryActions, type HistoryEnvironment, type HistoryTarget, isCur
 import {
   entryHref,
   loadActivity,
+  loadBatchContext,
   loadChain,
   loadRecovery,
   moveActivityBack,
@@ -860,6 +861,7 @@ export default function Workspace(props: {
                       return page;
                     }}
                     loadChain={(entry, signal) => loadChain(entry, signal, h().chainFailed)}
+                    loadBatch={(entry, signal) => loadBatchContext(entry, signal, h().batchFailed)}
                     retentionDays={props.retentionDays ?? 365}
                   />
                 </AppWorkspace.Main>

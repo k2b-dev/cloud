@@ -15,7 +15,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, Match, on, Show, Switch } from "solid-js";
-import type { ActivityChain, ActivityEntry, ActivityInput, ActivityPage, HistoryAction } from "../activity-contracts";
+import type { ActivityBatchContext, ActivityChain, ActivityEntry, ActivityInput, ActivityPage, HistoryAction } from "../activity-contracts";
 import {
   type ActorView,
   actorOf,
@@ -376,6 +376,7 @@ export type ActivityViewProps = {
   initial?: { filters: ActivityFilters; page: ActivityPage } | null;
   load: (request: ActivityRequest, signal: AbortSignal) => Promise<ActivityPage>;
   loadChain: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityChain>;
+  loadBatch?: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityBatchContext>;
   /** Configured retention, named when a history search finds nothing. */
   retentionDays: number;
   /** Optional trailing head controls, such as the administration's export. */
@@ -569,6 +570,7 @@ export default function ActivityView(props: ActivityViewProps) {
               env={props.env}
               actions={props.actions}
               loadChain={props.loadChain}
+              loadBatch={props.loadBatch}
               retentionDays={props.retentionDays}
               onClearSearch={() => {
                 setText("");

@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createSignal, type JSX } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
-import type { ActivityChain, ActivityEntry, ActivityPage, ShareAccessCounts, ShareAccessPeriod } from "../src/activity-contracts";
+import type {
+  ActivityBatchContext,
+  ActivityChain,
+  ActivityEntry,
+  ActivityPage,
+  ShareAccessCounts,
+  ShareAccessPeriod,
+} from "../src/activity-contracts";
 import type { ShareView } from "../src/contracts";
 import type { ActivityFilters, ActivityRequest } from "../src/frontend/ActivityView";
 import type { HistoryActions, RestoreOutcome } from "../src/frontend/history-actions";
@@ -901,6 +908,10 @@ describe("Files history components", () => {
         loadChain={async () =>
           chain({ endpoint: { baseId: "cloud:groups:vertrieb", path: "Archiv/2025/Angebote 2025", itemId: null }, certainty: "verified" })
         }
+        loadBatch={async (value) => {
+          expect(value.id).toBe(moved.id);
+          return { visibleCount: 42, complete: true };
+        }}
         actions={{ onOpen: (target) => opened.push(target), onMoveBack: async () => {} }}
         retentionDays={365}
       />
@@ -908,10 +919,70 @@ describe("Files history components", () => {
     await flush();
     const chainSection = dom.root.querySelector(".filesv2-history-chain")!;
     const lead = chainSection.querySelector(".filesv2-history-row")!;
-    expect(lead.textContent).toContain("mit 1 weiteren Elementen");
+    expect(lead.textContent).toContain("mit 41 weiteren Elementen");
     expect(lead.querySelector("a.filesv2-history-link")?.getAttribute("href")).toBe(`/app/filesv2/executions/${moved.id}`);
     // The hit above owns the jump; chain rows never repeat it.
     expect(chainSection.querySelector(".filesv2-history-row__action button")).toBeNull();
     expect(buttonNamed(dom.root, "Dorthin springen")).toBeDefined();
+  });
+
+  test("missing-item batch context retries a failed read, marks a lower bound, and aborts on disposal", async () => {
+    const { default: MissingItemView } = await import("../src/frontend/MissingItemView");
+    const moved = entry({
+      action: "item.move",
+      batchId: "batch-1",
+      before: gone("vertrieb/Angebote"),
+      after: current("vertrieb/Archiv/Angebote"),
+    });
+    const calls: { signal: AbortSignal; reply: ReturnType<typeof deferred<ActivityBatchContext>> }[] = [];
+    const [shown, setShown] = createSignal(true);
+    const { Show } = await import("solid-js");
+    await mount(() => (
+      <Show when={shown()}>
+        <MissingItemView
+          query="Angebote"
+          entries={[moved]}
+          state="ready"
+          onRetry={() => {}}
+          hasMore={false}
+          loadingMore={false}
+          moreFailed={false}
+          onLoadMore={() => {}}
+          limitReached={false}
+          env={env}
+          loadChain={async () => chain({})}
+          retentionDays={365}
+          onClearSearch={() => {}}
+          loadBatch={(_entry, signal) => {
+            const reply = deferred<ActivityBatchContext>();
+            calls.push({ signal, reply });
+            return reply.promise;
+          }}
+        />
+      </Show>
+    ));
+    await flush();
+    expect(calls).toHaveLength(1);
+    expect(dom.root.textContent).toContain("Weitere Elemente werden geprüft");
+    calls[0]!.reply.reject(new Error("offline"));
+    await flush();
+    expect(dom.root.textContent).toContain("Die weiteren Elemente konnten nicht geprüft werden");
+    buttonNamed(dom.root, "Erneut versuchen")!.click();
+    await flush();
+    calls[1]!.reply.resolve({ visibleCount: 500, complete: false });
+    await flush();
+    expect(dom.root.textContent).toContain("mit mindestens 499 weiteren Elementen");
+    expect(dom.root.textContent).not.toContain("mit 499 weiteren Elementen");
+    setShown(false);
+    await flush();
+    setShown(true);
+    await flush();
+    expect(calls).toHaveLength(3);
+    setShown(false);
+    await flush();
+    expect(calls[2]!.signal.aborted).toBeTrue();
+    calls[2]!.reply.resolve({ visibleCount: 42, complete: true });
+    await flush();
+    expect(dom.root.textContent).toBe("");
   });
 });
