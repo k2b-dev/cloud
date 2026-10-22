@@ -579,7 +579,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   });
 
   test("context titles expose only currently accessible apps", async () => {
-    const described = await artifacts.describe([id, "invalid"], owner.user.id);
+    const described = await artifacts.describe([id, "invalid"], owner);
     expect(described).toHaveLength(1);
     expect(described[0]).toMatchObject({
       id,
@@ -592,14 +592,14 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       permission: "admin",
       publishedRevision: null,
     });
-    expect(await artifacts.describe([id], stranger.user.id)).toEqual([]);
+    expect(await artifacts.describe([id], stranger)).toEqual([]);
   });
   test("descriptions round-trip without source writes erasing them", async () => {
     const app = await artifacts.create({ title: "Described", description: "Calculate a tip.", source }, owner);
     expect(app.description).toBe("Calculate a tip.");
     const saved = await artifacts.writeFile(app.id, "main.js", "export default () => 2", owner);
     expect(saved.description).toBe("Calculate a tip.");
-    expect((await artifacts.describe([app.id], owner.user!.id))[0]?.description).toBe("Calculate a tip.");
+    expect((await artifacts.describe([app.id], owner))[0]?.description).toBe("Calculate a tip.");
     const updated = await artifacts.update(
       app.id,
       { title: app.title, description: "Updated description.", expectedRevision: saved.revision, source },
@@ -610,7 +610,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   test("only admins see unpublished drafts; users can use a published version", async () => {
     await expect(artifacts.get(id, reader)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect((await artifacts.list(reader)).items).toHaveLength(0);
-    expect(await artifacts.describe([id], reader.user.id)).toEqual([]);
+    expect(await artifacts.describe([id], reader)).toEqual([]);
     await artifacts.publish(id, 1, owner, "Test publication");
     expect((await artifacts.get(id, reader)).source).toEqual(source);
     expect((await artifacts.list(stranger)).items).toHaveLength(0);
@@ -1784,7 +1784,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const rejectId = "00000000-0000-4000-8000-000000000095";
     const request = (id: string, name: string, reference = conversationId) => ({ id, name, input: {}, conversationId: reference });
     try {
-      expect((await aiProjects.get(projectId, owner.accessSubject, "read"))?.permission).toBe("read");
+      expect((await aiProjects.get(projectId, owner, "read"))?.permission).toBe("read");
       expect((await post("/runtime/capabilities", request(readId, "access.read"))).status).toBe(200);
       for (const id of [pendingId, rejectId]) {
         expect(await (await post("/runtime/capabilities", request(id, "access.write"))).json()).toMatchObject({
@@ -1839,7 +1839,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         }
         // Revoke the real Project grant while keeping ownership, tool scope and call records intact.
         await sql`DELETE FROM ai.project_access WHERE project_id=${projectId}::uuid`;
-        expect(await aiProjects.get(projectId, owner.accessSubject, "read")).toBeNull();
+        expect(await aiProjects.get(projectId, owner, "read")).toBeNull();
         catalog.mockClear();
         execute.mockClear();
         transfer.mockClear();
@@ -3000,8 +3000,8 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   test("project app selection only exposes manageable candidates and linking requires both admin grants", async () => {
     const projectId = crypto.randomUUID();
     const project = spyOn(aiProjects, "get").mockImplementation(async (id, subject, permission) => {
-      const projectAdmin = subject?.type === "user" && [owner.user.id, reader.user.id].includes(subject.userId);
-      const projectReader = subject?.type === "user" && subject.userId === stranger.user.id;
+      const projectAdmin = subject?.accessSubject.type === "user" && [owner.user.id, reader.user.id].includes(subject.accessSubject.userId);
+      const projectReader = subject?.accessSubject.type === "user" && subject.accessSubject.userId === stranger.user.id;
       return id === projectId && (projectAdmin || (projectReader && permission === "read"))
         ? {
             id,
@@ -3068,7 +3068,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       await artifacts.publish(script.id, 1, owner, "Initial release");
       expect((await artifacts.get(script.id, stranger)).permission).toBe("read");
       expect((await artifacts.get(script.id, contextual)).permission).toBe("read");
-      expect(await artifacts.describe([script.id], stranger.user.id)).toHaveLength(1);
+      expect(await artifacts.describe([script.id], stranger)).toHaveLength(1);
       expect((await artifacts.list(stranger, 1, "Shared calculation")).items).toMatchObject([{ id: script.id, permission: "read" }]);
       expect(await artifacts.runner(script.id, stranger)).toMatchObject({ serverAccess: true, canManage: false });
       await expect(artifacts.runner(script.id, {})).rejects.toMatchObject({ code: "NOT_FOUND" });
@@ -3109,7 +3109,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       await expect(artifacts.storage(script.id, { area: "kv", operation: "read", key: "shared" }, stranger)).rejects.toMatchObject({
         code: "ACCESS_DENIED",
       });
-      expect(await artifacts.describe([script.id], stranger.user.id)).toEqual([]);
+      expect(await artifacts.describe([script.id], stranger)).toEqual([]);
       expect((await artifacts.list(stranger, 1, "Shared calculation")).items.some((item) => item.id === script.id)).toBe(false);
       await sql`INSERT INTO auth.user_groups_v2 VALUES(${stranger.user.id}::uuid,${groupId}::uuid)`;
       await artifacts.linkProject(script.id, projectId, false, owner);
@@ -3705,18 +3705,18 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         VALUES (${conversationId}::uuid,'/kunden.csv','a'::bytea,1,'text/csv','user')`;
       try {
         const options = { timeZone: "Europe/Berlin" };
-        const snapshot = await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options);
+        const snapshot = await loadAssistantChatContextSnapshot(owner, "abc234", options);
         expect(snapshot?.results.map((result) => result.key)).toEqual([`assistant.artifact:${resource.id}`]);
         // The result shows the app under its current title, with the state of its last run of this revision.
         expect(snapshot?.results[0]).toMatchObject({ kind: "app", title: resource.title, messageSeq: 3 });
         expect(snapshot?.results[0]?.app).toMatchObject({ id: resource.id, href: `/app/assistant/apps/${resource.id}`, lastRun: "ready" });
         expect(snapshot?.runs.some((run) => run.id === call.callId && run.status === "ready")).toBe(true);
         await artifacts.writeFile(resource.id, "main.ts", "export default()=>43", owner);
-        expect((await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options))?.results[0]?.app?.lastRun).toBeNull();
-        expect(await loadAssistantChatContextSnapshot(stranger.user.id, "abc234", options)).toBeNull();
+        expect((await loadAssistantChatContextSnapshot(owner, "abc234", options))?.results[0]?.app?.lastRun).toBeNull();
+        expect(await loadAssistantChatContextSnapshot(stranger, "abc234", options)).toBeNull();
         // An app the chat built but never opened is no result, and the Studio overview still lists it.
         delivered = false;
-        const built = await loadAssistantChatContextSnapshot(owner.user.id, "abc234", options);
+        const built = await loadAssistantChatContextSnapshot(owner, "abc234", options);
         expect(built?.results).toEqual([]);
         expect(built?.apps.map((app) => app.id)).toEqual([resource.id]);
       } finally {

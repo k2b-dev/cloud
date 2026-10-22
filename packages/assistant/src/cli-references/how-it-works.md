@@ -168,6 +168,15 @@ and call checks current access. Instructions are the only instructions in a
 Project. The Assistant treats knowledge, files, references, and tool results
 as data, never as instructions.
 
+Share Projects with `cld assistant projects access` and Skills with
+`cld assistant skills access`. Both support `list`, `grant`, `set`, `revoke`,
+and `search-principals`. Use a recipient flag such as `--service-account
+"Release agent" --permission read`; exact names require directory access.
+Userless callers use recipient UUIDs. Standalone and agent credentials need
+both the resource grant and an adequate `read`, `write`, or `admin` scope.
+Resource-bound credentials are unsupported. Project and Skill grants do not
+change the user requirements of personal chats or Studio execution.
+
 Changing instructions, the default model, or Project access needs Project
 `admin`. Knowledge, files, and references need `write`.
 

@@ -1,6 +1,7 @@
 import {
   AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT,
   AI_WEBSITE_APPROVAL_TOOL,
+  type AiResourceContext,
   aiConversations,
   aiProjects,
   CodeResourceId,
@@ -138,14 +139,14 @@ function predicate(identity: ArtifactIdentity) {
   return sql`(${match}) AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL OR a.authenticated_only)`;
 }
 /** Resolve membership through the owning project service, without copying grants. */
-async function accessibleLinkedProjects(db: SQL, subject: AccessSubject, artifactId?: string) {
+async function accessibleLinkedProjects(db: SQL, identity: AiResourceContext | null, artifactId?: string) {
   const links = await db<{ project_id: string }[]>`SELECT DISTINCT project_id FROM assistant.artifact_projects
     WHERE ${artifactId ? db`artifact_id=${artifactId}::uuid` : db`true`}`;
   return [
     ...(
       await aiProjects.resolveShortIds(
         links.map((link) => link.project_id),
-        subject,
+        identity,
       )
     ).keys(),
   ];
@@ -164,7 +165,7 @@ export async function requireArtifact(db: SQL, id: string, identity: ArtifactIde
     ORDER BY CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END DESC LIMIT 1`;
   let permission = identity.administrative && hasRole(user(identity), "admin") ? ("admin" as const) : (grant?.permission ?? "none");
   if (!hasPermission(permission, required) && required === "read" && row.published_revision !== null) {
-    if ((await accessibleLinkedProjects(db, identity.accessSubject, id)).length) permission = "read";
+    if ((await accessibleLinkedProjects(db, identity, id)).length) permission = "read";
   }
   if (!hasPermission(permission, required)) throw new ArtifactError("ACCESS_DENIED");
   if (permission !== "admin" && row.published_revision === null) throw new ArtifactError("NOT_FOUND");
@@ -312,13 +313,14 @@ export const artifacts = {
   },
   async describe(
     ids: string[],
-    userId: string,
+    identity: ArtifactIdentity,
     _conversationId?: string,
   ): Promise<Array<ArtifactSummary & { description: string; icon: string }>> {
     if (!ids.length) return [];
     const valid = ids.filter((id) => CodeResourceId.safeParse(id).success);
     if (!valid.length) return [];
-    const projects = await accessibleLinkedProjects(sql, { type: "user", userId });
+    const userId = user(identity).id;
+    const projects = await accessibleLinkedProjects(sql, identity);
     const projectMatch = projects.length ? sql`project.project_id IN ${sql(projects)}` : sql`false`;
     const match = buildAccessPrincipalCondition({
       subject: { type: "user", userId },
@@ -350,7 +352,7 @@ export const artifacts = {
     z.string().max(500).parse(search);
     z.number().int().min(1).max(100).parse(pageSize);
     const match = predicate(identity);
-    const projects = await accessibleLinkedProjects(sql, identity.accessSubject);
+    const projects = await accessibleLinkedProjects(sql, identity);
     const projectMatch = projects.length ? sql`project.project_id IN ${sql(projects)}` : sql`false`;
     const rows = await sql<
       (ArtifactRow & { permission: PermissionLevel })[]
@@ -698,7 +700,7 @@ export const artifacts = {
       >`SELECT project_id AS "projectId" FROM assistant.artifact_projects WHERE artifact_id=${id}::uuid ORDER BY project_id`;
       const result: Array<{ projectId: string; shortId: string | null; name: string | null }> = [];
       for (const link of links) {
-        const project = await aiProjects.get(link.projectId, identity.accessSubject, "read");
+        const project = await aiProjects.get(link.projectId, identity, "read");
         result.push({ ...link, shortId: project?.shortId ?? null, name: project?.name ?? null });
       }
       return result;
@@ -710,8 +712,8 @@ export const artifacts = {
     z.string().max(500).parse(search);
     const required = available ? "admin" : "read";
     const project = z.uuid().safeParse(projectReference).success
-      ? await aiProjects.get(projectReference, identity.accessSubject, required)
-      : await aiProjects.getByShortId(projectReference, identity.accessSubject, required);
+      ? await aiProjects.get(projectReference, identity, required)
+      : await aiProjects.getByShortId(projectReference, identity, required);
     if (!project) throw new ArtifactError("ACCESS_DENIED");
     const match = predicate(identity);
     const rows = await sql<{ id: string; title: string; icon: string; published: boolean; canManage: boolean; linked: boolean }[]>`
@@ -735,8 +737,8 @@ export const artifacts = {
   async linkProject(id: string, projectReference: string, linked: boolean, identity: ArtifactIdentity) {
     z.string().min(1).max(80).parse(projectReference);
     const project = z.uuid().safeParse(projectReference).success
-      ? await aiProjects.get(projectReference, identity.accessSubject, "admin")
-      : await aiProjects.getByShortId(projectReference, identity.accessSubject, "admin");
+      ? await aiProjects.get(projectReference, identity, "admin")
+      : await aiProjects.getByShortId(projectReference, identity, "admin");
     if (!project) throw new ArtifactError("ACCESS_DENIED");
     const projectId = project.id;
     return sql.begin(async (db) => {

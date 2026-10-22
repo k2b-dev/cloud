@@ -8,9 +8,11 @@ import { getRoles } from "../services/accounts/users";
 import { toPgTextArray } from "../services/postgres";
 import { buildProjectedUser } from "../services/session/user";
 import { aiAppSkills, reconcileAppSkills as applyAppSkills } from "./app-skill-store";
+import { serviceAccounts } from "../services/service-accounts";
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, skill } from "./app-skills";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
+import { userResourceContext } from "./projects.test-fixture";
 import { AiSkillAppForbiddenError, AiSkillInputError, AiSkillRevisionConflictError, aiSkills } from "./skills";
 import { aiConversations } from "./store";
 
@@ -186,12 +188,14 @@ databaseSuite()("app skills (integration)", () => {
       VALUES(${`links-${crypto.randomUUID()}`},${conversation.id}::uuid,'queued') RETURNING id`;
     try {
       entry = await publish(entry, [source]);
-      const installed = (await aiSkills.getByName(name, subject))!;
+      const installed = (await aiSkills.getByName(name, userResourceContext(subject)))!;
       expect(installed).toMatchObject({ manualOnly: true, instructions: source.instructions });
-      expect((await aiSkills.list(subject)).find((item) => item.id === installed.id)?.manualOnly).toBe(true);
-      expect((await aiSkills.search(subject, name, 30, { modelInvocableOnly: true })).skills).toEqual([]);
-      await expect(aiSkills.loadForTurn(turn!.id, name, subject)).rejects.toThrow("starts only when the user selects it");
-      const loaded = await aiSkills.loadForTurn(turn!.id, { id: installed.shortId }, subject);
+      expect((await aiSkills.list(userResourceContext(subject))).find((item) => item.id === installed.id)?.manualOnly).toBe(true);
+      expect((await aiSkills.search(userResourceContext(subject), name, 30, { modelInvocableOnly: true })).skills).toEqual([]);
+      await expect(aiSkills.loadForTurn(turn!.id, name, userResourceContext(subject))).rejects.toThrow(
+        "starts only when the user selects it",
+      );
+      const loaded = await aiSkills.loadForTurn(turn!.id, { id: installed.shortId }, userResourceContext(subject));
       expect(loaded?.instructions).toBe(`Read [rules](/skills/${name}/references/rules.md).`);
       expect(loaded?.files[0]?.content).toContain("[rules](references/rules.md)");
       const [stored] = await sql<
@@ -212,15 +216,15 @@ databaseSuite()("app skills (integration)", () => {
     let entry = app([first]);
     try {
       entry = await publish(entry, [first]);
-      const installed = (await aiSkills.getByName(name, subject))!;
+      const installed = (await aiSkills.getByName(name, userResourceContext(subject)))!;
       expect(installed).toMatchObject({ revision: 1, permission: "read", source: { appId: entry.id, appName: "Inventory" } });
       expect(await aiSkills.admin.summary({ search: name })).toMatchObject({ unmanaged: 0 });
       expect(await aiSkills.admin.listAccess(installed.id)).toMatchObject([{ principal: { type: "authenticated" }, permission: "read" }]);
       await publish(entry, [first]);
-      expect(await aiSkills.get(installed.id, subject)).toEqual(installed);
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toEqual(installed);
       const next = definition(name, "Read [rules](references/new.md).", { "references/new.md": "New rules" });
       entry = await publish(entry, [next]);
-      const updated = (await aiSkills.get(installed.id, subject))!;
+      const updated = (await aiSkills.get(installed.id, userResourceContext(subject)))!;
       // Compare plain JSON: definitions are deeply frozen and database rows are not plain objects.
       expect(
         JSON.parse(
@@ -239,7 +243,7 @@ databaseSuite()("app skills (integration)", () => {
       });
       expect((await aiSkills.admin.getByShortId(updated.shortId))?.source?.status).toBe("current");
       await publish(entry, [next]);
-      expect(await aiSkills.get(installed.id, subject)).toEqual(updated);
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toEqual(updated);
       const [catalog] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.app_skill_catalogs WHERE app_id=${entry.id}`;
       expect(catalog?.count).toBe(2);
     } finally {
@@ -255,9 +259,9 @@ databaseSuite()("app skills (integration)", () => {
     let entry = app([first]);
     try {
       entry = await publish(entry, [first]);
-      const installed = (await aiSkills.getByName(name, subject))!;
+      const installed = (await aiSkills.getByName(name, userResourceContext(subject)))!;
       await aiSkills.admin.grantAccess(installed.id, { principal: { type: "user", userId: subject.userId }, permission: "write" });
-      const customized = (await aiSkills.update(installed.id, subject, {
+      const customized = (await aiSkills.update(installed.id, userResourceContext(subject), {
         ...installed,
         instructions: "Custom rules",
         expectedRevision: 1,
@@ -265,7 +269,7 @@ databaseSuite()("app skills (integration)", () => {
       expect((await aiSkills.admin.getByShortId(installed.shortId))?.source?.status).toBe("modified");
       const latest = definition(name, "New app rules");
       entry = await publish(entry, [latest]);
-      expect(await aiSkills.get(installed.id, subject)).toEqual(customized);
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toEqual(customized);
       expect((await aiSkills.admin.getByShortId(installed.shortId))?.source?.status).toBe("update_available");
       const diff = (await aiAppSkills.appVersion(installed.id))!;
       expect(diff.current.markdown).toContain("Custom rules");
@@ -275,12 +279,19 @@ databaseSuite()("app skills (integration)", () => {
       // A release published after the comparison is never applied unseen.
       await expect(aiAppSkills.reset(installed.id, 2, first.hash)).rejects.toThrow("Compare it again");
       expect(await aiAppSkills.reset(installed.id, 2, latest.hash)).toBe(true);
-      expect(await aiSkills.get(installed.id, subject)).toMatchObject({ revision: 3, instructions: "New app rules" });
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toMatchObject({ revision: 3, instructions: "New app rules" });
       expect((await aiSkills.admin.getByShortId(installed.shortId))?.source?.status).toBe("current");
       const converged = definition(name, "Converged rules");
-      await aiSkills.update(installed.id, subject, { ...customized, instructions: converged.instructions, expectedRevision: 3 });
+      await aiSkills.update(installed.id, userResourceContext(subject), {
+        ...customized,
+        instructions: converged.instructions,
+        expectedRevision: 3,
+      });
       await publish(entry, [converged]);
-      expect(await aiSkills.get(installed.id, subject)).toMatchObject({ revision: 4, instructions: converged.instructions });
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toMatchObject({
+        revision: 4,
+        instructions: converged.instructions,
+      });
       const [managed] = await sql<{ applied_hash: string }[]>`SELECT applied_hash FROM ai.app_skills WHERE skill_id=${installed.id}::uuid`;
       expect(managed?.applied_hash).toBe(converged.hash);
     } finally {
@@ -298,7 +309,7 @@ databaseSuite()("app skills (integration)", () => {
         const name = `field-${field.toLowerCase()}-${suffix}`;
         const original = definition(name);
         const catalog = await publish(entry, [original]);
-        const installed = (await aiSkills.getByName(name, subject))!;
+        const installed = (await aiSkills.getByName(name, userResourceContext(subject)))!;
         await aiSkills.admin.grantAccess(installed.id, { principal: { type: "user", userId: subject.userId }, permission: "write" });
         const fields = {
           name: `${name}-renamed`,
@@ -307,22 +318,26 @@ databaseSuite()("app skills (integration)", () => {
           extraFrontmatter: { metadata: { customized: true } },
           references: [{ path: "references/custom.md", content: "Custom" }],
         };
-        const customized = (await aiSkills.update(installed.id, subject, { ...installed, [field]: fields[field], expectedRevision: 1 }))!;
+        const customized = (await aiSkills.update(installed.id, userResourceContext(subject), {
+          ...installed,
+          [field]: fields[field],
+          expectedRevision: 1,
+        }))!;
         await publish(catalog, [definition(name, "App update")]);
-        expect(await aiSkills.get(installed.id, subject)).toEqual(customized);
+        expect(await aiSkills.get(installed.id, userResourceContext(subject))).toEqual(customized);
         expect((await aiSkills.admin.getByShortId(installed.shortId))?.source?.status).toBe("update_available");
       }
       const name = `race-${suffix}`,
         original = definition(name);
       const catalog = await publish(entry, [original]);
-      const installed = (await aiSkills.getByName(name, subject))!;
+      const installed = (await aiSkills.getByName(name, userResourceContext(subject)))!;
       await aiSkills.admin.grantAccess(installed.id, { principal: { type: "user", userId: subject.userId }, permission: "write" });
       const results = await Promise.allSettled([
-        aiSkills.update(installed.id, subject, { ...installed, instructions: "Concurrent edit", expectedRevision: 1 }),
+        aiSkills.update(installed.id, userResourceContext(subject), { ...installed, instructions: "Concurrent edit", expectedRevision: 1 }),
         publish(catalog, [definition(name, "Concurrent app update")]),
       ]);
       expect(results[1]!.status).toBe("fulfilled");
-      const current = (await aiSkills.get(installed.id, subject))!;
+      const current = (await aiSkills.get(installed.id, userResourceContext(subject)))!;
       expect(current.revision).toBe(2);
       expect(current.instructions).toBe(results[0]!.status === "fulfilled" ? "Concurrent edit" : "Concurrent app update");
       if (results[0]!.status === "rejected") expect(results[0]!.reason).toBeInstanceOf(AiSkillRevisionConflictError);
@@ -340,17 +355,26 @@ databaseSuite()("app skills (integration)", () => {
     let userSkillId: string | undefined;
     try {
       await publish(entry, [source]);
-      const installed = (await aiSkills.getByName(name, subject))!;
+      const installed = (await aiSkills.getByName(name, userResourceContext(subject)))!;
       await aiSkills.admin.grantAccess(installed.id, { principal: { type: "user", userId: subject.userId }, permission: "write" });
-      const customized = await aiSkills.update(installed.id, subject, { ...installed, name: `${name}-custom`, expectedRevision: 1 });
-      const owned = await aiSkills.create({ subject, name, description: "User skill", instructions: "Keep my work" });
+      const customized = await aiSkills.update(installed.id, userResourceContext(subject), {
+        ...installed,
+        name: `${name}-custom`,
+        expectedRevision: 1,
+      });
+      const owned = await aiSkills.create({
+        subject: userResourceContext(subject),
+        name,
+        description: "User skill",
+        instructions: "Keep my work",
+      });
       userSkillId = owned.id;
       await expect(aiAppSkills.reset(installed.id, 2, source.hash)).rejects.toThrow("name already exists");
-      expect(await aiSkills.get(installed.id, subject)).toEqual(customized);
-      expect(await aiSkills.get(owned.id, subject)).toEqual(owned);
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toEqual(customized);
+      expect(await aiSkills.get(owned.id, userResourceContext(subject))).toEqual(owned);
       await aiSkills.admin.delete(owned.id);
       expect(await aiAppSkills.reset(installed.id, 2, source.hash)).toBe(true);
-      expect(await aiSkills.get(installed.id, subject)).toMatchObject({ name, revision: 3 });
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toMatchObject({ name, revision: 3 });
     } finally {
       if (userSkillId) await aiSkills.admin.delete(userSkillId);
       await cleanup([entry.id]);
@@ -368,28 +392,28 @@ databaseSuite()("app skills (integration)", () => {
       VALUES (${`app-skill-${crypto.randomUUID()}`}, ${conversation.id}::uuid, 'queued') RETURNING id`;
     try {
       entry = await publish(entry, [first]);
-      const installed = (await aiSkills.getByName(name, subject))!;
-      expect(await aiSkills.loadForTurn(turn!.id, name, subject)).not.toBeNull();
+      const installed = (await aiSkills.getByName(name, userResourceContext(subject)))!;
+      expect(await aiSkills.loadForTurn(turn!.id, name, userResourceContext(subject))).not.toBeNull();
       await aiSkills.admin.grantAccess(installed.id, { principal: { type: "user", userId: subject.userId }, permission: "admin" });
       await reconcileAppSkills([]);
-      expect((await aiSkills.list(subject)).some((row) => row.id === installed.id)).toBe(false);
-      expect((await aiSkills.search(subject, name)).skills).toEqual([]);
-      expect(await aiSkills.get(installed.id, subject)).toBeNull();
-      expect(await aiSkills.getByShortId(installed.shortId, subject)).toBeNull();
-      expect(await aiSkills.getByName(name, subject)).toBeNull();
-      expect(await aiSkills.loadForTurn(turn!.id, name, subject)).toBeNull();
-      expect(await aiSkills.listTurnFiles(turn!.id, subject)).toEqual([]);
-      expect(await aiSkills.readTurnFile(turn!.id, `${name}/SKILL.md`, subject)).toBeNull();
-      expect(await aiSkills.setEnabled(installed.id, subject, false)).toBeNull();
-      expect(await aiSkills.update(installed.id, subject, { ...installed, expectedRevision: 1 })).toBeNull();
+      expect((await aiSkills.list(userResourceContext(subject))).some((row) => row.id === installed.id)).toBe(false);
+      expect((await aiSkills.search(userResourceContext(subject), name)).skills).toEqual([]);
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toBeNull();
+      expect(await aiSkills.getByShortId(installed.shortId, userResourceContext(subject))).toBeNull();
+      expect(await aiSkills.getByName(name, userResourceContext(subject))).toBeNull();
+      expect(await aiSkills.loadForTurn(turn!.id, name, userResourceContext(subject))).toBeNull();
+      expect(await aiSkills.listTurnFiles(turn!.id, userResourceContext(subject))).toEqual([]);
+      expect(await aiSkills.readTurnFile(turn!.id, `${name}/SKILL.md`, userResourceContext(subject))).toBeNull();
+      expect(await aiSkills.setEnabled(installed.id, userResourceContext(subject), false)).toBeNull();
+      expect(await aiSkills.update(installed.id, userResourceContext(subject), { ...installed, expectedRevision: 1 })).toBeNull();
       expect(await aiSkills.admin.getByShortId(installed.shortId)).toMatchObject({ source: { available: false } });
       await publish(entry, [first]);
-      expect(await aiSkills.get(installed.id, subject)).toMatchObject({ revision: 1, enabled: true });
-      await aiSkills.setEnabled(installed.id, subject, false);
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toMatchObject({ revision: 1, enabled: true });
+      await aiSkills.setEnabled(installed.id, userResourceContext(subject), false);
       await publish(entry, []);
-      expect(await aiSkills.get(installed.id, subject)).toBeNull();
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toBeNull();
       await publish(entry, [first]);
-      expect(await aiSkills.get(installed.id, subject)).toMatchObject({ id: installed.id, enabled: false });
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toMatchObject({ id: installed.id, enabled: false });
     } finally {
       await cleanup([entry.id]);
       await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
@@ -404,10 +428,10 @@ databaseSuite()("app skills (integration)", () => {
     let entry = app([first]);
     try {
       entry = await publish(entry, [first]);
-      const installed = (await aiSkills.getByName(name, subject))!;
+      const installed = (await aiSkills.getByName(name, userResourceContext(subject)))!;
       await aiSkills.admin.delete(installed.id);
       await publish(entry, [definition(name, "New app source")]);
-      expect(await aiSkills.getByName(name, subject)).toBeNull();
+      expect(await aiSkills.getByName(name, userResourceContext(subject))).toBeNull();
       expect(await aiAppSkills.appSkillIssues()).toContainEqual({
         appId: entry.id,
         appName: "Inventory",
@@ -416,7 +440,7 @@ databaseSuite()("app skills (integration)", () => {
         available: true,
       });
       expect(await aiAppSkills.restore(entry.id, name)).toBe(true);
-      const restored = (await aiSkills.getByName(name, subject))!;
+      const restored = (await aiSkills.getByName(name, userResourceContext(subject)))!;
       expect(restored.id).not.toBe(installed.id);
       expect(restored.instructions).toBe("New app source");
       await expect(aiAppSkills.restore(entry.id, name)).rejects.toBeInstanceOf(AiSkillRevisionConflictError);
@@ -430,11 +454,16 @@ databaseSuite()("app skills (integration)", () => {
     const subject = await user(),
       name = `collision-${crypto.randomUUID()}`,
       source = definition(name);
-    const owned = await aiSkills.create({ subject, name, description: "User rules", instructions: "User instructions" });
+    const owned = await aiSkills.create({
+      subject: userResourceContext(subject),
+      name,
+      description: "User rules",
+      instructions: "User instructions",
+    });
     let entry = app([source]);
     try {
       entry = await publish(entry, [source]);
-      expect(await aiSkills.get(owned.id, subject)).toEqual(owned);
+      expect(await aiSkills.get(owned.id, userResourceContext(subject))).toEqual(owned);
       expect(await aiAppSkills.appSkillIssues()).toContainEqual({
         appId: entry.id,
         appName: "Inventory",
@@ -445,7 +474,7 @@ databaseSuite()("app skills (integration)", () => {
       await expect(aiAppSkills.restore(entry.id, name)).rejects.toBeInstanceOf(AiSkillRevisionConflictError);
       await aiSkills.admin.delete(owned.id);
       expect(await aiAppSkills.restore(entry.id, name)).toBe(true);
-      expect(await aiSkills.getByName(name, subject)).toMatchObject({
+      expect(await aiSkills.getByName(name, userResourceContext(subject))).toMatchObject({
         permission: "read",
         instructions: source.instructions,
         source: { appId: entry.id },
@@ -523,34 +552,54 @@ databaseSuite()("app skills (integration)", () => {
     const standalone = { type: "service_account" as const, serviceAccountId: sa!.id };
     const [delegation] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name, kind, delegated_user_id)
       VALUES (${`delegation-${crypto.randomUUID()}`}, 'user_delegated', ${guest.userId}::uuid) RETURNING id`;
-    const delegatedGuest = { ...guest, delegatedByServiceAccountId: delegation!.id };
+    const standaloneAccount = await serviceAccounts.get({ id: standalone.serviceAccountId });
+    const delegatedAccount = await serviceAccounts.get({ id: delegation!.id });
+    if (!standaloneAccount || !delegatedAccount) throw new Error("Missing credential fixtures");
+    const standaloneContext = {
+      actor: { kind: "service_account" as const, serviceAccount: standaloneAccount, delegatedUser: null, scopes: ["read"] },
+      accessSubject: standalone,
+    };
+    const guestContext = userResourceContext(guest);
+    if (guestContext.actor.kind !== "user") throw new Error("Missing guest fixture");
+    const delegatedGuest = {
+      actor: {
+        kind: "service_account" as const,
+        serviceAccount: delegatedAccount,
+        delegatedUser: guestContext.actor.user,
+        scopes: ["read"],
+      },
+      accessSubject: { ...guest, delegatedByServiceAccountId: delegation!.id },
+    };
     let entry = app([source], { href: "/app/inventory", section: "primary", requiresRoles: ["user"] });
-    const project = await aiProjects.create({ subject: member, name: "Project audience" });
+    const project = await aiProjects.create({ subject: userResourceContext(member), name: "Project audience" });
     try {
       entry = await publish(entry, [source]);
-      const installed = (await aiSkills.getByName(name, member))!;
+      const installed = (await aiSkills.getByName(name, userResourceContext(member)))!;
       expect(await getRoles(guest.userId)).toEqual(["guest", "local", "local/guest"]);
-      expect(await aiSkills.get(installed.id, guest)).toBeNull();
+      expect(await aiSkills.get(installed.id, userResourceContext(guest))).toBeNull();
       expect(await aiSkills.get(installed.id, delegatedGuest)).toBeNull();
-      expect(await aiSkills.get(installed.id, standalone)).toBeNull();
-      expect((await aiSkills.list(guest)).some((row) => row.id === installed.id)).toBe(false);
+      expect(await aiSkills.get(installed.id, standaloneContext)).toBeNull();
+      expect((await aiSkills.list(userResourceContext(guest))).some((row) => row.id === installed.id)).toBe(false);
       await aiSkills.admin.grantAccess(installed.id, { principal: { type: "user", userId: member.userId }, permission: "admin" });
-      await aiProjects.grantAccess(project.id, member, { principal: { type: "user", userId: guest.userId }, permission: "read" });
-      await aiSkills.linkProject(installed.id, project.id, true, member);
-      expect(await aiSkills.get(installed.id, guest)).toBeNull();
+      await aiProjects.grantAccess(project.id, userResourceContext(member), {
+        principal: { type: "user", userId: guest.userId },
+        permission: "read",
+      });
+      await aiSkills.linkProject(installed.id, project.id, true, userResourceContext(member));
+      expect(await aiSkills.get(installed.id, userResourceContext(guest))).toBeNull();
       expect(await aiSkills.get(installed.id, delegatedGuest)).toBeNull();
-      expect((await aiSkills.projectSkills(project.id, guest))?.items).toEqual([]);
+      expect((await aiSkills.projectSkills(project.id, userResourceContext(guest)))?.items).toEqual([]);
       await aiSkills.admin.grantAccess(installed.id, { principal: { type: "user", userId: guest.userId }, permission: "read" });
       await aiSkills.admin.grantAccess(installed.id, { principal: standalone, permission: "read" });
-      expect(await aiSkills.get(installed.id, guest)).not.toBeNull();
+      expect(await aiSkills.get(installed.id, userResourceContext(guest))).not.toBeNull();
       expect(await aiSkills.get(installed.id, delegatedGuest)).not.toBeNull();
-      expect(await aiSkills.get(installed.id, standalone)).not.toBeNull();
+      expect(await aiSkills.get(installed.id, standaloneContext)).not.toBeNull();
       await reconcileAppSkills([]);
-      expect(await aiSkills.get(installed.id, guest)).toBeNull();
+      expect(await aiSkills.get(installed.id, userResourceContext(guest))).toBeNull();
       expect(await aiSkills.get(installed.id, delegatedGuest)).toBeNull();
-      expect(await aiSkills.get(installed.id, standalone)).toBeNull();
+      expect(await aiSkills.get(installed.id, standaloneContext)).toBeNull();
       await publish({ ...entry, nav: { ...entry.nav!, requiresRoles: [] } }, [source]);
-      expect(await aiSkills.get(installed.id, member)).not.toBeNull(); // explicit direct administrator
+      expect(await aiSkills.get(installed.id, userResourceContext(member))).not.toBeNull(); // explicit direct administrator
     } finally {
       await aiProjects.admin.delete(project.id);
       await cleanup([entry.id]);
@@ -569,13 +618,13 @@ databaseSuite()("app skills (integration)", () => {
     let entry = app([source], { href: "", section: "hidden", adminHref: "/admin/inventory" });
     try {
       entry = await publish(entry, [source]);
-      const installed = (await aiSkills.getByName(name, admin))!;
+      const installed = (await aiSkills.getByName(name, userResourceContext(admin)))!;
       expect(installed.source).toEqual({ appId: entry.id, appName: "Inventory" });
-      expect(await aiSkills.get(installed.id, member)).toBeNull();
-      expect((await aiSkills.list(member)).some((row) => row.id === installed.id)).toBe(false);
+      expect(await aiSkills.get(installed.id, userResourceContext(member))).toBeNull();
+      expect((await aiSkills.list(userResourceContext(member))).some((row) => row.id === installed.id)).toBe(false);
       // Once the app has its own page, everyone signed in may open it and use its Skills.
       entry = await publish({ ...entry, nav: { ...entry.nav!, href: "/app/inventory" } }, [source]);
-      expect(await aiSkills.get(installed.id, member)).not.toBeNull();
+      expect(await aiSkills.get(installed.id, userResourceContext(member))).not.toBeNull();
     } finally {
       await cleanup([entry.id]);
       await sql`DELETE FROM auth.users WHERE id IN (${member.userId}::uuid, ${admin.userId}::uuid)`;
@@ -589,15 +638,17 @@ databaseSuite()("app skills (integration)", () => {
     let entry = app([source]);
     try {
       entry = await publish(entry, [source]);
-      const installed = (await aiSkills.getByName(name, subject))!;
+      const installed = (await aiSkills.getByName(name, userResourceContext(subject)))!;
       const operations = [
-        () => aiSkills.update(installed.id, subject, { ...installed, expectedRevision: 1 }),
-        () => aiSkills.setReference(installed.id, subject, { path: "references/r.md", content: "R", expectedRevision: 1 }),
-        () => aiSkills.removeReference(installed.id, subject, { path: "references/r.md", expectedRevision: 1 }),
-        () => aiSkills.delete(installed.id, subject),
-        () => aiSkills.grantAccess(installed.id, subject, { principal: { type: "authenticated" }, permission: "write" }),
-        () => aiSkills.updateAccess(installed.id, "access", subject, "write"),
-        () => aiSkills.revokeAccess(installed.id, "access", subject),
+        () => aiSkills.update(installed.id, userResourceContext(subject), { ...installed, expectedRevision: 1 }),
+        () =>
+          aiSkills.setReference(installed.id, userResourceContext(subject), { path: "references/r.md", content: "R", expectedRevision: 1 }),
+        () => aiSkills.removeReference(installed.id, userResourceContext(subject), { path: "references/r.md", expectedRevision: 1 }),
+        () => aiSkills.delete(installed.id, userResourceContext(subject)),
+        () =>
+          aiSkills.grantAccess(installed.id, userResourceContext(subject), { principal: { type: "authenticated" }, permission: "write" }),
+        () => aiSkills.updateAccess(installed.id, "access", userResourceContext(subject), "write"),
+        () => aiSkills.revokeAccess(installed.id, "access", userResourceContext(subject)),
       ];
       for (const operation of operations) {
         await expect(operation()).rejects.toBeInstanceOf(AiSkillAppForbiddenError);
@@ -617,11 +668,11 @@ databaseSuite()("app skills (integration)", () => {
     let entry = app([source]);
     try {
       entry = await publish(entry, [source]);
-      const installed = (await aiSkills.getByName(name, subject))!;
+      const installed = (await aiSkills.getByName(name, userResourceContext(subject)))!;
       await reconcileAppSkills([{ ...entry, skills: { manifestHash: "a".repeat(64) } }]);
-      expect(await aiSkills.get(installed.id, subject)).not.toBeNull();
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).not.toBeNull();
       await publish({ ...entry, name: "Stock", nav: { href: "/app/inventory", section: "primary", requiresRoles: ["guest"] } }, [source]);
-      expect(await aiSkills.get(installed.id, subject)).toBeNull();
+      expect(await aiSkills.get(installed.id, userResourceContext(subject))).toBeNull();
       expect((await aiSkills.admin.getByShortId(installed.shortId))?.source?.appName).toBe("Stock");
       await sql`INSERT INTO ai.app_skill_catalogs(app_id, manifest_hash, skills, last_seen_at)
         VALUES (${entry.id}, ${"old"}, '[]'::jsonb, now() - interval '1 day')`;
@@ -645,8 +696,8 @@ databaseSuite()("app skills (integration)", () => {
           { ...valid, hash: "forged" },
         ])}::text)::jsonb)`;
       await reconcileAppSkills([entry]);
-      expect(await aiSkills.getByName(valid.name, subject)).not.toBeNull();
-      expect(await aiSkills.getByName(name, subject)).toBeNull();
+      expect(await aiSkills.getByName(valid.name, userResourceContext(subject))).not.toBeNull();
+      expect(await aiSkills.getByName(name, userResourceContext(subject))).toBeNull();
       expect(await aiAppSkills.appSkillIssues()).toContainEqual({
         appId: entry.id,
         appName: "Inventory",
@@ -670,7 +721,7 @@ databaseSuite()("app skills (integration)", () => {
         VALUES (${broken.id}, ${broken.skills!.manifestHash}, '{"not":"a list"}'::jsonb)`;
       await registerAppSkills(healthy.id, [valid], healthy.skills!.manifestHash);
       expect(await reconcileAppSkills([broken, healthy])).toBe(false);
-      expect(await aiSkills.getByName(valid.name, subject)).toMatchObject({ source: { appId: healthy.id } });
+      expect(await aiSkills.getByName(valid.name, userResourceContext(subject))).toMatchObject({ source: { appId: healthy.id } });
       expect(await reconcileAppSkills([healthy])).toBe(true);
     } finally {
       await cleanup([broken.id, healthy.id]);
@@ -692,16 +743,19 @@ databaseSuite()("app skills (integration)", () => {
     const first = definition("cloud-assistant"),
       customizedSource = definition("scheduled-tasks"),
       deletedSource = definition("assistant-code-mode");
-    const firstRow = await aiSkills.create({ subject, ...first });
-    const edited = await aiSkills.create({ subject, ...customizedSource });
-    const legacy = await aiSkills.create({ subject, ...definition("cloud-weather", "Legacy managed content") });
-    const unknown = await aiSkills.create({ subject, ...definition(`unknown-${crypto.randomUUID()}`) });
+    const firstRow = await aiSkills.create({ subject: userResourceContext(subject), ...first });
+    const edited = await aiSkills.create({ subject: userResourceContext(subject), ...customizedSource });
+    const legacy = await aiSkills.create({
+      subject: userResourceContext(subject),
+      ...definition("cloud-weather", "Legacy managed content"),
+    });
+    const unknown = await aiSkills.create({ subject: userResourceContext(subject), ...definition(`unknown-${crypto.randomUUID()}`) });
     const tombstoneId = crypto.randomUUID();
     try {
-      await aiSkills.setEnabled(firstRow.id, subject, false);
-      await aiSkills.update(edited.id, subject, { ...edited, instructions: "Admin override", expectedRevision: 1 });
-      await aiSkills.grantAccess(firstRow.id, subject, { principal: { type: "authenticated" }, permission: "read" });
-      const grants = await aiSkills.listAccess(firstRow.id, subject);
+      await aiSkills.setEnabled(firstRow.id, userResourceContext(subject), false);
+      await aiSkills.update(edited.id, userResourceContext(subject), { ...edited, instructions: "Admin override", expectedRevision: 1 });
+      await aiSkills.grantAccess(firstRow.id, userResourceContext(subject), { principal: { type: "authenticated" }, permission: "read" });
+      const grants = await aiSkills.listAccess(firstRow.id, userResourceContext(subject));
       await sql`ALTER TABLE ai.skills ADD COLUMN IF NOT EXISTS template_id text, ADD COLUMN IF NOT EXISTS template_version integer, ADD COLUMN IF NOT EXISTS template_hash text`.simple();
       await sql`CREATE TABLE ai.skill_seeds(key text PRIMARY KEY, skill_id uuid, catalog_version integer, seeded_at timestamptz DEFAULT now())`.simple();
       await sql`UPDATE ai.skills SET template_id='assistant:cloud-assistant', template_version=1, template_hash=${first.hash} WHERE id=${firstRow.id}::uuid`;
@@ -721,7 +775,7 @@ databaseSuite()("app skills (integration)", () => {
           await sql`SELECT 1 FROM information_schema.columns WHERE table_schema='ai' AND table_name='skills' AND column_name LIKE 'template_%'`
         ).length,
       ).toBe(0);
-      expect(await aiSkills.get(firstRow.id, subject)).toBeNull(); // adopted, not yet available
+      expect(await aiSkills.get(firstRow.id, userResourceContext(subject))).toBeNull(); // adopted, not yet available
       expect((await aiSkills.admin.getByShortId(firstRow.shortId))?.source).toMatchObject({ status: "current", available: false });
       expect((await aiSkills.admin.getByShortId(edited.shortId))?.source?.status).toBe("modified");
       const assistant: AppRegistryEntry = { ...app([first]), id: "assistant", name: "Assistant" };
@@ -735,25 +789,25 @@ databaseSuite()("app skills (integration)", () => {
       const live = [{ ...assistant, skills: { manifestHash: appSkillManifestHash(assistantSkills) } }, weather, contacts];
       await reconcileAppSkills(live);
       await reconcileAppSkills(live);
-      expect(await aiSkills.get(firstRow.id, subject)).toMatchObject({
+      expect(await aiSkills.get(firstRow.id, userResourceContext(subject))).toMatchObject({
         id: firstRow.id,
         shortId: firstRow.shortId,
         enabled: false,
         revision: 2,
         instructions: latest.instructions,
       });
-      expect(await aiSkills.listAccess(firstRow.id, subject)).toEqual(grants);
-      expect(await aiSkills.get(edited.id, subject)).toMatchObject({
+      expect(await aiSkills.listAccess(firstRow.id, userResourceContext(subject))).toEqual(grants);
+      expect(await aiSkills.get(edited.id, userResourceContext(subject))).toMatchObject({
         id: edited.id,
         shortId: edited.shortId,
         revision: 2,
         instructions: "Admin override",
       });
       expect((await aiSkills.admin.getByShortId(edited.shortId))?.source?.status).toBe("update_available");
-      expect(await aiSkills.getByName(deletedSource.name, subject)).toBeNull();
+      expect(await aiSkills.getByName(deletedSource.name, userResourceContext(subject))).toBeNull();
       expect((await sql`SELECT 1 FROM ai.skills WHERE name='cloud-contacts'`).length).toBe(0);
-      expect(await aiSkills.get(legacy.id, subject)).toEqual(legacy);
-      expect(await aiSkills.get(unknown.id, subject)).toEqual(unknown);
+      expect(await aiSkills.get(legacy.id, userResourceContext(subject))).toEqual(legacy);
+      expect(await aiSkills.get(unknown.id, userResourceContext(subject))).toEqual(unknown);
       expect((await sql`SELECT 1 FROM ai.app_skills WHERE app_id='assistant'`).length).toBe(3);
       expect(await aiAppSkills.appSkillIssues()).toEqual(
         expect.arrayContaining([
@@ -763,11 +817,14 @@ databaseSuite()("app skills (integration)", () => {
         ]),
       );
       expect(await aiAppSkills.restore("contacts", "cloud-contacts")).toBe(true);
-      expect((await aiSkills.getByName("cloud-contacts", subject))?.source).toEqual({ appId: "contacts", appName: "Contacts" });
+      expect((await aiSkills.getByName("cloud-contacts", userResourceContext(subject)))?.source).toEqual({
+        appId: "contacts",
+        appName: "Contacts",
+      });
       // An administrator links the pre-template copy to its app instead of deleting it: same ID, content kept as a customization.
       expect(await aiAppSkills.adopt("weather", "cloud-weather")).toBe(true);
       await expect(aiAppSkills.adopt("weather", "cloud-weather")).rejects.toBeInstanceOf(AiSkillRevisionConflictError);
-      expect(await aiSkills.get(legacy.id, subject)).toMatchObject({
+      expect(await aiSkills.get(legacy.id, userResourceContext(subject))).toMatchObject({
         id: legacy.id,
         shortId: legacy.shortId,
         instructions: legacy.instructions,
@@ -776,7 +833,7 @@ databaseSuite()("app skills (integration)", () => {
       expect((await aiSkills.admin.getByShortId(legacy.shortId))?.source?.status).toBe("modified");
       expect((await aiAppSkills.appSkillIssues()).some((issue) => issue.appId === "weather")).toBe(false);
       expect(await aiAppSkills.reset(legacy.id, legacy.revision, definition("cloud-weather").hash)).toBe(true);
-      expect((await aiSkills.get(legacy.id, subject))?.instructions).toBe(definition("cloud-weather").instructions);
+      expect((await aiSkills.get(legacy.id, userResourceContext(subject)))?.instructions).toBe(definition("cloud-weather").instructions);
       await expect(aiAppSkills.adopt("assistant", unknown.name)).resolves.toBe(false);
       await expect(aiAppSkills.reset(unknown.id, 1, first.hash)).rejects.toBeInstanceOf(AiSkillInputError);
     } finally {

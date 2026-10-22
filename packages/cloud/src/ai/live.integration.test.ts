@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { serviceAccounts } from "../services/service-accounts";
 import { aiFileStore } from "./files-store";
 import { AiInvalidationSchema } from "./live-events";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
+import { userResourceContext } from "./projects.test-fixture";
 import { aiConversations } from "./store";
 
 const suite = databaseSuite();
@@ -35,8 +37,8 @@ const insertUser = async (label: string): Promise<string> => {
 const insertServiceAccount = async (label: string): Promise<string> => {
   const suffix = crypto.randomUUID();
   const [row] = await sql<{ id: string }[]>`
-    INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
-    VALUES (${`AI Live ${label} ${suffix}`}, 'resource_bound', 'ai-live-test', 'project-test', ${suffix})
+    INSERT INTO auth.service_accounts (name, kind)
+    VALUES (${`AI Live ${label} ${suffix}`}, 'standalone')
     RETURNING id
   `;
   return row!.id;
@@ -140,24 +142,27 @@ suite("AI live updates in the platform outbox", () => {
     const memberId = await insertUser("project-member");
     const strangerId = await insertUser("project-stranger");
     const owner = { type: "user" as const, userId: ownerId };
-    const project = await aiProjects.create({ subject: owner, name: "Realtime Project" });
+    const project = await aiProjects.create({ subject: userResourceContext(owner), name: "Realtime Project" });
     await clearUpdates();
 
-    const grant = await aiProjects.grantAccess(project.id, owner, { principal: { type: "user", userId: memberId }, permission: "read" });
+    const grant = await aiProjects.grantAccess(project.id, userResourceContext(owner), {
+      principal: { type: "user", userId: memberId },
+      permission: "read",
+    });
     expect(await recipientsOf(project.shortId)).toEqual([memberId, ownerId].sort());
 
     await clearUpdates();
-    await aiProjects.updateAccess(project.id, grant!.id, owner, "write");
+    await aiProjects.updateAccess(project.id, grant!.id, userResourceContext(owner), "write");
     expect(await recipientsOf(project.shortId)).toEqual([memberId, ownerId].sort());
 
     // The member who loses access still learns that the Project left their list.
     await clearUpdates();
-    await aiProjects.revokeAccess(project.id, grant!.id, owner);
+    await aiProjects.revokeAccess(project.id, grant!.id, userResourceContext(owner));
     expect(await recipientsOf(project.shortId)).toEqual([memberId, ownerId].sort());
     expect((await updatesFor(memberId)).flatMap((update) => update.domains)).toContain("project-list");
 
     await clearUpdates();
-    await aiProjects.update(project.id, owner, { name: "Renamed Project" });
+    await aiProjects.update(project.id, userResourceContext(owner), { name: "Renamed Project" });
     expect(await recipientsOf(project.shortId)).toEqual([ownerId]);
 
     await clearUpdates();
@@ -180,8 +185,11 @@ suite("AI live updates in the platform outbox", () => {
              (${`ai-live-child-${suffix}`}, 'local', 'Live child', 'Live child')
       RETURNING id
     `;
-    const project = await aiProjects.create({ subject: owner, name: "Group Project" });
-    await aiProjects.grantAccess(project.id, owner, { principal: { type: "group", groupId: parent!.id }, permission: "read" });
+    const project = await aiProjects.create({ subject: userResourceContext(owner), name: "Group Project" });
+    await aiProjects.grantAccess(project.id, userResourceContext(owner), {
+      principal: { type: "group", groupId: parent!.id },
+      permission: "read",
+    });
     await sql`INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id) VALUES (${parent!.id}::uuid, ${child!.id}::uuid)`;
 
     // Joining and leaving a nested group changes the member's Project list at once.
@@ -189,7 +197,7 @@ suite("AI live updates in the platform outbox", () => {
     await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${memberId}::uuid, ${child!.id}::uuid)`;
     expect(await recipientsOf(project.shortId)).toContain(memberId);
     await clearUpdates();
-    await aiProjects.update(project.id, owner, { name: "Group Project, renamed" });
+    await aiProjects.update(project.id, userResourceContext(owner), { name: "Group Project, renamed" });
     expect(await recipientsOf(project.shortId)).toEqual([memberId, ownerId].sort());
     await clearUpdates();
     await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${memberId}::uuid AND group_id = ${child!.id}::uuid`;
@@ -197,14 +205,22 @@ suite("AI live updates in the platform outbox", () => {
 
     // A grant to every signed-in person reaches every user of the installation.
     await clearUpdates();
-    const everyone = await aiProjects.grantAccess(project.id, owner, { principal: { type: "authenticated" }, permission: "read" });
+    const everyone = await aiProjects.grantAccess(project.id, userResourceContext(owner), {
+      principal: { type: "authenticated" },
+      permission: "read",
+    });
     const [users] = await sql<{ ids: string[] }[]>`SELECT array_agg(id::text ORDER BY id::text) AS ids FROM auth.users`;
     expect(await recipientsOf(project.shortId)).toEqual(users!.ids.sort());
     expect(await recipientsOf(project.shortId)).toContain(anyoneId);
-    await aiProjects.revokeAccess(project.id, everyone!.id, owner);
+    await aiProjects.revokeAccess(project.id, everyone!.id, userResourceContext(owner));
 
     await clearUpdates();
-    const service = { type: "service_account" as const, serviceAccountId };
+    const serviceAccount = await serviceAccounts.get({ id: serviceAccountId });
+    if (!serviceAccount) throw new Error("Missing service account fixture");
+    const service = {
+      actor: { kind: "service_account" as const, serviceAccount, delegatedUser: null, scopes: ["write"] },
+      accessSubject: { type: "service_account" as const, serviceAccountId },
+    };
     const serviceProject = await aiProjects.create({ subject: service, name: "Service Project" });
     expect(await recipientsOf(serviceProject.shortId)).toEqual([]);
   });
@@ -213,8 +229,11 @@ suite("AI live updates in the platform outbox", () => {
     const ownerId = await insertUser("delete-owner");
     const leavingId = await insertUser("delete-member");
     const owner = { type: "user" as const, userId: ownerId };
-    const project = await aiProjects.create({ subject: owner, name: "Shared before deletion" });
-    await aiProjects.grantAccess(project.id, owner, { principal: { type: "user", userId: leavingId }, permission: "read" });
+    const project = await aiProjects.create({ subject: userResourceContext(owner), name: "Shared before deletion" });
+    await aiProjects.grantAccess(project.id, userResourceContext(owner), {
+      principal: { type: "user", userId: leavingId },
+      permission: "read",
+    });
     await aiConversations.createConversation({ ownerUserId: leavingId, projectId: project.id });
 
     await clearUpdates();

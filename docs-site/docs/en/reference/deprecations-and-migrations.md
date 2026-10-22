@@ -2434,3 +2434,16 @@ route are replaced by outgoing mail profiles and the per-profile test route.
 Core imports configured legacy SMTP settings automatically.
 See [Outgoing mail operations](/en/docs/operations/outgoing-mail) for the upgrade
 and rollback rules.
+
+## Project and Skill service authorization context
+
+Project and Skill services and their AI tool factories now require
+`AiResourceContext` from `@k2b/cloud/ai`. Replace bare `AccessSubject` arguments
+with `{ actor, accessSubject }` from the authenticated request or capability
+context. Pass that same context as `subject` when creating a resource. Keep the
+original machine actor, including its scopes; do not construct a user actor to
+represent a machine credential. Anonymous read paths may pass `null`.
+
+Standalone and agent credentials use their own grants within their credential
+scopes. Resource-bound credentials are unsupported for Projects and Skills.
+See [Projects and Skills](/en/docs/ai/files-projects-and-personalization#reuse-shared-skills).

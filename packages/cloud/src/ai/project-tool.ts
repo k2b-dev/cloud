@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { AccessSubject } from "../server";
 import { mountAiProjectFilePath } from "./file-mount";
 import { aiProjects } from "./projects";
+import type { AiResourceContext } from "./projects-authorization";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { defineAiTool } from "./tools";
 
@@ -31,11 +31,11 @@ export const CloudAiReadProjectKnowledgeInputSchema = z
 
 export const CloudAiReadProjectKnowledgeOutputSchema = z.object({ title: z.string(), content: z.string() }).strict();
 
-const requireProjectAccess = async (projectId: string, subject: AccessSubject): Promise<void> => {
+const requireProjectAccess = async (projectId: string, subject: AiResourceContext): Promise<void> => {
   if (!(await aiProjects.get(projectId, subject, "read"))) throw new Error("Project access is no longer available.");
 };
 
-export const createCloudAiSearchProjectTool = (projectId: string, subject: AccessSubject) =>
+export const createCloudAiSearchProjectTool = (projectId: string, subject: AiResourceContext) =>
   defineAiTool({
     name: "search_project",
     description:
@@ -77,7 +77,7 @@ export const createCloudAiSearchProjectTool = (projectId: string, subject: Acces
     return { items: all.slice(0, 100), truncated: all.length > 100 };
   });
 
-export const createCloudAiReadProjectKnowledgeTool = (projectId: string, subject: AccessSubject) =>
+export const createCloudAiReadProjectKnowledgeTool = (projectId: string, subject: AiResourceContext) =>
   defineAiTool({
     name: "read_project_knowledge",
     description:

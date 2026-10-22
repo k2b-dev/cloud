@@ -306,7 +306,12 @@ for (const reference of [conversation.shortId, conversation.id]) {
         expect(response.status).toBe(403);
         if (path.includes("/tools/"))
           expect(await response.json()).toEqual({ ok: false, error: { code: "ACCESS_DENIED", message: "Conversation access denied." } });
-        if (denied?.projectId) expect(state.project).toHaveBeenCalledWith("project", identity.accessSubject, "read");
+        if (denied?.projectId)
+          expect(state.project).toHaveBeenCalledWith(
+            "project",
+            expect.objectContaining({ actor: identity.actor, accessSubject: identity.accessSubject }),
+            "read",
+          );
         expect(state.queries).toHaveLength(0);
         expect(state.list).not.toHaveBeenCalled();
       });

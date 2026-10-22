@@ -2,9 +2,11 @@ import { beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { tinyJpeg, withCameraMetadata } from "../../../../scripts/fixtures/image-metadata";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { serviceAccounts } from "../services/service-accounts";
 import { aiFileContentVersion } from "./file-content-version";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
+import { userResourceContext } from "./projects.test-fixture";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { aiConversations } from "./store";
 
@@ -21,11 +23,20 @@ const insertUser = async (label: string) => {
 const insertServiceAccount = async (label: string) => {
   const suffix = crypto.randomUUID();
   const [row] = await sql<{ id: string }[]>`
-    INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
-    VALUES (${`AI Project ${label} ${suffix}`}, 'resource_bound', 'assistant', 'project-test', ${suffix})
+    INSERT INTO auth.service_accounts (name, kind)
+    VALUES (${`AI Project ${label} ${suffix}`}, 'standalone')
     RETURNING id
   `;
   return row!.id;
+};
+
+const serviceSubject = async (serviceAccountId: string) => {
+  const serviceAccount = await serviceAccounts.get({ id: serviceAccountId });
+  if (!serviceAccount) throw new Error("Missing service account");
+  return {
+    actor: { kind: "service_account" as const, serviceAccount, delegatedUser: null, scopes: ["admin"] },
+    accessSubject: { type: "service_account" as const, serviceAccountId },
+  };
 };
 
 databaseSuite()("aiProjects (integration)", () => {
@@ -35,15 +46,17 @@ databaseSuite()("aiProjects (integration)", () => {
   test("shared Project images lose camera metadata before storage and content hashing", async () => {
     const userId = await insertUser("photo");
     const subject = { type: "user" as const, userId };
-    const project = await aiProjects.create({ subject, name: "Photo privacy" });
+    const project = await aiProjects.create({ subject: userResourceContext(subject), name: "Photo privacy" });
     try {
       const jpeg = await tinyJpeg();
       const input = { path: "photo.jpg", bytes: withCameraMetadata(jpeg, 1), mediaType: "application/octet-stream" };
-      const stored = await aiProjects.writeFile(project.id, subject, input);
+      const stored = await aiProjects.writeFile(project.id, userResourceContext(subject), input);
       expect(stored?.size).toBe(jpeg.length);
-      const content = await aiProjects.readFileByPath(project.id, input.path, subject);
+      const content = await aiProjects.readFileByPath(project.id, input.path, userResourceContext(subject));
       expect(content?.bytes).toEqual(jpeg);
-      await expect(aiProjects.writeFile(project.id, subject, { ...input, bytes: input.bytes.subarray(0, 30) })).rejects.toMatchObject({
+      await expect(
+        aiProjects.writeFile(project.id, userResourceContext(subject), { ...input, bytes: input.bytes.subarray(0, 30) }),
+      ).rejects.toMatchObject({
         status: 422,
       });
     } finally {
@@ -55,22 +68,26 @@ databaseSuite()("aiProjects (integration)", () => {
   test("project file paths are NFC and legacy spellings migrate", async () => {
     const userId = await insertUser("unicode");
     const subject = { type: "user" as const, userId };
-    const project = await aiProjects.create({ subject, name: "Unicode" });
+    const project = await aiProjects.create({ subject: userResourceContext(subject), name: "Unicode" });
     const nfd = "Anlagevermo\u0308gen.pdf";
     const nfc = "Anlageverm\u00f6gen.pdf";
     try {
       await sql`INSERT INTO ai.project_files (short_id, project_id, path, media_type, bytes, size) VALUES ('legacy1', ${project.id}::uuid, ${`alt/${nfd}`}, 'text/plain', ${new Uint8Array([1])}, 1)`;
       await migrateCloudAi();
-      expect((await aiProjects.readFileByPath(project.id, `alt/${nfc}`, subject))?.path).toBe(`alt/${nfc}`);
+      expect((await aiProjects.readFileByPath(project.id, `alt/${nfc}`, userResourceContext(subject)))?.path).toBe(`alt/${nfc}`);
 
-      const written = await aiProjects.writeFile(project.id, subject, { path: nfd, mediaType: "text/plain", bytes: new Uint8Array([2]) });
+      const written = await aiProjects.writeFile(project.id, userResourceContext(subject), {
+        path: nfd,
+        mediaType: "text/plain",
+        bytes: new Uint8Array([2]),
+      });
       expect(written?.path).toBe(nfc);
-      expect((await aiProjects.readFileByPath(project.id, nfd, subject))?.bytes).toEqual(new Uint8Array([2]));
-      expect((await aiProjects.listFiles(project.id, subject, { limit: 10 })).map((file) => file.path).sort()).toEqual(
+      expect((await aiProjects.readFileByPath(project.id, nfd, userResourceContext(subject)))?.bytes).toEqual(new Uint8Array([2]));
+      expect((await aiProjects.listFiles(project.id, userResourceContext(subject), { limit: 10 })).map((file) => file.path).sort()).toEqual(
         [nfc, `alt/${nfc}`].sort(),
       );
     } finally {
-      await aiProjects.delete(project.id, subject);
+      await aiProjects.delete(project.id, userResourceContext(subject));
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
@@ -78,24 +95,24 @@ databaseSuite()("aiProjects (integration)", () => {
   test("versioned Project file transfers serialize replacements and reject stale content", async () => {
     const userId = await insertUser("file-transfer");
     const subject = { type: "user" as const, userId };
-    const project = await aiProjects.create({ subject, name: "Transfer" });
+    const project = await aiProjects.create({ subject: userResourceContext(subject), name: "Transfer" });
     try {
       const input = { path: "invoice.pdf", mediaType: "application/pdf", bytes: new Uint8Array([0, 128, 255]), expectedVersion: null };
-      await aiProjects.writeFile(project.id, subject, input);
-      const current = (await aiProjects.readFileByPath(project.id, input.path, subject))!;
+      await aiProjects.writeFile(project.id, userResourceContext(subject), input);
+      const current = (await aiProjects.readFileByPath(project.id, input.path, userResourceContext(subject)))!;
       const version = aiFileContentVersion(current);
       const writes = await Promise.allSettled([
-        aiProjects.writeFile(project.id, subject, { ...input, expectedVersion: version, bytes: new Uint8Array([1]) }),
-        aiProjects.writeFile(project.id, subject, { ...input, expectedVersion: version, bytes: new Uint8Array([2]) }),
+        aiProjects.writeFile(project.id, userResourceContext(subject), { ...input, expectedVersion: version, bytes: new Uint8Array([1]) }),
+        aiProjects.writeFile(project.id, userResourceContext(subject), { ...input, expectedVersion: version, bytes: new Uint8Array([2]) }),
       ]);
       expect(writes.filter((write) => write.status === "fulfilled")).toHaveLength(1);
       expect(writes.filter((write) => write.status === "rejected")).toHaveLength(1);
-      await expect(aiProjects.writeFile(project.id, subject, input)).rejects.toThrow("version conflict");
-      const page = await aiProjects.listFiles(project.id, subject, { limit: 1 });
+      await expect(aiProjects.writeFile(project.id, userResourceContext(subject), input)).rejects.toThrow("version conflict");
+      const page = await aiProjects.listFiles(project.id, userResourceContext(subject), { limit: 1 });
       expect(page.map((file) => file.path)).toEqual([input.path]);
-      expect(await aiProjects.listFiles(project.id, subject, { after: input.path, limit: 1 })).toEqual([]);
+      expect(await aiProjects.listFiles(project.id, userResourceContext(subject), { after: input.path, limit: 1 })).toEqual([]);
     } finally {
-      await aiProjects.delete(project.id, subject);
+      await aiProjects.delete(project.id, userResourceContext(subject));
       await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
     }
   });
@@ -128,36 +145,38 @@ databaseSuite()("aiProjects (integration)", () => {
     try {
       await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${memberId}::uuid, ${group!.id}::uuid)`;
       const project = await aiProjects.create({
-        subject: owner,
+        subject: userResourceContext(owner),
         name: "Support",
         instructions: "Answer with the support policy.",
         defaultModelProfileId: "model-support",
       });
       expect(project).not.toHaveProperty("ownerUserId");
-      expect(await aiProjects.listAccess(project.id, owner)).toMatchObject([
+      expect(await aiProjects.listAccess(project.id, userResourceContext(owner))).toMatchObject([
         { principal: { type: "user", userId: ownerId }, permission: "admin" },
       ]);
-      const grant = await aiProjects.grantAccess(project.id, owner, {
+      const grant = await aiProjects.grantAccess(project.id, userResourceContext(owner), {
         principal: { type: "group", groupId: group!.id },
         permission: "write",
       });
       expect(grant?.permission).toBe("write");
       expect(grant?.shortId).toMatch(AI_SHORT_ID_PATTERN);
-      expect((await aiProjects.list(owner)).map((item) => item.id)).toContain(project.id);
-      expect((await aiProjects.list(member)).map((item) => item.id)).toContain(project.id);
-      expect(await aiProjects.resolveShortIds([project.id, project.id], member)).toEqual(new Map([[project.id, project.shortId]]));
-      const visible = await aiProjects.get(project.id, member, "write");
+      expect((await aiProjects.list(userResourceContext(owner))).map((item) => item.id)).toContain(project.id);
+      expect((await aiProjects.list(userResourceContext(member))).map((item) => item.id)).toContain(project.id);
+      expect(await aiProjects.resolveShortIds([project.id, project.id], userResourceContext(member))).toEqual(
+        new Map([[project.id, project.shortId]]),
+      );
+      const visible = await aiProjects.get(project.id, userResourceContext(member), "write");
       expect(visible?.permission).toBe("write");
-      const knowledge = await aiProjects.createKnowledge(project.id, member, {
+      const knowledge = await aiProjects.createKnowledge(project.id, userResourceContext(member), {
         title: "Escalation",
         content: "Escalate account lockouts to identity operations.",
       });
-      const file = await aiProjects.writeFile(project.id, member, {
+      const file = await aiProjects.writeFile(project.id, userResourceContext(member), {
         path: "guides/triage.md",
         mediaType: "text/markdown",
         bytes: new TextEncoder().encode("# Triage"),
       });
-      const reference = await aiProjects.createReference(project.id, member, {
+      const reference = await aiProjects.createReference(project.id, userResourceContext(member), {
         ref: { type: "notebooks.notebook", id: "support-runbook" },
         label: "Runbook",
       });
@@ -168,16 +187,18 @@ databaseSuite()("aiProjects (integration)", () => {
       expect(knowledge).not.toBeNull();
       expect(file).not.toBeNull();
       expect(reference).not.toBeNull();
-      expect(new TextDecoder().decode((await aiProjects.readFileByPath(project.id, "guides/triage.md", member))?.bytes)).toBe("# Triage");
+      expect(
+        new TextDecoder().decode((await aiProjects.readFileByPath(project.id, "guides/triage.md", userResourceContext(member)))?.bytes),
+      ).toBe("# Triage");
 
-      const snapshot = await aiProjects.snapshot(project.id, member);
+      const snapshot = await aiProjects.snapshot(project.id, userResourceContext(member));
       expect(snapshot?.instructions).toBe("Answer with the support policy.");
       expect(snapshot?.defaultModelProfileId).toBe("model-support");
       expect(snapshot?.context).toContain("Escalation");
       expect(snapshot?.context).toContain("/project/guides/triage.md");
       expect(snapshot?.context).toContain("notebooks.notebook/support-runbook");
 
-      const beforeRollback = await aiProjects.get(project.id, owner);
+      const beforeRollback = await aiProjects.get(project.id, userResourceContext(owner));
       await sql
         .unsafe(
           `ALTER TABLE ai.projects ADD CONSTRAINT ai_projects_test_touch_rollback CHECK (id <> '${project.id}'::uuid OR revision < 0) NOT VALID`,
@@ -185,7 +206,7 @@ databaseSuite()("aiProjects (integration)", () => {
         .simple();
       try {
         await expect(
-          aiProjects.createKnowledge(project.id, member, {
+          aiProjects.createKnowledge(project.id, userResourceContext(member), {
             title: "Must roll back",
             content: "The child write must not survive a failed revision bump.",
           }),
@@ -193,8 +214,10 @@ databaseSuite()("aiProjects (integration)", () => {
       } finally {
         await sql`ALTER TABLE ai.projects DROP CONSTRAINT ai_projects_test_touch_rollback`;
       }
-      expect((await aiProjects.listKnowledge(project.id, member)).some((item) => item.title === "Must roll back")).toBe(false);
-      expect((await aiProjects.get(project.id, owner))?.revision).toBe(beforeRollback?.revision);
+      expect(
+        (await aiProjects.listKnowledge(project.id, userResourceContext(member))).some((item) => item.title === "Must roll back"),
+      ).toBe(false);
+      expect((await aiProjects.get(project.id, userResourceContext(owner)))?.revision).toBe(beforeRollback?.revision);
 
       const ownerChat = await aiConversations.createConversation({ ownerUserId: ownerId, projectId: project.id });
       const memberChat = await aiConversations.createConversation({ ownerUserId: memberId, projectId: project.id });
@@ -203,10 +226,10 @@ databaseSuite()("aiProjects (integration)", () => {
       expect(ownerChat.projectId).toBe(project.id);
       expect(memberChat.projectId).toBe(project.id);
 
-      expect(await aiProjects.revokeAccess(project.id, grant!.id, owner)).toBe(true);
-      expect(await aiProjects.get(project.id, member)).toBeNull();
-      expect(await aiProjects.readFileByPath(project.id, "guides/triage.md", member)).toBeNull();
-      expect(await aiProjects.resolveShortIds([project.id], member)).toEqual(new Map());
+      expect(await aiProjects.revokeAccess(project.id, grant!.id, userResourceContext(owner))).toBe(true);
+      expect(await aiProjects.get(project.id, userResourceContext(member))).toBeNull();
+      expect(await aiProjects.readFileByPath(project.id, "guides/triage.md", userResourceContext(member))).toBeNull();
+      expect(await aiProjects.resolveShortIds([project.id], userResourceContext(member))).toEqual(new Map());
     } finally {
       await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (${ownerId}::uuid, ${memberId}::uuid)`;
       await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid, ${memberId}::uuid)`;
@@ -216,11 +239,11 @@ databaseSuite()("aiProjects (integration)", () => {
 
   test("creates service-account Projects and permits duplicate display names", async () => {
     const serviceAccountId = await insertServiceAccount("creator");
-    const subject = { type: "service_account" as const, serviceAccountId };
+    const subject = await serviceSubject(serviceAccountId);
     const created: string[] = [];
     try {
-      const first = await aiProjects.create({ subject, name: "Duplicate" });
-      const second = await aiProjects.create({ subject, name: "Duplicate" });
+      const first = await aiProjects.create({ subject: subject, name: "Duplicate" });
+      const second = await aiProjects.create({ subject: subject, name: "Duplicate" });
       created.push(first.id, second.id);
       expect(first.shortId).not.toBe(second.shortId);
       expect((await aiProjects.list(subject)).filter((project) => project.name === "Duplicate")).toHaveLength(2);
@@ -240,18 +263,20 @@ databaseSuite()("aiProjects (integration)", () => {
       INSERT INTO auth.service_accounts (name, kind) VALUES (${`AI Project agent ${crypto.randomUUID()}`}, 'agent') RETURNING id
     `;
     const principal = { type: "service_account" as const, serviceAccountId: agent!.id };
-    const project = await aiProjects.create({ subject: owner, name: "Agent kind" });
+    const project = await aiProjects.create({ subject: userResourceContext(owner), name: "Agent kind" });
     try {
-      expect(await aiProjects.grantAccess(project.id, owner, { principal, permission: "write" })).toMatchObject({
+      expect(await aiProjects.grantAccess(project.id, userResourceContext(owner), { principal, permission: "write" })).toMatchObject({
         principal,
         serviceAccountKind: "agent",
       });
-      expect((await aiProjects.listAccess(project.id, owner))?.find((entry) => entry.principal.type === "service_account")).toMatchObject({
+      expect(
+        (await aiProjects.listAccess(project.id, userResourceContext(owner)))?.find((entry) => entry.principal.type === "service_account"),
+      ).toMatchObject({
         principal,
         serviceAccountKind: "agent",
       });
     } finally {
-      await aiProjects.delete(project.id, owner);
+      await aiProjects.delete(project.id, userResourceContext(owner));
       await sql`DELETE FROM auth.service_accounts WHERE id = ${agent!.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
@@ -265,7 +290,7 @@ databaseSuite()("aiProjects (integration)", () => {
     const creator = { type: "user" as const, userId: creatorId };
     const nestedUser = { type: "user" as const, userId: nestedUserId };
     const outsideUser = { type: "user" as const, userId: outsideUserId };
-    const service = { type: "service_account" as const, serviceAccountId };
+    const service = await serviceSubject(serviceAccountId);
     const suffix = crypto.randomUUID();
     const groups = await sql<{ id: string }[]>`
       INSERT INTO auth.groups (cn, provider, name, description)
@@ -284,33 +309,35 @@ databaseSuite()("aiProjects (integration)", () => {
         INSERT INTO auth.user_groups_v2 (user_id, group_id)
         VALUES (${nestedUserId}::uuid, ${groups[1]!.id}::uuid)
       `;
-      const project = await aiProjects.create({ subject: creator, name: "Matrix" });
+      const project = await aiProjects.create({ subject: userResourceContext(creator), name: "Matrix" });
       projectId = project.id;
-      await aiProjects.grantAccess(project.id, creator, {
+      await aiProjects.grantAccess(project.id, userResourceContext(creator), {
         principal: { type: "group", groupId: groups[0]!.id },
         permission: "write",
       });
-      await aiProjects.grantAccess(project.id, creator, {
+      await aiProjects.grantAccess(project.id, userResourceContext(creator), {
         principal: { type: "service_account", serviceAccountId },
         permission: "write",
       });
-      await aiProjects.grantAccess(project.id, creator, {
+      await aiProjects.grantAccess(project.id, userResourceContext(creator), {
         principal: { type: "authenticated" },
         permission: "read",
       });
 
-      expect((await aiProjects.get(project.id, nestedUser))?.permission).toBe("write");
+      expect((await aiProjects.get(project.id, userResourceContext(nestedUser)))?.permission).toBe("write");
       expect((await aiProjects.get(project.id, service))?.permission).toBe("write");
-      expect((await aiProjects.get(project.id, outsideUser))?.permission).toBe("read");
+      expect((await aiProjects.get(project.id, userResourceContext(outsideUser)))?.permission).toBe("read");
       expect(await aiProjects.get(project.id, null)).toBeNull();
 
-      await expect(aiProjects.grantAccess(project.id, creator, { principal: { type: "public" }, permission: "admin" })).rejects.toThrow();
+      await expect(
+        aiProjects.grantAccess(project.id, userResourceContext(creator), { principal: { type: "public" }, permission: "admin" }),
+      ).rejects.toThrow();
       await expect(aiProjects.admin.grantAccess(project.id, { principal: { type: "public" }, permission: "read" })).rejects.toThrow();
       expect(await aiProjects.get(project.id, null)).toBeNull();
       expect(await aiProjects.list(null)).toEqual([]);
       expect(await aiProjects.createKnowledge(project.id, null, { title: "Public", content: "Public write." })).toBeNull();
     } finally {
-      if (projectId) await aiProjects.delete(projectId, creator);
+      if (projectId) await aiProjects.delete(projectId, userResourceContext(creator));
       await sql`DELETE FROM auth.users WHERE id IN (${creatorId}::uuid, ${nestedUserId}::uuid, ${outsideUserId}::uuid)`;
       await sql`DELETE FROM auth.service_accounts WHERE id = ${serviceAccountId}::uuid`;
       await sql`DELETE FROM auth.groups WHERE id IN (${groups[0]!.id}::uuid, ${groups[1]!.id}::uuid)`;
@@ -331,33 +358,38 @@ databaseSuite()("aiProjects (integration)", () => {
     let projectId: string | null = null;
     try {
       await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${memberId}::uuid, ${group!.id}::uuid)`;
-      const project = await aiProjects.create({ subject: creator, name: "Durable" });
+      const project = await aiProjects.create({ subject: userResourceContext(creator), name: "Durable" });
       projectId = project.id;
-      const knowledge = await aiProjects.createKnowledge(project.id, creator, { title: "Policy", content: "Keep this." });
+      const knowledge = await aiProjects.createKnowledge(project.id, userResourceContext(creator), {
+        title: "Policy",
+        content: "Keep this.",
+      });
       if (!knowledge) throw new Error("Expected Project knowledge");
-      await aiProjects.writeFile(project.id, creator, {
+      await aiProjects.writeFile(project.id, userResourceContext(creator), {
         path: "policy.md",
         mediaType: "text/markdown",
         bytes: new TextEncoder().encode("Keep this."),
       });
-      await aiProjects.createReference(project.id, creator, {
+      await aiProjects.createReference(project.id, userResourceContext(creator), {
         ref: { type: "notebooks.notebook", id: "durable" },
         label: "Durable",
       });
-      await aiProjects.grantAccess(project.id, creator, {
+      await aiProjects.grantAccess(project.id, userResourceContext(creator), {
         principal: { type: "group", groupId: group!.id },
         permission: "admin",
       });
 
       await sql`DELETE FROM auth.users WHERE id = ${creatorId}::uuid`;
 
-      expect(await aiProjects.get(project.id, member, "admin")).not.toBeNull();
-      expect(await aiProjects.listKnowledge(project.id, member)).toHaveLength(1);
-      expect(await aiProjects.getKnowledgeByShortId(project.id, knowledge.shortId, member)).toMatchObject({ title: "Policy" });
-      expect(await aiProjects.listFiles(project.id, member)).toHaveLength(1);
-      expect(await aiProjects.listReferences(project.id, member)).toHaveLength(1);
+      expect(await aiProjects.get(project.id, userResourceContext(member), "admin")).not.toBeNull();
+      expect(await aiProjects.listKnowledge(project.id, userResourceContext(member))).toHaveLength(1);
+      expect(await aiProjects.getKnowledgeByShortId(project.id, knowledge.shortId, userResourceContext(member))).toMatchObject({
+        title: "Policy",
+      });
+      expect(await aiProjects.listFiles(project.id, userResourceContext(member))).toHaveLength(1);
+      expect(await aiProjects.listReferences(project.id, userResourceContext(member))).toHaveLength(1);
     } finally {
-      if (projectId) await aiProjects.delete(projectId, member);
+      if (projectId) await aiProjects.delete(projectId, userResourceContext(member));
       await sql`DELETE FROM auth.users WHERE id IN (${creatorId}::uuid, ${memberId}::uuid)`;
       await sql`DELETE FROM auth.groups WHERE id = ${group!.id}::uuid`;
     }
@@ -370,11 +402,11 @@ databaseSuite()("aiProjects (integration)", () => {
     const creator = { type: "user" as const, userId: creatorId };
     const rescuer = { type: "user" as const, userId: rescuerId };
     const name = `Unclaimed ${crypto.randomUUID()}`;
-    const project = await aiProjects.create({ subject: creator, name });
+    const project = await aiProjects.create({ subject: userResourceContext(creator), name });
     let deleted = false;
     try {
-      await aiProjects.createKnowledge(project.id, creator, { title: "Policy", content: "Keep this." });
-      await aiProjects.grantAccess(project.id, creator, {
+      await aiProjects.createKnowledge(project.id, userResourceContext(creator), { title: "Policy", content: "Keep this." });
+      await aiProjects.grantAccess(project.id, userResourceContext(creator), {
         principal: { type: "user", userId: readerId },
         permission: "read",
       });
@@ -388,7 +420,7 @@ databaseSuite()("aiProjects (integration)", () => {
         (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.project_knowledge WHERE project_id = ${project.id}::uuid`)[0]
           ?.count,
       ).toBe(1);
-      expect(await aiProjects.get(project.id, creator)).toBeNull();
+      expect(await aiProjects.get(project.id, userResourceContext(creator))).toBeNull();
 
       const adminList = await aiProjects.admin.list({ search: name, page: 1, perPage: 10 });
       expect(adminList.items).toMatchObject([{ id: project.id, shortId: project.shortId, accessCount: 1, adminCount: 0 }]);
@@ -399,13 +431,14 @@ databaseSuite()("aiProjects (integration)", () => {
         permission: "admin",
       });
       expect(recovered?.permission).toBe("admin");
-      expect(await aiProjects.get(project.id, rescuer, "admin")).not.toBeNull();
+      expect(await aiProjects.get(project.id, userResourceContext(rescuer), "admin")).not.toBeNull();
       await expect(aiProjects.admin.revokeAccess(project.id, recovered!.id)).rejects.toThrow("at least one admin");
       expect(await aiProjects.admin.delete(project.id)).toBe(true);
       deleted = true;
     } finally {
       if (!deleted) {
-        if (await aiProjects.get(project.id, rescuer, "admin")) await aiProjects.delete(project.id, rescuer);
+        if (await aiProjects.get(project.id, userResourceContext(rescuer), "admin"))
+          await aiProjects.delete(project.id, userResourceContext(rescuer));
         else await sql`DELETE FROM ai.projects WHERE id = ${project.id}::uuid`;
       }
       await sql`DELETE FROM auth.users WHERE id IN (${creatorId}::uuid, ${readerId}::uuid, ${rescuerId}::uuid)`;
@@ -416,16 +449,16 @@ databaseSuite()("aiProjects (integration)", () => {
     const creatorId = await insertUser("delete-race-creator");
     const targetId = await insertUser("delete-race-target");
     const creator = { type: "user" as const, userId: creatorId };
-    const project = await aiProjects.create({ subject: creator, name: "Delete race" });
+    const project = await aiProjects.create({ subject: userResourceContext(creator), name: "Delete race" });
     const before = (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.access WHERE user_id = ${targetId}::uuid`)[0]!
       .count;
 
     await Promise.all([
-      aiProjects.grantAccess(project.id, creator, {
+      aiProjects.grantAccess(project.id, userResourceContext(creator), {
         principal: { type: "user", userId: targetId },
         permission: "read",
       }),
-      aiProjects.delete(project.id, creator),
+      aiProjects.delete(project.id, userResourceContext(creator)),
     ]);
 
     const after = (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM auth.access WHERE user_id = ${targetId}::uuid`)[0]!
@@ -441,27 +474,29 @@ databaseSuite()("aiProjects (integration)", () => {
     const second = { type: "user" as const, userId: secondId };
     let projectId: string | null = null;
     try {
-      const project = await aiProjects.create({ subject: first, name: "Guarded" });
+      const project = await aiProjects.create({ subject: userResourceContext(first), name: "Guarded" });
       projectId = project.id;
-      const [initial] = (await aiProjects.listAccess(project.id, first))!;
-      await expect(aiProjects.updateAccess(project.id, initial!.id, first, "write")).rejects.toThrow("at least one admin");
-      await expect(aiProjects.revokeAccess(project.id, initial!.id, first)).rejects.toThrow("at least one admin");
+      const [initial] = (await aiProjects.listAccess(project.id, userResourceContext(first)))!;
+      await expect(aiProjects.updateAccess(project.id, initial!.id, userResourceContext(first), "write")).rejects.toThrow(
+        "at least one admin",
+      );
+      await expect(aiProjects.revokeAccess(project.id, initial!.id, userResourceContext(first))).rejects.toThrow("at least one admin");
 
-      const added = await aiProjects.grantAccess(project.id, first, {
+      const added = await aiProjects.grantAccess(project.id, userResourceContext(first), {
         principal: { type: "user", userId: secondId },
         permission: "admin",
       });
       const results = await Promise.all([
-        aiProjects.revokeAccess(project.id, added!.id, first),
-        aiProjects.revokeAccess(project.id, initial!.id, second),
+        aiProjects.revokeAccess(project.id, added!.id, userResourceContext(first)),
+        aiProjects.revokeAccess(project.id, initial!.id, userResourceContext(second)),
       ]);
       expect(results.filter(Boolean)).toHaveLength(1);
-      const survivingSubject = (await aiProjects.get(project.id, first, "admin")) ? first : second;
-      expect(await aiProjects.listAccess(project.id, survivingSubject)).toHaveLength(1);
+      const survivingSubject = (await aiProjects.get(project.id, userResourceContext(first), "admin")) ? first : second;
+      expect(await aiProjects.listAccess(project.id, userResourceContext(survivingSubject))).toHaveLength(1);
     } finally {
       if (projectId) {
-        const subject = (await aiProjects.get(projectId, first, "admin")) ? first : second;
-        await aiProjects.delete(projectId, subject);
+        const subject = (await aiProjects.get(projectId, userResourceContext(first), "admin")) ? first : second;
+        await aiProjects.delete(projectId, userResourceContext(subject));
       }
       await sql`DELETE FROM auth.users WHERE id IN (${firstId}::uuid, ${secondId}::uuid)`;
     }

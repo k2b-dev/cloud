@@ -28,6 +28,8 @@ convention still needs a check or a test.
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | App CSS overrides shared control sizing | An app stretches a compact action or overrides its size, so adjacent controls no longer match. | Test: Notebooks `detail-panel.browser.test.ts` measures AI and View height, padding, font size, intrinsic width, hover, keyboard focus, and offline dimensions in both themes at phone, tablet, and desktop widths. |
+
+| Creation defaults in a partial update | Omitted fields acquire values before the service sees the update. | Tests: Project route validation checks exact forwarded fields; token integration checks preserved fields and write access. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | A source location is valid but no longer names its evidence | A ranking accepts an in-range line number even when the line is blank or different code now occupies it. | Test: Mail `scripts/perf-baseline/browser-model.test.ts` rejects blank, changed and moved source lines and missing or multiline anchors; ranking requires the complete source line ([#1472](https://github.com/k2b-dev/cloud/issues/1472)). |
 | An app links assets below a prefix it never declared | The platform links `/public/<id>/app.css` on every page, but the gateway routes only declared prefixes, so the stylesheet answers 404 and the pages render unstyled. | Check: `app-public-route` requires the app's own `/public/<id>` prefix in every app config that declares pages below `/app/` or `/admin/`. |
@@ -1001,6 +1003,13 @@ explicitly documented identity reason for an excluding shared picker.
 - **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
+### Partial updates preserve absent fields
+
+- **What happened:** A description-only Project update was rejected for a writer.
+- **Root cause:** The partial update schema inherited creation defaults for omitted fields.
+- **Error class:** Applying creation defaults to a partial update.
+- **Guard:** Project route tests check the exact fields passed to the service, empty-update rejection, and explicit empty values. Token integration tests check that omitted fields remain unchanged.
 
 ## Add a lesson
 

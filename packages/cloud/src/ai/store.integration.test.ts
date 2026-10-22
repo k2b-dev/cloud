@@ -4,6 +4,7 @@ import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import { userResourceContext } from "./projects.test-fixture";
 import { readReviewContent } from "./review-content";
 import "../../../../scripts/fixtures/authorization-preload";
 import { approvalArgsDigest, approvalReviewDigest, approvals } from "../services/approvals";
@@ -921,7 +922,7 @@ suite("AI conversation store integration", () => {
     const subject = { type: "user" as const, userId };
     let projectId: string | null = null;
     try {
-      const project = await aiProjects.create({ subject, name: `Project ${crypto.randomUUID()}` });
+      const project = await aiProjects.create({ subject: userResourceContext(subject), name: `Project ${crypto.randomUUID()}` });
       projectId = project.id;
       const projectChat = await aiConversations.createConversation({ ownerUserId: userId, projectId: project.id });
       const generalChat = await aiConversations.createConversation({ ownerUserId: userId });
@@ -935,7 +936,7 @@ suite("AI conversation store integration", () => {
       ]);
     } finally {
       await cleanupFixture({ userId, conversationIds });
-      if (projectId) await aiProjects.delete(projectId, subject);
+      if (projectId) await aiProjects.delete(projectId, userResourceContext(subject));
     }
   });
 

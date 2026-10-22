@@ -26,6 +26,14 @@ grants and keeps existing grant rows visible. An application with a documented
 user-backed workflow can keep `allowServiceAccounts={false}`. See
 [resource authorization](/en/docs/identity/authorization).
 
+### Update Project and Skill service callers
+
+Rebuild Core, Assistant, and custom applications that call Project or Skill
+services against the same Cloud package before deploying their images. Service
+calls now pass `AiResourceContext` with both `actor` and `accessSubject`; HTTP
+request shapes stay the same. This change requires no database migration.
+See the [service migration](/en/docs/reference/deprecations-and-migrations#project-and-skill-service-authorization-context).
+
 ## Build a standalone application
 
 ```bash

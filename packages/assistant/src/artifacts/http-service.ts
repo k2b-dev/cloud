@@ -46,8 +46,7 @@ async function context(input: HttpScope, identity: ArtifactIdentity) {
       : await aiConversations.getConversationByShortId({ shortId: scope.conversationId, ownerUserId: actor.id });
     if (!conversation || conversation.archivedAt || (conversation.allowedTools !== null && conversation.allowedTools !== undefined))
       throw new HttpError("HTTP_DENIED");
-    if (conversation.projectId && !(await aiProjects.get(conversation.projectId, identity.accessSubject, "read")))
-      throw new HttpError("HTTP_DENIED");
+    if (conversation.projectId && !(await aiProjects.get(conversation.projectId, identity, "read"))) throw new HttpError("HTTP_DENIED");
     conversationId = conversation.id;
   }
   const resource = scope.resourceId

@@ -83,7 +83,11 @@ test("view route rejects missing, archived, restricted and unreadable Project ch
       expect((await request()).status).toBe(403);
     }
     expect(save).not.toHaveBeenCalled();
-    expect(project).toHaveBeenCalledWith("project", identity.accessSubject, "read");
+    expect(project).toHaveBeenCalledWith(
+      "project",
+      expect.objectContaining({ actor: identity.actor, accessSubject: identity.accessSubject }),
+      "read",
+    );
   } finally {
     chat.mockRestore();
     project.mockRestore();

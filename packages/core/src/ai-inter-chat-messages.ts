@@ -37,7 +37,9 @@ export const deliverPendingAiMessages = async (targetConversationId?: string): P
           archived: true,
         }));
       if (!target) continue;
-      const project = target.projectId ? await aiProjects.snapshot(target.projectId, { type: "user", userId: user.id }) : null;
+      const project = target.projectId
+        ? await aiProjects.snapshot(target.projectId, { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } })
+        : null;
       if (target.projectId && !project) {
         await aiConversations.failInterChatMessage({ messageId: message.id, error: "Target Project is unavailable" });
         outcomes.set(message.id, "failed");
