@@ -2526,8 +2526,8 @@
 .notebook-map__route-summary { font-size: 13px; margin: 0; }
 .notebook-map__placeholder { display: grid; place-items: center; background: var(--k2b-surface); color: var(--k2b-text-muted); }
 @container k2b-app-area (max-width: 600px) {
-  .notebook-map .k2b-map-view, .notebook-map__placeholder { height: 230px !important; }
-  .notebook-map--route .k2b-map-view, .notebook-map--route .notebook-map__placeholder { height: 200px !important; }
+  .notebook-map:not([data-map-print]) .k2b-map-view, .notebook-map__placeholder { height: 230px !important; }
+  .notebook-map--route:not([data-map-print]) .k2b-map-view, .notebook-map--route .notebook-map__placeholder { height: 200px !important; }
   .notebook-map__pin > a { max-width: 135px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 @media print {

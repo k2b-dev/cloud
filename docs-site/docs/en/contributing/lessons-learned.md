@@ -918,16 +918,6 @@ convention still needs a check or a test.
 - **Error class:** Renderer fallback mistaken for complete export resources.
 - **Guard:** MapView's per-map resource protocol validates glyph PBFs and reports failed glyph and tile downloads explicitly. Synthetic vector browser tests require failed glyph requests and HTTP 404/500 tiles to reject capture, retain retry, and recover before a real raster succeeds.
 
-## Add a lesson
-
-A fix pull request answers "How do we prevent this next time?" and adds its
-entry here in four lines: what happened, root cause, error class, and guard.
-When neither the code on `main` nor a test confirms the root cause, start it
-with "Suspected:"; the fix pull request replaces it with the confirmed cause.
-When the guard does not exist yet, write "Pending in #n" with the issue that
-tracks it, or "None, because …". A pull request that adds a guard for a class
-updates that class's row in the table.
-
 
 ## Preserve exact source when chunking Notebook saves
 
@@ -948,3 +938,14 @@ provider identifiers can exceed 100 characters. Notebook map schema and renderer
 regressions cover both cases. Browser images belong to the caller's export only;
 bind uploads to that export's text and complete map fingerprints, decode bounded
 PNG input, and report unavailable images with linked source lists.
+
+
+## Add a lesson
+
+A fix pull request answers "How do we prevent this next time?" and adds its
+entry here in four lines: what happened, root cause, error class, and guard.
+When neither the code on `main` nor a test confirms the root cause, start it
+with "Suspected:"; the fix pull request replaces it with the confirmed cause.
+When the guard does not exist yet, write "Pending in #n" with the issue that
+tracks it, or "None, because …". A pull request that adds a guard for a class
+updates that class's row in the table.
