@@ -9547,12 +9547,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   position: relative;
 }
 
-/* Where a pointer hovers, others' bubbles leave room for "…" beside them, so a long message never clips it. */
-@media (hover: hover) {
-  .k2b-ui .k2b-message-row:not([data-own]) .k2b-message-row__body {
-    max-width: min(40rem, 100% - 4.5rem);
-  }
+/* Others' bubbles leave room for "…" beside them, so a long message never pushes it out of the row; "…" may use the
+   row's own inline padding. */
+.k2b-ui .k2b-message-row:not([data-own]) .k2b-message-row__body {
+  max-width: min(40rem, 100% - 3.75rem);
 }
+
 
 .k2b-ui .k2b-message-row__menu {
   width: 1.75rem;

@@ -394,10 +394,11 @@ describe(`MessageRow in ${browserName}`, () => {
       expect(await opacity(page, "m6")).toBe("1");
       expect(await boxes(page)).toEqual(before);
 
+      // Below 48rem "…" opens the same entries as a sheet.
       await page.keyboard.press("Enter");
-      await page.locator('[role="menu"]:popover-open [role="menuitem"]', { hasText: "Reply" }).waitFor();
-      await page.keyboard.press("Enter");
-      expect(await replied(page)).toBe(1);
+      await page.locator('dialog[open] [role="menuitem"]', { hasText: "Reply" }).click();
+      // A sheet runs its entry once it has left the history.
+      await page.waitForFunction(() => ((window as unknown as { replied?: number }).replied ?? 0) === 1);
     } finally {
       await page.close();
     }
@@ -905,7 +906,7 @@ describe(`MessageRow in ${browserName}`, () => {
 
       await rowOf(page, "m11").focus();
       const order: string[] = [];
-      for (let step = 0; step < 7; step++) {
+      for (let step = 0; step < 6; step++) {
         await page.keyboard.press("Tab");
         order.push(
           await page.evaluate(() => {
@@ -914,14 +915,14 @@ describe(`MessageRow in ${browserName}`, () => {
           }),
         );
       }
+      // "…" belongs to the bubble, so it follows the quote and comes before the parts under the bubble.
       expect(order).toEqual([
         "k2b-message-row__quote",
+        "Message actions",
         "k2b-message-row__thread",
         "👍 4 reactions: Tobias, Mara, Robin, Minutes",
         "☕ 1 reaction: Robin",
         "Add reaction",
-        "Reply",
-        "React",
       ]);
 
       await rowOf(page, "m11").locator(".k2b-message-row__quote").focus();
@@ -1104,6 +1105,8 @@ describe(`MessageRow in ${browserName}`, () => {
 
       const list = rowOf(page, "r1").locator(".k2b-reaction-bar__scroll");
       await rowOf(page, "r1").focus();
+      // Tab passes "…" in the bubble first, then reaches the list.
+      await page.keyboard.press("Tab");
       await page.keyboard.press("Tab");
       expect(await list.evaluate((element) => element === document.activeElement)).toBe(true);
       // Arrow keys scroll the focused list; WebKit animates each step.

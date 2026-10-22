@@ -179,8 +179,8 @@ export type MessageRowProps = {
   /** Called by "Discard" next to "Retry" while `status` is `"failed"`, so both answers to a failure sit where it shows. */
   onDiscard?: () => void;
   /**
-   * The message's menu. A quiet "…" beside the bubble opens it while the message is hovered or focused; right-click,
-   * the Context Menu key, and a long press open the same menu. Showing "…" never moves the layout.
+   * The message's menu. A quiet "…" beside the bubble opens it while the message is hovered or focused, also from the
+   * keyboard; right-click and a long press open the same menu. Showing "…" never moves the layout.
    */
   actions?: readonly MessageRowAction[];
   /** The message this one answers, shown above it. */
@@ -904,7 +904,8 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
 
   return (
     <Show when={hasMenu()} fallback={row}>
-      <GestureMenu items={gestureItems()} label={chatMessages().messageMenu({ author: props.author.name, time: props.time })}>
+      {/* Out of the tab order: the keyboard reaches the same menu through "…", so a message adds no extra stop. */}
+      <GestureMenu items={gestureItems()} label={chatMessages().messageMenu({ author: props.author.name, time: props.time })} tabIndex={-1}>
         {row}
       </GestureMenu>
     </Show>

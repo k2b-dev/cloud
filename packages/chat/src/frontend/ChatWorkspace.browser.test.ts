@@ -396,8 +396,15 @@ const scrollFeed = async (page: Page, direction: number) => {
 /** Opens a message's menu the way each device does: "…" beside the bubble on a desktop, a long press on a phone. */
 const openMessageMenu = async (page: Page, name: string, item: Locator) => {
   if (name === "phone") {
+    await item.locator(".k2b-message-row__text").scrollIntoViewIfNeeded();
     const box = (await item.locator(".k2b-message-row__text").boundingBox())!;
     const point = { x: box.x + 8, y: box.y + box.height / 2 };
+    // A page that just opened may still be settling; the finger lands once the message is what lies under it.
+    const key = await item.getAttribute("data-key");
+    await page.waitForFunction(
+      ({ point, key }) => document.elementFromPoint(point.x, point.y)?.closest("[data-key]")?.getAttribute("data-key") === key,
+      { point, key },
+    );
     // Playwright taps only as a whole; the held pointer's lifecycle runs as GestureMenu receives it on a phone.
     await page.evaluate(async (point) => {
       const target = document.elementFromPoint(point.x, point.y)!;
@@ -413,7 +420,6 @@ const openMessageMenu = async (page: Page, name: string, item: Locator) => {
       target.dispatchEvent(new PointerEvent("pointerdown", init));
       await new Promise((resolve) => setTimeout(resolve, 650));
       target.dispatchEvent(new PointerEvent("pointerup", init));
-      target.dispatchEvent(new Event("touchend", { bubbles: true, cancelable: true }));
     }, point);
     const sheet = page.locator("dialog[open]");
     await sheet.waitFor();

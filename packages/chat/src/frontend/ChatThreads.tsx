@@ -2,7 +2,7 @@ import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, Dropdown, useLocale } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { chatMessages } from "../messages";
-import { activeThreads, archivedThreads, type ThreadList, type ThreadView, threadHref, viewName, viewUnread } from "./threads";
+import { activeThreads, archivedThreads, type ThreadList, type ThreadView, threadHref, threadOf, viewName, viewUnread } from "./threads";
 
 /** The icon of a view, the same in the list, the head, the badges, and the phone's thread page. */
 export const viewIcon = (view: ThreadView) =>
@@ -35,6 +35,8 @@ export function ThreadRows(props: RowsProps): JSX.Element {
   const [archiveOpen, setArchiveOpen] = createSignal(false);
   const row = (view: ThreadView, depth = 1) => {
     const unread = () => (view === "all" ? props.unread : viewUnread(view, null, props.threads));
+    // The open thread is being read; after "Mark unread from here" it shows its count again.
+    const marked = () => view !== "all" && view !== "general" && threadOf(props.threads, view)?.read?.unreadFromSeq != null;
     return (
       <AppWorkspace.SidebarItem
         depth={depth}
@@ -47,7 +49,7 @@ export function ThreadRows(props: RowsProps): JSX.Element {
         <AppWorkspace.SidebarItemIcon icon={viewIcon(view)} />
         <AppWorkspace.SidebarItemLabel marquee={false}>{viewName(view, props.threads, t())}</AppWorkspace.SidebarItemLabel>
         <AppWorkspace.SidebarItemMeta>
-          <AppWorkspace.SidebarItemStatus unread={props.view === view || unread() === 0 ? undefined : unread()} />
+          <AppWorkspace.SidebarItemStatus unread={(props.view === view && !marked()) || unread() === 0 ? undefined : unread()} />
         </AppWorkspace.SidebarItemMeta>
       </AppWorkspace.SidebarItem>
     );
