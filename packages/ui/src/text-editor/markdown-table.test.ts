@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ChangeSet } from "@codemirror/state";
 import { GFM, parser } from "@lezer/markdown";
+import * as Y from "yjs";
 import * as T from "./markdown-table";
 
 const table = (doc: string): T.Table => {
@@ -96,6 +97,35 @@ describe("literal display/source mapping", () => {
     expect(edit(raw, "A" + T.displayCell(raw).slice(1))).toBe("A" + raw.slice(1));
     expect(T.cellChanges(String.raw`x\|y`, "x|Zy", 4)).toEqual([{ from: 7, to: 7, insert: "Z" }]);
     expect(T.cellDisplayMap(String.raw`x\\\|y`)).toEqual({ text: "x\\|y", offsets: [0, 1, 3, 5, 6] });
+  });
+
+  test("cell replacements keep whole Unicode characters through the Yjs write seam", () => {
+    for (const [before, after] of [
+      ["😀", "😁"],
+      ["😀", "🨀"],
+      ["a😀b", "a😁b"],
+      ["😀😀", "😁😀"],
+      ["😀", ""],
+    ] as const) {
+      const doc = new Y.Doc();
+      doc.clientID = 101;
+      const text = doc.getText("codemirror");
+      const prefix = "| A |\n| --- |\n| ";
+      text.insert(0, prefix + before + " |");
+      try {
+        const changes = T.cellChanges(before, after, prefix.length);
+        doc.transact(() => {
+          for (const change of [...changes].reverse()) {
+            if (change.to > change.from) text.delete(change.from, change.to - change.from);
+            if (change.insert) text.insert(change.from, change.insert);
+          }
+        });
+        expect(text.toString()).toBe(prefix + after + " |");
+        expect(text.toString().isWellFormed()).toBe(true);
+      } finally {
+        doc.destroy();
+      }
+    }
   });
 
   test("inserts, deletes and replacements beside old lone slashes roundtrip", () => {

@@ -32,6 +32,11 @@ export type Table = {
 const gfm = parser.configure(GFM);
 const index = (value: number) => Number.isSafeInteger(value) && value >= 0;
 const normalizeBreaks = (value: string) => value.replace(/\r\n|[\r\n\u2028\u2029]/g, " ");
+const splitsCharacter = (value: string, at: number): boolean => {
+  const before = value.charCodeAt(at - 1),
+    after = value.charCodeAt(at);
+  return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff;
+};
 
 const parseLine = (text: string, from: number, lineBreak: string): Line => {
   const pipes: number[] = [];
@@ -138,12 +143,14 @@ export const cellChanges = (raw: string, nextDisplayed: string, from: number): C
   let prefix = 0,
     suffix = 0;
   while (prefix < text.length && prefix < next.length && text[prefix] === next[prefix]) prefix++;
+  if (splitsCharacter(text, prefix) || splitsCharacter(next, prefix)) prefix--;
   while (
     suffix < text.length - prefix &&
     suffix < next.length - prefix &&
     text[text.length - suffix - 1] === next[next.length - suffix - 1]
   )
     suffix++;
+  if (splitsCharacter(text, text.length - suffix) || splitsCharacter(next, next.length - suffix)) suffix--;
   const end = offsets[text.length - suffix]!;
   let start = offsets[prefix]!;
   let insert = escapeCell(next.slice(prefix, next.length - suffix));
@@ -164,11 +171,17 @@ export const cellChanges = (raw: string, nextDisplayed: string, from: number): C
     insert = escapeCell(next.slice(prefix, next.length - suffix));
   }
   let to = end;
-  while (start < to && insert && raw[start] === insert[0]) {
+  while (start < to && insert && raw[start] === insert[0] && !splitsCharacter(raw, start + 1) && !splitsCharacter(insert, 1)) {
     start++;
     insert = insert.slice(1);
   }
-  while (start < to && insert && raw[to - 1] === insert.at(-1)) {
+  while (
+    start < to &&
+    insert &&
+    raw[to - 1] === insert.at(-1) &&
+    !splitsCharacter(raw, to - 1) &&
+    !splitsCharacter(insert, insert.length - 1)
+  ) {
     to--;
     insert = insert.slice(0, -1);
   }
