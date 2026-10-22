@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |
 | Positional input-union compatibility | A manifest check rejects preserved input variants after additions or reordering, or accepts a `oneOf` change that makes old inputs match multiple variants. | Tests: Cloud `_internal/capabilities.test.ts` covers nested additive unions, required disjoint tags, removed or narrowed branches, overlaps, optional tags, and unchanged result-union restrictions. |
 | An app adds an unnecessary administration group | A single administration entry declares `adminNav`, separating it from the shared app administration list. | Test: Pulse `frontend/admin/navigation.render.test.ts` checks the German and English SSR sidebar and mobile snapshot, active link, default data-store tab, and unchanged admin-only route access. Convention: use `adminHref` for one app administration entry. |
@@ -879,6 +880,13 @@ convention still needs a check or a test.
 - **Root cause:** The renderer kept Cloud URLs relative, and Gotenberg resolved them against its local HTML file.
 - **Error class:** Relative navigation URLs crossing from a web page into an offline document.
 - **Guard:** Notebooks `note-pdf.integration.test.ts` inspects actual PDF URI annotations for the configured public origin and rejects `file://`; renderer tests preserve browser URLs, escaping, and internal anchors, and the API test checks the configured origin passed to export.
+
+### Oversized Chat messages lost their editable text
+
+- **What happened:** Chat queued messages over 20,000 characters and cleared the composer. Every retry failed, and discarding the failed message lost its text ([#1184](https://github.com/k2b-dev/cloud/issues/1184)).
+- **Root cause:** Only the server checked the message body; the browser consumed the draft before checking whether it could be accepted.
+- **Error class:** Input consumed before deterministic validation.
+- **Guard:** The composer validates with the API’s `MessageBodySchema` before queuing or consuming the draft. Chat behavior and desktop/phone browser tests submit oversized ASCII and emoji, check preserved text and visible correction feedback, then repair and send at the code-point limit; the behavior test also covers an unsupported null character.
 
 ### Safe direct pins left vulnerable transitive copies installed
 
