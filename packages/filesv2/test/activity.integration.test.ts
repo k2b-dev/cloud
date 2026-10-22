@@ -11,7 +11,7 @@ import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
 import { withRootLock } from "../src/data/operations";
 import { persistedEntryRefId } from "../src/data/references";
-import { uploadSessionId, uploads } from "../src/data/uploads";
+import { type Upload, uploadSessionId, uploads } from "../src/data/uploads";
 import { migrate } from "../src/migrate";
 import { createFilesService, filesService } from "../src/service";
 import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, uploadAction } from "../src/service/activity";
@@ -181,12 +181,21 @@ suite("Files activity with real storage", () => {
   });
   afterAll(async () => {
     try {
-      if (client)
+      if (client) {
+        const open = await sql<Upload[]>`SELECT u.* FROM filesv2.uploads u JOIN filesv2.bases b ON b.id=u.base_id
+          WHERE u.state='open' AND starts_with(b.path,${`${prefix}/`}) AND u.server_url=${config.url}`;
+        for (const upload of open) {
+          const id = uploadSessionId(upload);
+          if (!id) continue;
+          const root = client.root(upload.root);
+          await (upload.execution ? root.as(upload.execution) : root).abortSession(id).catch(() => undefined);
+        }
         for (const name of ["cloud", "freeipa"])
           await client
             .root(name)
             .remove(prefix, true)
             .catch(() => undefined);
+      }
     } finally {
       await processSync?.stop();
     }
@@ -426,11 +435,15 @@ suite("Files activity with real storage", () => {
     await sql`UPDATE filesv2.uploads SET activity_recorded=false WHERE id=${opened.id}`;
     const restored = await uploads.history(opened.id);
     expect((await uploadRows(opened.id))[0]).toMatchObject({ actor_user_id: actor.user.id, via: "unknown", detail: { adopted: true } });
-    await sql`UPDATE filesv2.uploads SET filegate_session_id='missing-receipt' WHERE id=${opened.id}`;
-    await sql`UPDATE filesv2.activity SET started_at=${new Date(now.getTime() - day)},heartbeat_at=${new Date(now.getTime() - 120_000)},next_check_at=${new Date(now.getTime() - 1)} WHERE id=${restored.activity!.id}::uuid`;
-    await recover();
-    expect((await uploadRows(opened.id))[0]?.state).toBe("unclear");
-    expect((await uploads.get(opened.id, actor.user.id))?.state).toBe("open");
+    try {
+      await sql`UPDATE filesv2.uploads SET filegate_session_id='missing-receipt' WHERE id=${opened.id}`;
+      await sql`UPDATE filesv2.activity SET started_at=${new Date(now.getTime() - day)},heartbeat_at=${new Date(now.getTime() - 120_000)},next_check_at=${new Date(now.getTime() - 1)} WHERE id=${restored.activity!.id}::uuid`;
+      await recover();
+      expect((await uploadRows(opened.id))[0]?.state).toBe("unclear");
+      expect((await uploads.get(opened.id, actor.user.id))?.state).toBe("open");
+    } finally {
+      await sql`UPDATE filesv2.uploads SET filegate_session_id=${uploadSessionId(restored.upload)} WHERE id=${opened.id}`;
+    }
   });
   test("a managed overwrite conflict keeps its reservation and history open until a confirmed abort", async () => {
     const root = client.root("cloud");
