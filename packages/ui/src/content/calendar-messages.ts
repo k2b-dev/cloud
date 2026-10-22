@@ -18,6 +18,11 @@ const calendarMessages = i18n.define({
       noEvents: "No events",
       moveEvent: "Move event",
       resizeEvent: "Resize event",
+      calendarMoveDayKeys: "Hold to drag. Alt+Left/Right moves one day.",
+      calendarMoveTimeKeys: "Hold to drag. Alt+Up/Down moves 15 minutes; Alt+Left/Right moves one day.",
+      calendarResizeDayKeys: "Alt+Shift+Left/Right changes the end by one day.",
+      calendarResizeTimeKeys:
+        "Hold a resize handle to resize. Alt+Shift+Up/Down changes the end by 15 minutes; Alt+Shift+Left/Right by one day.",
       calendarMoreEvents: ({ count }: { count: number }) => `+${count} more`,
       calendarMoreEventsOn: ({ count, label }: { count: number; label: string }) => `${count} more on ${label}`,
       calendarSelectionActions: "Actions for the selected days",
@@ -111,6 +116,11 @@ const calendarMessages = i18n.define({
       noEvents: "Keine Termine",
       moveEvent: "Termin verschieben",
       resizeEvent: "Termindauer ändern",
+      calendarMoveDayKeys: "Zum Ziehen gedrückt halten. Alt+Links/Rechts verschiebt um einen Tag.",
+      calendarMoveTimeKeys: "Zum Ziehen gedrückt halten. Alt+Hoch/Runter verschiebt um 15 Minuten; Alt+Links/Rechts um einen Tag.",
+      calendarResizeDayKeys: "Alt+Umschalt+Links/Rechts ändert das Ende um einen Tag.",
+      calendarResizeTimeKeys:
+        "Zum Ändern der Dauer einen Ziehgriff gedrückt halten. Alt+Umschalt+Hoch/Runter ändert das Ende um 15 Minuten; Alt+Umschalt+Links/Rechts um einen Tag.",
       calendarMoreEvents: ({ count }) => `+${count} weitere`,
       calendarMoreEventsOn: ({ count, label }) => `${count} weitere am ${label}`,
       calendarSelectionActions: "Aktionen für die ausgewählten Tage",

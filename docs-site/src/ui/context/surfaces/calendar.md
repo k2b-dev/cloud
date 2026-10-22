@@ -437,7 +437,7 @@ drawer.
 The following callbacks enable matching interactions in browser code:
 
 - `onEventDrop` moves an event;
-- `onEventResize` changes a timed event duration;
+- `onEventResize` changes an event duration;
 - `onEventActivate` activates an event;
 - `onSlotActivate` activates an empty time range, or the selected days of
   the month view when it has no `renderQuickCreate`.
@@ -619,6 +619,27 @@ less than an hour, which the column hides, is no stop. The day view keeps
 every entry and every gap of an hour or more in the tab order, in time order;
 Tab into it starts at the first stop on screen, and Space on an entry with a
 checkbox checks it off.
+
+Editable entries support mouse dragging and touch dragging after a 420 ms
+hold. Before the hold, swiping keeps native scrolling; moving more than
+10 px or releasing cancels the hold. Hold a resize grip to change the start
+or end where that view supplies grips. Release commits; Escape, pointer
+cancellation, the window losing focus, or removing the view cancels. A completed
+hold suppresses its trailing click. Month view moves entries by calendar day;
+its duration editing is available through the keyboard.
+
+With focus on an editable entry, **Alt+Left/Right** moves it one calendar day.
+Timed entries in day and week views also support **Alt+Up/Down** to move by
+15 minutes. Add **Shift** to either shortcut to change the end instead of
+moving the entry; the end must stay after the start. All-day and month
+entries use day increments. Moving by a day follows `dateConfig` and
+`timeZone`, including clock changes; moving a timed entry preserves its
+elapsed duration. These shortcuts call `onEventDrop` or `onEventResize` and
+require the matching callback. They do not expand the calendar's loaded
+range. Entries expose the available instructions through their localized
+accessible description. Ordinary arrow navigation, Enter to open, and Space
+to check remain available. `editable: false` removes editing instructions and
+suppresses mouse, touch, and keyboard edits while retaining activation.
 
 ## Runtime
 
