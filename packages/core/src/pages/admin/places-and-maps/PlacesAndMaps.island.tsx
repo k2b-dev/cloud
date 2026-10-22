@@ -420,7 +420,7 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
     <Switch>
       <Match when={statusLoad() === "loading"}>
         <div class="flex min-h-[52px] flex-wrap items-center gap-x-3 gap-y-2" aria-busy="true">
-          <Skeleton class="size-[34px] flex-none rounded-full" />
+          <Skeleton class="size-[34px] flex-none !rounded-full" />
           <div class="flex min-w-0 flex-1 flex-col gap-1.5">
             <Skeleton class="h-3.5 w-2/5" />
             <Skeleton class="h-3 w-3/5" />
@@ -544,7 +544,9 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
           class="m-0 min-h-9 text-[12.5px] leading-[18px]"
           classList={{ "text-[var(--k2b-danger-text)]": !!error(), "text-[var(--k2b-text-muted)]": !error() }}
         >
-          {error() ?? (unreadable() ? t().unreadableValue : hint())}
+          <Show when={statusLoad() === "ready"} fallback={<Skeleton class="mt-1 h-3 w-3/5" />}>
+            {error() ?? (unreadable() ? t().unreadableValue : hint())}
+          </Show>
         </p>
       </div>
     );
@@ -711,7 +713,8 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
               <Select
                 label={t().plan}
                 options={planOptions()}
-                value={values().plan}
+                value={statusLoad() === "ready" ? values().plan : null}
+                placeholder=""
                 onValueChange={(next) => {
                   const plan = GEO_PLAN_IDS.find((id) => id === next);
                   if (plan) setValues((current) => ({ ...current, plan }));

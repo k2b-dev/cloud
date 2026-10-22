@@ -18,6 +18,7 @@ const views = [
   { width: 1440, height: 900 },
   { width: 390, height: 844 },
 ] as const;
+const tablet = { width: 820, height: 1180 };
 const open = async (view: { width: number; height: number }, query: string) => {
   const page = await browser.newPage({
     viewport: view,
@@ -38,7 +39,7 @@ const section = (page: Page, name: string) =>
   page.locator("section.k2b-settings-section", { has: page.getByRole("heading", { name, exact: true }) });
 
 test("every state fits a phone and a desktop in both themes and languages, with one number format", async () => {
-  for (const view of views)
+  for (const view of [...views, tablet])
     for (const theme of ["light", "dark"])
       for (const locale of ["de", "en"])
         for (const state of ["eingerichtet", "aus", "budget-cloud", "budget-person", "verbrauch-fehler", "leer"]) {
