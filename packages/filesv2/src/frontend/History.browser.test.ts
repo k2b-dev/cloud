@@ -184,6 +184,7 @@ test("file inspector follows its app container width without resizing the viewpo
   try {
     const host = tab.locator("#root");
     const preview = tab.locator(".filesv2-inspector-preview");
+    const modified = tab.locator(".filesv2-inspector-info .k2b-description-list__item").filter({ hasText: "Modified" });
     const versions = tab.locator(".filesv2-inspector-versions");
     const count = tab
       .locator(".filesv2-inspector-info")
@@ -198,6 +199,7 @@ test("file inspector follows its app container width without resizing the viewpo
     expect(await versions.isVisible()).toBe(false);
     expect(await versions.getAttribute("data-open")).toBeNull();
     expect(await count.innerText()).toBe("2");
+    expect(await modified.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30);
     expect(await count.getAttribute("aria-expanded")).toBe("false");
 
     await count.click();
@@ -219,6 +221,7 @@ test("file inspector follows its app container width without resizing the viewpo
     expect(await versions.getByText("Initial draft · Mia Weber", { exact: true }).isVisible()).toBe(true);
     expect(await versions.getAttribute("data-open")).toBeNull();
     expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(900);
+    expect(await modified.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30);
     expect(await tab.evaluate(() => innerWidth)).toBe(1200);
     expect(errors).toEqual([]);
   } finally {
