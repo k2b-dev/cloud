@@ -35,6 +35,7 @@ const context: ChatContext = {
   },
 };
 const conversation = ConversationSchema.parse({
+  threads: 0,
   id: "abcdef",
   name: "Private name",
   title: "Private name",

@@ -20,6 +20,7 @@ const modules = isServer ? undefined : await load();
 const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
+  threads: 0,
   id: "Chat01",
   name: "Secret board",
   title: "Secret board",
@@ -76,6 +77,8 @@ class FakeWebSocket {
 const settle = () => Bun.sleep(60);
 const message = (seq: number, body = `Message ${seq}`) =>
   MessageViewSchema.parse({
+    thread: null,
+    replyTo: null,
     id: String(seq).padStart(10, "0"),
     conversationId: conversation.id,
     seq,
@@ -337,6 +340,8 @@ describe("ChatWorkspace interactions", () => {
     answer(
       Response.json(
         {
+          thread: null,
+          replyTo: null,
           id: "Chat010001",
           conversationId: "Chat01",
           seq: 1,

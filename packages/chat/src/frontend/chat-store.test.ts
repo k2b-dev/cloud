@@ -5,6 +5,7 @@ import { chatLiveUpdates } from "../service/live-updates";
 import { ChatRequestError, type ChatStoreApi, createChatStore, createChatStoreApi } from "./chat-store";
 
 const conversation = ConversationSchema.parse({
+  threads: 0,
   id: "abcdef",
   name: "Chat",
   title: "Chat",
@@ -23,6 +24,8 @@ const conversation = ConversationSchema.parse({
 });
 const message = (rev: number) =>
   MessageSchema.parse({
+    thread: null,
+    replyTo: null,
     id: String(rev).padStart(10, "0"),
     conversationId: conversation.id,
     seq: rev,
@@ -84,8 +87,24 @@ const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
   const connection = new ManualConnection();
   const api: ChatStoreApi = {
     ...memberApi,
-    read: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 1 }),
-    markUnread: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: 1, joinedSeq: 0, unread: 0, asOfRev: 1 }),
+    read: async () => ({
+      threads: [],
+      conversationId: conversation.id,
+      lastReadSeq: 1,
+      unreadFromSeq: null,
+      joinedSeq: 0,
+      unread: 0,
+      asOfRev: 1,
+    }),
+    markUnread: async () => ({
+      threads: [],
+      conversationId: conversation.id,
+      lastReadSeq: 1,
+      unreadFromSeq: 1,
+      joinedSeq: 0,
+      unread: 0,
+      asOfRev: 1,
+    }),
     readAll: async () => ({ outcome: "done", marked: 0, more: false }),
     snapshot: async () => ({ cursor: "snapshot", conversation, page: page(1), focus: null }),
     conversations: async () => ({ items: [conversation], nextCursor: null }),
@@ -406,8 +425,24 @@ test("a system event already in the SSR page still refreshes older SSR metadata"
   });
   const api: ChatStoreApi = {
     ...memberApi,
-    read: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 1 }),
-    markUnread: async () => ({ conversationId: conversation.id, lastReadSeq: 1, unreadFromSeq: 1, joinedSeq: 0, unread: 0, asOfRev: 1 }),
+    read: async () => ({
+      threads: [],
+      conversationId: conversation.id,
+      lastReadSeq: 1,
+      unreadFromSeq: null,
+      joinedSeq: 0,
+      unread: 0,
+      asOfRev: 1,
+    }),
+    markUnread: async () => ({
+      threads: [],
+      conversationId: conversation.id,
+      lastReadSeq: 1,
+      unreadFromSeq: 1,
+      joinedSeq: 0,
+      unread: 0,
+      asOfRev: 1,
+    }),
     readAll: async () => ({ outcome: "done", marked: 0, more: false }),
     snapshot: async () => ({ cursor: "snapshot", conversation, page: page(1), focus: null }),
     conversations: async () => ({ items: [conversation], nextCursor: null }),
@@ -744,7 +779,13 @@ test("text summaries project lastMessage, including an absent preview", async ()
     const m = message(preview === null ? 3 : 2);
     const summary = chatLiveUpdates(conversation.id, m, preview, [])[1]!.data;
     await connection.get("list").apply(summary);
-    expect(store.sidebar[0]?.lastMessage).toEqual({ id: m.id, author: m.author, preview: preview ?? "", createdAt: m.createdAt });
+    expect(store.sidebar[0]?.lastMessage).toEqual({
+      thread: null,
+      id: m.id,
+      author: m.author,
+      preview: preview ?? "",
+      createdAt: m.createdAt,
+    });
   }
   store.dispose();
 });
@@ -918,7 +959,16 @@ test("read updates apply personally and stale counts refetch just that row", asy
       return { ...conversation, rev: 4, unread: 1, read: { lastReadSeq: 3, unreadFromSeq: null, joinedSeq: 0 } };
     },
   });
-  const read = { type: "read", conversationId: conversation.id, lastReadSeq: 2, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 2 };
+  const read = {
+    type: "read",
+    threads: [],
+    conversationId: conversation.id,
+    lastReadSeq: 2,
+    unreadFromSeq: null,
+    joinedSeq: 0,
+    unread: 0,
+    asOfRev: 2,
+  };
   await connection.get("me").apply(read);
   expect(store.sidebar[0]?.read?.lastReadSeq).toBe(2);
   expect(store.openConversation?.conversation?.read?.lastReadSeq).toBe(2);
@@ -937,7 +987,16 @@ test("unknown personal rows are ignored and a stale read refetch can remove acce
       return null;
     },
   });
-  const read = { type: "read", conversationId: "zzzzzz", lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 0 };
+  const read = {
+    type: "read",
+    threads: [],
+    conversationId: "zzzzzz",
+    lastReadSeq: 1,
+    unreadFromSeq: null,
+    joinedSeq: 0,
+    unread: 0,
+    asOfRev: 0,
+  };
   await connection.get("me").apply(read);
   expect(calls).toBe(0);
   await connection.get("me").apply({ ...read, conversationId: conversation.id });
@@ -958,7 +1017,16 @@ test("personal reads update an open chat outside the sidebar and stale reads ref
     },
     { items: [], nextCursor: "more" },
   );
-  const read = { type: "read", conversationId: conversation.id, lastReadSeq: 3, unreadFromSeq: null, joinedSeq: 0, unread: 0, asOfRev: 3 };
+  const read = {
+    type: "read",
+    threads: [],
+    conversationId: conversation.id,
+    lastReadSeq: 3,
+    unreadFromSeq: null,
+    joinedSeq: 0,
+    unread: 0,
+    asOfRev: 3,
+  };
   await connection.get("me").apply(read);
   expect(store.sidebar).toEqual([]);
   expect(store.openConversation?.conversation).toMatchObject({ unread: 0, read: { lastReadSeq: 3 } });
@@ -987,9 +1055,16 @@ for (const channel of ["me", "list"])
     expect(calls).toBe(1);
     expect(store.sidebar).toEqual([]);
     expect(store.openConversation?.conversation?.read?.lastReadSeq).toBe(3);
-    await connection
-      .get("me")
-      .apply({ type: "read", conversationId: conversation.id, lastReadSeq: 2, unreadFromSeq: null, joinedSeq: 0, unread: 1, asOfRev: 2 });
+    await connection.get("me").apply({
+      type: "read",
+      threads: [],
+      conversationId: conversation.id,
+      lastReadSeq: 2,
+      unreadFromSeq: null,
+      joinedSeq: 0,
+      unread: 1,
+      asOfRev: 2,
+    });
     expect(calls).toBe(2);
     expect(store.openConversation?.conversation?.read?.lastReadSeq).toBe(3);
     store.dispose();

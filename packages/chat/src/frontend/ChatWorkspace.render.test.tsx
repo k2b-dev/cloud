@@ -18,6 +18,7 @@ const { default: ChatWorkspace } = await import("./ChatWorkspace.island");
 const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
+  threads: 0,
   id: "Chat01",
   name: "Delivery board",
   title: "Delivery board",
@@ -71,6 +72,7 @@ describe("ChatWorkspace server render", () => {
           id: "Chat01",
           title: "Own last message",
           lastMessage: {
+            thread: null,
             id: "Chat010001",
             author: { type: "user", id: viewerId, name: "Robin" },
             preview: "Sent the invoice",
@@ -85,6 +87,7 @@ describe("ChatWorkspace server render", () => {
           withGuests: false,
           peerDeactivated: false,
           lastMessage: {
+            thread: null,
             id: "Chat020001",
             author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" },
             preview: "Arriving soon",
@@ -96,6 +99,7 @@ describe("ChatWorkspace server render", () => {
           id: "Chat03",
           title: "Group chat",
           lastMessage: {
+            thread: null,
             id: "Chat030001",
             author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" },
             preview: "Bring photos",

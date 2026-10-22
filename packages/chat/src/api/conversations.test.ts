@@ -104,6 +104,7 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
     data: {
       outcome: "created",
       conversation: {
+        threads: 0,
         id: "abcdef",
         name: null,
         icon: null,
@@ -152,6 +153,8 @@ test("requires authentication for all conversation routes", async () => {
 });
 
 const textMessage = {
+  thread: null,
+  replyTo: null,
   id: "0123456789",
   conversationId: "abcdef",
   seq: 1,
@@ -210,6 +213,7 @@ test("rejects invalid message body and conflicting history cursors before the se
 test("snapshot reads the cursor before history and tolerates invalid message links", async () => {
   authenticate(true);
   const conversation = ConversationSchema.parse({
+    threads: 0,
     id: "abcdef",
     name: null,
     title: "You",

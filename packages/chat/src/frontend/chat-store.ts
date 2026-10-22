@@ -603,7 +603,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       unreadRev.set(known.id, summary.rev);
     }
     if (known && summary.rev <= known.rev) return;
-    if (!known || summary.kind === "system") {
+    if (!known || summary.kind === "system" || summary.thread !== null) {
       const row = await api.conversation(summary.conversationId);
       if (disposed) return;
       if (row !== null) unreadRev.set(row.id, row.rev);
@@ -618,7 +618,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         ...known,
         rev: summary.rev,
         lastActivityAt: summary.createdAt,
-        lastMessage: { id: summary.id, author: summary.author, preview: summary.preview ?? "", createdAt: summary.createdAt },
+        lastMessage: { thread: null, id: summary.id, author: summary.author, preview: summary.preview ?? "", createdAt: summary.createdAt },
       });
     notify();
   };

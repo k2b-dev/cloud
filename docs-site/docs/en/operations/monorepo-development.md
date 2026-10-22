@@ -416,6 +416,20 @@ this way; in development it is an optional application, so start it with
 unreleased the same way but starts with the default development stack. The
 release pull request removes the profile line.
 
+Chat's thread API uses an additive startup migration. Existing messages and
+participant read positions remain in General; no backfill is needed. Admins
+can manage up to 100 named threads per chat, including archived threads.
+Channels with discoverable access cannot create threads. Archived threads
+remain readable and retain their unread counts; restore them before sending.
+
+API clients can list and manage threads at
+`/api/chat/conversations/:conversation/threads`. History and snapshot requests
+accept `thread=<id>` or `thread=general`; omitting it reads the whole chat.
+Read updates default to General. Use `thread=all` to mark the whole chat read;
+the batch `read-all` endpoint also includes archived threads. Replies inherit
+the original message's thread. The API's OpenAPI schemas describe the new
+fields, errors, and idempotent thread creation.
+
 A worker without HTTP routes should be a separate service. It should not
 register application routes.
 

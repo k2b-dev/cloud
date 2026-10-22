@@ -207,7 +207,7 @@ export const startChatHarness = async () => {
   const update = (id: string, changed: boolean) => {
     const conversation = project(chats.get(id)!);
     if (!conversation.read) throw new Error("Read update has no participant");
-    const data = { conversationId: id, ...conversation.read, unread: conversation.unread, asOfRev: conversation.rev };
+    const data = { threads: [], conversationId: id, ...conversation.read, unread: conversation.unread, asOfRev: conversation.rev };
     if (changed) deliver("me", id, { type: "read", ...data });
     return data;
   };
@@ -241,6 +241,8 @@ export const startChatHarness = async () => {
     const seq = entry.messages.length + 1;
     const rev = entry.conversation.rev + 1;
     const message: Message = {
+      thread: null,
+      replyTo: null,
       id: messageId(chat, seq),
       conversationId: chat,
       seq,
@@ -259,7 +261,7 @@ export const startChatHarness = async () => {
       ...(kind === "text"
         ? {
             lastActivityAt: message.createdAt,
-            lastMessage: { id: message.id, author: message.author, preview: body, createdAt: message.createdAt },
+            lastMessage: { thread: null, id: message.id, author: message.author, preview: body, createdAt: message.createdAt },
           }
         : {}),
     };
@@ -272,6 +274,7 @@ export const startChatHarness = async () => {
     const { conversationId, id, seq, rev, kind, author, createdAt } = message;
     deliver("list", conversationId, {
       type: "summary",
+      thread: null,
       conversationId,
       id,
       seq,
@@ -316,6 +319,7 @@ export const startChatHarness = async () => {
     const start = new Date(options.end.getTime() - options.count * spacing);
     chats.set(id, {
       conversation: {
+        threads: 0,
         id,
         name: options.name ?? null,
         icon: null,

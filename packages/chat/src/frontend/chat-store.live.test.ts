@@ -130,6 +130,8 @@ class World {
   }
   message(id: string, m: ModelMessage) {
     return MessageSchema.parse({
+      thread: null,
+      replyTo: null,
       id: id + String(m.seq).padStart(4, "0"),
       conversationId: id,
       seq: m.seq,
@@ -165,7 +167,7 @@ class World {
         queue.push({
           v: 1,
           k: key,
-          d: { type: "read", conversationId: id, ...update.read, unread: update.unread, asOfRev: update.asOfRev },
+          d: { type: "read", threads: [], conversationId: id, ...update.read, unread: update.unread, asOfRev: update.asOfRev },
         });
         this.pending.set(key, queue);
       }
@@ -208,6 +210,7 @@ class World {
     if (!this.readable(person, id)) return null;
     const m = this.models.get(id)!;
     return ConversationSchema.parse({
+      threads: 0,
       id,
       name: m.name,
       icon: m.icon,
@@ -231,7 +234,13 @@ class World {
         const latest = m.msgs.findLast((message) => message.kind === "text");
         if (!latest) return null;
         const message = this.message(id, latest);
-        return { id: message.id, author: message.author, preview: messagePreview(message.body ?? ""), createdAt: message.createdAt };
+        return {
+          thread: null,
+          id: message.id,
+          author: message.author,
+          preview: messagePreview(message.body ?? ""),
+          createdAt: message.createdAt,
+        };
       })(),
       permission: m.members.get(person),
       rev: m.rev,
