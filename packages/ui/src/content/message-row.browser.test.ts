@@ -116,6 +116,7 @@ const entryOf = (message) => message && { author: message.author ?? "system", at
 const actions = [
   { id: "reply", label: options.locale === "de" ? "Antworten" : "Reply", icon: "ti ti-arrow-back-up", onSelect: () => (window.replied = (window.replied ?? 0) + 1) },
   { id: "react", label: options.locale === "de" ? "Reagieren" : "React", icon: "ti ti-mood-smile", onSelect: () => {} },
+  { id: "unread", label: "Mark unread from here", icon: "ti ti-mail", description: "Starts the new messages here.", altClick: true, onSelect: () => (window.unread = (window.unread ?? 0) + 1) },
 ];
 const time = (message) => new Date(message.at).toISOString().slice(11, 16);
 const feed = () =>
@@ -367,10 +368,10 @@ const boxes = (page: Page) =>
   );
 
 const opacity = (page: Page, key: string) =>
-  rowOf(page, key).evaluate((row) => getComputedStyle(row.querySelector(".k2b-message-row__actions")!).opacity);
+  rowOf(page, key).evaluate((row) => getComputedStyle(row.querySelector(".k2b-message-row__menu-root")!).opacity);
 
 describe(`MessageRow in ${browserName}`, () => {
-  test("hover and focus show the actions without moving anything", async () => {
+  test('hover and focus show "…" beside the bubble without moving anything, and it opens the menu', async () => {
     const page = await open();
     try {
       const before = await boxes(page);
@@ -384,13 +385,73 @@ describe(`MessageRow in ${browserName}`, () => {
       await page.mouse.move(719, 1399);
       await rowOf(page, "m6").focus();
       expect(await opacity(page, "m6")).toBe("1");
-      await page.keyboard.press("Tab");
-      expect(await page.evaluate(() => document.activeElement?.closest(".k2b-message-row__actions") !== null)).toBe(true);
+      // Tab reaches the message's menu host first (Shift+F10 opens the menu there), then "…" inside the bubble.
+      for (let step = 0; step < 4; step++) {
+        await page.keyboard.press("Tab");
+        if (await page.evaluate(() => document.activeElement?.classList.contains("k2b-message-row__menu"))) break;
+      }
+      expect(await page.evaluate(() => document.activeElement?.closest('[data-key="m6"] .k2b-message-row__bubble') !== null)).toBe(true);
       expect(await opacity(page, "m6")).toBe("1");
       expect(await boxes(page)).toEqual(before);
 
       await page.keyboard.press("Enter");
+      await page.locator('[role="menu"]:popover-open [role="menuitem"]', { hasText: "Reply" }).waitFor();
+      await page.keyboard.press("Enter");
       expect(await replied(page)).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test('one reading column: rows sit in 760 px centered in a wide feed, "…" beside the bubble\'s inner side', async () => {
+    const page = await open({ width: 2000 });
+    try {
+      const geometry = await page.evaluate(() => {
+        const feed = document.querySelector(".k2b-virtual-feed__viewport")!.getBoundingClientRect();
+        const item = document.querySelector<HTMLElement>('[data-key="m4"]')!.getBoundingClientRect();
+        return { feed: [feed.left, feed.width], item: [item.left, item.width] };
+      });
+      expect(geometry.item[1]).toBe(760);
+      // Centered in the feed less its stable scrollbar gutter.
+      expect(Math.abs(geometry.item[0] - geometry.feed[0] - (geometry.feed[1] - 760) / 2)).toBeLessThanOrEqual(8);
+
+      for (const key of ["m3", "m6"]) {
+        await rowOf(page, key).locator(".k2b-message-row__bubble").hover();
+        const place = await rowOf(page, key).evaluate((row) => {
+          const bubble = row.querySelector(".k2b-message-row__bubble")!.getBoundingClientRect();
+          const menu = row.querySelector(".k2b-message-row__menu")!.getBoundingClientRect();
+          const own = row.querySelector(".k2b-message-row")!.hasAttribute("data-own");
+          return { own, gap: own ? bubble.left - menu.right : menu.left - bubble.right, top: menu.top - bubble.top, size: menu.width };
+        });
+        expect(place.gap).toBeCloseTo(4, 0);
+        expect(place.top).toBeCloseTo(4, 0);
+        expect(place.size).toBe(28);
+      }
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("right-click opens the message's menu; Alt+click runs the entry that asks for it, not on a link", async () => {
+    const page = await open();
+    try {
+      const bubble = rowOf(page, "m2").locator(".k2b-message-row__text");
+      await bubble.click({ button: "right" });
+      const menu = page.locator(".k2b-context-menu[role='menu']");
+      await menu.waitFor();
+      expect(await menu.locator("[role='menuitem']").allTextContents()).toEqual([
+        "Reply",
+        "React",
+        expect.stringContaining("Mark unread from here") as unknown as string,
+      ]);
+      expect(await menu.locator("[role='menuitem']").nth(2).textContent()).toContain("Starts the new messages here.");
+      await page.keyboard.press("Escape");
+
+      const before = await boxes(page);
+      await bubble.click({ modifiers: ["Alt"] });
+      expect(await page.evaluate(() => (window as unknown as { unread?: number }).unread ?? 0)).toBe(1);
+      expect(await page.locator("[role='menu']:popover-open, .k2b-context-menu[role='menu']").count()).toBe(0);
+      expect(await boxes(page)).toEqual(before);
     } finally {
       await page.close();
     }

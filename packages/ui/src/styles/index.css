@@ -124,6 +124,8 @@
   --k2b-danger-surface: #fef2f2;
   --k2b-danger-text: #b91c1c;
   --k2b-radius-control: 0.5rem;
+  /* One reading column for long text beside wide space: conversation history and its composer, the mail reader. */
+  --k2b-reading-column: 47.5rem;
   --k2b-radius-surface: 0.75rem;
   --k2b-radius-dialog: 0.875rem;
   /* One motion vocabulary: every time and curve comes from these tokens. */
@@ -9139,11 +9141,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
 }
 
+/* Every item, its separator, and the marker share one reading column, centered in the feed; the scrollbar and the
+   empty sides still scroll the whole feed. */
 .k2b-ui .k2b-virtual-feed__item {
   position: absolute;
   top: 0;
   right: 0;
   left: 0;
+  max-width: var(--k2b-reading-column);
+  margin-inline: auto;
   border-radius: var(--k2b-radius-control);
   transition: background-color 600ms ease-out;
 }
@@ -9320,6 +9326,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-message-row__bubble {
+  position: relative;
   display: flex;
   max-width: 100%;
   min-width: 0;
@@ -9499,45 +9506,59 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   white-space: normal;
 }
 
-/* The actions overlay the top of the row while it is hovered or focused; showing them only changes paint. */
-.k2b-ui .k2b-message-row__actions {
+/* "…" sits beside the bubble's inner side, outside the bubble, while the row is hovered or focused; showing it only
+   changes paint. Without a bubble it sits beside the first part of the message. */
+.k2b-ui .k2b-message-row__menu-root {
   position: absolute;
   z-index: 1;
-  top: 0;
-  inset-inline-end: 0.75rem;
+  top: 0.25rem;
+  inset-inline-start: calc(100% + 0.25rem);
   display: flex;
-  gap: 0.125rem;
-  padding: 0.125rem;
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface-elevated);
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--k2b-text) 10%, transparent);
   opacity: 0;
   pointer-events: none;
 }
 
-.k2b-ui .k2b-message-row[data-own] .k2b-message-row__actions {
-  inset-inline: 0.75rem auto;
+.k2b-ui .k2b-message-row[data-own] .k2b-message-row__menu-root {
+  inset-inline: auto calc(100% + 0.25rem);
 }
 
-.k2b-ui .k2b-message-row:focus-within .k2b-message-row__actions,
-.k2b-ui :focus > .k2b-message-row .k2b-message-row__actions {
+.k2b-ui .k2b-message-row__body > .k2b-message-row__menu-root {
+  inset-inline-start: calc(100% + 0.25rem);
+}
+
+.k2b-ui .k2b-message-row[data-group-start] .k2b-message-row__body > .k2b-message-row__menu-root {
+  top: 1.75rem;
+}
+
+.k2b-ui .k2b-message-row__body {
+  position: relative;
+}
+
+.k2b-ui .k2b-message-row__menu {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-message-row:focus-within .k2b-message-row__menu-root,
+.k2b-ui :focus > .k2b-message-row .k2b-message-row__menu-root,
+.k2b-ui .k2b-message-row__menu-root:has([aria-expanded="true"]) {
   opacity: 1;
   pointer-events: auto;
 }
 
-/* Inside GestureMenu, keyboard focus on the element or on the list item around it shows them. A tap there leaves them
-   hidden: the long press opens the message's whole menu, and the tap stays free for a double tap instead of landing on
-   an action that the first tap revealed. */
-.k2b-ui :focus-visible > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__actions,
-.k2b-ui :focus-visible > * > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__actions {
+/* Inside GestureMenu, keyboard focus on the element or on the list item around it shows "…". A tap there leaves it
+   hidden: the long press opens the whole menu, and the tap stays free for a double tap. */
+.k2b-ui :focus-visible > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__menu-root,
+.k2b-ui :focus-visible > * > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__menu-root {
   opacity: 1;
   pointer-events: auto;
 }
 
-/* Only a pointer that really hovers shows them: a tap's emulated hover would show them and press the action under the
-   finger in the same tap. On a touch screen, the tap focuses the message instead. */
+/* Only a pointer that really hovers shows it: a tap's emulated hover would show it and press it in the same tap. */
 @media (hover: hover) {
-  .k2b-ui .k2b-message-row:hover .k2b-message-row__actions {
+  .k2b-ui .k2b-message-row:hover .k2b-message-row__menu-root {
     opacity: 1;
     pointer-events: auto;
   }
@@ -9560,30 +9581,60 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-variant-numeric: tabular-nums;
 }
 
-/* Above the bubble: a forwarded marker and the quoted message, at most two lines. */
-.k2b-ui .k2b-message-row__marker,
-.k2b-ui .k2b-message-row__quote {
+/* Above the bubble: a forwarded marker. */
+.k2b-ui .k2b-message-row__marker {
   display: flex;
   max-width: 100%;
   min-width: 0;
   align-items: flex-start;
   gap: 0.375rem;
   padding: 0 0.125rem;
-  border: 0;
-  border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-muted);
-  background: transparent;
-  font: inherit;
   font-size: 0.8125rem;
   line-height: 1.25rem;
-  text-align: start;
 }
 
-.k2b-ui .k2b-message-row__marker > i,
-.k2b-ui .k2b-message-row__quote > i {
+.k2b-ui .k2b-message-row__marker > i {
   flex: none;
   font-size: 1rem;
   line-height: 1.25rem;
+}
+
+/* The answered message: its author and at most two lines on a quiet tint at the top of the bubble, without a bar or
+   border. In the reader's own tinted bubble the tint is light. Without a bubble it stands in the bubble's place. */
+.k2b-ui .k2b-message-row__quote {
+  display: flex;
+  max-width: 30rem;
+  min-width: 0;
+  flex-direction: column;
+  align-self: stretch;
+  margin: 0.0625rem -0.375rem 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border: 0;
+  border-radius: 0.625rem;
+  color: var(--k2b-text-secondary);
+  background: color-mix(in srgb, var(--k2b-action) 7%, transparent);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  text-align: start;
+}
+
+.k2b-ui .k2b-message-row__body > .k2b-message-row__quote {
+  margin: 0;
+}
+
+.k2b-ui .k2b-message-row[data-own] .k2b-message-row__quote {
+  background: color-mix(in srgb, var(--k2b-surface) 70%, transparent);
+}
+
+.k2b-ui .k2b-message-row__quote-author {
+  overflow: hidden;
+  color: var(--k2b-action);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-message-row__quote-text {
@@ -9596,17 +9647,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-wrap: anywhere;
 }
 
-.k2b-ui .k2b-message-row__quote-author {
-  color: var(--k2b-text-secondary);
-  font-weight: 600;
-}
-
 .k2b-ui button.k2b-message-row__quote {
   cursor: pointer;
 }
 
 .k2b-ui button.k2b-message-row__quote:hover {
-  color: var(--k2b-text-secondary);
+  background: color-mix(in srgb, var(--k2b-action) 11%, transparent);
+}
+
+.k2b-ui .k2b-message-row[data-own] button.k2b-message-row__quote:hover {
+  background: var(--k2b-surface);
 }
 
 /* "edited" ends the last paragraph of the text. */
@@ -10168,7 +10218,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* Fills disappear in forced colours; an outline keeps the bubble and the toolbar apart without changing their size. */
 @media (forced-colors: active) {
   .k2b-ui .k2b-message-row__bubble,
-  .k2b-ui .k2b-message-row__actions,
+  .k2b-ui .k2b-message-row__quote,
   .k2b-ui .k2b-message-row__file {
     outline: 1px solid CanvasText;
   }
@@ -11973,6 +12023,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-composer[data-variant="conversation"],
 .k2b-ui .k2b-chat-composer[data-variant="conversation"]:focus-within {
   --k2b-chat-composer-control: 2.25rem;
+  /* The history's reading column less the 0.75rem inset of its rows, so field and bubbles share their edges. */
+  width: 100%;
+  max-width: calc(var(--k2b-reading-column) - 1.5rem);
+  margin-inline: auto;
   gap: 0.25rem;
   padding: 0;
   border: 0;

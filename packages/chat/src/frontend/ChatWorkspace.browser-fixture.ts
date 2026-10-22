@@ -133,6 +133,7 @@ export const startChatHarness = async () => {
   let nextAccess = 0;
   let nextPerson = 0;
   let failing = 0;
+  let failingUnread = 0;
   const reads: { chat: string; seq: number }[] = [];
   const posted: { chat: string; clientId: string; body: string }[] = [];
 
@@ -656,6 +657,10 @@ export const startChatHarness = async () => {
           return Response.json(read(id!, seq));
         }
         if (part === "unread" && request.method === "POST") {
+          if (failingUnread > 0) {
+            failingUnread -= 1;
+            return Response.json({ message: "Unavailable" }, { status: 503 });
+          }
           const { message } = MarkUnreadSchema.parse(await request.json());
           const data = markUnread(id!, message);
           return data ? Response.json(data) : Response.json({ code: "NOT_FOUND", message: "Message not found." }, { status: 404 });
@@ -784,6 +789,7 @@ export const startChatHarness = async () => {
       reads.length = 0;
       posted.length = 0;
       failing = 0;
+      failingUnread = 0;
     },
     /** Lets tests await the live connection before publishing. */
     subscribed: (chat?: string) =>
@@ -795,6 +801,10 @@ export const startChatHarness = async () => {
     /** Makes the next `count` sends fail with 503. */
     failSends: (count = 1) => {
       failing = count;
+    },
+    /** Makes the next `count` "mark unread" requests fail with 503. */
+    failUnread: (count = 1) => {
+      failingUnread = count;
     },
     /** Stores a message from another person and delivers it live. */
     receive: (chat: string, author: Person, body: string) => publish(append(chat, author, body, now())),

@@ -844,6 +844,11 @@ Set `variant="conversation"` for messages between people, for example under a
 [message rows](/en/ui/content/message-rows). Without it, the composer keeps
 the assistant prompt's behavior.
 
+The conversation composer shares the feed's reading column: at most
+`--k2b-reading-column` less the 0.75 rem inset of the message rows on each
+side, centered, so field and bubbles share their edges on a wide window. A
+narrower container gives it its whole width.
+
 The conversation composer is one row without a card: an attach button with a
 plain plus, a quiet pill-shaped field, and a round Send button. The field is muted at rest
 and shows the surface with a ring while it has focus; only its paint changes.

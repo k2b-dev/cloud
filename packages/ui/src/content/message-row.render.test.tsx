@@ -62,7 +62,7 @@ describe("MessageRow", () => {
     expect(html).toContain('datetime="2026-10-06T07:31:00.000Z"');
     expect(html).not.toContain("k2b-sr-only");
     expect(html).not.toContain("k2b-message-row__line");
-    expect(html).not.toContain("k2b-message-row__actions");
+    expect(html).not.toContain("k2b-message-row__menu");
   });
 
   test("continues a group with the text only and still names author and time for screen readers", () => {
@@ -217,18 +217,24 @@ describe("MessageRow", () => {
     expect(row({ text: '```"><img>\nx\n```' })).not.toContain("<img>");
   });
 
-  test("offers the caller's actions as a labelled group that overlays the row", () => {
+  test('offers the caller\'s actions as one menu behind a quiet "…" beside the bubble', () => {
     const html = row({
       actions: [
-        { id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => {} },
-        { id: "copy", label: "Copy text", icon: "ti ti-copy", onSelect: () => {}, disabled: true },
+        { id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => {}, shortcut: "r" },
+        { id: "unread", label: "Mark unread from here", icon: "ti ti-mail", onSelect: () => {}, altClick: true },
       ],
     });
 
-    expect(html).toMatch(/class="k2b-message-row__actions" role="group" aria-label="Message actions"/);
-    expect(html).toMatch(/aria-label="Reply"/);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*aria-label="Copy text"|<button[^>]*aria-label="Copy text"[^>]*disabled/);
-    expect(row({ actions: [] })).not.toContain("k2b-message-row__actions");
+    // The trigger sits inside the bubble; its menu lists every entry with the key or Alt+click that runs it too.
+    expect(html).toMatch(/class="k2b-message-row__bubble"[\s\S]*class="[^"]*k2b-message-row__menu-root[\s\S]*aria-label="Message actions"/);
+    expect(html).toMatch(/role="menu" aria-label="Message actions"/);
+    expect(textOf(html)).toContain("Reply R R");
+    expect(textOf(html)).toContain("Mark unread from here Alt click Alt Click");
+    // Right-click and a long press open the same entries on the whole message.
+    expect(html).toMatch(/role="group" tabindex="-1" aria-label="Message from Nora Brandt, 09:31" aria-haspopup="menu"/);
+    expect(html).toContain("k2b-gesture-menu");
+    expect(row({ actions: [] })).not.toContain("k2b-message-row__menu");
+    expect(row({ actions: [] })).not.toContain("k2b-gesture-menu");
     expect(row({ actions: [{ id: "reply", label: "Reply", icon: "ti ti-arrow-back-up", onSelect: () => {} }] }, "de")).toContain(
       'aria-label="Nachrichtenaktionen"',
     );
@@ -289,7 +295,10 @@ describe("MessageRow rich content", () => {
       expect(textOf(html)).toBe(
         `NB Nora Brandt 09:31 ${words.forwarded} ${words.replyTo} Tobias Kern The API is done. Hello ${words.edited}`,
       );
-      expect(html).toMatch(/<div class="k2b-message-row__quote"><i class="ti ti-arrow-back-up" aria-hidden="true">/);
+      // The quote opens the bubble on a quiet tint: the author, then at most two lines of the text.
+      expect(html).toMatch(
+        /<div class="k2b-message-row__bubble"[^>]*><div class="k2b-message-row__quote"><span class="k2b-message-row__quote-author"><span class="k2b-sr-only">/,
+      );
       // The marker ends the last paragraph instead of taking a line of its own.
       expect(html).toContain(`<p>Hello <span class="k2b-message-row__edited">${words.edited}</span></p>`);
       expect(row({ text: "```\ncode\n```", edited: true }, locale)).toContain(
@@ -570,22 +579,30 @@ describe("MessageRow styles", () => {
     expect(declarations(".k2b-ui .k2b-message-row[data-own] .k2b-message-row__bubble").get("background")).toEqual(["var(--k2b-selected)"]);
   });
 
-  test("shows the actions by paint only and gives the status line a fixed height", () => {
-    const bar = declarations(".k2b-ui .k2b-message-row__actions");
-    expect(bar.get("position")).toEqual(["absolute"]);
-    expect(bar.get("opacity")).toEqual(["0"]);
+  test('shows "…" by paint only beside the bubble and gives the status line a fixed height', () => {
+    const menu = declarations(".k2b-ui .k2b-message-row__menu-root");
+    expect(menu.get("position")).toEqual(["absolute"]);
+    expect(menu.get("opacity")).toEqual(["0"]);
+    // Beside the bubble's inner side, outside it: right of others' messages, left of the reader's own.
+    expect(menu.get("inset-inline-start")).toEqual(["calc(100% + 0.25rem)"]);
+    expect(declarations(".k2b-ui .k2b-message-row[data-own] .k2b-message-row__menu-root").get("inset-inline")).toEqual([
+      "auto calc(100% + 0.25rem)",
+    ]);
+    // No frame and no shadow around it.
+    expect(menu.get("box-shadow")).toBeUndefined();
+    expect(menu.get("background")).toBeUndefined();
     for (const [selector, context] of [
-      [".k2b-ui .k2b-message-row:focus-within .k2b-message-row__actions", ""],
-      [".k2b-ui :focus > .k2b-message-row .k2b-message-row__actions", ""],
+      [".k2b-ui .k2b-message-row:focus-within .k2b-message-row__menu-root", ""],
+      [".k2b-ui :focus > .k2b-message-row .k2b-message-row__menu-root", ""],
       // Inside GestureMenu, keyboard focus on the element or on the feed item around it.
-      [".k2b-ui :focus-visible > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__actions", ""],
-      [".k2b-ui :focus-visible > * > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__actions", ""],
-      // A tap's emulated hover must not show the actions and press one in the same tap.
-      [".k2b-ui .k2b-message-row:hover .k2b-message-row__actions", "@media (hover: hover)"],
+      [".k2b-ui :focus-visible > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__menu-root", ""],
+      [".k2b-ui :focus-visible > * > .k2b-gesture-menu > .k2b-gesture-menu__content > .k2b-message-row .k2b-message-row__menu-root", ""],
+      // A tap's emulated hover must not show "…" and press it in the same tap.
+      [".k2b-ui .k2b-message-row:hover .k2b-message-row__menu-root", "@media (hover: hover)"],
     ] as const)
       expect([...declarations(selector, context).keys()].sort()).toEqual(["opacity", "pointer-events"]);
     expect(rules.some((rule) => rule.selector.includes(".k2b-message-row:hover") && rule.context === "")).toBe(false);
-    // A tap that focuses a GestureMenu leaves them hidden, so the second tap of a double tap never presses one.
+    // A tap that focuses a GestureMenu leaves it hidden, so the second tap of a double tap never presses it.
     expect(rules.some((rule) => /:focus > (?:\* > )?\.k2b-gesture-menu\b/.test(rule.selector))).toBe(false);
     expect(declarations(".k2b-ui .k2b-message-row__line").get("height")).toEqual(["1.25rem"]);
     expect(declarations(".k2b-ui .k2b-message-row__meta").get("height")).toEqual(["1.25rem"]);
@@ -644,10 +661,14 @@ describe("MessageRow styles", () => {
     const list = declarations(".k2b-ui .k2b-reaction-bar__scroll", coarse);
     expect(list.get("padding-block")).toEqual(["0.5625rem"]);
     expect(list.get("margin-block")).toEqual(["-0.5625rem"]);
-    // Every rule that adds room for those areas applies to touch screens only.
+    // Every rule that adds room for those areas applies to touch screens only. The quote's own inset in the bubble is
+    // its layout on every device.
+    const quoteLayout = [".k2b-ui .k2b-message-row__quote", ".k2b-ui .k2b-message-row__body > .k2b-message-row__quote"];
     for (const rule of rules.filter(
       (candidate) =>
-        /margin|padding-bottom/.test(candidate.body) && /k2b-message-row__(?:thread|footer|quote)|:has/.test(candidate.selector),
+        /margin|padding-bottom/.test(candidate.body) &&
+        /k2b-message-row__(?:thread|footer|quote)|:has/.test(candidate.selector) &&
+        !quoteLayout.includes(candidate.selector),
     ))
       if (rule.selector.includes("k2b-message-row")) expect(rule.context, rule.selector).toBe(coarse);
   });

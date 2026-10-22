@@ -25,7 +25,23 @@ Chat markiert Nachrichten als gelesen, während du sie in einem sichtbaren, akti
 2. Wähle **Als ungelesen markieren**.
 :::
 
-Um bei einer bestimmten Nachricht zu beginnen, öffne ihr Menü und wähle **Ab hier als ungelesen markieren**. Das ändert deine Ungelesen-Markierung. Andere sehen weiterhin, was du gelesen hast.
+## Ab einer Nachricht als ungelesen markieren {icon="mail"}
+
+Nutze das, wenn du etwas gelesen hast, es aber später bearbeiten willst.
+
+:::steps
+1. Zeige auf die Nachricht und wähle **…** daneben, oder klicke mit der rechten Maustaste auf die Nachricht. Auf dem Telefon hältst du die Nachricht gedrückt.
+2. Wähle **Ab hier ungelesen**.
+:::
+
+**Neue Nachrichten** beginnt jetzt bei dieser Nachricht, der Chat steht in der Liste als ungelesen, und beim nächsten Öffnen landest du genau dort. Eine Meldung bestätigt die Änderung; mit **Rückgängig** stellst du deinen Lesestand wieder her. Schlägt die Änderung fehl, bleibt alles, wie es war, und du kannst **Erneut versuchen** wählen.
+
+:::reference
+- Kürzel: Alt + Klick auf die Nachricht (Wahltaste + Klick auf dem Mac).
+- Deine eigenen Nachrichten haben kein **Ab hier ungelesen**, weil sie nie als ungelesen zählen.
+- Andere sehen weiterhin, was du gelesen hast.
+- **Text kopieren** im selben Menü kopiert den Text der Nachricht.
+:::
 
 ## Chats als gelesen markieren {icon="checks"}
 

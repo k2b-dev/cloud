@@ -395,6 +395,42 @@ const scrollFeed = async (page: Page, direction: number) => {
   }, direction);
   await settle(page);
 };
+/** Opens a message's menu the way each device does: "…" beside the bubble on a desktop, a long press on a phone. */
+const openMessageMenu = async (page: Page, name: string, item: Locator) => {
+  if (name === "phone") {
+    const box = (await item.locator(".k2b-message-row__text").boundingBox())!;
+    const point = { x: box.x + 8, y: box.y + box.height / 2 };
+    // Playwright taps only as a whole; the held pointer's lifecycle runs as GestureMenu receives it on a phone.
+    await page.evaluate(async (point) => {
+      const target = document.elementFromPoint(point.x, point.y)!;
+      const init: PointerEventInit = {
+        pointerType: "touch",
+        isPrimary: true,
+        pointerId: 1,
+        bubbles: true,
+        cancelable: true,
+        clientX: point.x,
+        clientY: point.y,
+      };
+      target.dispatchEvent(new PointerEvent("pointerdown", init));
+      await new Promise((resolve) => setTimeout(resolve, 650));
+      target.dispatchEvent(new PointerEvent("pointerup", init));
+      target.dispatchEvent(new Event("touchend", { bubbles: true, cancelable: true }));
+    }, point);
+    const sheet = page.locator("dialog[open]");
+    await sheet.waitFor();
+    return sheet;
+  }
+  await item.locator(".k2b-message-row__bubble").hover();
+  await item.getByRole("button", { name: "Message actions", exact: true }).click();
+  const menu = page.getByRole("menu", { name: "Message actions", exact: true });
+  await menu.waitFor();
+  return menu;
+};
+const chooseFromMessageMenu = async (page: Page, name: string, item: Locator, entry: string) => {
+  const menu = await openMessageMenu(page, name, item);
+  await menu.getByRole("menuitem", { name: new RegExp(`^${entry}`) }).click();
+};
 const rowAction = async (page: Page, name: string, chat: string, action: "Mark unread" | "Mark read") => {
   const link = row(page, name, chat);
   await link.hover();
@@ -715,9 +751,7 @@ describe("ChatWorkspace browser read state", () => {
         await page.waitForURL(`**/c/${chat}`);
         const target = harness.messageId(chat, 5);
         const item = page.locator(`[data-key="${target}"]`);
-        if (name === "phone") await item.tap();
-        else await item.hover();
-        await item.getByRole("button", { name: "Mark unread from here", exact: true }).click();
+        await chooseFromMessageMenu(page, name, item, "Mark unread from here");
         await marker(page).waitFor();
         expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(target);
         await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 5);
@@ -736,6 +770,68 @@ describe("ChatWorkspace browser read state", () => {
         await page.context().close();
       }
     }, 30_000);
+
+    test(`"Mark unread from here" in the message menu: undo, failure with retry, own messages, copy on ${name}`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], name: "Menu actions", count: 8, end: harness.now() });
+      const { page, errors } = await load(options, { chat }, true);
+      try {
+        await until(() => harness.subscribed(chat));
+        const target = page.locator(`[data-key="${harness.messageId(chat, 5)}"]`);
+        const own = page.locator(`[data-key="${harness.messageId(chat, 7)}"]`);
+
+        // Own messages never count as unread, so their menu has no such entry; "Copy text" is on every message.
+        const ownMenu = await openMessageMenu(page, name, own);
+        expect(await ownMenu.getByRole("menuitem").allInnerTexts()).toEqual([expect.stringContaining("Copy text")]);
+        await page.keyboard.press("Escape");
+        await ownMenu.waitFor({ state: "hidden" });
+
+        // A failure leaves the marker and read state as they were and offers "Try again".
+        harness.failUnread();
+        await chooseFromMessageMenu(page, name, target, "Mark unread from here");
+        const failed = page.locator(".k2b-toast").filter({ hasText: "The read state could not be changed." });
+        await failed.waitFor();
+        expect(await marker(page).count()).toBe(0);
+        expect(harness.props({ chat }).open!.conversation.read!.unreadFromSeq).toBe(null);
+        await failed.getByRole("button", { name: "Try again", exact: true }).click();
+        await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 5);
+        await marker(page).waitFor();
+        expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(
+          harness.messageId(chat, 5),
+        );
+
+        // The success names whose message it starts at and offers "Undo", which puts everything back.
+        const done = page.locator(".k2b-toast").filter({ hasText: "Unread from Nora’s message" });
+        await done.waitFor();
+        await done.getByRole("button", { name: "Undo", exact: true }).click();
+        await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === null);
+        await marker(page).waitFor({ state: "detached" });
+        expect(harness.props({ chat }).open!.conversation.unread).toBe(0);
+
+        if (name === "desktop") {
+          // Alt+click (Option+click) runs it directly.
+          await target.locator(".k2b-message-row__text").click({ modifiers: ["Alt"] });
+          await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 5);
+          await marker(page).waitFor();
+          // The entry teaches the shortcut and says what it does.
+          const menu = await openMessageMenu(page, name, target);
+          const entry = menu.getByRole("menuitem", { name: /^Mark unread from here/ });
+          expect(await entry.innerText()).toContain("“New messages” starts at this message.");
+          expect(await entry.locator("kbd.k2b-kbd").count()).toBe(1);
+          await page.keyboard.press("Escape");
+        }
+
+        await page
+          .context()
+          .grantPermissions(["clipboard-read", "clipboard-write"])
+          .catch(() => {});
+        await chooseFromMessageMenu(page, name, target, "Copy text");
+        await page.locator("[data-k2b-live]").getByText("Copied", { exact: true }).waitFor({ state: "attached" });
+        if (errors.length) expect(errors).toEqual([]);
+        if (name === "desktop") expect(await page.evaluate(() => window.chatShifts)).toBeLessThan(0.001);
+      } finally {
+        await page.context().close();
+      }
+    }, 45_000);
 
     test(`Escape independently marks the open head read and removes its marker on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 48, unread: 25, end: harness.now() });

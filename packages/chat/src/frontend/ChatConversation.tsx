@@ -72,6 +72,8 @@ export type ChatConversationProps = {
   /** The first and last item fully in view, for reporting what the reader has seen. */
   onVisibleChange: (visible: { first: ChatFeedItem; last: ChatFeedItem } | null) => void;
   onMarkUnreadFrom: (item: ChatFeedItem) => void;
+  /** "Copy text" in a message's menu. */
+  onCopy: (item: ChatFeedItem) => void;
   /** Esc within the chat or with no focused control, unless a field, menu, dialog, tooltip, or light-dismiss popover uses it. */
   onEscape: () => void;
 };
@@ -217,9 +219,32 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               onRetry={item.retry}
               actions={
                 item.messageId
-                  ? [{ id: "unread", label: t().markUnreadFromHere, icon: "ti ti-mail", onSelect: () => props.onMarkUnreadFrom(item) }]
+                  ? [
+                      { id: "copy", label: t().copyText, icon: "ti ti-copy", immediate: true, onSelect: () => props.onCopy(item) },
+                      // The reader's own messages never count as unread.
+                      ...(item.own
+                        ? []
+                        : [
+                            {
+                              id: "unread",
+                              label: t().markUnreadFromHere,
+                              description: t().markUnreadFromHereHint,
+                              icon: "ti ti-mail",
+                              altClick: true,
+                              onSelect: () => props.onMarkUnreadFrom(item),
+                            },
+                          ]),
+                    ]
                   : item.discard
-                    ? [{ id: "discard", label: t().discardMessage, icon: "ti ti-trash", onSelect: item.discard }]
+                    ? [
+                        {
+                          id: "discard",
+                          label: t().discardMessage,
+                          icon: "ti ti-trash",
+                          variant: "danger" as const,
+                          onSelect: item.discard,
+                        },
+                      ]
                     : undefined
               }
             />

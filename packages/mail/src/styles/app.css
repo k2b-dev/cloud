@@ -621,7 +621,7 @@
   .mail-reading-column {
     display: flex;
     width: 100%;
-    max-width: 47.5rem;
+    max-width: var(--k2b-reading-column);
     flex-direction: column;
     gap: 0.5rem;
     margin-inline: auto;

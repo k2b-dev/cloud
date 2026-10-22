@@ -1,6 +1,7 @@
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
+import { clipboard } from "@k2b/stdlib/browser";
 import {
   AppWorkspace,
   announce,
@@ -24,6 +25,7 @@ import {
   MESSAGE_MAX_CODE_POINTS,
   MessageBodySchema,
   type MessagePageSchema,
+  type ReadState,
   readStart,
 } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
@@ -282,12 +284,49 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const markRead = (id: string) => void changeRead(() => store?.markRead(id, Number.MAX_SAFE_INTEGER));
   const markUnread = async (id: string, from?: ChatFeedItem) => {
     const open = openChat()?.id === id;
+    if (!from) {
+      if (open) paused = true;
+      if (open && reporter?.chatId === id) await reporter.reporter.settled();
+      if (!(await changeRead(() => store?.markUnread(id))) && open) paused = false;
+      return;
+    }
+    // "Mark unread from here" in the open chat: the marker moves at once, a failure puts everything back.
+    const before = { marker: marker(), read: conversation()?.read ?? null };
     if (open) paused = true;
     // Let earlier reads finish before the server applies the unread mark.
     if (open && reporter?.chatId === id) await reporter.reporter.settled();
-    if (from) setMarker(from.key);
-    if (!(await changeRead(() => store?.markUnread(id, from?.messageId))) && open) paused = false;
+    setMarker(from.key);
+    try {
+      await store?.markUnread(id, from.messageId);
+    } catch {
+      if (openChat()?.id === id) setMarker(before.marker);
+      if (open) paused = false;
+      toast.error(t().readStateFailed, { action: { label: t().retry, onClick: () => void markUnread(id, from) } });
+      return;
+    }
+    toast(t().markedUnreadFrom({ name: from.authorName.split(" ")[0] ?? from.authorName }), {
+      iconClass: "ti ti-mail",
+      action: { label: t().undo, onClick: () => void undoUnread(id, before) },
+    });
   };
+  // Undo puts the read state and the marker back as they were before "Mark unread from here".
+  const undoUnread = async (id: string, before: { marker: string | null; read: ReadState | null }) => {
+    const unreadFrom = before.read?.unreadFromSeq ?? null;
+    const message = unreadFrom === null ? undefined : openChat()?.messages.find((candidate) => candidate.seq === unreadFrom);
+    const restored = await changeRead(() =>
+      message
+        ? store?.markUnread(id, message.id)
+        : store?.markRead(id, Math.max(before.read?.lastReadSeq ?? 0, before.read?.joinedSeq ?? 0)),
+    );
+    if (!restored || openChat()?.id !== id) return;
+    setMarker(before.marker);
+    paused = false;
+  };
+  const copy = (item: ChatFeedItem) =>
+    void clipboard.copy(item.body).then(
+      () => announce(t().copied),
+      () => toast.error(t().copyFailed),
+    );
   const markOpenRead = () => {
     const current = openChat();
     if (!current) return;
@@ -656,6 +695,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       markerKey={marker()}
                       onVisibleChange={reportVisible}
                       onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
+                      onCopy={copy}
                       // With the info open, Esc closes it first; the workspace owns that.
                       onEscape={() => panel() === null && markOpenRead()}
                     />
