@@ -65,7 +65,11 @@ One plausible candidate is returned; several produce
 verified entrance or delivery address.
 
 Addresses carry `line1`, `postalCode`, `city`, `stateRegion`, `countryCode`,
-`point`, `formatted`, `confidence` (number or null), and `provenance`.
+`point`, `formatted`, `confidence` (number or null), `buildingConfidence`
+(number or null), and `provenance`. `buildingConfidence` is the provider's
+certainty that `point` is this building (`rank.confidence_building_level`);
+it is null when the result is not a house-number match. Store a point for a
+typed address only when this value is high; Contacts requires at least 0.9.
 Unavailable text components are empty strings.
 
 Place categories are `museum`, `cafe`, `restaurant`, `bar`, `pub`, `bakery`,
@@ -450,3 +454,47 @@ Core remains stateless for routes. Follow-ups update the first widget, and savin
 to a notebook uses the shared map document format through Notebook capabilities.
 See [Explore places and routes](/en/docs/ai/chat-interface#explore-places-and-routes)
 for selection, editing, recovery, and persistence behavior.
+## Suggest addresses in forms
+
+Import `AddressAutocomplete` from `@k2b/cloud/geo/ui` for a street field. It
+calls `address.autocomplete` from the browser as the signed-in person, after
+3 to 300 characters and a 250 ms pause, for at most 5 suggestions. A newer
+query waits for the open request instead of cancelling a call that Core may
+already have paid for, so one request per field is in flight.
+
+```tsx
+import { AddressAutocomplete } from "@k2b/cloud/geo/ui";
+
+<AddressAutocomplete
+  label="Street and number"
+  value={street()}
+  onValueChange={setStreet}
+  onPick={(address) => fillFields(address)}
+  onOwnEntry={() => keepTypedText()}
+  availability={ssrAvailability}
+/>
+```
+
+The field never fills other fields itself. `onPick` receives the chosen
+`GeoAddress` with `point` and `provenance`; keep both with the stored address
+and drop them when the person changes a location field later. The list always
+offers the typed text as its own entry: last on wide screens, first on phones
+so the on-screen keyboard cannot hide it. Arrow keys move, Enter takes the
+active entry, and Escape closes the list and keeps the typed text. The source
+line **Geoapify · OpenStreetMap** sits under the list.
+
+Pass the SSR `geo.availability` result as `availability`. Without a configured
+key the field is a plain text input. An exhausted personal or Cloud budget,
+from the snapshot or from a refused request, shows one calm line with the reset
+time instead of suggestions and sends no further requests.
+
+## Link to a navigation app
+
+Cloud does no live navigation. `geoNavigationHref` from `@k2b/cloud/geo/ui`
+builds a link that hands a destination to the device's maps app:
+`geo:` on Android, Apple Maps on iPhone and iPad, and OpenStreetMap
+directions elsewhere. Pass a `point` when one is known, otherwise the address
+text. Choose the platform with `geoNavigationPlatform(navigator.userAgent)`
+after the first render, so server output and the first client render agree.
+The link carries only the destination and an optional name, and it leaves
+Cloud only when the person follows it.
