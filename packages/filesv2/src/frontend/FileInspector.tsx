@@ -556,7 +556,7 @@ function createVersions(base: () => BaseSummary, entry: () => FileEntry) {
   /** `null` until the list of this exact file state arrived; then never an empty stand-in for "unknown". */
   const items = createMemo(() => (versions.data()?.key === key() ? (versions.data()?.items ?? null) : null));
   const state = () => (!base().versioningEnabled ? "off" : versions.error() ? "error" : items() ? "ready" : "loading");
-  return { items, state, refresh: () => versions.refresh() };
+  return { items, state, refreshing: versions.refreshing, refresh: () => versions.refresh() };
 }
 type Versions = ReturnType<typeof createVersions>;
 
@@ -744,11 +744,12 @@ function VersionsSection(props: {
   const f = useFilesMessages();
   const [busy, setBusy] = createSignal(false);
   const items = () => props.versions.items() ?? [];
+  const canAct = () => props.versions.state() === "ready" && !props.versions.refreshing();
   // Newest first, below the current file, as the approved list reads.
   const listed = createMemo(() => [...items()].sort((a, b) => b.created.localeCompare(a.created)));
   const run = async (work: () => Promise<void>) => {
     if (busy() || props.busy) return;
-    if (props.versions.state() !== "ready") {
+    if (!canAct()) {
       toast.error(h().versionsFailed);
       return;
     }
@@ -764,7 +765,7 @@ function VersionsSection(props: {
   const param = () => ({ baseId: props.base.id });
   const path = () => props.entry.path;
   const comment = async (version: FileVersion) => {
-    if (props.versions.state() !== "ready") return;
+    if (!canAct()) return;
     const values = await prompts.form({
       title: t().commentVersion,
       fields: {
@@ -793,7 +794,7 @@ function VersionsSection(props: {
       props.onChanged(path());
     });
   const restoreAs = async (version: FileVersion) => {
-    if (props.versions.state() !== "ready") return;
+    if (!canAct()) return;
     const dot = props.entry.name.lastIndexOf(".");
     const suggested =
       dot > 0
@@ -852,6 +853,11 @@ function VersionsSection(props: {
             }
           />
         </Show>
+        <Show when={props.versions.refreshing()}>
+          <p class="text-xs text-dimmed" role="status">
+            {t().loadingDetails}
+          </p>
+        </Show>
         <Switch>
           <Match when={props.versions.state() === "off"}>
             <p class="text-xs text-dimmed">{t().versionsUnavailable}</p>
@@ -908,30 +914,30 @@ function VersionsSection(props: {
                         {when(version.created)}
                       </time>
                     }
-                    disabled={busy() || props.busy || props.versions.state() !== "ready"}
+                    disabled={busy() || props.busy || !canAct()}
                     onClick={() => (props.entry.actions?.write === false ? void downloadVersion(version) : void comment(version))}
                     menuLabel={`${t().actions}: ${when(version.created)}`}
                     menuItems={[
                       {
-                        disabled: props.versions.state() !== "ready" || props.entry.actions?.write === false,
+                        disabled: !canAct() || props.entry.actions?.write === false,
                         label: t().commentVersion,
                         icon: "ti ti-message",
                         action: () => void comment(version),
                       },
                       {
-                        disabled: props.versions.state() !== "ready",
+                        disabled: !canAct(),
                         label: t().downloadVersion,
                         icon: "ti ti-download",
                         action: () => void downloadVersion(version),
                       },
                       {
-                        disabled: props.versions.state() !== "ready" || props.entry.actions?.write === false,
+                        disabled: !canAct() || props.entry.actions?.write === false,
                         label: t().restoreVersion,
                         icon: "ti ti-arrow-back-up",
                         action: () => void restore(version),
                       },
                       {
-                        disabled: props.versions.state() !== "ready",
+                        disabled: !canAct(),
                         label: t().restoreVersionAs,
                         icon: "ti ti-file-plus",
                         action: () => void restoreAs(version),
