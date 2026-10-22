@@ -378,7 +378,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         receipt = { deleted: true };
         await operations.recordReceipt(operation.id, receipt);
       }
-      await operations.finish(operation);
+      await operations.finish(operation, root);
       return result({ ...operation, state: "complete" });
     } catch (error) {
       await sql`UPDATE filesv2.operations SET error_code=${error instanceof FilesError ? error.code : "unavailable"},updated_at=now() WHERE id=${operation.id}::uuid AND state='pending'`;
