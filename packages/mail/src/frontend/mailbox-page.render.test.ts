@@ -70,6 +70,8 @@ const request = (query = "", focusPage = false) => {
     c.set("actor", { kind: "user", user });
     c.set("user", user);
     c.set("accessSubject", { type: "user", userId: user.id });
+    c.set("credentialKind", "oauth");
+    c.set("credentialScopes", ["mail:read"]);
     c.set("runtime", {
       apps: [
         {
@@ -130,6 +132,12 @@ test("active mailbox denied by workspace preserves 403 in the shared no-store HT
 
   expect(resolve).toHaveBeenCalledWith(mailboxShortId);
   expect(load).toHaveBeenCalledTimes(1);
+  expect(integration).toHaveBeenCalledWith({
+    actor: { kind: "user", user },
+    accessSubject: { type: "user", userId: user.id },
+    credentialKind: "oauth",
+    scopes: ["mail:read"],
+  });
   expect(load.mock.calls[0]?.[0]).toMatchObject({
     mailboxId,
     context: {
