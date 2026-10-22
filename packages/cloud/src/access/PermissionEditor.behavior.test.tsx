@@ -712,10 +712,10 @@ describe("PermissionEditor group coverage", () => {
     try {
       expect(view.panel().textContent).toContain("Loading members…");
       await waitFor(() => view.panel().querySelectorAll("li").length === 20, "the first page");
-      // Coverage follows access resolution: direct and nested members, users only.
+      // Coverage follows access resolution for direct and nested human and machine members.
       const memberRequest = view.requests.find((url) => url.searchParams.has("member_of_group_id"))!;
       expect(Object.fromEntries(memberRequest.searchParams)).toEqual({
-        kinds: "user",
+        kinds: "user,service_account",
         member_of_group_id: groupId,
         recursive: "true",
         page: "1",
@@ -733,7 +733,7 @@ describe("PermissionEditor group coverage", () => {
       expect(view.panel().hidden).toBe(false);
       // The count leads the list, then the directory hint.
       expect(Array.from(view.panel().children, (child) => child.textContent)).toEqual([
-        "23 people receive access through this group right now.",
+        "23 accounts receive access through this group right now.",
         "This group comes from the directory. Local accounts such as guests can't be members, so give them access directly.",
         expect.stringContaining("Member 1"),
         "Show 3 more",
@@ -801,6 +801,37 @@ describe("PermissionEditor group coverage", () => {
       dom.cleanup();
     }
   });
+
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`group coverage names a ${kind} member and its kind`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      dom.document.documentElement.lang = "en";
+      const view = await renderGroup(dom, (url) =>
+        url.searchParams.has("group_ids")
+          ? Response.json({
+              ...directoryGroup,
+              items: [{ kind: "group", group: { ...directoryGroup.items[0]!.group, provider: "local" } }],
+            })
+          : Response.json({
+              items: [{ kind: "service_account", serviceAccount: { id: "machine-member", name: "Research helper", kind } }],
+              pagination: { page: 1, per_page: 20, total: 1, total_pages: 1, has_next: false },
+            }),
+      );
+      try {
+        await waitFor(() => view.panel().querySelectorAll("li").length === 1, "machine member");
+        view.toggle().click();
+        expect(view.panel().textContent).toContain("Research helper");
+        expect(view.panel().textContent).toContain(kind === "agent" ? "Agent" : "Service account");
+        expect(view.panel().textContent).toContain("1 account receives access");
+        expect(view.panel().textContent).not.toContain("machine-member");
+        expect(view.panel().querySelector(kind === "agent" ? ".ti-robot" : ".ti-key")).not.toBeNull();
+      } finally {
+        view.done();
+        dom.cleanup();
+      }
+    });
+  }
 
   test("shows no member data when the directory withholds it", async () => {
     const dom = createDomTestHarness();

@@ -463,3 +463,67 @@ describe("accounts CLI", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe("local group machine recipients", () => {
+  for (const kind of ["standalone", "agent"] as const) {
+    for (const action of ["add", "remove"] as const) {
+      test(`${action} resolves a named ${kind} and sends its identity to the member API`, async () => {
+        const recipient = { id: "11111111-1111-4111-8111-111111111111", name: "Named worker", kind, status: "active" };
+        const { ctx, calls } = createContext(["groups", "members", action, "team"], { "service-account": recipient.name, yes: true }, [
+          jsonResponse({ groups: [group({})], pagination }),
+          jsonResponse({ items: [{ kind: "service_account", serviceAccount: recipient }], pagination }),
+          jsonResponse({ message: "Changed" }),
+        ]);
+        await accountsCli.run(ctx);
+        expect(calls[1]?.path).toContain("search=Named+worker&kinds=service_account");
+        expect(calls[2]?.path).toBe("/api/accounts/groups/g1/members");
+        expect(calls[2]?.init?.method).toBe(action === "add" ? "POST" : "DELETE");
+        expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ type: "service_account", id: recipient.id });
+      });
+    }
+  }
+  test("ambiguous names across pages cannot mutate group membership", async () => {
+    const machine = (id: string) => ({ kind: "service_account", serviceAccount: { id, name: "Worker", kind: "agent", status: "active" } });
+    const { ctx, calls } = createContext(["groups", "members", "add", "team"], { "service-account": "Worker", yes: true }, [
+      jsonResponse({ groups: [group({})], pagination }),
+      jsonResponse({ items: [machine("one")], pagination: { ...pagination, has_next: true } }),
+      jsonResponse({ items: [machine("two")], pagination: { ...pagination, page: 2 } }),
+    ]);
+    await expect(accountsCli.run(ctx)).rejects.toThrow("ambiguous");
+    expect(calls).toHaveLength(3);
+  });
+  test("a UUID reference uses exact machine filtering", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const { ctx, calls } = createContext(["groups", "members", "remove", "team"], { "service-account": id, yes: true }, [
+      jsonResponse({ groups: [group({})], pagination }),
+      jsonResponse({
+        items: [{ kind: "service_account", serviceAccount: { id, name: "Worker", kind: "agent", status: "disabled" } }],
+        pagination,
+      }),
+      jsonResponse({ message: "Removed" }),
+    ]);
+    await accountsCli.run(ctx);
+    expect(calls[1]?.path).toContain(`service_account_ids=${id}`);
+  });
+});
+
+test("group member tables preserve named machine account kinds and directness", async () => {
+  for (const kind of ["standalone", "agent"] as const) {
+    const { ctx, calls, tables } = createContext(["groups", "members", "list", "team"], { type: "service_account", recursive: true }, [
+      jsonResponse({ groups: [group({})], pagination }),
+      jsonResponse({
+        items: [
+          {
+            kind: "service_account",
+            serviceAccount: { id: "machine", name: "Named worker", kind, status: "active" },
+            relation: { direct: false },
+          },
+        ],
+        pagination,
+      }),
+    ]);
+    await accountsCli.run(ctx);
+    expect(calls[1]?.path).toContain("kinds=service_account&member_of_group_id=g1&recursive=true");
+    expect(tables[0]).toEqual([{ kind, name: "Named worker", provider: "", profile: "active", direct: "no", id: "machine" }]);
+  }
+});

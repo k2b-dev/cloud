@@ -5,7 +5,7 @@ section: Identity and access
 order: 320
 description: Resolve resource grants in application services for users, groups, service accounts, and public callers.
 tags: [identity, authorization, permissions, services]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Resource authorization
@@ -67,6 +67,29 @@ or relation filters:
   inherited groups;
 - anonymous callers and userless service accounts cannot search identities.
 
+Exact lookups accept `user_ids`, `group_ids`, and `service_account_ids`;
+all remain within the caller's directory visibility. Group relation queries
+return only their actual user, group, and eligible service-account relations;
+exact service-account filters still apply. Recursive membership queries use
+active machine recipients, as access resolution does. Direct membership
+queries retain disabled members so a group manager can remove them.
+
+`GET /api/accounts/entities` accepts optional service-account filters:
+
+| Query parameter | Values | Default |
+| --- | --- | --- |
+| `service_account_kinds` | Comma-separated `user_delegated`, `resource_bound`, `standalone`, `agent` | All kinds; an empty list also allows all |
+| `service_account_status` | `active` or `disabled` | Both statuses |
+
+These filters apply only to service-account rows, before totals and pagination;
+users and groups remain eligible. Unknown kinds or statuses return `400`.
+For local group member selection, request
+`service_account_kinds=standalone,agent&service_account_status=active` so
+ineligible matches cannot displace eligible accounts. The shared `EntitySearch`
+component from `@k2b/cloud/account/ui` forwards `serviceAccountKinds` and
+`serviceAccountStatus` when `includeServiceAccounts` is enabled. Omit these
+filters when listing direct members that may need removal after being disabled.
+
 A group result contains the group's identity, not its members. A guest who
 shares a group with another user cannot discover that user through entity
 search. Applications may narrow results to accepted principal kinds, but
@@ -80,6 +103,30 @@ accounts.
 leaves that field unrestricted; an empty kind list is also unrestricted. Invalid
 values return `400`. These filters apply only to service accounts, before totals and
 pagination; user and group results keep their existing visibility.
+
+### Local group recipients
+
+Local Cloud groups accept people, nested local groups, and active `standalone`
+or `agent` service accounts. A machine member inherits grants to its group and
+the group's local ancestors. Removing membership or disabling the account ends
+that inherited access on the next authoritative lookup. Resource-bound and
+user-delegated accounts cannot join independently; a delegated credential uses
+its person's access subject.
+
+Full user accounts that manage the group, and installation administrators,
+add or remove a named machine account through Accounts, its API, or
+`cld accounts groups members add <group> --service-account <id-or-name> --yes`
+(or the corresponding `remove` command). Group management remains a user-backed directory operation: membership alone does
+not authorize a machine to edit groups, search the directory, or acquire an
+installation role. A resource grant or credential scope cannot grant an
+installation role either. Applications still enforce scopes and resource
+bindings when a group grant matches.
+
+This membership exists only in Cloud. It creates no Unix identity or FreeIPA
+membership. Directory-synced (IPA) groups retain their directory policy and
+cannot contain these machine accounts or local users. Manage directory
+membership in FreeIPA; use a local Cloud group or a direct grant for local
+recipients.
 
 ## Link access entries to the resource
 
@@ -144,11 +191,15 @@ For a user subject it includes:
 - authenticated grants;
 - public grants.
 
-For a resource-bound or standalone service account it includes:
+For a standalone or agent service account it includes:
 
 - the direct service-account grant;
+- direct and nested local group grants;
 - authenticated grants;
 - public grants.
+
+A resource-bound account matches direct, authenticated, and public grants,
+but has no independent group membership.
 
 A standalone or agent account has no resource binding, so it is not capped to
 one resource; its grants and its credential scopes limit it.
@@ -162,6 +213,19 @@ To decide one resource for many subjects, for example the readers of a
 per subject, in the same order, with one query instead of one per subject, by
 the same rules. `accessIds` accepts an array or a Bun `SQLQuery` selecting one
 uuid column, so large grant sets can stay in the database.
+
+### Resolve the caller's group IDs
+
+`getEffectiveGroups({ userId }, db?)` returns authoritative `{ id, name }`
+records ordered by name. `getEffectiveGroupIds` returns just their IDs. Both
+also accept `{ serviceAccountId }` for active standalone and agent accounts;
+a null ID returns an empty list. Pass one identity kind at a time. Existing
+user lookups keep their directory/provider rules, while machine lookups
+expand only local groups.
+
+Use these helpers for the authenticated subject's own membership, for example
+to build Grids App `@auth.subjects` from the subject ID and effective group
+IDs. This does not authorize a directory listing or expose other identities.
 
 ## Check inside the service
 
@@ -324,7 +388,11 @@ resource credential to one exact resource or reject it before a collection
 query. This example rejects it:
 
 ```ts
-if (actor.kind === "service_account" && actor.delegatedUser === null) {
+if (
+  actor.kind === "service_account" &&
+  actor.delegatedUser === null &&
+  actor.serviceAccount.kind === "resource_bound"
+) {
   return fail(err.forbidden("Resource credentials cannot list items"));
 }
 
@@ -467,6 +535,26 @@ permission, and a limit from `1` to `500`. It does not expand `public` or
 `authenticated` into every account.
 Search results list exact login-name matches first, then exact display-name
 matches, so a limit never hides them.
+
+For a bounded machine-recipient query, use
+`recursiveServiceAccountGroupIdsSubquery(serviceAccountId)` from
+`@k2b/cloud/server`. It accepts an account ID or a Bun SQL fragment for a
+correlated account column and selects group IDs by the same local, active,
+independent-account rules as access resolution:
+
+```ts
+const groups = recursiveServiceAccountGroupIdsSubquery(sql`account.id`);
+// Inside a resource-scoped auth.access join:
+const namedRecipient = sql`a.service_account_id = account.id
+  OR a.group_id IN (${groups})`;
+```
+
+Join only that resource's grants, require the operation's permission level,
+and keep active-state and resource-binding checks on candidates. The direct
+branch can include a resource-bound account only when its binding matches.
+User-delegated accounts are not independent recipients. Never expand public
+or authenticated grants into assignable accounts. Credential scopes still
+cap operations performed by the selected account.
 
 Keep grant editing and credential creation separate. The permission editor
 must not display raw keys or own secret lifecycle.
@@ -620,11 +708,12 @@ fit, each gets an equal share and the shorter one stays whole.
 ### Show who a group grant reaches
 
 A group row has a “Members” toggle beside the group name. It expands a list
-below the row of the people who currently receive access through the group:
-its direct members and the members of nested groups, the same users that
-access resolution matches. The list starts with how many people that is and
-shows 20 of them at a time; further pages load only when the viewer asks for
-them. The editor needs no extra props or server routes for this.
+below the row of the people and active standalone or agent accounts that
+currently receive access through the group: its direct members and the
+members of nested groups, using the same membership rules as access
+resolution. The count includes these recipients, with machine names and kind
+labels in the list. It shows 20 members at a time; further pages load only
+when the viewer asks for them. The editor needs no extra props or server routes for this.
 
 The first page loads when the row appears, so the list usually opens
 complete. The row itself never changes when it arrives: the toggle keeps its
@@ -638,7 +727,7 @@ lists by the server, so the expanded list says that their account cannot see
 the members. Applications cannot widen this from the client.
 
 For a directory (FreeIPA) group, the expanded list also says that local
-accounts, such as guests, cannot be members and need a direct grant. Cloud
-rejects local users in directory groups, so a person missing from the list
-is not covered by the group grant. Change the membership in the directory or
-grant the person directly.
+users, such as guests, and machine accounts cannot be members and need a
+local Cloud group or a direct grant. Cloud rejects these recipients in
+directory groups. Change eligible membership in the directory, or grant the
+local recipient separately.

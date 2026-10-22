@@ -1002,6 +1002,13 @@ explicitly documented identity reason for an excluding shared picker.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
 
+### Local groups need the same recipient model as resource grants
+
+- **What happened:** Local groups could not contain standalone or agent accounts, although resource grants already accepted them.
+- **Root cause:** Membership storage, selection and resolution represented only people and groups.
+- **Error class:** Incomplete propagation of a shared identity contract.
+- **Guard:** The canonical membership migration and authoritative group resolver cover both machine kinds. Tests check grant use and revocation, recursive relations, named rows, and eligible choices before pagination.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

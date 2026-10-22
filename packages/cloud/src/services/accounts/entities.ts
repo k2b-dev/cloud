@@ -1,14 +1,14 @@
-import { sql } from "bun";
+import { type SQLQuery, sql } from "bun";
 import type { EntityKind, EntityListItem, UserProfile, UserProvider } from "../../contracts/shared";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { escapeLikePattern, toPgTextArray, toPgUuidArray } from "../postgres";
 import type { ServiceAccountKind, ServiceAccountStatus } from "../service-accounts";
 import { buildBaseGroup, personalOwnerJoin } from "./base-group";
 import { buildBaseUser } from "./base-user";
-import { buildManagedGroupScopeCondition, recursiveGroupIdsSubquery } from "./group-sql";
+import { buildManagedGroupScopeCondition, recursiveGroupIdsSubquery, recursiveServiceAccountGroupIdsSubquery } from "./group-sql";
 
 type DbRow = Record<string, unknown>;
-type SqlFragment = any;
+type SqlFragment = SQLQuery;
 
 export type EntityListParams = {
   visibility: { type: "directory" } | { type: "self_and_effective_groups"; userId: string };
@@ -18,6 +18,7 @@ export type EntityListParams = {
   profile?: UserProfile;
   userIds?: string[];
   groupIds?: string[];
+  serviceAccountIds?: string[];
   serviceAccountKinds?: ServiceAccountKind[];
   serviceAccountStatus?: ServiceAccountStatus;
   excludeUserIds?: string[];
@@ -442,12 +443,13 @@ export const list = async (
           )
         )`;
   const kindsCondition = (params.kinds?.length ?? 0) === 0 ? sql`TRUE` : sql`kind = ANY(${toPgTextArray(params.kinds ?? [])}::text[])`;
-  const hasIdFilter = params.userIds !== undefined || params.groupIds !== undefined;
+  const hasIdFilter = params.userIds !== undefined || params.groupIds !== undefined || params.serviceAccountIds !== undefined;
   const includeIdCondition = !hasIdFilter
     ? sql`TRUE`
     : sql`(
         (kind = 'user' AND id = ANY(${toPgUuidArray(params.userIds ?? [])}::uuid[]))
         OR (kind = 'group' AND id = ANY(${toPgUuidArray(params.groupIds ?? [])}::uuid[]))
+        OR (kind = 'service_account' AND id = ANY(${toPgUuidArray(params.serviceAccountIds ?? [])}::uuid[]))
       )`;
   const excludeUserCondition =
     (params.excludeUserIds?.length ?? 0) === 0
@@ -478,11 +480,30 @@ export const list = async (
             AND ug.group_id = ANY(${toPgUuidArray(params.userMemberOfGroupIds ?? [])}::uuid[])
         ))`;
 
+  // Machine recipients have local membership, but no directory management/parent relation.
+  const otherRelation = Boolean(params.managerOfGroupId || params.parentGroupId || params.managedByUserId);
+  const machineRelation = params.memberOfGroupId
+    ? sql`sa.kind IN ('standalone', 'agent') AND EXISTS (
+        SELECT 1 FROM auth.groups target
+        WHERE target.id = ${params.memberOfGroupId}::uuid AND target.provider = 'local'
+          AND ${
+            params.recursive === true
+              ? sql`target.id IN (${recursiveServiceAccountGroupIdsSubquery(sql`sa.id`)})`
+              : sql`EXISTS (SELECT 1 FROM auth.service_account_groups sg
+                  WHERE sg.service_account_id = sa.id AND sg.group_id = target.id)`
+          }
+      )`
+    : sql`TRUE`;
+  const machineDirect = params.memberOfGroupId
+    ? sql`EXISTS (SELECT 1 FROM auth.service_account_groups sg
+        WHERE sg.service_account_id = sa.id AND sg.group_id = ${params.memberOfGroupId}::uuid)`
+    : sql`NULL::boolean`;
   const where = sql`
     ${visibilityCondition}
     AND ${kindsCondition}
     AND ${includeIdCondition}
-    AND (${params.provider ?? null}::text IS NULL OR provider = ${params.provider ?? null})
+    AND (${params.provider ?? null}::text IS NULL OR provider = ${params.provider ?? null}
+      OR (kind = 'service_account' AND ${params.provider ?? null}::text = 'local'))
     AND (${params.profile ?? null}::text IS NULL OR kind = 'group' OR profile = ${params.profile ?? null})
     AND ${excludeUserCondition}
     AND ${excludeGroupCondition}
@@ -598,7 +619,7 @@ export const list = async (
       service_account_rows AS (
         SELECT
           'service_account'::text AS kind,
-          NULL::boolean AS direct,
+          ${machineDirect} AS direct,
           sa.id,
           NULL::text AS provider,
           NULL::text AS profile,
@@ -630,6 +651,7 @@ export const list = async (
           NULL::text AS personal_owner_display_name,
           LOWER(sa.name) AS sort_label
         FROM auth.service_accounts sa
+        WHERE NOT ${otherRelation} AND ${machineRelation}
       ),
       entity_rows AS (
         SELECT * FROM user_rows

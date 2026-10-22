@@ -35,6 +35,7 @@ const QuerySchema = z
     profile: UserProfileSchema.optional(),
     user_ids: z.string().optional(),
     group_ids: z.string().optional(),
+    service_account_ids: z.string().optional(),
     service_account_kinds: z.string().optional(),
     service_account_status: ServiceAccountStatusSchema.optional(),
     exclude_user_ids: z.string().optional(),
@@ -152,6 +153,9 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
       const groupIds = parseUuidList(query.group_ids, "group_ids");
       if (!groupIds.ok) return respond(c, fail(err.badInput(groupIds.message)));
 
+      const serviceAccountIds = parseUuidList(query.service_account_ids, "service_account_ids");
+      if (!serviceAccountIds.ok) return respond(c, fail(err.badInput(serviceAccountIds.message)));
+
       const result = await (dependencies.listEntities ?? accountsService.entity.list)({
         actor: {
           userId: user.id,
@@ -166,6 +170,7 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
         profile: query.profile,
         userIds: userIds.value,
         groupIds: groupIds.value,
+        serviceAccountIds: serviceAccountIds.value,
         serviceAccountKinds: serviceAccountKinds.value,
         serviceAccountStatus: query.service_account_status,
         excludeUserIds: excludeUserIds.value,

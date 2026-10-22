@@ -26,6 +26,20 @@ grants and keeps existing grant rows visible. An application with a documented
 user-backed workflow can keep `allowServiceAccounts={false}`. See
 [resource authorization](/en/docs/identity/authorization).
 
+### Roll out local machine group membership
+
+Deploy Core first and let its canonical migration create
+`auth.service_account_groups`. Then deploy Accounts and rebuild/redeploy
+applications using the new Cloud access resolver. The shared resolver queries
+this table for machine subjects; consumers require the Core migration even
+before the first machine member is added.
+
+The updated applications resolve local group grants for active standalone
+and agent accounts. Group coverage includes these members.
+Existing memberships and grants are preserved. IPA groups, directory
+visibility, human group management, resource bindings, and credential scope
+limits keep their existing rules.
+
 ## Build a standalone application
 
 ```bash

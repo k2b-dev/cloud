@@ -217,8 +217,66 @@ suite("accounts entity visibility (integration)", () => {
   });
 });
 
+suite("named machine principal directory lookups", () => {
+  test("exact standalone and agent lookups preserve visibility and never invent group membership", async () => {
+    const suffix = crypto.randomUUID();
+    const userId = await insertUser(suffix, "machine-directory", "user");
+    const groupId = await insertGroup(suffix, "machine-directory");
+    const ids: string[] = [];
+    const actor: AccountsActor = { userId, uid: `entity-visibility-machine-directory-${suffix}`, roles: ["user"], provider: "local" };
+    try {
+      for (const kind of ["standalone", "agent"] as const) {
+        const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+          VALUES (${`Directory ${kind} ${suffix}`}, ${kind}) RETURNING id`;
+        ids.push(account!.id);
+        const query = { actor, kinds: ["service_account" as const], serviceAccountIds: [account!.id] };
+        const exact = await accountsAppService.entity.list(query);
+        expect(exact.total).toBe(1);
+        expect(exact.items).toMatchObject([
+          {
+            kind: "service_account",
+            serviceAccount: {
+              id: account!.id,
+              kind,
+              name: `Directory ${kind} ${suffix}`,
+            },
+          },
+        ]);
+        const guest = await accountsAppService.entity.list({ ...query, actor: { ...actor, roles: ["guest"] } });
+        expect(guest.items).toEqual([]);
+        for (const relation of [
+          { memberOfGroupId: groupId },
+          { managerOfGroupId: groupId },
+          { parentGroupId: groupId },
+          { managedByUserId: userId },
+        ]) {
+          expect((await accountsAppService.entity.list({ ...query, ...relation })).items).toEqual([]);
+        }
+      }
+      expect((await accountsAppService.entity.list({ actor, serviceAccountIds: [] })).items).toEqual([]);
+      const both = await accountsAppService.entity.list({ actor, serviceAccountIds: ids });
+      expect(both.total).toBe(2);
+      const [memberId, outsideId] = ids;
+      if (!memberId || !outsideId) throw new Error("Missing named membership fixtures");
+      await sql`INSERT INTO auth.service_account_groups (service_account_id, group_id)
+        VALUES (${memberId}::uuid, ${groupId}::uuid)`;
+      const relation = { actor, memberOfGroupId: groupId, recursive: true, kinds: ["service_account" as const] };
+      expect((await accountsAppService.entity.list(relation)).items).toMatchObject([
+        { kind: "service_account", serviceAccount: { id: memberId }, relation: { direct: true } },
+      ]);
+      expect((await accountsAppService.entity.list({ ...relation, serviceAccountIds: [outsideId] })).items).toEqual([]);
+      expect((await accountsAppService.entity.list({ ...relation, serviceAccountIds: [] })).items).toEqual([]);
+      expect((await accountsAppService.entity.list({ ...relation, serviceAccountIds: [memberId] })).total).toBe(1);
+    } finally {
+      for (const id of ids) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+});
+
 suite("service-account directory eligibility filters", () => {
-  test("filters matching machine names before totals and pagination without hiding human rows", async () => {
+  test("filters matching machine names before totals and pagination without hiding human or direct disabled members", async () => {
     const suffix = crypto.randomUUID();
     const userId = await insertUser(suffix, "eligibility", "user");
     const groupId = await insertGroup(suffix, "eligibility");
@@ -227,6 +285,7 @@ suite("service-account directory eligibility filters", () => {
     const actor: AccountsActor = { userId, uid: `entity-visibility-eligibility-${suffix}`, roles: ["user"], provider: "local" };
     const ids: string[] = [];
     const eligibleIds: string[] = [];
+    let disabledId = "";
     try {
       for (const kind of ["user_delegated", "resource_bound", "standalone", "agent"] as const) {
         for (const status of ["active", "disabled"] as const) {
@@ -242,6 +301,7 @@ suite("service-account directory eligibility filters", () => {
           `;
           ids.push(account!.id);
           if (eligible) eligibleIds.push(account!.id);
+          if (kind === "standalone" && status === "disabled") disabledId = account!.id;
         }
       }
       // Ten ineligible name matches sort before either eligible recipient.
@@ -253,7 +313,7 @@ suite("service-account directory eligibility filters", () => {
         `;
         ids.push(account!.id);
       }
-      const query = { actor, search: suffix, kinds: ["service_account" as const] };
+      const query = { actor, search: suffix, kinds: ["service_account" as const], provider: "local" as const };
       const eligibility = { serviceAccountKinds: ["standalone" as const, "agent" as const], serviceAccountStatus: "active" as const };
       const defaults = await accountsAppService.entity.list({ ...query, pagination: { page: 1, perPage: 10 } });
       expect(defaults.total).toBe(12);
@@ -268,12 +328,12 @@ suite("service-account directory eligibility filters", () => {
       expect((await accountsAppService.entity.list({ ...query, ...eligibility, pagination: { page: 1, perPage: 10 } })).items).toHaveLength(
         2,
       );
+      expect((await accountsAppService.entity.list({ ...query, ...eligibility, serviceAccountIds: [disabledId] })).items).toEqual([]);
+      expect((await accountsAppService.entity.list({ ...query, ...eligibility, serviceAccountIds: eligibleIds })).total).toBe(2);
       expect((await accountsAppService.entity.list({ ...query, ...eligibility, excludeServiceAccountIds: eligibleIds })).items).toEqual([]);
       expect((await accountsAppService.entity.list({ ...query, serviceAccountStatus: "disabled" })).total).toBe(4);
       expect((await accountsAppService.entity.list({ ...query, serviceAccountKinds: [] })).total).toBe(12);
-      for (const provider of ["local", "ipa"] as const) {
-        expect((await accountsAppService.entity.list({ ...query, ...eligibility, provider })).items).toEqual([]);
-      }
+      expect((await accountsAppService.entity.list({ ...query, ...eligibility, provider: "ipa" })).items).toEqual([]);
 
       const mixed = await accountsAppService.entity.list({ actor, search: suffix, ...eligibility });
       expect(mixed.total).toBe(4);
@@ -284,6 +344,15 @@ suite("service-account directory eligibility filters", () => {
         ]),
       );
       expect((await accountsAppService.entity.list({ ...query, ...eligibility, actor: { ...actor, roles: ["guest"] } })).items).toEqual([]);
+
+      await sql`INSERT INTO auth.service_account_groups (service_account_id, group_id)
+        VALUES (${disabledId}::uuid, ${groupId}::uuid)`;
+      const relation = { actor, memberOfGroupId: groupId, kinds: ["service_account" as const] };
+      expect((await accountsAppService.entity.list(relation)).items).toMatchObject([
+        { serviceAccount: { id: disabledId, status: "disabled" }, relation: { direct: true } },
+      ]);
+      expect((await accountsAppService.entity.list({ ...relation, ...eligibility })).items).toEqual([]);
+      expect((await accountsAppService.entity.list({ ...relation, recursive: true })).items).toEqual([]);
     } finally {
       for (const id of ids) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
       await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
