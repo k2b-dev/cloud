@@ -30,6 +30,8 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
+| `@k2b/ui/text-editor` | Supported, SolidJS | [Markdown editor with editable table cells](/en/ui/input/text-editor); application-injected collaboration |
+| `@k2b/ui/text-editor/model` | Supported, portable | Pure Markdown table parsing and minimal source edits for the editor and server actions |
 | `@k2b/stdlib/solid` | Supported, SolidJS | Owner-local queries, mutations, and browser interaction primitives |
 | `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
 | `@k2b/cloud/workflows` | Supported | Workflow definitions and authoring contracts |

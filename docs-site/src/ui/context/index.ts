@@ -99,12 +99,14 @@ import surfacePaper from "./surfaces/paper.md" with { type: "text" };
 import surfaceProgress from "./surfaces/progress.md" with { type: "text" };
 import surfaceStats from "./surfaces/stats.md" with { type: "text" };
 import surfaceUtilities from "./surfaces/utilities.md" with { type: "text" };
+import inputTextEditor from "./text-editor.md" with { type: "text" };
 import widgetDashboard from "./widgets/dashboard.md" with { type: "text" };
 
 const catalogContextSources = {
   "ai/chat": { file: "ai/chat.md", content: aiChat },
   "ai/context-usage": { file: "ai/context-usage.md", content: aiContextUsage },
   "input/text": { file: "input/text.md", content: inputText },
+  "input/text-editor": { file: "text-editor.md", content: inputTextEditor },
   "input/markdown-editor": { file: "markdown-editor.md", content: inputMarkdownEditor },
   "input/autocomplete": { file: "input/autocomplete.md", content: inputAutocomplete },
   "input/autocomplete-select": { file: "input/autocomplete-select.md", content: inputAutocompleteSelect },
