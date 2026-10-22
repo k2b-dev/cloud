@@ -156,9 +156,9 @@ databaseSuite()("Skill broker routes (integration)", () => {
         expect(response.status).toBe(403);
         expect(await response.json()).toMatchObject({ code: "app_access_denied", app: "core" });
       }
-      expect(await sql`SELECT revision, instructions FROM ai.skills WHERE id=${own!.id}::uuid`).toMatchObject([
-        { revision: own!.revision, instructions: "Original instructions." },
-      ]);
+      const [unchanged] = await sql`SELECT revision, instructions FROM ai.skills WHERE id=${own!.id}::uuid`;
+      expect(unchanged?.revision).toBe(own!.revision);
+      expect(unchanged?.instructions).toBe("Original instructions.");
       expect(await sql`SELECT id FROM ai.skills WHERE name=${deniedCreateName}`).toHaveLength(0);
 
       registered.mockResolvedValue([core, { ...ownApp, access: { kind: "roles", roles: ["admin"] } }, otherApp]);

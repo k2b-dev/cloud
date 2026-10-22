@@ -221,9 +221,9 @@ suiteFor("database", "valkey")("Core Skills broker mount order", () => {
         expect(await response.json()).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("user-backed") });
       }
       expect(create).not.toHaveBeenCalled();
-      expect(await sql`SELECT revision,instructions FROM ai.skills WHERE id=${own.id}::uuid`).toMatchObject([
-        { revision: own.revision, instructions: "Original instructions." },
-      ]);
+      const [unchanged] = await sql`SELECT revision,instructions FROM ai.skills WHERE id=${own.id}::uuid`;
+      expect(unchanged?.revision).toBe(own.revision);
+      expect(unchanged?.instructions).toBe("Original instructions.");
       const taskRouter = mounted({ ...core, access: undefined });
       for (const path of ["/api/ai/tasks", "/api/ai/conversations"]) {
         const response = await taskRouter.request(path, { headers });
