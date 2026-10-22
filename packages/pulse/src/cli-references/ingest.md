@@ -46,7 +46,11 @@ Agents may instead call `ingest.write` with `baseId`, `sourceId`, the current
 `expectedRevision`, and `batch` (whole input at most 192 KiB). This needs base
 write access and a source created by the current access subject. It accepts
 remembered approval per source and requires an idempotency key. Source token
-and membership management remain outside capabilities.
+and membership management remain outside capabilities. Capability dispatch
+can return `409 IDEMPOTENCY_UNCERTAIN` after a provider 5xx or lost upstream
+answer; it will not call the writer again. Inspect stored rows with SQL and
+report the uncertainty. Do not use a new key for a potentially partial batch.
+The direct HTTP/CLI ingest retries described below have a separate contract.
 
 ## Build a batch
 

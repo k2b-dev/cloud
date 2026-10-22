@@ -208,7 +208,13 @@ A source without a recorded creator needs a new source for this action.
 Base creation and ingest can remember approval; ingest's scope is one source.
 Both require an idempotency key. The platform dispatcher replays completed
 calls; ingest also reserves its batch durably by source and key for 24 hours.
-Reuse the unchanged input/key after a lost response.
+Retry with the unchanged input/key only while the dispatcher permits it.
+After a provider 5xx or lost upstream answer it can return
+`409 IDEMPOTENCY_UNCERTAIN` without calling Pulse again. Inspect the stored
+rows with `sql.run` and report the uncertain outcome. Do not generate a new
+key: part of the batch may already be stored. The direct HTTP ingest path
+has its own same-key recovery contract; it is not a bypass for an uncertain
+capability approval.
 `pulse.base.clear_data` and `pulse.base.delete` require base admin, always ask,
 and cannot run in a routine. Pass `baseId` and the exact `expectedUpdatedAt`
 from a fresh `pulse.base.read`. A 409 requires a fresh read and proposal.

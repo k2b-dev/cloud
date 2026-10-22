@@ -413,7 +413,12 @@ tokens and authenticated API writes; create a new source for `ingest.write`.
 | `base.delete` | Same revision and admin requirements; always asks |
 
 All four require an idempotency key. Reuse the same key and unchanged input
-when retrying through the platform capability dispatcher. A changed source
+when retrying through the platform capability dispatcher. After a provider
+5xx or a lost upstream answer, the dispatcher can return
+`409 IDEMPOTENCY_UNCERTAIN` without executing again. Inspect stored rows with
+SQL and report the uncertain result; do not invent a new key, because part of
+the batch may already exist. Direct HTTP ingest has its own same-key retry
+contract. A changed source
 revision or base timestamp returns 409: read the resource again before
 proposing another action. Clear and delete return `{started: true}` when the
 lifecycle operation is queued; follow `base.read` for completion. Clearing

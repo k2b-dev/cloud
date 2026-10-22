@@ -709,7 +709,15 @@ export const pulseCapabilities = defineCapabilities({
           requestBytes: new TextEncoder().encode(JSON.stringify(parsed.data)).byteLength,
           locale: context.locale,
         });
-        return result.ok ? ok({ data: result.data }) : sqlFailure(result.error);
+        if (result.ok) return ok({ data: result.data });
+        if (result.error.status >= 500)
+          return fail({
+            ...result.error,
+            message: context.locale.startsWith("de")
+              ? "Die Messdaten konnten nicht bestätigt werden. Prüfe den gespeicherten Stand mit SQL. Bei IDEMPOTENCY_UNCERTAIN keine neue Kennung erzeugen: Teile können bereits gespeichert sein."
+              : "Telemetry could not be confirmed. Inspect stored data with SQL. If the dispatcher reports IDEMPOTENCY_UNCERTAIN, do not create a new key: part of the batch may already be stored.",
+          });
+        return result;
       },
     },
     "alert.save": {
