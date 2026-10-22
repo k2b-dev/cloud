@@ -60,7 +60,7 @@ export const dashboardTestDashboard: Dashboard = {
         kind: "number",
         section: "",
         columns: ["time", "value", "detail", "detailTone"],
-        unit: "",
+        unit: "%",
         description: "belegt in Prozent",
       }),
       panel("req", "Anfragen je Dienst", { ...traefikSection, columns: ["time", "service", "value"], series: "service" }),
