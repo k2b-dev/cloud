@@ -69,3 +69,16 @@ test("move supports an optional parent and mutually exclusive placements", () =>
   const ambiguous = NoteMoveInputSchema.safeParse({ noteId: "def456", before: "abc123", after: "ghi789" });
   if (!ambiguous.success) expect(ambiguous.error.issues[0]?.message).toContain("at most one placement");
 });
+
+test("only append accepts the explicit exact separator and existing bounds still apply", () => {
+  const operation = { kind: "append", content: "fragment", separator: "none" };
+  expect(NoteEditInputSchema.parse({ noteId: "abc123", operations: [operation] }).operations).toEqual([operation]);
+  for (const kind of ["prepend", "set-content", "append-block"]) {
+    expect(NoteEditInputSchema.safeParse({ noteId: "abc123", operations: [{ ...operation, kind, name: "block" }] }).success).toBeFalse();
+  }
+  expect(NoteEditInputSchema.safeParse({ noteId: "abc123", operations: [{ ...operation, separator: "paragraph" }] }).success).toBeFalse();
+  expect(NoteEditInputSchema.safeParse({ noteId: "abc123", operations: Array(21).fill(operation) }).success).toBeFalse();
+  expect(
+    NoteEditInputSchema.safeParse({ noteId: "abc123", operations: [{ ...operation, content: "x".repeat(10_001) }] }).success,
+  ).toBeFalse();
+});

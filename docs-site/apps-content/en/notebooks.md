@@ -361,6 +361,23 @@ joining windows. Never use a partial window as a whole-note replacement;
 prefer structural edits with `ifContentHash`. `note.edit` accepts
 `blockLimit: 0` for a compact receipt that still includes before/after hashes.
 
+For exact source chunks, append with `{ kind: "append", content: chunk,
+separator: "none" }`. This joins the fragment without inserting any characters;
+omitting `separator` keeps the existing paragraph behavior. Only `append`
+accepts this option. Each fragment remains limited to 10,000 UTF-16 characters,
+with at most 20 structural edits per call. The serialized `{ input }` request
+must also fit the 256 KiB capability limit, including JSON escaping.
+
+To save a larger source, create its first bounded chunk with its existing title,
+then append chunks using `ifContentHash` and `separator: "none"`. Read
+`note.read` with `contentLimit: 1` to reconcile the complete hash after a lost
+response. Continue only when an uncertain append matches its expected next prefix.
+The previous hash alone does not prove that a delayed write will not finish;
+leave that attempt unresolved and inspect the note. Stop on any other hash.
+`note.edit` uses hash preconditions and rejects idempotency keys;
+`note.create` requires one. Never repeat an uncertain create without a known
+note ID: inspect the selected notebook to recover the note first.
+
 Assistant can check query and TOC drafts with `notebooks.note.preview` before
 saving them. This returns compact diagnostics through the same server preview
 as the editor, without saving a draft or returning HTML. Saved previews need

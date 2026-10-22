@@ -207,7 +207,7 @@ const NoteEditBlockFields = {
 
 const NoteEditOperationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("set-content"), content: z.string() }),
-  z.object({ kind: z.literal("append"), content: z.string() }),
+  z.object({ kind: z.literal("append"), content: z.string(), separator: z.literal("none").optional() }),
   z.object({ kind: z.literal("prepend"), content: z.string() }),
   z.object({ kind: z.literal("insert-before-line"), line: z.number().int().positive(), content: z.string() }),
   z.object({ kind: z.literal("insert-after-line"), line: z.number().int().positive(), content: z.string() }),

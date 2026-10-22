@@ -1522,6 +1522,15 @@ Application authors remove calls to `syncOps.registerDeadLetters()` and
 Custom administration clients must include `queue`, `job`, or `topic` in dead-letter
 mutation paths, between `/dead-letters/` and the resource name.
 
+## Exact Notebook source appends
+
+Clients that save source in chunks require a Notebooks deployment whose
+`note.edit` capability accepts `separator: "none"` on append operations.
+Upgrade Notebooks before enabling those clients. Existing append calls retain
+their paragraph behavior; capability request limits, permissions, and revision
+checks are unchanged. See [Notebooks](/en/apps/notebooks) for chunk limits and
+recovery after a lost response.
+
 ## Optional BM25 search ranking
 
 Help publication and native full-text search require the Core-managed Postgres

@@ -303,7 +303,16 @@ const EditLineSchema = z.number().int().positive().describe("One-based Markdown 
 const SetContentEditOperationSchema = z.object({ kind: EditKindSchema("set-content"), content: FullEditContentSchema }).strict();
 
 const StructuralNoteEditOperationSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: EditKindSchema("append"), content: FragmentEditContentSchema }).strict(),
+  z
+    .object({
+      kind: EditKindSchema("append"),
+      content: FragmentEditContentSchema,
+      separator: z
+        .literal("none")
+        .optional()
+        .describe("Append the exact fragment without adding a paragraph separator. Omit for existing paragraph behavior."),
+    })
+    .strict(),
   z.object({ kind: EditKindSchema("prepend"), content: FragmentEditContentSchema }).strict(),
   z.object({ kind: EditKindSchema("insert-before-line"), line: EditLineSchema, content: FragmentEditContentSchema }).strict(),
   z.object({ kind: EditKindSchema("insert-after-line"), line: EditLineSchema, content: FragmentEditContentSchema }).strict(),
