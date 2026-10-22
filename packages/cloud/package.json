@@ -30,6 +30,7 @@
     "./server": "./src/server/index.ts",
     "./server/*": "./src/server/*",
     "./geo/ui": "./src/geo/ui.ts",
+    "./geo/document": "./src/contracts/geo-document.ts",
     "./browser": "./src/server/api-client.ts",
     "./browser/app-approval": "./src/browser/app-approval.ts",
     "./browser/app-badges": "./src/browser/app-badges.ts",
