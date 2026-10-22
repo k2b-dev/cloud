@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } f
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
+import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
 import type { MailboxPageData } from "../service/workspace";
 import { mailTestFolder, mailTestRow } from "./_components/mail-list-test-fixtures";
 
@@ -129,6 +130,58 @@ const data: MailboxPageData = {
   selectedReference: null,
 };
 
+const readerMessage: MailboxPageData["detailMessages"][number] = {
+  id: "Msg001",
+  subject: "Support mail",
+  messageId: "<split@example.test>",
+  internalDate: now,
+  sentAt: now,
+  from: [{ name: "Sender", address: "sender@example.test" }],
+  to: [],
+  preview: "",
+  hasAttachments: false,
+  replyTo: [],
+  cc: [],
+  flags: ["\\Seen"],
+  keywords: [],
+  hydrationStatus: "complete",
+  remoteAvailable: true,
+  folderId: "Inbox1",
+  deletedOnServer: false,
+  contentType: "text/plain",
+  sizeBytes: 64,
+  plainText: "Message body",
+  sanitizedHtml: null,
+  forwardText: "Message body",
+  selectedHeaders: {},
+  sourceAvailable: true,
+  mailingList: null,
+  remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.test", domain: "example.test" },
+  delivery: null,
+  attachments: [],
+};
+
+const scheduledItem: NonNullable<MailboxPageData["scheduledPage"]>["items"][number] = {
+  id: "Deliv1",
+  commandId: "00000000-0000-4000-8000-000000000002",
+  draftId: "Draft1",
+  conversationId: null,
+  intent: "new",
+  to: [{ name: null, address: "recipient@example.com" }],
+  cc: [],
+  bcc: [],
+  subject: "Offer",
+  bodyPreview: "Preview",
+  scheduledAt: now,
+  nextAttemptAt: null,
+  state: "scheduled",
+  attempt: 0,
+  lastErrorCode: null,
+  lastError: null,
+  scheduledBy: { kind: "user", displayName: "Ada" },
+  createdAt: now,
+};
+
 class FakeWebSocket {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
@@ -175,6 +228,8 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
   let requests: RecordedRequest[];
   let failure: number | "network" | "json" | null;
   let structureResponse: Promise<Response> | undefined;
+  let cancellationResponse: Promise<Response> | undefined;
+  let cancellationSignals: (AbortSignal | null | undefined)[];
   const held = new Map<string, Promise<void>>();
   const mailboxes = [data.mailbox, { ...data.mailbox, id: "Box002", name: "Sales" }, { ...data.mailbox, id: "Box003", name: "Projects" }];
   const snapshotFor = (href: string): MailboxPageData => {
@@ -186,6 +241,10 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
       ...structuredClone(data),
       mailbox: box,
       folderId,
+      scheduledMode: url.searchParams.get("scheduled") === "1",
+      scheduledPage: url.searchParams.has("scheduled") ? { items: [scheduledItem], nextCursor: null, total: 1 } : null,
+      query: url.searchParams.get("q") ?? "",
+      search: resolveMailSearchRoute(url),
       selectedConversationId: url.searchParams.get("conversation"),
       listTitle: title,
       listItems: [mailTestRow(`${box.id}-row`, { subject: title, unread: false, unreadFolderIds: [] })],
@@ -210,11 +269,17 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     held.clear();
     failure = null;
     structureResponse = undefined;
+    cancellationResponse = undefined;
+    cancellationSignals = [];
     spies = navigationSpies();
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
         const route = url.pathname.split("/").at(-1)!;
+        if (route === "cancel" && cancellationResponse) {
+          cancellationSignals.push(init?.signal ?? (input instanceof Request ? input.signal : undefined));
+          return cancellationResponse;
+        }
         if ((route === "merge" || route === "split") && structureResponse) return structureResponse;
         if (route === "workspace-route" || route === "workspace-list") {
           const mailboxId = url.pathname.split("/").at(-2)!;
@@ -307,6 +372,10 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     const sidebar = dom.root.querySelector(".mail-sidebar");
     const root = dom.root.querySelector(".mail-workspace");
     const head = dom.root.querySelector(".k2b-app-workspace__head");
+    const main = dom.root.querySelector(".k2b-app-workspace__main");
+    const list = dom.root.querySelector("[data-mail-conversation-list]");
+    const scroller = dom.root.querySelector("[data-scroll-preserve^=mail-list-]");
+    const searchTrigger = dom.root.querySelector("[data-mail-search-trigger]");
     const b = link("Box002");
     b.focus();
     expect(scope()).toEqual([{ type: "mail.mailbox", id: MAILBOX_ID }]);
@@ -316,10 +385,14 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
       { route: "workspace-route", mailboxId: "Box002", href: "/app/mail/Box002" },
     ]);
     noDocument();
-    expect(dom.root.querySelector(".mail-sidebar")).toBe(sidebar);
-    expect(dom.root.querySelector(".mail-workspace")).toBe(root);
-    expect(dom.root.querySelector(".k2b-app-workspace__head")).toBe(head);
-    expect(link("Box002")).toBe(b);
+    expect(dom.root.querySelector(".mail-sidebar") === sidebar).toBe(true);
+    expect(dom.root.querySelector(".mail-workspace") === root).toBe(true);
+    expect(dom.root.querySelector(".k2b-app-workspace__head") === head).toBe(true);
+    expect(dom.root.querySelector(".k2b-app-workspace__main") === main).toBe(true);
+    expect(dom.root.querySelector("[data-mail-conversation-list]") === list).toBe(true);
+    expect(dom.root.querySelector("[data-scroll-preserve^=mail-list-]") === scroller).toBe(true);
+    expect(dom.root.querySelector("[data-mail-search-trigger]") === searchTrigger).toBe(true);
+    expect(link("Box002") === b).toBe(true);
     expect(dom.document.activeElement).toBe(b);
     shown("Box002");
     expect(dom.root.querySelector('[data-mailbox="Box001"]')?.getAttribute("data-open")).toBeNull();
@@ -329,6 +402,90 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     expect(document.title).toBe("Sales");
     expect(m.readPageTrail()).toEqual({ title: "Sales", ancestors: [] });
     expect(scope()).toEqual([{ type: "mail.mailbox", id: "Box002" }]);
+  });
+
+  test("the retained list clears A's bulk selection before B can act", async () => {
+    mount();
+    const list = dom.root.querySelector("[data-mail-conversation-list]");
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-selection-trigger]")!.click();
+    const checkbox = dom.root.querySelector<HTMLInputElement>('.mail-list-entry input[type="checkbox"]')!;
+    checkbox.click();
+    expect(checkbox.checked).toBe(true);
+    expect(dom.root.querySelector("[data-mail-head-selection]")).not.toBeNull();
+    link("Box002").click();
+    await settle();
+    shown("Box002");
+    expect(dom.root.querySelector("[data-mail-conversation-list]") === list).toBe(true);
+    expect(dom.root.querySelector("[data-mail-head-selection]")).toBeNull();
+    expect(dom.root.querySelector('.mail-list-entry input[type="checkbox"]')).toBeNull();
+    noDocument();
+  });
+
+  test("B clears A's open conversation, search, folder filter and scroll in the retained panes", async () => {
+    const search = JSON.stringify({
+      expression: { type: "and", expressions: [{ type: "folder_id", folderId: "Filed1" }, simpleMailSearchExpression("invoice")] },
+      sort: "newest",
+    });
+    const source = `${path}?${new URLSearchParams({ conversation: "Box001-row", q: "invoice", search })}`;
+    const snapshot = snapshotFor(source);
+    snapshot.detailMessages = [{ ...readerMessage, plainText: "Only mailbox A can show this body" }];
+    mount(source, snapshot);
+    expect(dom.root.querySelector("[data-mail-reader-heading]")).not.toBeNull();
+    expect(dom.root.querySelector("[data-mail-head-search-options]")?.textContent).toContain("Filed");
+    const list = dom.root.querySelector("[data-mail-conversation-list]");
+    const main = dom.root.querySelector(".k2b-app-workspace__main");
+    const scroller = dom.root.querySelector<HTMLElement>("[data-scroll-preserve^=mail-list-]")!;
+    scroller.scrollTop = 240;
+    expect(scroller.scrollTop).toBe(240);
+    expect(dom.root.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("invoice");
+    link("Box002").click();
+    await settle();
+    shown("Box002");
+    expect(dom.root.querySelector("[data-mail-conversation-list]") === list).toBe(true);
+    expect(dom.root.querySelector(".k2b-app-workspace__main") === main).toBe(true);
+    expect(scroller.dataset.scrollPreserve).toBe("mail-list-Box002");
+    expect(scroller.scrollTop).toBe(0);
+    expect(window.location.search).toBe("");
+    expect(dom.root.querySelector('[data-conversation-id="Box001-row"]')).toBeNull();
+    expect(dom.root.querySelector("[data-mail-reader-heading]")).toBeNull();
+    expect(dom.root.querySelector("[data-mail-filter-folder]")).toBeNull();
+    expect(dom.root.querySelector<HTMLInputElement>('input[name="q"]')).toBeNull();
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
+    expect(dom.root.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe("");
+    expect(dom.root.querySelector(".k2b-app-workspace__head")?.textContent).not.toContain("Filed");
+    expect(dom.root.querySelector("[data-mail-head-search-options]")?.textContent).not.toContain("Filed");
+    noDocument();
+  });
+
+  test("history replaces mailbox-owned scheduled actions without letting a late A response refresh B", async () => {
+    mount(`${path}?scheduled=1`);
+    let respond = (_response: Response) => {};
+    cancellationResponse = new Promise<Response>((resolve) => {
+      respond = resolve;
+    });
+    const disposition = spyOn(m.ui.prompts, "dialog").mockResolvedValue("discard");
+    try {
+      const cancel = dom.root.querySelector<HTMLButtonElement>("article button")!;
+      cancel.click();
+      await settle();
+      expect(cancellationSignals).toHaveLength(1);
+      expect(cancel.disabled).toBe(true);
+      await pop("/app/mail/Box002?scheduled=1");
+      expect(scope()).toEqual([{ type: "mail.mailbox", id: "Box002" }]);
+      const nextCancel = dom.root.querySelector<HTMLButtonElement>("article button")!;
+      expect(nextCancel).not.toBe(cancel);
+      expect(nextCancel.disabled).toBe(false);
+      expect(cancellationSignals[0]?.aborted).toBe(true);
+      const beforeResponse = requests.length;
+      respond(Response.json({ disposition: "discard" }));
+      await settle();
+      expect(requests).toHaveLength(beforeResponse);
+      expect(nextCancel.disabled).toBe(false);
+      noDocument();
+    } finally {
+      respond(Response.json({ disposition: "discard" }));
+      disposition.mockRestore();
+    }
   });
 
   test("A → B → C aborts B, leaves the frame in place while busy, and only C commits", async () => {
@@ -375,7 +532,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     await pop("/app/mail/Box002?folder=Filed1");
     shown("Box002");
     expect(heading()).toBe("Filed");
-    expect(dom.root.querySelector(".mail-sidebar")).toBe(sidebar);
+    expect(dom.root.querySelector(".mail-sidebar") === sidebar).toBe(true);
     expect(spies.push).not.toHaveBeenCalled();
     noDocument();
   });
@@ -637,37 +794,7 @@ describe.skipIf(isServer)("Mail workspace mailbox switches", () => {
     const source = `${path}?conversation=Box001-row`;
     const snapshot = snapshotFor(source);
     snapshot.listItems[0]!.messageCount = 2;
-    const message: MailboxPageData["detailMessages"][number] = {
-      id: "Msg001",
-      subject: "Support mail",
-      messageId: "<split@example.test>",
-      internalDate: now,
-      sentAt: now,
-      from: [{ name: "Sender", address: "sender@example.test" }],
-      to: [],
-      preview: "",
-      hasAttachments: false,
-      replyTo: [],
-      cc: [],
-      flags: ["\\Seen"],
-      keywords: [],
-      hydrationStatus: "complete",
-      remoteAvailable: true,
-      folderId: "Inbox1",
-      deletedOnServer: false,
-      contentType: "text/plain",
-      sizeBytes: 64,
-      plainText: "Message body",
-      sanitizedHtml: null,
-      forwardText: "Message body",
-      selectedHeaders: {},
-      sourceAvailable: true,
-      mailingList: null,
-      remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.test", domain: "example.test" },
-      delivery: null,
-      attachments: [],
-    };
-    snapshot.detailMessages = [message, { ...message, id: "Msg002", messageId: "<split-2@example.test>" }];
+    snapshot.detailMessages = [readerMessage, { ...readerMessage, id: "Msg002", messageId: "<split-2@example.test>" }];
     try {
       mount(source, snapshot);
       dom.root.querySelector<HTMLButtonElement>('button[aria-label="More conversation actions"]')!.click();

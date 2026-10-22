@@ -9,7 +9,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 import type { MailSearchExpression } from "../contracts";
-import { resolveMailSearchRoute } from "../search-state";
+import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
 import { mailTagSearch } from "../search-url";
 import { readMailHeadFilters } from "./_components/mail-head-filters";
 
@@ -1033,8 +1033,11 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           await page.evaluate(() => [
             Reflect.get(window, "mailboxSwitchMarker"),
             Reflect.get(document.querySelector(".mail-sidebar")!, "mailboxSwitchMarker"),
+            Reflect.get(document.querySelector(".k2b-app-workspace__main")!, "mailboxSwitchMarker"),
+            Reflect.get(document.querySelector("[data-mail-conversation-list]")!, "mailboxSwitchMarker"),
+            Reflect.get(document.querySelector(".mail-reader")!, "mailboxSwitchMarker"),
           ]),
-        ).toEqual(["kept", "kept"]);
+        ).toEqual(["kept", "kept", "kept", "kept", "kept"]);
       const frame = async () =>
         (await geometry(page)).filter(({ part }) =>
           part.split(" ").some((name) => name === "mail-sidebar" || name === "k2b-app-workspace__head"),
@@ -1043,6 +1046,9 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         await page.evaluate(() => {
           Reflect.set(window, "mailboxSwitchMarker", "kept");
           Reflect.set(document.querySelector(".mail-sidebar")!, "mailboxSwitchMarker", "kept");
+          Reflect.set(document.querySelector(".k2b-app-workspace__main")!, "mailboxSwitchMarker", "kept");
+          Reflect.set(document.querySelector("[data-mail-conversation-list]")!, "mailboxSwitchMarker", "kept");
+          Reflect.set(document.querySelector(".mail-reader")!, "mailboxSwitchMarker", "kept");
         });
         const before = await frame();
         await sidebar(page).locator(`a[href="${destination}"]`).first().click();
@@ -1075,9 +1081,48 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
       }
     });
 
+    test("mailbox switch clears search, filters, reader and scroll while retaining the panes", async () => {
+      const search = JSON.stringify({
+        expression: { type: "and", expressions: [{ type: "folder_id", folderId: "Filed1" }, simpleMailSearchExpression("invoice")] },
+        sort: "newest",
+      });
+      const source = `${boxPath}?${new URLSearchParams({ conversation: "Conv01", q: "invoice", search })}`;
+      const page = await open(source, 1440, 600);
+      try {
+        expect(await page.locator('input[name="q"]').inputValue()).toBe("invoice");
+        expect(await page.locator("[data-mail-reader-heading]").count()).toBe(1);
+        expect(await page.locator("[data-mail-head-search-options]").textContent()).toContain("Filed");
+        await page.locator('[data-scroll-preserve="mail-list-Box001"]').evaluate((element) => {
+          element.scrollTop = 120;
+          Reflect.set(element, "mailboxListMarker", "kept");
+        });
+        await settled(page);
+        expect(await page.locator('[data-scroll-preserve="mail-list-Box001"]').evaluate((element) => element.scrollTop)).toBe(120);
+        await sidebar(page).locator('a[href="/app/mail/Box002"]').first().click();
+        await page.waitForURL(new URL("/app/mail/Box002", server.url).href);
+        await ready(page);
+        const scroller = page.locator('[data-scroll-preserve="mail-list-Box002"]');
+        expect(await scroller.evaluate((element) => [Reflect.get(element, "mailboxListMarker"), element.scrollTop])).toEqual(["kept", 0]);
+        expect(new URL(page.url()).search).toBe("");
+        expect(await page.locator("[data-mail-reader-heading]").count()).toBe(0);
+        expect(await page.locator("[data-mail-filter-folder]").count()).toBe(0);
+        expect(await page.locator('input[name="q"]').count()).toBe(0);
+        await page.locator("[data-mail-search-trigger]").focus();
+        await page.keyboard.press("/");
+        await page.locator('input[name="q"]').waitFor({ state: "visible" });
+        await page.waitForFunction(() => document.activeElement?.matches('input[name="q"]'));
+        expect(await page.locator('input[name="q"]').inputValue()).toBe("");
+        await page.keyboard.press("Escape");
+        await page.locator('input[name="q"]').waitFor({ state: "hidden" });
+        await page.waitForFunction(() => document.activeElement?.matches("[data-mail-search-trigger]"));
+      } finally {
+        await close(page);
+      }
+    });
+
     test("mailbox history restores nonzero list scroll after async content commits, reversal and reload", async () => {
       // Install the same shared history owner as Cloud before mounting the island. The two mailboxes use
-      // distinct scroll keys, and switching reconstructs their list elements after the traversal arrives.
+      // distinct scroll keys on the retained list element; restoration waits for the destination content.
       const source = `${boxPath}?history=1`;
       const destination = "/app/mail/Box002";
       const page = await open(source, 1440, 600);

@@ -115,7 +115,7 @@ export default function MailDetailsPanel(props: {
     setInspectorLoading(initialTab);
     const inspector = await importOnDemand(() => import("./MailMessageInspectorDialog"));
     setInspectorLoading(null);
-    if (!inspector) return;
+    if (!inspector || disposed) return;
     await inspector.openMailMessageInspector({
       mailboxId: props.mailboxId,
       messages: props.messages,
@@ -377,7 +377,7 @@ export default function MailDetailsPanel(props: {
       },
       { title: t().createTag, icon: "ti ti-tag-plus" },
     );
-    if (values) await createTagMutation.mutate(values);
+    if (values && !disposed) await createTagMutation.mutate(values);
   };
 
   const addComment = mutations.create<ConversationComment, string>({

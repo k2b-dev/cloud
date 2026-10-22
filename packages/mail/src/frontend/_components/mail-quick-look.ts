@@ -1,4 +1,4 @@
-import { createSignal, untrack } from "solid-js";
+import { createEffect, createSignal, on, onCleanup, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailConversationPreview } from "../../contracts";
 import type { MailListItem } from "./mail-navigation";
@@ -24,6 +24,13 @@ export const mailQuickLookKey = (item: QuickLookTarget): string | null =>
 export const createMailQuickLookLoader = (mailboxId: () => string) => {
   const [states, setStates] = createSignal<ReadonlyMap<string, MailQuickLookState>>(new Map());
   const requests = new Map<string, AbortController>();
+  const reset = () => {
+    for (const request of requests.values()) request.abort();
+    requests.clear();
+    setStates(new Map());
+  };
+  createEffect(on(mailboxId, reset, { defer: true }));
+  onCleanup(reset);
 
   const update = (key: string, state: MailQuickLookState | null) =>
     setStates((current) => {
