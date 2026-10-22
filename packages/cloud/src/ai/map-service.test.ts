@@ -270,10 +270,13 @@ describe("native Assistant map transitions", () => {
     map.groups.push({ title: "Cafés", places: mapPlaces(20, "cafe") });
     map.route = mapFixture("route").route;
     map.groups[0]!.places[0]!.website = "https://[";
+    const providerId = "provider-" + "a".repeat(1000);
+    map.groups[0]!.places[0]!.id = providerId;
     const unicodeWebsite = `https://example.com/${"ä".repeat(400)}`;
     map.groups[0]!.places[1]!.website = unicodeWebsite;
     const markdown = aiMapNotebookContent(map);
     expect(markdown).not.toContain("https://[");
+    expect(markdown).toContain(`"id":"${providerId}"`);
     expect(markdown).toContain(unicodeWebsite);
     expect(markdown.match(/:::map/g)).toHaveLength(3);
     expect(markdown).toContain('"distanceAllowanceMeters":500000');

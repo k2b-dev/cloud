@@ -12,10 +12,10 @@ export const aiMapNotebookContent = (map: AiMap): string =>
           version: 1,
           savedAt: map.viewedAt,
           title: group.title,
-          pins: group.places.map((place, index) => {
+          pins: group.places.map((place) => {
             const website = aiMapWebsite(place.website);
             return {
-              id: `place-${index + 1}`,
+              id: place.id,
               label: place.name,
               point: place.point,
               provenance: place.provenance,
