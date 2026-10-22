@@ -1506,12 +1506,12 @@ test("conversation creation exposes HTTP refusal separately from an unknown netw
     return createAiChatController({ baseUrl: "/api/ai" });
   });
   try {
-    expect(await controller.createConversation({ requestId: "replayed-creation" })).toBeNull();
+    expect(await controller.createConversation({ requestId: "11111111-1111-4111-8111-111111111111" })).toBeNull();
     expect(controller.creationErrorStatus()).toBe(404);
     response = async () => {
       throw new TypeError("Connection lost");
     };
-    expect(await controller.createConversation({ requestId: "another-creation" })).toBeNull();
+    expect(await controller.createConversation({ requestId: "22222222-2222-4222-8222-222222222222" })).toBeNull();
     expect(controller.creationErrorStatus()).toBeNull();
   } finally {
     dispose();
