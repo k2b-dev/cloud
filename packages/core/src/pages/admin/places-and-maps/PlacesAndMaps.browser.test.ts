@@ -81,7 +81,7 @@ test("replacing the key keeps the old one through refusal and outage, then saves
     try {
       await page.getByRole("button", { name: "Ersetzen", exact: true }).click();
       const field = page.getByLabel("Neuer Schlüssel", { exact: true });
-      await expect(field.evaluate((element) => element === document.activeElement)).resolves.toBe(true);
+      expect(await field.evaluate((element) => element === document.activeElement)).toBe(true);
       expect(await root(page).innerText()).toContain("Der alte Schlüssel gilt, bis der neue geprüft ist.");
       // The key row stays visible while a replacement is typed and checked.
       expect(await root(page).innerText()).toContain("Schlüssel hinterlegt");
