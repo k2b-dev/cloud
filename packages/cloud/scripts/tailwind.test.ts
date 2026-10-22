@@ -195,6 +195,21 @@ ${shape === "nested" ? `    & {\n      ${declaration}\n    }` : `    ${declarati
     expect(results).toEqual([{ loader: "css", contents: source }]);
   });
 
+  test.each(["color: red; background: blue", 'color: var(--fallback, "a;b"); background: blue'])(
+    "preserve authored adjacent declarations: %s",
+    async (fallback) => {
+      const source = `.x {
+  ${fallback};
+  @supports (color: color-mix(in lab, red, red)) {
+    color: color-mix(in srgb, red 50%, blue);
+  }
+}`;
+      const results: OnLoadResult[] = [];
+      await buildCss(observe(wrapTailwindPlugin(cssPlugin(source)), results));
+      expect(results).toEqual([{ loader: "css", contents: source }]);
+    },
+  );
+
   test("pass unpolyfilled CSS and unrelated supports rules through byte-identically", async () => {
     const source =
       (await compile(fixture, { polyfills: 1 })).build([]) +
