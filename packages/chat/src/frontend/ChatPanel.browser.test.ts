@@ -824,11 +824,11 @@ for (const preparation of ["resource", "image"] as const) {
         await newChat.dispatchEvent("click");
         expect(fixture.assistant.conversations.size).toBe(unknownCreation ? 1 : 0);
         await panel.getByRole("dialog").press("Escape");
+        await page.locator('[data-cloud-panel-provider="second"]').click();
+        expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
         expect(await panel.getByRole("button", { name: "Save drafts", exact: true }).isDisabled()).toBe(true);
         if (unknownCreation)
           expect(await panel.getByRole("button", { name: "Leave despite unclear creation", exact: true }).isDisabled()).toBe(true);
-        await page.locator('[data-cloud-panel-provider="second"]').click();
-        expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
         await page.locator("[data-cloud-panel-close]").click();
         expect(await page.locator("[data-cloud-panel-frame]").count()).toBe(1);
         release();
