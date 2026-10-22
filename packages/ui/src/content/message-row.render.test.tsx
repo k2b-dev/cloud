@@ -231,7 +231,7 @@ describe("MessageRow", () => {
     expect(textOf(html)).toContain("Reply R R");
     expect(textOf(html)).toContain("Mark unread from here Alt click Alt Click");
     // Right-click and a long press open the same entries on the whole message.
-    expect(html).toMatch(/role="group" tabindex="-1" aria-label="Message from Nora Brandt, 09:31" aria-haspopup="menu"/);
+    expect(html).toMatch(/role="group" tabindex="0" aria-label="Message from Nora Brandt, 09:31" aria-haspopup="menu"/);
     expect(html).toContain("k2b-gesture-menu");
     expect(row({ actions: [] })).not.toContain("k2b-message-row__menu");
     expect(row({ actions: [] })).not.toContain("k2b-gesture-menu");

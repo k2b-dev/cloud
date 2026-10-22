@@ -5638,9 +5638,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-wrap: anywhere;
 }
 
+/* A description says in one quiet sentence what an entry does; it wraps instead of widening the menu. */
 .k2b-ui .k2b-dropdown__copy > small {
+  max-inline-size: 16rem;
   color: var(--k2b-text-muted);
-  font-size: 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* A phone sheet has no keyboard, so its entries show no shortcuts. */
+.k2b-ui .k2b-gesture-menu__sheet-menu .k2b-kbd {
+  display: none;
 }
 
 .k2b-ui .k2b-dropdown__image {
