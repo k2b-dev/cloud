@@ -258,7 +258,10 @@ export type ContactAddressInput = {
   city: string;
   stateRegion?: string | null;
   countryCode: string;
-  /** Point of a chosen address suggestion for exactly these fields. Unchanged addresses keep their location without it. */
+  /**
+   * Point of a chosen address suggestion for exactly these fields. Unchanged addresses keep their location without it.
+   * The point and provenance are stored as the writer's client sent them; Contacts does not verify them with Core.
+   */
   location?: { point: GeoPoint; provenance: GeoProvenance } | null;
 };
 
