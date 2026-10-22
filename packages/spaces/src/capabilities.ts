@@ -2274,10 +2274,20 @@ export const spacesCapabilities = defineCapabilities({
           "time-block.read": {
             title: "Zeitblock lesen",
             description: "Einen Zeitblock per UUID mit Eigentümer, Aufgabenstatus, Schreibrecht und Revision lesen.",
+            input: { id: "UUID des Zeitblocks aus time-block.list oder time-block.read; keine Aufgaben-ID." },
           },
           "time-block.list": {
             title: "Zeitblöcke auflisten",
             description: "Lesbare Zeitblöcke eines begrenzten Zeitraums auflisten. Alle Folgeseiten mit unveränderten Filtern lesen.",
+            input: {
+              from: "Beginn des Zeitraums einschließlich, als Zeitpunkt mit UTC-Offset.",
+              to: "Ende des Zeitraums ausschließlich, höchstens 366 Tage nach from.",
+              itemId: "Öffentliche Aufgaben-ID aus item.read oder task.list; erlaubt die Abfrage ohne Zeitraum.",
+              spaceId: "Öffentliche Space-ID aus space.list; ohne Angabe werden alle lesbaren Spaces berücksichtigt.",
+              mine: "Nur Blöcke der Person hinter dem Aufruf; eigenständige Agenten vertreten keine Person.",
+              cursor: "Fortsetzung aus page.nextCursor; Filter und Seitengröße unverändert lassen.",
+              limit: "Höchstens 50 Blöcke je Seite, standardmäßig 25; page.nextCursor bis zum Ende folgen.",
+            },
           },
         },
         actions: {
@@ -2285,14 +2295,32 @@ export const spacesCapabilities = defineCapabilities({
           "time-block.create": {
             title: "Zeit für eine Aufgabe blocken",
             description: "Als zuständige Person einen Zeitblock anlegen. Bei Wiederholung dieselbe Client-UUID verwenden.",
+            input: {
+              id: "Vom Client erzeugte UUID; bei erneutem Versuch dieselbe UUID und denselben Zeitraum verwenden.",
+              itemId: "Öffentliche Aufgaben-ID aus item.read oder task.list; die zugewiesene Person besitzt den neuen Block.",
+              taskTitle: "Aktueller Aufgabentitel aus item.read; eine zwischenzeitliche Umbenennung erfordert eine neue Prüfung.",
+              startsAt: "Beginn als Zeitpunkt mit UTC-Offset.",
+              endsAt: "Ende als Zeitpunkt mit UTC-Offset, nach startsAt.",
+            },
           },
           "time-block.update": {
             title: "Zeitblock ändern",
             description: "Eigenen Zeitblock mit der gelesenen Revision ändern. Der Aufgabentitel bleibt unabhängig.",
+            input: {
+              id: "UUID des Zeitblocks aus time-block.list oder time-block.read; keine Aufgaben-ID.",
+              revision: "Exakte Revision aus time-block.read; nach einem Konflikt erneut lesen.",
+              title: "Eigener Titel des Blocks; ohne Angabe unverändert. Benennt die Aufgabe nicht um.",
+              startsAt: "Neuer Beginn mit UTC-Offset; ohne Angabe unverändert.",
+              endsAt: "Neues Ende mit UTC-Offset; ohne Angabe unverändert.",
+            },
           },
           "time-block.delete": {
             title: "Zeitblock löschen",
             description: "Eigenen Zeitblock mit der gelesenen Revision löschen. Die Aufgabe bleibt erhalten.",
+            input: {
+              id: "UUID des Zeitblocks aus time-block.list oder time-block.read; keine Aufgaben-ID.",
+              revision: "Exakte Revision aus time-block.read; nach einem Konflikt erneut lesen.",
+            },
           },
         },
       },
