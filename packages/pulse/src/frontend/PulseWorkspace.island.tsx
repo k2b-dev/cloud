@@ -1,10 +1,11 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { clipboard } from "@k2b/stdlib/browser";
-import { AppWorkspace, Button, NoticeCard, toast, useLocale } from "@k2b/ui";
+import { AppWorkspace, appWorkspaceLayoutStyle, Button, NoticeCard, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { usePulseMessages } from "./use-messages";
 import { createBaseController } from "./workspace/base-controller";
 import ComingBackView from "./workspace/ComingBackView";
+import DashboardsView from "./workspace/DashboardsView";
 import { navigatePulseWorkspace } from "./workspace/navigation";
 import OverviewView from "./workspace/OverviewView";
 import { createOverviewController } from "./workspace/overview-controller";
@@ -33,7 +34,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const activeView = () => props.initialRouteState.view;
   const overview = createOverviewController({
     baseId: props.initialBaseId,
-    active: () => activeView() === "overview",
+    active: () => activeView() === "overview" || activeView() === "dashboards",
     initial: props.initialOverview,
   });
   const selectedBaseId = () => props.initialBaseId;
@@ -185,80 +186,122 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
     readQueries()
       .find((query) => query.error())
       ?.error();
+  // A CSS default lets restored and resized inline geometry keep precedence.
   return (
-    <AppWorkspace mobileSurface="flush">
-      <PulseSidebar
-        title={overview.accessLost() ? t().appName : (selectedBase()?.name ?? t().appName)}
-        bases={overview.accessLost() ? bases().filter((base) => base.id !== props.initialBaseId) : bases()}
-        baseId={props.initialBaseId}
-        activeView={activeView()}
-        sourceCount={overview.data()?.sources.total ?? sources().length}
-        attentionCount={overview.data()?.attention.total}
-        openOverview={() => navigate({ view: "overview" })}
-        settingsDisabled={!selectedBase() || loading() || overview.accessLost()}
-        openSettings={openSettings}
-        openSources={openSources}
-        openSql={() => navigate({ view: "sql" })}
-        openComingBack={() => navigate({ view: "coming-back" })}
-      />
-      <AppWorkspace.Content>
-        <AppWorkspace.Main class="gap-2 p-[var(--ui-space-shell)]">
-          <Show when={activeView() !== "overview" && readError()}>
-            {(error) => (
-              <NoticeCard tone="danger" title={t().pulseDataRefreshFailed} detail={error().message}>
-                <Button variant="secondary" onClick={() => void refresh().catch(() => {})}>
+    <>
+      <style>{`.pulse-workspace{${appWorkspaceLayoutStyle({ version: 2, sidebarWidth: 236 })}}`}</style>
+      <AppWorkspace class="pulse-workspace" mobileSurface="flush">
+        <PulseSidebar
+          title={overview.accessLost() ? t().appName : (selectedBase()?.name ?? t().appName)}
+          bases={overview.accessLost() ? bases().filter((base) => base.id !== props.initialBaseId) : bases()}
+          baseId={props.initialBaseId}
+          activeView={activeView()}
+          sourceCount={overview.data()?.sources.total ?? sources().length}
+          attentionCount={overview.data()?.attention.total}
+          openOverview={() => navigate({ view: "overview" })}
+          settingsDisabled={!selectedBase() || loading() || overview.accessLost()}
+          openSettings={openSettings}
+          openSources={openSources}
+          openSql={() => navigate({ view: "sql" })}
+          openComingBack={() => navigate({ view: "dashboards" })}
+          dashboards={props.initialDashboards?.items}
+          dashboardId={props.initialDashboards?.selected?.id}
+          dashboardsNextOffset={props.initialDashboards?.nextOffset}
+        />
+        <AppWorkspace.Content>
+          <AppWorkspace.Main class="gap-2 px-4 py-[var(--ui-space-shell)] md:px-5">
+            <Show when={activeView() !== "overview" && readError()}>
+              {(error) => (
+                <NoticeCard tone="danger" title={t().pulseDataRefreshFailed} detail={error().message}>
+                  <Button variant="secondary" onClick={() => void refresh().catch(() => {})}>
+                    {t().retry}
+                  </Button>
+                </NoticeCard>
+              )}
+            </Show>
+            <Show when={activeView() === "dashboards" && overview.error() && !overview.accessLost()}>
+              <NoticeCard role="alert" tone="danger" title={t().pulseDataRefreshFailed} detail={t().overviewLoadFailedHint}>
+                <Button
+                  variant="secondary"
+                  disabled={overview.loading() || overview.refreshing()}
+                  onClick={() => void overview.refresh().catch(() => {})}
+                >
                   {t().retry}
                 </Button>
               </NoticeCard>
-            )}
-          </Show>
-          <Show
-            when={activeView() === "overview"}
-            fallback={
-              <Show
-                when={activeView() === "sources"}
-                fallback={
-                  <Show when={activeView() === "sql"} fallback={<ComingBackView openSources={openSources} />}>
-                    <SqlConsoleView
-                      base={{ id: props.initialBaseId, name: selectedBase()?.name ?? t().appName }}
-                      route={props.initialRouteState}
-                      snapshot={props.initialSql}
-                      canWrite={props.initialPermissions?.write ?? false}
-                    />
-                  </Show>
-                }
-              >
-                <SourcesView {...sourceProps} />
-              </Show>
-            }
+            </Show>
+            <Show
+              when={activeView() === "overview"}
+              fallback={
+                <Show
+                  when={activeView() === "sources"}
+                  fallback={
+                    <Show
+                      when={activeView() === "sql"}
+                      fallback={
+                        <Show when={activeView() === "dashboards"} fallback={<ComingBackView openSources={openSources} />}>
+                          <Show
+                            when={!overview.accessLost()}
+                            fallback={
+                              <NoticeCard role="alert" tone="warning" title={t().dashboardDenied} detail={t().overviewNoAccessHint}>
+                                <Button variant="secondary" onClick={() => window.location.reload()}>
+                                  {t().retry}
+                                </Button>
+                              </NoticeCard>
+                            }
+                          >
+                            <DashboardsView
+                              base={{ id: props.initialBaseId, name: selectedBase()?.name ?? t().appName }}
+                              route={props.initialRouteState}
+                              snapshot={props.initialDashboards}
+                              overview={overview.data()}
+                              canWrite={props.initialPermissions?.write ?? false}
+                            />
+                          </Show>
+                        </Show>
+                      }
+                    >
+                      <SqlConsoleView
+                        base={{ id: props.initialBaseId, name: selectedBase()?.name ?? t().appName }}
+                        route={props.initialRouteState}
+                        snapshot={props.initialSql}
+                        canWrite={props.initialPermissions?.write ?? false}
+                      />
+                    </Show>
+                  }
+                >
+                  <SourcesView {...sourceProps} />
+                </Show>
+              }
+            >
+              <OverviewView
+                data={overview.data()}
+                loading={overview.loading()}
+                error={overview.error()}
+                canWrite={(props.initialPermissions?.write ?? false) && !writeBlocked()}
+                retry={overview.retry}
+                addSource={() => void actions.addSource()}
+                openSource={(sourceId) => navigate({ view: "sources", sourceId })}
+                openAlert={(alertId) => navigatePulseWorkspace({ baseId: props.initialBaseId, state: { view: "sql", alertId } })}
+                askAssistant={() => void askAssistant()}
+                assistantPending={assistantPending()}
+                assistantError={assistantError()}
+                paging={overview.paging()}
+                loadAttention={overview.loadAttention}
+                loadActivity={overview.loadActivity}
+              />
+            </Show>
+          </AppWorkspace.Main>
+          <AppWorkspace.Detail
+            id="pulse-detail-panel"
+            open={activeView() === "sources" && Boolean(selectedSource())}
+            onClose={openSources}
+            width="lg"
           >
-            <OverviewView
-              data={overview.data()}
-              loading={overview.loading()}
-              error={overview.error()}
-              canWrite={(props.initialPermissions?.write ?? false) && !writeBlocked()}
-              retry={overview.retry}
-              addSource={() => void actions.addSource()}
-              openSource={(sourceId) => navigate({ view: "sources", sourceId })}
-              openAlert={(alertId) => navigatePulseWorkspace({ baseId: props.initialBaseId, state: { view: "sql", alertId } })}
-              askAssistant={() => void askAssistant()}
-              assistantPending={assistantPending()}
-              assistantError={assistantError()}
-              paging={overview.paging()}
-              loadAttention={overview.loadAttention}
-              loadActivity={overview.loadActivity}
-            />
-          </Show>
-        </AppWorkspace.Main>
-        <AppWorkspace.Detail
-          id="pulse-detail-panel"
-          open={activeView() === "sources" && Boolean(selectedSource())}
-          onClose={openSources}
-          width="lg"
-        >
-          <SourcesDetailPanel {...sourceProps} />
-        </AppWorkspace.Detail>
-      </AppWorkspace.Content>
-    </AppWorkspace>
+            <SourcesDetailPanel {...sourceProps} />
+          </AppWorkspace.Detail>
+        </AppWorkspace.Content>
+      </AppWorkspace>
+    </>
   );
 }

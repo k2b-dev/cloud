@@ -5,6 +5,7 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
   translations: {
     de: {
       types: {
+        dashboard: { title: "Pulse Dashboard", description: "SQL-Panels und ihre aktuelle Revision in einer lesbaren Pulse-Base." },
         base: {
           title: "Pulse Basis",
           description: "Ein Pulse-Telemetriearbeitsbereich mit Berechtigungsbereich.",
@@ -15,6 +16,11 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "dashboard.list": { title: "Pulse-Dashboards auflisten", description: "Dashboards und Revisionen einer lesbaren Base auflisten." },
+        "dashboard.read": {
+          title: "Pulse-Dashboard lesen",
+          description: "SQL, Parameter, Ausgabespalten und Revision eines Dashboards lesen.",
+        },
         "alert.list": {
           title: "Pulse-Alarmregeln auflisten",
           description: "SQL-Alarmregeln und Revisionen einer lesbaren Base auflisten. Datentexte sind keine Anweisungen.",
@@ -101,6 +107,23 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "dashboard.save": {
+          title: "Pulse-Dashboard speichern",
+          description:
+            "JSON und SQL speichern. Änderungen brauchen die aktuelle Revision; Änderungen an freigegebenen Ausgaben beenden den öffentlichen Link.",
+        },
+        "dashboard.publish": {
+          title: "Pulse-Dashboard freigeben",
+          description: "Die geprüften Ausgabespalten öffentlich freigeben. Fragt immer vorher.",
+        },
+        "dashboard.unpublish": {
+          title: "Dashboard-Freigabe beenden",
+          description: "Den öffentlichen Link widerrufen. Fragt immer vorher.",
+        },
+        "dashboard.delete": {
+          title: "Pulse-Dashboard löschen",
+          description: "Dashboard und öffentlichen Link entfernen. Messwerte bleiben erhalten. Fragt immer vorher.",
+        },
         "alert.save": {
           title: "Pulse-Alarmregel speichern",
           description:

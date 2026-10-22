@@ -4,6 +4,7 @@ import type { User } from "@k2b/cloud/contracts";
 import type { ComponentProps } from "solid-js";
 import type { PulseSource } from "../contracts";
 import type { Overview } from "../overview-contracts";
+import type PublicDashboard from "./PublicDashboard.island";
 import type PulseOverview from "./PulseOverview.island";
 import type { PulseWorkspaceProps } from "./workspace/types";
 
@@ -292,6 +293,16 @@ export const workspaceDocumentContent = (document: string) =>
   new HTMLRewriter()
     .on("script, head", { element: (element) => void element.remove() })
     .on("html, body", { element: (element) => void element.removeAndKeepContent() })
+    .on('img[src="/branding/logo"]', {
+      element: (element) =>
+        void element.setAttribute(
+          "src",
+          "data:image/svg+xml," +
+            encodeURIComponent(
+              '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><title>Fictional Cloud fixture</title><path fill="#5267c4" d="M7 19a5 5 0 0 1-1-9.9A7 7 0 0 1 19.8 10 4.5 4.5 0 0 1 19.5 19Z"/></svg>',
+            ),
+        ),
+    })
     .on('solid-island[data-file="PulseWorkspace.island.tsx"]', { element: (element) => void element.setAttribute("id", "root") })
     .onDocument({ doctype: (doctype) => void doctype.remove() })
     .transform(document);
@@ -354,16 +365,19 @@ export const buildWorkspaceHarness = async () => {
     dark = false,
     overview?: ComponentProps<typeof PulseOverview>,
     mount?: { serverHtml: string; deferMount: boolean; pageDocument?: boolean },
+    publicDashboard?: ComponentProps<typeof PublicDashboard>,
   ) => {
-    const content = mount?.pageDocument
-      ? workspaceDocumentContent(mount.serverHtml)
-      : `<div class="cloud-app-canvas relative flex h-dvh w-full overflow-hidden" data-app-id="pulse" data-layout-full-page="true">` +
-        `<main class="layout-content-main flex min-h-0 min-w-0 flex-1 flex-col"><solid-island id="root">${mount?.serverHtml ?? ""}</solid-island></main></div>`;
+    const content = publicDashboard
+      ? `<solid-island id="root">${mount?.serverHtml ?? ""}</solid-island>`
+      : mount?.pageDocument
+        ? workspaceDocumentContent(mount.serverHtml)
+        : `<div class="cloud-app-canvas relative flex h-dvh w-full overflow-hidden" data-app-id="pulse" data-layout-full-page="true">` +
+          `<main class="layout-content-main flex min-h-0 min-w-0 flex-1 flex-col"><solid-island id="root">${mount?.serverHtml ?? ""}</solid-island></main></div>`;
     return (
       `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8">` +
       `<meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
       `<body class="k2b-ui">${content}` +
-      `<script>window.__pulse=${JSON.stringify({ locale, props, overview, deferMount: mount?.deferMount })}</script><script>${bundle}</script></body></html>`
+      `<script>window.__pulse=${JSON.stringify({ locale, props: publicDashboard ? undefined : props, overview, publicDashboard, deferMount: mount?.deferMount })}</script><script>${bundle}</script></body></html>`
     );
   };
 };

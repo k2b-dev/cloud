@@ -9,9 +9,6 @@ test("base pages default to overview while old source URLs keep working", () => 
 
 test("historical view URLs share the coming-back view without looking up deleted data", () => {
   for (const path of [
-    "dashboards",
-    "dashboards/Old001",
-    "dashboards/Old001/edit",
     "explorer",
     "signals",
     "signals/events",
@@ -109,4 +106,23 @@ test("overview and authorized alert references survive settings, reload and over
   expect(readWorkspacePathState(href, "Base01")).toMatchObject({ view: "sql", alertId: "Alt001", settings: "general" });
   expect(readWorkspacePathState("/app/pulse/Base01/sql/Qry001?alert=Alt001", "Base01")).not.toHaveProperty("alertId");
   expect(readWorkspacePathState("/app/pulse/Base01/sql?alert=%2Fbad", "Base01")).not.toHaveProperty("alertId");
+});
+
+test("dashboard selection and range survive URLs while historical removed routes stay isolated", () => {
+  const state = {
+    view: "dashboards" as const,
+    dashboardId: "Dash01",
+    dashboardRange: { range: "7d" as const, from: "2026-10-01T00:00:00.000Z", to: "2026-10-08T00:00:00.000Z" },
+  };
+  const href = buildPulseWorkspaceHref({ baseId: "Base01", state });
+  expect(readWorkspacePathState(href, "Base01")).toEqual({ ...state, sourceId: "" });
+  expect(readWorkspacePathState("/app/pulse/Base01/dashboards", "Base01")).toEqual({
+    view: "dashboards",
+    sourceId: "",
+    dashboardId: "",
+    dashboardRange: { range: "24h" },
+  });
+  expect(readWorkspacePathState("/app/pulse/Base01/dashboards/Dash01?range=90d&from=bad&to=no", "Base01").dashboardRange).toEqual({
+    range: "90d",
+  });
 });
