@@ -121,6 +121,12 @@ export async function createNotebookMapFixtureServer(port = 0) {
           headers: { "content-type": "application/javascript" },
         });
       if (url.pathname === "/api/geo/style") {
+        if (new URL(request.headers.get("referer") ?? request.url).searchParams.get("state") === "waiting") {
+          if (request.signal.aborted) return new Response(null, { status: 499 });
+          return new Promise<Response>((resolve) =>
+            request.signal.addEventListener("abort", () => resolve(new Response(null, { status: 499 })), { once: true }),
+          );
+        }
         if (new URL(request.headers.get("referer") ?? request.url).searchParams.get("state") === "style-error")
           return Response.json({ code: "GEO_PROVIDER_FAILED" }, { status: 502 });
         const dark = url.searchParams.get("theme") === "dark";
