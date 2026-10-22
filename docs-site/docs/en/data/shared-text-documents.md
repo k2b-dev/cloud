@@ -194,6 +194,47 @@ These helpers check character identity, not document permissions or structural
 meaning. The application still rejects stale context and unconfirmed local
 anchors; never fall back to a submitted ordinal after resolution fails.
 
+## Plan table actions and track local undo
+
+`captureTableAction(ytext, action, target)` captures structural character
+identities synchronously in the browser. Send the resulting `TableActionIntent`
+with byte arrays encoded by the application's transport. After authorization,
+reconstruct the current Y.Text and call `planTableAction(ytext, intent, maxLength)`
+inside `documents.change`. Planning derives the current row and column from
+surviving anchors. A deleted or replaced target raises `TableActionRejectedError`;
+a table expansion beyond the text budget raises `TableActionLimitError` before
+allocating the expanded grid. Some omitted outer boundaries cannot be anchored;
+these actions reject rather than choosing an adjacent cell.
+
+Pass an `actionId` to `change` to receive the same ID and exact update bytes in
+its log event and result receipt. A `persistFailed` result can still contain an
+accepted receipt. Do not publish again because the snapshot failed.
+
+The browser entry point exports `createSharedTextActionHistory(doc, undoManager)`.
+Call `begin(actionId)` before the request and apply incoming events through its
+`apply(bytes, actionId?)` in log order. Await the returned `applied` promise.
+This makes one accepted server action one local undo step, separate from peer
+changes. An HTTP receipt alone does not cover preceding log events; do not apply
+it ahead of the ordered stream. Cancel a known rejected action with the returned
+`cancel(error)`. An unknown outcome requires resynchronization, not an automatic
+retry. Dispose the tracker when the editor closes.
+
+## Respect restored document versions
+
+Server `change` events and snapshot repairs carry the store's `restoreRevision`.
+Replay applies them only to that revision; obsolete events still advance the
+cursor without altering the restored document. `read`, `edit`, `change`, and the
+snapshot pipeline supply the revision automatically. Advanced callers of
+`log.replay`, `log.recover` or `applySharedTextEvent` must pass the matching
+snapshot revision. Omitting it for a versioned event raises an error.
+
+Custom browser transports must retain this metadata and start from a snapshot
+with its matching revision. A client holding a different document version must
+preserve unsent text and reopen the current version. Do not merge a replacement
+snapshot into the old Y.Doc. Upgrade all log readers and browser transports
+before enabling these server actions or automatic repair; older readers do not
+understand this revision fence.
+
 ## Snapshots
 
 Use `sharedText.snapshots({ log, job, store, input?, logger?, repair? })` to persist
@@ -263,7 +304,9 @@ bytes in the snapshot and skip repair until the dependencies arrive.
 
 Keep the planner idempotent and specific to structures it recognizes.
 For Markdown, `repairTables` from `@k2b/ui/text-editor/model` pads recognized
-ragged GFM tables without removing cell text. It leaves code, quotes and
+ragged GFM tables without removing cell text. Pass the same text limit as its
+second argument; padding that would exceed it is left unresolved without
+allocating the expanded grid. It leaves code, quotes and
 unrecognized damage unchanged. The application must still show unresolved
 damage and verify that its rendered output contains all visible text.
 

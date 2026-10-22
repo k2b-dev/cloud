@@ -56,5 +56,5 @@ export const draftSnapshots = (store: SharedTextSnapshotStore) =>
     log,
     job: lazySync((sync) => sync.job(snapshotConfig)),
     store,
-    repair: { maxLength: 2_097_152, plan: repairTables },
+    repair: { maxLength: 2_097_152, plan: (text) => repairTables(text, 2_097_152) },
   });

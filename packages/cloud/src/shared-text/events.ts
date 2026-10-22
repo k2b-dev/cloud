@@ -29,14 +29,24 @@ export const isValidSharedTextUpdate = (payload: string): boolean => {
   }
 };
 
-export const applySharedTextEvent = (doc: Y.Doc, event: { cursor: string; data: SharedTextEvent }, docId: string): void => {
-  if (event.data.kind !== "sync") return;
+export const applySharedTextEvent = (
+  doc: Y.Doc,
+  event: { cursor: string; data: SharedTextEvent },
+  docId: string,
+  restoreRevision?: string,
+): boolean => {
+  if (event.data.kind !== "sync") return false;
+  if (event.data.restoreRevision !== undefined) {
+    if (restoreRevision === undefined) throw new TypeError("A versioned update needs its snapshot restore revision");
+    if (event.data.restoreRevision !== restoreRevision) return false;
+  }
   try {
     const update = fromBase64(event.data.payload);
     // Decode completely before mutating the document: malformed bytes must not
     // partially integrate state before recovery skips the invalid event.
     Y.decodeUpdate(update);
     Y.applyUpdate(doc, update, `replay:${event.cursor}`);
+    return true;
   } catch (error) {
     throw new MalformedSharedTextEventError(docId, event.cursor, error);
   }

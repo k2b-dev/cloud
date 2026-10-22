@@ -7,6 +7,10 @@ export type SharedTextEvent = {
   originNodeId: string;
   originPeerId: string | null;
   actor?: SharedTextActor;
+  /** Echoed only by authorized server actions, for the initiating browser's undo history. */
+  actionId?: string;
+  /** Server changes apply only to the store lineage from which they were planned. */
+  restoreRevision?: string;
 };
 export type SharedTextSyncEvent = SharedTextEvent & { kind: "sync" };
 export type SharedTextContributor = SharedTextActor & { lastContributedAt: Date };
@@ -31,12 +35,14 @@ export type SharedTextSnapshot = { state: Uint8Array | null; text: string | null
 /** A disjoint edit in the original document's UTF-16 coordinates. */
 export type SharedTextChange = { from: number; to: number; insert: string };
 
+export type SharedTextActionReceipt = { actionId: string; update: Uint8Array };
+
 export type SharedTextEditResult<Saved> =
   | { status: "notFound" }
   | { status: "unchanged"; text: string }
   | { status: "syncFailed"; error: unknown }
-  | { status: "persistFailed"; cursor: string; error: unknown }
-  | { status: "edited"; text: string; cursor: string; saved: Saved };
+  | { status: "persistFailed"; cursor: string; error: unknown; receipt?: SharedTextActionReceipt }
+  | { status: "edited"; text: string; cursor: string; saved: Saved; receipt?: SharedTextActionReceipt };
 
 export type SharedTextStore<Saved, Context> = {
   load(docId: string, options: { signal?: AbortSignal }): Promise<SharedTextStoredState | null>;

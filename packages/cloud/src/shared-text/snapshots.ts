@@ -180,8 +180,8 @@ const createSnapshots = <Input>(
                   until: target,
                   signal: context.signal,
                 })) {
-                  applySharedTextEvent(doc, event, docId);
-                  if (event.data.actor)
+                  const applied = applySharedTextEvent(doc, event, docId, initial.restoreRevision);
+                  if (applied && event.data.actor)
                     contributors.set(`${event.data.actor.kind}:${event.data.actor.id}`, {
                       ...event.data.actor,
                       lastContributedAt: event.publishedAt,
@@ -223,6 +223,7 @@ const createSnapshots = <Input>(
                     payload: toBase64(Y.encodeStateAsUpdate(doc, before)),
                     originNodeId: sharedTextNodeId,
                     originPeerId: null,
+                    restoreRevision: initial.restoreRevision,
                   },
                 });
                 cursor = published.cursor;

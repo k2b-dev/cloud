@@ -133,7 +133,7 @@ const setup = (
       const doc = new Y.Doc();
       try {
         if (initial.state) Y.applyUpdate(doc, initial.state);
-        await log.recover({ docId, after: initial.cursor, until: head, doc, signal });
+        await log.recover({ docId, after: initial.cursor, until: head, doc, restoreRevision: initial.restoreRevision, signal });
         await store.save(docId, {
           state: Y.encodeStateAsUpdate(doc),
           text: doc.getText(SHARED_TEXT_NAME).toString(),
@@ -433,7 +433,7 @@ testFor("nats")(
           confirmed = snapshot.cursor!;
           expect(alice.getText(SHARED_TEXT_NAME).toString()).toBe(snapshot.text!);
           expect(bob.getText(SHARED_TEXT_NAME).toString()).toBe(snapshot.text!);
-          expect(repairTables(snapshot.text!)).toEqual([]);
+          expect(repairTables(snapshot.text!, 2_097_152)).toEqual([]);
           expect(snapshot.text!.startsWith("Before\n\n")).toBe(true);
           expect(snapshot.text!.endsWith("\n\nAfter")).toBe(true);
           return snapshot.text!;
@@ -468,7 +468,66 @@ testFor("nats")(
           bob.destroy();
         }
       },
-      { maxLength: 2_097_152, plan: repairTables },
+      { maxLength: 2_097_152, plan: (text) => repairTables(text, 2_097_152) },
+    );
+  },
+  90_000,
+);
+
+testFor("nats")(
+  "repair replay respects a store-only restore even after the old repair was accepted",
+  async () => {
+    await withFixture(
+      async (f) => {
+        const id = "repair-restore";
+        const source = "TOKEN\n\n| A | B |\n| --- | --- |\n| x | y | extra |";
+        f.add(id, source);
+        const oldVersion = f.states.get(id)!.state!;
+        const edited = new Y.Doc({ gc: false });
+        edited.clientID = 101;
+        try {
+          Y.applyUpdate(edited, oldVersion);
+          const vector = Y.encodeStateVector(edited);
+          edited.getText(SHARED_TEXT_NAME).delete(0, 5);
+          const beforeRepair = await f.publish(id, Y.encodeStateAsUpdate(edited, vector));
+          f.states.set(id, {
+            state: Y.encodeStateAsUpdate(edited),
+            text: edited.getText(SHARED_TEXT_NAME).toString(),
+            cursor: beforeRepair.cursor,
+            restoreRevision: "0",
+          });
+          let restored = false;
+          f.hooks.beforeSave = async (docId, input) => {
+            if (docId !== id || restored) return;
+            restored = true;
+            // The repair is already in the broker. Restore excludes that obsolete
+            // event but retains the same tenant; the retry must filter its lineage.
+            f.states.set(id, { state: oldVersion, text: source, cursor: beforeRepair.cursor, restoreRevision: "1" });
+            expect(input.restoreRevision).toBe("0");
+          };
+          await Promise.all([f.first.start(), f.second.start()]);
+          await f.queue(f.first, id, beforeRepair.cursor);
+          await until(
+            () => f.attempts.some((attempt) => attempt.docId === id && attempt.accepted && attempt.input.restoreRevision === "1"),
+            "repair after restore",
+          );
+          const stored = f.states.get(id)!;
+          expect(stored.text).toContain("TOKEN");
+          expect(stored.text).toContain("extra");
+          expect(findTables(stored.text!)[0]!.columns).toBe(3);
+          const reader = new Y.Doc();
+          try {
+            Y.applyUpdate(reader, stored.state!);
+            expect(reader.store.pendingStructs).toBeNull();
+            expect(reader.store.pendingDs).toBeNull();
+          } finally {
+            reader.destroy();
+          }
+        } finally {
+          edited.destroy();
+        }
+      },
+      { maxLength: 2_097_152, plan: (text) => repairTables(text, 2_097_152) },
     );
   },
   90_000,

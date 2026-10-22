@@ -78,7 +78,14 @@ const fixture = (repair?: SharedTextSnapshotRepair) => {
   const warnings: unknown[][] = [];
   const infos: unknown[][] = [];
   const lifecycle: unknown[] = [];
-  const control: { replayError?: Error; replayHook?: () => Promise<void>; yielded: number; closed: number; firstSequence: number } = {
+  const control: {
+    replayError?: Error;
+    replayHook?: () => Promise<void>;
+    beforePublish?: () => void;
+    yielded: number;
+    closed: number;
+    firstSequence: number;
+  } = {
     yielded: 0,
     closed: 0,
     firstSequence: 1,
@@ -86,6 +93,7 @@ const fixture = (repair?: SharedTextSnapshotRepair) => {
   const topic = {
     publish: async (input: TopicPublish<SharedTextSyncEvent>) => {
       publications.push(input);
+      control.beforePublish?.();
       if (input.expectedAfter !== (latest.get(input.tenantId ?? "") ?? null)) throw new ConflictError("head changed");
       const seq = sequence(head.value) + 1;
       const next = cursor(seq);
@@ -768,5 +776,59 @@ test("repair is skipped while pending dependencies are preserved in the snapshot
     }
   } finally {
     writer.destroy();
+  }
+});
+
+test("a repair accepted across a store-only restore cannot delete restored text or create missing dependencies on retry", async () => {
+  for (const replacement of [false, true]) {
+    const original = new Y.Doc({ gc: false }),
+      current = new Y.Doc({ gc: false }),
+      unrelated = new Y.Doc();
+    original.clientID = 101;
+    current.clientID = 202;
+    unrelated.clientID = 303;
+    try {
+      original.getText(SHARED_TEXT_NAME).insert(0, "TOKEN keep");
+      const oldVersion = Y.encodeStateAsUpdate(original);
+      Y.applyUpdate(current, oldVersion);
+      current.getText(SHARED_TEXT_NAME).delete(0, 5);
+      unrelated.getText(SHARED_TEXT_NAME).insert(0, "RESTORED");
+      const restoredState = replacement ? Y.encodeStateAsUpdate(unrelated) : oldVersion;
+      const restoredText = replacement ? "RESTORED" : "TOKEN keep";
+      const f = fixture({ maxLength: 100, plan: (text) => [{ from: text.length, to: text.length, insert: "!" }] });
+      f.states.set("doc", { state: Y.encodeStateAsUpdate(current), text: " keep", cursor: cursor(10), restoreRevision: "old" });
+      f.control.beforePublish = () => {
+        f.control.beforePublish = undefined;
+        // Restore advances the store lineage, but deliberately not the tenant head.
+        f.states.set("doc", { state: restoredState, text: restoredText, cursor: cursor(10), restoreRevision: "restored" });
+      };
+      const originalSave = f.store.save;
+      const save = spyOn(f.store, "save").mockImplementation(async (id, input) => {
+        if (f.states.get(id)!.restoreRevision !== input.restoreRevision) throw new Error("restored during repair");
+        await originalSave(id, input);
+      });
+      try {
+        await expect(f.run()).rejects.toThrow("restored during repair");
+        expect(f.publications[0]!.data.restoreRevision).toBe("old");
+        expect(f.saves).toEqual([]);
+        await f.run();
+        expect(f.saves[0]![1]).toMatchObject({ text: `${restoredText}!`, restoreRevision: "restored" });
+        expect(f.publications[1]!.data.restoreRevision).toBe("restored");
+        const reader = new Y.Doc();
+        try {
+          Y.applyUpdate(reader, f.saves[0]![1].state);
+          expect(reader.store.pendingStructs).toBeNull();
+          expect(reader.store.pendingDs).toBeNull();
+        } finally {
+          reader.destroy();
+        }
+      } finally {
+        save.mockRestore();
+      }
+    } finally {
+      original.destroy();
+      current.destroy();
+      unrelated.destroy();
+    }
   }
 });

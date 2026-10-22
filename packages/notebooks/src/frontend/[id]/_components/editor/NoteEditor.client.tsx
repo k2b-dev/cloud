@@ -605,6 +605,7 @@ function EditorInstance(
     ? null
     : yjs.createYjsProvider({
         doc,
+        undoManager: undoManager ?? undefined,
         awareness,
         noteId: props.noteId,
         appUrl: props.appUrl,

@@ -183,6 +183,7 @@ export const notebooksService = {
     create: notes.create,
     update: notes.update,
     editContent: notes.editContent,
+    tableAction: notes.tableAction,
     remove: notes.remove,
     move: notes.move,
     resetOrder: notes.resetOrder,

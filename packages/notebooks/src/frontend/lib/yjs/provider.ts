@@ -1,3 +1,4 @@
+import { createSharedTextActionHistory } from "@k2b/cloud/browser/shared-text";
 import { type NotebookPresenceParticipant, NotebookPresenceParticipantSchema } from "@k2b/cloud/contracts";
 import { encoding } from "@k2b/stdlib";
 import * as awarenessProtocol from "y-protocols/awareness";
@@ -21,6 +22,7 @@ export type YjsProviderError = {
 
 export type YjsProviderOptions = {
   doc: Y.Doc;
+  undoManager?: Y.UndoManager;
   awareness: awarenessProtocol.Awareness;
   noteId: string;
   appUrl: string;
@@ -90,6 +92,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   let ws: WebSocket | null = null;
   let isDisposed = false;
   let isTerminated = false;
+  let needsReopen = false;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let failedConnects = 0;
   let storageFailures = 0;
@@ -99,10 +102,12 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   let workspaceGeneration = 0;
   const activeWorkspaceId = opts.workspace?.notebookId ?? null;
   let replayReady = false;
+  let restoreRevision: string | null = null;
   let localStateSent = false;
   let needsFullResync = false;
   const unconfirmed = new Set<string>();
   const pendingChanged = () => opts.onUnsentChange?.();
+  const actionHistory = opts.undoManager ? createSharedTextActionHistory(doc, opts.undoManager, pendingChanged) : null;
 
   const errorMessageByCode: Record<YjsErrorCode, string> = {
     LOGIN_REQUIRED: "Login required",
@@ -196,6 +201,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   const terminate = (error: YjsProviderError) => {
     if (isTerminated) return;
     isTerminated = true;
+    actionHistory?.cancelPending(new Error(error.message));
     replayReady = false;
     localStateSent = false;
     if (reconnectTimer) {
@@ -214,7 +220,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
 
   const onDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (isDisposed) return;
-    if (origin === "remote") return;
+    if (origin === "remote" || actionHistory?.isRemoteOrigin(origin)) return;
     if (isTerminated || !replayReady) {
       needsFullResync = true;
       pendingChanged();
@@ -370,10 +376,12 @@ export function createYjsProvider(opts: YjsProviderOptions) {
 
   const handleReplayReadyMessage = (msg: ProviderMessage): boolean => {
     if (msg.type !== WS_TYPE.replayReady) return false;
-    const payload = (msg.payload ?? {}) as { noteId?: unknown };
+    const payload = (msg.payload ?? {}) as { noteId?: unknown; cursor?: unknown; restoreRevision?: unknown };
     // A socket can still deliver queued messages after a terminal error; the editor must stay stopped.
     if (payload.noteId !== activeNoteId || isTerminated) return true;
     replayReady = true;
+    if (typeof payload.cursor === "string") lastCursor = payload.cursor;
+    restoreRevision = typeof payload.restoreRevision === "string" ? payload.restoreRevision : null;
     // Reading works again, but with edits still unsent only their echo proves that storage accepts writes,
     // so backoff and storage budget keep counting until then.
     if (!needsFullResync && unconfirmed.size === 0) {
@@ -408,26 +416,76 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     const payload = msg.payload as {
       noteId?: unknown;
       historyIncomplete?: unknown;
-      updates?: Array<{ cursor?: unknown; payload?: unknown }>;
+      snapshot?: unknown;
+      restoreRevision?: unknown;
+      updates?: Array<{ cursor?: unknown; payload?: unknown; actionId?: unknown; restoreRevision?: unknown }>;
     };
 
-    if (payload.noteId !== activeNoteId || !Array.isArray(payload.updates)) return true;
+    if (isTerminated || payload.noteId !== activeNoteId || !Array.isArray(payload.updates)) return true;
+    if (payload.snapshot === true && typeof payload.restoreRevision === "string") {
+      if (restoreRevision !== null && restoreRevision !== payload.restoreRevision) {
+        needsReopen = true;
+        terminate({
+          code: notebooksYjs.errorCode.resyncRequired,
+          message: "The note was restored. Copy unsent text before reopening it",
+          noteId: activeNoteId,
+        });
+        return true;
+      }
+      restoreRevision = payload.restoreRevision;
+    }
     if (msg.type === WS_TYPE.syncPush && payload.historyIncomplete === true) opts.onHistoryIncomplete?.();
     for (const update of payload.updates) {
       if (typeof update.payload !== "string") continue;
-      if (msg.type === WS_TYPE.syncPush && unconfirmed.delete(update.payload)) {
-        failedConnects = 0;
-        storageFailures = 0;
-        pendingChanged();
-      }
       try {
         if (msg.type === WS_TYPE.syncPush) {
-          Y.applyUpdate(doc, encoding.fromBase64(update.payload), "remote");
+          if (typeof update.restoreRevision === "string" && update.restoreRevision !== restoreRevision) {
+            if (
+              restoreRevision !== null &&
+              /^\d+$/.test(restoreRevision) &&
+              /^\d+$/.test(update.restoreRevision) &&
+              BigInt(update.restoreRevision) < BigInt(restoreRevision)
+            ) {
+              // A server action from before a restore must never touch its replacement.
+              if (typeof update.cursor === "string") lastCursor = update.cursor;
+              continue;
+            }
+            needsReopen = true;
+            terminate({
+              code: notebooksYjs.errorCode.resyncRequired,
+              message: "The note was restored. Copy unsent text before reopening it",
+              noteId: activeNoteId,
+            });
+            return true;
+          }
+          if (payload.snapshot === true && actionHistory?.hasPending())
+            throw new Error("The table action could not be confirmed before reloading its history");
+          const bytes = encoding.fromBase64(update.payload);
+          if (actionHistory) actionHistory.apply(bytes, typeof update.actionId === "string" ? update.actionId : undefined);
+          else {
+            Y.decodeUpdate(bytes);
+            Y.applyUpdate(doc, bytes, "remote");
+          }
+          if (unconfirmed.delete(update.payload)) {
+            failedConnects = 0;
+            storageFailures = 0;
+            pendingChanged();
+          }
         } else {
           awarenessProtocol.applyAwarenessUpdate(awareness, encoding.fromBase64(update.payload), "remote");
         }
       } catch {
-        // Ignore malformed updates to keep collaboration resilient.
+        if (msg.type === WS_TYPE.syncPush) {
+          const error = {
+            code: notebooksYjs.errorCode.invalidPayload,
+            message: "Shared editing stopped because an update could not be applied",
+            noteId: activeNoteId,
+          };
+          opts.onError?.(error);
+          terminate(error);
+          return true;
+        }
+        // Awareness does not advance document history.
       }
 
       if (msg.type === WS_TYPE.syncPush && typeof update.cursor === "string") {
@@ -518,17 +576,34 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       failedConnects = 0;
       connect();
     },
+    /** Server actions wait for replay coverage and all local updates to be echoed. */
+    canStructure: (): boolean =>
+      !isDisposed &&
+      !isTerminated &&
+      replayReady &&
+      restoreRevision !== null &&
+      !needsFullResync &&
+      unconfirmed.size === 0 &&
+      !!actionHistory &&
+      !actionHistory.hasPending(),
+    restoreRevision: (): string | null => restoreRevision,
+    beginAction: (actionId: string) => {
+      if (isDisposed || isTerminated || !replayReady || restoreRevision === null || needsFullResync || unconfirmed.size || !actionHistory)
+        throw new Error("The editor must finish synchronizing before changing the table structure");
+      return actionHistory.begin(actionId);
+    },
     /** Local edits the server has not echoed yet. */
     hasUnsentChanges: (): boolean => needsFullResync || unconfirmed.size > 0,
     /** Reconnect after a terminal error, used after the person signs in again. */
     resume: (): void => {
-      if (!isTerminated || isDisposed) return;
+      if (!isTerminated || isDisposed || needsReopen) return;
       isTerminated = false;
       failedConnects = 0;
       connect();
     },
     dispose: () => {
       isDisposed = true;
+      actionHistory?.dispose();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       awarenessProtocol.removeAwarenessStates(awareness, [doc.clientID], "disconnect");
       doc.off("update", onDocUpdate);

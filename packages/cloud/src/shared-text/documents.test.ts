@@ -32,12 +32,12 @@ const fixture = () => {
   const documents = bindDocuments(
     {
       topic: () => handle,
-      replay: async ({ docId, after, until, doc, signal }) => {
+      replay: async ({ docId, after, until, doc, restoreRevision, signal }) => {
         docs.push(doc);
         replays.push({ after, until, signal });
         if (failures.replay === replays.length) throw new Error("replay failed");
         for (const event of events.slice(after ? Number(after.split(".").at(-1)) : 0, Number(until.split(".").at(-1))))
-          applySharedTextEvent(doc, event, docId);
+          applySharedTextEvent(doc, event, docId, restoreRevision);
         return [];
       },
     },
@@ -371,4 +371,32 @@ test("change preserves cancellation, unknown publication errors and accepted-wri
     cursor: "s6t.fixture.1",
   });
   expect(f.events).toHaveLength(1);
+});
+
+test("change returns and publishes the same action receipt before persistence, with the loaded restore revision", async () => {
+  for (const failure of [false, true]) {
+    const f = fixture();
+    f.setStored({ state: null, cursor: null, restoreRevision: "17", text: "body" });
+    if (failure) f.failures.save = new Error("store unavailable");
+    const result = await f.documents.change(
+      "doc",
+      { actor: { kind: "user", id: "writer" }, actionId: "action-17", maxLength: 100 },
+      (current) => {
+        expect(current.restoreRevision).toBe("17");
+        return [{ from: 4, to: 4, insert: "!" }];
+      },
+    );
+    expect(result.status).toBe(failure ? "persistFailed" : "edited");
+    if (result.status !== "edited" && result.status !== "persistFailed") throw new Error("Missing action result");
+    expect(result.receipt?.actionId).toBe("action-17");
+    expect(f.publications[0]!.data.actionId).toBe("action-17");
+    expect(Buffer.from(result.receipt!.update).toString("base64")).toBe(f.publications[0]!.data.payload);
+    const peer = createDoc({ state: null, text: "body", cursor: null, restoreRevision: "17" });
+    try {
+      Y.applyUpdate(peer, result.receipt!.update);
+      expect(peer.getText(SHARED_TEXT_NAME).toString()).toBe("body!");
+    } finally {
+      peer.destroy();
+    }
+  }
 });

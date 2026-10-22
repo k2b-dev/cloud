@@ -66,6 +66,19 @@ export const notebookApiMessages = i18n.define({
       authenticationRequired: "Authentication required",
       resourceNotFound: "The requested resource was not found.",
       conflict: "The request conflicts with the current state.",
+      tableActionLocked: "This note is locked. Its text was preserved.",
+      tableActionHistoryIncomplete: "This note has incomplete history. The table action was rejected and its text was preserved.",
+      tableActionRestoreConflict:
+        "This note was restored. Inspect its current table before trying again. This action did not change its text.",
+      tableTargetRejected: "The table target changed or is unavailable. Inspect the table before trying again. Its text was preserved.",
+      tableActionConflict:
+        "This note changed before the table action was accepted. Inspect the table before trying again. This action did not change its text.",
+      tableActionTooLarge: "The table action would exceed 2,097,152 UTF-16 code units. The existing text was preserved.",
+      tableActionSyncFailed: "The note could not be synchronized. The table action was rejected and its text was preserved.",
+      tableActionPersistFailed:
+        "The table action was accepted, but saving failed. Do not repeat it. Synchronize the note to recover its current state.",
+      tableActionOutcomeUnknown:
+        "The table action may have been accepted. Do not repeat it. Synchronize the note and inspect the table before continuing.",
       rateLimited: "Too many requests. Try again later.",
       operationFailed: "The operation could not be completed.",
       notePathInvalid: ({ maxLength, maxSegments }: { maxLength: number; maxSegments: number }) =>
@@ -138,6 +151,22 @@ export const notebookApiMessages = i18n.define({
       authenticationRequired: "Anmeldung erforderlich",
       resourceNotFound: "Die angeforderte Ressource wurde nicht gefunden.",
       conflict: "Die Anfrage steht im Konflikt mit dem aktuellen Stand.",
+      tableActionLocked: "Diese Notiz ist gesperrt. Ihr Text blieb erhalten.",
+      tableActionHistoryIncomplete:
+        "Die Historie dieser Notiz ist unvollständig. Die Tabellenaktion wurde abgelehnt und der Text blieb erhalten.",
+      tableActionRestoreConflict:
+        "Diese Notiz wurde wiederhergestellt. Prüfe die aktuelle Tabelle vor einem neuen Versuch. Diese Aktion hat den Text nicht verändert.",
+      tableTargetRejected:
+        "Das Tabellenziel hat sich geändert oder ist nicht verfügbar. Prüfe die Tabelle vor einem neuen Versuch. Ihr Text blieb erhalten.",
+      tableActionConflict:
+        "Diese Notiz wurde geändert, bevor die Tabellenaktion angenommen wurde. Prüfe die Tabelle vor einem neuen Versuch. Diese Aktion hat den Text nicht verändert.",
+      tableActionTooLarge: "Die Tabellenaktion würde 2.097.152 UTF-16-Codeeinheiten überschreiten. Der vorhandene Text blieb erhalten.",
+      tableActionSyncFailed:
+        "Die Notiz konnte nicht synchronisiert werden. Die Tabellenaktion wurde abgelehnt und der Text blieb erhalten.",
+      tableActionPersistFailed:
+        "Die Tabellenaktion wurde angenommen, konnte aber nicht gespeichert werden. Wiederhole sie nicht. Synchronisiere die Notiz, um den aktuellen Stand zu laden.",
+      tableActionOutcomeUnknown:
+        "Die Tabellenaktion wurde möglicherweise angenommen. Wiederhole sie nicht. Synchronisiere die Notiz und prüfe die Tabelle, bevor du fortfährst.",
       rateLimited: "Zu viele Anfragen. Versuche es später erneut.",
       operationFailed: "Der Vorgang konnte nicht abgeschlossen werden.",
       notePathInvalid: ({ maxLength, maxSegments }) =>

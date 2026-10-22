@@ -913,3 +913,201 @@ describe("manual reconnect", () => {
     }
   });
 });
+
+describe("server table action receipts", () => {
+  test("replay-ready and echoed local edits gate structure; the live receipt creates one undo step without republishing", async () => {
+    const doc = new Y.Doc(),
+      server = new Y.Doc();
+    doc.clientID = 101;
+    server.clientID = 202;
+    doc.getText("codemirror").insert(0, "base");
+    Y.applyUpdate(server, Y.encodeStateAsUpdate(doc));
+    const awareness = new Awareness(doc),
+      undoManager = new Y.UndoManager(doc.getText("codemirror"));
+    const provider = createYjsProvider({ doc, awareness, undoManager, noteId: NOTE_ID, appUrl: "http://localhost" });
+    try {
+      provider.connect();
+      const socket = FakeWebSocket.instances[0]!;
+      socket.open();
+      expect(provider.canStructure()).toBe(false);
+      socket.message({
+        type: notebooksYjs.wsType.replayReady,
+        payload: { noteId: NOTE_ID, cursor: "s6t.fixture.1", restoreRevision: "7" },
+      });
+      expect(provider.restoreRevision()).toBe("7");
+      expect(provider.canStructure()).toBe(true);
+      const action = provider.beginAction("action");
+      expect(provider.canStructure()).toBe(false);
+      const before = Y.encodeStateVector(server);
+      server.getText("codemirror").insert(4, " table");
+      const update = encoding.toBase64(Y.encodeStateAsUpdate(server, before));
+      const sent = socket.sent.length;
+      socket.message({
+        type: notebooksYjs.wsType.syncPush,
+        payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.fixture.2", payload: update, actionId: "action" }] },
+      });
+      await action.applied;
+      expect(socket.sent).toHaveLength(sent);
+      expect(provider.canStructure()).toBe(true);
+      undoManager.undo();
+      expect(doc.getText("codemirror").toString()).toBe("base");
+      expect(provider.canStructure()).toBe(false);
+      const undo = JSON.parse(socket.sent.at(-1)!);
+      socket.message({
+        type: notebooksYjs.wsType.syncPush,
+        payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.fixture.3", payload: undo.payload.payload }] },
+      });
+      expect(provider.canStructure()).toBe(true);
+    } finally {
+      provider.dispose();
+      undoManager.destroy();
+      awareness.destroy();
+      doc.destroy();
+      server.destroy();
+    }
+  });
+
+  test("a pending action survives a dropped connection and is tracked during ordered replay", async () => {
+    const doc = new Y.Doc(),
+      server = new Y.Doc();
+    doc.clientID = 101;
+    server.clientID = 202;
+    const awareness = new Awareness(doc),
+      undoManager = new Y.UndoManager(doc.getText("codemirror"));
+    const provider = createYjsProvider({ doc, awareness, undoManager, noteId: NOTE_ID, appUrl: "http://localhost" });
+    try {
+      provider.connect();
+      const socket = FakeWebSocket.instances[0]!;
+      socket.open();
+      socket.message({
+        type: notebooksYjs.wsType.replayReady,
+        payload: { noteId: NOTE_ID, cursor: "s6t.fixture.0", restoreRevision: "0" },
+      });
+      const action = provider.beginAction("pending");
+      socket.close();
+      socket.onclose?.({ code: 1006, reason: "" });
+      provider.reconnectNow();
+      const next = FakeWebSocket.instances.at(-1)!;
+      next.open();
+      expect(replayRequests(next)).toEqual(["s6t.fixture.0"]);
+      server.getText("codemirror").insert(0, "table");
+      next.message({
+        type: notebooksYjs.wsType.syncPush,
+        payload: {
+          noteId: NOTE_ID,
+          updates: [{ cursor: "s6t.fixture.1", payload: encoding.toBase64(Y.encodeStateAsUpdate(server)), actionId: "pending" }],
+        },
+      });
+      await action.applied;
+      next.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, cursor: "s6t.fixture.1", restoreRevision: "0" } });
+      undoManager.undo();
+      expect(doc.getText("codemirror").toString()).toBe("");
+    } finally {
+      provider.dispose();
+      undoManager.destroy();
+      awareness.destroy();
+      doc.destroy();
+      server.destroy();
+    }
+  });
+
+  test("malformed document updates stop visibly without advancing coverage or losing unsent text", () => {
+    const doc = new Y.Doc();
+    doc.clientID = 101;
+    const awareness = new Awareness(doc);
+    const fatal: string[] = [];
+    const provider = createYjsProvider({
+      doc,
+      awareness,
+      noteId: NOTE_ID,
+      appUrl: "http://localhost",
+      onFatal: (error) => fatal.push(error.code),
+    });
+    try {
+      provider.connect();
+      const socket = FakeWebSocket.instances[0]!;
+      socket.open();
+      socket.message({
+        type: notebooksYjs.wsType.replayReady,
+        payload: { noteId: NOTE_ID, cursor: "s6t.fixture.1", restoreRevision: "0" },
+      });
+      doc.getText("codemirror").insert(0, "keep me");
+      socket.message({
+        type: notebooksYjs.wsType.syncPush,
+        payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.fixture.2", payload: "////" }] },
+      });
+      expect(fatal).toEqual(["INVALID_PAYLOAD"]);
+      expect(provider.hasUnsentChanges()).toBe(true);
+      expect(doc.getText("codemirror").toString()).toBe("keep me");
+      provider.resume();
+      const next = FakeWebSocket.instances.at(-1)!;
+      next.open();
+      expect(replayRequests(next)).toEqual(["s6t.fixture.1"]);
+    } finally {
+      provider.dispose();
+      awareness.destroy();
+      doc.destroy();
+    }
+  });
+});
+
+test("a stale versioned server update cannot alter a restored note; a newer lineage requires reopening", () => {
+  const original = new Y.Doc({ gc: false }),
+    old = new Y.Doc({ gc: false }),
+    local = new Y.Doc();
+  original.clientID = 101;
+  old.clientID = 202;
+  local.clientID = 303;
+  original.getText("codemirror").insert(0, "KEEP");
+  const base = Y.encodeStateAsUpdate(original);
+  Y.applyUpdate(old, base);
+  Y.applyUpdate(local, base);
+  old.getText("codemirror").delete(0, 4);
+  const vector = Y.encodeStateVector(old);
+  old.getText("codemirror").insert(0, "repair");
+  const awareness = new Awareness(local);
+  const failures: string[] = [];
+  const provider = createYjsProvider({
+    doc: local,
+    awareness,
+    noteId: NOTE_ID,
+    appUrl: "http://localhost",
+    onFatal: (error) => failures.push(error.code),
+  });
+  try {
+    provider.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.message({
+      type: notebooksYjs.wsType.syncPush,
+      payload: {
+        noteId: NOTE_ID,
+        snapshot: true,
+        restoreRevision: "1",
+        updates: [{ cursor: "s6t.fixture.1", payload: encoding.toBase64(base) }],
+      },
+    });
+    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, cursor: "s6t.fixture.1", restoreRevision: "1" } });
+    const payload = encoding.toBase64(Y.encodeStateAsUpdate(old, vector));
+    socket.message({
+      type: notebooksYjs.wsType.syncPush,
+      payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.fixture.2", payload, restoreRevision: "0" }] },
+    });
+    expect(local.getText("codemirror").toString()).toBe("KEEP");
+    expect(failures).toEqual([]);
+    socket.message({
+      type: notebooksYjs.wsType.syncPush,
+      payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.fixture.3", payload, restoreRevision: "2" }] },
+    });
+    expect(local.getText("codemirror").toString()).toBe("KEEP");
+    expect(failures).toEqual(["RESYNC_REQUIRED"]);
+    provider.resume();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  } finally {
+    provider.dispose();
+    awareness.destroy();
+    original.destroy();
+    old.destroy();
+    local.destroy();
+  }
+});

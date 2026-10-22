@@ -22,6 +22,7 @@ type DocumentLog = {
     after: string | null;
     until: string;
     doc: Y.Doc;
+    restoreRevision?: string;
     signal?: AbortSignal;
   }): Promise<SharedTextContributor[]>;
 };
@@ -53,9 +54,10 @@ export const createDoc = (stored: SharedTextStoredState): Y.Doc => {
 export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, store: SharedTextStore<Saved, Context>) => {
   const write = async (
     docId: string,
-    options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal },
+    options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal; actionId?: string },
     update: (current: {
       text: string;
+      restoreRevision: string;
       contributors: SharedTextContributor[];
       state(): Uint8Array;
     }) => string | readonly SharedTextChange[] | Promise<string | readonly SharedTextChange[]>,
@@ -72,7 +74,15 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
     try {
       let contributors: SharedTextContributor[] = [];
       try {
-        if (target) contributors = await replay({ docId, after: stored.cursor, until: target, doc, signal: options.signal });
+        if (target)
+          contributors = await replay({
+            docId,
+            after: stored.cursor,
+            until: target,
+            doc,
+            restoreRevision: stored.restoreRevision,
+            signal: options.signal,
+          });
       } catch (error) {
         // A cancelled request is not a sync failure: it throws like every other abort before publication.
         options.signal?.throwIfAborted();
@@ -83,7 +93,7 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
         return { status: "syncFailed", error: new Error("Shared text has unresolved update dependencies") };
       const ytext = doc.getText(SHARED_TEXT_NAME);
       const text = ytext.toString();
-      const next = await update({ text, contributors, state: () => Y.encodeStateAsUpdate(doc) });
+      const next = await update({ text, restoreRevision: stored.restoreRevision, contributors, state: () => Y.encodeStateAsUpdate(doc) });
       let changes: readonly SharedTextChange[];
       if (maxLength === undefined) {
         if (typeof next !== "string") throw new TypeError("edit must return text");
@@ -106,12 +116,16 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
         }
       }, "cli-edit");
       const actor = options.actor;
+      const updateBytes = Y.encodeStateAsUpdate(doc, beforeEditState);
+      const receipt = options.actionId ? { actionId: options.actionId, update: updateBytes } : undefined;
       const published = await handle.publish({
         tenantId: docId,
         ...(maxLength !== undefined ? { expectedAfter: target } : {}),
         data: {
           kind: "sync",
-          payload: toBase64(Y.encodeStateAsUpdate(doc, beforeEditState)),
+          payload: toBase64(updateBytes),
+          ...(options.actionId ? { actionId: options.actionId } : {}),
+          ...(maxLength !== undefined ? { restoreRevision: stored.restoreRevision } : {}),
           originNodeId: sharedTextNodeId,
           originPeerId: null,
           ...(actor ? { actor } : {}),
@@ -120,7 +134,14 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
       let persistedDoc: Y.Doc | undefined;
       try {
         persistedDoc = createDoc(stored);
-        await replay({ docId, after: stored.cursor, until: published.cursor, doc: persistedDoc, signal: options.signal });
+        await replay({
+          docId,
+          after: stored.cursor,
+          until: published.cursor,
+          doc: persistedDoc,
+          restoreRevision: stored.restoreRevision,
+          signal: options.signal,
+        });
         const persistedText = persistedDoc.getText(SHARED_TEXT_NAME).toString();
         const credited = new Map(contributors.map((contributor) => [`${contributor.kind}:${contributor.id}`, contributor]));
         if (actor) credited.set(`${actor.kind}:${actor.id}`, { ...actor, lastContributedAt: new Date(requestedAt) });
@@ -137,9 +158,9 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
           },
           options.context,
         );
-        return { status: "edited", text: persistedText, cursor: published.cursor, saved };
+        return { status: "edited", text: persistedText, cursor: published.cursor, saved, ...(receipt ? { receipt } : {}) };
       } catch (error) {
-        return { status: "persistFailed", cursor: published.cursor, error };
+        return { status: "persistFailed", cursor: published.cursor, error, ...(receipt ? { receipt } : {}) };
       } finally {
         persistedDoc?.destroy();
       }
@@ -156,7 +177,7 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
         return { state: stored.state, text: stored.text, cursor: stored.cursor };
       const doc = createDoc(stored);
       try {
-        await replay({ docId, after: stored.cursor, until: latest, doc, signal: options.signal });
+        await replay({ docId, after: stored.cursor, until: latest, doc, restoreRevision: stored.restoreRevision, signal: options.signal });
         return { state: Y.encodeStateAsUpdate(doc), text: doc.getText(SHARED_TEXT_NAME).toString(), cursor: latest };
       } finally {
         doc.destroy();
@@ -172,9 +193,10 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
     /** Disjoint original-source changes, accepted only while the captured tenant head is unchanged. */
     async change(
       docId: string,
-      options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal; maxLength: number },
+      options: { actor: SharedTextActor | null; context?: Context; signal?: AbortSignal; maxLength: number; actionId?: string },
       update: (current: {
         text: string;
+        restoreRevision: string;
         contributors: SharedTextContributor[];
         state(): Uint8Array;
       }) => readonly SharedTextChange[] | Promise<readonly SharedTextChange[]>,

@@ -179,3 +179,7 @@ on screen read-only. The bar says storage is full and whether changes are saved,
 and offers **Copy text** and **Reload**. Changes typed during the outage are
 resent on each retry, so they are saved if the broker accepts updates again
 within that minute. After the retries stop, they stay only in the open tab.
+
+## Versioned server edits
+
+Shared-text table actions and automatic repair include a snapshot restore revision. Update every log reader and WebSocket transport before enabling them. Older readers do not filter these events by revision. Notebook table activation also requires the merge and browser gates; the optional platform repair planner alone does not enable editable Notebook tables.

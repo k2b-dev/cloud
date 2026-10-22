@@ -372,7 +372,7 @@ test("complete columns preserves every cell and surrounding source", () => {
 
 test("repair settles surviving peer text after an appended row is undone, without rewriting any source", () => {
   const source = "Before\n\n| A | B |\n| --- | --- |\n| one | two |peer😀\\\n\nAfter";
-  const changes = T.repairTables(source);
+  const changes = T.repairTables(source, 2_097_152);
   expect(changes.every((change) => change.from === change.to)).toBe(true);
   const result = T.applyChanges(source, changes);
   const table = T.findTables(result)[0]!;
@@ -381,7 +381,7 @@ test("repair settles surviving peer text after an appended row is undone, withou
   expect(result).toContain("| one | two |peer😀\\ |");
   expect(result.startsWith("Before\n\n")).toBe(true);
   expect(result.endsWith("\n\nAfter")).toBe(true);
-  expect(T.repairTables(result)).toEqual([]);
+  expect(T.repairTables(result, 2_097_152)).toEqual([]);
 });
 
 test("repair leaves valid omitted pipes, formulas, fenced code, quotes and unrecognized damage unchanged", () => {
@@ -392,5 +392,16 @@ test("repair leaves valid omitted pipes, formulas, fenced code, quotes and unrec
     "    | A | B |\n    | --- | --- |\n    | x | y | extra |",
     "| A | B |\n| --- | BROKEN --- |\n| keep | all |",
   ])
-    expect(T.repairTables(source)).toEqual([]);
+    expect(T.repairTables(source, 2_097_152)).toEqual([]);
+});
+
+test("repair counts quadratic grid padding before allocation and leaves over-budget damage visible", () => {
+  const source = "| A | B |\n| --- | --- |\n" + "|x".repeat(100) + "|\n" + "x\n".repeat(100);
+  expect(source.length).toBeLessThan(4096);
+  expect(T.repairTables(source, 4096)).toEqual([]);
+  const changes = T.repairTables(source, 100_000);
+  const expanded = T.applyChanges(source, changes);
+  expect(expanded.length).toBeGreaterThan(4096);
+  expect(T.repairTables(source, expanded.length)).toEqual(changes);
+  expect(T.repairTables(source, expanded.length - 1)).toEqual([]);
 });

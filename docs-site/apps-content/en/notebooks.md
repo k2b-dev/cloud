@@ -508,3 +508,19 @@ A refused target returns `NOTEBOOK_SNAPSHOT_TARGET_BLOCKED` (HTTP 400) with:
 public storage unless an operator allows this target." Existing configurations
 and credentials stay stored; uploads fail with this reason until the operator
 allows the target. A notebook admin can always turn snapshots off.
+
+### Apply a table action through the API
+
+`POST /api/notebooks/:id/notes/:noteId/table-action` accepts a captured table
+intent, the current restore revision and a UUID `actionId`. It requires write
+access to the note's notebook. Locked notes, incomplete history and removed
+targets reject the action. Capture anchors synchronously, then wait for all local
+updates to be confirmed before sending the request.
+
+The response identifies the published cursor and action receipt; current text
+arrives through the live stream. `actionId` correlates local undo and does not
+deduplicate requests. On failure, `accepted: false` means the action was rejected,
+`accepted: true` means publication succeeded but saving failed, and
+`accepted: null` means the outcome is unknown. Preserve accepted receipts and
+synchronize instead of automatically submitting the action again. The API does
+not itself enable the formatted table editor.

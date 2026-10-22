@@ -378,15 +378,27 @@ export const applyChanges = (doc: string, changes: Change[]): string => {
  * Unrecognizable tables remain raw text for the application's check state;
  * code, quotes and lists are not repair candidates.
  */
-export const repairTables = (doc: string): Change[] =>
-  findTables(doc).flatMap((table) => {
-    const columns = width(table);
-    if (table.lines.every((line) => line.cells.length === columns)) return [];
-    return table.lines.flatMap((line, row) => {
+export const repairTables = (doc: string, maxLength: number): Change[] => {
+  if (!Number.isSafeInteger(maxLength) || maxLength < 0) throw new RangeError("Invalid repair text budget");
+  const candidates = findTables(doc)
+    .map((table) => ({ table, columns: width(table) }))
+    .filter(({ table, columns }) => table.lines.some((line) => line.cells.length !== columns));
+  let length = doc.length;
+  // A wide row followed by many short rows can require quadratic padding.
+  // Count first; leave the damage visible if the document budget cannot fit it.
+  for (const { table, columns } of candidates) {
+    for (const [row, line] of table.lines.entries()) {
+      const count = columns - line.cells.length;
+      length += count * (row === 1 ? 6 : 4) + (line.trailingPipe ? 0 : 2);
+      if (length > maxLength) return [];
+    }
+  }
+  return candidates.flatMap(({ table, columns }) =>
+    table.lines.flatMap((line, row) => {
       const padding = appendCells(line, columns - line.cells.length, row === 1);
       if (padding.length) return padding;
-      // A peer's surviving text after undoing an appended row can lie after
-      // the previous row's closing pipe. Keep that text as an explicit cell.
+      // Surviving peer text after append undo becomes an explicit extra cell.
       return line.trailingPipe ? [] : [{ from: line.to, to: line.to, insert: " |" }];
-    });
-  });
+    }),
+  );
+};

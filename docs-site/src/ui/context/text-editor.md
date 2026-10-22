@@ -110,4 +110,4 @@ dismissed the preserved input, so another rejected edit cannot overwrite it.
 UI locale. Direct engine consumers can supply `textEditorFormatLabels.of({
 link, column })` through `extensions` for localized insertion text. Render an identical locale on the server and in the browser.
 
-`repairTables(text)` provides insertion-only padding for recognized ragged GFM tables. Run it through the owning application's ordered document writer. It leaves valid tables, fenced code, quotes and unrecognized damage unchanged; it does not authorize an action or resolve every form of Markdown damage.
+`repairTables(text, maxLength)` provides insertion-only padding for recognized ragged GFM tables. It counts the required padding before allocating it and returns no changes if it cannot fit the text budget; the damage stays visible. Run it through the owning application's ordered document writer. It leaves valid tables, fenced code, quotes and unrecognized damage unchanged; it does not authorize an action or resolve every form of Markdown damage.

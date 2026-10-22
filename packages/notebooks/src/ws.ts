@@ -155,6 +155,8 @@ type PushUpdate = {
   cursor: string | null;
   payload: string;
   originPeerId: string | null;
+  actionId?: string;
+  restoreRevision?: string;
 };
 
 const isWritablePermission = (permission: "none" | "read" | "write" | "admin"): boolean => permission === "write" || permission === "admin";
@@ -710,6 +712,8 @@ const toPushUpdate = (event: TopicEvent<YjsTopicEvent> | TopicLiveEvent<YjsTopic
   cursor: "cursor" in event ? event.cursor : null,
   payload: event.data.payload,
   originPeerId: event.data.originPeerId,
+  ...(event.data.actionId ? { actionId: event.data.actionId } : {}),
+  ...(event.data.restoreRevision !== undefined ? { restoreRevision: event.data.restoreRevision } : {}),
 });
 
 /**
@@ -749,7 +753,7 @@ const startLiveStream = (
     storedBase: boolean;
   },
   // Fired only after deterministic replay to the captured head.
-  onCaughtUp: () => void,
+  onCaughtUp: (cursor: string) => void,
 ) => {
   stopLiveStream(ctx);
   const abort = new AbortController();
@@ -818,7 +822,7 @@ const startLiveStream = (
         }
         if (abort.signal.aborted || ctx.streamAbort !== abort) return;
         flush();
-        onCaughtUp();
+        onCaughtUp(head ?? replay.after ?? noteTopic.cursorAt(0));
         yield* noteTopic
           .hub({ tenantId: noteId })
           .subscribe({ after: head ?? replay.after ?? noteTopic.cursorAt(0), signal: abort.signal });
@@ -1001,12 +1005,14 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
 
   const clientCursor = payload.fromCursor && notebooksYjs.streamCursorPattern.test(payload.fromCursor) ? payload.fromCursor : null;
   let replayCursor = clientCursor;
+  const snapshot = await notebooksService.note.getAnchoredYjsState({ noteId: dbNoteId });
   if (!clientCursor) {
-    const snapshot = await notebooksService.note.getAnchoredYjsState({ noteId: dbNoteId });
     if (snapshot?.yjsState) {
       send(ctx.socket, WS_TYPE.syncPush, {
         noteId: payload.noteId,
         historyIncomplete: snapshot.historyIncomplete,
+        snapshot: true,
+        restoreRevision: snapshot.restoreRevision,
         updates: [
           {
             cursor: snapshot.streamCursor,
@@ -1022,8 +1028,8 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
   // `replayReady` is deferred until retained history up to the captured head
   // has been delivered (see `startLiveStream`). Sending it earlier would let
   // the client publish edits while catch-up is still streaming.
-  startLiveStream(ctx, dbNoteId, payload.noteId, { after: replayCursor, storedBase: !clientCursor }, () => {
-    send(ctx.socket, WS_TYPE.replayReady, { noteId: payload.noteId });
+  startLiveStream(ctx, dbNoteId, payload.noteId, { after: replayCursor, storedBase: !clientCursor }, (cursor) => {
+    send(ctx.socket, WS_TYPE.replayReady, { noteId: payload.noteId, cursor, restoreRevision: snapshot?.restoreRevision ?? null });
   });
   startAccessRefresh(ctx);
   if (ctx.noteNotebookId) startNoteAccessWatch(ctx, ctx.noteNotebookId);

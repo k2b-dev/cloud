@@ -12,4 +12,11 @@ export {
 export { sharedText } from "./log";
 export type { SharedTextSnapshotBacklog, SharedTextSnapshotRepair, SharedTextSnapshotRequest, SharedTextSnapshotStore } from "./snapshots";
 export { sharedTextSnapshotJobConfig } from "./snapshots";
+export {
+  captureTableAction,
+  planTableAction,
+  type TableActionIntent,
+  TableActionLimitError,
+  TableActionRejectedError,
+} from "./table-actions";
 export * from "./types";
