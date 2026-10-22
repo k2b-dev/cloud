@@ -879,7 +879,8 @@ export default function AssistantWorkspace(props: Props) {
         if (!(await saveComposer(key, key))) return;
       }
       for (const key of [...rejectedCreations()]) {
-        if (!(await createConversation(false, key.startsWith("project:") ? key.slice(8) : undefined, false))) return;
+        const projectId = key.startsWith("project:") ? key.slice(8) : undefined;
+        if (!(await createConversation(false, projectId, !projectId && composerSessionKey() === key))) return;
       }
       for (const request of [...creationRequests.values()]) {
         if (!(await createConversation(false, request.projectId, false))) return;
