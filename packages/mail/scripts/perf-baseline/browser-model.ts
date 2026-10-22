@@ -694,9 +694,9 @@ export const bottleneckCandidateSchema = z.object({
   /** The complete source line, with surrounding whitespace removed. */
   anchor: z
     .string()
+    .refine((value) => !/[\r\n]/.test(value), "Anchor must be one non-empty source line")
     .trim()
-    .min(1)
-    .refine((value) => !/[\r\n]/.test(value), "Anchor must be one non-empty source line"),
+    .min(1),
   /** A key of timeMetrics(result); its value from this run ranks the candidate. */
   metric: z.string().min(1),
   evidence: z.string().min(1),
