@@ -4,6 +4,8 @@ import { z } from "zod";
 import {
   type AdminMailFilter,
   type AdminMailRecord,
+  type MailContent,
+  type MailContentContext,
   type MailFilter,
   type MailMessage,
   type MailPage,
@@ -17,7 +19,7 @@ import { audit } from "../audit";
 import { escapeLikePattern, parsePgJsonValue, toPgTextArray, toPgUuidArray } from "../postgres";
 import type { UploadedAttachments } from "./attachments";
 import { mailActorSnapshot, mailMessageId } from "./message";
-import { type MailAuditContext, OutgoingMailError } from "./store";
+import { type MailAuditContext, mailAppIdSha256, OutgoingMailError } from "./store";
 
 export type MessageRow = {
   id: string;
@@ -433,7 +435,84 @@ const content = async (id: string, context: MailAuditContext) =>
           headers: z.record(z.string(), z.string()).nullable().parse(parsePgJsonValue(row.headers)),
         };
   });
-export const outgoingMailMessages = { read, metadata, known, accept, list, content };
+/** One budget for database work, from transaction start through audit. Pool acquisition and commit are outside it. */
+const CONTENT_BUDGET_MS = 5_000;
+const appContent = async (id: string, readingAppId: string, canReadOtherApps: boolean, context: MailContentContext): Promise<MailContent> =>
+  sql.begin(async (tx) => {
+    const deadline = Date.now() + CONTENT_BUDGET_MS;
+    const limit = async () => {
+      const remaining = Math.floor(deadline - Date.now());
+      if (remaining < 1) throw new Error("Outgoing mail content DB budget exhausted.");
+      await tx`SELECT set_config('statement_timeout', ${`${remaining}ms`}, true)`;
+    };
+    await limit();
+    // Writers take this same key exclusively. Check grants in a fresh statement after acquiring it.
+    await tx`SELECT pg_advisory_xact_lock_shared(hashtextextended('outgoing_mail.policy', 0))`;
+    await limit();
+    const [row] = await tx<{ app_id: string; content_purged_at: Date | string | null; level: string | null }[]>`
+      SELECT m.app_id, m.content_purged_at, g.level FROM outgoing_mail.messages m
+      LEFT JOIN outgoing_mail.app_log_access g ON g.app_id = ${readingAppId} AND g.source_app_id = m.app_id
+      WHERE m.id = ${id}::uuid AND (m.app_id = ${readingAppId} OR
+        (${canReadOtherApps} AND ${readingAppId} <> 'core' AND m.app_id <> 'core' AND g.app_id IS NOT NULL))
+      FOR SHARE OF m`;
+    if (!row) throw new OutgoingMailError("message_unknown", "Outgoing mail message does not exist.", 404);
+    if (row.app_id !== readingAppId && row.level !== "content")
+      throw new OutgoingMailError("app_not_allowed", "This application may not read this mail content.", 403);
+    let result: MailContent;
+    if (row.content_purged_at !== null) result = { purged: true, contentPurgedAt: date(row.content_purged_at) };
+    else {
+      await limit();
+      // No body fetch before authorization. Never fetch HTML, headers, object refs or attachment digests.
+      const [body] = await tx<{ text_body: string | null; attachment_names: unknown }[]>`
+        SELECT text_body, ARRAY(SELECT item->>'filename' FROM jsonb_array_elements(attachments) AS item) AS attachment_names
+        FROM outgoing_mail.messages WHERE id = ${id}::uuid`;
+      if (!body) throw new Error("Locked outgoing mail disappeared.");
+      result = { purged: false, text: body.text_body, attachmentNames: z.array(z.string()).parse(body.attachment_names) };
+    }
+    const actor = context.actor;
+    const user = actor.kind === "user" ? actor.user : undefined;
+    const provenance = actor.delegation;
+    await limit();
+    await audit.record(
+      {
+        action: "outgoing_mail.message.read",
+        outcome: "allowed",
+        target: { type: "outgoing_mail_message", id },
+        actor: user ? { userId: user.id, uid: user.uid, provider: user.provider, roles: user.roles } : undefined,
+        requestId: context.requestId ?? provenance?.requestId,
+        metadata: {
+          appId: row.app_id,
+          appIdSha256: mailAppIdSha256(row.app_id),
+          readingAppId,
+          readingAppIdSha256: mailAppIdSha256(readingAppId),
+          actorKind: actor.kind,
+          ...(actor.kind === "service_account"
+            ? {
+                serviceAccountId: actor.serviceAccount.id,
+                ...(actor.delegatedUser ? { delegatedUserId: actor.delegatedUser.id } : {}),
+              }
+            : {}),
+          ...(provenance
+            ? {
+                delegation: {
+                  kind: provenance.kind,
+                  callingAppId: provenance.callingAppId,
+                  credentialKind: provenance.credentialKind,
+                  invocationId: provenance.invocationId,
+                  mandateId: provenance.mandateId,
+                  mandateRevision: provenance.mandateRevision,
+                  workloadType: provenance.workloadType,
+                  workloadId: provenance.workloadId,
+                },
+              }
+            : {}),
+        },
+      },
+      tx,
+    );
+    return result;
+  });
+export const outgoingMailMessages = { read, metadata, known, accept, list, content, appContent };
 
 /** Serialize updates to preserve failures from overlapping reports and replicas. */
 export const applyOutgoingMailBounce = async (

@@ -1,5 +1,6 @@
 import type { CDPSession, Page, Request } from "playwright";
 import { validatePage } from "../../../../scripts/perf-baseline/model";
+import { monotonicMs } from "./measure";
 
 type ByteKey = "htmlBytes" | "jsBytes" | "cssBytes";
 const byteKey = (type: string, url: string, target: string): ByteKey | null => {
@@ -41,7 +42,7 @@ export async function boundedSettlement<T>(jobs: Promise<T>[], timeoutMs: number
 /** Freeze starts at the observed end state, then settle that exact set before reading bytes or responses. */
 export function recordPageChangeNetwork(page: Page, target: string, cdp?: CDPSession) {
   let collecting = true;
-  const beganAt = Date.now();
+  const beganAt = monotonicMs();
   let endedAt = Infinity;
   const requests = new Map<Request, { key: ByteKey; done: Promise<string | null>; finish: (error: string | null) => void }>();
   const transfers = new Map<string, { key: ByteKey; url: string; done: Promise<void>; finish: () => void; bytes: number }>();
@@ -94,7 +95,7 @@ export function recordPageChangeNetwork(page: Page, target: string, cdp?: CDPSes
   return {
     providerDocuments,
     async finish(timeoutMs = 10_000) {
-      endedAt = Date.now();
+      endedAt = monotonicMs();
       collecting = false;
       const frozen = [...requests];
       const excluded = new Set<Request>();

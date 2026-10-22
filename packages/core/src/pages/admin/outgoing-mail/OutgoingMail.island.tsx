@@ -8,6 +8,7 @@ import {
   confirmDiscardIfDirty,
   DataTable,
   type DataTableColumn,
+  Disclosure,
   Dropdown,
   dialogCore,
   Format,
@@ -18,6 +19,7 @@ import {
   panelDialogOptions,
   prompts,
   SegmentedControl,
+  Select,
   StatusBadge,
   Switch,
   TextInput,
@@ -85,7 +87,14 @@ const accessLabel = (app: AdminMailApp, profiles: readonly AdminMailProfile[], t
 /** Names the other apps whose send log this app may read; its own mail is always readable. */
 const logLabel = (app: AdminMailApp, apps: readonly AdminMailApp[], t: Messages): string =>
   app.logApps.length
-    ? t.logAlso({ names: app.logApps.map((id) => apps.find((entry) => entry.appId === id)?.name ?? id).join(", ") })
+    ? t.logAlso({
+        names: app.logApps
+          .map(
+            (id) =>
+              `${apps.find((entry) => entry.appId === id)?.name ?? id} (${app.logContentApps?.includes(id) ? t.logContent : t.logMetadata})`,
+          )
+          .join(", "),
+      })
     : t.logOwnOnly;
 
 type BounceError = NonNullable<NonNullable<AdminMailProfile["bounces"]>["error"]>;
@@ -658,10 +667,11 @@ export function AccessDialog(props: { app: AdminMailApp; profiles: readonly Admi
   );
 }
 
-/** Exported for the layout test: toggling apps never changes the dialog's height. */
+/** Exported for the layout test: changing access levels keeps the dialog height. */
 export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly AdminMailApp[]; close: () => void; onSaved: () => void }) {
   const t = messages();
   const [selected, setSelected] = createSignal<string[]>(props.app.logApps);
+  const [content, setContent] = createSignal<string[]>(props.app.logContentApps ?? []);
   // Core's system email is never readable by apps; grants for apps that went offline stay visible.
   const candidates = () =>
     [
@@ -673,7 +683,7 @@ export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly Admin
   const save = mutation.create({
     mutation: async (_: void, { abortSignal }) => {
       const response = await api.apps[":appId"]["log-access"].$put(
-        { param: { appId: props.app.appId }, json: { apps: selected() } },
+        { param: { appId: props.app.appId }, json: { apps: selected(), contentApps: content() } },
         { init: { signal: abortSignal } },
       );
       if (!response.ok) throw await failure(response, t().logAccessFailed, t());
@@ -684,8 +694,10 @@ export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly Admin
     },
   });
   onCleanup(() => save.abort());
-  const toggle = (appId: string, checked: boolean) =>
-    setSelected((current) => (checked ? [...new Set([...current, appId])] : current.filter((entry) => entry !== appId)));
+  const choose = (appId: string, level: string) => {
+    setSelected((current) => (level === "none" ? current.filter((id) => id !== appId) : [...new Set([...current, appId])]));
+    setContent((current) => (level === "content" ? [...new Set([...current, appId])] : current.filter((id) => id !== appId)));
+  };
   return (
     <form
       class="flex flex-col gap-4"
@@ -698,23 +710,41 @@ export function LogAccessDialog(props: { app: AdminMailApp; apps: readonly Admin
         <NoticeCard tone="warning" title={t().logAccessNotDeclared} />
       </Show>
       <p class="text-sm text-secondary">{t().logAccessHint}</p>
+      <Disclosure summary={t().logAccessDetails} surface="plain">
+        <div class="flex flex-col gap-2 text-sm text-secondary">
+          <p>{t().logMetadataHint}</p>
+          <p>{t().logContentHint}</p>
+        </div>
+      </Disclosure>
       <Show when={candidates().length} fallback={<p class="text-sm text-dimmed">{t().noOtherApps}</p>}>
-        <div class="flex flex-col gap-2" role="group" aria-label={t().apps}>
+        <div class="flex flex-col gap-4" role="group" aria-label={t().apps}>
           <For each={candidates()}>
             {(app) => (
-              <CheckboxCard
-                variant="input"
+              <Select
                 label={app.name}
-                description={app.registered ? app.appId : `${app.appId} · ${t().notRegistered}`}
-                value={selected().includes(app.appId)}
-                onValueChange={(checked) => toggle(app.appId, checked)}
+                description={
+                  !app.registered
+                    ? t().notRegistered
+                    : candidates().some((other) => other.appId !== app.appId && other.name === app.name)
+                      ? app.appId
+                      : undefined
+                }
+                value={content().includes(app.appId) ? "content" : selected().includes(app.appId) ? "metadata" : "none"}
+                onValueChange={(level) => choose(app.appId, level ?? "none")}
+                options={[
+                  { value: "none", label: t().logNoAccess },
+                  { value: "metadata", label: t().logMetadata },
+                  { value: "content", label: t().logContent },
+                ]}
                 disabled={save.loading()}
               />
             )}
           </For>
         </div>
       </Show>
-      <Show when={save.error()}>{(error) => <NoticeCard tone="danger" title={t().logAccessFailed} detail={error().message} />}</Show>
+      <Show when={save.error()}>
+        {(error) => <NoticeCard role="alert" tone="danger" title={t().logAccessFailed} detail={error().message} />}
+      </Show>
       <div class="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={() => props.close()} disabled={save.loading()}>
           {t().cancel}
