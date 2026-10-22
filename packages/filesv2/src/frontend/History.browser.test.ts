@@ -88,8 +88,16 @@ afterAll(async () => {
   await browser?.close();
   rmSync(temporary, { recursive: true, force: true });
 });
-async function open(width: number, theme: "light" | "dark", search = "", lang = "de", mountInitially = true, inspector = false) {
-  const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: "reduce" });
+async function open(
+  width: number,
+  theme: "light" | "dark",
+  search = "",
+  lang = "de",
+  mountInitially = true,
+  inspector = false,
+  touch = false,
+) {
+  const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: "reduce", hasTouch: touch });
   const tab = await context.newPage();
   await tab.clock.setFixedTime(new Date(historyNow));
   const errors: string[] = [];
@@ -179,55 +187,66 @@ async function metrics(tab: Page) {
     };
   });
 }
-test("file inspector follows its app container width without resizing the viewport", async () => {
-  const { context, tab, errors } = await open(1200, "light", "", "en", true, true);
-  try {
-    const host = tab.locator("#root");
-    const preview = tab.locator(".filesv2-inspector-preview");
-    const modified = tab.locator(".filesv2-inspector-info .k2b-description-list__item").filter({ hasText: "Modified" });
-    const versions = tab.locator(".filesv2-inspector-versions");
-    const count = tab
-      .locator(".filesv2-inspector-info")
-      .getByRole("button", { name: "View versions (2)", exact: true, includeHidden: true });
-    await count.waitFor({ state: "visible" });
-    await preview.waitFor({ state: "attached" });
-    await versions.waitFor({ state: "attached" });
-    expect(await host.evaluate((element) => getComputedStyle(element).containerName)).toBe("k2b-app-area");
-    expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(700);
-    expect(await tab.evaluate(() => innerWidth)).toBe(1200);
-    expect(await preview.isVisible()).toBe(false);
-    expect(await versions.isVisible()).toBe(false);
-    expect(await versions.getAttribute("data-open")).toBeNull();
-    expect(await count.innerText()).toBe("2");
-    expect(await modified.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30);
-    expect(await count.getAttribute("aria-expanded")).toBe("false");
+for (const touch of [false, true])
+  test(`file inspector follows its app container width with ${touch ? "touch" : "mouse"} input`, async () => {
+    const { context, tab, errors } = await open(1200, "light", "", "en", true, true, touch);
+    try {
+      const host = tab.locator("#root");
+      const preview = tab.locator(".filesv2-inspector-preview");
+      const modified = tab.locator(".filesv2-inspector-info .k2b-description-list__item").filter({ hasText: "Modified" });
+      const versions = tab.locator(".filesv2-inspector-versions");
+      const count = tab
+        .locator(".filesv2-inspector-info")
+        .getByRole("button", { name: "View versions (2)", exact: true, includeHidden: true });
+      await count.waitFor({ state: "visible" });
+      await preview.waitFor({ state: "attached" });
+      await versions.waitFor({ state: "attached" });
+      expect(await host.evaluate((element) => getComputedStyle(element).containerName)).toBe("k2b-app-area");
+      expect(await tab.evaluate(() => matchMedia("(any-pointer: coarse)").matches)).toBe(touch);
+      expect(await tab.locator(".filesv2-inspector .k2b-detail-panel__body").evaluate((element) => getComputedStyle(element).rowGap)).toBe(
+        "16px",
+      );
+      expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(700);
+      expect(await tab.evaluate(() => innerWidth)).toBe(1200);
+      expect(await preview.isVisible()).toBe(false);
+      expect(await versions.isVisible()).toBe(false);
+      expect(await versions.getAttribute("data-open")).toBeNull();
+      expect(await count.innerText()).toBe("2");
+      expect(await modified.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30);
+      expect(await count.getAttribute("aria-expanded")).toBe("false");
 
-    await count.click();
-    await versions.waitFor({ state: "visible" });
-    expect(await count.getAttribute("aria-expanded")).toBe("true");
-    expect(await versions.getByText("Initial draft · Mia Weber", { exact: true }).isVisible()).toBe(true);
-    expect(await preview.isVisible()).toBe(false);
-    await count.click();
-    await versions.waitFor({ state: "hidden" });
-    expect(await versions.getAttribute("data-open")).toBeNull();
+      await count.click();
+      await versions.waitFor({ state: "visible" });
+      expect(await count.getAttribute("aria-expanded")).toBe("true");
+      const rowHeight = await versions
+        .locator("button.k2b-detail-panel__action")
+        .first()
+        .evaluate((element) => element.getBoundingClientRect().height);
+      if (touch) expect(rowHeight).toBeGreaterThanOrEqual(44);
+      else expect(rowHeight).toBeLessThanOrEqual(32);
+      expect(await versions.getByText("Initial draft · Mia Weber", { exact: true }).isVisible()).toBe(true);
+      expect(await preview.isVisible()).toBe(false);
+      await count.click();
+      await versions.waitFor({ state: "hidden" });
+      expect(await versions.getAttribute("data-open")).toBeNull();
 
-    // Only the host grows: a viewport media query would leave the initial compact assertions failing.
-    await host.evaluate((element) => {
-      element.style.width = "900px";
-    });
-    await preview.waitFor({ state: "visible" });
-    await versions.waitFor({ state: "visible" });
-    await count.waitFor({ state: "hidden" });
-    expect(await versions.getByText("Initial draft · Mia Weber", { exact: true }).isVisible()).toBe(true);
-    expect(await versions.getAttribute("data-open")).toBeNull();
-    expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(900);
-    expect(await modified.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30);
-    expect(await tab.evaluate(() => innerWidth)).toBe(1200);
-    expect(errors).toEqual([]);
-  } finally {
-    await context.close();
-  }
-}, 30_000);
+      // Only the host grows: a viewport media query would leave the initial compact assertions failing.
+      await host.evaluate((element) => {
+        element.style.width = "900px";
+      });
+      await preview.waitFor({ state: "visible" });
+      await versions.waitFor({ state: "visible" });
+      await count.waitFor({ state: "hidden" });
+      expect(await versions.getByText("Initial draft · Mia Weber", { exact: true }).isVisible()).toBe(true);
+      expect(await versions.getAttribute("data-open")).toBeNull();
+      expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(900);
+      expect(await modified.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30);
+      expect(await tab.evaluate(() => innerWidth)).toBe(1200);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
 for (const width of [1440, 768, 390])
   for (const theme of ["light", "dark"] as const)
     test(`history and vanished folder fit ${width}px ${theme}`, async () => {
