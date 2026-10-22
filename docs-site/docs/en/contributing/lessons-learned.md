@@ -950,7 +950,7 @@ convention still needs a check or a test.
 
 ### Browser print received offline PDF image slots
 
-- **What happened:** Printing a map note showed internal placeholder text instead of ordinary attachment images.
+- **What happened:** Printing a map note showed internal image markers instead of ordinary attachment images.
 - **Root cause:** Browser Print used the offline PDF renderer mode without the server image preparation step.
 - **Error class:** A rendering mode crossed from server export to browser preview without resolving its assets.
 - **Guard:** The Book renderer explicitly retains authorized browser image URLs for Print and preview. Image-form tests preserve the offline default; browser tests verify decoded map and attachment images, cancellation during decoding, and temporary-document cleanup.
@@ -978,6 +978,13 @@ convention still needs a check or a test.
 - **Root cause:** Replacement read asynchronous state before locking the rows that completion would update. PostgreSQL transaction-start timestamps could also backdate a claim after waiting for a lock.
 - **Error class:** Replacing child rows loses asynchronous state.
 - **Guard:** Replacement, claim, completion and release lock the parent contact before reading or writing address state; provider calls run outside these transactions. Claims use statement time. `address-location.integration.test.ts` uses deterministic barriers before child-row locking and checks success, failure and lock-wait timestamps.
+
+### Measure map documents and their export frame
+
+- **What happened:** Saved-map notes used the ordinary book type scale, and the shared workspace-dialog width overrode the intended PDF preview width.
+- **Root cause:** Application composition inherited larger typography and a more specific shared frame selector; the export sheet also needed to grow with long content.
+- **Error class:** Shared presentation rules override a scoped document composition.
+- **Guard:** Notebook map browser tests measure typography, spacing, map/list dimensions, the 640px export frame, and full white-sheet containment on phones. They also check editor map widgets retain zero padding and ordinary notes retain their existing typography and export controls.
 
 ## Add a lesson
 

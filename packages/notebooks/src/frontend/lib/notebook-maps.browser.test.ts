@@ -27,7 +27,10 @@ async function open(query = "", width = 1440) {
   const context = await browser.newContext({ viewport: { width, height: 1000 } });
   const page = await context.newPage();
   await page.goto(`${server.url}${query}`);
-  await page.locator("figure.notebook-map[data-map-enhanced]").first().waitFor();
+  await page
+    .locator(query.includes("pdf=") ? ".notebook-map-export__preview" : "figure.notebook-map[data-map-enhanced]")
+    .first()
+    .waitFor();
   return { context, page };
 }
 
@@ -122,8 +125,8 @@ test("route calculation saves the full returned route; stale writes stay visible
   }
 });
 
-test("phone, tablet and dark keep controls and linked rows within the document", async () => {
-  for (const width of [390, 820, 1440]) {
+for (const width of [390, 820, 1440]) {
+  test(`phone, tablet and dark keep controls and linked rows within the document (${width}px)`, async () => {
     const { context, page } = await open("", width);
     try {
       await page.locator("html").evaluate((root) => root.classList.add("dark"));
@@ -146,8 +149,57 @@ test("phone, tablet and dark keep controls and linked rows within the document",
     } finally {
       await context.close();
     }
-  }
-});
+  });
+}
+
+for (const width of [1440, 820, 390]) {
+  test(`map documents match the approved compact composition without changing ordinary note typography (${width}px)`, async () => {
+    const { context, page } = await open("", width);
+    try {
+      const measured = await page.locator("#notebook-book-content").evaluate((article) => {
+        const title = article.querySelector("h1")!;
+        const paragraph = article.querySelector("p")!;
+        const heading = article.querySelector("h2")!;
+        const maps = [...article.querySelectorAll("figure.notebook-map")];
+        const firstMap = maps[0]!;
+        const titleBox = title.getBoundingClientRect();
+        return {
+          type: [title, heading, paragraph].map((node) => getComputedStyle(node).fontSize),
+          top: titleBox.top - article.getBoundingClientRect().top,
+          titleToBody: paragraph.getBoundingClientRect().top - titleBox.bottom,
+          bodyToHeading: heading.getBoundingClientRect().top - paragraph.getBoundingClientRect().bottom,
+          headingToMap: firstMap.getBoundingClientRect().top - heading.getBoundingClientRect().bottom,
+          maps: maps.map((map) => {
+            const box = map.querySelector(".k2b-map-view")!.getBoundingClientRect();
+            return { width: box.width, height: box.height };
+          }),
+          searchHeight: firstMap.querySelector(".notebook-map__search")!.getBoundingClientRect().height,
+          list: firstMap.querySelector(".notebook-map__pins")!.getBoundingClientRect().height,
+          rows: [...firstMap.querySelectorAll(".notebook-map__pin")].map((row) => row.getBoundingClientRect().height),
+        };
+      });
+      expect(measured.type).toEqual(["28px", "19px", "14px"]);
+      expect(measured.top).toBe(width === 390 ? 12 : 14);
+      expect(measured.titleToBody).toBe(16);
+      expect(measured.bodyToHeading).toBe(28);
+      expect(measured.headingToMap).toBe(14);
+      expect(measured.maps).toEqual([
+        { width: width === 390 ? 358 : 696, height: width === 390 ? 230 : 320 },
+        { width: width === 390 ? 358 : 696, height: width === 390 ? 200 : 240 },
+      ]);
+      expect(measured.searchHeight).toBe(38);
+      expect(measured.list).toBe(176);
+      expect(measured.rows).toEqual([40, 40, 40, 40]);
+      const ordinary = await page.locator("#notebook-book-content").evaluate((article) => {
+        article.querySelectorAll("figure.notebook-map").forEach((map) => map.remove());
+        return ["h1", "h2", "p"].map((selector) => getComputedStyle(article.querySelector(selector)!).fontSize);
+      });
+      expect(ordinary).toEqual(["30px", "24px", "16px"]);
+    } finally {
+      await context.close();
+    }
+  });
+}
 
 test("style failure keeps saved pins, exposes retry and recovers in place", async () => {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -210,6 +262,9 @@ test("the actual editor writes only the selected duplicate block to Yjs and supp
   const { context, page } = await open("?editor=1&theme=dark");
   try {
     await page.locator("figure[data-map-enhanced]").nth(1).waitFor();
+    expect(
+      await page.locator(".cm-query-block-preview").evaluateAll((previews) => previews.map((preview) => getComputedStyle(preview).padding)),
+    ).toEqual(["0px", "0px"]);
     await page.evaluate(() => window.notebookEditorFixture.typePrefix());
     await page.waitForFunction(() => document.querySelectorAll(".cm-query-block-widget figure[data-map-enhanced]").length === 2);
     const before = await page.evaluate(() => window.notebookEditorFixture.markdown());
@@ -283,7 +338,23 @@ test("PDF preview waits for complete map PNGs, preserves sources and uploads ima
     await preview.locator("img.notebook-map__image").nth(1).waitFor();
     expect(await preview.locator("img.notebook-map__image").count()).toBe(2);
     expect(await preview.innerText()).toContain("OpenMapTiles");
-    const download = page.getByRole("button", { name: "PDF herunterladen", exact: true }).last();
+    const frame = page.locator(".notebook-map-preview-frame");
+    expect((await frame.boundingBox())!.width).toBe(640);
+    const header = frame.locator(".k2b-panel-dialog__header");
+    expect(await header.innerText()).toContain("PDF-Vorschau");
+    const guidanceBox = await frame.locator(".notebook-map-export__guidance").boundingBox();
+    const headerBox = await header.boundingBox();
+    expect(guidanceBox!.y - headerBox!.y - headerBox!.height).toBe(14);
+    expect(await header.getByRole("button", { name: "Drucken", exact: true }).isEnabled()).toBe(true);
+    expect(await frame.getByRole("combobox", { name: "Vorlage", exact: true }).isVisible()).toBe(false);
+    expect(await frame.getByText("Im PDF stehen Karte und Route als Bild.", { exact: false }).isVisible()).toBe(true);
+    const sheet = await preview.evaluate((node) => ({
+      background: getComputedStyle(node).backgroundColor,
+      width: node.getBoundingClientRect().width,
+      images: [...node.querySelectorAll(".notebook-map__image")].map((image) => image.getBoundingClientRect().height),
+    }));
+    expect(sheet).toEqual({ background: "rgb(255, 255, 255)", width: 576, images: [186, 150] });
+    const download = page.getByRole("button", { name: "PDF laden", exact: true }).last();
     await download.click();
     await page.waitForFunction(() => !document.querySelector(".notebook-map-export__preview"));
     const form = fixture.uploads.at(-1)!;
@@ -310,6 +381,66 @@ test("PDF preview waits for complete map PNGs, preserves sources and uploads ima
   }
 });
 
+test("phone PDF keeps its guidance visible and the entire document inside a white sheet in dark mode", async () => {
+  const { context, page } = await open("?pdf=1&theme=dark", 390);
+  try {
+    const preview = page.locator(".notebook-map-export__preview");
+    await preview.locator(".notebook-map--route img.notebook-map__image").waitFor();
+    await page.waitForFunction(() => !document.querySelector(".notebook-map-preview-frame button:disabled"));
+    const geometry = await preview.evaluate((sheet) => {
+      const box = sheet.getBoundingClientRect();
+      const body = sheet.closest(".k2b-panel-dialog__body")!;
+      const guidance = body.querySelector(".notebook-map-export__guidance")!.getBoundingClientRect();
+      return {
+        width: box.width,
+        background: getComputedStyle(sheet).backgroundColor,
+        color: getComputedStyle(sheet).color,
+        bodyScroll: body.scrollTop,
+        guidanceInView: guidance.top >= body.getBoundingClientRect().top && guidance.bottom <= body.getBoundingClientRect().bottom,
+        containsAllContent: [...sheet.children].every((child) => {
+          const childBox = child.getBoundingClientRect();
+          return childBox.left >= box.left && childBox.right <= box.right && childBox.bottom <= box.bottom;
+        }),
+        overflow: document.documentElement.scrollWidth > innerWidth,
+      };
+    });
+    expect(geometry).toEqual({
+      width: 358,
+      background: "rgb(255, 255, 255)",
+      color: "rgb(24, 24, 27)",
+      bodyScroll: 0,
+      guidanceInView: true,
+      containsAllContent: true,
+      overflow: false,
+    });
+    const header = page.locator(".notebook-map-preview-frame .k2b-panel-dialog__header");
+    expect(await header.getByRole("button", { name: "PDF laden", exact: true }).isVisible()).toBe(true);
+    await page.keyboard.press("Escape");
+    await preview.waitFor({ state: "detached" });
+  } finally {
+    await context.close();
+  }
+});
+
+test("ordinary notes retain the existing PDF format-first dialog", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await page.goto(`${server.url}?pdf=1&ordinary=1`);
+    const dialog = page.locator(".notebook-pdf-dialog");
+    await dialog.waitFor();
+    expect(await dialog.getAttribute("data-map-document")).toBeNull();
+    expect(await dialog.getByRole("combobox", { name: "Vorlage", exact: true }).isVisible()).toBe(true);
+    expect(await dialog.getByRole("button", { name: "PDF herunterladen", exact: true }).isVisible()).toBe(true);
+    expect(await dialog.getByRole("button", { name: "Drucken", exact: true }).count()).toBe(0);
+    expect(await dialog.locator(".notebook-map-export__preview").count()).toBe(0);
+    await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+    await dialog.waitFor({ state: "detached" });
+  } finally {
+    await context.close();
+  }
+});
+
 test("PDF no-key preview keeps lists and sources, offers retry and exports fallback only explicitly", async () => {
   const { context, page } = await open("?pdf=1&state=off");
   try {
@@ -318,9 +449,17 @@ test("PDF no-key preview keeps lists and sources, offers retry and exports fallb
     expect(await preview.innerText()).toContain("Münster");
     expect(await preview.innerText()).toContain("Geoapify");
     expect(await preview.locator("img.notebook-map__image").count()).toBe(0);
-    expect(await page.getByRole("button", { name: "PDF herunterladen", exact: true }).last().isDisabled()).toBe(true);
+    expect(await page.getByRole("button", { name: "PDF laden", exact: true }).last().isDisabled()).toBe(true);
     await page.getByRole("button", { name: "Mit Quellenlisten fortfahren", exact: true }).click();
     await page.locator("[data-pdf-omissions]").waitFor();
+    expect(await page.locator(".notebook-map-export__guidance [data-pdf-omissions]").isVisible()).toBe(true);
+    expect(
+      await page.locator("[data-pdf-omissions]").evaluate((report) => {
+        const box = report.getBoundingClientRect();
+        const body = report.closest(".k2b-panel-dialog__body")!.getBoundingClientRect();
+        return box.top >= body.top && box.bottom <= body.bottom;
+      }),
+    ).toBe(true);
     expect(await page.getByRole("button", { name: "Erneut versuchen", exact: true }).last().isVisible()).toBe(true);
     await page.getByRole("button", { name: "Erneut versuchen", exact: true }).last().click();
     await page.getByRole("button", { name: "Mit Quellenlisten fortfahren", exact: true }).waitFor();
@@ -342,16 +481,26 @@ test("pending map export gates both actions; closing cancels preparation without
   });
   const count = fixture.uploads.length;
   try {
-    await page.goto(`${server.url}?pdf=1`);
+    await page.goto(`${server.url}?pdf=1&theme=dark`);
     await page.locator(".notebook-map-export__preview .k2b-map-view").waitFor();
-    expect(await page.getByRole("button", { name: "PDF herunterladen", exact: true }).last().isDisabled()).toBe(true);
-    expect(await page.getByRole("button", { name: "Drucken", exact: true }).last().isDisabled()).toBe(true);
     expect(
       await page
-        .locator('.k2b-inline-guidance[aria-hidden="true"]')
-        .last()
-        .evaluate((element) => getComputedStyle(element).visibility),
-    ).toBe("hidden");
+        .locator(".notebook-map-export__preview .k2b-map-view__attribution")
+        .first()
+        .evaluate((attribution) => ({
+          color: getComputedStyle(attribution).color,
+          background: getComputedStyle(attribution).backgroundColor,
+        })),
+    ).toEqual({ color: "rgb(82, 82, 91)", background: "rgb(255, 255, 255)" });
+    expect(await page.getByRole("button", { name: "PDF laden", exact: true }).last().isDisabled()).toBe(true);
+    expect(await page.getByRole("button", { name: "Drucken", exact: true }).last().isDisabled()).toBe(true);
+    expect(
+      await page.locator(".notebook-map-export__slot").evaluateAll((slots) => slots.map((slot) => slot.getBoundingClientRect().height)),
+    ).toEqual([186, 150]);
+    expect(await page.locator(".notebook-map-export__guidance").innerText()).toBe(
+      "Die Kartenbilder entstehen gerade. Drucken und PDF warten, bis sie da sind.",
+    );
+    expect(await page.locator(".notebook-map-export__guidance [data-pdf-omissions]").count()).toBe(0);
     await page.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
     await page.locator(".notebook-map-export__preview").waitFor({ state: "detached" });
     release();

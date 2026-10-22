@@ -6,6 +6,7 @@ import {
   NoticeCard,
   PanelDialog,
   panelDialogOptions,
+  panelDialogWorkspaceOptions,
   Select,
   useLocale,
 } from "@k2b/ui";
@@ -130,6 +131,9 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
       }
       throw cause;
     } finally {
+      // Lazy maps must enter the scrollport for capture; return to the toolbar guidance afterwards.
+      const body = mapHost.closest<HTMLElement>(".k2b-panel-dialog__body");
+      if (body && !signal.aborted) body.scrollTop = 0;
       setMapWaiting(false);
     }
   };
@@ -268,118 +272,160 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
     }
   };
 
-  return (
-    <PanelDialog>
-      <PanelDialog.Header
-        title={t().downloadPdf}
-        subtitle={t().pdfSubtitle({ title: props.noteTitle || t().thisNote })}
-        icon="ti ti-file-type-pdf"
-        close={close}
-      />
-      <PanelDialog.Body>
-        <PanelDialog.Section title={hasMaps() ? mt().pdfStyle : t().printStyle} subtitle={t().printStyleDescription} icon="ti ti-template">
-          <div class="flex flex-col gap-4">
-            <Show when={hasMaps()}>
-              <InlineGuidance>{mt().printStyleHint}</InlineGuidance>
-            </Show>
-            <Select
-              label={t().template}
-              icon="ti ti-template"
-              value={templateId}
-              onValueChange={selectTemplate}
-              options={templateOptions()}
-            />
-            <Show when={templateId() === "custom"}>
-              <AutocompleteEditor
-                label={t().customCss}
-                description={t().customCssDescription}
-                value={customCss}
-                onValueChange={setCustomCss}
-                placeholder={MINIMAL_NOTE_PDF_CSS}
-                lines={9}
-                spellcheck={false}
-              />
-            </Show>
-            {/* One reserved place: the data notice and the summary of what the PDF left out share one cell that
+  const formatControls = () => (
+    <div class="flex flex-col gap-4">
+      <Show when={hasMaps()}>
+        <InlineGuidance>{mt().printStyleHint}</InlineGuidance>
+      </Show>
+      <Select label={t().template} icon="ti ti-template" value={templateId} onValueChange={selectTemplate} options={templateOptions()} />
+      <Show when={templateId() === "custom"}>
+        <AutocompleteEditor
+          label={t().customCss}
+          description={t().customCssDescription}
+          value={customCss}
+          onValueChange={setCustomCss}
+          placeholder={MINIMAL_NOTE_PDF_CSS}
+          lines={9}
+          spellcheck={false}
+        />
+      </Show>
+    </div>
+  );
+  const exportReport = () => (
+    <div class="flex flex-col gap-4">
+      {/* One reserved place: the data notice and the summary of what the PDF left out share one cell that
                 always holds both, so the summary arrives without moving anything. The live region exists from the
                 start, so screen readers announce the summary. */}
-            <div class="grid">
-              <InlineGuidance
-                icon="ti ti-server"
-                class="[grid-area:1/1]"
-                style={{ "grid-area": "1 / 1", visibility: report() ? "hidden" : "visible" }}
-                aria-hidden={report() ? "true" : undefined}
-              >
-                {t().pdfDataNotice}
-              </InlineGuidance>
-              <InlineGuidance
-                tone="warning"
-                icon="ti ti-alert-triangle"
-                class="[grid-area:1/1]"
-                style={{ "grid-area": "1 / 1", visibility: report() ? "visible" : "hidden" }}
-                aria-hidden={report() ? undefined : "true"}
-                data-pdf-omissions={report() ? "" : undefined}
-              >
-                {omissionSummary()}{" "}
-                <Button
-                  type="button"
-                  variant="text"
-                  size="xs"
-                  aria-expanded={detailsOpen()}
-                  aria-controls={detailsId}
-                  onClick={() => setDetailsOpen((open) => !open)}
-                >
-                  {t().pdfOmissionsDetails}
-                  <i
-                    class="ti ti-chevron-down transition-transform motion-reduce:transition-none"
-                    classList={{ "rotate-180": detailsOpen() }}
-                    aria-hidden="true"
-                  />
-                </Button>
-              </InlineGuidance>
-              <span class="sr-only" role="status" aria-live="polite">
-                {report() ? omissionSummary() : ""}
-              </span>
-            </div>
-            <Show when={report() && detailsOpen() ? report() : null}>
-              {(current) => (
-                <ul id={detailsId} class="flex min-w-0 flex-col gap-2.5 text-sm" data-pdf-omission-list="">
-                  <For each={current().items}>
-                    {(item) => {
-                      const text = () => notePdfOmissionText(item, locale());
-                      return (
-                        <li class="flex min-w-0 flex-col gap-0.5">
-                          <span class="min-w-0 break-words">
-                            <span class="font-medium">{text().kind}</span>
-                            <Show when={item.label}>
-                              {(label) => (
-                                <>
-                                  <span class="text-dimmed" aria-hidden="true">
-                                    {" · "}
-                                  </span>
-                                  <span class="sr-only">: </span>
-                                  {label()}
-                                </>
-                              )}
-                            </Show>
-                          </span>
-                          <span class="text-dimmed">
-                            {text().reason} {text().hint}
-                          </span>
-                        </li>
-                      );
-                    }}
-                  </For>
-                  <li class="text-dimmed">
-                    {current().more > 0 ? t().pdfOmissionsMore({ count: current().more }) : t().pdfOmissionsMarked}
+      <div class="grid">
+        <InlineGuidance
+          icon="ti ti-server"
+          class="[grid-area:1/1]"
+          style={{ "grid-area": "1 / 1", visibility: report() ? "hidden" : "visible" }}
+          aria-hidden={report() ? "true" : undefined}
+        >
+          {t().pdfDataNotice}
+        </InlineGuidance>
+        <InlineGuidance
+          tone="warning"
+          icon="ti ti-alert-triangle"
+          class="[grid-area:1/1]"
+          style={{ "grid-area": "1 / 1", visibility: report() ? "visible" : "hidden" }}
+          aria-hidden={report() ? undefined : "true"}
+          data-pdf-omissions={report() ? "" : undefined}
+        >
+          {omissionSummary()}{" "}
+          <Button
+            type="button"
+            variant="text"
+            size="xs"
+            aria-expanded={detailsOpen()}
+            aria-controls={detailsId}
+            onClick={() => setDetailsOpen((open) => !open)}
+          >
+            {t().pdfOmissionsDetails}
+            <i
+              class="ti ti-chevron-down transition-transform motion-reduce:transition-none"
+              classList={{ "rotate-180": detailsOpen() }}
+              aria-hidden="true"
+            />
+          </Button>
+        </InlineGuidance>
+        <span class="sr-only" role="status" aria-live="polite">
+          {report() ? omissionSummary() : ""}
+        </span>
+      </div>
+      <Show when={report() && detailsOpen() ? report() : null}>
+        {(current) => (
+          <ul id={detailsId} class="flex min-w-0 flex-col gap-2.5 text-sm" data-pdf-omission-list="">
+            <For each={current().items}>
+              {(item) => {
+                const text = () => notePdfOmissionText(item, locale());
+                return (
+                  <li class="flex min-w-0 flex-col gap-0.5">
+                    <span class="min-w-0 break-words">
+                      <span class="font-medium">{text().kind}</span>
+                      <Show when={item.label}>
+                        {(label) => (
+                          <>
+                            <span class="text-dimmed" aria-hidden="true">
+                              {" · "}
+                            </span>
+                            <span class="sr-only">: </span>
+                            {label()}
+                          </>
+                        )}
+                      </Show>
+                    </span>
+                    <span class="text-dimmed">
+                      {text().reason} {text().hint}
+                    </span>
                   </li>
-                </ul>
-              )}
-            </Show>
-            <Show when={hasMaps()}>
-              <Show when={mapFailure()}>
-                <div role="status">
-                  <p>{mapReason() || mt().printFailed}</p>
+                );
+              }}
+            </For>
+            <li class="text-dimmed">{current().more > 0 ? t().pdfOmissionsMore({ count: current().more }) : t().pdfOmissionsMarked}</li>
+          </ul>
+        )}
+      </Show>
+    </div>
+  );
+  const exportError = () => (
+    <Show when={error()}>
+      <div role="alert">
+        <NoticeCard tone="danger" title={t().pdfGenerationFailed}>
+          {error()}
+        </NoticeCard>
+      </div>
+    </Show>
+  );
+  const download = () => (
+    <Button
+      type="button"
+      size="sm"
+      onClick={() => void generate()}
+      disabled={mapWaiting() || (hasMaps() && !mapsReady())}
+      loading={busy()}
+      loadingLabel={t().generatingPdf}
+    >
+      <i class="ti ti-download" aria-hidden="true" /> {hasMaps() ? mt().pdfDownload : t().downloadPdf}
+    </Button>
+  );
+
+  return (
+    <div class="notebook-pdf-dialog" data-map-document={hasMaps() ? "" : undefined}>
+      <PanelDialog>
+        <PanelDialog.Header
+          title={hasMaps() ? mt().pdfPreview : t().downloadPdf}
+          subtitle={hasMaps() ? undefined : t().pdfSubtitle({ title: props.noteTitle || t().thisNote })}
+          icon={hasMaps() ? undefined : "ti ti-file-type-pdf"}
+          close={close}
+          actions={
+            hasMaps() ? (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy() || mapWaiting() || !mapsReady()}
+                  onClick={() => void generate(false, true)}
+                >
+                  <i class="ti ti-printer" aria-hidden="true" /> {mt().print}
+                </Button>
+                {download()}
+              </>
+            ) : undefined
+          }
+        />
+        <PanelDialog.Body scrollFade={!hasMaps()}>
+          <Show when={hasMaps()}>
+            <div class="notebook-map-export">
+              <div class="notebook-map-export__guidance" role="status" aria-live="polite">
+                <Show when={!report() || mapWaiting()} fallback={exportReport()}>
+                  <InlineGuidance icon="ti ti-info-circle" tone={mapFailure() ? "warning" : "neutral"}>
+                    {mapWaiting() ? mt().printWaiting : mapFailure() ? mt().printFailed : mt().printReady}
+                  </InlineGuidance>
+                </Show>
+                <Show when={mapFailure()}>
+                  <p class="notebook-map-export__reason">{mapReason()}</p>
                   <div class="notebook-map-export__actions">
                     <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void retryMaps()}>
                       {mt().retry}
@@ -388,57 +434,57 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
                       {mt().printFallback}
                     </Button>
                     <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void generate(true, true)}>
-                      {mt().print}
+                      {mt().printList}
                     </Button>
                   </div>
-                </div>
-              </Show>
-              <div class="notebook-map-export">
-                <Show when={mapWaiting()}>
-                  <p role="status">{mt().printWaiting}</p>
                 </Show>
-                <div ref={mapHost} class="notebook-map-export__preview notebook-book-content" />
               </div>
-            </Show>
-            <Show when={error()}>
-              <div role="alert">
-                <NoticeCard tone="danger" title={t().pdfGenerationFailed}>
-                  {error()}
-                </NoticeCard>
-              </div>
-            </Show>
-          </div>
-        </PanelDialog.Section>
-      </PanelDialog.Body>
-      <PanelDialog.Footer>
-        <Show when={hasMaps()}>
-          <Button variant="secondary" size="sm" disabled={busy() || mapWaiting()} onClick={() => void generate(false, true)}>
-            {mt().print}
-          </Button>
-        </Show>
-        <Button type="button" variant="secondary" size="sm" onClick={close}>
-          {/* Both labels share one cell, so the button keeps its width when Cancel becomes Close. */}
-          <span class="grid">
-            <span class="[grid-area:1/1]">{report() && !busy() ? t().close : t().cancel}</span>
-            <span class="invisible [grid-area:1/1]" aria-hidden="true">
-              {report() && !busy() ? t().cancel : t().close}
+              {exportError()}
+              <div ref={mapHost} class="notebook-map-export__preview notebook-book-content" />
+            </div>
+          </Show>
+          <PanelDialog.Section
+            {...(hasMaps() ? { hideable: true } : {})}
+            title={hasMaps() ? mt().pdfStyle : t().printStyle}
+            subtitle={t().printStyleDescription}
+            icon="ti ti-template"
+          >
+            <div class="flex flex-col gap-4">
+              {formatControls()}
+              <Show when={hasMaps()}>
+                <InlineGuidance icon="ti ti-server">{t().pdfDataNotice}</InlineGuidance>
+              </Show>
+              <Show when={!hasMaps()}>
+                {exportReport()}
+                {exportError()}
+              </Show>
+            </div>
+          </PanelDialog.Section>
+        </PanelDialog.Body>
+        <PanelDialog.Footer>
+          <Button type="button" variant="secondary" size="sm" onClick={close}>
+            {/* Both labels share one cell, so the button keeps its width when Cancel becomes Close. */}
+            <span class="grid">
+              <span class="[grid-area:1/1]">{report() && !busy() ? t().close : t().cancel}</span>
+              <span class="invisible [grid-area:1/1]" aria-hidden="true">
+                {report() && !busy() ? t().cancel : t().close}
+              </span>
             </span>
-          </span>
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => void generate()}
-          disabled={mapWaiting() || (hasMaps() && !mapsReady())}
-          loading={busy()}
-          loadingLabel={t().generatingPdf}
-        >
-          <i class="ti ti-download" aria-hidden="true" /> {t().downloadPdf}
-        </Button>
-      </PanelDialog.Footer>
-    </PanelDialog>
+          </Button>
+          <Show when={!hasMaps()}>{download()}</Show>
+        </PanelDialog.Footer>
+      </PanelDialog>
+    </div>
   );
 }
 
-export const openNotePdfDialog = (props: NotePdfDialogProps): Promise<void> =>
-  dialogCore.open<void>((close) => <NotePdfDialog {...props} close={() => close()} />, panelDialogOptions);
+export const openNotePdfDialog = (props: NotePdfDialogProps): Promise<void> => {
+  const maps = parseNotebookMapBlocks(props.markdown).blocks.length > 0;
+  const options = maps
+    ? {
+        ...panelDialogWorkspaceOptions,
+        panelClassName: `${panelDialogWorkspaceOptions.panelClassName} notebook-map-preview-frame`,
+      }
+    : panelDialogOptions;
+  return dialogCore.open<void>((close) => <NotePdfDialog {...props} close={() => close()} />, options);
+};

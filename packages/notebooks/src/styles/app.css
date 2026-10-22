@@ -2497,16 +2497,17 @@
 }
 
 /* Saved geo documents share the note column. Map/list slots match the approved blocks. */
-.notebook-map { display: flex; flex-direction: column; gap: 10px; margin: 1em 0; min-width: 0; }
+.notebook-map { line-height: 1.45; display: flex; flex-direction: column; gap: 10px; margin: 1em 0; min-width: 0; }
 .notebook-map__header { display: flex; align-items: center; gap: 8px; min-height: 30px; flex-wrap: nowrap; font-size: 14px; }
 .notebook-map__header > strong { font-weight: 600; margin-right: auto; min-width: 0; }
 .notebook-map--route .notebook-map__header > strong { margin-right: 0; }
-.notebook-map__summary { margin-right: auto; min-width: 0; color: var(--k2b-text-muted); font-size: 12px; }
+.notebook-map__summary { margin-right: auto; min-width: 0; color: var(--k2b-text-muted); font-size: 12.5px; }
 .notebook-map__body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .notebook-map__viewport { min-width: 0; }
 .notebook-map .k2b-map-view { width: 100%; }
 .k2b-ui .notebook-map .k2b-map-view { --k2b-map-accent: var(--app-accent, #eab308); --k2b-map-accent-ink: var(--ui-app-accent-text); --k2b-map-accent-on: #18181b; }
 .notebook-map__search { position: relative; }
+.k2b-ui .notebook-map__search .k2b-input-shell { min-height: 38px; }
 .notebook-map__suggestions { position: absolute; inset-inline: 0; top: calc(100% + 6px); z-index: 20; padding: 6px; border-radius: 12px; background: var(--k2b-surface); box-shadow: var(--k2b-shadow-float); }
 .notebook-map__suggestions [role="option"] > button { width: 100%; min-height: 46px; justify-content: flex-start; text-align: start; }
 .notebook-map__suggestions [aria-selected="true"] { background: var(--ui-app-selected); border-radius: 9px; }
@@ -2547,7 +2548,7 @@
 .notebook-map__link > span { overflow: hidden; text-overflow: ellipsis; }
 .notebook-map__link > i { flex: none; font-size: 15px; }
 
-.notebook-map__search-placeholder { height: 36px; border-radius: var(--k2b-radius-control); background: var(--k2b-surface-muted); }
+.notebook-map__search-placeholder { height: 38px; border-radius: var(--k2b-radius-control); background: var(--k2b-surface-muted); }
 
 .notebook-map__image { display: block; width: 100%; height: auto; border-radius: var(--k2b-radius-control); }
 .notebook-map-export__preview { min-height: 240px; }
@@ -2567,5 +2568,105 @@
 .notebook-map[data-map-print] .notebook-map__link > span { overflow: visible; }
 .notebook-map-export__slot { width: 100%; display: grid; align-items: center; margin-bottom: 8px; border-radius: var(--k2b-radius-control); background: #f1f5f9; }
 .notebook-map-export__slot .k2b-map-view { width: 100%; }
+/* Keep raster attribution legible on the white export sheet in either theme. */
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__slot .k2b-map-view { --k2b-map-surface: #fff; }
 
 .notebook-map-export__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* The approved map document is a compact composition; ordinary notes keep the book scale. */
+.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) {
+  --notebook-book-inset: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 760px;
+  padding-top: 8px;
+  padding-bottom: 120px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > * { margin-block: 0; }
+.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > h1 {
+  margin-block: 6px 2px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.45;
+  letter-spacing: -.01em;
+}
+.notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) > h2 {
+  margin-top: 14px;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.notebook-map .notebook-map__pins { margin: 0; padding: 0; gap: 0; }
+@media (max-width: 599px) {
+  .notebook-book-content:not(.cm-query-block-preview):has(> figure.notebook-map:not([data-map-print])) {
+    --notebook-book-inset: 16px;
+    padding-top: 6px;
+  }
+}
+
+.notebook-pdf-dialog { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.k2b-ui .k2b-panel-dialog-frame.is-workspace.notebook-map-preview-frame { width: 640px; border: 0; }
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog { --k2b-panel-dialog-inset: 32px; }
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__header {
+  gap: 8px;
+  min-height: 60px;
+  padding: 8px 32px;
+}
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__heading h2 { font-size: 15px; line-height: 1.45; letter-spacing: normal; }
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__body { gap: 14px; padding-top: 14px; }
+.notebook-map-export { container-type: inline-size; }
+.notebook-map-export__guidance { min-height: 44px; }
+.notebook-map-export__guidance .k2b-inline-guidance { font-size: 13.5px; line-height: 1.45; }
+.notebook-map-export__reason { font-size: 13px; color: var(--k2b-text-muted); margin: 6px 0; }
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: none;
+  /* A4 minimum; long notes grow within the same white sheet. */
+  min-height: calc(100cqi * 297 / 210);
+  padding: 7% 8%;
+  margin: 26px 0 0;
+  border: 0;
+  border-radius: 4px;
+  background: #fff;
+  color: #18181b;
+  box-shadow: 0 6px 24px -10px rgb(0 0 0 / .35), 0 0 0 1px rgb(0 0 0 / .06);
+  font-size: 11.5px;
+  line-height: 1.45;
+  --k2b-text-muted: #52525b;
+  --k2b-action: #1d4ed8;
+  --ui-app-accent-text: #a16207;
+}
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview > * { margin-block: 0; flex-shrink: 0; }
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview h1 { font-size: 20px; line-height: 1.45; }
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview h2 { font-size: 14px; }
+.notebook-pdf-dialog[data-map-document] .notebook-map-export__preview p { margin: 0; }
+.notebook-pdf-dialog[data-map-document] .notebook-map__header { font-size: 11.5px; min-height: 0; }
+.notebook-pdf-dialog[data-map-document] .notebook-map__pin { font-size: 10.5px; }
+.notebook-pdf-dialog[data-map-document] .notebook-map__source { font-size: 9.5px; }
+.notebook-pdf-dialog[data-map-document] .notebook-map__image { height: 186px; object-fit: contain; border-radius: 4px; }
+.notebook-pdf-dialog[data-map-document] .notebook-map--route .notebook-map__image { height: 150px; }
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-panel-dialog-frame.is-workspace.notebook-map-preview-frame { width: 100%; }
+  .k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog { --k2b-panel-dialog-inset: 16px; }
+  .k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__header { padding-inline: 16px; flex-wrap: wrap; }
+}
+
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__actions .k2b-button {
+  min-height: 30px;
+  padding: 0 10px;
+  gap: 7px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.k2b-ui .notebook-pdf-dialog[data-map-document] .k2b-panel-dialog__actions .k2b-button[data-variant="primary"] {
+  --k2b-action-solid: var(--app-accent, #eab308);
+  --k2b-action-solid-hover: color-mix(in srgb, var(--app-accent, #eab308) 90%, #000);
+  --k2b-focus-on-fill: #18181b;
+  color: #18181b;
+}

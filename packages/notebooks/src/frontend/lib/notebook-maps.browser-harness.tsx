@@ -3,12 +3,13 @@ import { serializeGeoDocument } from "@k2b/cloud/geo/document";
 import { enhanceNotebookMaps } from "./notebook-maps";
 
 const root = document.getElementById("notebook-book-content")!;
+const pdf = new URL(location.href).searchParams.has("pdf");
 let saved = root.querySelector<HTMLElement>("[data-map-document]")?.dataset.mapDocument ?? "";
 window.addEventListener("notebook-map-fixture-restore", () => location.reload());
 if (new URL(location.href).searchParams.has("editor")) {
   const { mountMapEditorFixture } = await import("./notebook-maps.editor-harness");
   mountMapEditorFixture(root);
-} else {
+} else if (!pdf) {
   const cleanup = enhanceNotebookMaps(
     root,
     document.documentElement.lang,
@@ -33,7 +34,7 @@ if (new URL(location.href).searchParams.has("editor")) {
   Object.assign(window, { notebookMapFixture: { saved: (): GeoDocument => JSON.parse(saved), dispose: cleanup } });
 }
 
-if (new URL(location.href).searchParams.has("pdf")) {
+if (pdf) {
   const { openNotePdfDialog } = await import("../[id]/_components/detail/NotePdfDialog");
   const markdown = JSON.parse(document.getElementById("fixture-markdown")!.textContent!);
   void openNotePdfDialog({ notebookId: "Book01", noteId: "Note01", noteTitle: "Fictional map plan", markdown });

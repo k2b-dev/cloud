@@ -77,6 +77,11 @@ as source-attributed lists. Only platform administrators receive the setup or
 budget-settings link. The browser can retry failed requests and switch to a
 list without changing the saved document.
 
+For notes with maps, the PDF preview places **Print** and **Download PDF** in
+the header above a white document sheet. Optional **PDF format** settings sit
+below the preview and start collapsed. Notes without maps keep the existing
+export dialog with format settings first.
+
 The PDF dialog prepares complete map images in a document preview. Print and
 PDF wait for all images. The browser captures the fitted saved maps through
 `CloudMap`; cancellation stops pending work. Missing tiles, glyphs or map access

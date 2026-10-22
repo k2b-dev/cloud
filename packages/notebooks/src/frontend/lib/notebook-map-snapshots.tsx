@@ -78,7 +78,7 @@ export async function captureNotebookMaps(
     slot.className = "notebook-map-export__slot";
     slot.style.height = `${block.document.route && !block.document.pins.length ? 150 : 186}px`;
     slot.setAttribute("role", "status");
-    slot.textContent = notebookMapMessages.resolve([locale]).t.printWaiting;
+    slot.textContent = notebookMapMessages.resolve([locale]).t.printImageWaiting;
     figures[index]?.querySelector(".notebook-map__body")?.prepend(slot);
     return slot;
   });
@@ -181,7 +181,6 @@ export async function captureNotebookMaps(
       querySource: true,
       mapImages: images,
     }).html;
-    host.scrollIntoView({ block: "start" });
     form.set("mapSnapshots", JSON.stringify(manifest));
     return { form, images, release };
   } catch (error) {
