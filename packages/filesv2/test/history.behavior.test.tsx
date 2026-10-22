@@ -679,6 +679,7 @@ describe("Files history components", () => {
     downloads: 0,
     passwordFailed: 0,
     knownNetworks: null,
+    pageNetworks: null,
     overflow: false,
     ...patch,
   });
@@ -719,7 +720,7 @@ describe("Files history components", () => {
           ])
         : accessCounts(
             [
-              accessPeriod("2026-10-18T20:00:00.000Z", { pages: 96, knownNetworks: 21, downloads: 3 }),
+              accessPeriod("2026-10-18T20:00:00.000Z", { pages: 96, pageNetworks: 1, knownNetworks: 21, downloads: 3 }),
               accessPeriod("2026-10-17T08:00:00.000Z", { downloads: 2 }),
               accessPeriod("2026-10-15T08:00:00.000Z", { pages: 3 }),
             ],
@@ -759,7 +760,7 @@ describe("Files history components", () => {
     expect(dom.root.querySelectorAll("[data-kind='link-access']")).toHaveLength(3);
     expect(dom.root.querySelectorAll("[data-kind='link-access'] .k2b-avatar")).toHaveLength(3);
     expect(dom.root.querySelector("[data-kind='link-access'] button")).toBeNull();
-    expect(text()).toContain("Die Seite des Links wurde 96-mal aus 21 Netzen aufgerufen");
+    expect(text()).toContain("Die Seite des Links wurde 96-mal aus einem Netz aufgerufen");
     expect(text()).toContain("18.10., 22:00 bis 23:00");
     expect(text()).toContain("Link „Druckdaten für Hoffmann“");
     expect(text()).toContain("3 Downloads freigegeben");

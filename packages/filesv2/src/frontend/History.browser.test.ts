@@ -84,6 +84,13 @@ async function open(width: number, theme: "light" | "dark", search = "", lang = 
   const errors: string[] = [];
   tab.on("pageerror", (error) => errors.push(error.message));
   let fail = false;
+  let holdContacts = !mountInitially;
+  const contacts: (() => void)[] = [];
+  const requests: { query: string; fail: boolean }[] = [];
+  const releaseContacts = () => {
+    holdContacts = false;
+    for (const release of contacts.splice(0)) release();
+  };
   await tab.route("http://files-history.test/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/app/filesv2")
@@ -93,14 +100,17 @@ async function open(width: number, theme: "light" | "dark", search = "", lang = 
       });
     const json = (body: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     if (url.pathname === "/api/filesv2/activity") {
+      requests.push({ query: url.search, fail });
       if (fail)
         return route.fulfill({
           status: 503,
           contentType: "application/json",
-          body: JSON.stringify({ error: "Temporarily unavailable", code: "unavailable" }),
+          body: JSON.stringify({ message: "Temporarily unavailable", code: "unavailable" }),
         });
       return json(url.searchParams.has("q") ? historyPage([historyMove]) : historyActivity);
     }
+    if (holdContacts && (url.pathname.endsWith("/chain") || url.pathname.endsWith("/recovery")))
+      await new Promise<void>((resolve) => contacts.push(resolve));
     if (url.pathname.endsWith("/chain")) return json(historyChain);
     if (url.pathname.endsWith("/recovery"))
       return json({ oldLocation: { baseId: historyBase.id, path: "" }, trash: null, canMoveBack: true });
@@ -118,6 +128,8 @@ async function open(width: number, theme: "light" | "dark", search = "", lang = 
     context,
     tab,
     errors,
+    requests,
+    releaseContacts,
     mount: async () => {
       await tab.addScriptTag({ url: "http://files-history.test/harness.js" });
       await tab.waitForFunction(() => document.body.dataset.ready === "true");
@@ -167,7 +179,7 @@ for (const width of [1440, 768, 390])
       }
     }, 30_000);
 test("a failed search keeps its address and retries in place", async () => {
-  const { context, tab, errors, fail } = await open(1440, "light", "", "en");
+  const { context, tab, errors, fail, requests } = await open(1440, "light", "", "en");
   try {
     fail(true);
     const search = tab.getByPlaceholder("Search name or old path");
@@ -177,7 +189,13 @@ test("a failed search keeps its address and retries in place", async () => {
     expect(new URL(tab.url()).searchParams.get("q")).toBe("Angebote 2025");
     fail(false);
     await tab.getByRole("button", { name: "Try again", exact: true }).click();
-    await tab.locator(".filesv2-history-hit").first().waitFor();
+    await tab
+      .locator(".filesv2-history-hit")
+      .first()
+      .waitFor({ timeout: 5_000 })
+      .catch(async (cause) => {
+        throw new Error(JSON.stringify({ requests, errors, text: await tab.locator("body").innerText() }), { cause });
+      });
     expect(await search.inputValue()).toBe("Angebote 2025");
     expect(errors).toEqual([]);
   } finally {
@@ -187,7 +205,7 @@ test("a failed search keeps its address and retries in place", async () => {
 
 for (const width of [1440, 390])
   test(`history preserves the server result through the client mount at ${width}px`, async () => {
-    const { context, tab, errors, mount } = await open(width, "light", "Angebote 2025", "de", false);
+    const { context, tab, errors, mount, releaseContacts } = await open(width, "light", "Angebote 2025", "de", false);
     try {
       const serverText = await tab.locator(".filesv2-history-hit").first().innerText();
       const before = await metrics(tab);
@@ -197,8 +215,12 @@ for (const width of [1440, 390])
       expect(after.overflow).toBe(0);
       expect(Math.abs(after.result.width - before.result.width)).toBeLessThanOrEqual(1);
       expect(Math.abs(after.search.width - before.search.width)).toBeLessThanOrEqual(1);
+      // Fresh contact data arrives after the first client render and may update its loading state.
+      releaseContacts();
+      await tab.getByRole("button", { name: "Dorthin springen", exact: true }).waitFor();
       expect(errors).toEqual([]);
     } finally {
+      releaseContacts();
       await context.close();
     }
   }, 30_000);
