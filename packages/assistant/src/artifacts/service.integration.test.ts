@@ -2923,7 +2923,11 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const writes = spyOn(app.settings, "set").mockResolvedValue();
     try {
       await expect(artifactDatabase.settings(owner)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
-      expect(await artifactDatabase.settings(administrator)).toEqual({ url: upstream.url.origin, tokenSet: true });
+      expect(await artifactDatabase.settings(administrator)).toMatchObject({
+        url: upstream.url.origin,
+        tokenSet: true,
+        unreadable: { "assistant.rsql_url": false, "assistant.rsql_api_token": false },
+      });
       expect(await artifactDatabase.configure({ url: upstream.url.origin }, administrator, true)).toEqual({ connected: true });
       expect(writes).not.toHaveBeenCalled();
       await expect(artifactDatabase.configure({ url: "", token: "" }, administrator)).rejects.toMatchObject({ code: "DB_SERVER_IN_USE" });

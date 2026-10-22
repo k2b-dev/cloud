@@ -11,6 +11,7 @@ import { principalLabel } from "@k2b/cloud/shared";
 import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,
+  Checkbox,
   CodeDisplay,
   DataTable,
   type DataTableColumn,
@@ -88,17 +89,44 @@ function StatusCell(props: { status: MailStatus }) {
   return <StatusBadge tone={TONES[props.status]} label={statusLabel(props.status, t())} />;
 }
 
-function RetentionDialog(props: { retention: MailRetention; close: () => void; onSaved: (value: MailRetention) => void }) {
+export function RetentionDialog(props: { retention: MailRetention; close: () => void; onSaved: (value: MailRetention) => void }) {
   const t = messages();
   const [contentDays, setContentDays] = createSignal<number | null>(props.retention.contentDays);
   const [recordDays, setRecordDays] = createSignal<number | null>(props.retention.recordDays);
+  const [unreadable, setUnreadable] = createSignal(props.retention.unreadable);
+  const [replace, setReplace] = createSignal<string[]>([]);
   const valid = () => !!contentDays() && !!recordDays() && recordDays()! >= contentDays()!;
   const save = mutation.create({
     mutation: async (_: void, { abortSignal }) => {
-      const json = { contentDays: contentDays()!, recordDays: recordDays()! };
+      const json = {
+        ...((!unreadable()?.["outgoing_mail.content_retention_days"] || replace().includes("outgoing_mail.content_retention_days")) &&
+        (contentDays() !== props.retention.contentDays || replace().includes("outgoing_mail.content_retention_days"))
+          ? { contentDays: contentDays()! }
+          : {}),
+        ...((!unreadable()?.["outgoing_mail.record_retention_days"] || replace().includes("outgoing_mail.record_retention_days")) &&
+        (recordDays() !== props.retention.recordDays || replace().includes("outgoing_mail.record_retention_days"))
+          ? { recordDays: recordDays()! }
+          : {}),
+        replaceUnreadable: (["outgoing_mail.content_retention_days", "outgoing_mail.record_retention_days"] as const).filter((key) =>
+          replace().includes(key),
+        ),
+      };
       const response = await api.retention.$put({ json }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await errorText(response, t().retentionFailed));
-      return json;
+      if (!response.ok) {
+        const failure = await errorText(response.clone(), t().retentionFailed);
+        const body: unknown = await response.json().catch(() => null);
+        if (body && typeof body === "object" && "code" in body && body.code === "setting_unreadable") {
+          try {
+            const latest = await api.retention.$get({}, { init: { signal: abortSignal } });
+            if (!latest.ok) throw new Error(t().recoveryFailed);
+            setUnreadable((await latest.json()).unreadable);
+          } catch {
+            throw new Error(`${failure} ${t().recoveryFailed}`);
+          }
+        }
+        throw new Error(failure);
+      }
+      return response.json();
     },
     onSuccess: (value) => {
       props.onSaved(value);
@@ -114,6 +142,24 @@ function RetentionDialog(props: { retention: MailRetention; close: () => void; o
         if (valid() && !save.loading()) void save.mutate(undefined);
       }}
     >
+      <Show when={Object.values(unreadable() ?? {}).some(Boolean)}>
+        <NoticeCard tone="warning" title={t().unreadableTitle} detail={t().unreadableDetail}>
+          <For
+            each={(["outgoing_mail.content_retention_days", "outgoing_mail.record_retention_days"] as const).filter(
+              (key) => unreadable()?.[key],
+            )}
+          >
+            {(key) => (
+              <Checkbox
+                label={`${t().replaceStored}: ${key === "outgoing_mail.content_retention_days" ? t().retentionContent : t().retentionRecords}`}
+                value={replace().includes(key)}
+                disabled={save.loading()}
+                onValueChange={(checked) => setReplace((keys) => (checked ? [...keys, key] : keys.filter((entry) => entry !== key)))}
+              />
+            )}
+          </For>
+        </NoticeCard>
+      </Show>
       <NumberInput
         label={t().retentionContent}
         description={t().retentionContentHint}
@@ -121,7 +167,10 @@ function RetentionDialog(props: { retention: MailRetention; close: () => void; o
         onValueChange={setContentDays}
         min={1}
         max={36500}
-        disabled={save.loading()}
+        disabled={
+          save.loading() ||
+          (unreadable()?.["outgoing_mail.content_retention_days"] === true && !replace().includes("outgoing_mail.content_retention_days"))
+        }
         required
         autofocus
       />
@@ -132,7 +181,10 @@ function RetentionDialog(props: { retention: MailRetention; close: () => void; o
         onValueChange={setRecordDays}
         min={1}
         max={36500}
-        disabled={save.loading()}
+        disabled={
+          save.loading() ||
+          (unreadable()?.["outgoing_mail.record_retention_days"] === true && !replace().includes("outgoing_mail.record_retention_days"))
+        }
         required
         error={() => (contentDays() && recordDays() && recordDays()! < contentDays()! ? t().retentionOrder : undefined)}
       />
