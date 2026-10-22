@@ -73,6 +73,7 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         { version: 3, name: "clickhouse_baseline" },
         { version: 4, name: "sql_console" },
         { version: 5, name: "overview_alerts" },
+        { version: 8, name: "agent_source_ownership" },
       ]);
       expect(await sql`SELECT extname FROM pg_extension ORDER BY extname`).toEqual(extensions);
       const ddl = await readFile(`${import.meta.dir}/schema.ts`, "utf8");
@@ -165,6 +166,20 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         { expect_daily_by: string; stale_since: Date | null }[]
       >`SELECT expect_daily_by,stale_since FROM pulse.sources WHERE id=${source}::uuid`,
     ).toEqual([{ expect_daily_by: "04:00", stale_since: null }]);
+  });
+  databaseTest("migration 8 preserves sources and records no invented creator", async () => {
+    await sql`DELETE FROM pulse.schema_migrations WHERE version=8`;
+    await sql`ALTER TABLE pulse.sources DROP COLUMN created_by_subject`.simple();
+    await Promise.all([migrate(), migrate(), migrate()]);
+    expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=8`).toHaveLength(1);
+    expect(await sql`SELECT name,created_by_subject FROM pulse.sources WHERE id=${source}::uuid`).toEqual([
+      { name: "Daily push", created_by_subject: null },
+    ]);
+    await sql`UPDATE pulse.sources SET created_by_subject='service_account:fixture' WHERE id=${source}::uuid`;
+    await migrate();
+    expect((await sql`SELECT created_by_subject FROM pulse.sources WHERE id=${source}::uuid`)[0]?.created_by_subject).toBe(
+      "service_account:fixture",
+    );
   });
   databaseTest("refuses unknown newer versions before touching old data", async () => {
     await sql`INSERT INTO pulse.schema_migrations(version,name) VALUES(99,'future')`;

@@ -101,6 +101,34 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "base.create": {
+          title: "Pulse-Base anlegen",
+          description:
+            "Eine Base nach der Richtlinie der Verwaltung anlegen. Die erstellende Identität erhält Admin-Zugriff. Nach Freigabe planbar.",
+          input: { name: "Name der Base.", description: "Beschreibung der Base." },
+        },
+        "base.clear_data": {
+          title: "Pulse-Messdaten leeren",
+          description:
+            "Alle Messdaten löschen; Quellen und Einstellungen bleiben. Braucht Admin-Zugriff, unveränderten Änderungsstand und jedes Mal Freigabe.",
+          input: { baseId: "ID der Base.", expectedUpdatedAt: "Exakter updatedAt-Wert aus einem frischen base.read." },
+        },
+        "base.delete": {
+          title: "Pulse-Base löschen",
+          description: "Base, Quellen und Messdaten löschen. Braucht Admin-Zugriff, unveränderten Änderungsstand und jedes Mal Freigabe.",
+          input: { baseId: "ID der Base.", expectedUpdatedAt: "Exakter updatedAt-Wert aus einem frischen base.read." },
+        },
+        "ingest.write": {
+          title: "Pulse-Messdaten schreiben",
+          description:
+            "Höchstens 192 KiB über eine eigene HTTP-Sendequelle schreiben. Braucht Schreibzugriff und die aktuelle Quellrevision. Nach Freigabe planbar.",
+          input: {
+            baseId: "ID der Base.",
+            sourceId: "HTTP-Sendequelle, die die aktuelle Zugriffsidentität angelegt hat.",
+            expectedRevision: "Aktuelle Revision aus source.read.",
+            batch: "Messdaten als Ingest-Batch; gesamte Eingabe höchstens 192 KiB.",
+          },
+        },
         "alert.save": {
           title: "Pulse-Alarmregel speichern",
           description:
