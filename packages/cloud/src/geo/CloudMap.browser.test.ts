@@ -148,6 +148,7 @@ for (const width of [390, 768, 1440])
       );
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.waitForSelector('.k2b-map-view[data-state="ready"]');
+      expect(await page.locator(".k2b-map-view__notice").count()).toBe(0);
       expect(
         await page.evaluate(async () => {
           const capture = await window.cloudMapHandle!.snapshot();

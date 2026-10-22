@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createSignal, onMount } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { MapViewMarker } from "../src/content/map-view-types";
 import { createDomTestHarness } from "./dom";
@@ -86,6 +86,38 @@ else {
       expect(mounts).toEqual({ notice: 1, empty: 1, attribution: 1 });
       expect(dom.root.querySelector(".k2b-map-view__notice")?.textContent).toBe("notice");
       expect(dom.root.querySelector(".k2b-map-view__empty")?.textContent).toBe("empty");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("an empty reactive notice fragment leaves no blank badge", async () => {
+    const dom = createDomTestHarness();
+    const { MapView } = await import("../src/content/MapView");
+    const [message, setMessage] = createSignal("");
+    const dispose = render(
+      () => (
+        <MapView
+          height={160}
+          style={{ version: 8, sources: {}, layers: [] }}
+          attribution="Local data"
+          notice={
+            <>
+              {undefined}
+              <Show when={message()}>{message()}</Show>
+            </>
+          }
+        />
+      ),
+      dom.root,
+    );
+    try {
+      expect(dom.root.querySelector(".k2b-map-view__notice")).toBeNull();
+      setMessage("Map unavailable");
+      expect(dom.root.querySelector(".k2b-map-view__notice")?.textContent).toBe("Map unavailable");
+      setMessage("");
+      expect(dom.root.querySelector(".k2b-map-view__notice")).toBeNull();
     } finally {
       dispose();
       dom.cleanup();

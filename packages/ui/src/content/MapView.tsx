@@ -467,7 +467,7 @@ export function MapView(props: MapViewProps): JSX.Element {
         )}
       </Show>
       <div class="k2b-map-view__messages">
-        <Show when={notice()}>
+        <Show when={notice.toArray().some((child) => child != null && typeof child !== "boolean" && child !== "")}>
           <div class="k2b-map-view__notice">{notice()}</div>
         </Show>
         <Show when={state() === "loading" || state() === "error" || state() === "no-webgl"}>
