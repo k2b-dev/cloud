@@ -271,6 +271,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
           admins: deps.admins ?? [],
           initialTab: navigation.tab(),
           loading: deps.loading,
+          refreshBase: deps.refreshBases,
           writeBlocked: deps.writeBlocked,
           updateBaseSettings: updateSettings,
           currentStore: () => deps.selectedBase()?.store ?? null,

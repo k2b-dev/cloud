@@ -1,35 +1,14 @@
 import { expect, test } from "bun:test";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./routes";
 
-test("base pages default to overview while old source URLs keep working", () => {
+test("base pages default to overview and source URLs restore selection", () => {
   expect(readWorkspacePathState("/app/pulse/Base01", "Base01")).toEqual({ view: "overview", sourceId: "" });
   expect(readWorkspacePathState("/app/pulse/Base01/sources/Src001", "Base01")).toEqual({ view: "sources", sourceId: "Src001" });
   expect(readWorkspacePathState("/app/pulse/Base012/dashboards", "Base01").view).toBe("overview");
 });
 
-test("historical view URLs share the coming-back view without looking up deleted data", () => {
-  for (const path of [
-    "explorer",
-    "signals",
-    "signals/events",
-    "signals/states",
-    "signals/metrics",
-    "resources",
-    "resources/service%3Aapi",
-    "events",
-    "events/order.created",
-    "metrics",
-    "metrics/cpu",
-    "states",
-    "states/online",
-    "query-reference",
-  ]) {
-    expect(readWorkspacePathState(`/app/pulse/Base01/${path}`, "Base01")).toEqual({ view: "coming-back", sourceId: "" });
-  }
-});
-
-test("navigation exposes sources and one stable coming-back URL", () => {
-  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "coming-back" } })).toBe("/app/pulse/Base01/dashboards");
+test("navigation exposes sources and dashboards", () => {
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "dashboards" } })).toBe("/app/pulse/Base01/dashboards");
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources" } })).toBe("/app/pulse/Base01/sources");
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", sourceId: "Src001" } })).toBe(
     "/app/pulse/Base01/sources/Src001",
@@ -108,7 +87,7 @@ test("overview and authorized alert references survive settings, reload and over
   expect(readWorkspacePathState("/app/pulse/Base01/sql?alert=%2Fbad", "Base01")).not.toHaveProperty("alertId");
 });
 
-test("dashboard selection and range survive URLs while historical removed routes stay isolated", () => {
+test("dashboard selection and range survive URLs", () => {
   const state = {
     view: "dashboards" as const,
     dashboardId: "Dash01",

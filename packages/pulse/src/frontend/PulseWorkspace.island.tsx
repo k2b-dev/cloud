@@ -1,15 +1,15 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { clipboard } from "@k2b/stdlib/browser";
-import { AppWorkspace, appWorkspaceLayoutStyle, Button, NoticeCard, toast, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { AppWorkspace, appWorkspaceLayoutStyle, Button, IconButton, NoticeCard, toast, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { usePulseMessages } from "./use-messages";
 import { createBaseController } from "./workspace/base-controller";
-import ComingBackView from "./workspace/ComingBackView";
 import DashboardsView from "./workspace/DashboardsView";
+import { createDashboardActions } from "./workspace/dashboard-actions";
 import { navigatePulseWorkspace } from "./workspace/navigation";
 import OverviewView from "./workspace/OverviewView";
 import { createOverviewController } from "./workspace/overview-controller";
-import PulseSidebar from "./workspace/PulseSidebar";
+import PulseSidebar, { PulseMobileDashboardHeader, PulseMobileFeatureHeader } from "./workspace/PulseSidebar";
 import { installPeriodicRefresh } from "./workspace/periodic-refresh";
 import { launchPulseOverviewAssistant } from "./workspace/pulse-assistant-launch";
 import SourcesView, { SourcesDetailPanel, type SourcesViewProps } from "./workspace/SourcesView";
@@ -17,6 +17,7 @@ import SqlConsoleView from "./workspace/SqlConsoleView";
 import { createSourceController } from "./workspace/source-controller";
 import type { PulseWorkspaceProps } from "./workspace/types";
 import { createPulseWorkspaceQueries } from "./workspace/workspace-queries";
+import { pulseWorkspaceStyles } from "./workspace/workspace-styles";
 
 export default function PulseWorkspace(props: PulseWorkspaceProps) {
   const t = usePulseMessages();
@@ -59,6 +60,17 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       if (!disposed) setAssistantPending(false);
     }
   };
+  const dashboardActions = createMemo(
+    on(overview.accessLost, (lost) =>
+      props.initialDashboards?.selected && !lost
+        ? createDashboardActions({
+            dashboard: props.initialDashboards.selected,
+            base: { id: props.initialBaseId, name: selectedBase()?.name ?? t().appName },
+            canWrite: props.initialPermissions?.write ?? false,
+          })
+        : undefined,
+    ),
+  );
   const selectedSource = () => sources().find((source) => source.id === selectedSourceId()) ?? null;
   const navigate: Parameters<typeof createSourceController>[0]["navigate"] = (state) =>
     navigatePulseWorkspace({ baseId: props.initialBaseId, state });
@@ -187,9 +199,53 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
       .find((query) => query.error())
       ?.error();
   // A CSS default lets restored and resized inline geometry keep precedence.
-  return (
+  const renderFrame = (sqlContent?: JSX.Element, sqlAction?: JSX.Element) => (
     <>
-      <style>{`.pulse-workspace{${appWorkspaceLayoutStyle({ version: 2, sidebarWidth: 236 })}}`}</style>
+      <style>{`.pulse-workspace{${appWorkspaceLayoutStyle({ version: 2, sidebarWidth: 236 })}}${pulseWorkspaceStyles}`}</style>
+      <Show when={activeView() === "dashboards" && props.initialDashboards?.selected}>
+        {(dashboard) => (
+          <PulseMobileDashboardHeader
+            title={overview.accessLost() ? t().appName : (selectedBase()?.name ?? t().appName)}
+            bases={overview.accessLost() ? bases().filter((base) => base.id !== props.initialBaseId) : bases()}
+            baseId={props.initialBaseId}
+            name={dashboard().name}
+            actions={dashboardActions()}
+          />
+        )}
+      </Show>
+      <Show when={activeView() !== "dashboards"}>
+        <PulseMobileFeatureHeader
+          title={overview.accessLost() ? t().appName : (selectedBase()?.name ?? t().appName)}
+          bases={overview.accessLost() ? bases().filter((base) => base.id !== props.initialBaseId) : bases()}
+          baseId={props.initialBaseId}
+          name={activeView() === "sql" ? "SQL" : activeView() === "sources" ? t().sources : t().overview}
+          action={
+            activeView() === "sql" ? (
+              sqlAction
+            ) : activeView() === "sources" ? (
+              <IconButton
+                variant="ghost"
+                label={t().sourcePickTitle({ base: selectedBase()?.name ?? t().appName })}
+                disabled={!selectedBaseId() || loading() || writeBlocked()}
+                onClick={() => void actions.addSource()}
+              >
+                <i class="ti ti-plus" aria-hidden="true" />
+              </IconButton>
+            ) : (
+              <Show when={overview.data() && !overview.accessLost()}>
+                <IconButton
+                  variant="ai"
+                  label={assistantPending() ? t().sqlAssistantLaunching : t().sqlAskAssistant}
+                  loading={assistantPending()}
+                  onClick={() => void askAssistant()}
+                >
+                  <i class="ti ti-sparkles" aria-hidden="true" />
+                </IconButton>
+              </Show>
+            )
+          }
+        />
+      </Show>
       <AppWorkspace class="pulse-workspace" mobileSurface="flush">
         <PulseSidebar
           title={overview.accessLost() ? t().appName : (selectedBase()?.name ?? t().appName)}
@@ -203,10 +259,12 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
           openSettings={openSettings}
           openSources={openSources}
           openSql={() => navigate({ view: "sql" })}
-          openComingBack={() => navigate({ view: "dashboards" })}
+          openDashboards={() => navigate({ view: "dashboards" })}
           dashboards={props.initialDashboards?.items}
           dashboardId={props.initialDashboards?.selected?.id}
           dashboardsNextOffset={props.initialDashboards?.nextOffset}
+          dashboardsError={props.initialDashboards?.error}
+          selectedDashboard={props.initialDashboards?.selected ?? undefined}
         />
         <AppWorkspace.Content>
           <AppWorkspace.Main class="gap-2 px-4 py-[var(--ui-space-shell)] md:px-5">
@@ -239,7 +297,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
                     <Show
                       when={activeView() === "sql"}
                       fallback={
-                        <Show when={activeView() === "dashboards"} fallback={<ComingBackView openSources={openSources} />}>
+                        <Show when={activeView() === "dashboards"}>
                           <Show
                             when={!overview.accessLost()}
                             fallback={
@@ -252,6 +310,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
                           >
                             <DashboardsView
                               base={{ id: props.initialBaseId, name: selectedBase()?.name ?? t().appName }}
+                              actions={dashboardActions()}
                               route={props.initialRouteState}
                               snapshot={props.initialDashboards}
                               overview={overview.data()}
@@ -261,12 +320,7 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
                         </Show>
                       }
                     >
-                      <SqlConsoleView
-                        base={{ id: props.initialBaseId, name: selectedBase()?.name ?? t().appName }}
-                        route={props.initialRouteState}
-                        snapshot={props.initialSql}
-                        canWrite={props.initialPermissions?.write ?? false}
-                      />
+                      {sqlContent}
                     </Show>
                   }
                 >
@@ -303,5 +357,16 @@ export default function PulseWorkspace(props: PulseWorkspaceProps) {
         </AppWorkspace.Content>
       </AppWorkspace>
     </>
+  );
+  return (
+    <Show when={activeView() === "sql"} fallback={renderFrame()}>
+      <SqlConsoleView
+        base={{ id: props.initialBaseId, name: selectedBase()?.name ?? t().appName }}
+        route={props.initialRouteState}
+        snapshot={props.initialSql}
+        canWrite={props.initialPermissions?.write ?? false}
+        renderFrame={renderFrame}
+      />
+    </Show>
   );
 }

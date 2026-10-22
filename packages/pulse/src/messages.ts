@@ -89,7 +89,7 @@ export const pulseMessages = i18n.define({
       sqlQueryName: "Query name",
       sqlReady: "Ready",
       sqlNoParameters: "No parameters",
-      sqlHelperHint: "Helper views: rate, increase, histogram_quantile",
+      sqlHelperHint: "SQL helpers: bucket, rate, increase, histogram_quantile",
       sqlTables: ({ tables }: { tables: string }) => `Tables: ${tables}`,
       sqlExampleLabel: "Example SQL",
       sqlChartMeta: ({
@@ -353,10 +353,6 @@ export const pulseMessages = i18n.define({
         `Queue ${baseSlots} per base, ${cloudSlots} per Cloud, ${waiting} waiting, ${wait} s`,
       selectBase: "Switch base",
       dashboardsAndQuestions: "Dashboards",
-      comingBackTitle: "Dashboards are coming back",
-      comingBackBody:
-        "You can already query Pulse in SQL. Dashboards follow in the next step. Earlier dashboards and saved queries were removed with this update. Pulse keeps collecting every value from your sources.",
-      goToSources: "Go to sources",
       copySetupFailed: "Could not copy the command. Please try again.",
       appName: "Pulse",
       scrapeTargetBlocked:
@@ -426,6 +422,7 @@ export const pulseMessages = i18n.define({
       noMatchingBases: "No matching bases",
       differentSearch: "Try a different search term.",
       firstBaseDescription: "Create a base for servers, websites, business metrics, or automation telemetry.",
+      baseMembers: ({ count }: { count: number }) => `Base · ${count} ${i18n.plural(count, "en", { one: "member", other: "members" })}`,
       baseCount: ({ count }: { count: number }) => `${count} ${i18n.plural(count, "en", { one: "base", other: "bases" })} available`,
       rawRetention: ({ days }: { days: number }) => `${days}-day raw retention`,
       pulseDataRefreshFailed: "Pulse data could not be refreshed",
@@ -672,7 +669,7 @@ export const pulseMessages = i18n.define({
       sqlQueryName: "Name der Abfrage",
       sqlReady: "Bereit",
       sqlNoParameters: "Keine Parameter",
-      sqlHelperHint: "Hilfen als Views: rate, increase, histogram_quantile",
+      sqlHelperHint: "SQL-Hilfen: bucket, rate, increase, histogram_quantile",
       sqlTables: ({ tables }: { tables: string }) => `Tabellen: ${tables}`,
       sqlExampleLabel: "Beispiel-SQL",
       sqlChartMeta: ({
@@ -943,10 +940,6 @@ export const pulseMessages = i18n.define({
         `Warteschlange ${baseSlots} pro Base, ${cloudSlots} pro Cloud, ${waiting} wartend, ${wait} s`,
       selectBase: "Base wechseln",
       dashboardsAndQuestions: "Dashboards",
-      comingBackTitle: "Dashboards kommen zurück",
-      comingBackBody:
-        "Du kannst Pulse schon mit SQL abfragen. Dashboards folgen im nächsten Schritt. Frühere Dashboards und gespeicherte Abfragen hat dieses Update entfernt. Pulse sammelt alle Werte deiner Quellen weiter.",
-      goToSources: "Zu den Quellen",
       copySetupFailed: "Der Befehl konnte nicht kopiert werden. Bitte versuche es erneut.",
       appName: "Pulse",
       scrapeTargetBlocked:
@@ -1015,6 +1008,7 @@ export const pulseMessages = i18n.define({
       noMatchingBases: "Keine passenden Basen",
       differentSearch: "Versuche es mit einem anderen Suchbegriff.",
       firstBaseDescription: "Erstelle eine Basis für Server, Websites, Geschäftskennzahlen oder Automatisierungstelemetrie.",
+      baseMembers: ({ count }) => `Base · ${count} ${i18n.plural(count, "de", { one: "Mitglied", other: "Mitglieder" })}`,
       baseCount: ({ count }) => `${count} ${i18n.plural(count, "de", { one: "Basis", other: "Basen" })} verfügbar`,
       rawRetention: ({ days }) => `${days} Tage Aufbewahrung für Rohdaten`,
       pulseDataRefreshFailed: "Die Pulse-Daten konnten nicht aktualisiert werden",

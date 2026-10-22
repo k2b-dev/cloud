@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { Dashboard } from "../../dashboard-contracts";
 import { usePulseMessages } from "../use-messages";
 import { DashboardClientError, dashboardClient } from "./dashboard-client";
+import { useDashboardMessages } from "./dashboard-messages";
 
 const PublicationOperationSchema = z.object({
   kind: z.enum(["publish", "revoke"]),
@@ -14,11 +15,12 @@ const PublicationOperationSchema = z.object({
 
 export const createDashboardSharing = (dashboard: Dashboard) => {
   const t = usePulseMessages();
+  const messages = useDashboardMessages();
   const [revision, setRevision] = createSignal(dashboard.revision);
   const [published, setPublished] = createSignal(dashboard.published);
   const [href, setHref] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
-  const [failure, setFailure] = createSignal<"conflict" | "unknown" | "denied" | null>(null);
+  const [failure, setFailure] = createSignal<"conflict" | "unknown" | "denied" | "rejected" | null>(null);
   const [operation, setOperation] = createSignal<z.infer<typeof PublicationOperationSchema> | null>(null);
   const storageKey = `pulse:dashboard-publication:${dashboard.baseId}:${dashboard.id}`;
   const remember = (operation: z.infer<typeof PublicationOperationSchema> | null) => {
@@ -44,15 +46,20 @@ export const createDashboardSharing = (dashboard: Dashboard) => {
   const lifetime = new AbortController();
   onCleanup(() => lifetime.abort());
   const run = async (kind: "publish" | "revoke") => {
-    if (pending() || failure() === "conflict" || failure() === "denied") return;
+    if (pending() || (failure() && failure() !== "unknown") || (kind === "publish" && href())) return;
     let op = operation();
     if (!op) {
-      const confirmed = await prompts.confirm(kind === "publish" ? t().dashboardConfirmPublish : t().dashboardConfirmRevoke, {
-        title: dashboard.name,
-        confirmText: kind === "publish" ? t().dashboardPublish : t().dashboardRevoke,
-        variant: kind === "publish" ? "primary" : "danger",
-        signal: lifetime.signal,
-      });
+      const confirmed = await prompts.confirm(
+        kind === "publish"
+          ? `${published() ? `${messages().replaceLink} ` : ""}${t().dashboardConfirmPublish}`
+          : t().dashboardConfirmRevoke,
+        {
+          title: dashboard.name,
+          confirmText: kind === "publish" ? t().dashboardPublish : t().dashboardRevoke,
+          variant: kind === "publish" ? "primary" : "danger",
+          signal: lifetime.signal,
+        },
+      );
       if (!confirmed || lifetime.signal.aborted) return;
       op = {
         kind,
@@ -91,14 +98,18 @@ export const createDashboardSharing = (dashboard: Dashboard) => {
       }
       remember(null);
     } catch (error) {
-      if (error instanceof DashboardClientError && [401, 403, 404, 409].includes(error.status)) remember(null);
+      const final =
+        error instanceof DashboardClientError && error.status >= 400 && error.status < 500 && ![408, 429].includes(error.status);
+      if (final) remember(null);
       if (!lifetime.signal.aborted)
         setFailure(
           error instanceof DashboardClientError && error.status === 409
             ? "conflict"
             : error instanceof DashboardClientError && [401, 403, 404].includes(error.status)
               ? "denied"
-              : "unknown",
+              : final
+                ? "rejected"
+                : "unknown",
         );
     } finally {
       if (!lifetime.signal.aborted) setPending(false);
@@ -127,6 +138,9 @@ export const createDashboardSharing = (dashboard: Dashboard) => {
             />
             <PanelDialog.Body>
               <p class="text-sm text-secondary">{t().dashboardPublishDetail}</p>
+              <Show when={published() && !href()}>
+                <p class="mt-2 text-sm text-secondary">{messages().replaceLink}</p>
+              </Show>
               <div class="my-4 flex flex-col gap-4">
                 <For each={dashboard.definition.panels}>
                   {(panel) => (
@@ -171,7 +185,9 @@ export const createDashboardSharing = (dashboard: Dashboard) => {
                         ? t().dashboardConflict
                         : failure() === "denied"
                           ? t().dashboardDenied
-                          : t().dashboardPublishFailure
+                          : failure() === "rejected"
+                            ? messages().rejected
+                            : t().dashboardPublishFailure
                     }
                   >
                     <Show when={failure() !== "unknown"}>
@@ -185,7 +201,7 @@ export const createDashboardSharing = (dashboard: Dashboard) => {
             </PanelDialog.Body>
             <PanelDialog.Footer>
               <Show when={published() && !operation()}>
-                <Button variant="danger" disabled={pending()} onClick={() => void run("revoke")}>
+                <Button variant="danger" disabled={pending() || !!failure()} onClick={() => void run("revoke")}>
                   {t().dashboardRevoke}
                 </Button>
               </Show>
@@ -196,17 +212,16 @@ export const createDashboardSharing = (dashboard: Dashboard) => {
                 when={operation()}
                 fallback={
                   <Button
-                    disabled={pending() || !columns.length || reviewed().length !== columns.length || !confirmed() || !!failure()}
+                    disabled={
+                      pending() || !!href() || !columns.length || reviewed().length !== columns.length || !confirmed() || !!failure()
+                    }
                     onClick={() => void run("publish")}
                   >
                     {t().dashboardPublish}
                   </Button>
                 }
               >
-                <Button
-                  disabled={pending() || failure() === "conflict" || failure() === "denied"}
-                  onClick={() => void run(operation()!.kind)}
-                >
+                <Button disabled={pending() || (!!failure() && failure() !== "unknown")} onClick={() => void run(operation()!.kind)}>
                   {pending() ? t().dashboardLoading : t().retry}
                 </Button>
               </Show>
@@ -216,5 +231,5 @@ export const createDashboardSharing = (dashboard: Dashboard) => {
       },
       { ...panelDialogOptions, signal: lifetime.signal },
     );
-  return { open, failure, pending, published };
+  return { open, failure, pending, published, dispose: () => lifetime.abort() };
 };

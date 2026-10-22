@@ -1,17 +1,16 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { Avatar, Button, createChartCursor, DateTimePicker, IconButton, NoticeCard, PanelHeader, RangePicker, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { Avatar, Button, createChartCursor, DateTimePicker, NoticeCard, PanelHeader, RangePicker, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { Dashboard, DashboardPanel, DashboardRange } from "../../dashboard-contracts";
 import type { Overview } from "../../overview-contracts";
 import { usePulseMessages } from "../use-messages";
 import DashboardPanelView from "./DashboardPanelView";
+import { createDashboardActions, type DashboardActions } from "./dashboard-actions";
 import type { DashboardTarget, PublicDashboardPanel } from "./dashboard-client";
 import { dashboardRangeSearch } from "./dashboard-client";
 import { createDashboardController } from "./dashboard-controller";
 import { dashboardSections } from "./dashboard-data";
-import { createDashboardSharing } from "./dashboard-sharing";
 import { dashboardStyles } from "./dashboard-styles";
-import { launchPulseDashboardAssistant } from "./pulse-assistant-launch";
 
 export type DashboardViewProps = {
   name: string;
@@ -19,6 +18,7 @@ export type DashboardViewProps = {
   target: DashboardTarget;
   range: DashboardRange;
   path: string;
+  actions?: DashboardActions;
   private?: { dashboard: Dashboard; base: { id: string; name: string }; canWrite: boolean; overview?: Overview | null };
 };
 export default function DashboardView(props: DashboardViewProps) {
@@ -34,30 +34,13 @@ export default function DashboardView(props: DashboardViewProps) {
   const [from, setFrom] = createSignal<string | null>(props.range.from ?? null);
   const [to, setTo] = createSignal<string | null>(props.range.to ?? null);
   const [invalidRange, setInvalidRange] = createSignal(false);
-  const [assistantPending, setAssistantPending] = createSignal(false);
-  const [assistantError, setAssistantError] = createSignal(false);
-  const sharing = props.private ? createDashboardSharing(props.private.dashboard) : null;
-  let disposed = false;
-  onCleanup(() => {
-    disposed = true;
-  });
-  const askAssistant = async () => {
-    if (!props.private || assistantPending() || c.denied()) return;
-    setAssistantPending(true);
-    setAssistantError(false);
-    try {
-      const result = await launchPulseDashboardAssistant({
-        base: props.private.base,
-        dashboard: props.private.dashboard,
-        locale: locale(),
-      });
-      if (!disposed) navigateTo(result.href);
-    } catch {
-      if (!disposed) setAssistantError(true);
-    } finally {
-      if (!disposed) setAssistantPending(false);
+  const actions = props.actions ?? (props.private ? createDashboardActions(props.private) : null);
+  createEffect(() => {
+    if (c.denied()) {
+      actions?.setDenied(true);
+      actions?.dispose();
     }
-  };
+  });
   const rangeHref = (range: DashboardRange) => {
     const url = new URL(props.path, "https://pulse.invalid");
     for (const key of ["range", "from", "to"]) url.searchParams.delete(key);
@@ -66,9 +49,10 @@ export default function DashboardView(props: DashboardViewProps) {
   };
   const results = () => Object.values(c.results());
   const loading = () =>
-    c.pending().length > 0 ||
-    (props.panels.length > 0 && results().length === 0) ||
-    results().some((result) => result.status === "waiting" || result.status === "refreshing");
+    props.panels.some((panel) => {
+      const result = c.results()[panel.id];
+      return !result || (!result.lastGood && result.status !== "error");
+    });
   const outages = () => results().some((result) => result.error === "STORE_UNAVAILABLE");
   const attention = () => props.private?.overview?.attention.items ?? [];
   const attentionLabels = () =>
@@ -103,18 +87,11 @@ export default function DashboardView(props: DashboardViewProps) {
         as="h1"
         size="lg"
         title={props.name}
-        class={props.private ? "pulse-dashboard__heading" : undefined}
+        class={props.actions ? "sr-only" : props.private ? "pulse-dashboard__heading" : undefined}
         actions={
-          props.private && !c.denied() ? (
-            <div class="flex items-center gap-2 lg:hidden">
-              <Show when={props.private.canWrite}>
-                <IconButton label={t().dashboardShare} disabled={sharing?.pending()} onClick={() => void sharing?.open()}>
-                  <i class="ti ti-share" aria-hidden="true" />
-                </IconButton>
-              </Show>
-              <IconButton label={t().sqlAskAssistant} variant="ai" disabled={assistantPending()} onClick={() => void askAssistant()}>
-                <i class="ti ti-sparkles" aria-hidden="true" />
-              </IconButton>
+          actions && !props.actions ? (
+            <div class="pulse-dashboard__compact-actions">
+              <actions.Buttons compact />
             </div>
           ) : undefined
         }
@@ -122,7 +99,7 @@ export default function DashboardView(props: DashboardViewProps) {
       <Show
         when={!c.denied()}
         fallback={
-          <NoticeCard tone="warning" title={t().dashboardDenied} detail={t().dashboardDeniedDetail}>
+          <NoticeCard tone="warning" title={t().dashboardDenied} detail={t().dashboardUnavailableDetail}>
             <Button variant="secondary" onClick={() => window.location.reload()}>
               {t().retry}
             </Button>
@@ -134,29 +111,21 @@ export default function DashboardView(props: DashboardViewProps) {
             label={null}
             ariaLabel={t().dashboardRange}
             value={props.range.from ? "custom" : (props.range.range ?? "24h")}
-            options={(["24h", "7d", "30d", "90d"] as const).map((range) => ({
-              value: range,
-              label: { "24h": t().dashboard24h, "7d": t().dashboard7d, "30d": t().dashboard30d, "90d": t().dashboard90d }[range],
-              href: rangeHref({ range }),
-            }))}
+            options={[
+              ...(["24h", "7d", "30d", "90d"] as const).map((range) => ({
+                value: range,
+                label: { "24h": t().dashboard24h, "7d": t().dashboard7d, "30d": t().dashboard30d, "90d": t().dashboard90d }[range],
+                href: rangeHref({ range }),
+              })),
+              ...(props.range.from ? [{ value: "custom", label: t().dashboardCustom, href: rangeHref(props.range) }] : []),
+            ]}
           />
           <div class="pulse-dashboard__actions">
             <Button variant="ghost" onClick={() => setCustom((value) => !value)} aria-expanded={custom()}>
               {t().dashboardCustom}
             </Button>
-            <Show when={props.private && !c.denied()}>
-              <div class="hidden gap-2 lg:flex">
-                <Show when={props.private?.canWrite}>
-                  <Button variant="ghost" disabled={sharing?.pending()} onClick={() => void sharing?.open()}>
-                    <i class="ti ti-share" aria-hidden="true" />
-                    {t().dashboardShare}
-                  </Button>
-                </Show>
-                <Button variant="ai" disabled={assistantPending()} onClick={() => void askAssistant()}>
-                  <i class="ti ti-sparkles" aria-hidden="true" />
-                  {t().sqlAskAssistant}
-                </Button>
-              </div>
+            <Show when={actions && !c.denied()}>
+              <div class="pulse-dashboard__desktop-actions">{actions && <actions.Buttons />}</div>
             </Show>
           </div>
         </div>
@@ -190,9 +159,9 @@ export default function DashboardView(props: DashboardViewProps) {
             </Show>
           </form>
         </Show>
-        <Show when={assistantError()}>
+        <Show when={actions?.assistantError()}>
           <NoticeCard role="alert" tone="danger" title={t().sqlAssistantFailureTitle}>
-            <Button variant="secondary" disabled={assistantPending()} onClick={() => void askAssistant()}>
+            <Button variant="secondary" disabled={actions?.assistantPending()} onClick={() => void actions?.askAssistant()}>
               {t().retry}
             </Button>
           </NoticeCard>
@@ -206,27 +175,34 @@ export default function DashboardView(props: DashboardViewProps) {
           data-critical={attention().some((item) => item.severity === "critical" || item.state === "error")}
         >
           <i
-            class={`ti ${outages() ? "ti-cloud-off" : loading() ? "ti-loader-2" : attention().length ? "ti-point" : "ti-circle-check"}`}
+            class={`ti ${outages() ? "ti-cloud-off" : loading() ? "ti-loader-2" : attention().length ? "pulse-dashboard__status-dot" : "ti-circle-check"}`}
             aria-hidden="true"
           />
-          <strong>
-            {outages()
-              ? t().dashboardStoreUnavailable
-              : loading()
-                ? t().dashboardLoading
-                : attention().length
-                  ? attentionLabels()[0]
-                  : t().dashboardReady}
-          </strong>
-          <Show when={!loading() && !outages() && attentionLabels().length > 1}>
-            <span>· {attentionLabels().slice(1).join(" · ")}</span>
-          </Show>
-          <Show when={lastGood()}>
-            <span title={timestamp()}>
-              · {outages() ? t().dashboardLastGood : t().overviewAsOf}: {timestamp()}
-              <Show when={attention().length && !outages()}> · {t().overviewEveryMinute}</Show>
-            </span>
-          </Show>
+          <p>
+            <strong>
+              {outages()
+                ? t().dashboardStoreUnavailable
+                : loading()
+                  ? t().dashboardLoading
+                  : attention().length
+                    ? attentionLabels()[0]
+                    : t().dashboardReady}
+            </strong>
+            <Show when={!loading() && !outages() && attentionLabels().length > 1}>
+              <span>
+                {"\u00a0· "}
+                {attentionLabels().slice(1).join("\u00a0· ")}
+              </span>
+            </Show>
+            <Show when={lastGood()}>
+              <span title={timestamp()}>
+                {"\u00a0· "}
+                {outages() ? t().dashboardLastGood : t().overviewAsOf}: {timestamp()}
+              </span>
+            </Show>
+            {"\u00a0· "}
+            {t().overviewEveryMinute}
+          </p>
           <Show when={outages()}>
             <Button variant="subtle" size="sm" disabled={!!c.pending().length} onClick={() => void c.refresh()}>
               {t().retry}

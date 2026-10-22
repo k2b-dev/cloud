@@ -25,6 +25,9 @@ Pulse uses the shared app administration list, with no separate sidebar section.
 
 ## See what needs attention
 
+The base switcher shows the number of configured members. Each person, group
+or agent counts once; general access rules do not count as individual members.
+
 A base opens on **Overview**. It shows source freshness, alert rules needing
 attention, up to four saved key numbers, and recent changes. Existing
 `/app/pulse/:baseId/sources` links still open the sources view.

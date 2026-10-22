@@ -4,6 +4,7 @@ import type { DashboardRange } from "../../dashboard-contracts";
 import type { DashboardPanelData } from "../../dashboard-result";
 import { sqlTimestamp } from "../../sql-result-values";
 import type { PublicDashboardPanel } from "./dashboard-client";
+import { dashboardMessages } from "./dashboard-messages";
 
 export const readDashboardRange = (path: string): DashboardRange => {
   const search = new URL(path, "https://pulse.invalid").searchParams;
@@ -102,7 +103,15 @@ export const dashboardLine = (
       format: (x) => (domain && (x === domain[0] || x === domain[1]) && x % tickStep !== 0 ? "" : tickDate.format(x)),
     },
     yAxis: { ticks: 3, format: (y) => dashboardCell(y, locale) },
-    references: panel.threshold === undefined ? [] : [{ value: panel.threshold, label: `${panel.threshold} ${panel.unit}` }],
+    references:
+      panel.threshold === undefined
+        ? []
+        : [
+            {
+              value: panel.threshold,
+              label: `${dashboardMessages.resolve([locale]).t.alarm} ${dashboardCell(panel.threshold, locale)} ${panel.unit}`.trim(),
+            },
+          ],
     tooltip: ({ datum }) => ({
       title: date.format(Number(datum.values.find((value) => value.key === "x")?.value)),
       rows: datum.values.flatMap((value) =>

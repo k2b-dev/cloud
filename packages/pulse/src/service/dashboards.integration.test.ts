@@ -1,15 +1,18 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
-import { dashboardCapabilities } from "../capabilities";
 import { DashboardDefinitionSchema } from "../dashboard-contracts";
-import { migrate } from "../migrate";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
-import { seedActiveBaseStore } from "./base-store.test-fixture";
-import { createDashboardPanels, readPublicDashboard } from "./dashboard-panels";
-import { createDashboardRuns } from "./dashboard-runs";
-import { dashboards, findDashboard } from "./dashboards";
 import type { SqlResult } from "./sql-service";
+
+let dashboardCapabilities: typeof import("../capabilities")["dashboardCapabilities"];
+let migrate: typeof import("../migrate")["migrate"];
+let seedActiveBaseStore: typeof import("./base-store.test-fixture")["seedActiveBaseStore"];
+let createDashboardPanels: typeof import("./dashboard-panels")["createDashboardPanels"];
+let readPublicDashboard: typeof import("./dashboard-panels")["readPublicDashboard"];
+let createDashboardRuns: typeof import("./dashboard-runs")["createDashboardRuns"];
+let dashboards: typeof import("./dashboards")["dashboards"];
+let findDashboard: typeof import("./dashboards")["findDashboard"];
 
 suiteFor("database")("SQL dashboard permissions, publication and durable runs", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
@@ -21,6 +24,13 @@ suiteFor("database")("SQL dashboard permissions, publication and durable runs", 
   });
   beforeAll(async () => {
     database = await useFreshDatabase("pulse_dashboards");
+    // Bind the disposable database before domain singletons capture Bun.sql.
+    ({ dashboardCapabilities } = await import("../capabilities"));
+    ({ migrate } = await import("../migrate"));
+    ({ seedActiveBaseStore } = await import("./base-store.test-fixture"));
+    ({ createDashboardPanels, readPublicDashboard } = await import("./dashboard-panels"));
+    ({ createDashboardRuns } = await import("./dashboard-runs"));
+    ({ dashboards, findDashboard } = await import("./dashboards"));
     const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
     await runCoreSetup();
     await migrate("UTC");

@@ -201,6 +201,7 @@ export const UpdateSourceSchema = z.strictObject({
 export const MessageSchema = z.object({ message: z.string() });
 
 export const BaseSchema = z.object({
+  memberCount: z.number().int().nonnegative(),
   store: BaseStoreStatusSchema,
   shortId: PulseShortIdSchema,
   icon: BaseIconSchema,

@@ -1,17 +1,20 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { AppWorkspace, createNavigation } from "@k2b/ui";
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import type { Dashboard } from "../../dashboard-contracts";
 import { usePulseMessages } from "../use-messages";
+import type { DashboardActions } from "./dashboard-actions";
 import { dashboardClient } from "./dashboard-client";
 import { buildPulseWorkspaceHref } from "./routes";
 import type { WorkspaceView } from "./types";
 
 type Props = {
   dashboards?: Dashboard[];
+  selectedDashboard?: Dashboard;
   dashboardId?: string;
   dashboardsNextOffset?: number | null;
+  dashboardsError?: { code: string; message: string } | null;
   title: string;
   bases: PulseBase[];
   baseId: string;
@@ -23,27 +26,31 @@ type Props = {
   openSettings: () => void | Promise<void>;
   openSql: () => void;
   openSources: () => void;
-  openComingBack: () => void;
+  openDashboards: () => void;
 };
 
 export default function PulseSidebar(props: Props) {
   const t = usePulseMessages();
   const [dashboards, setDashboards] = createSignal(props.dashboards ?? []);
-  const [nextOffset, setNextOffset] = createSignal(props.dashboardsNextOffset ?? null);
+  const visibleDashboards = () =>
+    props.selectedDashboard && !dashboards().some((item) => item.id === props.selectedDashboard!.id)
+      ? [props.selectedDashboard, ...dashboards()]
+      : dashboards();
+  const [nextOffset, setNextOffset] = createSignal(props.dashboardsError ? 0 : (props.dashboardsNextOffset ?? null));
   const [loadingMore, setLoadingMore] = createSignal(false);
-  const [loadFailed, setLoadFailed] = createSignal(false);
+  const [loadFailed, setLoadFailed] = createSignal(!!props.dashboardsError);
   const lifetime = new AbortController();
   onCleanup(() => lifetime.abort());
   const dashboardHref = (id: string) => buildPulseWorkspaceHref({ baseId: props.baseId, state: { view: "dashboards", dashboardId: id } });
   const loadMore = async () => {
     if (loadingMore() || nextOffset() === null) return;
     setLoadingMore(true);
-    setLoadFailed(false);
     try {
       const page = await dashboardClient.list(props.baseId, nextOffset()!, lifetime.signal);
       if (!lifetime.signal.aborted) {
         setDashboards((old) => [...old, ...page.items.filter((item) => !old.some((existing) => existing.id === item.id))]);
         setNextOffset(page.nextOffset);
+        setLoadFailed(false);
       }
     } catch {
       if (!lifetime.signal.aborted) setLoadFailed(true);
@@ -51,14 +58,11 @@ export default function PulseSidebar(props: Props) {
       if (!lifetime.signal.aborted) setLoadingMore(false);
     }
   };
-  const switcher = () => ({
-    currentId: props.baseId,
-    label: props.title,
-    icon: "ti ti-activity-heartbeat",
-    switchLabel: t().selectBase,
-    options: props.bases.map((base) => ({ id: base.id, label: base.name, href: `/app/pulse/${base.id}` })),
-    actions: [{ id: "all", label: t().yourBases, icon: "ti ti-layout-grid", href: "/app/pulse" }],
-  });
+  const switcher = () => {
+    const base = props.bases.find((base) => base.id === props.baseId);
+    return { ...baseSwitcher(props, t), description: base ? t().baseMembers({ count: base.memberCount }) : t().base };
+  };
+  const phoneDashboardId = () => props.dashboardId ?? visibleDashboards()[0]?.id;
   const navigation = createNavigation({
     switcher,
     items: () => [
@@ -80,13 +84,13 @@ export default function PulseSidebar(props: Props) {
         active: props.activeView === "sources",
       },
       {
-        id: "coming-back",
+        id: "dashboards",
         label: t().dashboards,
         icon: "ti ti-chart-area-line",
-        action: "coming-back",
+        action: "dashboards",
         active: props.activeView === "dashboards" && !props.dashboardId,
       },
-      ...dashboards().map((dashboard) => ({
+      ...visibleDashboards().map((dashboard) => ({
         id: `dashboard-${dashboard.id}`,
         label: dashboard.name,
         icon: "ti ti-layout-dashboard",
@@ -110,7 +114,7 @@ export default function PulseSidebar(props: Props) {
       if (action === "overview") props.openOverview();
       else if (action === "sql") props.openSql();
       else if (action === "sources") props.openSources();
-      else if (action === "coming-back") props.openComingBack();
+      else if (action === "dashboards") props.openDashboards();
       else if (action === "dashboards-more") await loadMore();
       else if (action === "settings") await props.openSettings();
     },
@@ -118,11 +122,15 @@ export default function PulseSidebar(props: Props) {
   return (
     <>
       <WorkspaceNavigationProvider navigation={navigation} label={props.title} />
-      <AppWorkspace.Sidebar collapsible defaultSize={236}>
+      <AppWorkspace.Sidebar label={props.title} mobile="stacked" collapsible defaultSize={236}>
         <AppWorkspace.SidebarDesktop>
+          <AppWorkspace.SidebarSection class="pulse-sidebar__identity" sidebarMode="expanded">
+            <p>{t().appName}</p>
+          </AppWorkspace.SidebarSection>
           <AppWorkspace.SidebarSwitcher {...switcher()} />
           <AppWorkspace.SidebarBody scrollPreserveKey="pulse-sidebar" sidebarMode="expanded">
             <AppWorkspace.SidebarItem
+              class="pulse-sidebar__chip"
               icon="ti ti-home"
               active={props.activeView === "overview"}
               onClick={props.openOverview}
@@ -130,13 +138,19 @@ export default function PulseSidebar(props: Props) {
             >
               {t().overview}
             </AppWorkspace.SidebarItem>
-            <AppWorkspace.SidebarItem icon="ti ti-code" active={props.activeView === "sql"} onClick={props.openSql}>
+            <AppWorkspace.SidebarItem
+              class="pulse-sidebar__chip"
+              icon="ti ti-code"
+              active={props.activeView === "sql"}
+              onClick={props.openSql}
+            >
               SQL
             </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarSection title={t().dashboards}>
-              <For each={dashboards()}>
+              <For each={visibleDashboards()}>
                 {(dashboard) => (
                   <AppWorkspace.SidebarItem
+                    class={phoneDashboardId() === dashboard.id ? "pulse-sidebar__chip" : "pulse-sidebar__secondary"}
                     variant="object"
                     icon="ti ti-layout-dashboard"
                     href={dashboardHref(dashboard.id)}
@@ -146,23 +160,33 @@ export default function PulseSidebar(props: Props) {
                   </AppWorkspace.SidebarItem>
                 )}
               </For>
-              <Show when={!dashboards().length}>
-                <AppWorkspace.SidebarItem icon="ti ti-plus" active={props.activeView === "dashboards"} onClick={props.openComingBack}>
+              <Show when={!visibleDashboards().length && !loadFailed()}>
+                <AppWorkspace.SidebarItem
+                  class="pulse-sidebar__secondary"
+                  icon="ti ti-plus"
+                  active={props.activeView === "dashboards"}
+                  onClick={props.openDashboards}
+                >
                   {t().dashboardEmpty}
                 </AppWorkspace.SidebarItem>
               </Show>
               <Show when={nextOffset() !== null}>
-                <AppWorkspace.SidebarItem icon="ti ti-dots" disabled={loadingMore()} onClick={() => void loadMore()}>
+                <AppWorkspace.SidebarItem
+                  class="pulse-sidebar__secondary"
+                  icon="ti ti-dots"
+                  disabled={loadingMore()}
+                  onClick={() => void loadMore()}
+                >
                   {loadFailed() ? t().retry : t().dashboardMore}
                 </AppWorkspace.SidebarItem>
               </Show>
               <Show when={loadFailed()}>
-                <p role="alert" class="px-3 text-xs text-[var(--k2b-danger-text)]">
+                <p role="alert" class="pulse-sidebar__secondary px-3 text-xs text-[var(--k2b-danger-text)]">
                   {t().pulseDataRefreshFailed}
                 </p>
               </Show>
             </AppWorkspace.SidebarSection>
-            <AppWorkspace.SidebarSection title={t().dashboardBaseSection}>
+            <AppWorkspace.SidebarSection class="pulse-sidebar__secondary" title={t().dashboardBaseSection}>
               <AppWorkspace.SidebarItem
                 icon="ti ti-database"
                 active={props.activeView === "sources"}
@@ -194,7 +218,7 @@ export default function PulseSidebar(props: Props) {
               icon="ti ti-chart-area-line"
               label={t().dashboards}
               active={props.activeView === "dashboards"}
-              onClick={props.openComingBack}
+              onClick={props.openDashboards}
             />
           </AppWorkspace.SidebarIconGrid>
           <AppWorkspace.SidebarFooter sidebarMode="collapsed">
@@ -210,5 +234,45 @@ export default function PulseSidebar(props: Props) {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
     </>
+  );
+}
+
+const baseSwitcher = (props: Pick<Props, "baseId" | "title" | "bases">, t: ReturnType<typeof usePulseMessages>) => ({
+  currentId: props.baseId,
+  label: props.title,
+  icon: "ti ti-activity-heartbeat",
+  switchLabel: t().selectBase,
+  options: props.bases.map((base) => ({ id: base.id, label: base.name, href: `/app/pulse/${base.id}` })),
+  actions: [{ id: "all", label: t().yourBases, icon: "ti ti-layout-grid", href: "/app/pulse" }],
+});
+
+export function PulseMobileFeatureHeader(props: Pick<Props, "baseId" | "title" | "bases"> & { name: string; action?: JSX.Element }) {
+  const t = usePulseMessages();
+  return (
+    <div class="pulse-workspace__mobile-header">
+      <AppWorkspace.SidebarSwitcher {...baseSwitcher(props, t)} class="pulse-workspace__base-switcher" />
+      <div class="pulse-workspace__mobile-title">
+        <p aria-hidden="true">{props.name}</p>
+        {props.action}
+      </div>
+    </div>
+  );
+}
+
+export function PulseMobileDashboardHeader(
+  props: Pick<Props, "baseId" | "title" | "bases"> & { name: string; actions?: DashboardActions },
+) {
+  return (
+    <PulseMobileFeatureHeader
+      {...props}
+      action={
+        <Show when={props.actions}>
+          {(actions) => {
+            const Buttons = actions().Buttons;
+            return <Buttons compact />;
+          }}
+        </Show>
+      }
+    />
   );
 }

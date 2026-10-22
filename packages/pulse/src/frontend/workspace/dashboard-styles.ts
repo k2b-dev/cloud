@@ -1,10 +1,18 @@
 /** Dashboard-owned composition; shared controls and charts retain their UI contracts. */
 export const dashboardStyles = `
+
 .pulse-dashboard{container-type:inline-size;width:100%;min-width:0;color:var(--k2b-text);font-size:14px;line-height:1.45}
 .pulse-dashboard__toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;min-height:64px}
+.pulse-dashboard__desktop-actions{display:flex;gap:8px}
+.pulse-dashboard__compact-actions{display:none;gap:8px}
+@container k2b-app-area (max-width:767px){.pulse-dashboard__desktop-actions{display:none}.pulse-dashboard__compact-actions{display:flex}}
 .pulse-dashboard__actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
-.pulse-dashboard__band{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-height:40px;margin:6px 0 10px;color:var(--k2b-text-muted);font-size:13px}
+.pulse-dashboard__band{display:flex;align-items:center;gap:8px;min-height:40px;margin:6px 0 10px;color:var(--k2b-text-muted);font-size:13px}
 .pulse-dashboard__band[data-error=true]{color:var(--k2b-danger-text)}
+.pulse-dashboard__band>p{flex:1;min-width:0}
+.pulse-dashboard__band>i{flex:none}
+.pulse-dashboard__status-dot{display:grid;place-items:center;width:14px;height:14px}
+.pulse-dashboard__status-dot::before{content:"";display:block;width:8px;height:8px;border-radius:50%;background:currentColor}
 .pulse-dashboard__band strong{color:var(--k2b-text);font-weight:600}
 .pulse-dashboard__band[data-attention=true]>i{color:var(--k2b-warning-text)}
 .pulse-dashboard__band[data-critical=true]>i,.pulse-dashboard__band[data-error=true] strong{color:var(--k2b-danger-text)}
@@ -29,7 +37,7 @@ export const dashboardStyles = `
 .pulse-dashboard__section-heading h2{min-width:0;overflow-wrap:anywhere;font-size:16px;font-weight:600}
 .pulse-dashboard__section-description{min-width:0;overflow-wrap:anywhere;margin-left:auto;color:var(--k2b-text-muted);font-size:12.5px}
 @container k2b-app-area (min-width:1024px){.pulse-dashboard__heading{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
-@container k2b-app-area (max-width:1023px){.pulse-dashboard__heading h1{font-size:30px;letter-spacing:-.025em}}
+@container k2b-app-area (max-width:767px){.pulse-dashboard__heading h1{font-size:30px;letter-spacing:-.025em}}
 @container(max-width:600px){.pulse-dashboard__section-description{display:none}}
 .pulse-dashboard__panels{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:26px 32px}
 .pulse-dashboard__panel{position:relative;min-width:0;grid-column:span 2}
@@ -40,6 +48,8 @@ export const dashboardStyles = `
 .pulse-dashboard__description{overflow-wrap:anywhere;color:var(--k2b-text-muted);font-size:12.5px;min-height:18px}
 .pulse-dashboard__plot{height:198px;min-width:0;margin-top:6px}
 .pulse-dashboard__plot .k2b-chart{height:100%}
+.pulse-dashboard__plot .stdlib-chart-reference{stroke:var(--k2b-danger-text);opacity:1}
+.pulse-dashboard__plot .stdlib-chart-reference-label{fill:var(--k2b-danger-text);opacity:1}
 .pulse-dashboard__feedback{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:8px;min-height:198px;margin-top:6px}
 .pulse-dashboard__empty{display:flex;flex-direction:column;align-items:flex-start;gap:10px;max-width:520px;padding:40px 0 20px}
 .pulse-dashboard__empty h2{font-size:20px;font-weight:600}

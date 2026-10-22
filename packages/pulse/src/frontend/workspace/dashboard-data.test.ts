@@ -86,3 +86,10 @@ test("bar preserves every numeric output while funnel rejects ambiguous or inval
     dashboardCategories({ ...panel, kind: "funnel" }, { columns: data.columns.slice(0, 2), rows: [["Visit", -1]] }, "en"),
   ).toThrow("PANEL_RESULT_INVALID");
 });
+
+test("alarm references retain their threshold and localized numeric caption", () => {
+  const panel = { ...dashboardTestDashboard.definition.panels[4]!, threshold: 2.5, unit: "%" };
+  const result = dashboardTestPanelResult(panel);
+  expect(dashboardLine(panel, result.lastGood!.data, "de").references).toEqual([{ value: 2.5, label: "Alarm 2,5 %" }]);
+  expect(dashboardLine({ ...panel, threshold: undefined }, result.lastGood!.data, "en").references).toEqual([]);
+});

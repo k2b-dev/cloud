@@ -7,6 +7,7 @@ import {
   DataTable,
   type DataTableColumn,
   highlightSql,
+  IconButton,
   Kbd,
   prompts,
   Skeleton,
@@ -15,7 +16,7 @@ import {
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { usePulseMessages } from "../use-messages";
 import { buildPulseWorkspaceHref, readWorkspacePathState } from "./routes";
 import SavedQueriesView from "./SavedQueriesView";
@@ -31,6 +32,8 @@ export default function SqlConsoleView(props: {
   route: PulseWorkspaceProps["initialRouteState"];
   snapshot: PulseWorkspaceProps["initialSql"];
   canWrite: boolean;
+  /** The view owns its controller; the parent places its real phone action around the content. */
+  renderFrame?: (content: JSX.Element, action: JSX.Element) => JSX.Element;
 }) {
   const t = usePulseMessages();
   const locale = useLocale();
@@ -131,15 +134,30 @@ export default function SqlConsoleView(props: {
       )}
     </Show>
   );
+  const primaryDiagnosis = (value: SqlStatusBand) => value.title === band().title && value.message === band().message;
   const Diagnosis = (props: { band: SqlStatusBand }) => (
     <div class="flex max-w-[680px] flex-col items-start gap-1.5 py-2.5 text-sm [overflow-wrap:anywhere]">
-      <h2 class="text-base font-semibold" style={{ color: toneColor(props.band.diagnosis?.kind ?? props.band.kind) }}>
+      <h2
+        class="text-base font-semibold"
+        classList={{
+          "sr-only":
+            primaryDiagnosis(props.band) &&
+            (props.band.diagnosis?.title ?? props.band.title ?? props.band.message) === (band().title ?? band().message),
+        }}
+        style={{ color: toneColor(props.band.diagnosis?.kind ?? props.band.kind) }}
+      >
         {props.band.diagnosis?.title ?? props.band.title ?? props.band.message}
       </h2>
-      <Show when={props.band.diagnosis || (props.band.title && props.band.message !== props.band.title)}>
+      <Show
+        when={
+          primaryDiagnosis(props.band)
+            ? props.band.diagnosis && props.band.diagnosis.message !== band().message
+            : props.band.diagnosis || (props.band.title && props.band.message !== props.band.title)
+        }
+      >
         <p class="text-secondary">{props.band.diagnosis?.message ?? props.band.message}</p>
       </Show>
-      <Show when={props.band.action}>
+      <Show when={props.band.action && !primaryDiagnosis(props.band)}>
         <div class="mt-1.5 flex flex-wrap gap-2">
           <Recovery band={props.band} />
         </div>
@@ -180,7 +198,7 @@ export default function SqlConsoleView(props: {
     c.setSql(EXAMPLE_SQL);
     c.setParameter("bucket", "1h");
   };
-  return (
+  const content = (
     <section class="flex min-w-0 flex-1 flex-col gap-3" aria-label={title()}>
       <h1 class="sr-only">{title()}</h1>
       <Tabs
@@ -188,7 +206,13 @@ export default function SqlConsoleView(props: {
         onValueChange={setTab}
         ariaLabel="SQL"
         trailing={
-          <Button variant="ai" disabled={c.assistantState() === "launching"} onClick={() => void c.launchAssistant()}>
+          <Button
+            class={props.renderFrame ? "pulse-workspace__desktop-action" : undefined}
+            variant="ai"
+            loading={c.assistantState() === "launching"}
+            loadingLabel={t().sqlAssistantLaunching}
+            onClick={() => void c.launchAssistant()}
+          >
             <i class="ti ti-sparkles" aria-hidden="true" />
             {t().sqlAskAssistant}
           </Button>
@@ -449,6 +473,11 @@ export default function SqlConsoleView(props: {
                 </span>
               </Show>
             </div>
+            <Show when={band().action && !["cancel", "focus-parameter"].includes(band().action!.kind)}>
+              <div class="shrink-0">
+                <Recovery band={band()} />
+              </div>
+            </Show>
           </div>
           <div
             data-sql-region="result"
@@ -513,7 +542,13 @@ export default function SqlConsoleView(props: {
                     <i class="ti ti-file-code" aria-hidden="true" />
                     {t().sqlInsertExample}
                   </Button>
-                  <Button variant="ai" disabled={c.assistantState() === "launching"} onClick={() => void c.launchAssistant()}>
+                  <Button
+                    class={props.renderFrame ? "pulse-workspace__desktop-action" : undefined}
+                    variant="ai"
+                    loading={c.assistantState() === "launching"}
+                    loadingLabel={t().sqlAssistantLaunching}
+                    onClick={() => void c.launchAssistant()}
+                  >
                     <i class="ti ti-sparkles" aria-hidden="true" />
                     {t().sqlAskAssistant}
                   </Button>
@@ -610,4 +645,17 @@ export default function SqlConsoleView(props: {
       </Show>
     </section>
   );
+  return props.renderFrame
+    ? props.renderFrame(
+        content,
+        <IconButton
+          variant="ai"
+          label={c.assistantState() === "launching" ? t().sqlAssistantLaunching : t().sqlAskAssistant}
+          loading={c.assistantState() === "launching"}
+          onClick={() => void c.launchAssistant()}
+        >
+          <i class="ti ti-sparkles" aria-hidden="true" />
+        </IconButton>,
+      )
+    : content;
 }

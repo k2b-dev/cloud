@@ -106,7 +106,7 @@ export default function SourcesView(props: SourcesViewProps) {
   };
 
   return (
-    <section class="flex min-h-0 flex-1 flex-col gap-2">
+    <section class="flex min-h-0 flex-1 flex-col gap-2" aria-label={t().sources}>
       <div class="flex shrink-0 flex-wrap items-center gap-2">
         <div class="min-w-64 flex-1">
           <TextInput
@@ -119,6 +119,7 @@ export default function SourcesView(props: SourcesViewProps) {
           />
         </div>
         <Button
+          class="pulse-workspace__desktop-action"
           type="button"
           variant="secondary"
           size="sm"

@@ -4,6 +4,7 @@ import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { Overview } from "../../overview-contracts";
 import { usePulseMessages } from "../use-messages";
 import DashboardView from "./DashboardView";
+import type { DashboardActions } from "./dashboard-actions";
 import { DashboardClientError, type DashboardSnapshot, dashboardClient } from "./dashboard-client";
 import { dashboardStyles } from "./dashboard-styles";
 import { launchPulseOverviewAssistant } from "./pulse-assistant-launch";
@@ -15,6 +16,7 @@ export default function DashboardsView(props: {
   snapshot?: DashboardSnapshot;
   canWrite: boolean;
   overview?: Overview | null;
+  actions?: DashboardActions;
 }) {
   const t = usePulseMessages(),
     locale = useLocale();
@@ -130,10 +132,11 @@ export default function DashboardsView(props: {
     >
       {(dashboard) => (
         <DashboardView
+          actions={props.actions}
           name={dashboard.name}
           panels={dashboard.definition.panels}
           range={props.route.dashboardRange ?? { range: "24h" }}
-          path={buildPulseWorkspaceHref({ baseId: props.base.id, state: props.route })}
+          path={buildPulseWorkspaceHref({ baseId: props.base.id, state: { ...props.route, dashboardId: dashboard.id } })}
           target={{ baseId: props.base.id, dashboardId: dashboard.id }}
           private={{ dashboard, base: props.base, canWrite: props.canWrite, overview: props.overview }}
         />

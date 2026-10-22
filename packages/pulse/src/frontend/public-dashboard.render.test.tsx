@@ -2,20 +2,29 @@ import { afterAll, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { defineApp } from "@k2b/cloud";
 import type { CloudRuntime } from "@k2b/cloud/contracts";
 import { type AuthContext, err, fail, ok } from "@k2b/cloud/server";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
-import { createStatusPreservingSsrHandler } from "../../../cloud/src/_internal/status-preserving-ssr";
 import * as config from "../config";
 import * as panels from "../service/dashboard-panels";
 import * as gate from "./not-set-up";
 import { dashboardTestDashboard } from "./workspace/dashboard-test-fixtures";
 
 const root = mkdtempSync(join(tmpdir(), "pulse-public-dashboard-"));
-const render = createConfig({ dev: true, rootDir: root });
-Bun.plugin(render.plugin());
-const renderer = spyOn(config, "ssr").mockImplementation(Object.assign(createStatusPreservingSsrHandler(render.html), config.ssr));
+Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+process.once("exit", () => rmSync(root, { recursive: true, force: true }));
+const render = defineApp({
+  id: "pulse",
+  name: "Pulse",
+  icon: "ti ti-activity-heartbeat",
+  description: "Public dashboard render fixture",
+  baseUrl: "http://pulse.fixture",
+  routes: ["/app/pulse"],
+  appRoot: root,
+});
+const renderer = spyOn(config, "ssr").mockImplementation(render.ssr);
 let gated = 0;
 const block = spyOn(gate, "pulseNotSetUpGate").mockImplementation(() => async (c) => {
   gated += 1;
@@ -50,6 +59,7 @@ test("anonymous public SSR is before the private auth/store gate and exposes pre
     expect(response.headers.get("Cache-Control")).toContain("no-store");
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
     const html = await response.text();
+    expect(html).toMatch(/<title>[^<]*Server &amp; Traefik[^<]*<\/title>/);
     expect(html).toContain("minimal-layout-footer");
     expect(html).toContain("Server &amp; Traefik");
     expect(html).toContain("ti ti-router");
@@ -75,6 +85,7 @@ test("revoked public link renders an actionable minimal error without redirectin
   expect(response.headers.get("location")).toBeNull();
   expect(response.headers.get("Cache-Control")).toContain("no-store");
   const html = await response.text();
+  expect(html).toMatch(/<title>[^<]*Dashboard nicht verfügbar[^<]*<\/title>/);
   expect(html).toContain("Dashboard nicht verfügbar");
   expect(html).toContain("Erneut versuchen");
   expect(html).not.toContain("SELECT time");
@@ -88,7 +99,20 @@ test("an initial metadata outage keeps a minimal retry page and never exposes th
   expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
   const html = await response.text();
   expect(html).toContain("minimal-layout-footer");
+  expect(html).toMatch(/<title>[^<]*Die Pulse-Daten konnten nicht aktualisiert werden[^<]*<\/title>/);
   expect(html).toContain("Dashboard konnte nicht geladen werden");
   expect(html).toContain("Erneut versuchen");
   expect(html).not.toContain("fictional-sensitive-database-detail");
+});
+
+test("only current workspace routes are mounted", () => {
+  const paths = routes.routes.filter((route) => route.method === "GET").map((route) => route.path);
+  expect(paths).toContain("/:baseId/sql");
+  expect(paths).toContain("/:baseId/dashboards/:dashboardId");
+  expect(paths).toContain("/:baseId/sources/:sourceId");
+  for (const path of paths) {
+    expect(path).not.toMatch(/\/(explorer|signals|resources|events|metrics|states|query-reference)(?:\/|$)/);
+    expect(path).not.toContain("/edit");
+    expect(path).not.toContain("*");
+  }
 });

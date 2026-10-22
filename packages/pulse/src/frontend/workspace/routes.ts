@@ -3,7 +3,7 @@ import { SQL_MAX_BYTES, SQL_MAX_PARAMETERS, SQL_PARAMETER_MAX_BYTES } from "../.
 import { dashboardRangeSearch } from "./dashboard-client";
 import { readDashboardRange } from "./dashboard-data";
 
-export type WorkspaceView = "overview" | "sources" | "coming-back" | "sql" | "dashboards";
+export type WorkspaceView = "overview" | "sources" | "sql" | "dashboards";
 export const PULSE_SIDEBAR_SQL_ID = "sql";
 export const PULSE_SETTINGS_TABS = ["general", "members", "retention", "usage", "danger"] as const;
 export type PulseSettingsTab = (typeof PULSE_SETTINGS_TABS)[number];
@@ -23,7 +23,6 @@ export type WorkspaceHrefOptions = { baseId: string; state: Omit<WorkspaceRouteS
 // never truncate SQL or values into a different query. Saved query identity always survives.
 export const MAX_PULSE_WORKSPACE_HREF_LENGTH = 4_000;
 const bytes = (value: string) => new TextEncoder().encode(value).length;
-const removedViews = new Set(["explorer", "signals", "resources", "events", "metrics", "states", "query-reference"]);
 const decode = (value: string) => {
   try {
     return decodeURIComponent(value);
@@ -53,7 +52,6 @@ export const readWorkspacePathState = (path: string, baseId: string): WorkspaceR
   if (view === "sources") state = { view: "sources", sourceId: decode(id ?? "") };
   else if (view === "dashboards")
     state = { view: "dashboards", sourceId: "", dashboardId: decode(id ?? ""), dashboardRange: readDashboardRange(path) };
-  else if (view && removedViews.has(view)) state.view = "coming-back";
   else if (view === "sql") {
     state = { view: "sql", sourceId: "", queryId: decode(id ?? ""), sql: undefined, params: {} };
     const alertId = url.searchParams.get("alert");
@@ -84,11 +82,9 @@ export const buildPulseWorkspaceHref = ({ baseId, state }: WorkspaceHrefOptions)
       ? base
       : state.view === "dashboards"
         ? `${base}/dashboards${state.dashboardId ? `/${encodeURIComponent(state.dashboardId)}` : ""}`
-        : state.view === "coming-back"
-          ? `${base}/dashboards`
-          : state.view === "sql"
-            ? `${base}/sql${state.queryId ? `/${encodeURIComponent(state.queryId)}` : ""}`
-            : `${base}/sources${state.sourceId ? `/${encodeURIComponent(state.sourceId)}` : ""}`;
+        : state.view === "sql"
+          ? `${base}/sql${state.queryId ? `/${encodeURIComponent(state.queryId)}` : ""}`
+          : `${base}/sources${state.sourceId ? `/${encodeURIComponent(state.sourceId)}` : ""}`;
   const search = new URLSearchParams(state.view === "dashboards" ? dashboardRangeSearch(state.dashboardRange ?? {}) : undefined);
   if (state.settings) search.set("settings", state.settings);
   if (state.view === "sql" && state.alertId && !state.queryId) search.set("alert", state.alertId);

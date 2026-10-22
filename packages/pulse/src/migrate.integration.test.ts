@@ -73,6 +73,7 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         { version: 3, name: "clickhouse_baseline" },
         { version: 4, name: "sql_console" },
         { version: 5, name: "overview_alerts" },
+        { version: 7, name: "sql_dashboards" },
       ]);
       expect(await sql`SELECT extname FROM pg_extension ORDER BY extname`).toEqual(extensions);
       const ddl = await readFile(`${import.meta.dir}/schema.ts`, "utf8");
@@ -89,6 +90,9 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         "base_internal_targets",
         "base_stores",
         "bases",
+        "dashboard_operations",
+        "dashboard_runs",
+        "dashboards",
         "event_kinds",
         "ingest_idempotency",
         "metric_defs",

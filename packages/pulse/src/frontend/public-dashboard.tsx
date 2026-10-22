@@ -17,6 +17,7 @@ export default ssr<AuthContext>(async (c) => {
   const path = requestPath(c);
   const range = readDashboardRange(path);
   const denied = result && !result.ok && [401, 403, 404].includes(result.error.status);
+  c.get("page").title = result?.ok ? result.data.name : denied ? t.dashboardDenied : t.pulseDataRefreshFailed;
   if (!result) c.status(503);
   else if (!result.ok) c.status(result.error.status);
   return () => (

@@ -88,6 +88,7 @@ export const workspaceFixture: PulseWorkspaceProps = {
       dataClearCompletedAt: null,
       dataClearFailedAt: null,
       dataClearError: null,
+      memberCount: 3,
       createdAt: "2026-10-01T08:00:00.000Z",
       updatedAt: "2026-10-01T08:00:00.000Z",
       store: {

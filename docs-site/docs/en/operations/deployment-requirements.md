@@ -725,6 +725,11 @@ setup lock. Restart old and new replicas of one app one at a time until all
 run this release. Keep Core first: it creates the shared schemas other
 applications need.
 
+Pulse base responses include `memberCount`, the number of configured person,
+group and agent grants with access. The sidebar reads this authorized base
+metadata; group sizes and general-access rules are not expanded into a people
+count.
+
 ### Prepare Pulse's new data store
 
 This update deletes all existing Pulse data without confirmation: bases,
