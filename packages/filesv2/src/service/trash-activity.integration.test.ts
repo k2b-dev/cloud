@@ -4,10 +4,11 @@ import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { Filegate, FilegateError } from "@k2b/filegate";
 import { sql } from "bun";
-import { suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
+import { activityFilegate } from "../../test/activity-filegate";
 import { testActor, testCall } from "../../test/files-call";
-import { assertPrivateDatabase, localFilegateToken } from "../../test/private-database";
+import { assertPrivateDatabase } from "../../test/private-database";
 import type { Configuration } from "../contracts";
 import { bindings } from "../data/bases";
 import { operations } from "../data/operations";
@@ -18,7 +19,7 @@ import { FilesError } from "./errors";
 import { connectFilegate } from "./filegate-facade";
 import { createFilesService } from "./index";
 
-const suite = suiteFor("database", "filegate", "nats");
+const suite = suiteFor("database", "nats");
 const now = new Date("2030-05-15T12:00:00Z");
 const earlier = new Date("2030-05-14T12:00:00Z");
 const stale = new Date("2030-05-15T11:58:00Z");
@@ -46,6 +47,7 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
   const home = `${prefix}/users/alice`;
   let ownsPrefix = false;
   let processSync: ProcessSync | undefined;
+  let storage: Awaited<ReturnType<typeof activityFilegate>> | undefined;
   let client: Filegate;
   let config: Configuration & { token: string; tokenConfigured: boolean; unreadable: boolean };
   let actor: Extract<RequestActor, { kind: "user" }>;
@@ -241,10 +243,11 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
   beforeAll(async () => {
     await assertPrivateDatabase();
     processSync = await startProcessSync({ application: "filesv2" });
-    const token = await localFilegateToken();
+    storage = await activityFilegate();
+    const { token, url } = storage;
     config = {
       activityRetentionDays: 365,
-      url: testInfra.filegate!,
+      url,
       token,
       tokenConfigured: true,
       unreadable: false,
@@ -313,7 +316,11 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
         }
       }
     } finally {
-      await processSync?.stop();
+      try {
+        await processSync?.stop();
+      } finally {
+        await storage?.stop();
+      }
     }
   });
 
