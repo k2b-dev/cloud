@@ -858,4 +858,59 @@ describe("Files history components", () => {
     expect(rowTimes(dom.root)).toEqual(["2026-10-16T12:20:00.000Z"]);
     expect(chips()).toEqual(["1"]);
   });
+
+  test("a vanished item's chain names visible batch members and the execution link, without a second main action", async () => {
+    const execution = { invocationId: "inv-1", requestId: null, callingApp: null, origin: "assistant" };
+    const moved = entry({
+      action: "item.move",
+      via: "agent",
+      batchId: "batch-1",
+      execution,
+      time: "2026-10-14T14:40:00.000Z",
+      before: gone("vertrieb/Kunden/Angebote 2025"),
+      after: current("vertrieb/Archiv/2025/Angebote 2025"),
+    });
+    // Another visible match of the same batch; the stored batch size never reaches the browser.
+    const sibling = entry({
+      action: "item.move",
+      via: "agent",
+      batchId: "batch-1",
+      execution,
+      time: "2026-10-14T14:40:00.000Z",
+      before: gone("vertrieb/Kunden/Angebote 2025 Übersicht.xlsx", { directory: false }),
+      after: current("vertrieb/Archiv/2025/Angebote 2025 Übersicht.xlsx", { directory: false }),
+    });
+    const renamed = entry({
+      action: "item.rename",
+      time: "2026-10-02T07:15:00.000Z",
+      before: gone("vertrieb/Kunden/Angebote"),
+      after: gone("vertrieb/Kunden/Angebote 2025"),
+    });
+    const { default: ActivityView } = await import("../src/frontend/ActivityView");
+    const opened: unknown[] = [];
+    const dom = await mount(() => (
+      <ActivityView
+        env={{ ...env, executionHref: (value) => `/app/filesv2/executions/${value.id}` }}
+        filters={{ q: "Angebote 2025" }}
+        onFiltersChange={() => {}}
+        bases={[]}
+        people={[]}
+        initial={{ filters: { q: "Angebote 2025" }, page: page([moved, sibling, renamed]) }}
+        load={async () => page([moved, sibling, renamed])}
+        loadChain={async () =>
+          chain({ endpoint: { baseId: "cloud:groups:vertrieb", path: "Archiv/2025/Angebote 2025", itemId: null }, certainty: "verified" })
+        }
+        actions={{ onOpen: (target) => opened.push(target), onMoveBack: async () => {} }}
+        retentionDays={365}
+      />
+    ));
+    await flush();
+    const chainSection = dom.root.querySelector(".filesv2-history-chain")!;
+    const lead = chainSection.querySelector(".filesv2-history-row")!;
+    expect(lead.textContent).toContain("mit 1 weiteren Elementen");
+    expect(lead.querySelector("a.filesv2-history-link")?.getAttribute("href")).toBe(`/app/filesv2/executions/${moved.id}`);
+    // The hit above owns the jump; chain rows never repeat it.
+    expect(chainSection.querySelector(".filesv2-history-row__action button")).toBeNull();
+    expect(buttonNamed(dom.root, "Dorthin springen")).toBeDefined();
+  });
 });
