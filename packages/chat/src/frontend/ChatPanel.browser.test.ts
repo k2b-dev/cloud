@@ -863,9 +863,14 @@ for (const provider of ["chat", "assistant"] as const) {
 for (const width of [1440, 390]) {
   test(`Assistant create replay preserves another tab's saved draft at ${width}px`, async () => {
     fixture.assistant.reset();
-    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en" });
+    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
+    await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
+    let releaseTarget!: () => void;
+    const targetSave = new Promise<void>((resolve) => {
+      releaseTarget = resolve;
+    });
     try {
       await page.goto(fixture.url + "app/fixture");
       await page.locator('html[data-fixture-ready="true"]').waitFor();
@@ -879,16 +884,72 @@ for (const width of [1440, 390]) {
       await panel.getByRole("button", { name: "Save drafts", exact: true }).click();
       await panel.getByText("Conversation creation is unclear", { exact: true }).waitFor();
       const created = [...fixture.assistant.conversations.values()][0]!;
+      // A desktop tab also restores the panel. Its writes must not satisfy the full-view save below.
+      if (width === 1440) fixture.assistant.addConversation("Chat2C");
       const other = await context.newPage();
+      const draftUrl = `${fixture.url}api/ai/conversations/${created.id}/draft`;
+      const expectedRevision = created.draft.revision;
+      if (width === 1440)
+        await other.route(draftUrl, async (route) => {
+          if (route.request().method() === "PUT") await targetSave;
+          await route.continue();
+        });
       await other.goto(`${fixture.url}app/assistant?conversation=${created.id}`);
       await other.locator('html[data-fixture-ready="true"]').waitFor();
-      const saved = other.waitForResponse((response) => response.url().endsWith("/draft") && response.request().method() === "PUT");
+      const saved = other.waitForResponse((response) => {
+        const request = response.request();
+        return (
+          response.url() === draftUrl &&
+          request.method() === "PUT" &&
+          request.frame() === other.mainFrame() &&
+          request.postDataJSON().expectedRevision === expectedRevision &&
+          request
+            .postDataJSON()
+            .content.some((part: { type: string; text?: string }) => part.type === "text" && part.text === "Other tab draft B")
+        );
+      });
+      const extra = other.frameLocator("[data-cloud-panel-frame]");
+      const unrelatedSaved =
+        width === 1440
+          ? other.waitForResponse(
+              (response) => response.url() === `${fixture.url}api/ai/conversations/Chat2C/draft` && response.request().method() === "PUT",
+            )
+          : undefined;
+      if (unrelatedSaved) {
+        await other.evaluate(() =>
+          window.dispatchEvent(
+            new CustomEvent("cloud.panel.request", {
+              detail: { action: "open", provider: "assistant", search: "conversation=Chat2C", accepted: false },
+            }),
+          ),
+        );
+        await extra.locator('a[href="/app/assistant?conversation=Chat2C"]').waitFor();
+        await extra.locator('textarea:not([aria-hidden="true"])').fill("Unrelated panel draft");
+      }
       await other.locator('textarea:not([aria-hidden="true"])').fill("Other tab draft B");
+      if (unrelatedSaved) {
+        expect((await unrelatedSaved).ok()).toBe(true);
+        // The unrelated acknowledgement arrived while the target write was still held.
+        expect(created.draft.revision).toBe(expectedRevision);
+        expect(created.draft.content).toEqual([]);
+      }
+      releaseTarget();
       const response = await saved;
       expect(response.ok()).toBe(true);
-      const revision = created.draft.revision;
+      const savedDraft = await response.json();
+      expect(savedDraft.content).toEqual([{ type: "text", text: "Other tab draft B" }]);
+      expect(savedDraft.revision).toBeGreaterThan(expectedRevision);
+      expect(created.draft).toEqual(savedDraft);
+      expect(await other.locator('textarea:not([aria-hidden="true"])').inputValue()).toBe("Other tab draft B");
+      const revision = savedDraft.revision;
       const writes = fixture.assistant.requests.filter((request) => request.path.endsWith("/draft")).length;
+      const replay = page.waitForResponse(
+        (response) => response.url() === `${fixture.url}api/ai/conversations` && response.request().method() === "POST",
+      );
       await panel.getByRole("button", { name: "Retry creating conversation", exact: true }).click();
+      const replayResponse = await replay;
+      expect(replayResponse.ok()).toBe(true);
+      expect((await replayResponse.json()).draft).toEqual(savedDraft);
       await panel.getByText("The saved draft changed. Your local text has been kept.", { exact: true }).waitFor();
       expect(await composer.inputValue()).toBe("Local draft A");
       await panel.getByText("Other tab draft B", { exact: true }).waitFor();
@@ -910,7 +971,14 @@ for (const width of [1440, 390]) {
       expect(await composer.inputValue()).toBe("Other tab draft B");
       await page.locator("[data-cloud-panel-close]").click();
       await page.locator("[data-cloud-panel-frame]").waitFor({ state: "detached" });
+    } catch (error) {
+      console.error({
+        drafts: [...fixture.assistant.conversations.values()].map(({ id, draft }) => ({ id, draft })),
+        requests: fixture.assistant.requests,
+      });
+      throw error;
     } finally {
+      releaseTarget();
       await context.close();
     }
   }, 30_000);
@@ -1281,16 +1349,44 @@ const catalog = {
   ],
   page: { hasMore: false },
 };
-for (const embedded of [true, false])
-  test(`catalog and resource recovery in real ${embedded ? "panel" : "fullview"}`, async () => {
+for (const { embedded, width } of [
+  { embedded: true, width: 1440 },
+  { embedded: false, width: 1440 },
+  { embedded: false, width: 390 },
+])
+  test(`catalog and resource recovery in real ${embedded ? "panel" : "fullview"} at ${width}px`, async () => {
     fixture.assistant.reset();
-    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
+    await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
     const page = await context.newPage();
+    let documents = 0;
+    page.on("request", (request) => {
+      if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++;
+    });
     page.setDefaultTimeout(8000);
     let recoveredCatalogLoads = 0;
     let searches = 0;
     let catalogFailed = true;
-    await page.route("**/api/capabilities/v1/catalog?*", (route) => {
+    let releaseInitial!: () => void;
+    let releaseComposer!: () => void;
+    const initialCatalog = new Promise<void>((resolve) => {
+      releaseInitial = resolve;
+    });
+    const composerCatalog = new Promise<void>((resolve) => {
+      releaseComposer = resolve;
+    });
+    let catalogRequests = 0;
+    // A preceding catalog request may fail before the command menu's own request has settled.
+    const initialRequested = !embedded ? page.waitForRequest((request) => request.url().includes("/capabilities/v1/catalog")) : undefined;
+    await page.route("**/api/capabilities/v1/catalog?*", async (route) => {
+      const ordinal = ++catalogRequests;
+      if (!embedded) {
+        if (ordinal === 1) {
+          await initialCatalog;
+          return route.fulfill({ status: 503, json: { message: "Synthetic earlier catalog failure" } });
+        }
+        await composerCatalog;
+      }
       if (catalogFailed) return route.fulfill({ status: 503, json: { message: "Synthetic catalog failure" } });
       recoveredCatalogLoads++;
       return route.fulfill({ json: catalog });
@@ -1335,19 +1431,30 @@ for (const embedded of [true, false])
       const view = embedded ? page.frameLocator("[data-cloud-panel-frame]") : page;
       await view.locator('html[data-fixture-ready="true"]').waitFor();
       const composer = view.locator('textarea:not([aria-hidden="true"])');
-      const failed = page.waitForResponse((r) => r.url().includes("/capabilities/v1/catalog") && r.status() === 503);
+      if (initialRequested) await initialRequested;
+      const failed = page.waitForResponse(
+        (response) =>
+          response.url().includes("/capabilities/v1/catalog") &&
+          response.status() === 503 &&
+          (!embedded || new URL(response.request().frame().url()).pathname === "/app/assistant/panel"),
+      );
       await composer.fill("/");
       await composer.click();
+      releaseInitial();
       await failed;
       await view.getByRole("listbox").waitFor();
-      catalogFailed = false;
+      releaseComposer();
       if (embedded) {
         expect(await view.getByText("Commands from apps could not be loaded", { exact: true }).count()).toBe(0);
+        catalogFailed = false;
         await composer.press("Escape");
         await composer.fill("plain");
         await composer.fill("/notes");
       } else {
-        await view.getByRole("option").filter({ hasText: "Commands from apps could not be loaded" }).click();
+        const retry = view.getByRole("option").filter({ hasText: "Commands from apps could not be loaded" });
+        await retry.waitFor();
+        catalogFailed = false;
+        await retry.click();
         await composer.press("Escape");
         await composer.fill("plain");
         await composer.fill("/notes");
@@ -1363,6 +1470,7 @@ for (const embedded of [true, false])
       await dialog.getByRole("option").filter({ hasText: "Synthetic recovery note" }).click();
       await dialog.getByRole("button", { name: "Add", exact: true }).click();
       await dialog.waitFor({ state: "hidden" });
+      expect(documents).toBe(1);
       expect(searches).toBe(2);
       expect(await composer.inputValue()).toContain("Synthetic recovery note");
       expect(await view.locator(".k2b-chat-composer__mention").allTextContents()).toEqual(["Synthetic recovery note"]);
@@ -1375,6 +1483,8 @@ for (const embedded of [true, false])
       console.error(await (embedded ? page.frameLocator("[data-cloud-panel-frame]") : page).locator("body").innerText());
       throw error;
     } finally {
+      releaseInitial();
+      releaseComposer();
       await context.close();
     }
   }, 30000);
