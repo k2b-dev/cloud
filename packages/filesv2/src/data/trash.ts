@@ -110,6 +110,8 @@ export async function finishDeletedTrash(tx: TransactionSQL, operation: Operatio
       const [row] = await tx<TrashRow[]>`SELECT * FROM filesv2.trash WHERE id=${candidate.id}::uuid
         AND base_id=${operation.base_id}::uuid AND root=${operation.root} AND server_url=${operation.server_url}`;
       if (!row || !["pending", "trashed", "restoring"].includes(row.state)) continue;
+      // A pending transfer may still publish either endpoint after these reads.
+      if (row.error_code === "transfer_pending") continue;
       const opposite = row.state === "pending" ? row.original : row.state === "restoring" ? row.restore_path : null;
       const endpoints = row.state === "trashed" ? [row.trashed] : [row.trashed, opposite];
       if (

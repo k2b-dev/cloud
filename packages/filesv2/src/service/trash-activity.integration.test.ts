@@ -705,6 +705,23 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
     ).toHaveLength(51);
   });
 
+  test.each(["pending", "restoring"] as const)("deletion preserves a still-executable %s transfer", async (phase) => {
+    const file = await fixture(`transfer-pending-${phase}.txt`);
+    const journal = await pendingTrash(file);
+    if (phase === "restoring") {
+      await trash.finish(journal.id, "trashed", await root().stat(file.target));
+      await trash.restoring(journal.id, file.path, await root().stat(file.target), config.url, {
+        call: callFor("restore"),
+        basePath: home,
+      });
+    }
+    await sql`UPDATE filesv2.trash SET error_code='transfer_pending' WHERE id=${journal.id}::uuid`;
+    const before = await rows();
+    await purge(service, file);
+    expect(await trash.get(journal.id, bindingId)).toMatchObject({ state: phase, error_code: "transfer_pending" });
+    for (const entry of before) expect(await history(entry.id)).toEqual(entry);
+  });
+
   test.each(["pending", "restoring"] as const)("deleting one %s endpoint preserves a surviving opposite endpoint", async (phase) => {
     const file = await fixture(`survives-${phase}.txt`);
     const journal = await pendingTrash(file);
