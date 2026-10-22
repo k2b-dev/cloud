@@ -99,16 +99,19 @@ export function createCodeSourceTool(name: CodeSourceToolName) {
       await authorizeDatabase?.();
       const signed = await withActiveIdentitySigner(
         "invocation",
-        (signer) =>
-          signInvocationToken({
-            targetAppId: "assistant",
-            callingAppId: "core",
-            operation: `tool:${name}`,
-            schemaHash: null,
-            authority: invocationAuthorityFromRequest(authority),
-            signer,
-            issuer: signer.issuer,
-          }),
+        (signer, db) =>
+          signInvocationToken(
+            {
+              targetAppId: "assistant",
+              callingAppId: "core",
+              operation: `tool:${name}`,
+              schemaHash: null,
+              authority: invocationAuthorityFromRequest(authority),
+              signer,
+              issuer: signer.issuer,
+            },
+            { db, groupsAdmin: signer.groupsAdmin },
+          ),
         { signal, timeoutMs: 5000 },
       );
       const headers = new Headers({ authorization: `Bearer ${signed.token}`, "content-type": "application/json" });

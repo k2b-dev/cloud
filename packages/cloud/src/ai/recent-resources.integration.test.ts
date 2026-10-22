@@ -7,6 +7,7 @@ import * as registry from "../_internal/registry";
 import * as capabilities from "../api/capabilities";
 import type { RequestAuthority } from "../server";
 import { accounts } from "../services/accounts";
+import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { migrateCloudAi } from "./migrate";
 import { listAiRecentResources } from "./recent-resources";
@@ -72,6 +73,7 @@ const fixture = async () => {
 };
 
 suite("recent sent resources: real store and current reader authorization", () => {
+  useRegisteredTestApp("demo", { kind: "signedIn" });
   beforeAll(migrateCloudAi);
 
   test("only own sent user refs count; excludes archived chats, routines, agents, assistant/tool markers and malformed content", async () => {

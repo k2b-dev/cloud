@@ -158,10 +158,14 @@ databaseSuite()("app skills (integration)", () => {
       expect(withReference?.revision).toBe(3);
       expect(await aiSkills.setEnabled(skill.id, subject, false, authority)).toBe(false);
       expect(await aiSkills.setEnabled(skill.id, subject, true, authority)).toBe(true);
-      expect(await aiSkills.removeReference(skill.id, subject, { expectedRevision: 3, path: "references/a.md" }, authority)).toMatchObject({
-        revision: 4,
-        references: [],
-      });
+      const withoutReference = await aiSkills.removeReference(
+        skill.id,
+        subject,
+        { expectedRevision: 3, path: "references/a.md" },
+        authority,
+      );
+      expect(withoutReference?.revision).toBe(4);
+      expect(withoutReference?.references).toHaveLength(0);
       expect(await aiSkills.delete(skill.id, subject, authority)).toBe(true);
     } finally {
       await aiSkills.admin.delete(skill.id);

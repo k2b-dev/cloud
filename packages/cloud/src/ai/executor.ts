@@ -926,9 +926,9 @@ export class AiTurnExecutor {
     const helpEnabled = toolActor !== null;
     const toolDiscoveryEnabled = toolActor !== null;
     const appToolsEnabled = toolActor !== null && defaultToolSource?.appTools === true;
-    let capabilityAuthority: Awaited<ReturnType<typeof resolveAiCapabilityActor>> | null = null;
+    let toolAuthority: Awaited<ReturnType<typeof resolveAiCapabilityActor>> | null = null;
     try {
-      capabilityAuthority = appToolsEnabled
+      toolAuthority = toolActor
         ? await resolveAiCapabilityActor({ conversationId, persistedActor: material.actor, store: aiConversations })
         : null;
     } catch (error) {
@@ -947,7 +947,10 @@ export class AiTurnExecutor {
       );
       return;
     }
-    if (capabilityAuthority) material.actor = capabilityAuthority.actor;
+    if (toolAuthority) material.actor = toolAuthority.actor;
+    // Skills and Help need current authority even when application operations are disabled.
+    // Keep the appTools switch responsible for exposing and executing those operations.
+    const capabilityAuthority = appToolsEnabled ? toolAuthority : null;
 
     // Personalization applies to user-backed personal conversations.
     const user = aiActorUser(material.actor);
@@ -967,7 +970,7 @@ export class AiTurnExecutor {
     const skillSubject =
       defaultToolSource && resolved.profile.capabilities.includes("tools") ? accessSubjectForActor(material.actor) : null;
     const availableSkills = skillSubject
-      ? (await aiSkills.list(skillSubject, { authority: capabilityAuthority })).filter((skill) => skill.enabled)
+      ? (await aiSkills.list(skillSubject, { authority: toolAuthority })).filter((skill) => skill.enabled)
       : [];
     const localClient = !config.background && !config.mandate ? config.client : undefined;
     const localContext = localClient ? config.localContext : undefined;
@@ -1005,15 +1008,15 @@ export class AiTurnExecutor {
         : undefined;
     const skillFiles = skillSubject
       ? {
-          list: () => aiSkills.listTurnFiles(turnId, skillSubject, capabilityAuthority),
-          read: (path: string) => aiSkills.readTurnFile(turnId, path, skillSubject, capabilityAuthority),
+          list: () => aiSkills.listTurnFiles(turnId, skillSubject, toolAuthority),
+          read: (path: string) => aiSkills.readTurnFile(turnId, path, skillSubject, toolAuthority),
         }
       : undefined;
     const runtimeTools = [
       ...material.tools,
       ...(memoryActive ? [createCloudAiMemoryTool(query)] : []),
-      ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject, capabilityAuthority)] : []),
-      ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject, localSkills, capabilityAuthority)] : []),
+      ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject, toolAuthority)] : []),
+      ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject, localSkills, toolAuthority)] : []),
       ...(config.project && resolvedProjectId && projectSubject
         ? [
             createCloudAiSearchProjectTool(resolvedProjectId, projectSubject),
@@ -1265,8 +1268,8 @@ export class AiTurnExecutor {
     const tools = toolActor
       ? createAiToolResolver({
           conversationId,
-          actor: capabilityAuthority?.actor ?? toolActor,
-          authority: capabilityAuthority,
+          actor: toolAuthority?.actor ?? toolActor,
+          authority: toolAuthority,
           staticTools: activeTools,
           ...(activeTools.some((tool) => tool.def.name === "load_skill") ? { skillNames: availableSkills.map((skill) => skill.name) } : {}),
           allowedTools,
@@ -1485,7 +1488,7 @@ export class AiTurnExecutor {
       turnId,
       skillSubject,
       activeTools.some((tool) => tool.def.name === "load_skill"),
-      capabilityAuthority,
+      toolAuthority,
     );
     const chat = await aiConversations.getConversation({ conversationId });
     const workingPlan = chat?.todoPlan;

@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from "bun:test";
-import { type AppRegistryEntry, CapabilityManifestSchema } from "@k2b/cloud/contracts";
-import type { RequestAuthority } from "@k2b/cloud/server";
-import * as registry from "../../../cloud/src/_internal/registry";
-import { isMailInvitationIntegrationAvailable } from "./mail-integration";
+import * as registry from "../packages/cloud/src/_internal/registry";
+import { type AppRegistryEntry, CapabilityManifestSchema } from "../packages/cloud/src/contracts/index.ts";
+import type { RequestAuthority } from "../packages/cloud/src/server/index.ts";
+import { isMailInvitationIntegrationAvailable } from "../packages/spaces/src/service/mail-integration";
 
 const authority: RequestAuthority = {
   actor: {
@@ -27,9 +27,7 @@ const authority: RequestAuthority = {
   scopes: ["read"],
 };
 
-const manifest = CapabilityManifestSchema.parse(
-  await Bun.file(new URL("../../../../tests/fixtures/capabilities/v2/mail.json", import.meta.url)).json(),
-);
+const manifest = CapabilityManifestSchema.parse(await Bun.file(new URL("./fixtures/capabilities/v2/mail.json", import.meta.url)).json());
 
 test("spaces integration discovery uses request authority and preserves credential caps", async () => {
   let app: AppRegistryEntry = {

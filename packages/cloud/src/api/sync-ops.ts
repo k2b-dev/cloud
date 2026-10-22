@@ -55,17 +55,20 @@ export const createSyncOpsProxyRoutes = (dependencies: Dependencies = {}) =>
       try {
         const signed = await (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
           "invocation",
-          (signer) =>
-            (dependencies.signInvocation ?? signInvocationToken)({
-              targetAppId: app.id,
-              callingAppId: "core",
-              operation,
-              schemaHash: null,
-              authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
-              requestId,
-              signer,
-              issuer: signer.issuer,
-            }),
+          (signer, db) =>
+            (dependencies.signInvocation ?? signInvocationToken)(
+              {
+                targetAppId: app.id,
+                callingAppId: "core",
+                operation,
+                schemaHash: null,
+                authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
+                requestId,
+                signer,
+                issuer: signer.issuer,
+              },
+              { db, groupsAdmin: signer.groupsAdmin },
+            ),
           { signal, timeoutMs: 5_000 },
         );
         const headers = new Headers({ authorization: `Bearer ${signed.token}`, accept: "application/json" });

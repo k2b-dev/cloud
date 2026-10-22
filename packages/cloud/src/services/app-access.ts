@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { type SQL, sql } from "bun";
 import type { Context } from "hono";
 import type { AppMeta } from "../contracts/app";
 import { AppAccessRuleSchema, type FixedAppAccessRule } from "../contracts/app-access";
@@ -77,8 +77,16 @@ const reportFailure = () => {
   logger("app-access").error("Application access could not be resolved; configurable applications are unavailable");
 };
 
-/** One authoritative SQL read for all configurable apps. No grant cache: revocation applies on the next request. */
-export const usableAppIds = async (authority: RequestAuthority | null, apps: readonly AccessApp[]): Promise<Set<string>> => {
+/**
+ * One authoritative SQL read for all configurable apps. No grant cache: revocation applies on the next request.
+ * Pass the reserved transaction as `db` when checking access inside a guarded operation.
+ */
+export const usableAppIds = async (
+  authority: RequestAuthority | null,
+  apps: readonly AccessApp[],
+  options: { db?: SQL } = {},
+): Promise<Set<string>> => {
+  const db = options.db ?? sql;
   const allowed = new Set(apps.filter((app) => app.access?.kind !== "grants" && evaluateAppAccess(authority, app)).map((app) => app.id));
   if (!authority) return allowed;
   const configurable = apps.filter((app) => app.access?.kind === "grants" && credentialAllows(authority, app.id));
@@ -87,13 +95,13 @@ export const usableAppIds = async (authority: RequestAuthority | null, apps: rea
     const principal = buildAccessPrincipalCondition({
       subject: authority.accessSubject,
       columns: {
-        userId: sql`a.user_id`,
-        groupId: sql`a.group_id`,
-        serviceAccountId: sql`a.service_account_id`,
-        authenticatedOnly: sql`a.authenticated_only`,
+        userId: db`a.user_id`,
+        groupId: db`a.group_id`,
+        serviceAccountId: db`a.service_account_id`,
+        authenticatedOnly: db`a.authenticated_only`,
       },
     });
-    const states = await sql<GrantState[]>`
+    const states = await db<GrantState[]>`
       SELECT requested.app_id, s.configured_at IS NOT NULL AS configured,
         (SELECT a.permission FROM auth.app_access j JOIN auth.access a ON a.id = j.access_id
          WHERE j.app_id = requested.app_id AND a.permission IN ('read', 'admin')
@@ -111,5 +119,5 @@ export const usableAppIds = async (authority: RequestAuthority | null, apps: rea
   return allowed;
 };
 
-export const canUseApp = async (authority: RequestAuthority | null, app: AccessApp): Promise<boolean> =>
-  (await usableAppIds(authority, [app])).has(app.id);
+export const canUseApp = async (authority: RequestAuthority | null, app: AccessApp, options: { db?: SQL } = {}): Promise<boolean> =>
+  (await usableAppIds(authority, [app], options)).has(app.id);

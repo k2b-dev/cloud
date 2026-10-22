@@ -1,24 +1,24 @@
 import { beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
-import { aiSkills, aiSkillsRoutes } from "@k2b/cloud/ai";
-import { createAiOpenAiRoutes, createCoreApiRouter } from "@k2b/cloud/api";
-import type { AppRegistryEntry } from "@k2b/cloud/contracts";
-import type { AuthContext, RequestAuthority } from "@k2b/cloud/server";
-import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
 import { sql } from "bun";
 import { Hono } from "hono";
-import { suiteFor } from "../../../scripts/fixtures/test-infra";
-import * as registry from "../../cloud/src/_internal/registry";
-import { migrateCloudAi } from "../../cloud/src/ai/migrate";
-import * as appAccess from "../../cloud/src/services/app-access";
-import * as appAccessMetrics from "../../cloud/src/services/app-access-metrics";
+import * as registry from "../packages/cloud/src/_internal/registry";
+import { aiSkills, aiSkillsRoutes } from "../packages/cloud/src/ai/index.ts";
+import { migrateCloudAi } from "../packages/cloud/src/ai/migrate";
+import { createAiOpenAiRoutes, createCoreApiRouter } from "../packages/cloud/src/api/index.ts";
+import type { AppRegistryEntry } from "../packages/cloud/src/contracts/index.ts";
+import type { AuthContext, RequestAuthority } from "../packages/cloud/src/server/index.ts";
+import { requireAppAccess } from "../packages/cloud/src/server/middleware/app-access";
+import * as appAccess from "../packages/cloud/src/services/app-access";
+import * as appAccessMetrics from "../packages/cloud/src/services/app-access-metrics";
 import {
   type AuthenticatedServiceAccountCredential,
   serviceAccountCredentials,
-} from "../../cloud/src/services/service-account-credentials";
-import { session } from "../../cloud/src/services/session";
-import { buildProjectedUser } from "../../cloud/src/services/session/user";
-import * as settings from "../../cloud/src/services/settings";
-import { aiChatTaskRoutes } from "./ai-chat-task-routes";
+} from "../packages/cloud/src/services/service-account-credentials";
+import { session } from "../packages/cloud/src/services/session";
+import { buildProjectedUser } from "../packages/cloud/src/services/session/user";
+import * as settings from "../packages/cloud/src/services/settings";
+import { aiChatTaskRoutes } from "../packages/core/src/ai-chat-task-routes";
+import { suiteFor } from "../scripts/fixtures/test-infra";
 
 const token = `cld_${"a".repeat(24)}_${"b".repeat(64)}`;
 const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };

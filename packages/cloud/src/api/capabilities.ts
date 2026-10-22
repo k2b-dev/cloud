@@ -389,18 +389,21 @@ const runCapabilityDispatch = async (
                   async (mandateAuthority) => {
                     deadline.check();
                     observed.subject = mandateAuthority.subject;
-                    return (params.dependencies?.signInvocation ?? signInvocationToken)({
-                      targetAppId: params.appId,
-                      callingAppId: mandate.ownerAppId,
-                      operation: invocationOperation,
-                      schemaHash: operation.schemaHash,
-                      authority: invocationAuthorityFromMandate(mandateAuthority),
-                      requestId,
-                      signer,
-                      issuer: signer.issuer,
-                    });
+                    return (params.dependencies?.signInvocation ?? signInvocationToken)(
+                      {
+                        targetAppId: params.appId,
+                        callingAppId: mandate.ownerAppId,
+                        operation: invocationOperation,
+                        schemaHash: operation.schemaHash,
+                        authority: invocationAuthorityFromMandate(mandateAuthority),
+                        requestId,
+                        signer,
+                        issuer: signer.issuer,
+                      },
+                      { db, groupsAdmin: signer.groupsAdmin },
+                    );
                   },
-                  { db },
+                  { db, groupsAdmin: signer.groupsAdmin },
                 );
               },
               { signal, timeoutMs: deadline.remainingMs() },
@@ -422,18 +425,21 @@ const runCapabilityDispatch = async (
           const signed = await deadline.wait(() =>
             (params.dependencies?.withActiveSigner ?? withActiveIdentitySigner)(
               "invocation",
-              (signer) => {
+              (signer, db) => {
                 deadline.check();
-                return (params.dependencies?.signInvocation ?? signInvocationToken)({
-                  targetAppId: params.appId,
-                  callingAppId: params.callingAppId ?? "core",
-                  operation: invocationOperation,
-                  schemaHash: operation.schemaHash,
-                  authority: invocationAuthorityFromRequest(authority),
-                  requestId,
-                  signer,
-                  issuer: signer.issuer,
-                });
+                return (params.dependencies?.signInvocation ?? signInvocationToken)(
+                  {
+                    targetAppId: params.appId,
+                    callingAppId: params.callingAppId ?? "core",
+                    operation: invocationOperation,
+                    schemaHash: operation.schemaHash,
+                    authority: invocationAuthorityFromRequest(authority),
+                    requestId,
+                    signer,
+                    issuer: signer.issuer,
+                  },
+                  { db, groupsAdmin: signer.groupsAdmin },
+                );
               },
               { signal, timeoutMs: deadline.remainingMs() },
             ),
@@ -445,7 +451,7 @@ const runCapabilityDispatch = async (
           });
         })();
   } catch (error) {
-    if (error instanceof AppAccessDeniedError) return Response.json(appAccessDeniedBody(error.app), { status: 403 });
+    if (error instanceof AppAccessDeniedError) return { body: appAccessDeniedBody(error.app), status: 403 };
     if (error instanceof MandateDispatchError) {
       const denied = errorResponse(
         error.status === 409 ? "MANDATE_REVISION_CHANGED" : "MANDATE_FORBIDDEN",

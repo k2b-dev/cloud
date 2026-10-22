@@ -12,6 +12,7 @@ import { env } from "../config/env";
 import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { auth, type RequestAuthority } from "../server";
+import { AppAccessDeniedError } from "../server/middleware/app-access";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import {
@@ -1739,4 +1740,18 @@ test("catalog app access filters before manifest lookup and pagination", async (
   const response = await routes.request("/capabilities/v1/catalog");
   expect(response.status).toBe(200);
   expect(await response.text()).not.toContain("hidden");
+});
+
+test("invocation issuance preserves structured app denial and never reaches the provider", async () => {
+  const fetch = mock(async () => Response.json({ data: { id: "one" } }));
+  const response = await queryDispatch({
+    getCapability: async () => entry(),
+    signInvocation: async () => {
+      throw new AppAccessDeniedError(summary(entry()));
+    },
+    fetch,
+  });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: "app_access_denied", app: "demo" });
+  expect(fetch).not.toHaveBeenCalled();
 });

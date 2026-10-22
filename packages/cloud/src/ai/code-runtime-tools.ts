@@ -83,14 +83,17 @@ export const runManagedCodeTool =
         try {
           return await withActiveIdentitySigner(
             "invocation",
-            (signer) =>
-              signInvocationToken({
-                ...audience,
-                schemaHash: null,
-                authority: invocationAuthorityFromRequest(authority),
-                signer,
-                issuer: signer.issuer,
-              }),
+            (signer, db) =>
+              signInvocationToken(
+                {
+                  ...audience,
+                  schemaHash: null,
+                  authority: invocationAuthorityFromRequest(authority),
+                  signer,
+                  issuer: signer.issuer,
+                },
+                { db, groupsAdmin: signer.groupsAdmin },
+              ),
             { signal: context.signal, timeoutMs: ISSUANCE_TIMEOUT_MS },
           );
         } catch (error) {

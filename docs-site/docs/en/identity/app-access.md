@@ -96,6 +96,20 @@ Changes take effect on the next request. Open live connections must revalidate
 when access changes and at least once per minute, including current account,
 role, group, and credential state. Failed revalidation closes the connection.
 
+## Check access inside a service
+
+Use `canUseApp(authority, app)` or `usableAppIds(authority, apps)` from
+`@k2b/cloud/services` when a service needs the same app-entry decision as the
+platform. Pass the resolved request authority so credential limits remain in
+effect; continue to check the operation's resource permissions separately.
+
+Inside a SQL transaction, pass its connection as the optional third argument:
+`canUseApp(authority, app, { db })` or `usableAppIds(authority, apps, { db })`.
+This keeps grant reads in the transaction and avoids waiting for a second
+pooled connection. Outside a transaction, omit the option. Framework-managed
+invocation issuance carries its transaction through identity and access checks
+automatically.
+
 ## Upgrade an existing application
 
 In this release, an application without `access` keeps its existing entry and

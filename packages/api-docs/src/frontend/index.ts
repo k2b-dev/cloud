@@ -18,7 +18,7 @@ import { buildApiDocsGuideSource, buildScalarSources } from "../sources";
  */
 const pages = new Hono<AuthContext>().use(auth.requireRole("*")).get(
   "/",
-  Scalar(async (c) => {
+  Scalar<AuthContext>(async (c) => {
     const runtime = getLocalizedRuntimeContext(c);
     const allowed = await usableAppIds(appAccessAuthority(c), runtime.apps);
     const sources = [

@@ -12,6 +12,7 @@ import * as capabilityDispatch from "../api/capabilities";
 import { APPROVAL_ACP_CLIENT, APPROVAL_CLIENT_HEADER } from "../contracts/approvals";
 import { accounts } from "../services/accounts";
 import { approvalScopeFromToolName, approvals } from "../services/approvals";
+import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import { session } from "../services/session/index";
 import { createTestAppSession, createTestBrowserSignIn, createTestSession } from "../services/session/session.test-fixture";
@@ -64,6 +65,7 @@ describe("global AI route registration", () => {
 });
 
 suite("global AI conversation boundaries", () => {
+  useRegisteredTestApp("core", { kind: "signedIn" });
   beforeAll(async () => {
     await migrateCloudAi();
   });
@@ -1148,6 +1150,7 @@ suiteFor(
   "nats",
   "valkey",
 )("owner-only Action outcome re-checks", () => {
+  useRegisteredTestApp("demo", { kind: "signedIn" });
   beforeAll(async () => {
     await migrateCloudAi();
   });

@@ -214,7 +214,12 @@ const validSubject = async (subject: MandateSubject, db: SQL): Promise<boolean> 
   return row?.active === true;
 };
 
-const subjectAppAccess = async (subject: MandateSubject, appIds: readonly string[], db: SQL): Promise<boolean> => {
+const subjectAppAccess = async (
+  subject: MandateSubject,
+  appIds: readonly string[],
+  db: SQL,
+  groupsAdmin?: readonly string[],
+): Promise<boolean> => {
   try {
     const authority = await resolveIssuanceAuthority(
       {
@@ -227,8 +232,9 @@ const subjectAppAccess = async (subject: MandateSubject, appIds: readonly string
       },
       "core",
       db,
+      groupsAdmin,
     );
-    for (const appId of new Set(appIds)) await requireRegisteredAppAccess(authority, appId);
+    for (const appId of new Set(appIds)) await requireRegisteredAppAccess(authority, appId, { db });
     return true;
   } catch {
     return false;
@@ -660,7 +666,7 @@ export const validateMandateIssueAuthority = async (
     expectedRevision?: number;
     requestId?: string;
   },
-  options: { db?: SQL } = {},
+  options: { db?: SQL; groupsAdmin?: readonly string[] } = {},
 ): Promise<Result<MandateIssueAuthority>> => {
   if (!UUID.safeParse(input.mandateId).success) {
     return denyMandateIssue(err.forbidden("Mandate identifier is invalid"));
@@ -723,7 +729,7 @@ export const validateMandateIssueAuthority = async (
     return denyMandateIssue(err.forbidden(MANDATE_POLICY_DENIED_MESSAGE));
   }
   const mandate = mapMandate(row);
-  if (!(await subjectAppAccess(mandate.subject, [mandate.ownerAppId, target.data], db))) {
+  if (!(await subjectAppAccess(mandate.subject, [mandate.ownerAppId, target.data], db, options.groupsAdmin))) {
     return denyMandateIssue(err.forbidden("App access was denied. Ask someone who manages access before running this mandate."));
   }
   return ok({
@@ -790,10 +796,10 @@ const issueAuditParams = <T>(
 export const withMandateIssueAuthority = <T>(
   input: Parameters<typeof validateMandateIssueAuthority>[0],
   use: (authority: MandateIssueAuthority) => Promise<T>,
-  options: { db?: SQL } = {},
+  options: { db?: SQL; groupsAdmin?: readonly string[] } = {},
 ): Promise<Result<T>> => {
   const run = async (db: SQL): Promise<Result<T>> => {
-    const authority = await validateMandateIssueAuthority(input, { db });
+    const authority = await validateMandateIssueAuthority(input, { db, groupsAdmin: options.groupsAdmin });
     if (!authority.ok) {
       mandateMetrics.increment(metricForIssueDenial(authority.error));
       return audit.recordResult(issueAuditParams(input, authority, input.expectedRevision ?? null, db));

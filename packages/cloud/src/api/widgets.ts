@@ -1,3 +1,4 @@
+import type { SQL } from "bun";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
@@ -201,17 +202,21 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
     widget: DashboardWidget,
     requestId: string | undefined,
     signer: Parameters<Parameters<typeof withActiveIdentitySigner>[1]>[0],
+    db: SQL,
   ) =>
-    signInvocation({
-      targetAppId: widget.appId,
-      callingAppId: "core",
-      operation: widgetInvocationOperation(widget.widgetId),
-      schemaHash: null,
-      authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
-      requestId,
-      signer,
-      issuer: signer.issuer,
-    });
+    signInvocation(
+      {
+        targetAppId: widget.appId,
+        callingAppId: "core",
+        operation: widgetInvocationOperation(widget.widgetId),
+        schemaHash: null,
+        authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
+        requestId,
+        signer,
+        issuer: signer.issuer,
+      },
+      { db, groupsAdmin: signer.groupsAdmin },
+    );
 
   const stream = async (c: Context<AuthContext>, entries: WidgetEntry[], requestId: string | undefined) => {
     const streamDeadline = AbortSignal.timeout(WIDGET_STREAM_DEADLINE_MS);
@@ -226,8 +231,10 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
         tokens = await waitWithin(
           withActiveSigner(
             "invocation",
-            (signer) =>
-              Promise.all(startBounded(entries, WIDGET_CONCURRENCY, async (entry) => sign(c, entry.widget, requestId, signer), signing)),
+            (signer, db) =>
+              Promise.all(
+                startBounded(entries, WIDGET_CONCURRENCY, async (entry) => sign(c, entry.widget, requestId, signer, db), signing),
+              ),
             { signal: signing, timeoutMs },
           ),
           signing,
@@ -393,7 +400,7 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
 
           phase = "signing";
           const signed = await waitWithin(
-            withActiveSigner("invocation", (signer) => sign(c, widget, requestId, signer), { signal, timeoutMs }),
+            withActiveSigner("invocation", (signer, db) => sign(c, widget, requestId, signer, db), { signal, timeoutMs }),
             signal,
           );
 

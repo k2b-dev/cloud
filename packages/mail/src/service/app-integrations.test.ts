@@ -1,7 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
-import { type AppRegistryEntry, CapabilityManifestSchema } from "@k2b/cloud/contracts";
-import type { RequestAuthority } from "@k2b/cloud/server";
-import * as registry from "../../../cloud/src/_internal/registry";
+import { describe, expect, test } from "bun:test";
 import {
   calendarEventSchema,
   calendarInvitationImportResultSchema,
@@ -9,7 +6,7 @@ import {
   eventInvitationCommitDataSchema,
   spacesMailDestinationContextSchema,
 } from "../app-integration-contracts";
-import { getSpacesMailIntegrationAvailability, projectAppCapabilityError } from "./app-integrations";
+import { projectAppCapabilityError } from "./app-integrations";
 
 const legacyUuid = "11111111-1111-4111-8111-111111111111";
 
@@ -129,86 +126,4 @@ describe("Mail app capability integration errors", () => {
       status: 503,
     });
   });
-});
-
-const authority: RequestAuthority = {
-  actor: {
-    kind: "service_account",
-    serviceAccount: {
-      id: "11111111-1111-4111-8111-111111111111",
-      name: "Catalog reader",
-      kind: "standalone",
-      status: "active",
-      delegatedUserId: null,
-      appId: null,
-      resourceType: null,
-      resourceId: null,
-      createdBy: null,
-      createdAt: "2026-10-01T00:00:00.000Z",
-    },
-    delegatedUser: null,
-    scopes: ["read"],
-  },
-  accessSubject: { type: "service_account", serviceAccountId: "11111111-1111-4111-8111-111111111111" },
-  credentialKind: "oauth",
-  scopes: ["read"],
-};
-
-const manifest = CapabilityManifestSchema.parse(
-  await Bun.file(new URL("../../../../tests/fixtures/capabilities/v2/spaces.json", import.meta.url)).json(),
-);
-
-test("mail integration discovery uses request authority and preserves credential caps", async () => {
-  let app: AppRegistryEntry = {
-    id: "spaces",
-    name: "Spaces",
-    icon: "ti ti-apps",
-    description: "Catalog fixture",
-    routes: [],
-    baseUrl: "http://test.invalid",
-    access: { kind: "signedIn" },
-  };
-  const spies = [
-    spyOn(registry, "getApp").mockImplementation(async () => app),
-    spyOn(registry, "getCapability").mockResolvedValue({
-      appId: app.id,
-      appName: app.name,
-      appIcon: app.icon,
-      appDescription: app.description,
-      endpoint: "/api/spaces/capabilities",
-      manifest,
-    }),
-  ];
-  try {
-    expect(await getSpacesMailIntegrationAvailability(authority)).toEqual({
-      invitations: true,
-      settings: true,
-      composer: true,
-      context: true,
-    });
-    expect(await getSpacesMailIntegrationAvailability(null)).toEqual({
-      invitations: false,
-      settings: false,
-      composer: false,
-      context: false,
-    });
-    // The actor is unchanged; only the actual credential scope narrows.
-    expect(await getSpacesMailIntegrationAvailability({ ...authority, scopes: ["other:read"] })).toEqual({
-      invitations: false,
-      settings: false,
-      composer: false,
-      context: false,
-    });
-    app = { ...app, access: { kind: "roles", roles: ["admin"] } };
-    expect(await getSpacesMailIntegrationAvailability(authority)).toEqual({
-      invitations: false,
-      settings: false,
-      composer: false,
-      context: false,
-    });
-    app = { ...app, access: undefined };
-    expect(await getSpacesMailIntegrationAvailability(null)).toEqual({ invitations: true, settings: true, composer: true, context: true });
-  } finally {
-    for (const spy of spies) spy.mockRestore();
-  }
 });

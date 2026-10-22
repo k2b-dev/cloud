@@ -143,17 +143,20 @@ export async function dispatchCapabilityStream(
     destructive = "destructive" in operation && operation.destructive;
     const signed = await (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
       "invocation",
-      (signer) =>
-        (dependencies.signInvocation ?? signInvocationToken)({
-          targetAppId: grant.appId,
-          callingAppId: "core",
-          operation: capabilityInvocationOperation(grant.kind, grant.capabilityId),
-          schemaHash: operation.schemaHash,
-          authority: invocationAuthorityFromRequest(authority),
-          requestId: grant.requestId,
-          signer,
-          issuer: signer.issuer,
-        }),
+      (signer, db) =>
+        (dependencies.signInvocation ?? signInvocationToken)(
+          {
+            targetAppId: grant.appId,
+            callingAppId: "core",
+            operation: capabilityInvocationOperation(grant.kind, grant.capabilityId),
+            schemaHash: operation.schemaHash,
+            authority: invocationAuthorityFromRequest(authority),
+            requestId: grant.requestId,
+            signer,
+            issuer: signer.issuer,
+          },
+          { db, groupsAdmin: signer.groupsAdmin },
+        ),
       { signal, timeoutMs: 30_000 },
     );
     const headers = new Headers({

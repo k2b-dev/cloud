@@ -241,22 +241,25 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
           signedInvocations = await waitWithin(
             (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
               "invocation",
-              (signer) =>
+              (signer, db) =>
                 Promise.all(
                   startBounded(
                     active,
                     PROVIDER_CONCURRENCY,
                     (provider) =>
-                      (dependencies.signInvocation ?? signInvocationToken)({
-                        targetAppId: provider.appId,
-                        callingAppId: "core",
-                        operation: searchInvocationOperation,
-                        schemaHash: provider.schemaHash,
-                        authority: invocationAuthority,
-                        requestId,
-                        signer,
-                        issuer: signer.issuer,
-                      }),
+                      (dependencies.signInvocation ?? signInvocationToken)(
+                        {
+                          targetAppId: provider.appId,
+                          callingAppId: "core",
+                          operation: searchInvocationOperation,
+                          schemaHash: provider.schemaHash,
+                          authority: invocationAuthority,
+                          requestId,
+                          signer,
+                          issuer: signer.issuer,
+                        },
+                        { db, groupsAdmin: signer.groupsAdmin },
+                      ),
                     fanoutSignal,
                   ),
                 ),
