@@ -1,6 +1,19 @@
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { clipboard, query } from "@k2b/stdlib/solid";
-import { Button, DescriptionList, DetailPanel, Format, IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
+import {
+  Button,
+  DescriptionList,
+  DetailPanel,
+  Dropdown,
+  type DropdownItem,
+  Format,
+  IconButton,
+  Placeholder,
+  prompts,
+  Tooltip,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
@@ -20,7 +33,10 @@ import { useFilesMessages } from "./messages";
 import ShareHistory, { createShareAccess, type ShareAccessRequest } from "./ShareHistory";
 import { referenceHref } from "./urls";
 
-/** Identity, quick preview, facts, actions and versions of one entry; a summary for several. */
+/**
+ * Identity, one action bar, a compact preview, facts, versions and history of one entry; a summary for several.
+ * The bar keeps the open action, download, share and favorite in view; every other action sits in its menu.
+ */
 export default function FileInspector(props: {
   base: BaseSummary;
   cloudUrl: string;
@@ -107,11 +123,14 @@ export default function FileInspector(props: {
   // The preview reads a `.pdf` anyway; once its bytes show it is no PDF, the viewer tab would only open an error page.
   const [notPdf, setNotPdf] = createSignal<string | null>(null);
   const refClipboard = clipboard.createWriter({ write: cloudResourceClipboard.write, copiedFor: 1800 });
+  // The menu closes on copy, so a toast confirms the result the label shows while it stays open.
   const copyReference = (item: FileEntry) => {
     const id = item.resourceId ?? details.data()?.result.resourceId ?? entryRefId(props.base.id, item.path);
     if (!id) return;
     const href = referenceHref(props.base.id, item, id);
-    void refClipboard.copy({ cloudUrl: props.cloudUrl, ref: { type: ENTRY_TYPE, id }, fallbackText: new URL(href, props.cloudUrl).href });
+    void refClipboard
+      .copy({ cloudUrl: props.cloudUrl, ref: { type: ENTRY_TYPE, id }, fallbackText: new URL(href, props.cloudUrl).href })
+      .then((copied) => (copied ? toast.success(t().copiedReference) : toast.error(t().copyReferenceFailed)));
   };
   const copyLabel = () =>
     refClipboard.error() ? t().copyReferenceFailed : refClipboard.wasCopied() ? t().copiedReference : t().copyReference;
@@ -148,22 +167,50 @@ export default function FileInspector(props: {
     </IconButton>
   );
   const expand = (item: FileEntry) => props.onPreview(item, () => setNotPdf(revision(item)));
-  const actionRow = (
-    title: string,
-    icon: string,
-    onClick: () => void,
-    options: { danger?: boolean; description?: string; disabled?: boolean } = {},
-  ) => (
-    <DetailPanel.Action
-      type="button"
-      title={title}
-      description={options.description}
-      leading={<i class={`${icon} ${options.danger ? "text-danger" : ""}`} aria-hidden="true" />}
-      class={options.danger ? "text-danger" : undefined}
-      disabled={props.busy || options.disabled}
-      onClick={onClick}
-    />
-  );
+  /** The container of an entry, as the approved detail names it: storage, then each folder above the entry. */
+  const place = (item: FileEntry) =>
+    [baseLabel(props.base, t(), locale()), ...item.path.split("/").filter(Boolean).slice(0, -1)].join(" › ");
+  /** Everything beyond the bar, with the same permissions and busy state the actions always had. */
+  const menuItems = (item: FileEntry): DropdownItem[] => {
+    const busy = !!props.busy;
+    const editor = !item.directory && !!props.editable?.(item) && !!previewKind(item);
+    return [
+      ...(!item.directory && notPdf() !== revision(item)
+        ? [{ disabled: busy, label: t().openInTab, icon: "ti ti-external-link", action: () => void openInTab(item) }]
+        : []),
+      // The bar's main action edits such a file; the large preview stays one step away.
+      ...(editor ? [{ disabled: busy, label: t().expand, icon: "ti ti-arrows-maximize", action: () => expand(item) }] : []),
+      { disabled: busy || item.actions?.move === false, label: t().rename, icon: "ti ti-pencil", action: () => props.onRename(item) },
+      { disabled: busy, label: t().duplicate, icon: "ti ti-copy", action: () => props.onDuplicate(item) },
+      {
+        disabled: busy || item.actions?.move === false,
+        label: t().moveTo,
+        icon: "ti ti-arrow-move-right",
+        action: () => props.onMove(item),
+      },
+      { disabled: busy, label: t().copyTo, icon: "ti ti-folder-symlink", action: () => props.onCopy(item) },
+      ...(props.onShareInbox && item.directory && item.actions?.write !== false
+        ? [{ disabled: busy, label: t().shareInbox, icon: "ti ti-inbox", action: () => props.onShareInbox?.(item) }]
+        : []),
+      {
+        label: copyLabel(),
+        icon: refClipboard.error() ? "ti ti-alert-circle" : refClipboard.wasCopied() ? "ti ti-check" : "ti ti-link",
+        immediate: true,
+        action: () => copyReference(item),
+      },
+      {
+        items: [
+          {
+            disabled: busy || item.actions?.move === false,
+            label: t().trashSelection,
+            icon: "ti ti-trash",
+            variant: "danger" as const,
+            action: () => props.onTrash(item),
+          },
+        ],
+      },
+    ];
+  };
   return (
     <DetailPanel>
       <Show
@@ -196,25 +243,7 @@ export default function FileInspector(props: {
                         {" · "}
                         <Format.Bytes value={item().size} />
                       </Show>
-                      {" · "}
-                      <Format.DateTime value={item().modified} />
                     </span>
-                  }
-                  meta={
-                    <Tooltip.Anchor content={copyLabel()}>
-                      <IconButton size="xs" variant="ghost" label={copyLabel()} onClick={() => copyReference(item())}>
-                        <i
-                          class={
-                            refClipboard.error()
-                              ? "ti ti-alert-circle text-danger"
-                              : refClipboard.wasCopied()
-                                ? "ti ti-check"
-                                : "ti ti-copy"
-                          }
-                          aria-hidden="true"
-                        />
-                      </IconButton>
-                    </Tooltip.Anchor>
                   }
                   actions={close}
                   primaryActions={
@@ -232,14 +261,34 @@ export default function FileInspector(props: {
                               : t().edit
                             : t().preview}
                       </Button>
-                      <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onDownload([item()])}>
-                        <i class="ti ti-download" aria-hidden="true" />
-                        {f().download}
-                      </Button>
+                      <Tooltip.Anchor content={f().download}>
+                        <IconButton
+                          size="sm"
+                          variant="ghost"
+                          label={f().download}
+                          disabled={props.busy}
+                          onClick={() => props.onDownload([item()])}
+                        >
+                          <i class="ti ti-download" aria-hidden="true" />
+                        </IconButton>
+                      </Tooltip.Anchor>
+                      <Show when={props.onShare && item().actions?.share !== false}>
+                        <Tooltip.Anchor content={t().shareSelection}>
+                          <IconButton
+                            size="sm"
+                            variant="ghost"
+                            label={t().shareSelection}
+                            disabled={props.busy}
+                            onClick={() => props.onShare?.(item())}
+                          >
+                            <i class="ti ti-share" aria-hidden="true" />
+                          </IconButton>
+                        </Tooltip.Anchor>
+                      </Show>
                       <Tooltip.Anchor content={favorite(item()) ? t().removeFavorite : t().addFavorite}>
                         <IconButton
                           size="sm"
-                          variant="secondary"
+                          variant="ghost"
                           class="filesv2-favorite"
                           data-favorite={favorite(item()) ? "true" : undefined}
                           label={favorite(item()) ? t().removeFavorite : t().addFavorite}
@@ -253,52 +302,47 @@ export default function FileInspector(props: {
                           </Show>
                         </IconButton>
                       </Tooltip.Anchor>
+                      <Dropdown.Root items={menuItems(item())} label={t().actions} menuClass="filesv2-inspector-menu" phone="sheet">
+                        <Dropdown.Trigger iconOnly size="sm" label={t().actions}>
+                          <i class="ti ti-dots" aria-hidden="true" />
+                        </Dropdown.Trigger>
+                      </Dropdown.Root>
                     </>
                   }
                 />
                 <DetailPanel.Body scrollPreserveKey={`filesv2-inspector:${props.base.id}:${item().path}`}>
+                  {/* A compact glimpse; the bar's Preview, a click on an image, or the menu opens it large. */}
                   <Show when={!item().directory && previewKind(item())}>
-                    <DetailPanel.Group label={t().preview}>
-                      <DetailPanel.Section
-                        title={t().preview}
-                        icon="ti ti-eye"
-                        tone="neutral"
-                        actions={
-                          <IconButton size="sm" variant="ghost" label={t().expand} onClick={() => expand(item())}>
-                            <i class="ti ti-arrows-maximize" aria-hidden="true" />
-                          </IconButton>
+                    <div class="filesv2-inspector-preview" role="group" aria-label={t().preview}>
+                      <Show
+                        keyed
+                        when={
+                          previewKind(item()) === "image"
+                            ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])
+                            : null
+                        }
+                        fallback={
+                          <Show keyed when={revision(item())}>
+                            {(key) => (
+                              <FilePreview
+                                variant="plain"
+                                previewLines={5}
+                                onExpandPreview={() => void expand(item())}
+                                baseId={props.base.id}
+                                locationKey={props.base.locationKey}
+                                entry={item()}
+                                onDownload={() => props.onDownload([item()])}
+                                onNotPdf={() => setNotPdf(key)}
+                              />
+                            )}
+                          </Show>
                         }
                       >
-                        <Show
-                          keyed
-                          when={
-                            previewKind(item()) === "image"
-                              ? JSON.stringify([props.base.id, props.base.locationKey, item().path, item().modified])
-                              : null
-                          }
-                          fallback={
-                            <Show keyed when={revision(item())}>
-                              {(key) => (
-                                <FilePreview
-                                  variant="plain"
-                                  previewLines={5}
-                                  onExpandPreview={() => void expand(item())}
-                                  baseId={props.base.id}
-                                  locationKey={props.base.locationKey}
-                                  entry={item()}
-                                  onDownload={() => props.onDownload([item()])}
-                                  onNotPdf={() => setNotPdf(key)}
-                                />
-                              )}
-                            </Show>
-                          }
-                        >
-                          <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
-                            <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
-                          </button>
-                        </Show>
-                      </DetailPanel.Section>
-                    </DetailPanel.Group>
+                        <button type="button" class="filesv2-hero" onClick={() => expand(item())} aria-label={t().expand}>
+                          <FileThumbnail baseId={props.base.id} locationKey={props.base.locationKey} entry={item()} large hero />
+                        </button>
+                      </Show>
+                    </div>
                   </Show>
                   <DetailPanel.Summary title={t().info}>
                     <DescriptionList
@@ -308,43 +352,16 @@ export default function FileInspector(props: {
                         {
                           term: t().location,
                           description: (
-                            <span class="break-all" title={`${props.base.name} / ${item().path}`}>
-                              {`${baseLabel(props.base, t(), locale())} / ${item().path}`}
+                            <span class="break-words" title={`${props.base.name} / ${item().path}`}>
+                              {place(item())}
                             </span>
                           ),
                         },
-                        { term: t().kind, description: kindLabel(item()) },
                         { term: f().modified, description: <Format.DateTime value={item().modified} /> },
                         ...(!item().directory ? [{ term: f().size, description: <Format.Bytes value={item().size} /> }] : []),
-                        { term: t().storageArea, description: props.base.area === "cloud" ? t().cloudArea : t().freeipaArea },
                       ]}
                     />
                   </DetailPanel.Summary>
-                  <DetailPanel.Group label={t().actions}>
-                    <DetailPanel.Section title={t().actions} icon="ti ti-bolt" tone="neutral">
-                      <div class="flex flex-col gap-1">
-                        <Show when={!item().directory && notPdf() !== revision(item())}>
-                          {actionRow(t().openInTab, "ti ti-external-link", () => void openInTab(item()))}
-                        </Show>
-                        {actionRow(t().rename, "ti ti-pencil", () => props.onRename(item()), { disabled: item().actions?.move === false })}
-                        {actionRow(t().duplicate, "ti ti-copy", () => props.onDuplicate(item()))}
-                        {actionRow(t().moveTo, "ti ti-arrow-move-right", () => props.onMove(item()), {
-                          disabled: item().actions?.move === false,
-                        })}
-                        {actionRow(t().copyTo, "ti ti-folder-symlink", () => props.onCopy(item()))}
-                        <Show when={props.onShare && item().actions?.share !== false}>
-                          {actionRow(t().shareSelection, "ti ti-world-share", () => props.onShare?.(item()))}
-                        </Show>
-                        <Show when={props.onShareInbox && item().directory && item().actions?.write !== false}>
-                          {actionRow(t().shareInbox, "ti ti-inbox", () => props.onShareInbox?.(item()))}
-                        </Show>
-                        {actionRow(t().trashSelection, "ti ti-trash", () => props.onTrash(item()), {
-                          danger: true,
-                          disabled: item().actions?.move === false,
-                        })}
-                      </div>
-                    </DetailPanel.Section>
-                  </DetailPanel.Group>
                   <EntryHistory
                     base={props.base}
                     entry={item()}
@@ -360,7 +377,17 @@ export default function FileInspector(props: {
           </Show>
         }
       >
-        <DetailPanel.Header icon="ti ti-stack" title={t().selected(props.paths.length)} actions={close} />
+        <DetailPanel.Header
+          icon="ti ti-stack"
+          title={t().selected(props.paths.length)}
+          actions={close}
+          primaryActions={
+            <Button size="sm" variant="secondary" disabled={props.busy} onClick={() => props.onDownload(props.selected)}>
+              <i class="ti ti-download" aria-hidden="true" />
+              {t().downloadZip}
+            </Button>
+          }
+        />
         <DetailPanel.Body>
           <DetailPanel.Summary title={t().selection}>
             <DescriptionList
@@ -381,9 +408,6 @@ export default function FileInspector(props: {
               <p class="text-sm text-dimmed">{t().unknownFolders}</p>
             </Show>
           </DetailPanel.Summary>
-          <DetailPanel.Section title={t().actions} icon="ti ti-bolt" tone="neutral">
-            <div class="flex flex-col gap-1">{actionRow(t().downloadZip, "ti ti-download", () => props.onDownload(props.selected))}</div>
-          </DetailPanel.Section>
         </DetailPanel.Body>
       </Show>
     </DetailPanel>

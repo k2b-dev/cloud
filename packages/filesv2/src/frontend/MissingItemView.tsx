@@ -503,9 +503,7 @@ function MissingHit(props: {
   return (
     <>
       <article class="filesv2-history-hit" aria-labelledby={`filesv2-hit-${lead().id}`}>
-        <span class="filesv2-history-hit__tile">
-          <FileTypeIcon name={itemName()} folder={directory() !== false} size="lg" />
-        </span>
+        <FileTypeIcon class="filesv2-history-hit__tile" name={itemName()} folder={directory() !== false} />
         <div class="filesv2-history-hit__text">
           <h3 id={`filesv2-hit-${lead().id}`} class="filesv2-history-hit__title">
             <span class="break-all">{itemName()}</span>
@@ -645,9 +643,7 @@ export function MovedNotice(props: MovedNoticeProps) {
   };
   return (
     <div class="filesv2-history-moved">
-      <span class="filesv2-history-hit__tile">
-        <FileTypeIcon name={itemName()} folder={directory() !== false} size="lg" />
-      </span>
+      <FileTypeIcon class="filesv2-history-hit__tile" name={itemName()} folder={directory() !== false} />
       <h2 class="filesv2-history-moved__title">{title()}</h2>
       <p class="filesv2-history-moved__now">
         <Sentence parts={now()} />
