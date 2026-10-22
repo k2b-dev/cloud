@@ -153,7 +153,9 @@ Fully visible `share.create` and `share.revoke` entries include
 `share.expiresAt` from the retained share. Null means no recorded expiry or a
 missing share row. Disappearance-only entries carry no share metadata.
 
-Search and counts use only the projected fields. A page returns at most 50
+Search and counts use only the projected fields. A search result's movement
+history names other members of a batch only from the loaded visible entries,
+never the stored batch size. A page returns at most 50
 visible entries after inspecting at most 500 candidates. An empty page may
 still have a next cursor. Search stops after 200 visible matches. Keep filters
 unchanged when following a cursor. Movement chains follow path segments for at

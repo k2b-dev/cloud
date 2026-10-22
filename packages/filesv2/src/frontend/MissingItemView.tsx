@@ -24,6 +24,7 @@ import {
   formatWhen,
   type HistoryActions,
   type HistoryEnvironment,
+  type HistoryRowModel,
   historyRows,
   hopEntry,
   hopSentence,
@@ -76,6 +77,19 @@ export default function MissingItemView(props: MissingItemViewProps) {
     return first && kind ? { hit: first, kind } : null;
   });
   const others = createMemo(() => (top() ? hits().slice(1) : hits()));
+  // Batch context counts only loaded projected entries this person sees, never the stored batch size.
+  const batchMembers = createMemo(() => {
+    const members = new Map<string, Set<string>>();
+    for (const entry of props.entries)
+      if (entry.batchId) members.set(entry.batchId, (members.get(entry.batchId) ?? new Set()).add(entry.id));
+    return members;
+  });
+  const batchOthers = (row: HistoryRowModel) => {
+    const members = row.lead.batchId ? batchMembers().get(row.lead.batchId) : undefined;
+    if (!members) return 0;
+    const own = new Set(row.entries.map((entry) => entry.id));
+    return [...members].filter((id) => !own.has(id)).length;
+  };
   const label = () =>
     fill(h().hitsFor, {
       // Counts cover loaded pages only; while more exist the number is a lower bound.
@@ -157,6 +171,7 @@ export default function MissingItemView(props: MissingItemViewProps) {
                 kind={current.kind}
                 env={props.env}
                 actions={props.actions}
+                batchOthers={batchOthers}
                 loadChain={props.loadChain}
                 onChanged={props.onChanged}
               />
@@ -246,6 +261,8 @@ function MissingHit(props: {
   kind: MissingCase;
   env: HistoryEnvironment;
   actions?: HistoryActions;
+  /** Other visible members of a row's batch among the loaded entries. */
+  batchOthers: (row: HistoryRowModel) => number;
   loadChain: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityChain>;
   onChanged?: () => void;
 }) {
@@ -577,15 +594,17 @@ function MissingHit(props: {
           <For each={rows()}>
             {(row) => (
               <li>
+                {/* The hit above owns the one main action; chain rows keep only their facts and links. */}
                 <HistoryRow
                   row={row}
                   env={props.env}
+                  actions={props.actions}
                   context="chain"
                   directory={directory() ?? undefined}
                   dated={false}
                   variant="list"
                   action={null}
-                  meta={undefined}
+                  others={props.batchOthers(row)}
                 />
               </li>
             )}
