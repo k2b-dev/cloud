@@ -245,7 +245,7 @@ export const createAdminOutgoingMailRoutes = (authenticate: MiddlewareHandler<Au
     .put(
       "/apps/:appId/log-access",
       describeRoute({
-        summary: "Set application mail log access",
+        summary: "Replace application metadata and content mail log access",
         tags: ["Outgoing mail"],
         ...requiresAdmin,
         responses: {

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import type { Browser } from "playwright";
 import { panelEndState } from "../../../../scripts/perf-baseline/panel-probe";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
@@ -82,6 +82,55 @@ test("page-change recorder waits for a slow required script after the observed e
     const sizes = await result;
     expect(sizes.htmlBytes).toBeGreaterThan(0);
     expect(sizes.jsBytes).toBeGreaterThan(0);
+  } finally {
+    releaseScript?.();
+    releaseScript = undefined;
+    scriptAccepted = undefined;
+    recorder.stop();
+    await context.close();
+  }
+}, 20_000);
+
+test("a required script in the final fractional millisecond retains its transfer", async () => {
+  const { context, page, cdp } = await setup();
+  const recorder = recordPageChangeNetwork(page, "/target", cdp);
+  try {
+    await page.goto(new URL("/target", server.url).href);
+    const accepted = new Promise<void>((resolve) => {
+      scriptAccepted = resolve;
+    });
+    const requested = page.waitForRequest("**/slow.js");
+    await page.evaluate(() => {
+      const script = document.createElement("script");
+      script.src = "/slow.js";
+      document.head.append(script);
+    });
+    const request = await requested;
+    await accepted;
+    // Fix only the boundary precision: the request starts before the actual end,
+    // but after the integer millisecond returned by Date.now(). Bytes remain real.
+    // real clock: align the boundary with the live browser's epoch timestamps; only the fractional offsets are fixed.
+    const end = Date.now() + 1;
+    const timing = request.timing.bind(request);
+    const requestTiming = spyOn(request, "timing").mockImplementation(() => ({ ...timing(), startTime: end + 0.25 }));
+    const coarseClock = spyOn(Date, "now").mockReturnValue(end);
+    const preciseClock = spyOn(performance, "now").mockReturnValue(end + 0.75 - performance.timeOrigin);
+    let result: ReturnType<typeof recorder.finish>;
+    try {
+      result = recorder.finish(1000);
+    } finally {
+      preciseClock.mockRestore();
+      coarseClock.mockRestore();
+    }
+    try {
+      releaseScript?.();
+      releaseScript = undefined;
+      const sizes = await result;
+      expect(sizes.htmlBytes).toBeGreaterThan(0);
+      expect(sizes.jsBytes).toBeGreaterThan(0);
+    } finally {
+      requestTiming.mockRestore();
+    }
   } finally {
     releaseScript?.();
     releaseScript = undefined;

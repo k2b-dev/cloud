@@ -306,12 +306,18 @@ test("apps list shows declared read access and comma-joined log grants", async (
     profiles: [],
   };
   const result = { defaultProfile: null, items: [item] };
-  expect((await invoke(["apps", "list"], {}, result, [], "text")).output[0]).toMatchObject([{ reads: true, logApps: "a,b" }]);
+  expect((await invoke(["apps", "list"], {}, result, [], "text")).output[0]).toMatchObject([
+    { reads: true, logApps: "a:metadata,b:metadata" },
+  ]);
   expect((await invoke(["apps", "list"], {}, result)).output).toEqual([result]);
 });
 test("set-log-access requires exactly one mode and confirmation and validates readers and sources", async () => {
   for (const [flags, body] of [
     [{ apps: " a, b " }, { apps: ["a", "b"] }],
+    [
+      { apps: "a,b", "content-apps": " a " },
+      { apps: ["a", "b"], contentApps: ["a"] },
+    ],
     [{ apps: "erp_v2,ERP" }, { apps: ["erp_v2", "ERP"] }],
     [{ "own-only": true }, { apps: [] }],
   ] as const) {
@@ -323,6 +329,11 @@ test("set-log-access requires exactly one mode and confirmation and validates re
     await expect(invoke(["apps", "set-log-access", "reader"], flags)).rejects.toThrow("--yes");
   }
   const invalid: CloudCliFlags[] = [
+    { "content-apps": "a" },
+    { "own-only": true, "content-apps": "a" },
+    { apps: "a", "content-apps": "b" },
+    { apps: "a", "content-apps": "a,a" },
+    { apps: "a", "content-apps": "" },
     {},
     { apps: "a", "own-only": true },
     { apps: "" },
