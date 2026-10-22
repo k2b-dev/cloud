@@ -2,7 +2,7 @@ import { type SQL, sql, type TransactionSQL } from "bun";
 import type { FilesCall, Finished, Intent } from "../service/activity";
 import { FilesError } from "../service/errors";
 
-export async function insertActivity(call: FilesCall, intent: Intent, db: SQL | TransactionSQL = sql): Promise<string> {
+export async function insertActivity(call: FilesCall, intent: Intent, db: SQL | TransactionSQL = sql, uploadId?: string): Promise<string> {
   const id = Bun.randomUUIDv7();
   const userId = call.kind === "user" ? (call.actor.kind === "user" ? call.actor.user.id : (call.actor.delegatedUser?.id ?? null)) : null;
   const detail = {
@@ -13,12 +13,13 @@ export async function insertActivity(call: FilesCall, intent: Intent, db: SQL | 
       ? { version_options_hash: new Bun.CryptoHasher("sha256").update(JSON.stringify(intent.versionOptions)).digest("hex") }
       : {}),
     ...(intent.copyOptions ? { copy_options: intent.copyOptions } : {}),
+    ...(intent.writeOptions ? { write_options: intent.writeOptions } : {}),
     ...(intent.onConflict ? { on_conflict: intent.onConflict } : {}),
     ...(call.kind === "system" ? { job: call.job } : {}),
   };
   // An independently committed intent is the prerequisite for every external effect.
-  await db`INSERT INTO filesv2.activity(id,state,action,server_url,root,root_after,base_id,base_after_id,item_id,item_after_id,directory,name,path_before,path_after,size,revision_before,version_id,actor_kind,actor_user_id,via,calling_app,origin,invocation_id,request_id,batch_id,share_id,trash_id,operation_id,detail)
-    VALUES(${id}::uuid,'pending',${intent.action},${intent.serverUrl},${intent.root},${intent.rootAfter ?? null},${intent.baseId}::uuid,${intent.baseAfterId ?? null}::uuid,${intent.itemId ?? null},${intent.itemAfterId ?? null},${intent.directory},${intent.name},${intent.pathBefore ?? null},${intent.pathAfter ?? null},${intent.size ?? null},${intent.revisionBefore ?? null},${intent.versionId ?? null},${call.kind},${userId}::uuid,${call.kind === "user" ? call.via : call.kind === "visitor" ? "link" : "system"},${call.kind === "user" ? call.callingApp : null},${call.kind === "user" ? call.origin : null},${call.kind === "user" ? call.invocationId : null},${call.kind !== "system" ? call.requestId : null},${intent.batchId ?? null}::uuid,${call.kind === "visitor" ? call.shareId : null}::uuid,${intent.trashId ?? null}::uuid,${intent.operationId ?? null}::uuid,${detail}::jsonb)`;
+  await db`INSERT INTO filesv2.activity(id,state,action,server_url,root,root_after,base_id,base_after_id,item_id,item_after_id,directory,name,path_before,path_after,size,revision_before,version_id,actor_kind,actor_user_id,via,calling_app,origin,invocation_id,request_id,batch_id,share_id,trash_id,operation_id,upload_id,detail)
+    VALUES(${id}::uuid,'pending',${intent.action},${intent.serverUrl},${intent.root},${intent.rootAfter ?? null},${intent.baseId}::uuid,${intent.baseAfterId ?? null}::uuid,${intent.itemId ?? null},${intent.itemAfterId ?? null},${intent.directory},${intent.name},${intent.pathBefore ?? null},${intent.pathAfter ?? null},${intent.size ?? null},${intent.revisionBefore ?? null},${intent.versionId ?? null},${call.kind},${userId}::uuid,${call.kind === "user" ? call.via : call.kind === "visitor" ? "link" : "system"},${call.kind === "user" ? call.callingApp : null},${call.kind === "user" ? call.origin : null},${call.kind === "user" ? call.invocationId : null},${call.kind !== "system" ? call.requestId : null},${intent.batchId ?? null}::uuid,${call.kind === "visitor" ? call.shareId : null}::uuid,${intent.trashId ?? null}::uuid,${intent.operationId ?? null}::uuid,${uploadId ?? null},${detail}::jsonb)`;
   return id;
 }
 

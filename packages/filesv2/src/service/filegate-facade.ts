@@ -122,10 +122,18 @@ export class FilesRoot {
     return this.#mutate("mkdir", args[0], () => this.#client.mkdir(...args));
   }
   put(...args: Parameters<RootClient["put"]>) {
-    return this.#mutate("put", args[0], () => this.#client.put(...args));
+    return filegateMutation(this.serverUrl, this.name, "put", args[0], () => this.#client.put(...args), undefined, {
+      size: args[1].size,
+      options: args[2] ?? {},
+    });
   }
   createSession(...args: Parameters<RootClient["createSession"]>) {
-    return this.#mutate("createSession", args[0], () => this.#client.createSession(...args));
+    const { idempotencyKey, expiresIn: _expires, allowAbort: _abort, ...options } = args[2] ?? {};
+    return filegateMutation(this.serverUrl, this.name, "createSession", args[0], () => this.#client.createSession(...args), undefined, {
+      size: args[1],
+      options,
+      key: idempotencyKey,
+    });
   }
   commitSession(...args: Parameters<RootClient["commitSession"]>) {
     return this.#mutate("commitSession", args[0], () => this.#client.commitSession(...args));

@@ -1,11 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AccessSubject, RequestActor } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { FilegateError } from "@k2b/filegate";
+import { FilegateError, type WriteOptions } from "@k2b/filegate";
 import { deepEquals, sql, type TransactionSQL } from "bun";
 import { filegateErrorCode } from "../api/filegate-error";
 import { finishActivity, insertActivity } from "../data/activity";
 import { trash } from "../data/trash";
+import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import type { FilesFilegate, FilesRoot } from "./filegate-facade";
@@ -37,7 +38,11 @@ export type ActivityAction =
   | "version.delete"
   | "item.trash"
   | "item.restore"
-  | "item.purge";
+  | "item.purge"
+  | "file.upload"
+  | "file.overwrite"
+  | "file.create"
+  | "file.edit";
 export type Intent = {
   action: ActivityAction;
   serverUrl: string;
@@ -61,6 +66,7 @@ export type Intent = {
   onConflict?: "error" | "rename";
   detail?: Record<string, unknown>;
   versionOptions?: Parameters<FilesRoot["updateVersion"]>[2];
+  writeOptions?: WriteOptions;
   copyOptions?: Parameters<FilesRoot["copyVersion"]>[4];
 };
 export type Finished = {
@@ -72,12 +78,7 @@ export type Finished = {
 } | void;
 
 // May only shrink; the freeze test fails if this list grows.
-export const PENDING_MIGRATION = Object.freeze([
-  "files.upload_session",
-  "files.write_bytes",
-  "sharing.inbox_session",
-  "lifecycle.operation",
-] as const);
+export const PENDING_MIGRATION = Object.freeze(["lifecycle.operation"] as const);
 export type PendingMigrationKey = (typeof PENDING_MIGRATION)[number];
 export type Mutation =
   | "mkdir"
@@ -92,9 +93,6 @@ export type Mutation =
   | "deleteVersion"
   | "remove";
 export const PENDING_MIGRATION_METHODS: Readonly<Record<PendingMigrationKey, readonly Mutation[]>> = Object.freeze({
-  "files.upload_session": ["createSession", "commitSession", "abortSession"],
-  "files.write_bytes": ["put"],
-  "sharing.inbox_session": ["createSession", "commitSession", "abortSession"],
   "lifecycle.operation": ["mkdir", "transfer"],
 });
 for (const methods of Object.values(PENDING_MIGRATION_METHODS)) Object.freeze(methods);
@@ -103,6 +101,7 @@ type GuardScope =
       kind: "activity";
       id: string;
       intent: Intent;
+      upload?: Upload;
       closed: boolean;
       sent: number;
       refused: unknown;
@@ -128,6 +127,7 @@ export async function filegateMutation<T>(
     | { kind: "transfer"; root: string; path: string; move: boolean; onConflict: string }
     | { kind: "version"; id: string; target?: { root: string; path: string }; options?: unknown }
     | { kind: "remove"; recursive: boolean },
+  write?: { size: number; options: WriteOptions; key?: string },
 ): Promise<T> {
   const scope = scopes.getStore();
   if (!scope || (scope.kind === "activity" && scope.closed)) throw new FilesError("activity_scope_missing", 500);
@@ -177,7 +177,31 @@ export async function filegateMutation<T>(
         path === intent.pathBefore &&
         binding?.kind === "remove" &&
         binding.recursive);
+    const upload = scope.upload;
+    const uploadMatches =
+      !!upload &&
+      scope.sent === 0 &&
+      (intent.action === "file.upload" || intent.action === "file.overwrite") &&
+      (method === "createSession"
+        ? path === intent.pathAfter &&
+          write?.size === upload.size &&
+          write.key === upload.id &&
+          sameUploadOptions(write.options, upload.write_options)
+        : (method === "commitSession" || method === "abortSession") && !!uploadSessionId(upload) && path === uploadSessionId(upload));
+    const writeMatches =
+      !upload &&
+      (intent.action === "file.create" || intent.action === "file.edit") &&
+      scope.sent === 0 &&
+      method === "put" &&
+      path === intent.pathAfter &&
+      !!write &&
+      !!intent.writeOptions &&
+      sameUploadOptions(write.options, { ...intent.writeOptions, metadata: { ...intent.writeOptions.metadata, activity: scope.id } }) &&
+      write.size === intent.size &&
+      (write.options.onConflict ?? "error") === (intent.action === "file.edit" ? "overwrite" : "error");
     const matches =
+      uploadMatches ||
+      writeMatches ||
       versionMatches ||
       journalMatches ||
       (intent.action === "folder.create"
@@ -224,7 +248,9 @@ function certainNoChange(scope: Extract<GuardScope, { kind: "activity" }>, error
     scope.sent === 1 &&
     error === scope.refused &&
     error instanceof FilegateError &&
-    ([403, 404].includes(error.status) || (error.status === 409 && filegateErrorCode(error) === "path_conflict"))
+    ([403, 404].includes(error.status) ||
+      (error.status === 412 && ["file.create", "file.edit"].includes(scope.intent.action)) ||
+      (error.status === 409 && filegateErrorCode(error) === "path_conflict"))
   );
 }
 
@@ -278,6 +304,26 @@ export async function journalAction<T>(id: string, effect: () => Promise<T>): Pr
   return runScope({ kind: "activity", id, intent, closed: false, sent: 0, refused: undefined }, effect);
 }
 
+/** A reservation outlives a request. Reload its persisted scope; opening a session never finishes the activity. */
+export async function uploadAction<T>(id: string, effect: () => Promise<T>): Promise<T> {
+  const { upload, activity } = await uploads.history(id);
+  if (!activity || upload.state !== "open" || !["pending", "unclear"].includes(activity.state)) throw new FilesError("upload_closed", 409);
+  const intent: Intent = {
+    action: activity.action,
+    serverUrl: activity.server_url,
+    root: activity.root,
+    baseId: activity.base_id,
+    directory: false,
+    name: activity.name,
+    pathAfter: activity.path_after,
+    size: Number(activity.size),
+  };
+  const rows =
+    await sql`UPDATE filesv2.activity SET heartbeat_at=now() WHERE id=${activity.id}::uuid AND state IN ('pending','unclear') RETURNING id`;
+  if (!rows.length) throw new FilesError("upload_closed", 409);
+  return runScope({ kind: "activity", id: activity.id, intent, upload, closed: false, sent: 0, refused: undefined }, effect);
+}
+
 export async function fileAction<T>(
   call: FilesCall,
   input: Intent,
@@ -317,6 +363,7 @@ type RecoveryRow = {
   path_before: string | null;
   path_after: string | null;
   final: boolean;
+  upload_id: string | null;
   version_id: string | null;
   trash_id: string | null;
   base_id: string | null;
@@ -340,6 +387,46 @@ export async function recoverActivity(input: {
     input.signal?.throwIfAborted();
     await input.heartbeat?.();
     input.signal?.throwIfAborted();
+    if (row.upload_id && input.config && !input.config.unreadable && input.config.url === row.server_url) {
+      try {
+        const { upload, activity } = await uploads.history(row.upload_id);
+        if (!activity || ["done", "failed", "not_done"].includes(activity.state)) {
+          checked++;
+          continue;
+        }
+        const id = uploadSessionId(upload);
+        if (id && upload.server_url === row.server_url && upload.root === row.root) {
+          const root = input.connect(input.config).root(upload.root);
+          const session = await (upload.execution ? root.as(upload.execution) : root).session(id);
+          if (
+            session.id !== id ||
+            session.root !== upload.root ||
+            session.path !== activity.path_after ||
+            session.size !== upload.size ||
+            (upload.write_options !== null && !sameUploadOptions(session.options, upload.write_options)) ||
+            !sameUploadExecution(session.execution ?? null, upload.execution)
+          )
+            throw new FilesError("upload_changed", 409);
+          if (session.state === "committed" && session.result) {
+            await uploads.finish(upload.id, "committed", session.result);
+            checked++;
+            continue;
+          }
+          if (session.state === "aborted" || session.state === "expired") {
+            await uploads.finish(upload.id, session.state, null);
+            checked++;
+            continue;
+          }
+          // An open receipt remains executable, even when the original reservation is older than seven days.
+          if (session.state === "open") {
+            checked++;
+            continue;
+          }
+        }
+      } catch (error) {
+        log.warn("Upload history receipt unavailable", { id: row.id, error });
+      }
+    }
     if (
       row.action === "version.comment" &&
       row.version_id &&
@@ -430,6 +517,6 @@ export async function recoverActivity(input: {
 export async function purgeActivity(input: { now?: Date; retentionDays: number }): Promise<{ purged: number }> {
   // Pending entries never expire here; each later PR adds its own journal predicate.
   const rows = await sql<{ id: string }[]>`DELETE FROM filesv2.activity WHERE id IN
-    (SELECT id FROM filesv2.activity WHERE started_at<coalesce(${input.now ?? null}::timestamptz, now())-${input.retentionDays}*interval '1 day' AND state<>'pending' AND NOT EXISTS (SELECT 1 FROM filesv2.operations o WHERE o.id=activity.operation_id AND o.state='pending') AND NOT EXISTS (SELECT 1 FROM filesv2.trash t WHERE t.id=activity.trash_id AND t.state IN ('pending','restoring')) ORDER BY started_at LIMIT 10000) RETURNING id`;
+    (SELECT id FROM filesv2.activity WHERE started_at<coalesce(${input.now ?? null}::timestamptz, now())-${input.retentionDays}*interval '1 day' AND state<>'pending' AND NOT EXISTS (SELECT 1 FROM filesv2.uploads u WHERE u.id=activity.upload_id AND u.state='open') AND NOT EXISTS (SELECT 1 FROM filesv2.operations o WHERE o.id=activity.operation_id AND o.state='pending') AND NOT EXISTS (SELECT 1 FROM filesv2.trash t WHERE t.id=activity.trash_id AND t.state IN ('pending','restoring')) ORDER BY started_at LIMIT 10000) RETURNING id`;
   return { purged: rows.length };
 }
