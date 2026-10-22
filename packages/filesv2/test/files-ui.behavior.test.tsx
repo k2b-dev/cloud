@@ -185,9 +185,8 @@ describe("Filesv2 interactions", () => {
     expect(new URL(next.href, "https://cloud.test").searchParams.get("after")).toBe("next/+=");
     rows[1]!.click();
     await flush();
-    const download = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === "Download",
-    )!;
+    const download = dom.root.querySelector<HTMLButtonElement>('.filesv2-inspector-actions button[aria-label="Download"]')!;
+    expect(download).not.toBeNull();
     // The inspector preview already asked for a lease; only the explicit download is counted here.
     const before = requests.length;
     download.click();
