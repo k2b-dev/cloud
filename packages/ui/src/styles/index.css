@@ -6156,6 +6156,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: flex;
 }
 
+/* A footer line never takes room from the results. */
+.k2b-ui .k2b-choice-popover:has(> .k2b-choice-footer) {
+  max-height: min(23rem, calc(100dvh - 1rem));
+}
+
 .k2b-ui .k2b-choice-search {
   display: flex;
   min-height: 2rem;
@@ -6527,6 +6532,41 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+/* A first search waits in rows of the option's size, so the list does not jump when results arrive. */
+.k2b-ui .k2b-choice-loading {
+  display: flex;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-choice-loading__row {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem;
+}
+
+.k2b-ui .k2b-choice-loading__row > .k2b-skeleton {
+  height: 0.75rem;
+}
+
+.k2b-ui .k2b-choice-loading__row > .k2b-skeleton:first-child {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  border-radius: 999px;
+}
+
+.k2b-ui .k2b-choice-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 0.5rem;
+  padding: 0.375rem 0.5rem 0.125rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.6875rem;
 }
 
 /* RichSelect: a dropdown whose rows explain each choice. A row is a name

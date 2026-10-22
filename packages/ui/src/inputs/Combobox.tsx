@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, type JSX, Show } from "solid-js";
+import { createEffect, createSignal, For, type JSX, on, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useUiMessages } from "../intl/messages";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabledChoiceIndex } from "./choice";
@@ -15,6 +15,18 @@ export type ComboboxProps = FieldProps & {
   fetchData: (query: string, signal: AbortSignal) => Promise<ComboboxOption[]>;
   onSelect: (option: ComboboxOption) => void;
   debounceMs?: number;
+  /** The query is the field's own value: picking or closing keeps the typed text, and Enter without an active option only closes the list. */
+  freeText?: boolean;
+  /** Below this many characters nothing loads and the list stays closed. */
+  minQueryLength?: number;
+  /** This result (by position) is active as soon as results arrive, so Enter takes it. */
+  autoHighlight?: number;
+  /** Replaces the results with a host-owned notice, such as an exhausted quota; nothing loads while it is set. */
+  status?: JSX.Element;
+  /** Shown instead of the default text when a search finds nothing. */
+  empty?: JSX.Element;
+  /** One line under the results, such as their source. */
+  footer?: JSX.Element;
 };
 
 const iconClass = (icon: string) => (icon.split(/\s+/).includes("ti") ? icon : `ti ${icon}`);
@@ -45,6 +57,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
   const popover = createChoicePopover(() => Boolean(props.disabled || props.readOnly));
   const options = loader.options;
   const focusedOption = () => options()[focusedIndex()];
+  const searchable = (value: string) => value.trim().length >= (props.minQueryLength ?? 0);
   const focus = (index: number) => {
     setFocusedIndex(index);
     optionRefs[index]?.scrollIntoView({ block: "nearest" });
@@ -52,9 +65,9 @@ export function Combobox(props: ComboboxProps): JSX.Element {
   /** `eager` loads the currently controlled query on open; typing supplies its
    *  own query, so opening from `onInput` skips the duplicate request. */
   const open = (eager = true) => {
-    if (props.disabled || props.readOnly || popover.open()) return;
+    if (props.disabled || props.readOnly || popover.open() || !searchable(query())) return;
     popover.show();
-    if (eager) loader.load(query(), true);
+    if (eager && !props.status) loader.load(query(), true);
     focus(-1);
   };
   const reset = () => {
@@ -64,8 +77,16 @@ export function Combobox(props: ComboboxProps): JSX.Element {
   };
   const close = () => {
     popover.hide();
-    reset();
+    if (!props.freeText) return reset();
+    loader.cancel();
+    focus(-1);
   };
+  createEffect(
+    on(options, (list) => {
+      const index = props.autoHighlight;
+      if (index !== undefined && focusedIndex() < 0 && popover.open() && list.length > 0) setFocusedIndex(Math.min(index, list.length - 1));
+    }),
+  );
   createEffect(() => {
     if (props.readOnly) {
       popover.hide();
@@ -77,7 +98,10 @@ export function Combobox(props: ComboboxProps): JSX.Element {
     if (props.disabled || props.readOnly) return;
     popover.hide();
     props.onSelect({ id: option.value, label: option.label, description: option.description, icon: option.icon });
-    reset();
+    if (props.freeText) {
+      loader.cancel();
+      focus(-1);
+    } else reset();
     inputRef?.focus();
   };
   const onKeyDown = (event: KeyboardEvent) => {
@@ -91,6 +115,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
       event.preventDefault();
       const option = options()[focusedIndex()];
       if (option) select(option);
+      else if (props.freeText) close();
     } else if ((event.key === "Escape" || event.key === "Tab") && popover.open()) {
       // Escape is only ours while the list is open; otherwise it has to reach an
       // enclosing dialog or drawer.
@@ -125,6 +150,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
             readOnly={props.readOnly}
             aria-readonly={props.readOnly ? "true" : undefined}
             role="combobox"
+            autocomplete="off"
             aria-autocomplete="list"
             aria-expanded={popover.open()}
             aria-controls={listboxId}
@@ -136,10 +162,16 @@ export function Combobox(props: ComboboxProps): JSX.Element {
                 event.currentTarget.value = query();
                 return;
               }
-              setQuery(event.currentTarget.value);
-              open(false);
-              loader.load(event.currentTarget.value);
+              const value = event.currentTarget.value;
+              setQuery(value);
               focus(-1);
+              if (!searchable(value)) {
+                popover.hide();
+                loader.cancel();
+                return;
+              }
+              open(false);
+              if (!props.status) loader.load(value);
             }}
             onKeyDown={onKeyDown}
           />
@@ -149,7 +181,8 @@ export function Combobox(props: ComboboxProps): JSX.Element {
         </div>
         <div ref={popover.setPopover} popover="manual" class="k2b-choice-popover">
           <div class="k2b-choice-options" role="listbox" id={listboxId}>
-            <Show when={loader.error()}>
+            <Show when={props.status}>{(status) => <div class="k2b-choice-status">{status()}</div>}</Show>
+            <Show when={!props.status && loader.error()}>
               {(message) => (
                 <div class="k2b-choice-status" data-tone="danger">
                   <span>{message()}</span>
@@ -160,9 +193,31 @@ export function Combobox(props: ComboboxProps): JSX.Element {
               )}
             </Show>
             <For
-              each={loader.error() ? [] : options()}
+              each={props.status || loader.error() ? [] : options()}
               fallback={
-                <div class="k2b-choice-status">{query().length >= 2 ? selectMessages().noResultsFound : selectMessages().typeToSearch}</div>
+                <Show when={!props.status && !loader.error()}>
+                  <Show
+                    when={loader.loading()}
+                    fallback={
+                      <div class="k2b-choice-status">
+                        {query().length >= 2 ? (props.empty ?? selectMessages().noResultsFound) : selectMessages().typeToSearch}
+                      </div>
+                    }
+                  >
+                    {/* The first search has nothing to keep visible yet: rows of the final size wait in its place. */}
+                    <div class="k2b-choice-loading" role="status">
+                      <span class="k2b-sr-only">{messages().loading}</span>
+                      <For each={[62, 48, 55]}>
+                        {(width) => (
+                          <div class="k2b-choice-loading__row" aria-hidden="true">
+                            <span class="k2b-skeleton" />
+                            <span class="k2b-skeleton" style={{ width: `${width}%` }} />
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </Show>
               }
             >
               {(option, index) => (
@@ -187,6 +242,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
               )}
             </For>
           </div>
+          <Show when={props.footer}>{(footer) => <div class="k2b-choice-footer">{footer()}</div>}</Show>
         </div>
       </div>
     </Field>
