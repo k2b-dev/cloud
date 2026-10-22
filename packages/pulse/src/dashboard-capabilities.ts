@@ -11,7 +11,10 @@ const Target = z.object({ baseId: Base, dashboardId: z.string().min(1).describe(
 const Revision = Target.extend({
   expectedRevision: z.number().int().positive().describe("Current dashboard revision from dashboard.read."),
 });
-const Save = DashboardSaveSchema.extend({ baseId: Base, dashboardId: z.string().min(1).optional() });
+const Save = DashboardSaveSchema.extend({
+  baseId: Base,
+  dashboardId: z.string().min(1).optional().describe("Dashboard ID for an update; omit to create."),
+});
 const Publish = Revision.extend({
   columns: z.record(z.string(), z.array(z.string()).min(1).max(32)).describe("Exact reviewed output column names for every panel ID."),
 });
@@ -138,7 +141,7 @@ export const dashboardCapabilities = defineCapabilities({
         .object({
           baseId: Base,
           cursor: z.string().regex(/^\d+$/).optional().describe("Cursor returned by the previous page."),
-          limit: z.number().int().min(1).max(100).default(20),
+          limit: z.number().int().min(1).max(100).default(20).describe("Maximum number of dashboards to return."),
         })
         .strict(),
       data: z.array(Summary),
