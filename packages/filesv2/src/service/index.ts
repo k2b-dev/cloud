@@ -1,17 +1,20 @@
 import { createHash } from "node:crypto";
 import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import {
+  AccountIdentityError,
   type AccountIdentityGroup,
   type AccountIdentityPage,
   type AccountIdentityUser,
   accountIdentities,
   accounts,
+  audit,
   coreSettings,
   logger,
 } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { type ExecutionContext, type ExecutionIdentity, FilegateError, type Node, type RootInfo } from "@k2b/filegate";
 import { z } from "zod";
+import type { ActivityInput, ActivityPage } from "../activity-contracts";
 import { filegateErrorCode } from "../api/filegate-error";
 import { readBoundedBody } from "../bounded-body";
 import type {
@@ -46,14 +49,17 @@ import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { favorites, recent } from "../data/marks";
 import { operations, rootLockWait, withRootLock, withUploadLock } from "../data/operations";
 import { entryRef, persistedEntryRefId, resolveEntryRefId } from "../data/references";
+import { maintainShareAccess } from "../data/share-access";
 import { shares } from "../data/shares";
 import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
 import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "../document-assets";
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
-import { fileAction, pendingMigration, purgeActivity, recoverActivity, type UserFilesCall } from "./activity";
+import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, type UserFilesCall, uploadAction } from "./activity";
 import { createActivityActions } from "./activity-actions";
+import { type ActivityReadBudget, readStep, withActivityReadBudget } from "./activity-read-budget";
+import { type ActivityReadCall, createActivityReader } from "./activity-reader";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
@@ -141,17 +147,17 @@ export function createFilesService(
     userById: (id: string) => accounts.users.get({ id }),
     /** Byte transfers between Filegate leases and Collabora; separate from the short-timeout API client. */
     transfer: fetch as typeof fetch,
-    connect: (config: Config) => connectFilegate(config),
+    connect: (config: Config, signal?: AbortSignal) => connectFilegate(config, undefined, signal),
   },
 ) {
   const { provisionCandidate, ...lifecycle } = createDirectoryLifecycle(deps);
-  async function allGroups(actor: RequestActor): Promise<Group[]> {
+  async function allGroups(actor: RequestActor, budget?: ActivityReadBudget): Promise<Group[]> {
     const result: Group[] = [];
     const deadline = Date.now() + 10_000;
     let after: string | undefined;
     do {
       if (Date.now() >= deadline) throw new FilesError("unavailable", 503);
-      const page = await deps.identities.groups(actor, { after });
+      const page = await readStep(budget, () => deps.identities.groups(actor, { after }));
       result.push(...page.items);
       after = page.nextCursor ?? undefined;
     } while (after);
@@ -172,7 +178,17 @@ export function createFilesService(
       gid_number: identity.gid,
     };
   }
-  async function inspect(root: FilesRoot, item: Candidate, info: RootInfo, serverUrl: string, adopt = false): Promise<Inspection> {
+  async function inspect(
+    root: FilesRoot,
+    item: Candidate,
+    info: RootInfo,
+    serverUrl: string,
+    actor: RequestActor,
+    adopt = false,
+    call?: UserFilesCall,
+    readOnly = false,
+    budget?: ActivityReadBudget,
+  ): Promise<Inspection> {
     const summary: BaseSummary = {
       id: `${item.area}:${item.kind}:${item.identity_id}`,
       area: item.area,
@@ -200,15 +216,17 @@ export function createFilesService(
       binding,
     });
     if (item.area === "freeipa" && !info.execution) return result("unknown", "execution_disabled");
-    let existing = await deps.bindings.find(item);
-    if (!existing.length && (await operations.retiredPath(item.root, item.path))) return result("retired", "retired");
+    let existing = await readStep(budget, () => deps.bindings.find(item));
+    if (!existing.length && (await readStep(budget, () => operations.retiredPath(item.root, item.path))))
+      return result("retired", "retired");
     if (existing.some((binding) => !sameBinding(binding, item))) return result("conflict", "binding_conflict");
     if (existing.some((binding) => ["retired", "archived", "deleted"].includes(binding.lifecycle)))
       return result("retired", "retired", existing[0] ?? null);
-    if (await operations.pending(item.root, item.path)) return result("unknown", "operation_pending", existing[0] ?? null);
+    if (await readStep(budget, () => operations.pending(item.root, item.path)))
+      return result("unknown", "operation_pending", existing[0] ?? null);
     let node: Node;
     try {
-      node = await root.stat(item.path);
+      node = await readStep(budget, () => root.stat(item.path));
     } catch (error) {
       if (error instanceof FilegateError && error.status === 404) return result("missing", "not_found");
       throw error;
@@ -219,16 +237,21 @@ export function createFilesService(
       if (node.gid !== item.gid_number || (item.kind === "users" && node.uid !== item.uid_number))
         return result("conflict", "ownership_mismatch");
     }
-    if (!existing.length && (item.area === "freeipa" || adopt)) existing = await deps.bindings.claim(item);
+    if (!readOnly && !existing.length && (item.area === "freeipa" || adopt))
+      existing = await deps.bindings.claim(item, { actor, requestId: call?.requestId, via: call?.via });
     if (!existing.length) return result("unassigned", "unassigned");
     if (existing.length !== 1 || !sameBinding(existing[0]!, item)) return result("conflict", "binding_conflict");
     return result("existing", null, existing[0]!);
   }
-  async function context(actor: RequestActor) {
-    const self = await deps.identities.self(actor);
+  async function currentUser(actor: RequestActor, budget?: ActivityReadBudget) {
+    const self = await readStep(budget, () => deps.identities.self(actor));
     if (self.user.profile !== "user") throw new FilesError("forbidden", 403);
-    const config = await deps.readConfiguration();
-    const groups = await allGroups(actor);
+    return self;
+  }
+  async function context(actor: RequestActor, budget?: ActivityReadBudget) {
+    const self = await currentUser(actor, budget);
+    const config = await readStep(budget, () => deps.readConfiguration());
+    const groups = await allGroups(actor, budget);
     const unix: UnixIdentity | null =
       self.user.provider === "ipa" && self.user.posix
         ? {
@@ -264,13 +287,13 @@ export function createFilesService(
     const personalGroupIds = new Set(groups.filter((group) => group.personal).map((group) => group.id));
     return { self, config, unix, candidates, personalGroupIds };
   }
-  async function checkUnix(root: FilesRoot, path: string, unix: UnixIdentity | null, leafRights: number) {
+  async function checkUnix(root: FilesRoot, path: string, unix: UnixIdentity | null, leafRights: number, budget?: ActivityReadBudget) {
     if (!unix) throw new FilesError("identity_incomplete", 403);
     // Every caller supplies an execution-scoped root. Filegate's kernel path resolution checks ancestor x bits;
     // metadata access does not require leaf read/write rights, so the requested leaf permission remains explicit.
     try {
-      const node = await root.stat(path);
-      const acl = await root.getACL(path, "access");
+      const node = await readStep(budget, () => root.stat(path));
+      const acl = await readStep(budget, () => root.getACL(path, "access"));
       if (!permits(node, acl, unix, leafRights)) throw new FilesError("forbidden", 403);
     } catch (error) {
       if (error instanceof FilegateError && error.status === 403) throw new FilesError("forbidden", 403);
@@ -278,38 +301,49 @@ export function createFilesService(
     }
   }
   /** The actor's base, usable and bound, before any path in it is looked at. */
-  async function authorizedBase(actor: RequestActor, baseId: string, snapshot?: Awaited<ReturnType<typeof context>>) {
-    const state = snapshot ?? (await context(actor));
+  async function authorizedBase(
+    actor: RequestActor,
+    baseId: string,
+    snapshot?: Awaited<ReturnType<typeof context>>,
+    readOnly = false,
+    budget?: ActivityReadBudget,
+  ) {
+    const state = snapshot ?? (await context(actor, budget));
     const item = state.candidates.find((candidate) => `${candidate.area}:${candidate.kind}:${candidate.identity_id}` === baseId);
     if (!item) throw new FilesError("not_found", 404);
     const issue = issueFor(state.config, item.area, state.self.availability);
     if (issue) throw new FilesError(issue, 403);
-    const service = deps.connect(state.config).root(item.root);
-    const info = await service.info();
-    let inspection = await inspect(service, item, info, state.config.url);
-    if (inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
+    const service = deps.connect(state.config, budget?.signal).root(item.root);
+    const info = await readStep(budget, () => service.info());
+    let inspection = await inspect(service, item, info, state.config.url, actor, false, undefined, readOnly, budget);
+    if (!readOnly && inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
       await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
-      inspection = await inspect(service, item, info, state.config.url);
+      inspection = await inspect(service, item, info, state.config.url, actor);
     }
     if (inspection.summary.status !== "existing") throw new FilesError(inspection.summary.reason ?? "forbidden", 403);
     const execution = executionFor({ inspection, state });
     return { state, item, info, inspection, service, root: execution ? service.as(execution) : service };
   }
   /** An existing entry in that base, after the path checks the actor's execution identity must pass. */
-  async function authorizedPath(base: Awaited<ReturnType<typeof authorizedBase>>, path: string, directory?: boolean) {
+  async function authorizedPath(
+    base: Awaited<ReturnType<typeof authorizedBase>>,
+    path: string,
+    directory?: boolean,
+    budget?: ActivityReadBudget,
+  ) {
     const { state, item, info, inspection, root } = base;
     const relative = userPath(path);
     const target = joinPath(item.path, relative);
     let node: Node;
     try {
-      node = await root.stat(target);
+      node = await readStep(budget, () => root.stat(target));
     } catch (error) {
       // A missing leaf must not reveal itself to users who may not even traverse its parent.
       if (error instanceof FilegateError && error.status === 404 && item.area === "freeipa" && relative)
-        await checkUnix(root, joinPath(item.path, relative.split("/").slice(0, -1).join("/")), state.unix, 1);
+        await checkUnix(root, joinPath(item.path, relative.split("/").slice(0, -1).join("/")), state.unix, 1, budget);
       throw error;
     }
-    if (item.area === "freeipa") await checkUnix(root, target, state.unix, node.directory ? 5 : 4);
+    if (item.area === "freeipa") await checkUnix(root, target, state.unix, node.directory ? 5 : 4, budget);
     if (directory !== undefined && node.directory !== directory) throw new FilesError(directory ? "not_directory" : "not_file", 400);
     return { root, inspection, target, relative, state, node, info };
   }
@@ -471,28 +505,74 @@ export function createFilesService(
   }
   /** Whole-document writes from Cloud: a direct lease, one PUT, and the resulting node. */
   async function writeBytes(
+    call: UserFilesCall,
     current: Awaited<ReturnType<typeof authorized>> & { target: string },
     body: Blob,
     onConflict: "error" | "overwrite",
+    templateId?: string,
   ): Promise<Node> {
     if (current.info.managed && onConflict === "overwrite" && !current.node.revision) throw new FilesError("write_conflict", 409);
     if (body.size > current.info.available) throw new FilesError("insufficient_space", 409);
-    return pendingMigration("files.write_bytes", () =>
-      current.root.put(
-        current.target,
-        body,
-        {
-          onConflict,
-          ownership: onConflict === "error" ? ownershipFor(current, false) : undefined,
-          precondition: current.info.managed
-            ? onConflict === "error"
-              ? { ifNoneMatch: true }
-              : { ifMatch: current.node.revision! }
-            : undefined,
-        },
-        AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
-      ),
+    const writeOptions = {
+      onConflict,
+      ownership: onConflict === "error" ? ownershipFor(current, false) : undefined,
+      precondition: current.info.managed
+        ? onConflict === "error"
+          ? { ifNoneMatch: true as const }
+          : { ifMatch: current.node.revision! }
+        : undefined,
+    };
+    return fileAction(
+      call,
+      {
+        action: onConflict === "overwrite" ? "file.edit" : "file.create",
+        serverUrl: current.state.config.url,
+        root: current.root.name,
+        baseId: current.inspection.binding!.id,
+        directory: false,
+        name: current.target.split("/").at(-1)!,
+        pathAfter: current.target,
+        pathBefore: onConflict === "overwrite" ? current.target : null,
+        itemId: onConflict === "overwrite" && current.info.stableIds ? current.node.id : null,
+        revisionBefore: onConflict === "overwrite" ? current.node.revision : null,
+        size: body.size,
+        writeOptions,
+        detail: templateId ? { template: templateId } : undefined,
+      },
+      () =>
+        current.root.put(
+          current.target,
+          body,
+          { ...writeOptions, metadata: { activity: currentActivityId() } },
+          AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
+        ),
+      async (_tx, node) => {
+        if (node.root !== current.root.name || node.path !== current.target || node.directory || node.size !== body.size)
+          throw new FilesError("unavailable", 503);
+        return { itemAfterId: current.info.stableIds ? node.id : null, revisionAfter: node.revision, size: node.size };
+      },
     );
+  }
+
+  function versionIntent(
+    current: Awaited<ReturnType<typeof authorized>>,
+    action: "version.comment" | "version.restore" | "version.restore_copy" | "version.delete",
+    versionId: string,
+  ): Intent {
+    return {
+      action,
+      serverUrl: current.state.config.url,
+      root: current.root.name,
+      baseId: current.inspection.binding!.id,
+      itemId: current.info.stableIds ? current.node.id : null,
+      directory: false,
+      name: current.relative.split("/").at(-1)!,
+      pathBefore: current.target,
+      pathAfter: current.target,
+      revisionBefore: current.node.revision,
+      versionId,
+      size: current.node.size,
+    };
   }
 
   async function createFolder(call: UserFilesCall, current: Awaited<ReturnType<typeof writableParent>>, batchId?: string) {
@@ -732,6 +812,7 @@ export function createFilesService(
       !sameUploadExecution(session.execution ?? null, row.execution)
     )
       throw new FilesError("upload_changed", 409);
+    if (session.state === "committed" && !session.result) throw new FilesError("upload_changed", 409);
     if (session.result) uploadResult(current, row, session.result);
   }
   /** A commit whose response was lost is recognised from Filegate's session record; repeats are idempotent. */
@@ -763,7 +844,7 @@ export function createFilesService(
     }
     if (session.received !== session.size) throw new FilesError("upload_incomplete");
     signal?.throwIfAborted();
-    const node = await pendingMigration("files.upload_session", () => root.commitSession(sessionId));
+    const node = await uploadAction(row.id, () => root.commitSession(sessionId));
     const result = uploadResult(current, row, node);
     await uploads.finish(row.id, "committed", node);
     return result;
@@ -778,6 +859,7 @@ export function createFilesService(
     if (row.server_url !== current.state.config.url) throw new FilesError("configuration_changed", 409);
     if (!sameUploadExecution(row.execution, executionFor(current))) throw new FilesError("upload_changed", 409);
     await checkUploadTarget(current);
+    await uploads.history(row.id);
     if (row.state === "open" && !uploadSessionId(row)) row = await ensureUploadSession(current, row);
     return { row, current };
   }
@@ -794,7 +876,7 @@ export function createFilesService(
     if (!uploadSessionId(row)) {
       // Filegate retains creation keys for seven days. Never recreate an ambiguous old transfer after GC.
       if (Date.now() - row.created_at.getTime() >= UPLOAD_RECOVERY_MS || !row.write_options) throw new FilesError("receipt_unknown", 409);
-      const created = await pendingMigration("files.upload_session", () =>
+      const created = await uploadAction(row.id, () =>
         current.root.createSession(joinPath(current.target, current.name), row.size, {
           ...row.write_options,
           idempotencyKey: row.id,
@@ -804,11 +886,13 @@ export function createFilesService(
       );
       checkUploadSession(current, { ...row, filegate_session_id: created.session.id }, created.session);
       await uploads.attachSession(row.id, created.session);
-      row = { ...row, filegate_session_id: created.session.id };
+      if (created.session.state !== "open") await uploads.finish(row.id, created.session.state, created.session.result ?? null);
+      row = { ...row, filegate_session_id: created.session.id, state: created.session.state, result: created.session.result ?? null };
     }
     return row;
   }
   async function openUpload(current: Awaited<ReturnType<typeof writableParent>>, row: Upload): Promise<UploadSession> {
+    await uploads.history(row.id);
     if (row.state !== "open")
       return {
         id: row.id,
@@ -886,16 +970,84 @@ export function createFilesService(
           },
         )
       : 0;
-    return { activityChecked, activityPurged };
+    const shareAccess = config
+      ? await maintainShareAccess({ now: input.now, retentionDays: config.activityRetentionDays }).catch((error: unknown) => {
+          maintenanceLog.error("Public link access retention failed", { error });
+          return { rolledUp: 0, purged: 0 };
+        })
+      : { rolledUp: 0, purged: 0 };
+    return { activityChecked, activityPurged, shareAccessRolledUp: shareAccess.rolledUp, shareAccessPurged: shareAccess.purged };
   }
+  const activityReader = createActivityReader({
+    requestContext: async (actor, budget) => {
+      const state = await context(actor, budget);
+      let admin = false;
+      try {
+        // Same canonical check as requireAdmin, without repeating self().
+        await budget.run(() => deps.identities.inventory(actor, { kind: "groups", provider: "local" }));
+        admin = true;
+      } catch (error) {
+        if (!((error instanceof AccountIdentityError || error instanceof FilesError) && [403, 404].includes(error.status))) throw error;
+      }
+      const allowedBindingIds: string[] = [];
+      for (const item of state.candidates) {
+        if (issueFor(state.config, item.area, state.self.availability)) continue;
+        const found = await budget.run(() => deps.bindings.find(item));
+        for (const binding of found)
+          if (found.length === 1 && binding.lifecycle === "active" && sameBinding(binding, item) && !allowedBindingIds.includes(binding.id))
+            allowedBindingIds.push(binding.id);
+      }
+      const bases = new Map<string, ReturnType<typeof authorizedBase>>();
+      return {
+        userId: state.self.user.id,
+        admin,
+        config: state.config,
+        allowedBindingIds,
+        readOnlyAuthorized: (baseId, path) => {
+          budget.check();
+          let base = bases.get(baseId);
+          if (!base) {
+            base = authorizedBase(actor, baseId, state, true, budget);
+            bases.set(baseId, base);
+          }
+          return budget.run(async () => authorizedPath(await base, path, undefined, budget));
+        },
+      };
+    },
+    requireAdmin: async (actor, budget) => {
+      await currentUser(actor, budget);
+      await budget.run(() => deps.identities.inventory(actor, { kind: "groups", provider: "local" }));
+    },
+    canReadShare: async (actor, creatorId, budget) => {
+      const self = await currentUser(actor, budget);
+      if (self.user.id === creatorId) return true;
+      try {
+        await budget.run(() => deps.identities.inventory(actor, { kind: "groups", provider: "local" }));
+        return true;
+      } catch (error) {
+        if ((error instanceof AccountIdentityError || error instanceof FilesError) && [403, 404].includes(error.status)) return false;
+        throw error;
+      }
+    },
+    bindings: deps.bindings,
+    connect: deps.connect,
+    displayNames: deps.displayNames,
+    shares,
+  });
   const sharing = createSharingService<Awaited<ReturnType<typeof authorized>>>({
     authorized,
+    readOnlyAuthorized: (actor, baseId, path) =>
+      withActivityReadBudget(undefined, async (budget) => {
+        const state = await context(actor, budget);
+        return authorizedPath(await authorizedBase(actor, baseId, state, true, budget), path, undefined, budget);
+      }),
+    displayNames: deps.displayNames,
     writableParent,
     executionFor,
     requireAdmin,
     ownershipFor,
     validateUploadTarget: (current, path) => checkUploadTarget({ ...current, relative: path, name: path.split("/").at(-1)! }),
-    actorUserId: async (actor) => (await deps.identities.self(actor)).user.id,
+    actorUserId: async (actor) => (await currentUser(actor)).user.id,
     creatorActor: async (id) => {
       const user = await deps.userById(id);
       if (!user) throw new FilesError("not_found", 404);
@@ -933,9 +1085,7 @@ export function createFilesService(
         const target = joinPath(candidate.path, "trash");
         try {
           const node = await current.root.stat(candidate.path);
-          await pendingMigration("files.ensure_trash", () =>
-            current.root.mkdir(target, { ownership: ownershipFor({ ...current, node }, true) }),
-          );
+          await current.root.mkdir(target, { ownership: ownershipFor({ ...current, node }, true) });
         } catch (error) {
           if (!(error instanceof FilegateError && error.status === 409)) throw error;
           if (!(await current.root.stat(target)).directory) throw new FilesError("not_directory", 409);
@@ -1007,6 +1157,80 @@ export function createFilesService(
     restoreActivity: activityActions.restore,
     moveActivityBack: activityActions.moveBack,
     recheckActivity: activityActions.recheck,
+    ...activityReader,
+    /** Authorize the ref's current item or missing path's parent before any history candidate scan. */
+    async activityForEntry(
+      call: ActivityReadCall,
+      id: string,
+      input: Omit<ActivityInput, "baseId" | "itemId" | "path"> = {},
+    ): Promise<ActivityPage> {
+      return withActivityReadBudget(call.requestAbort, async (budget) => {
+        const state = await context(call.actor, budget);
+        if (state.config.unreadable) throw new FilesError("configuration_unreadable", 409);
+        const empty: ActivityPage = {
+          items: [],
+          next: null,
+          visibleCount: 0,
+          batches: [],
+          exhausted: true,
+          scanLimitReached: false,
+          searchLimitReached: false,
+        };
+        let filter: Pick<ActivityInput, "baseId" | "itemId" | "path">;
+        try {
+          const stable = parseStableEntryRefId(id);
+          const location = stable ?? (await budget.run(() => resolveEntryRefId(id)));
+          if (!location) return empty;
+          // Same read-only base/path checks as the reader: no claim, provisioning or reference writes.
+          const base = await authorizedBase(call.actor, location.baseId, state, true, budget);
+          if (stable) {
+            if (base.info.stableIds !== true) return empty;
+            let node: Node;
+            try {
+              node = await budget.run(() => base.service.resolve(stable.fileId));
+            } catch (error) {
+              if (error instanceof FilegateError && [400, 404, 409].includes(error.status)) return empty;
+              throw error;
+            }
+            if (node.id !== stable.fileId || node.root !== base.item.root || !node.path.startsWith(`${base.item.path}/`)) return empty;
+            const path = userPath(node.path.slice(base.item.path.length + 1));
+            const current = await authorizedPath(base, path, undefined, budget);
+            if (current.node.id !== stable.fileId || current.node.path !== node.path) return empty;
+            filter = { baseId: stable.baseId, itemId: stable.fileId };
+          } else {
+            // A path ref has no identity evidence: an unreadable existing leaf is never a disappearance.
+            if (!("path" in location)) return empty;
+            const path = userPath(location.path);
+            const target = joinPath(base.item.path, path);
+            const node = await budget
+              .run(() => base.service.stat(target))
+              .catch((error: unknown) => {
+                if (error instanceof FilegateError && error.status === 404) return null;
+                throw error;
+              });
+            if (node) {
+              const current = await authorizedPath(base, path, undefined, budget);
+              if (current.node.path !== target) return empty;
+            } else {
+              if (!path) return empty; // A base's parent is outside its authority.
+              const parent = path.split("/").slice(0, -1).join("/");
+              const current = await authorizedPath(base, parent, undefined, budget);
+              if (!current.node.directory) return empty;
+            }
+            filter = { baseId: location.baseId, path };
+          }
+        } catch (error) {
+          // Unknown and forbidden anchors have the same terminal page, without candidate SQL.
+          if (
+            (error instanceof FilesError || error instanceof FilegateError || error instanceof AccountIdentityError) &&
+            [403, 404].includes(error.status)
+          )
+            return empty;
+          throw error;
+        }
+        return activityReader.activity({ ...call, requestAbort: budget.signal }, { ...input, ...filter });
+      });
+    },
     async maintain(input: Parameters<typeof lifecycle.maintain>[0] & { now?: Date } = {}): Promise<MaintenanceResult> {
       // The history goes first and alone: its failure never stops directory work, and theirs never stops it.
       const activity = await maintainActivity(input);
@@ -1039,10 +1263,10 @@ export function createFilesService(
           const root = deps.connect(state.config).root(state.config[area].root);
           const info = await root.info();
           for (const item of items) {
-            let entry = await inspect(root, item, info, state.config.url);
+            let entry = await inspect(root, item, info, state.config.url, actor, false, call);
             if (entry.summary.status === "missing" && area === "cloud" && state.config.cloud.autoCreate) {
               await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
-              entry = await inspect(root, item, info, state.config.url);
+              entry = await inspect(root, item, info, state.config.url, actor, false, call);
             }
             if (entry.summary.status === "existing" && area === "freeipa") {
               try {
@@ -1314,18 +1538,21 @@ export function createFilesService(
         ownership: existing ? undefined : ownershipFor(current, false),
         precondition: current.info.managed ? (existing ? { ifMatch: existing.revision! } : { ifNoneMatch: true as const }) : undefined,
       };
-      const row = await uploads.reservePrivate({
-        id: input.idempotencyKey,
-        base_id: current.inspection.binding!.id,
-        user_id: current.state.self.user.id,
-        root: current.inspection.candidate.root,
-        server_url: current.state.config.url,
-        path: current.relative,
-        size: input.size,
-        write_options: writeOptions,
-        expected_revision: input.expectedRevision ?? null,
-        execution: executionFor(current),
-      });
+      const row = await uploads.reservePrivate(
+        {
+          id: input.idempotencyKey,
+          base_id: current.inspection.binding!.id,
+          user_id: current.state.self.user.id,
+          root: current.inspection.candidate.root,
+          server_url: current.state.config.url,
+          path: current.relative,
+          size: input.size,
+          write_options: writeOptions,
+          expected_revision: input.expectedRevision ?? null,
+          execution: executionFor(current),
+        },
+        { call, target, previous: existing },
+      );
       return openUpload(current, row);
     },
     async uploadLease(call: UserFilesCall, input: { baseId: string; id: string }): Promise<UploadLease> {
@@ -1502,9 +1729,19 @@ export function createFilesService(
         comment: input.comment || undefined,
         author: input.comment ? current.state.self.user.username : undefined,
       };
+      const options = { pinned: existing.pinned, metadata };
       return versionEntry(
-        await pendingMigration("files.version_comment", () =>
-          current.root.updateVersion(current.target, input.id, { pinned: existing.pinned, metadata }),
+        await fileAction(
+          call,
+          { ...versionIntent(current, "version.comment", input.id), versionOptions: options },
+          () =>
+            current.root.updateVersion(current.target, input.id, {
+              ...options,
+              metadata: { ...metadata, comment_activity: currentActivityId() },
+            }),
+          async (_tx, version) => {
+            if (version.id !== input.id) throw new FilesError("unavailable", 503);
+          },
         ),
       );
     },
@@ -1516,45 +1753,99 @@ export function createFilesService(
       const current = await versionFile(actor, input.baseId, input.path, true);
       return publish(current.root.name, async () => {
         const fresh = await versionFile(actor, input.baseId, input.path, true);
+        if (
+          fresh.root.name !== current.root.name ||
+          fresh.state.config.url !== current.state.config.url ||
+          fresh.inspection.binding!.id !== current.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
         if (input.expectedRevision !== undefined && fresh.node.revision !== input.expectedRevision)
           throw new FilesError("version_restore_changed", 409);
-        const node = await pendingMigration("files.version_restore", () => fresh.root.restore(fresh.target, input.id));
+        const node = await fileAction(
+          call,
+          versionIntent(fresh, "version.restore", input.id),
+          () => fresh.root.restore(fresh.target, input.id),
+          async (_tx, node) => {
+            if (
+              node.root !== fresh.root.name ||
+              node.path !== fresh.target ||
+              node.directory ||
+              (fresh.info.stableIds && node.id !== fresh.node.id)
+            )
+              throw new FilesError("unavailable", 503);
+            return { itemAfterId: fresh.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
+          },
+        );
         return { base: fresh.inspection.summary, entry: fileEntry(fresh.inspection.summary, fresh.relative, node) };
       });
     },
     async restoreVersionAs(call: UserFilesCall, input: { baseId: string; path: string; id: string; name: string }): Promise<EntryResult> {
       const actor = call.actor;
-      const current = await versionFile(actor, input.baseId, input.path, false);
-      const relative = userPath(joinPath(current.relative.split("/").slice(0, -1).join("/"), input.name));
-      if (relative.split("/").length !== current.relative.split("/").length || relative === current.relative)
-        throw new FilesError("invalid_path");
-      const destination = await writableParent(actor, input.baseId, relative);
-      if (JSON.stringify(executionFor(current)) !== JSON.stringify(executionFor(destination)))
-        throw new FilesError("configuration_changed", 409);
-      if (
-        current.state.config.url !== destination.state.config.url ||
-        current.inspection.binding?.id !== destination.inspection.binding?.id
-      )
-        throw new FilesError("configuration_changed", 409);
-      const node = await pendingMigration("files.version_restore_copy", () =>
-        current.root.copyVersion(current.target, input.id, destination.root.name, joinPath(destination.target, destination.name), {
-          onConflict: "error",
+      const prepared = await versionFile(actor, input.baseId, input.path, false);
+      return publish(prepared.root.name, async () => {
+        const current = await versionFile(actor, input.baseId, input.path, false);
+        if (
+          current.root.name !== prepared.root.name ||
+          current.state.config.url !== prepared.state.config.url ||
+          current.inspection.binding!.id !== prepared.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const relative = userPath(joinPath(current.relative.split("/").slice(0, -1).join("/"), input.name));
+        if (relative.split("/").length !== current.relative.split("/").length || relative === current.relative)
+          throw new FilesError("invalid_path");
+        const destination = await writableParent(actor, input.baseId, relative);
+        if (
+          JSON.stringify(executionFor(current)) !== JSON.stringify(executionFor(destination)) ||
+          current.state.config.url !== destination.state.config.url ||
+          current.inspection.binding!.id !== destination.inspection.binding!.id
+        )
+          throw new FilesError("configuration_changed", 409);
+        const target = joinPath(destination.target, destination.name);
+        const options = {
+          onConflict: "error" as const,
           ownership: ownershipFor(destination, false),
           targetExecution: targetExecution(destination),
-        }),
-      );
-      if (node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`))
-        throw new FilesError("unavailable", 503);
-      return {
-        base: current.inspection.summary,
-        entry: fileEntry(destination.inspection.summary, userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node),
-      };
+        };
+        const node = await fileAction(
+          call,
+          {
+            ...versionIntent(current, "version.restore_copy", input.id),
+            rootAfter: destination.root.name,
+            baseAfterId: destination.inspection.binding!.id,
+            pathAfter: target,
+            copyOptions: options,
+          },
+          () => current.root.copyVersion(current.target, input.id, destination.root.name, target, options),
+          async (_tx, node) => {
+            if (node.root !== destination.root.name || node.path !== target || node.directory) throw new FilesError("unavailable", 503);
+            return { itemAfterId: destination.info.stableIds ? node.id : null, size: node.size, revisionAfter: node.revision };
+          },
+        );
+        return { base: destination.inspection.summary, entry: fileEntry(destination.inspection.summary, relative, node) };
+      });
     },
     async deleteVersion(call: UserFilesCall, input: { baseId: string; path: string; id: string }): Promise<void> {
       const actor = call.actor;
       await requireAdmin(actor);
       const current = await versionFile(actor, input.baseId, input.path, true);
-      await pendingMigration("files.version_delete", () => current.root.deleteVersion(current.target, input.id));
+      await fileAction(
+        call,
+        versionIntent(current, "version.delete", input.id),
+        () => current.root.deleteVersion(current.target, input.id),
+        async (tx) => {
+          await audit.record(
+            {
+              action: "filesv2.version.delete",
+              outcome: "allowed",
+              actor: { userId: current.state.self.user.id },
+              target: { type: "filesv2.version", id: input.id, label: current.target },
+              requestId: call.requestId,
+              metadata: { root: current.root.name },
+            },
+            tx,
+          );
+        },
+      );
     },
     async versionDownload(call: UserFilesCall, input: { baseId: string; path: string; id: string }): Promise<DownloadLease> {
       const actor = call.actor;
@@ -1621,14 +1912,14 @@ export function createFilesService(
     },
     async createFromBytes(
       call: UserFilesCall,
-      input: { baseId: string; path: string },
+      input: { baseId: string; path: string; templateId?: string },
       bytes: Uint8Array<ArrayBuffer>,
     ): Promise<EntryResult> {
       const actor = call.actor;
       if (bytes.byteLength > TEMPLATE_LIMIT) throw new FilesError("preview_too_large", 400);
       const current = await writableParent(actor, input.baseId, input.path);
       const target = joinPath(current.target, current.name);
-      const node = await writeBytes({ ...current, target }, new Blob([bytes]), "error");
+      const node = await writeBytes(call, { ...current, target }, new Blob([bytes]), "error", input.templateId);
       return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, current.relative, node) };
     },
     /** A new document starts in the administrator's format; the extension is appended here. */
@@ -1644,7 +1935,7 @@ export function createFilesService(
       } catch (error) {
         if (!(error instanceof FilegateError && error.status === 404)) throw error;
       }
-      const node = await writeBytes({ ...current, target }, await documentTemplate(extension), "error");
+      const node = await writeBytes(call, { ...current, target }, await documentTemplate(extension), "error");
       return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, relative, node) };
     },
     async editorFileInfo(token: string, id: string, requestId: string | null = null) {
@@ -1706,7 +1997,7 @@ export function createFilesService(
         )
           return { conflict: true };
         try {
-          const node = await writeBytes(latest, body, "overwrite");
+          const node = await writeBytes(latest.call, latest, body, "overwrite");
           const modified = wopiTimestamp(node.modified);
           if (!modified) throw new FilesError("unavailable", 503);
           return { modified };
@@ -1732,7 +2023,7 @@ export function createFilesService(
         return;
       }
       try {
-        await pendingMigration("files.upload_session", () => current.root.abortSession(sessionId));
+        await uploadAction(row.id, () => current.root.abortSession(sessionId));
       } catch (error) {
         // An abort may race a commit. Only a retained terminal receipt proves the outcome.
         const receipt = await privateReceipt(current.root, row, sessionId);
@@ -1811,9 +2102,14 @@ export function createFilesService(
       if (!sessionId) throw new FilesError("receipt_unknown", 409);
       const session = await privateReceipt(current.root, row, sessionId);
       checkUploadSession(current, row, session);
-      if (session.state === "committed" && session.result)
+      if (session.state === "committed" && session.result) {
+        await uploads.finish(row.id, "committed", session.result);
         return { state: "completed" as const, entry: uploadResult(current, row, session.result) };
-      if (session.state === "aborted" || session.state === "expired") return { state: "aborted" as const };
+      }
+      if (session.state === "aborted" || session.state === "expired") {
+        await uploads.finish(row.id, session.state, null);
+        return { state: "aborted" as const };
+      }
       return { state: "open" as const };
     },
     async capabilityUpload(
@@ -1905,12 +2201,12 @@ export function createFilesService(
             if (!node.directory) throw new FilesError("not_directory");
           }
       }
-      await deps.writeConfiguration(input);
+      await deps.writeConfiguration(input, call);
     },
     async resetConfiguration(call: UserFilesCall): Promise<void> {
       const actor = call.actor;
       await requireAdmin(actor);
-      await deps.resetConfiguration();
+      await deps.resetConfiguration(call);
     },
     async admin(
       call: UserFilesCall,
@@ -2000,7 +2296,7 @@ export function createFilesService(
           status = "conflict";
           reason = "ownership_mismatch";
         } else if (knownCandidate) {
-          const checked = await inspect(root, knownCandidate, info, config.url);
+          const checked = await inspect(root, knownCandidate, info, config.url, actor, false, call);
           status = checked.summary.status;
           reason = checked.summary.reason;
         } else if (node && proof.state === "present") {
@@ -2178,7 +2474,7 @@ export function createFilesService(
           : { id: identity.id, name: identity.name, uid: null, gid: identity.gidNumber },
       );
       const root = deps.connect(config).root(item.root);
-      const result = await inspect(root, item, await root.info(), config.url, true);
+      const result = await inspect(root, item, await root.info(), config.url, actor, true, call);
       if (result.summary.status !== "existing") throw new FilesError(result.summary.reason ?? "binding_conflict", 409);
       return result.summary;
     },

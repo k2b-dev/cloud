@@ -269,7 +269,7 @@ describe("Files history in the workspace", () => {
       const oldPath = "Kunden/Angebote";
       const moved = entry({
         action: "item.move",
-        before: { ...gone("opaque/base/Kunden", { directory: true }), relativePath: "Kunden" },
+        before: gone("opaque/base/Kunden", { directory: true, relativePath: "Kunden" }),
         after: current("opaque/base/Archiv/Kunden", { itemId: "ancestor-id" }),
       });
       const endpoint = { baseId: home.id, path: "Archiv/Kunden/Angebote", itemId: null };

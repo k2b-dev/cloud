@@ -50,6 +50,25 @@ export const ActivityInput = z
   })
   .strict();
 export type ActivityInput = z.input<typeof ActivityInput>;
+/** Optional old base-relative address, scoped against the source's visible before-side by the reader. */
+export const MovementChainInput = z
+  .object({
+    activityId: z.uuid(),
+    oldPath: z
+      .string()
+      .min(1)
+      .max(4096)
+      .refine(
+        (path) =>
+          !path.includes("\\") &&
+          !/[\x00-\x1f\x7f]/.test(path) &&
+          path.split("/").every((part) => part !== "" && part !== "." && part !== ".." && part !== ".filegate"),
+        "Expected a base-relative path",
+      )
+      .optional(),
+  })
+  .strict();
+export type MovementChainInput = z.input<typeof MovementChainInput>;
 export type ActivityObservation =
   | { state: "unavailable" }
   | { exists: boolean; directory?: boolean; id?: string; size?: number; revision?: string };
@@ -196,11 +215,14 @@ export type ShareAccessCounts = {
   };
 };
 
-/** Recorded public binding identities, including archived bases; never storage inventory. */
+/** Administrator-only recorded bindings, including historical locations. Pages count bindings, not public IDs. */
 export const ActivityBasesInput = z
   .object({
     q: z.string().trim().min(1).max(4096).optional(),
-    after: z
+    /** Stable binding keyset; public IDs are not unique across historical bindings. */
+    after: z.uuid().optional(),
+    /** Exact lookup for an existing public selection, including all its bindings over subsequent pages. */
+    baseId: z
       .string()
       .max(256)
       .refine((value) => {
@@ -213,13 +235,35 @@ export const ActivityBasesInput = z
         );
       }, "Expected a public base ID")
       .optional(),
+    /** Bounded exact metadata lookup for the sides of a loaded history page. CSV keeps the query transport scalar. */
+    bindingIds: z
+      .string()
+      .max(ACTIVITY_PAGE_LIMIT * 37)
+      .refine((value) => {
+        const ids = value.split(",");
+        return ids.length <= ACTIVITY_PAGE_LIMIT && ids.every((id) => z.uuid().safeParse(id).success);
+      }, "Expected at most 50 binding UUIDs")
+      .optional(),
   })
   .strict();
 export type ActivityBasesInput = z.input<typeof ActivityBasesInput>;
+export const ActivityBaseSchema = z
+  .object({
+    id: z.string(),
+    bindingId: z.uuid(),
+    area: z.enum(["cloud", "freeipa"]),
+    kind: KindSchema,
+    name: z.string(),
+    displayName: z.string().nullable(),
+    root: z.string(),
+    path: z.string(),
+  })
+  .strict();
+export type ActivityBase = z.infer<typeof ActivityBaseSchema>;
 export const ActivityBasesPageSchema = z
   .object({
-    items: z.array(z.object({ id: z.string(), name: z.string(), kind: KindSchema }).strict()).max(ACTIVITY_PAGE_LIMIT),
-    next: z.string().nullable(),
+    items: z.array(ActivityBaseSchema).max(ACTIVITY_PAGE_LIMIT),
+    next: z.uuid().nullable(),
   })
   .strict();
 export type ActivityBasesPage = z.infer<typeof ActivityBasesPageSchema>;

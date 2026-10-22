@@ -14,6 +14,7 @@ import {
   printStructured,
 } from "@k2b/cloud/cli";
 import type { ApiType } from "./api";
+import { activityCommands } from "./cli-activity";
 import {
   addressOf,
   areaLabel,
@@ -1112,6 +1113,7 @@ function filesCommands(locale?: string) {
           );
         },
       }),
+      ...activityCommands(locale),
       ...templateCommands(locale),
       ...adminCommands(locale),
     ],

@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { migrateActivity } from "./data/activity-migration";
+import { migrateShareAccess } from "./data/share-access-migration";
 import { migrateSharing } from "./data/sharing-migration";
 import { migrateTemplates } from "./data/templates";
 import { migrateTrash } from "./migrate-trash";
@@ -43,6 +44,9 @@ export async function migrate(): Promise<void> {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
   await sql`ALTER TABLE filesv2.operations ADD COLUMN IF NOT EXISTS server_url TEXT NOT NULL DEFAULT ''`.simple();
+  await sql`ALTER TABLE filesv2.operations ADD COLUMN IF NOT EXISTS activity_recorded boolean NOT NULL DEFAULT false`.simple();
+  await sql`ALTER TABLE filesv2.operations ADD COLUMN IF NOT EXISTS effect_started boolean NOT NULL DEFAULT false`.simple();
+  await sql`ALTER TABLE filesv2.operations ADD COLUMN IF NOT EXISTS receipt jsonb`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS filesv2_pending_operation ON filesv2.operations(root,source) WHERE state='pending'`.simple();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.maintenance (
     singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK(singleton),
@@ -78,6 +82,7 @@ export async function migrate(): Promise<void> {
   )`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_trash_base ON filesv2.trash(base_id,deleted_at) WHERE state='trashed'`.simple();
   await sql`ALTER TABLE filesv2.uploads ADD COLUMN IF NOT EXISTS share_id UUID`.simple();
+  await sql`ALTER TABLE filesv2.uploads ADD COLUMN IF NOT EXISTS activity_recorded boolean NOT NULL DEFAULT false`.simple();
   // Public shares: a bundle of entries for download or a folder that accepts anonymous uploads. Both stay inside one base.
   await sql`CREATE TABLE IF NOT EXISTS filesv2.shares (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -118,6 +123,9 @@ export async function migrate(): Promise<void> {
   await migrateTemplates();
   await migrateTrash();
   await migrateSharing();
+  await sql`ALTER TABLE filesv2.trash ADD COLUMN IF NOT EXISTS activity_recorded boolean NOT NULL DEFAULT false`.simple();
+  await sql`ALTER TABLE filesv2.trash ADD COLUMN IF NOT EXISTS restore_activity_recorded boolean NOT NULL DEFAULT false`.simple();
   await migrateActivity();
+  await migrateShareAccess();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.entry_references(id TEXT PRIMARY KEY, base_id TEXT NOT NULL, path TEXT NOT NULL)`.simple();
 }

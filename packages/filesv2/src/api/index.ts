@@ -60,6 +60,7 @@ import {
 import { isMarkdown } from "../document-assets";
 import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
+import { activityApi } from "./activity";
 import { createActivityActionsApi } from "./activity-actions";
 import { apiError, describeError } from "./api-error";
 import { inlinePdfApi } from "./inline-pdf";
@@ -85,6 +86,7 @@ const api = new Hono<AuthContext>()
       log.error("Files request failed", { code, status, method: c.req.method, path: c.req.path, error: describeError(error) });
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status, code });
   })
+  .route("/", activityApi)
   .route("/templates", templateApi)
   .route("/", inlinePdfApi)
   .route(
@@ -269,7 +271,16 @@ const api = new Hono<AuthContext>()
     middleware.openapi({ summary: "Restore a trashed entry to its original path", ...requiresAuth }),
     v("param", TrashIdSchema.extend({ baseId: z.string() })),
     v("query", z.object({ path: z.string().min(1).max(4096).optional() })),
-    async (c) => respond(c, ok(await filesService.restoreTrash(requestCall(c), { ...c.req.valid("param"), ...c.req.valid("query") }))),
+    async (c) =>
+      respond(
+        c,
+        ok(
+          await filesService.restoreTrash(
+            { ...requestCall(c), requestAbort: c.req.raw.signal },
+            { ...c.req.valid("param"), ...c.req.valid("query") },
+          ),
+        ),
+      ),
   )
   .post(
     "/bases/:baseId/archive",
@@ -314,7 +325,7 @@ const api = new Hono<AuthContext>()
   )
   .get(
     "/shares",
-    middleware.openapi({ summary: "List public shares owned by the user", ...requiresAuth }),
+    middleware.openapi({ summary: "List own public shares, or item shares for the current creator or administrator", ...requiresAuth }),
     v("query", SharePageQuerySchema),
     async (c) => respond(c, ok(await filesService.listShares(requestCall(c), c.req.valid("query")))),
   )

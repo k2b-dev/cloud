@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Lessons learned
@@ -23,6 +23,8 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| An ancestor's identity becomes its child's identity | An old descendant address follows the moved folder's stable ID and opens or offers actions for the folder instead of the child. | Tests: Files `service/activity-reader.test.ts` scopes old paths to the visible before-side, keeps descendant chains probable and path-only, checks the current leaf, and stops at lifetime barriers and truncation. `activity-transports.test.ts` rejects unsafe old paths. UI `history-requests.test.ts`, `history.behavior.test.tsx` and `history-workspace.behavior.test.tsx` cover ancestor matching, the opened subject, and matching SSR/client requests without an automatic redirect. |
+| Aggregate pagination loses its ordering evidence | A network list sorts by its key instead of usage, or a period summary treats expired network identities as a complete count. | Tests: Files `service/activity-reader.integration.test.ts` covers combined-usage order and ties, fresh cursor aggregates, cursor expiry, bounded UTC timelines, and totals before and after rollup. `activity-transports.test.ts` rejects private share fields and visitor details. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |

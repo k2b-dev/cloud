@@ -8,6 +8,7 @@ import {
 import { FilegateError } from "@k2b/filegate";
 import { err, fail, fileIcons, ok } from "@k2b/stdlib";
 import { z } from "zod";
+import { activityQueries } from "./activity-capabilities";
 import { apiError } from "./api/api-error";
 import { errorMessage } from "./api/messages";
 import { filesCapabilityMessages } from "./capability-messages";
@@ -55,6 +56,7 @@ export const filesCapabilities = defineCapabilities({
   actions: fileActions,
   queries: {
     ...fileQueries,
+    ...activityQueries,
     "entry.read": {
       title: "Read file entry",
       description: "Read the current metadata of one filesv2.entry ref after checking access.",

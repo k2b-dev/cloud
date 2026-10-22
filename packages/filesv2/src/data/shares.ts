@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { sql } from "bun";
+import { type SQL, sql, type TransactionSQL } from "bun";
 
 export const shareTokenHash = (token: string) => createHash("sha256").update(token).digest("hex");
+export type ShareTarget = { path: string; directory: boolean; itemId: string | null };
 export type ShareRow = {
   id: string;
   token_hash: string;
@@ -10,6 +11,9 @@ export type ShareRow = {
   base_id: string;
   root: string;
   base_path: string;
+  /** Original location, independent of activity retention and current binding/access. Null for legacy shares. */
+  server_url: string | null;
+  target_snapshots: ShareTarget[] | null;
   scope: string;
   items: string[];
   title: string;
@@ -33,37 +37,83 @@ const normalize = (row: ShareRow): ShareRow => ({
   ...row,
   max_file_size: Number(row.max_file_size),
   max_total_size: Number(row.max_total_size),
+  target_snapshots: typeof row.target_snapshots === "string" ? (JSON.parse(row.target_snapshots) as ShareTarget[]) : row.target_snapshots,
   items: typeof row.items === "string" ? (JSON.parse(row.items) as string[]) : row.items,
 });
+/** Current item identity resolved by the service, never accepted from a browser or historical snapshot. */
+export type ShareItemFilter = {
+  bindingId: string;
+  serverUrl: string;
+  root: string;
+  basePath: string;
+  path: string;
+  target: string;
+  directory: boolean;
+  itemId: string | null;
+};
 export const shares = {
   async create(
     input: Omit<ShareRow, "id" | "created_at" | "revoked_at" | "revoked_by" | "access_count" | "last_accessed_at">,
+    db: SQL | TransactionSQL = sql,
   ): Promise<ShareRow> {
-    const [row] = await sql<
+    const [row] = await db<
       ShareRow[]
-    >`INSERT INTO filesv2.shares(token_hash,password_hash,kind,base_id,root,base_path,scope,items,title,note,public_note,owner_uid,owner_gid,created_by,created_by_name,expires_at,max_file_size,max_total_size,show_upload_names)
-      VALUES(${input.token_hash},${input.password_hash},${input.kind},${input.base_id}::uuid,${input.root},${input.base_path},${input.scope},${input.items},${input.title},${input.note},${input.public_note},${input.owner_uid},${input.owner_gid},${input.created_by}::uuid,${input.created_by_name},${input.expires_at},${input.max_file_size},${input.max_total_size},${input.show_upload_names}) RETURNING *`;
+    >`INSERT INTO filesv2.shares(token_hash,password_hash,kind,base_id,root,base_path,scope,items,title,note,public_note,owner_uid,owner_gid,created_by,created_by_name,expires_at,max_file_size,max_total_size,show_upload_names,server_url,target_snapshots)
+      VALUES(${input.token_hash},${input.password_hash},${input.kind},${input.base_id}::uuid,${input.root},${input.base_path},${input.scope},${input.items},${input.title},${input.note},${input.public_note},${input.owner_uid},${input.owner_gid},${input.created_by}::uuid,${input.created_by_name},${input.expires_at},${input.max_file_size},${input.max_total_size},${input.show_upload_names},${input.server_url},${input.target_snapshots === null ? null : JSON.stringify(input.target_snapshots)}::jsonb) RETURNING *`;
     return normalize(row!);
   },
-  /** An owner's management list never depends on retaining access to the old storage. */
-  async list(input: { ownerId?: string; after?: string; limit?: number }): Promise<{ items: ShareRow[]; next: string | null }> {
+  /** An owner's unscoped management list never depends on retaining access to the old storage.
+   * Item matching uses PR5's retained server_url/target_snapshots, independently of activity retention.
+   * Filtering happens before the bounded keyset page; it never walks an owner's/all administrators' pages.
+   */
+  async list(input: {
+    ownerId?: string;
+    after?: string;
+    limit?: number;
+    item?: ShareItemFilter;
+  }): Promise<{ items: ShareRow[]; next: string | null }> {
     const limit = input.limit ?? 50;
-    const rows = await sql<ShareRow[]>`SELECT * FROM filesv2.shares
+    const item = input.item;
+    const rows = item
+      ? await sql<ShareRow[]>`SELECT * FROM filesv2.shares
+      WHERE (${input.ownerId ?? null}::uuid IS NULL OR created_by=${input.ownerId ?? null}::uuid)
+      AND base_id=${item.bindingId}::uuid AND root=${item.root} AND base_path=${item.basePath}
+        AND (server_url IS NULL OR server_url=${item.serverUrl})
+        AND (
+          (target_snapshots IS NOT NULL AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(target_snapshots) AS target
+            WHERE (kind='download' OR ${item.directory})
+            AND (target->>'directory')::boolean=${item.directory}
+            AND CASE WHEN ${item.itemId}::text IS NOT NULL AND target->>'itemId' IS NOT NULL
+              THEN target->>'itemId'=${item.itemId}
+              ELSE target->>'path'=${item.target} END
+          ))
+          OR (target_snapshots IS NULL AND (
+            (kind='download' AND items @> ${JSON.stringify([item.path])}::jsonb)
+            OR (kind='inbox' AND ${item.directory} AND scope=${item.path})
+          ))
+        )
+      AND (${input.after ?? null}::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM filesv2.shares WHERE id=${input.after ?? null}::uuid))
+      ORDER BY created_at DESC,id DESC LIMIT ${limit + 1}`
+      : await sql<ShareRow[]>`SELECT * FROM filesv2.shares
       WHERE (${input.ownerId ?? null}::uuid IS NULL OR created_by=${input.ownerId ?? null}::uuid)
       AND (${input.after ?? null}::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM filesv2.shares WHERE id=${input.after ?? null}::uuid))
       ORDER BY created_at DESC,id DESC LIMIT ${limit + 1}`;
     return { items: rows.slice(0, limit).map(normalize), next: rows.length > limit ? rows[limit - 1]!.id : null };
   },
-  async get(id: string): Promise<ShareRow | null> {
-    const row = (await sql<ShareRow[]>`SELECT * FROM filesv2.shares WHERE id=${id}::uuid`)[0];
+  async get(id: string, db: SQL | TransactionSQL = sql): Promise<ShareRow | null> {
+    const row = (await db<ShareRow[]>`SELECT * FROM filesv2.shares WHERE id=${id}::uuid`)[0];
     return row ? normalize(row) : null;
   },
   async byToken(token: string): Promise<ShareRow | null> {
     const row = (await sql<ShareRow[]>`SELECT * FROM filesv2.shares WHERE token_hash=${shareTokenHash(token)}`)[0];
     return row ? normalize(row) : null;
   },
-  async revoke(id: string, userId: string): Promise<void> {
-    await sql`UPDATE filesv2.shares SET revoked_at=now(), revoked_by=${userId}::uuid WHERE id=${id}::uuid AND revoked_at IS NULL`;
+  async revoke(id: string, userId: string, db: SQL | TransactionSQL = sql): Promise<ShareRow | null> {
+    // The conditional update serializes concurrent revokes; only its winner writes history/audit.
+    const [row] = await db<ShareRow[]>`UPDATE filesv2.shares SET revoked_at=now(), revoked_by=${userId}::uuid
+      WHERE id=${id}::uuid AND revoked_at IS NULL RETURNING *`;
+    return row ? normalize(row) : null;
   },
   /** The items of every active public download share in one storage binding. */
   async activeDownloadItems(baseId: string): Promise<string[][]> {

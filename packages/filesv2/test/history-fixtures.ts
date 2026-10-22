@@ -31,12 +31,16 @@ export const snapshot = (path: string, options: { directory?: boolean; itemId?: 
   source: "snapshot",
   publicBaseId: null,
 });
-export const gone = (path: string, options: { directory?: boolean | null; publicBaseId?: string | null } = {}): ActivitySide => ({
+export const gone = (
+  path: string,
+  options: { directory?: boolean | null; publicBaseId?: string | null; relativePath?: string | null } = {},
+): ActivitySide => ({
   visibility: "disappearance",
   name: path.split("/").at(-1)!,
   path,
   directory: options.directory ?? null,
   publicBaseId: options.publicBaseId ?? null,
+  relativePath: options.relativePath,
 });
 
 let counter = 0;

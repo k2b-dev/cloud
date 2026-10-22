@@ -13,9 +13,14 @@ export function filegateCallTimeoutMs(input: Parameters<typeof fetch>[0], init?:
   return slow ? SLOW_CALL_TIMEOUT_MS : 10_000;
 }
 
-export function filegateApiFetch(transport: typeof fetch = fetch): typeof fetch {
+export function filegateApiFetch(transport: typeof fetch = fetch, requestAbort?: AbortSignal): typeof fetch {
   return Object.assign(
     (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      requestAbort?.throwIfAborted();
+      if (requestAbort) {
+        const signal = init?.signal ? AbortSignal.any([requestAbort, init.signal]) : requestAbort;
+        return transport(input, { ...init, signal });
+      }
       if (init?.signal) return transport(input, init);
       const budget = filegateCallTimeoutMs(input, init);
       // Bun's own socket idle timer (5 min by default) would otherwise end a silent slow call first.
@@ -25,8 +30,12 @@ export function filegateApiFetch(transport: typeof fetch = fetch): typeof fetch 
   );
 }
 
-export function connectFilegate(config: { url: string; token: string }, transport?: typeof fetch): FilesFilegate {
-  return FilesFilegate.connect(config, transport);
+export function connectFilegate(
+  config: { url: string; token: string },
+  transport?: typeof fetch,
+  requestAbort?: AbortSignal,
+): FilesFilegate {
+  return FilesFilegate.connect(config, transport, requestAbort);
 }
 
 export class FilesFilegate {
@@ -37,9 +46,14 @@ export class FilesFilegate {
   ) {
     this.#client = client;
   }
-  static connect(config: { url: string; token: string }, transport?: typeof fetch): FilesFilegate {
+  static connect(config: { url: string; token: string }, transport?: typeof fetch, requestAbort?: AbortSignal): FilesFilegate {
     return new FilesFilegate(
-      new Filegate({ baseUrl: config.url, token: config.token, transferBaseUrl: config.url, fetch: filegateApiFetch(transport) }),
+      new Filegate({
+        baseUrl: config.url,
+        token: config.token,
+        transferBaseUrl: config.url,
+        fetch: filegateApiFetch(transport, requestAbort),
+      }),
       config.url,
     );
   }
@@ -119,13 +133,21 @@ export class FilesRoot {
     return this.#client.versions(...args);
   }
   mkdir(...args: Parameters<RootClient["mkdir"]>) {
-    return this.#mutate("mkdir", args[0], () => this.#client.mkdir(...args));
+    return filegateMutation(this.serverUrl, this.name, "mkdir", args[0], () => this.#client.mkdir(...args), undefined, { mkdir: args[1] });
   }
   put(...args: Parameters<RootClient["put"]>) {
-    return this.#mutate("put", args[0], () => this.#client.put(...args));
+    return filegateMutation(this.serverUrl, this.name, "put", args[0], () => this.#client.put(...args), undefined, {
+      size: args[1].size,
+      options: args[2] ?? {},
+    });
   }
   createSession(...args: Parameters<RootClient["createSession"]>) {
-    return this.#mutate("createSession", args[0], () => this.#client.createSession(...args));
+    const { idempotencyKey, expiresIn: _expires, allowAbort: _abort, ...options } = args[2] ?? {};
+    return filegateMutation(this.serverUrl, this.name, "createSession", args[0], () => this.#client.createSession(...args), undefined, {
+      size: args[1],
+      options,
+      key: idempotencyKey,
+    });
   }
   commitSession(...args: Parameters<RootClient["commitSession"]>) {
     return this.#mutate("commitSession", args[0], () => this.#client.commitSession(...args));
@@ -135,26 +157,46 @@ export class FilesRoot {
   }
   transfer(...args: Parameters<RootClient["transfer"]>) {
     return filegateMutation(this.serverUrl, this.name, "transfer", args[0], () => this.#client.transfer(...args), {
+      kind: "transfer",
       root: args[1],
       path: args[2],
       move: args[3]?.move ?? false,
       onConflict: args[3]?.onConflict ?? "error",
+      options: args[3],
     });
   }
   restore(...args: Parameters<RootClient["restore"]>) {
-    return this.#mutate("restore", args[0], () => this.#client.restore(...args));
+    return filegateMutation(this.serverUrl, this.name, "restore", args[0], () => this.#client.restore(...args), {
+      kind: "version",
+      id: args[1],
+    });
   }
   copyVersion(...args: Parameters<RootClient["copyVersion"]>) {
-    return this.#mutate("copyVersion", args[0], () => this.#client.copyVersion(...args));
+    return filegateMutation(this.serverUrl, this.name, "copyVersion", args[0], () => this.#client.copyVersion(...args), {
+      kind: "version",
+      id: args[1],
+      target: { root: args[2], path: args[3] },
+      options: args[4],
+    });
   }
   updateVersion(...args: Parameters<RootClient["updateVersion"]>) {
-    return this.#mutate("updateVersion", args[0], () => this.#client.updateVersion(...args));
+    return filegateMutation(this.serverUrl, this.name, "updateVersion", args[0], () => this.#client.updateVersion(...args), {
+      kind: "version",
+      id: args[1],
+      options: args[2],
+    });
   }
   deleteVersion(...args: Parameters<RootClient["deleteVersion"]>) {
-    return this.#mutate("deleteVersion", args[0], () => this.#client.deleteVersion(...args));
+    return filegateMutation(this.serverUrl, this.name, "deleteVersion", args[0], () => this.#client.deleteVersion(...args), {
+      kind: "version",
+      id: args[1],
+    });
   }
   remove(...args: Parameters<RootClient["remove"]>) {
-    return this.#mutate("remove", args[0], () => this.#client.remove(...args));
+    return filegateMutation(this.serverUrl, this.name, "remove", args[0], () => this.#client.remove(...args), {
+      kind: "remove",
+      recursive: args[1] ?? false,
+    });
   }
   // Maintenance only: these rebuild derived metadata, without changing user data.
   refreshStats(...args: Parameters<RootClient["refreshStats"]>) {
