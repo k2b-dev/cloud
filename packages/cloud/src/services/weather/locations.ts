@@ -34,7 +34,7 @@ const create = async (config: {
       return withWeatherLocationShortId(async (shortId) => {
         const [row] = await tx`
           INSERT INTO weather_locations (short_id, user_id, name, state, lat, lon, provenance)
-          VALUES (${shortId}, ${config.userId}, ${config.data.name}, ${config.data.state ?? null}, ${config.data.lat}, ${config.data.lon}, ${config.data.provenance ? JSON.stringify(config.data.provenance) : null}::jsonb)
+          VALUES (${shortId}, ${config.userId}, ${config.data.name}, ${config.data.state ?? null}, ${config.data.lat}, ${config.data.lon}, (${config.data.provenance ? JSON.stringify(config.data.provenance) : null}::text)::jsonb)
           ON CONFLICT (short_id) DO NOTHING
           RETURNING short_id AS id, name, state, lat, lon, provenance
         `;

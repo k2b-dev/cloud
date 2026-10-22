@@ -102,6 +102,12 @@ for (const width of [390, 768, 1440])
         await input.fill("Ulm");
         await page.getByRole("option", { name: /Ulm/ }).waitFor();
         expect(await page.getByRole("link", { name: "Geoapify", exact: true }).isVisible()).toBe(true);
+        expect(
+          await page.getByRole("link", { name: "Geoapify", exact: true }).evaluate((link) => {
+            const box = link.getBoundingClientRect();
+            return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest("a") === link;
+          }),
+        ).toBe(true);
         expect(await page.getByRole("link", { name: "OpenStreetMap", exact: true }).getAttribute("href")).toBe(
           "https://www.openstreetmap.org/copyright",
         );

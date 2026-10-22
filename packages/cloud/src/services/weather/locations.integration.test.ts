@@ -15,6 +15,8 @@ suite("Weather saved geo provenance", () => {
       expect(saved.ok).toBe(true);
       if (!saved.ok) throw new Error(saved.error.code);
       expect(saved.data.provenance).toEqual(provenance);
+      const [stored] = await sql`SELECT jsonb_typeof(provenance) AS kind FROM weather_locations WHERE user_id = ${id}`;
+      expect(stored.kind).toBe("object");
       expect((await weatherLocationsService.get({ userId: id, id: saved.data.id }))?.provenance).toEqual(provenance);
       expect((await weatherLocationsService.list({ userId: id })).items[0]?.provenance).toEqual(provenance);
       expect(await weatherLocationsService.get({ userId: "00000000-0000-4000-8000-000000000001", id: saved.data.id })).toBeNull();
