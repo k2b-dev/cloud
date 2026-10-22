@@ -172,10 +172,10 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
     await sql`ALTER TABLE pulse.ingest_idempotency DROP COLUMN reset_generation,DROP COLUMN checkpoint_id,DROP COLUMN pending_checkpoint_id`.simple();
     await sql`INSERT INTO pulse.ingest_idempotency(source_id,idempotency_key,request_hash,state,accepted_at,planned_states,response,expires_at)
       VALUES(${source}::uuid,'upgrade','preserved','done','2026-10-17T12:00:00Z','[]','{"metrics":0,"events":1,"states":0}','2026-10-18T12:00:00Z')`;
-    const before = await sql`SELECT * FROM pulse.ingest_idempotency WHERE idempotency_key='upgrade'`;
+    const before = await sql<Record<string, unknown>[]>`SELECT * FROM pulse.ingest_idempotency WHERE idempotency_key='upgrade'`;
     await Promise.all([migrate(), migrate()]);
     expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=8`).toHaveLength(1);
-    expect(await sql`SELECT * FROM pulse.ingest_idempotency WHERE idempotency_key='upgrade'`).toEqual(
+    expect(await sql<Record<string, unknown>[]>`SELECT * FROM pulse.ingest_idempotency WHERE idempotency_key='upgrade'`).toEqual(
       before.map((receipt) => ({ ...receipt, reset_generation: null, checkpoint_id: null, pending_checkpoint_id: null })),
     );
   });
