@@ -4,7 +4,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
-import { historyActivity, historyBase, historyChain, historyMove, historyNow, historyPage } from "./History.browser-fixtures";
+import {
+  historyActivity,
+  historyBase,
+  historyChain,
+  historyDirectory,
+  historyFile,
+  historyInspectorSource,
+  historyMove,
+  historyNow,
+  historyPage,
+  historyVersions,
+} from "./History.browser-fixtures";
 
 const ui = new URL("../../../ui/", import.meta.url).pathname;
 const appCss =
@@ -77,7 +88,7 @@ afterAll(async () => {
   await browser?.close();
   rmSync(temporary, { recursive: true, force: true });
 });
-async function open(width: number, theme: "light" | "dark", search = "", lang = "de", mountInitially = true) {
+async function open(width: number, theme: "light" | "dark", search = "", lang = "de", mountInitially = true, inspector = false) {
   const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: "reduce" });
   const tab = await context.newPage();
   await tab.clock.setFixedTime(new Date(historyNow));
@@ -96,10 +107,11 @@ async function open(width: number, theme: "light" | "dark", search = "", lang = 
     if (url.pathname === "/app/filesv2")
       return route.fulfill({
         contentType: "text/html",
-        body: `<!doctype html><html lang="${lang}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"><style>html,body,#root {height:100%;margin:0}</style></head><body class="k2b-ui" data-theme="${theme}"><div id="root">${renderHistory(url.pathname + url.search, lang)}</div>${mountInitially ? '<script src="/harness.js"></script>' : ""}</body></html>`,
+        body: `<!doctype html><html lang="${lang}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"><style>html,body,#root {height:100%;margin:0}${inspector ? "#root {container: k2b-app-area / inline-size; width:700px}" : ""}</style></head><body class="k2b-ui" data-theme="${theme}"><div id="root">${renderHistory(url.pathname + url.search, lang)}</div>${mountInitially ? '<script src="/harness.js"></script>' : ""}</body></html>`,
       });
     const json = (body: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     if (url.pathname === "/api/filesv2/activity") {
+      if (inspector) return json(historyPage([]));
       requests.push({ query: url.search, fail });
       if (fail)
         return route.fulfill({
@@ -115,13 +127,24 @@ async function open(width: number, theme: "light" | "dark", search = "", lang = 
     if (url.pathname.endsWith("/recovery"))
       return json({ oldLocation: { baseId: historyBase.id, path: "" }, trash: null, canMoveBack: true });
     if (url.pathname === "/api/filesv2/bases") return json({ items: [historyBase], issues: [], editor: null });
+    if (inspector) {
+      if (url.pathname.endsWith("/entries")) return json(historyDirectory);
+      if (url.pathname.endsWith("/entry")) return json({ base: historyBase, entry: historyFile });
+      if (url.pathname.endsWith("/versions")) return json(historyVersions);
+      if (url.pathname === "/api/filesv2/shares") return json({ items: [], next: null });
+      if (url.pathname.endsWith("/download"))
+        return json({ url: "http://files-history.test/notes-content", method: "GET", expires: "2026-10-20T13:00:00.000Z" });
+      if (url.pathname === "/notes-content") return route.fulfill({ contentType: "text/plain", body: "Current notes for review" });
+    }
     if (url.pathname.endsWith("/recent") || url.pathname.endsWith("/favorites")) return json([]);
     const asset =
       assets[url.pathname] ?? (url.pathname.endsWith(".woff2") ? ["font/woff2", readFileSync(`${ui}dist${url.pathname}`)] : null);
     return asset ? route.fulfill({ contentType: asset[0], body: asset[1] }) : route.fulfill({ status: 404 });
   });
-  await tab.goto(`http://files-history.test/app/filesv2?view=activity${search ? `&q=${encodeURIComponent(search)}` : ""}`);
-  await tab.locator(".filesv2-history").waitFor();
+  await tab.goto(
+    `http://files-history.test${inspector ? historyInspectorSource : `/app/filesv2?view=activity${search ? `&q=${encodeURIComponent(search)}` : ""}`}`,
+  );
+  await tab.locator(inspector ? ".filesv2-inspector-info" : ".filesv2-history").waitFor();
   if (mountInitially) await tab.waitForFunction(() => document.body.dataset.ready === "true");
   await tab.evaluate(() => document.fonts.ready);
   return {
@@ -151,6 +174,52 @@ async function metrics(tab: Page) {
     };
   });
 }
+test("file inspector follows its app container width without resizing the viewport", async () => {
+  const { context, tab, errors } = await open(1200, "light", "", "en", true, true);
+  try {
+    const host = tab.locator("#root");
+    const preview = tab.locator(".filesv2-inspector-preview");
+    const versions = tab.locator(".filesv2-inspector-versions");
+    const count = tab
+      .locator(".filesv2-inspector-info")
+      .getByRole("button", { name: "View versions (2)", exact: true, includeHidden: true });
+    await count.waitFor({ state: "visible" });
+    await preview.waitFor({ state: "attached" });
+    await versions.waitFor({ state: "attached" });
+    expect(await host.evaluate((element) => getComputedStyle(element).containerName)).toBe("k2b-app-area");
+    expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(700);
+    expect(await tab.evaluate(() => innerWidth)).toBe(1200);
+    expect(await preview.isVisible()).toBe(false);
+    expect(await versions.isVisible()).toBe(false);
+    expect(await versions.getAttribute("data-open")).toBeNull();
+    expect(await count.innerText()).toBe("2");
+    expect(await count.getAttribute("aria-expanded")).toBe("false");
+
+    await count.click();
+    await versions.waitFor({ state: "visible" });
+    expect(await count.getAttribute("aria-expanded")).toBe("true");
+    expect(await versions.getByText("Initial draft · Mia Weber", { exact: true }).isVisible()).toBe(true);
+    expect(await preview.isVisible()).toBe(false);
+    await count.click();
+    await versions.waitFor({ state: "hidden" });
+    expect(await versions.getAttribute("data-open")).toBeNull();
+
+    // Only the host grows: a viewport media query would leave the initial compact assertions failing.
+    await host.evaluate((element) => {
+      element.style.width = "900px";
+    });
+    await preview.waitFor({ state: "visible" });
+    await versions.waitFor({ state: "visible" });
+    await count.waitFor({ state: "hidden" });
+    expect(await versions.getByText("Initial draft · Mia Weber", { exact: true }).isVisible()).toBe(true);
+    expect(await versions.getAttribute("data-open")).toBeNull();
+    expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(900);
+    expect(await tab.evaluate(() => innerWidth)).toBe(1200);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
 for (const width of [1440, 768, 390])
   for (const theme of ["light", "dark"] as const)
     test(`history and vanished folder fit ${width}px ${theme}`, async () => {
