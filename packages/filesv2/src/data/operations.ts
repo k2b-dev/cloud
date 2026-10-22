@@ -5,7 +5,9 @@ import { sql, type TransactionSQL } from "bun";
 import type { Area, BaseKind } from "../contracts";
 import type { UserFilesCall } from "../service/activity";
 import { FilesError } from "../service/errors";
+import type { FilesRoot } from "../service/filegate-facade";
 import { finishActivity, insertActivity } from "./activity";
+import { finishDeletedTrash } from "./trash";
 
 const log = logger("filesv2:operations");
 export type Operation = {
@@ -185,7 +187,7 @@ export const operations = {
       return activity;
     });
   },
-  async finish(operation: Operation): Promise<void> {
+  async finish(operation: Operation, root: FilesRoot): Promise<void> {
     await sql.begin(async (tx) => {
       const finish = async () => {
         await tx`UPDATE filesv2.operations SET state='complete',error_code=NULL,updated_at=now() WHERE id=${operation.id}::uuid`;
@@ -209,10 +211,8 @@ export const operations = {
       if (current.state !== "pending") return;
       if (!activity) throw new FilesError("activity_scope_missing", 500);
       await finishActivity(tx, activity.id, "done", async () => {
+        await finishDeletedTrash(tx, current, root);
         await finish();
-        await tx`UPDATE filesv2.trash t SET state='gone',updated_at=now() FROM filesv2.bases b
-          WHERE t.state='trashed' AND b.id=t.base_id AND t.root=${operation.root} AND t.server_url=${operation.server_url}
-          AND (b.path||'/'||t.trashed=${operation.source} OR starts_with(b.path||'/'||t.trashed,${operation.source}||'/'))`;
         await audit.record(
           {
             action: "filesv2.delete",

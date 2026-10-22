@@ -11,7 +11,7 @@ import { testActor, testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import type { Configuration } from "../contracts";
 import { bindings } from "../data/bases";
-import { operations } from "../data/operations";
+import { operations, withRootLock } from "../data/operations";
 import { trash } from "../data/trash";
 import { migrate } from "../migrate";
 import { currentActivityId, journalAction, purgeActivity, recoverActivity, type UserFilesCall } from "./activity";
@@ -206,11 +206,16 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
       WHERE state IN ('pending','unclear')`;
     return recoverActivity({ now, config, connect: (configuration) => connectFilegate(configuration, transport) });
   }
-  async function rejection(kind: "intent" | "history-finish" | "journal-finish" | "audit", run: () => Promise<void>) {
+  async function rejection(
+    kind: "intent" | "history-finish" | "journal-finish" | "gone" | "final-unclear" | "audit",
+    run: () => Promise<void>,
+  ) {
     const target = {
       intent: { table: "filesv2.activity", event: "INSERT", when: "" },
       "history-finish": { table: "filesv2.activity", event: "UPDATE", when: "WHEN (NEW.state='done')" },
       "journal-finish": { table: "filesv2.trash", event: "UPDATE", when: "WHEN (NEW.state IN ('trashed','restored'))" },
+      gone: { table: "filesv2.trash", event: "UPDATE", when: "WHEN (NEW.state='gone')" },
+      "final-unclear": { table: "filesv2.activity", event: "UPDATE", when: "WHEN (NEW.state='unclear' AND NEW.detail->>'final'='true')" },
       audit: { table: "audit.events", event: "INSERT", when: "WHEN (NEW.action='filesv2.delete')" },
     }[kind];
     await sql`CREATE FUNCTION filesv2.reject_trash_activity_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected trash activity failure'; END $$`.simple();
@@ -303,7 +308,11 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
     await sql`TRUNCATE filesv2.activity,filesv2.trash,filesv2.operations,audit.events`.simple();
     await sql`UPDATE filesv2.bases SET lifecycle='active' WHERE id=${bindingId}::uuid`;
     // This home and everything underneath it belong to this suite's unique prefix.
-    await root().remove(home, true);
+    try {
+      await root().remove(home, true);
+    } catch (error) {
+      if (!(error instanceof FilegateError && error.status === 404)) throw error;
+    }
     await root().mkdir(home, { ownership: { dirMode: "0700" } });
   });
   afterAll(async () => {
@@ -585,6 +594,315 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
       expect(tracked.transfers()).toBe(1);
     }
   });
+
+  test.each(["pending", "restoring"] as const)(
+    "confirmed deletion closes a dead %s journal without inventing its outcome",
+    async (phase) => {
+      const file = await fixture(`dead-${phase}.txt`);
+      let id: string;
+      let preserved: ActivityRow | undefined;
+      if (phase === "pending") {
+        await rejection("journal-finish", async () => {
+          expect((await remove(service, file)).results[0]?.ok).toBe(false);
+        });
+        id = (await trash.pending(bindingId, file.path))!.id;
+      } else {
+        id = (await remove(service, file)).entries[0]!.id;
+        preserved = (await rows()).find((entry) => entry.action === "item.trash")!;
+        await expect(
+          wire({ lose: "transfer" }).service.restoreTrash(callFor("restore"), {
+            baseId: baseId(),
+            id,
+            path: "ordinary.txt",
+          }),
+        ).rejects.toMatchObject({ code: "operation_unresolved" });
+      }
+      const deleted =
+        phase === "pending"
+          ? await service.deleteDirectory(callFor("purge"), { area: "cloud", kind: "users", name: "alice", confirmPath: home })
+          : await service.adminDelete(callFor("purge"), {
+              area: "cloud",
+              kind: "users",
+              name: "alice",
+              path: "ordinary.txt",
+              confirmPath: `${home}/ordinary.txt`,
+            });
+      const action = phase === "pending" ? "item.trash" : "item.restore";
+      const joined = await journalState(id, "gone", "unclear", action);
+      const unresolved = (await rows()).find((entry) => entry.trash_id === id && entry.action === action)!;
+      expect(unresolved).toMatchObject({ finished_at: null, detail: { final: true } });
+      expect(joined.journal_xmin).toBe(unresolved.xmin);
+      expect(joined.activity_xmin).toBe(unresolved.xmin);
+      const [operation] = await sql`SELECT state,xmin::text FROM filesv2.operations WHERE id=${deleted.id}::uuid`;
+      const [audit] = await sql`SELECT xmin::text FROM audit.events WHERE target_id=${deleted.id}`;
+      const purgeHistory = (await rows()).find((entry) => entry.operation_id === deleted.id)!;
+      expect(operation).toMatchObject({ state: "complete", xmin: unresolved.xmin });
+      expect(audit!.xmin).toBe(unresolved.xmin);
+      expect(purgeHistory).toMatchObject({ state: "done", xmin: unresolved.xmin });
+      if (preserved) expect(await history(preserved.id)).toEqual(preserved);
+      await sql`UPDATE filesv2.activity SET started_at=CASE WHEN trash_id=${id}::uuid THEN ${expired}::timestamptz ELSE ${now}::timestamptz END,heartbeat_at=${stale}`;
+      expect(await recoverActivity({ now, config, connect: (configuration) => connectFilegate(configuration) })).toEqual({ checked: 0 });
+      expect(await purgeActivity({ now, retentionDays: 365 })).toEqual({ purged: phase === "pending" ? 1 : 2 });
+      expect(await trash.history(id)).toBeNull();
+      expect(await sql`SELECT id FROM filesv2.activity WHERE trash_id=${id}::uuid`).toHaveLength(0);
+    },
+  );
+
+  test.each(["pending", "restoring"] as const)("legacy %s adoption precedes gone and is never repeated after retention", async (phase) => {
+    const file = await fixture(`legacy-dead-${phase}.txt`);
+    let id: string;
+    if (phase === "pending") {
+      id = (await pendingTrash(file)).id;
+      await sql`DELETE FROM filesv2.activity WHERE trash_id=${id}::uuid`;
+      await sql`UPDATE filesv2.trash SET activity_recorded=false,deleted_at=${expired},updated_at=${legacyFinished} WHERE id=${id}::uuid`;
+    } else {
+      id = await legacyTrashed(file);
+      await root().remove(`${home}/trash/${id}`);
+      await root().put(file.target, new Blob([content]));
+      await sql`UPDATE filesv2.trash SET state='restoring',restore_path=${file.path} WHERE id=${id}::uuid`;
+    }
+    await purge(service, file);
+    const entries = (await rows()).filter((entry) => entry.trash_id === id);
+    expect(entries).toHaveLength(phase === "pending" ? 1 : 2);
+    expect(entries.find((entry) => entry.action === (phase === "pending" ? "item.trash" : "item.restore"))).toMatchObject({
+      state: "unclear",
+      finished_at: null,
+      via: "unknown",
+      detail: { adopted: true, final: true },
+    });
+    if (phase === "restoring")
+      expect(entries.find((entry) => entry.action === "item.trash")).toMatchObject({ state: "done", finished_at: legacyFinished });
+    expect(await trash.get(id, bindingId)).toMatchObject({
+      state: "gone",
+      activity_recorded: true,
+      restore_activity_recorded: phase === "restoring",
+    });
+    await sql`UPDATE filesv2.activity SET started_at=${now} WHERE operation_id IS NOT NULL`;
+    expect(await purgeActivity({ now, retentionDays: 365 })).toEqual({ purged: entries.length });
+    expect(await trash.history(id)).toBeNull();
+    expect(await sql`SELECT id FROM filesv2.activity WHERE trash_id=${id}::uuid`).toHaveLength(0);
+  });
+
+  test.each(["done", "failed", "not_done"] as const)("gone preserves existing %s phase history exactly", async (state) => {
+    const file = await fixture(`terminal-${state}.txt`);
+    const journal = await pendingTrash(file);
+    await sql`UPDATE filesv2.activity SET state=${state},started_at=${expired},finished_at=${legacyFinished},error_code='original-result',detail='{"final":true}'::jsonb WHERE trash_id=${journal.id}::uuid`;
+    const before = await onlyRow();
+    await purge(service, file);
+    expect(await trash.get(journal.id, bindingId)).toMatchObject({ state: "gone" });
+    expect(await history(before.id)).toEqual(before);
+  });
+
+  test("confirmed base deletion closes more than one journal page", async () => {
+    const file = await fixture("page-seed.txt");
+    for (let index = 0; index < 51; index++) {
+      await pendingTrash({ ...file, path: `page-${index}.txt` });
+    }
+    await service.deleteDirectory(callFor("purge"), { area: "cloud", kind: "users", name: "alice", confirmPath: home });
+    expect(await sql`SELECT id FROM filesv2.trash WHERE state='gone'`).toHaveLength(51);
+    expect(
+      await sql`SELECT id FROM filesv2.activity WHERE state='unclear' AND detail->>'final'='true' AND next_check_at='infinity'::timestamptz`,
+    ).toHaveLength(51);
+  });
+
+  test.each(["pending", "restoring"] as const)("deleting one %s endpoint preserves a surviving opposite endpoint", async (phase) => {
+    const file = await fixture(`survives-${phase}.txt`);
+    const journal = await pendingTrash(file);
+    await root().mkdir(`${home}/trash`);
+    await root().transfer(file.target, "cloud", `${home}/${journal.trashed}`, { move: false, onConflict: "error" });
+    if (phase === "restoring") {
+      await trash.finish(journal.id, "trashed", await root().stat(`${home}/${journal.trashed}`));
+      await trash.restoring(journal.id, file.path, await root().stat(`${home}/${journal.trashed}`), config.url, {
+        call: callFor("restore"),
+        basePath: home,
+      });
+    }
+    const before = await rows();
+    // Pending: remove its original while trash survives. Restoring: remove its
+    // trash source while the ordinary destination survives (no restore proof).
+    const path = phase === "pending" ? file.path : journal.trashed;
+    await service.adminDelete(callFor("purge"), { area: "cloud", kind: "users", name: "alice", path, confirmPath: `${home}/${path}` });
+    expect(await trash.get(journal.id, bindingId)).toMatchObject({ state: phase });
+    for (const entry of before) expect(await history(entry.id)).toEqual(entry);
+    await root().stat(phase === "pending" ? `${home}/${journal.trashed}` : file.target);
+  });
+
+  test.each(["server", "unknown-server", "root", "binding", "segment"] as const)(
+    "confirmed deletion leaves an unrelated %s journal open",
+    async (scope) => {
+      const file = await fixture(`unrelated-${scope}.txt`);
+      const journal = await pendingTrash(file);
+      if (scope === "server")
+        await sql`UPDATE filesv2.trash SET server_url='https://other-filegate.example.test' WHERE id=${journal.id}::uuid`;
+      if (scope === "unknown-server") await sql`UPDATE filesv2.trash SET server_url=NULL WHERE id=${journal.id}::uuid`;
+      if (scope === "root") await sql`UPDATE filesv2.trash SET root='freeipa' WHERE id=${journal.id}::uuid`;
+      let otherId: string | undefined;
+      if (scope === "binding") {
+        const [other] = await bindings.claim({
+          area: "cloud",
+          kind: "users",
+          identity_id: Bun.randomUUIDv7(),
+          identity_name: "other",
+          root: "cloud",
+          path: `${home}-other`,
+          uid_number: null,
+          gid_number: null,
+        });
+        otherId = other!.id;
+        await sql`UPDATE filesv2.trash SET base_id=${otherId}::uuid WHERE id=${journal.id}::uuid`;
+      }
+      if (scope === "segment") {
+        await sql`UPDATE filesv2.trash SET original=${`${file.path}-other`},trashed=${`${file.path}-other/target`} WHERE id=${journal.id}::uuid`;
+      }
+      const before = await onlyRow();
+      await purge(service, file);
+      expect(await sql`SELECT state FROM filesv2.trash WHERE id=${journal.id}::uuid`).toMatchObject([{ state: "pending" }]);
+      expect(await history(before.id)).toEqual(before);
+      if (otherId) {
+        await sql`UPDATE filesv2.trash SET base_id=${bindingId}::uuid WHERE id=${journal.id}::uuid`;
+        await sql`DELETE FROM filesv2.bases WHERE id=${otherId}::uuid`;
+      }
+    },
+  );
+
+  test.each(["pending", "restoring", "trashed", "pending-survives"] as const)(
+    "archived deletion resolves the physical base of a %s journal",
+    async (phase) => {
+      const file = await fixture(`archive-${phase}.txt`);
+      let id = "";
+      if (phase === "pending-survives") {
+        id = (await pendingTrash(file)).id;
+        await root().mkdir(`${home}/trash`);
+        await root().transfer(file.target, "cloud", `${home}/trash/${id}`, { move: false, onConflict: "error" });
+      } else if (phase === "pending") {
+        await rejection("journal-finish", async () => {
+          expect((await remove(service, file)).results[0]?.ok).toBe(false);
+        });
+        id = (await trash.pending(bindingId, file.path))!.id;
+      } else {
+        id = (await remove(service, file)).entries[0]!.id;
+        if (phase === "restoring")
+          await expect(
+            wire({ lose: "transfer" }).service.restoreTrash(callFor("restore"), {
+              baseId: baseId(),
+              id,
+              path: "ordinary.txt",
+            }),
+          ).rejects.toMatchObject({ code: "operation_unresolved" });
+      }
+      const before = await rows();
+      // Seed a real archived directory and its existing lifecycle journal; this
+      // fixture does not need identity RPC to exercise archived admin deletion.
+      const archiveId = Bun.randomUUIDv7();
+      const target = `${prefix}/archive/${archiveId}/contents`;
+      const archive = await operations.insert({
+        id: archiveId,
+        area: "cloud",
+        kind: "users",
+        root: "cloud",
+        server_url: config.url,
+        name: "alice",
+        action: "archive",
+        source: home,
+        target,
+        base_id: bindingId,
+        archive_id: null,
+        actor_id: administrator.user.id,
+        actor_name: administrator.user.uid,
+        snapshot: await root().stat(home),
+      });
+      try {
+        await root().stat(`${prefix}/archive`);
+      } catch (error) {
+        if (!(error instanceof FilegateError && error.status === 404)) throw error;
+        await root().mkdir(`${prefix}/archive`, { ownership: { dirMode: "0700" } });
+      }
+      await root().mkdir(`${prefix}/archive/${archiveId}`, { ownership: { dirMode: "0700" } });
+      await root().transfer(home, "cloud", target, { move: true, onConflict: "error" });
+      await operations.finish(archive, connectFilegate(config).root("cloud"));
+      const path = phase === "pending-survives" ? file.path : "";
+      await service.adminDelete(callFor("purge"), { area: "cloud", archiveId, path, confirmPath: path ? `${target}/${path}` : target });
+      expect(await trash.get(id, bindingId)).toMatchObject({ state: phase === "pending-survives" ? "pending" : "gone" });
+      for (const entry of before) {
+        const after = await history(entry.id);
+        expect(after.path_before).toBe(entry.path_before);
+        expect(after.path_after).toBe(entry.path_after);
+        if (entry.state === "done" || phase === "pending-survives") expect(after).toEqual(entry);
+        else expect(after).toMatchObject({ state: "unclear", finished_at: null, detail: { final: true } });
+      }
+      expect(await bindings.byId(bindingId)).toMatchObject({
+        lifecycle: phase === "pending-survives" ? "archived" : "deleted",
+        path: home,
+      });
+    },
+  );
+
+  test.each(["gone", "final-unclear", "audit"] as const)(
+    "%s failure rolls dead-journal closure back with purge completion",
+    async (failure) => {
+      const file = await fixture(`rollback-${failure}.txt`);
+      const journal = await pendingTrash(file);
+      const before = await onlyRow();
+      await rejection(failure, async () => {
+        await expect(purge(service, file)).rejects.toThrow("injected trash activity failure");
+      });
+      expect(await trash.get(journal.id, bindingId)).toMatchObject({ state: "pending" });
+      expect(await history(before.id)).toEqual(before);
+      const entry = (await rows()).find((row) => row.action === "item.purge")!;
+      expect(entry).toMatchObject({ state: "pending", finished_at: null });
+      expect(await operations.get(entry.operation_id!)).toMatchObject({ state: "pending" });
+      expect(await sql`SELECT id FROM audit.events WHERE action='filesv2.delete'`).toHaveLength(0);
+      await absent(file.target);
+    },
+  );
+
+  test("failed deletion completion rolls legacy adoption and its marker back", async () => {
+    const file = await fixture("legacy-adoption-rollback.txt");
+    const journal = await pendingTrash(file);
+    await sql`DELETE FROM filesv2.activity WHERE trash_id=${journal.id}::uuid`;
+    await sql`UPDATE filesv2.trash SET activity_recorded=false WHERE id=${journal.id}::uuid`;
+    const before = await trash.get(journal.id, bindingId);
+    await rejection("audit", async () => {
+      await expect(purge(service, file)).rejects.toThrow("injected trash activity failure");
+    });
+    expect(await trash.get(journal.id, bindingId)).toEqual(before);
+    expect(await sql`SELECT id FROM filesv2.activity WHERE trash_id=${journal.id}::uuid`).toHaveLength(0);
+    expect(await sql`SELECT id FROM audit.events WHERE action='filesv2.delete'`).toHaveLength(0);
+    expect((await rows()).find((entry) => entry.action === "item.purge")).toMatchObject({ state: "pending", finished_at: null });
+  });
+
+  test.each(["exists", "unavailable", "aborted"] as const)(
+    "delayed completion freshly preserves an opposite endpoint that %s",
+    async (observation) => {
+      const file = await fixture(`delayed-${observation}.txt`);
+      const journal = await pendingTrash(file);
+      const operation = await pendingPurge(file);
+      await root().remove(file.target, true); // Confirmed effect, completion delayed.
+      if (observation === "exists") {
+        await root().mkdir(`${home}/trash`);
+        await root().put(`${home}/${journal.trashed}`, new Blob([content]));
+      }
+      let observations = 0;
+      const transport: typeof fetch = Object.assign(
+        async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+          const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+          if (url.pathname.endsWith("/stat") && url.searchParams.get("path") === `${home}/${journal.trashed}`) {
+            observations++;
+            if (observation === "unavailable") return new Response("unavailable", { status: 503 });
+            if (observation === "aborted") throw new DOMException("aborted read", "AbortError");
+          }
+          return fetch(input, init);
+        },
+        { preconnect: fetch.preconnect },
+      );
+      const before = (await rows()).find((entry) => entry.trash_id === journal.id)!;
+      await withRootLock("cloud", () => operations.finish(operation, connectFilegate(config, transport).root("cloud")));
+      expect(await trash.get(journal.id, bindingId)).toMatchObject({ state: "pending" });
+      expect(await history(before.id)).toEqual(before);
+      expect(await operations.get(operation.id)).toMatchObject({ state: "complete" });
+      expect(observations).toBe(1);
+    },
+  );
 
   test("adminDelete commits purge history and operation before delete, then audit and both completions atomically", async () => {
     const file = await fixture("purge.txt");

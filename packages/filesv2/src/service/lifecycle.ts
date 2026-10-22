@@ -293,7 +293,7 @@ export function createDirectoryLifecycle(deps: Dependencies) {
         if (!unchanged(operation.snapshot, node)) throw new FilesError("source_changed", 409);
         await root.remove(operation.source, true);
       }
-      await operations.finish(operation);
+      await operations.finish(operation, root);
       if (operation.action !== "delete")
         await audit.recordResultAfterSideEffect({
           action: `filesv2.${operation.action}`,
