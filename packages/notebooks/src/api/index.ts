@@ -2084,7 +2084,7 @@ const app = new Hono<AuthContext>()
             [NOTE_PDF_OMISSIONS_HEADER]: {
               required: false,
               description:
-                "Optional base64url (no padding) of UTF-8 JSON {items:[{code,kind,label}],more}, at most 2048 bytes. Items list what the PDF could not include; each is also marked in place in the PDF. The more count is the number of items that did not fit in the header. Absent when nothing is omitted.",
+                "Optional base64url (no padding) of UTF-8 JSON {items:[{code,kind,label}],more}, at most 2048 bytes. Items list what the PDF could not include. Map images fall back to linked, attributed pin and route lists; other omitted content is marked in place. The more count is the number of items that did not fit in the header. Absent when nothing is omitted.",
               schema: { type: "string", maxLength: NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES, pattern: "^[A-Za-z0-9_-]+$" },
             },
           },

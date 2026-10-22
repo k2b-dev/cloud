@@ -11,7 +11,6 @@ import sharp from "sharp";
 import { pdfImages, pdfText, pdfTitle } from "../../../../scripts/fixtures/pdf-info";
 import { fictionalMap, fictionalRouteMap } from "../lib/map.test-fixture";
 import { notebookMapRevision, parseNotebookMapBlocks } from "../lib/map-blocks";
-import { notebookMapMessages } from "../lib/map-messages";
 import { decodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER } from "../lib/pdf-omissions";
 import api from ".";
 
@@ -327,7 +326,7 @@ suiteFor(
     expect(saved?.content_md).toBe("# Persisted text is not the export snapshot");
   }, 60_000);
 
-  test("JSON export keeps linked map lists and explicitly reports both missing map images", async () => {
+  test("JSON export keeps attributed map lists and reports both missing map images in its omission header", async () => {
     const response = await fetch(url, {
       method: "POST",
       headers: { ...headers, "content-type": "application/json" },
@@ -342,10 +341,11 @@ suiteFor(
       more: 0,
     });
     const pdf = new Uint8Array(await response.arrayBuffer());
+    // The approved print fallback keeps failure guidance above the preview sheet.
+    // Headless clients receive the omission header; the PDF retains attributed lists.
     expect(await pdfImages(pdf)).toEqual([]);
     const text = (await pdfText(pdf)).replace(/\s+/gu, " ");
     for (const content of [
-      notebookMapMessages.resolve(["en"]).t.printFailed,
       "Münster",
       "Museum Ulm",
       "Ulm Hbf",
