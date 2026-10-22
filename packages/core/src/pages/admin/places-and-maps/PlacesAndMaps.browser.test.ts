@@ -49,6 +49,8 @@ test("every state fits a phone and a desktop in both themes and languages, with 
             expect({ state, width: view.width, overflow: Math.max(0, overflow) }).toEqual({ state, width: view.width, overflow: 0 });
             const text = await textOf(page);
             if (state === "eingerichtet") {
+              expect(await page.locator(".k2b-settings-page__heading > p").isVisible()).toBe(view.width > 600);
+              expect(await page.locator(".k2b-text-input:has([data-geo-field]) .k2b-input-shell__icon").count()).toBe(0);
               expect(text).toContain(locale === "de" ? "41.230 / 90.000" : "41,230 / 90,000");
               expect(text).toContain(locale === "de" ? "Seit 19.10.2026 · von Lea Schulz · EU-Endpunkt" : "by Lea Schulz · EU endpoint");
               expect(text).toContain(locale === "de" ? "46 %" : "46%");
