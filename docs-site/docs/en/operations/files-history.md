@@ -202,6 +202,23 @@ most 20 steps. A current endpoint is verified with stable identity and fresh
 read permissions, or explicitly marked probable when only path evidence is
 available. Chains never claim complete history across retention gaps.
 
+`GET /api/filesv2/activity/:activityId/batch` freshly authorizes the selected
+event before reading its batch. It returns only `{visibleCount, complete}`;
+search filters and page boundaries do not restrict that count. The anchor is
+included, and each peer passes the same current ACL and own-snapshot projection
+in one request context. Unknown, denied and unbatched anchors all return 404.
+No peer names, paths, people or raw totals are returned.
+
+The read inspects at most 500 events, including the anchor. `complete: true`
+means all retained candidates in the caller's scope were projected; it makes
+no claim about expired history or descendants inside a selected folder.
+`complete: false` makes `visibleCount` a lower bound, including when exactly
+500 candidates fill the bound. Clients must use an “at least” label. The read
+uses the existing history request deadline and cancellation, never creates
+storage or bindings, and records no new activity. This release adds a partial
+batch/effective-time index for this bounded lookup; no worker or configuration
+is required.
+
 `GET /api/filesv2/activity/:activityId/chain` also accepts `oldPath`, the
 opened old address relative to its base. For example, a move of `Customers`
 can locate `Customers/Proposal.pdf` without a separate history row for that

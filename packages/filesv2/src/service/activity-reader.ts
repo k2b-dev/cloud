@@ -10,6 +10,7 @@ import {
   ACTIVITY_SEARCH_LIMIT,
   ActivityBasesInput,
   type ActivityBasesPage,
+  type ActivityBatchContext,
   type ActivityChain,
   type ActivityEntry,
   ActivityInput,
@@ -447,6 +448,25 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
         if (!projected) throw new FilesError("not_found", 404);
         await names([projected.entry], budget);
         return projected.entry;
+      });
+    },
+    async activityBatchContext(call: ActivityReadCall, input: { activityId: string }): Promise<ActivityBatchContext> {
+      return withActivityReadBudget(call.requestAbort, async (budget) => {
+        const id = z.uuid().parse(input.activityId);
+        const current = await context(call, budget);
+        const anchor = await budget.run(() => data.byId(id, budget));
+        const projected = anchor ? await current.project(anchor) : null;
+        const batchId = anchor?.batch_id;
+        // Missing, denied and unbatched anchors share one opaque response. Never accept a caller's batch ID.
+        if (!projected || !batchId) throw new FilesError("not_found", 404);
+        const limit = ACTIVITY_SCAN_LIMIT - 1;
+        const peers = await budget.run(() =>
+          data.candidates({ scope: current.scope, batch: { id: batchId, anchorId: id }, position: null, direction: "desc", limit }, budget),
+        );
+        let visibleCount = 1;
+        for (const peer of peers) if (await current.project(peer)) visibleCount++;
+        budget.check();
+        return { visibleCount, complete: peers.length < limit };
       });
     },
     async activity(call: ActivityReadCall, rawInput: ActivityInput = {}): Promise<ActivityPage> {

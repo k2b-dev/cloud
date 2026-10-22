@@ -5,6 +5,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { hc } from "hono/client";
 import { testActor, testCall } from "../test/files-call";
 import type { ActivityChain, ActivityEntry, ActivityInput, ActivityPage, ShareAccessCounts, ShareAccessInput } from "./activity-contracts";
+import { ActivityBatchContextSchema } from "./activity-contracts";
 import { ActivityChainSchema, ActivityEntrySchema, ActivityPageSchema, ActivitySideSchema } from "./activity-transport";
 import { capabilityCall } from "./files-call";
 import type { ActivityReadCall } from "./service/activity-reader";
@@ -73,6 +74,10 @@ mock.module("./service", () => ({
     movementChain: async (call: ActivityReadCall, input: { activityId: string }) => {
       record("movementChain", call, input);
       return chain;
+    },
+    activityBatchContext: async (call: ActivityReadCall, input: { activityId: string }) => {
+      record("activityBatchContext", call, input);
+      return { visibleCount: 42, complete: true };
     },
     shareAccess: async (call: ActivityReadCall, input: ShareAccessInput) => {
       record("shareAccess", call, input);
@@ -175,6 +180,42 @@ test("default and invalid reader-owned page limits are validated before the serv
     expect(calls).toHaveLength(0);
   }
 });
+test("typed batch endpoint forwards request identity/cancellation and returns only count/completeness", async () => {
+  const response = await client.api.filesv2.activity[":activityId"].batch.$get({ param: { activityId: id } });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ visibleCount: 42, complete: true });
+  expect(calls).toEqual([
+    {
+      method: "activityBatchContext",
+      call: {
+        ...testCall(actor),
+        requestAbort: expect.any(AbortSignal),
+        via: "app:assistant",
+        requestId: "delegate-request",
+        invocationId: id,
+        callingApp: "assistant",
+      },
+      input: { activityId: id },
+    },
+  ]);
+  expect(response.headers.get("cache-control")).toContain("no-transform");
+  for (const status of [404, 503] as const) {
+    failure = new FilesError(status === 404 ? "not_found" : "unavailable", status);
+    expect(Number((await client.api.filesv2.activity[":activityId"].batch.$get({ param: { activityId: id } })).status)).toBe(status);
+  }
+  calls.length = 0;
+  expect(Number((await client.api.filesv2.activity[":activityId"].batch.$get({ param: { activityId: "invalid" } })).status)).toBe(400);
+  expect(calls).toEqual([]);
+});
+
+test("batch schema rejects totals, peer details and impossible visible counts", () => {
+  expect(ActivityBatchContextSchema.parse({ visibleCount: 1, complete: false })).toEqual({ visibleCount: 1, complete: false });
+  for (const visibleCount of [0, 501, 1.5])
+    expect(ActivityBatchContextSchema.safeParse({ visibleCount, complete: true }).success).toBe(false);
+  expect(ActivityBatchContextSchema.safeParse({ visibleCount: 1, complete: true, total: 99 }).success).toBe(false);
+  expect(ActivityBatchContextSchema.safeParse({ visibleCount: 1, complete: true, peers: [row] }).success).toBe(false);
+});
+
 test("chain and share access use the same request actor and preserve absent endpoints", async () => {
   const response = await client.api.filesv2.activity[":activityId"].chain.$get({ param: { activityId: id } });
   expect(await response.json()).toEqual(chain);

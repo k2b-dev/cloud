@@ -81,7 +81,14 @@ suite("history reader SQL and permission projection in a private database", () =
     const page = await f.reader.activity(call);
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.actor).toMatchObject({ userId: otherId, name: "Live Bob" });
-    expect(page.items[0]?.before).toEqual({ visibility: "disappearance", name: "old", path: `${home}/old`, directory: true, publicBaseId, relativePath: "old" });
+    expect(page.items[0]?.before).toEqual({
+      visibility: "disappearance",
+      name: "old",
+      path: `${home}/old`,
+      directory: true,
+      publicBaseId,
+      relativePath: "old",
+    });
     expect(JSON.stringify(page)).not.toMatch(/Old Bob|raw-private|hidden\/place|Old stored/);
     await sql`UPDATE auth.users SET display_name='Renamed Bob' WHERE id=${otherId}::uuid`;
     expect((await f.reader.activity(call)).items[0]?.actor.name).toBe("Renamed Bob");
@@ -103,6 +110,69 @@ suite("history reader SQL and permission projection in a private database", () =
       expect((await f.reader.activity(call, query)).items).toEqual([]);
     f.setMember(false);
     expect((await f.reader.activity(call)).items).toEqual([]);
+  });
+
+  test("batch SQL counts visible peers beyond search matches, rechecks mixed-side ACLs, and retains only own snapshots", async () => {
+    const anchor = candidate(1, { path_before: null });
+    await seed(anchor);
+    await seed(candidate(2, { path_before: null, path_after: `${home}/secret` }));
+    await seed(candidate(3, { path_before: `${home}/secret`, path_after: `${home}/peer` }));
+    await seed(candidate(4, { actor_user_id: actorId, base_id: null, path_after: "private/own-snapshot" }));
+    await seed(candidate(5, { batch_id: "30000000-0000-4000-8000-000000000002" }));
+    await seed(candidate(6, { path_before: `${home}/peer`, path_after: `${home}/secret` }));
+    const f = fixture();
+    f.nodes.set(`${home}/secret`, f.node(`${home}/secret`, "stable-a"));
+    f.nodes.set(`${home}/peer`, f.node(`${home}/peer`, "stable-a"));
+    f.denied.add("secret");
+    expect((await f.reader.activity(call, { q: "peer" })).items.map((row) => row.id)).toEqual([candidate(6).id, candidate(3).id]);
+    expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 4, complete: true });
+    f.denied.add("peer");
+    expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 2, complete: true });
+    f.setMember(false);
+    expect(await f.reader.activityBatchContext(call, { activityId: candidate(4).id })).toEqual({ visibleCount: 1, complete: true });
+    for (const id of [anchor.id, candidate(99).id])
+      await expect(f.reader.activityBatchContext(call, { activityId: id })).rejects.toMatchObject({ code: "not_found", status: 404 });
+    await sql`UPDATE filesv2.activity SET batch_id=NULL WHERE id=${candidate(4).id}::uuid`;
+    await expect(f.reader.activityBatchContext(call, { activityId: candidate(4).id })).rejects.toMatchObject({
+      code: "not_found",
+      status: 404,
+    });
+  });
+
+  test("batch SQL caps anchor plus peers at 500 and reports only a lower bound, even when candidates are hidden", async () => {
+    const anchor = candidate(1, { actor_user_id: actorId });
+    await seed(anchor);
+    await sql`INSERT INTO filesv2.activity(id,action,state,server_url,root,base_id,directory,name,path_after,item_after_id,actor_kind,actor_user_id,via,batch_id,started_at,finished_at)
+      SELECT ('40000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid,'item.move','done',${anchor.server_url},'cloud',${baseId}::uuid,true,'secret',${home + "/secret"},'stable-a','user',${otherId}::uuid,'web',
+        ${anchor.batch_id}::uuid,'2030-05-15T12:00:00Z','2030-05-15T12:00:00Z' FROM generate_series(2,501) n`;
+    const f = fixture();
+    f.nodes.set(`${home}/secret`, f.node(`${home}/secret`, "stable-a"));
+    f.denied.add("secret");
+    expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 1, complete: false });
+    await sql`UPDATE filesv2.activity SET actor_user_id=${actorId}::uuid`;
+    expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 500, complete: false });
+    await sql`DELETE FROM filesv2.activity WHERE id IN (${candidate(500).id}::uuid,${candidate(501).id}::uuid)`;
+    expect(await f.reader.activityBatchContext(call, { activityId: anchor.id })).toEqual({ visibleCount: 499, complete: true });
+  });
+
+  test("batch candidates have an indexed batch/order access path without sorting the whole activity table", async () => {
+    const anchor = candidate();
+    await seed(anchor);
+    const db = await sql.reserve();
+    try {
+      await db`BEGIN`;
+      await db`SET LOCAL enable_seqscan=off`;
+      const plan = await db`EXPLAIN (FORMAT JSON) SELECT id FROM filesv2.activity
+        WHERE batch_id=${anchor.batch_id}::uuid AND id<>${anchor.id}::uuid
+          AND (base_id=${baseId}::uuid OR base_after_id=${baseId}::uuid OR (actor_kind='user' AND actor_user_id=${actorId}::uuid))
+        ORDER BY coalesce(finished_at,started_at) DESC,id DESC LIMIT 499`;
+      expect(JSON.stringify(plan)).toContain("filesv2_activity_batch_effective");
+      expect(JSON.stringify(plan)).not.toContain('"Node Type":"Sort"');
+      expect(JSON.stringify(plan)).not.toContain('"Node Type":"Seq Scan"');
+    } finally {
+      await db`ROLLBACK`;
+      db.release();
+    }
   });
 
   test("SQL sorts effective finish/start time and losslessly pages through microsecond ties", async () => {
@@ -307,7 +377,7 @@ suite("history reader SQL and permission projection in a private database", () =
     expect(chain.endpoint?.path).toBe("final");
   });
 
-  test("aborting a blocked real SQL reader query removes its waiter without returning a partial page", async () => {
+  test.each(["list", "batch"])("aborting a blocked real SQL %s query removes its waiter without returning partial data", async (mode) => {
     const blocker = await sql.reserve();
     const controller = new AbortController();
     let pending: Promise<void> | undefined;
@@ -326,6 +396,7 @@ suite("history reader SQL and permission projection in a private database", () =
         activityReaderData.candidates(
           {
             scope: { admin: false, userId: actorId, bindingIds: [baseId] },
+            batch: mode === "batch" ? { id: candidate().batch_id!, anchorId: candidate().id } : undefined,
             position: null,
             direction: "desc",
             limit: 500,
