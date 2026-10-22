@@ -29,7 +29,7 @@ export function Fixture(props) {
     </div>
   </AppWorkspace.Main>;
   return <PageTrailProvider trail={{title:"Records",ancestors:[]}}><AppWorkspace class="outer">
-    <AppWorkspace.Head mobilePane={props.unbound ? undefined : "list"} actions={<button>List action</button>} />
+    <AppWorkspace.Head mobilePane={props.unbound ? undefined : "list"} views={props.title ? <span id="pane-title">Records</span> : undefined} actions={<button>List action</button>} />
     <AppWorkspace.Content>
       {props.island ? <solid-island style="display:contents">{main()}</solid-island> : main()}
       <AppWorkspace.Detail id="record" open={details()} available onOpen={() => setDetails(true)} onClose={() => setDetails(false)}>
@@ -133,7 +133,7 @@ beforeAll(async () => {
         return new Response(script, { headers: { "Content-Type": "application/javascript" } });
       }
       const params = new URL(request.url).searchParams;
-      const options = Object.fromEntries(["reader", "unbound", "unsplit", "nested", "island"].map((key) => [key, params.has(key)]));
+      const options = Object.fromEntries(["reader", "unbound", "unsplit", "nested", "island", "title"].map((key) => [key, params.has(key)]));
       return new Response(
         `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head>
 <body class="k2b-ui" style="margin:0" data-options='${JSON.stringify(options)}'><div id="app" style="container:k2b-app-area / inline-size;height:900px">${render(options)}</div>${hydrationScript}</body></html>`,
@@ -236,3 +236,57 @@ test("phone selection, Back and reload use the existing pane state", async () =>
     await page.close();
   }
 }, 30_000);
+
+for (const island of [false, true]) {
+  test(`phone list head: a title keeps the inset and the reader owns Details, island=${island}`, async () => {
+    const page = await browser!.newPage({ viewport: { width: 390, height: 900 }, reducedMotion: "reduce" });
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    const list = () =>
+      page.evaluate(() => {
+        const head = document.querySelector(".outer > .k2b-app-workspace__head")!;
+        const title = document.getElementById("pane-title")!;
+        const range = document.createRange();
+        range.selectNodeContents(title);
+        const actions = head.querySelector(".k2b-app-workspace__head-actions")!.getBoundingClientRect();
+        return {
+          titleInset: range.getBoundingClientRect().left - head.getBoundingClientRect().left,
+          endInset: head.getBoundingClientRect().right - actions.right,
+          toggle: document.querySelector(".outer [data-app-workspace-detail-toggle]")!.getClientRects().length > 0,
+        };
+      });
+    try {
+      await page.goto(`${origin}?title=1${island ? "&island=1" : ""}`);
+      await settled(page);
+      const before = await list();
+      // The head's own 1 rem inset, as the view strip and filter row keep it.
+      expect(before).toEqual({ titleInset: 16, endInset: 16, toggle: false });
+      await page.addScriptTag({ url: `${origin}/client.js` });
+      await page.locator('body[data-ready="true"]').waitFor();
+      await settled(page);
+      expect(await list()).toEqual(before);
+      // The reader still opens and returns focus to its own Details control.
+      await page.getByRole("button", { name: "Open record" }).click();
+      await settled(page);
+      await page.locator("#reader-details").click();
+      await page.getByRole("heading", { name: "Record information" }).waitFor();
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await page.locator("#reader-details").evaluate((e) => e === document.activeElement)).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+}
+
+test("phone head without a list pane keeps the shared Details control", async () => {
+  const page = await browser!.newPage({ viewport: { width: 390, height: 900 }, reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}?unbound=1`);
+    await settled(page);
+    expect((await geometry(page)).toggle).toBe(true);
+  } finally {
+    await page.close();
+  }
+});

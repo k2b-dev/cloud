@@ -88,12 +88,16 @@ object navigation precedes view controls in both reading and keyboard order.
 Callers without an explicit slot retain the automatic head. Individual parts may be islands.
 
 For a split list/reader page, set `Head.mobilePane` to the list region's ID.
-Below 48rem, the head and its shared Details control appear only while that
-region is active. `Main.mobilePane` remains the single selection source; the
-server and hydrated page use the same region markers. Unsplit Mains, desktop,
-and tablet keep their head. A reader must provide its own visible way back and
-a Details control with `aria-controls={appWorkspaceDetailElementId(detailId)}`;
-closing details returns focus to that control while the head is hidden.
+Below 48rem, the head appears only while that region is active, and it shows
+neither the shared Details control nor room for it. `Main.mobilePane` remains
+the single selection source; the server and hydrated page use the same region
+markers. Unsplit Mains, desktop, and tablet keep their head. A reader must
+provide its own visible way back and a Details control with
+`aria-controls={appWorkspaceDetailElementId(detailId)}`; closing details
+returns focus to that control while the head is hidden.
+
+Where a place has no views, `views` may hold a plain title instead, such as a
+folder name. On phones it keeps the same inset from the edge as the view strip.
 
 Give the chips `showValue`, keep secondary actions quiet, and put the one filled
 action in `primary`.
