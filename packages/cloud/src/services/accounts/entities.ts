@@ -2,7 +2,7 @@ import { sql } from "bun";
 import type { EntityKind, EntityListItem, UserProfile, UserProvider } from "../../contracts/shared";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { escapeLikePattern, toPgTextArray, toPgUuidArray } from "../postgres";
-import type { ServiceAccountKind } from "../service-accounts";
+import type { ServiceAccountKind, ServiceAccountStatus } from "../service-accounts";
 import { buildBaseGroup, personalOwnerJoin } from "./base-group";
 import { buildBaseUser } from "./base-user";
 import { buildManagedGroupScopeCondition, recursiveGroupIdsSubquery } from "./group-sql";
@@ -18,6 +18,8 @@ export type EntityListParams = {
   profile?: UserProfile;
   userIds?: string[];
   groupIds?: string[];
+  serviceAccountKinds?: ServiceAccountKind[];
+  serviceAccountStatus?: ServiceAccountStatus;
   excludeUserIds?: string[];
   excludeGroupIds?: string[];
   excludeServiceAccountIds?: string[];
@@ -459,6 +461,13 @@ export const list = async (
     (params.excludeServiceAccountIds?.length ?? 0) === 0
       ? sql`TRUE`
       : sql`(kind <> 'service_account' OR id <> ALL(${toPgUuidArray(params.excludeServiceAccountIds ?? [])}::uuid[]))`;
+  const serviceAccountKindsCondition =
+    (params.serviceAccountKinds?.length ?? 0) === 0
+      ? sql`TRUE`
+      : sql`(kind <> 'service_account' OR service_account_kind = ANY(${toPgTextArray(params.serviceAccountKinds ?? [])}::text[]))`;
+  const serviceAccountStatusCondition = params.serviceAccountStatus
+    ? sql`(kind <> 'service_account' OR status = ${params.serviceAccountStatus})`
+    : sql`TRUE`;
   const userMemberOfGroupCondition =
     (params.userMemberOfGroupIds?.length ?? 0) === 0
       ? sql`TRUE`
@@ -478,6 +487,8 @@ export const list = async (
     AND ${excludeUserCondition}
     AND ${excludeGroupCondition}
     AND ${excludeServiceAccountCondition}
+    AND ${serviceAccountKindsCondition}
+    AND ${serviceAccountStatusCondition}
     AND ${userMemberOfGroupCondition}
     AND ${personalCondition}
     AND (

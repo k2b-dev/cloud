@@ -216,3 +216,78 @@ suite("accounts entity visibility (integration)", () => {
     }
   });
 });
+
+suite("service-account directory eligibility filters", () => {
+  test("filters matching machine names before totals and pagination without hiding human rows", async () => {
+    const suffix = crypto.randomUUID();
+    const userId = await insertUser(suffix, "eligibility", "user");
+    const groupId = await insertGroup(suffix, "eligibility");
+    // A user can own only one delegated account; keep its second owner outside this search.
+    const otherUserId = await insertUser(crypto.randomUUID(), "delegated-owner", "user");
+    const actor: AccountsActor = { userId, uid: `entity-visibility-eligibility-${suffix}`, roles: ["user"], provider: "local" };
+    const ids: string[] = [];
+    const eligibleIds: string[] = [];
+    try {
+      for (const kind of ["user_delegated", "resource_bound", "standalone", "agent"] as const) {
+        for (const status of ["active", "disabled"] as const) {
+          const eligible = status === "active" && (kind === "standalone" || kind === "agent");
+          const [account] = await sql<{ id: string }[]>`
+            INSERT INTO auth.service_accounts (name, kind, status, delegated_user_id, app_id, resource_type, resource_id)
+            VALUES (${`${eligible ? "90" : "00"} Member ${kind} ${status} ${suffix}`}, ${kind}, ${status},
+              ${kind === "user_delegated" ? (status === "active" ? userId : otherUserId) : null}::uuid,
+              ${kind === "resource_bound" ? "entity-test" : null},
+              ${kind === "resource_bound" ? "fixture" : null},
+              ${kind === "resource_bound" ? `${suffix}-${status}` : null})
+            RETURNING id
+          `;
+          ids.push(account!.id);
+          if (eligible) eligibleIds.push(account!.id);
+        }
+      }
+      // Ten ineligible name matches sort before either eligible recipient.
+      for (let index = 0; index < 4; index++) {
+        const [account] = await sql<{ id: string }[]>`
+          INSERT INTO auth.service_accounts (name, kind, app_id, resource_type, resource_id)
+          VALUES (${`00 Member bound ${index} ${suffix}`}, 'resource_bound', 'entity-test', 'fixture', ${`${suffix}-${index}`})
+          RETURNING id
+        `;
+        ids.push(account!.id);
+      }
+      const query = { actor, search: suffix, kinds: ["service_account" as const] };
+      const eligibility = { serviceAccountKinds: ["standalone" as const, "agent" as const], serviceAccountStatus: "active" as const };
+      const defaults = await accountsAppService.entity.list({ ...query, pagination: { page: 1, perPage: 10 } });
+      expect(defaults.total).toBe(12);
+      expect(defaults.items).toHaveLength(10);
+      expect(defaults.items.filter((item) => item.kind === "service_account" && item.serviceAccount.status === "disabled")).toHaveLength(4);
+      expect(defaults.items.every((item) => item.kind === "service_account" && !eligibleIds.includes(item.serviceAccount.id))).toBe(true);
+
+      const first = await accountsAppService.entity.list({ ...query, ...eligibility, pagination: { page: 1, perPage: 1 } });
+      const second = await accountsAppService.entity.list({ ...query, ...eligibility, pagination: { page: 2, perPage: 1 } });
+      expect(first).toMatchObject({ total: 2, hasNext: true, items: [{ serviceAccount: { kind: "agent", status: "active" } }] });
+      expect(second).toMatchObject({ total: 2, hasNext: false, items: [{ serviceAccount: { kind: "standalone", status: "active" } }] });
+      expect((await accountsAppService.entity.list({ ...query, ...eligibility, pagination: { page: 1, perPage: 10 } })).items).toHaveLength(
+        2,
+      );
+      expect((await accountsAppService.entity.list({ ...query, ...eligibility, excludeServiceAccountIds: eligibleIds })).items).toEqual([]);
+      expect((await accountsAppService.entity.list({ ...query, serviceAccountStatus: "disabled" })).total).toBe(4);
+      expect((await accountsAppService.entity.list({ ...query, serviceAccountKinds: [] })).total).toBe(12);
+      for (const provider of ["local", "ipa"] as const) {
+        expect((await accountsAppService.entity.list({ ...query, ...eligibility, provider })).items).toEqual([]);
+      }
+
+      const mixed = await accountsAppService.entity.list({ actor, search: suffix, ...eligibility });
+      expect(mixed.total).toBe(4);
+      expect(mixed.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "user", user: expect.objectContaining({ id: userId }) }),
+          expect.objectContaining({ kind: "group", group: expect.objectContaining({ id: groupId }) }),
+        ]),
+      );
+      expect((await accountsAppService.entity.list({ ...query, ...eligibility, actor: { ...actor, roles: ["guest"] } })).items).toEqual([]);
+    } finally {
+      for (const id of ids) await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherUserId}::uuid)`;
+    }
+  });
+});

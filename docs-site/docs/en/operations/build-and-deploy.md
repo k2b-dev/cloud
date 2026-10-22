@@ -20,8 +20,11 @@ optional application-specific build output.
 Applications rebuilt with the current Cloud package include service accounts
 and agents in their shared permission picker and access CLI by default. Deploy
 the rebuilt applications to update these surfaces; existing grants do not
-change. An application with a documented user-backed workflow can keep
-`allowServiceAccounts={false}`. See [resource authorization](/en/docs/identity/authorization).
+change. Update Core before the consuming applications to provide the directory
+kind and status filters. The permission editor searches active accounts for new
+grants and keeps existing grant rows visible. An application with a documented
+user-backed workflow can keep `allowServiceAccounts={false}`. See
+[resource authorization](/en/docs/identity/authorization).
 
 ## Build a standalone application
 

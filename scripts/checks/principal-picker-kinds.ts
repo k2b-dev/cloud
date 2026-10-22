@@ -6,6 +6,8 @@ import type { Finding, Rule } from "./rule";
 
 /** Restrictions belong to the owning identity contract, never an accidental picker default. */
 const restrictions: Record<string, string> = {
+  "packages/grids/src/frontend/_components/permissions/ScopedPermissionEditor.tsx":
+    "Temporary: Grids POST /api/grids/access/by-custom-app/:customAppId rejects service_account principals via validateAccessPrincipal; remove with the Grids machine-recipient contract slice.",
   "packages/assistant/src/artifacts/StudioPermissions.tsx": "Studio execution binds personal storage, secrets and approvals to a user.",
   "packages/filesv2/src/frontend/Templates.tsx": "Files template use requires a storage owner's user and Unix identity.",
   "packages/core/src/pages/admin/rail/RailAdmin.island.tsx": "Rail audiences select browser navigation for people, not resource authority.",

@@ -2,7 +2,7 @@ import { describe, expect, setSystemTime, test } from "bun:test";
 import { createSignal, Show } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
-import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
+import type { AccessEntry, Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 
 const waitFor = async (condition: () => boolean, label: string) => {
   for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -165,6 +165,164 @@ describe("PermissionEditor service accounts", () => {
         }
       });
     }
+  }
+
+  test("grant selection defaults to active accounts, forwards kind eligibility, and keeps existing rows", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const originalFetch = globalThis.fetch;
+    const requests: URL[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        requests.push(new URL(input instanceof Request ? input.url : input.toString()));
+        return Response.json({ items: [] });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          initialEntries={[{ ...serviceEntry("agent"), displayName: "Disabled agent" }]}
+          allowAuthenticated={false}
+          serviceAccountKinds={["standalone", "agent"]}
+          grantAccess={async () => {
+            throw new Error("No selection expected");
+          }}
+          updateAccess={async () => {}}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      delegateEvents(["input"]);
+      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.value = "helper";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => requests.length > 0, "filtered directory request");
+      expect(requests[0]!.searchParams.get("kinds")).toBe("user,group,service_account");
+      expect(requests[0]!.searchParams.get("service_account_kinds")).toBe("standalone,agent");
+      expect(requests[0]!.searchParams.get("service_account_status")).toBe("active");
+      expect(dom.root.textContent).toContain("Disabled agent");
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  test("an explicit status filter overrides the grant selection default", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const originalFetch = globalThis.fetch;
+    const requests: URL[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        requests.push(new URL(input instanceof Request ? input.url : input.toString()));
+        return Response.json({ items: [] });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          initialEntries={[]}
+          serviceAccountStatus="disabled"
+          grantAccess={async () => {
+            throw new Error("No selection expected");
+          }}
+          updateAccess={async () => {}}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      delegateEvents(["input"]);
+      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.value = "helper";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(() => requests.length > 0, "explicit status directory request");
+      expect(requests[0]!.searchParams.get("service_account_status")).toBe("disabled");
+      expect(requests[0]!.searchParams.has("service_account_kinds")).toBe(false);
+    } finally {
+      dispose();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
+
+  for (const scenario of [
+    { name: "unrestricted defaults", props: {}, kinds: "user,group,service_account", accountKinds: null, status: null },
+    {
+      name: "empty kinds stay unrestricted",
+      props: { serviceAccountKinds: [] },
+      kinds: "user,group,service_account",
+      accountKinds: null,
+      status: null,
+    },
+    {
+      name: "optional eligibility",
+      props: { serviceAccountKinds: ["standalone", "agent"], serviceAccountStatus: "active" },
+      kinds: "user,group,service_account",
+      accountKinds: "standalone,agent",
+      status: "active",
+    },
+    {
+      name: "excluded machines omit eligibility",
+      props: { allowServiceAccounts: false, serviceAccountKinds: ["agent"], serviceAccountStatus: "active" },
+      kinds: "user,group",
+      accountKinds: null,
+      status: null,
+    },
+  ] satisfies {
+    name: string;
+    props: { allowServiceAccounts?: boolean; serviceAccountKinds?: ServiceAccountKind[]; serviceAccountStatus?: ServiceAccountStatus };
+    kinds: string;
+    accountKinds: string | null;
+    status: string | null;
+  }[]) {
+    test(`PrincipalPicker: ${scenario.name}`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      const originalFetch = globalThis.fetch;
+      const requests: URL[] = [];
+      globalThis.fetch = Object.assign(
+        async (input: string | URL | Request) => {
+          requests.push(new URL(input instanceof Request ? input.url : input.toString()));
+          return Response.json({ items: [] });
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+      const { default: PrincipalPicker } = await import("./PrincipalPicker");
+      const dispose = render(
+        () => (
+          <PrincipalPicker
+            {...scenario.props}
+            onSelect={() => {
+              throw new Error("No selection expected");
+            }}
+          />
+        ),
+        dom.root,
+      );
+      try {
+        delegateEvents(["input"]);
+        const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+        input.value = "helper";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await waitFor(() => requests.length > 0, "principal directory request");
+        expect(requests[0]!.searchParams.get("kinds")).toBe(scenario.kinds);
+        expect(requests[0]!.searchParams.get("service_account_kinds")).toBe(scenario.accountKinds);
+        expect(requests[0]!.searchParams.get("service_account_status")).toBe(scenario.status);
+      } finally {
+        dispose();
+        globalThis.fetch = originalFetch;
+        dom.cleanup();
+      }
+    });
   }
 
   test("a kind this bundle does not know shows a key without a label", async () => {

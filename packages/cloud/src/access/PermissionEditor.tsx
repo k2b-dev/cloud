@@ -3,7 +3,7 @@ import { announce, IconButton, Placeholder, prompts, SelectChip, Tooltip, useLoc
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
-import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
+import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
@@ -73,6 +73,10 @@ type PermissionEditorProps = {
   /** Allow granting service accounts. Defaults to true, including agents.
    *  Disable only when the resource documents a user-backed identity requirement. */
   allowServiceAccounts?: boolean;
+  /** Optional directory filters for the resource's accepted credential kinds. */
+  serviceAccountKinds?: ServiceAccountKind[];
+  /** Grant selection defaults to active accounts; existing entries are unaffected. */
+  serviceAccountStatus?: ServiceAccountStatus;
 
   /** Which levels the UI offers — and what they're called. Bare strings
    *  use the default labels (View / Edit / Manage). Objects override
@@ -357,6 +361,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           allowPublic={allowPublic()}
           allowAuthenticated={allowAuthenticated()}
           allowServiceAccounts={props.allowServiceAccounts}
+          serviceAccountKinds={props.serviceAccountKinds}
+          serviceAccountStatus={props.serviceAccountStatus ?? "active"}
           readOnly={grantPending()}
           disabled={updateMut.loading() || revokeMut.loading()}
           onSelect={(principal, display) => void grant(principal, display)}
