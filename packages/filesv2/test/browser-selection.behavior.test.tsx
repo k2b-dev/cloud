@@ -2,7 +2,7 @@ import { afterEach, expect, mock, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
-import type { DirectoryResult } from "../src/contracts";
+import type { DirectoryResult, FileEntry } from "../src/contracts";
 import { browserWithUploads } from "./browser-with-uploads";
 
 const branchRequests: Array<{ input: unknown; signal: AbortSignal; resolve: (response: Response) => void }> = [];
@@ -86,8 +86,8 @@ test("view changes preserve selection; superseded details cannot replace current
   await flush();
   expect(dom.root.querySelector("h2")?.textContent).toBe("B.txt");
   expect(dom.window.location.search).toContain("file=B.txt");
-  // The details panel labels the personal base and keeps the technical location as tooltip.
-  expect(dom.root.querySelector<HTMLElement>('[title="Home / B.txt"]')?.textContent).toBe("Personal / B.txt");
+  // The details panel names the place that holds the entry and keeps the technical location as tooltip.
+  expect(dom.root.querySelector<HTMLElement>('[title="Home / B.txt"]')?.textContent).toBe("Personal");
   [...dom.root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((button) => button.textContent?.includes("Grid"))!.click();
   await flush();
   expect(dom.root.querySelector('.k2b-file-grid__item[aria-selected="true"]')?.textContent).toContain("B.txt");
@@ -134,7 +134,13 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
   await flush();
   const button = () => dom.root.querySelector<HTMLButtonElement>(".filesv2-favorite")!;
   expect(button().getAttribute("aria-pressed")).toBe("false");
-  expect(button().parentElement?.parentElement?.textContent).toContain("Download");
+  const bar = () => [...button().closest(".k2b-detail-panel__primary-actions")!.querySelectorAll("button:not([role='menuitem'])")];
+  expect(bar().map((action) => action.getAttribute("aria-label") ?? action.textContent?.trim())).toEqual([
+    "Preview",
+    "Download",
+    "Add to favorites",
+    "Actions",
+  ]);
   button().click();
   button().click();
   await flush();
@@ -161,6 +167,106 @@ test("favorite action is beside primary actions, suppresses duplicate requests a
   favoriteRequests[2]!.resolve(Response.json({ code: "unavailable", message: "Offline" }, { status: 503 }));
   await flush();
   expect(button().getAttribute("aria-pressed")).toBe("true");
+});
+
+test("details keep every action: a compact bar, the rest in one menu with the same permissions and busy state", async () => {
+  const dom = createDomTestHarness();
+  const { default: FileInspector } = await import("../src/frontend/FileInspector");
+  const calls: string[] = [];
+  const noop = () => {};
+  const record = (name: string) => () => void calls.push(name);
+  const [busy, setBusy] = createSignal(false);
+  const show = (entry: FileEntry) =>
+    render(
+      () => (
+        <FileInspector
+          base={initial.base}
+          cloudUrl="https://cloud.test"
+          selected={[entry]}
+          paths={[entry.path]}
+          initial={{ base: initial.base, entry, favorite: false }}
+          busy={busy()}
+          onClose={noop}
+          onOpen={record("open")}
+          onPreview={noop}
+          onDownload={record("download")}
+          onRename={record("rename")}
+          onDuplicate={record("duplicate")}
+          onMove={record("move")}
+          onCopy={record("copy")}
+          onTrash={record("trash")}
+          onShare={record("share")}
+          onShareInbox={record("inbox")}
+          onChanged={noop}
+        />
+      ),
+      dom.root,
+    );
+  let dispose = show({ ...initial.items[0]!, actions: { write: true, move: true, share: true } });
+  cleanup = () => {
+    dispose();
+    dom.cleanup();
+  };
+  await flush();
+  const bar = () =>
+    [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__primary-actions button:not([role='menuitem'])")].map(
+      (action) => action.getAttribute("aria-label") ?? action.textContent?.trim(),
+    );
+  const menu = () => [...dom.root.querySelectorAll<HTMLButtonElement>(".filesv2-inspector-menu [role='menuitem']")];
+  const item = (label: string) => menu().find((action) => action.textContent?.trim() === label)!;
+  expect(bar()).toEqual(["Preview", "Download", "Share publicly", "Add to favorites", "Actions"]);
+  expect(menu().map((action) => action.textContent?.trim())).toEqual([
+    "Open in new tab",
+    "Rename",
+    "Duplicate",
+    "Move to…",
+    "Copy to…",
+    "Copy Cloud reference",
+    "Move to trash",
+  ]);
+  // The long list no longer pushes versions and history down.
+  expect(dom.root.querySelector(".k2b-detail-panel__body .k2b-detail-panel__action")).toBeNull();
+  for (const label of ["Rename", "Duplicate", "Move to…", "Copy to…", "Move to trash"]) item(label).click();
+  expect(calls).toEqual(["rename", "duplicate", "move", "copy", "trash"]);
+
+  // While another action runs, the bar and every changing menu action wait.
+  setBusy(true);
+  await flush();
+  expect(
+    [...dom.root.querySelectorAll<HTMLButtonElement>(".k2b-detail-panel__primary-actions button:not([role='menuitem'])")]
+      .filter((action) => action.disabled)
+      .map((action) => action.getAttribute("aria-label") ?? action.textContent?.trim()),
+  ).toEqual(["Preview", "Download", "Share publicly", "Add to favorites"]);
+  expect(
+    menu()
+      .filter((action) => !action.disabled)
+      .map((action) => action.textContent?.trim()),
+  ).toEqual(["Copy Cloud reference"]);
+  setBusy(false);
+
+  // Without move or share rights, those actions stay visible but disabled or leave, as before; a writable folder offers its inbox.
+  dispose();
+  dispose = show({
+    name: "Docs",
+    path: "Docs",
+    directory: true,
+    size: 0,
+    modified: "2026-09-18T00:00:00Z",
+    actions: { write: true, move: false, share: false },
+  });
+  await flush();
+  expect(bar()).toEqual(["Open", "Download", "Add to favorites", "Actions"]);
+  expect(menu().map((action) => [action.textContent?.trim(), action.disabled])).toEqual([
+    ["Rename", true],
+    ["Duplicate", false],
+    ["Move to…", true],
+    ["Copy to…", false],
+    ["Share as upload inbox", false],
+    ["Copy Cloud reference", false],
+    ["Move to trash", true],
+  ]);
+  item("Share as upload inbox").click();
+  expect(calls.at(-1)).toBe("inbox");
 });
 
 test("tree branches cannot cross full cloud base identities or accept a superseded branch response", async () => {

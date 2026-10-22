@@ -291,13 +291,13 @@
 .filesv2-history-hit--skeleton {
   min-height: 120px;
 }
-.filesv2-history-hit__tile {
-  display: grid;
-  place-items: center;
+/* The box of the shared file-type tile; its chip and type colour stay with `FileTypeIcon`. A block box, so the moved
+   notice puts no line gap under it. */
+.k2b-ui .k2b-file-type-icon.filesv2-history-hit__tile {
+  display: flex;
   width: 44px;
   height: 44px;
-  border-radius: 12px;
-  background: var(--k2b-surface-muted);
+  font-size: 22px;
 }
 .filesv2-history-hit__title {
   display: flex;
@@ -365,6 +365,33 @@
 }
 .filesv2-history-chain .filesv2-history-row {
   min-height: 0;
+}
+
+/* Details: the preview is a compact glimpse of the approved 150px, so versions and history stay in view. Media take
+   that height; a text excerpt, a placeholder and its retry or download keep their natural size inside it. */
+.filesv2-inspector-preview {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--k2b-surface-muted);
+}
+.filesv2-inspector-preview > *,
+.filesv2-inspector-preview .filesv2-preview {
+  width: 100%;
+}
+.filesv2-inspector-preview .filesv2-thumbnail--hero,
+.filesv2-inspector-preview .filesv2-thumbnail--hero img {
+  height: 150px;
+  max-height: 150px;
+}
+.filesv2-inspector-preview .filesv2-preview__pdf {
+  max-height: 150px;
+  overflow: hidden;
+}
+.k2b-ui .filesv2-inspector-preview .filesv2-preview > .k2b-video-player {
+  max-height: 150px;
 }
 
 /* Old address of a moved item */
@@ -559,6 +586,10 @@
   .filesv2-history-hit {
     grid-template-columns: 40px minmax(0, 1fr);
     gap: 0.75rem;
+  }
+  .filesv2-history-hit .k2b-file-type-icon.filesv2-history-hit__tile {
+    width: 40px;
+    height: 40px;
   }
   .filesv2-history-hit__title {
     font-size: 1.125rem;
