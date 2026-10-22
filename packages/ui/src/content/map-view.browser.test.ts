@@ -1052,9 +1052,9 @@ async function capturePixels(page: Page) {
     ctx.drawImage(bitmap, 0, 0);
     bitmap.close();
     const rgba = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-    const count = (r: number, g: number, b: number, tolerance = 0) => {
+    const count = (r: number, g: number, b: number, tolerance = 0, fromY = 0, toY = canvas.height) => {
       let count = 0;
-      for (let i = 0; i < rgba.length; i += 4)
+      for (let i = Math.max(0, fromY) * canvas.width * 4; i < Math.min(canvas.height, toY) * canvas.width * 4; i += 4)
         if (
           Math.abs(rgba[i]! - r) <= tolerance &&
           Math.abs(rgba[i + 1]! - g) <= tolerance &&
@@ -1064,6 +1064,17 @@ async function capturePixels(page: Page) {
           count++;
       return count;
     };
+    const dark = document.documentElement.classList.contains("dark");
+    const roadColor = dark ? [44, 51, 61] : [255, 255, 255];
+    let roadY = 0,
+      roadWidth = 0;
+    for (let y = 0; y < canvas.height; y++) {
+      const pixels = count(roadColor[0]!, roadColor[1]!, roadColor[2]!, dark ? 8 : 0, y, y + 1);
+      if (pixels > roadWidth) {
+        roadY = y;
+        roadWidth = pixels;
+      }
+    }
     const colorCanvas = document.createElement("canvas");
     colorCanvas.width = colorCanvas.height = 1;
     const colorContext = colorCanvas.getContext("2d")!;
@@ -1109,7 +1120,11 @@ async function capturePixels(page: Page) {
       darkLand: count(26, 31, 38),
       water: count(207, 227, 243),
       road: count(255, 255, 255),
-      label: count(82, 82, 91, 8),
+      roadY,
+      roadWidth,
+      // The road's band excludes attribution and pin text: those cannot stand in for a missing road label.
+      // At 11px the dark SDF label has no fully covered ink pixels; its antialiased cores remain far above road ink.
+      label: dark ? count(161, 161, 170, 24, roadY - 10, roadY + 11) : count(82, 82, 91, 8, roadY - 10, roadY + 11),
       pins,
       baseWidth: base.width,
       attribution: Array.from(ctx.getImageData(canvas.width - 100, canvas.height - 18, 100, 18).data),
@@ -1275,12 +1290,13 @@ test("dark map snapshots preserve the basemap and actual numbered-pin ring tone"
       page.evaluate(() => document.documentElement.classList.add("dark")),
     ]);
     const result = await capturePixels(page);
-    expect(result.darkLand).toBeGreaterThan(10000);
-    for (const pin of result.pins) expect(pin.ringPixels, `${pin.mark} dark ring pixels`).toBeGreaterThan(10);
     if (process.env.MAP_SNAPSHOT_EVIDENCE_DIR) {
       const png = await page.evaluate(async () => Array.from(new Uint8Array(await (await window.mapHandle.snapshot()).data.arrayBuffer())));
       await Bun.write(resolve(process.env.MAP_SNAPSHOT_EVIDENCE_DIR, "map-capture-dark-768.png"), new Uint8Array(png));
     }
+    expect(result.darkLand).toBeGreaterThan(10000);
+    expect(result.label, `road at ${result.roadY}, ${result.roadWidth} pixels`).toBeGreaterThan(20);
+    for (const pin of result.pins) expect(pin.ringPixels, `${pin.mark} dark ring pixels`).toBeGreaterThan(10);
   } finally {
     await page.close();
   }
