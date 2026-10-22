@@ -9,8 +9,9 @@ const RETRY_MS = 5_000;
 const log = logger("notifications:catalog");
 
 const isSchemaUnavailable = (error: unknown): boolean => {
-  if (!error || typeof error !== "object" || !("code" in error)) return false;
-  return error.code === "42P01" || error.code === "42703" || error.code === "3F000";
+  if (!error || typeof error !== "object") return false;
+  const code = ("errno" in error ? error.errno : undefined) ?? ("code" in error ? error.code : undefined);
+  return code === "42P01" || code === "42703" || code === "3F000";
 };
 
 const upsertDefinition = async (definition: AnyBoundNotificationDefinition, db: typeof sql = sql): Promise<void> => {
