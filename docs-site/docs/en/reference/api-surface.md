@@ -307,7 +307,7 @@ for execution, model access, and usage accounting.
 
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
-| `@k2b/cloud/geo/ui` | Supported, SolidJS | Same-origin budgeted maps and complete browser snapshots | [Places and maps](/en/docs/platform/places-and-maps) |
+| `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap`, `CloudMapAttribution` and `CloudMapProps` for budgeted maps and browser snapshots; `AddressAutocomplete` for forms; `geoNavigationHref` and `geoNavigationPlatform` for navigation links | [Places and maps](/en/docs/platform/places-and-maps) |
 | `@k2b/cloud/geo/document` | Supported, browser and server | Validate and serialize saved maps, linked pins and complete routes | [Saved maps](/en/docs/platform/saved-map-documents) |
 | `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
 | `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input and output schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
@@ -321,10 +321,8 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime and turn submission | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting, model access, and masked request-header names for administration | [Models and providers](/en/docs/ai/models-and-providers), [Observability](/en/docs/operations/observability) |
 | `@k2b/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
-| `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap`, `CloudMapAttribution`, and `CloudMapProps`, including the browser capture ref | [Places and maps](/en/docs/platform/places-and-maps) |
 | `@k2b/cloud/approvals/ui` | Supported, SolidJS | `Approvals`, `ApprovalsNavStatus`, and `approvalNavCount` for open Action requests | [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app) |
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager) |
-| `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap` for the budgeted Cloud map, `AddressAutocomplete` for address suggestions in forms, `geoNavigationHref` and `geoNavigationPlatform` for links into a navigation app | [Places and maps](/en/docs/platform/places-and-maps#suggest-addresses-in-forms) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@k2b/cloud/events` | Supported, server-only | `defineLive`: live updates written in the transaction that makes the change; `routes(channels)` serves them over one socket per application with access checked at delivery | [Live updates](/en/docs/automation/live-updates) |
 | `@k2b/cloud/events/testing` | Supported, tests only | Real live engine, limits and types; memory topic with publish and trim controls; outbox startup for integration tests | [Test channels](/en/docs/automation/live-updates#test-channels) |

@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Replacing child rows loses asynchronous state | An unchanged address save carries a stale geocode claim while a concurrent lookup completes. | Test: Contacts `address-location.integration.test.ts` pauses replacement before child-row locks and verifies one paid lookup, retained coordinates, released failed claims and fresh claim timestamps. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Driver-specific collection serialization at a database boundary | Array or serialized JSON parameters reach PostgreSQL with the wrong representation, breaking history queries and forks. | Test: Cloud `ai/map-store.integration.test.ts` reloads and forks native maps, recovers interrupted calls, and asserts object-shaped JSONB. Writes cast serialized JSON through text; array queries use the existing PostgreSQL helper. |
 | Saved presentation bypasses live validation | Stored map JSON reaches renderers without complete geometry validation, or export preparation loses ordinary document content. | Tests: Cloud `geo-document.test.ts`, Notebook `map-blocks.test.ts` and `notebook-maps.browser.test.ts` cover geometry, provider IDs, image readiness, internal links and print cancellation. |
@@ -969,6 +970,13 @@ convention still needs a check or a test.
 - **Error class:** Consumer input violates a shared service invariant.
 - **Guard:** AiMap service tests require a circle without `near`; named search
   tests trace the filter through the browser, service, GET/POST, and cache.
+
+### Address replacement and lookup share a stable lock
+
+- **Symptom:** Saving unchanged addresses could discard a completed lookup or retain a failed claim, causing another paid lookup or delaying recovery.
+- **Root cause:** Replacement read asynchronous state before locking the rows that completion would update. PostgreSQL transaction-start timestamps could also backdate a claim after waiting for a lock.
+- **Error class:** Replacing child rows loses asynchronous state.
+- **Guard:** Replacement, claim, completion and release lock the parent contact before reading or writing address state; provider calls run outside these transactions. Claims use statement time. `address-location.integration.test.ts` uses deterministic barriers before child-row locking and checks success, failure and lock-wait timestamps.
 
 ## Add a lesson
 
