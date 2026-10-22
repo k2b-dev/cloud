@@ -371,12 +371,12 @@
 .k2b-ui .k2b-app-workspace__detail .filesv2-inspector .k2b-detail-panel__body {
   gap: 1rem;
 }
-.k2b-ui .filesv2-inspector-info .k2b-description-list__item {
+.k2b-ui .filesv2-inspector-info .k2b-description-list[data-layout="rows"] .k2b-description-list__item {
   min-height: 0;
   grid-template-rows: auto;
   padding-block: 3px;
 }
-.k2b-ui .filesv2-inspector-info .k2b-description-list__item dt {
+.k2b-ui .filesv2-inspector-info .k2b-description-list[data-layout="rows"] .k2b-description-list__item dt {
   padding-block-start: 0;
 }
 .k2b-ui .filesv2-inspector-versions .k2b-button.k2b-detail-panel__action {
