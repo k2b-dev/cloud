@@ -1,9 +1,10 @@
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale, hasPermission } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale, getTimeZone, hasPermission } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ok } from "@k2b/stdlib";
 import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../../config";
+import { loadGeoAvailability } from "../../geo-caller";
 import { contactsService } from "../../service";
 import { captureContactLiveCursor } from "../../service/live";
 import {
@@ -35,6 +36,8 @@ import { pagesMessages } from "../pages-messages";
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
   const { t } = pagesMessages.resolve([getLocale(c)]);
+  // Asked alongside the page's own reads; the map, suggestions and their budget notes start from it.
+  const geoAvailabilityRequest = loadGeoAvailability(c);
   const publicBookId = c.req.param("bookId") ?? "";
   const search = c.req.query("search") ?? "";
   const page = parseContactsPage(c.req.query("page"));
@@ -143,6 +146,7 @@ export default ssr<AuthContext>(async (c) => {
   const initialSelectedContactId = selectedPublicContact?.id ?? selectedContactIdFromUrl ?? null;
   const initialSelectedBookId = selectedPublicContact ? publicBookId : selectedContactIdFromUrl ? publicBookId : null;
   const hasDesktopDetailSelection = Boolean(selectedPublicContact);
+  const geoAvailability = await geoAvailabilityRequest;
   return () => (
     <Layout
       c={c}
@@ -185,7 +189,11 @@ export default ssr<AuthContext>(async (c) => {
             width="lg"
             viewTransitionName="contacts-detail-panel-shell"
           >
-            <ContactCreateLauncher writableBooks={writableBooks} defaultBookId={canWrite ? currentBook.id : undefined} />
+            <ContactCreateLauncher
+              writableBooks={writableBooks}
+              defaultBookId={canWrite ? currentBook.id : undefined}
+              geoAvailability={geoAvailability}
+            />
             <ContactDetailPanel
               initialContact={selectedPublicContact}
               initialContactId={initialSelectedContactId}
@@ -198,6 +206,8 @@ export default ssr<AuthContext>(async (c) => {
               currentUserId={user.id}
               showEmpty={false}
               initialFavoriteKeys={favoriteKeys}
+              geoAvailability={geoAvailability}
+              timeZone={getTimeZone(c)}
             />
           </AppWorkspace.Detail>
         </AppWorkspace.Content>

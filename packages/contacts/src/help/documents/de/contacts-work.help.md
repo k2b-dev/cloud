@@ -30,6 +30,16 @@ Die Kontakte-Übersicht ist eine gemeinsame Arbeitsansicht für alle Kontaktbüc
 
 Deinen eigenen Kommentar kannst du bis zu 10 Minuten nach dem Absenden bearbeiten oder löschen. Kommentare anderer Personen kannst du nicht ändern, auch nicht mit Zugriff **Verwalten** auf das Kontaktbuch.
 
+## Adressen eintragen und Routen planen {icon="map-pin"}
+
+:::reference
+- **Vorschläge:** Tippe mindestens 3 Zeichen in **Straße und Hausnummer**. Wähle einen Vorschlag. Er füllt Straße, PLZ, Ort und Land. Du kannst jedes Feld danach ändern.
+- **Eigene Eingabe:** Behalte den Text so, wie du ihn geschrieben hast. Wähle dafür die eigene Eingabe in der Liste oder drücke Escape.
+- **Lage:** Ein gewählter Vorschlag speichert die Lage der Adresse. Wenn du die Adresse später änderst, sucht Cloud die Lage neu. Für Adressen ohne Lage sucht Cloud die Lage, wenn du den Kontakt öffnest.
+- **Karte und Route:** Unter der Adresse zeigt der Kontakt eine kleine Karte. **Route planen** öffnet die Karten-App deines Geräts.
+- **Ohne Karte:** Wenn Karten nicht eingerichtet sind oder das Kartenbudget aufgebraucht ist, bleibt die Adresse ohne Karte. **Route planen** nutzt dann den Adresstext.
+:::
+
 ## Kontakte nützlich halten {icon="table"}
 
 - Setze die wichtigste E-Mail-Adresse, Telefonnummer, Website oder Adresse an die erste Stelle.

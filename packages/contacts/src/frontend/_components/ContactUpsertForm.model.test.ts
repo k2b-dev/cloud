@@ -6,9 +6,13 @@ import {
   type ContactUpsertDraft,
   contactToUpsertDraft,
   createContactUpsertDraft,
+  type EditableAddress,
+  editAddressField,
+  emptyAddressRow,
   initialAddressRows,
   initialBankAccountRows,
   initialEmailRows,
+  pickAddressSuggestion,
 } from "./ContactUpsertForm.model";
 import { contactFormMessages, contactRowLabels } from "./contact-form-messages";
 
@@ -77,6 +81,8 @@ const baseDraft: ContactUpsertDraft = {
       city: " Berlin ",
       stateRegion: " be ",
       countryCode: " de ",
+      geo: "idle",
+      location: null,
     },
   ],
   bankAccounts: [
@@ -187,6 +193,8 @@ describe("ContactUpsertForm model", () => {
         city: "",
         stateRegion: "",
         countryCode: "DE",
+        geo: "idle",
+        location: null,
       },
     ]);
     expect(initialBankAccountRows(baseContact, rowLabels)).toEqual([]);
@@ -257,5 +265,50 @@ describe("ContactUpsertForm model", () => {
         websites: [{ label: "Website", url: "javascript:alert(1)" }],
       }),
     ).toThrow("Website URL must start with http:// or https://");
+  });
+  test("a picked suggestion travels with its fields until a location field changes", () => {
+    const provenance = {
+      provider: "geoapify" as const,
+      attribution: {
+        text: "Geoapify · OpenStreetMap" as const,
+        links: ["https://geoapify.com", "https://www.openstreetmap.org/copyright"],
+      },
+      computedAt: "2026-10-22T10:00:00.000Z",
+    };
+    const empty = emptyAddressRow(rowLabels);
+    const picked = pickAddressSuggestion(empty, {
+      line1: "Frauenstraße 28",
+      postalCode: "89073",
+      city: "Ulm",
+      stateRegion: "Baden-Württemberg",
+      countryCode: "DE",
+      point: { lat: 48.4, lon: 9.99 },
+      formatted: "Frauenstraße 28, 89073 Ulm, Germany",
+      confidence: 1,
+      buildingConfidence: 1,
+      provenance,
+    });
+    expect(picked).toMatchObject({
+      line1: "Frauenstraße 28",
+      postalCode: "89073",
+      city: "Ulm",
+      countryCode: "DE",
+      stateRegion: "",
+      geo: "picked",
+    });
+    const payload = (row: EditableAddress) => buildContactPayload({ ...baseDraft, addresses: [row] }).addresses?.[0];
+    expect(payload(picked)?.location).toEqual({ point: { lat: 48.4, lon: 9.99 }, provenance });
+
+    // Label, recipient and the second line do not move the building.
+    expect(editAddressField(picked, "line2", "3rd floor")).toMatchObject({ geo: "picked", location: { point: { lat: 48.4 } } });
+    const changed = editAddressField(picked, "line1", "Frauenstraße 30");
+    expect(changed).toMatchObject({ geo: "changed", location: null });
+    expect(payload(changed)).not.toHaveProperty("location");
+
+    // A known location is dropped the same way; an own entry stays own; an untouched row stays pending.
+    expect(editAddressField({ ...empty, line1: "A 1", geo: "known" }, "city", "Ulm")).toMatchObject({ geo: "changed" });
+    expect(editAddressField({ ...empty, geo: "own" }, "city", "Ulm")).toMatchObject({ geo: "own" });
+    expect(editAddressField(empty, "city", "Ulm")).toMatchObject({ geo: "idle" });
+    expect(editAddressField(picked, "city", "Ulm")).toBe(picked);
   });
 });

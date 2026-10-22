@@ -1,3 +1,4 @@
+import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { announce, dialogCore, panelDialogOptions, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
@@ -7,6 +8,7 @@ import type { Contact, ContactRef, ContactTree, ContactTreeNode } from "../../se
 import { resolveContactName } from "../../shared";
 import AddMemberDialog from "./AddMemberDialog";
 import { readErrorMessage } from "./api";
+import ContactAddressEditor from "./ContactAddressEditor";
 import ContactUpsertForm from "./ContactUpsertForm";
 import { contactOutcomeHref } from "./contact-outcome";
 import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySource } from "./contact-query-source";
@@ -20,6 +22,7 @@ export const createContactDetailActions = (config: {
   setOrgTreeSource: Setter<string | null>;
   setDetailMode: Setter<"details" | "tree">;
   invalidateDetail: () => Promise<void>;
+  geoAvailability?: GeoAvailabilityData;
 }) => {
   const locale = useLocale();
   const t = () => detailMessages.resolve([locale()]).t;
@@ -141,7 +144,10 @@ export const createContactDetailActions = (config: {
   });
 
   const openAddMemberDialog = async (parent: Contact) => {
-    const member = await dialogCore.open<Contact | null>((close) => <AddMemberDialog parent={parent} close={close} />, panelDialogOptions);
+    const member = await dialogCore.open<Contact | null>(
+      (close) => <AddMemberDialog parent={parent} close={close} geoAvailability={config.geoAvailability} />,
+      panelDialogOptions,
+    );
     if (!member || disposed) return;
     void config.invalidateDetail().then(
       () => {
@@ -165,6 +171,7 @@ export const createContactDetailActions = (config: {
           onCancel={() => close(undefined)}
           onSaved={(contact) => close(contact)}
           onDeleted={() => close("deleted")}
+          geoAvailability={config.geoAvailability}
         />
       ),
       panelDialogOptions,
@@ -181,6 +188,23 @@ export const createContactDetailActions = (config: {
       contact: updated,
     });
     announce(t().contactUpdated);
+  };
+
+  const openAddressEditor = async (selectedContact: Contact, index: number) => {
+    const updated = await dialogCore.open<Contact | undefined>(
+      (close) => (
+        <ContactAddressEditor
+          contact={selectedContact}
+          index={index}
+          geoAvailability={config.geoAvailability}
+          onCancel={() => close(undefined)}
+          onSaved={(contact) => close(contact)}
+        />
+      ),
+      panelDialogOptions,
+    );
+    if (!updated || disposed) return;
+    setSelectedContactInUrl({ contactId: updated.id, bookId: updated.bookId, contact: updated });
   };
 
   const selectOrgTreeNode = (node: ContactTreeNode, fallbackBookId: string) => {
@@ -274,6 +298,7 @@ export const createContactDetailActions = (config: {
     },
     openAddMemberDialog,
     openEditDialog,
+    openAddressEditor,
     selectOrgTreeNode,
   };
 };

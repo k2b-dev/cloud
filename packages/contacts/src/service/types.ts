@@ -1,3 +1,5 @@
+import type { GeoPoint, GeoProvenance } from "@k2b/cloud/contracts/geo";
+
 export type ContactBook = {
   id: string;
   name: string;
@@ -82,6 +84,15 @@ export type ContactBankAccount = {
   updatedAt: string;
 };
 
+/**
+ * Where an address lies. Bound to the address text it was found for: any change of street,
+ * postal code, city, region, or country drops it, and the next authorized detail view looks it up again.
+ */
+export type ContactAddressLocation =
+  | { status: "found"; point: GeoPoint; provenance: GeoProvenance }
+  /** The lookup found no house-number-level match; only a changed address searches again. */
+  | { status: "not_found"; checkedAt: string };
+
 export type ContactAddress = {
   id: string;
   contactId: string;
@@ -94,6 +105,8 @@ export type ContactAddress = {
   city: string;
   stateRegion: string | null;
   countryCode: string;
+  /** Null while the lookup is pending. */
+  location: ContactAddressLocation | null;
   position: number;
   createdAt: string;
   updatedAt: string;
@@ -245,6 +258,8 @@ export type ContactAddressInput = {
   city: string;
   stateRegion?: string | null;
   countryCode: string;
+  /** Point of a chosen address suggestion for exactly these fields. Unchanged addresses keep their location without it. */
+  location?: { point: GeoPoint; provenance: GeoProvenance } | null;
 };
 
 export type CreateContactInput = {

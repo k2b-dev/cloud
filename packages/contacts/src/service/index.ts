@@ -10,6 +10,7 @@ import {
 } from "@k2b/cloud/server";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
 import { capByCredential, credentialPermission, getActorBookPermission, isContactsAdministrator, readableBookScope } from "./access";
+import * as addressLocation from "./address-location";
 import * as apiKeys from "./api-keys";
 import * as books from "./books";
 import * as contactLookup from "./contact-lookup";
@@ -18,6 +19,7 @@ import * as favorites from "./favorites";
 import * as imports from "./imports";
 import { contactsLive } from "./live";
 import * as notes from "./notes";
+import { isUuid } from "./shared";
 import * as tags from "./tags";
 import type {
   ContactBook,
@@ -322,6 +324,23 @@ export const contactsService = {
       if (!access.ok) return access;
       return ok(await contacts.get({ bookId: config.bookId, id: config.id }));
     },
+    /**
+     * Resolves a pending address location once, for anyone who may read the contact. The geocoder runs as
+     * the requesting person through Core, so it spends that person's budget; it never runs without a caller.
+     */
+    locateAddress: async (
+      config: BookCaller & { bookId: string; contactId: string; addressId: string } & Pick<
+          Parameters<typeof addressLocation.locateAddress>[0],
+          "geocode"
+        >,
+    ) => {
+      const access = await authorizeBook(config.bookId, config, "read");
+      if (!access.ok) return access;
+      if (!isUuid(config.addressId)) return fail(err.notFound("Address"));
+      const contact = await contacts.get({ bookId: config.bookId, id: config.contactId });
+      if (!contact) return fail(err.notFound("Contact"));
+      return addressLocation.locateAddress({ contactId: contact.id, addressId: config.addressId, geocode: config.geocode });
+    },
     getMany: async (config: BookCaller & Parameters<typeof contacts.getMany>[0]) => {
       const access = await authorizeBook(config.bookId, config, "read");
       if (!access.ok) return access;
@@ -470,8 +489,11 @@ export const contactsService = {
   },
 };
 
+export type { ContactAddressLocateResult } from "./address-location";
 export type {
   Contact,
+  ContactAddress,
+  ContactAddressLocation,
   ContactBankAccount,
   ContactBankAccountInput,
   ContactBook,

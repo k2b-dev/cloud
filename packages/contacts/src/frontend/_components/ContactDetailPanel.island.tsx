@@ -1,4 +1,5 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
 import type { Paginated } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import {
@@ -21,6 +22,7 @@ import { apiClient } from "@/api/client";
 import type { Contact, ContactNote, ContactRef } from "../../service";
 import { resolveContactInitials, resolveContactName, safeWebsiteHref } from "../../shared";
 import { readErrorMessage } from "./api";
+import ContactAddressMap from "./ContactAddressMap";
 import { createContactDetailActions } from "./ContactDetailPanel.actions";
 import ContactFavoriteButton from "./ContactFavoriteButton";
 import ContactNotesSection from "./ContactNotesSection";
@@ -53,6 +55,10 @@ type Props = {
   currentUserId: string;
   showEmpty?: boolean;
   initialFavoriteKeys: string[];
+  /** Core's geo setup and budget for this reader, from the same SSR request. */
+  geoAvailability?: GeoAvailabilityData;
+  /** The reader's time zone, so reset times read the same on the server and in the browser. */
+  timeZone: string;
 };
 
 const formatAddress = (address: Contact["addresses"][number]) => {
@@ -280,6 +286,7 @@ export default function ContactDetailPanel(props: Props) {
     setOrgTreeSource,
     setDetailMode,
     invalidateDetail: detailQuery.invalidate,
+    geoAvailability: props.geoAvailability,
   });
 
   createEffect(() => {
@@ -569,18 +576,31 @@ export default function ContactDetailPanel(props: Props) {
                       </Show>
 
                       <Show when={c().addresses.length > 0}>
-                        <DetailPanel.Section title={t().addresses} icon="ti ti-map-pin" tone="neutral" collapsible>
+                        <DetailPanel.Section title={t().addresses} icon="ti ti-map-pin" tone="neutral" collapsible defaultOpen>
                           <div class="flex flex-col gap-3">
                             <For each={c().addresses}>
-                              {(address) => (
-                                <div class="flex items-start gap-3 py-1 text-sm text-primary">
-                                  <i class="ti ti-map-pin mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
-                                  <div class="min-w-0 flex-1">
-                                    <Show when={address.label}>
-                                      <p class="text-xs text-dimmed">{address.label}</p>
-                                    </Show>
-                                    <For each={formatAddress(address)}>{(line) => <p class="leading-snug">{line}</p>}</For>
+                              {(address, index) => (
+                                <div class="py-1">
+                                  <div class="flex items-start gap-3 text-sm text-primary">
+                                    <i class="ti ti-map-pin mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
+                                    <div class="min-w-0 flex-1">
+                                      <Show when={address.label}>
+                                        <p class="text-xs text-dimmed">{address.label}</p>
+                                      </Show>
+                                      <For each={formatAddress(address)}>{(line) => <p class="leading-snug">{line}</p>}</For>
+                                    </div>
                                   </div>
+                                  {/* The map uses the section's full width, so a phone still shows a useful area. */}
+                                  <ContactAddressMap
+                                    bookId={c().bookId}
+                                    contactId={c().id}
+                                    contactName={resolveContactName(c(), t().unnamedContact)}
+                                    address={address}
+                                    availability={props.geoAvailability}
+                                    timeZone={props.timeZone}
+                                    canEdit={actions.canEdit()}
+                                    onEdit={() => void actions.openAddressEditor(c(), index())}
+                                  />
                                 </div>
                               )}
                             </For>

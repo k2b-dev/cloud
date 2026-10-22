@@ -206,6 +206,16 @@ export const migrate = async (): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_contacts_contact_addresses_postal
     ON contacts.contact_addresses(postal_code, city)
   `.simple();
+  // Location of the address text in geo_hash: found (point and provenance) or not found (point null).
+  // A changed address never matches its old hash, so it is looked up again.
+  await sql`
+    ALTER TABLE contacts.contact_addresses
+      ADD COLUMN IF NOT EXISTS geo_hash TEXT,
+      ADD COLUMN IF NOT EXISTS geo_lat DOUBLE PRECISION,
+      ADD COLUMN IF NOT EXISTS geo_lon DOUBLE PRECISION,
+      ADD COLUMN IF NOT EXISTS geo_provenance JSONB,
+      ADD COLUMN IF NOT EXISTS geo_checked_at TIMESTAMPTZ
+  `.simple();
   console.log("  ✓ contacts.contact_addresses table");
 
   // Hierarchy: parent_contact_id introduced after initial release. ON DELETE SET NULL

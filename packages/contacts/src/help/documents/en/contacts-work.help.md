@@ -30,6 +30,16 @@ The Contacts overview is a working view, not only a list of books. Search all bo
 
 You can edit or delete your own comment for 10 minutes after you post it. You cannot change the comments of other people, even with **Manage** access to the book.
 
+## Enter addresses and plan routes {icon="map-pin"}
+
+:::reference
+- **Suggestions:** Type at least 3 characters in **Street and number**. Choose a suggestion to fill the street, postal code, city, and country. You can change each field after that.
+- **Own entry:** Keep the text as you typed it. Choose the own entry in the list, or press Escape.
+- **Location:** A chosen suggestion saves the location of the address. If you change the address later, Cloud looks up the location again. Cloud also looks up addresses without a location when you open the contact.
+- **Map and route:** The contact shows a small map below the address. **Plan route** opens the maps app of your device.
+- **No map:** If the map is not set up, or if the map budget is used up, the address stays without a map. **Plan route** then uses the address text.
+:::
+
 ## Keep contacts useful {icon="table"}
 
 - Put the most useful email address, phone number, website, or address first.

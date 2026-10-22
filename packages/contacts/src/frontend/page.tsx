@@ -1,9 +1,10 @@
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { Layout } from "@k2b/cloud/ssr";
 import { ok } from "@k2b/stdlib";
 import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../config";
+import { loadGeoAvailability } from "../geo-caller";
 import { contactsService } from "../service";
 import { captureContactLiveCursor } from "../service/live";
 import {
@@ -33,6 +34,8 @@ import { pagesMessages } from "./pages-messages";
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
   const { t } = pagesMessages.resolve([getLocale(c)]);
+  // Asked alongside the page's own reads; the map, suggestions and their budget notes start from it.
+  const geoAvailabilityRequest = loadGeoAvailability(c);
   const search = c.req.query("search") ?? "";
   const activeTagId = c.req.query("tag_id") ?? null;
   const page = parseContactsPage(c.req.query("page"));
@@ -118,10 +121,11 @@ export default ssr<AuthContext>(async (c) => {
   const initialSelectedContactId = selectedPublicContact?.id ?? selectedContactIdFromUrl;
   const initialSelectedBookId = selectedPublicContact?.bookId ?? selectedBookIdFromUrl;
   const hasDesktopDetailSelection = Boolean(selectedPublicContact);
+  const geoAvailability = await geoAvailabilityRequest;
   return () => (
     <Layout c={c} fullWidth title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbContacts }]}>
       <ContactsLiveEvents scope={{ kind: "all" }} initialCursor={initialLiveCursor} />
-      <ContactCreateLauncher writableBooks={writableBooks} />
+      <ContactCreateLauncher writableBooks={writableBooks} geoAvailability={geoAvailability} />
       <AppWorkspace mobileSurface="flush">
         <ContactsSidebar books={books} active={queryOptions.favorites ? "favorites" : "all"} adminBookIds={adminBookIds} />
 
@@ -169,6 +173,8 @@ export default ssr<AuthContext>(async (c) => {
               currentUserId={user.id}
               showEmpty={false}
               initialFavoriteKeys={favoriteKeys}
+              geoAvailability={geoAvailability}
+              timeZone={getTimeZone(c)}
             />
           </AppWorkspace.Detail>
         </AppWorkspace.Content>

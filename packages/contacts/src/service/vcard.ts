@@ -49,7 +49,7 @@ const sanitiseType = (raw: string | null | undefined): string | null => {
   return cleaned.length > 0 ? cleaned : null;
 };
 
-const formatAdr = (a: ContactAddressInput): string => {
+const formatAdr = (a: Omit<ContactAddressInput, "location">): string => {
   // RFC 2426 §3.2.1 — ADR fields:
   //   po-box ; ext-address ; street ; locality ; region ; postal-code ; country
   const parts = [

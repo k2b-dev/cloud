@@ -1,4 +1,5 @@
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
 import { createEffect, onCleanup, onMount } from "solid-js";
@@ -13,7 +14,11 @@ const consumeCreateQuery = (url: URL): void => {
   window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 };
 
-export default function ContactCreateLauncher(props: { writableBooks: WritableContactBook[]; defaultBookId?: string }) {
+export default function ContactCreateLauncher(props: {
+  writableBooks: WritableContactBook[];
+  defaultBookId?: string;
+  geoAvailability?: GeoAvailabilityData;
+}) {
   const locale = useLocale();
   let pending = false;
   let active = true;
@@ -27,6 +32,7 @@ export default function ContactCreateLauncher(props: { writableBooks: WritableCo
       if (bookId && !props.writableBooks.some((book) => book.id === bookId))
         throw new Error(detailMessages.resolve([locale()]).t.noWritableBookHint);
       const result = await openContactCreateFlow({
+        geoAvailability: props.geoAvailability,
         writableBooks: props.writableBooks,
         defaultBookId: bookId,
         chooseBook: !bookId,
@@ -63,6 +69,7 @@ export default function ContactCreateLauncher(props: { writableBooks: WritableCo
     consumeCreateQuery(url);
     if (!seed) return;
     void openContactCreateFlow({
+      geoAvailability: props.geoAvailability,
       writableBooks: props.writableBooks,
       chooseBook: true,
       initialValues: { label: seed.name, email: seed.email },
