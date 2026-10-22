@@ -24,6 +24,7 @@ const files: Record<string, Classification> = {
   recheckActivity: read,
   activity: read,
   activityEntry: read,
+  activityBatchContext: read,
   activityForEntry: read,
   movementChain: read,
   shareAccess: read,

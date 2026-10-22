@@ -129,6 +129,15 @@ export type ActivityPage = {
   scanLimitReached: boolean;
   searchLimitReached: boolean;
 };
+/** Visible retained events, including the authorized anchor; independent of list/search filters. */
+export const ActivityBatchContextSchema = z
+  .object({
+    visibleCount: z.number().int().min(1).max(ACTIVITY_SCAN_LIMIT),
+    /** False at the scan bound: visibleCount is then only a lower bound, even for exactly 500 candidates. */
+    complete: z.boolean(),
+  })
+  .strict();
+export type ActivityBatchContext = z.infer<typeof ActivityBatchContextSchema>;
 export type ActivityChain = {
   sourceId: string;
   hops: { activityId: string; time: string; actor: ActivityEntry["actor"]; via: string; before: ActivitySide; after: ActivitySide }[];
