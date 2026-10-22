@@ -681,7 +681,7 @@ function VersionsSection(props: {
   // Newest first, below the current file, as the approved list reads.
   const listed = createMemo(() => [...items()].sort((a, b) => b.created.localeCompare(a.created)));
   const run = async (work: () => Promise<void>) => {
-    if (busy() || props.busy) return;
+    if (busy() || props.busy || props.versions.state() !== "ready") return;
     setBusy(true);
     try {
       await work();
@@ -694,6 +694,7 @@ function VersionsSection(props: {
   const param = () => ({ baseId: props.base.id });
   const path = () => props.entry.path;
   const comment = async (version: FileVersion) => {
+    if (props.versions.state() !== "ready") return;
     const values = await prompts.form({
       title: t().commentVersion,
       fields: {
@@ -722,6 +723,7 @@ function VersionsSection(props: {
       props.onChanged(path());
     });
   const restoreAs = async (version: FileVersion) => {
+    if (props.versions.state() !== "ready") return;
     const dot = props.entry.name.lastIndexOf(".");
     const suggested =
       dot > 0
@@ -764,32 +766,36 @@ function VersionsSection(props: {
         tone="neutral"
         count={props.versions.state() === "ready" ? items().length + 1 : undefined}
       >
+        <Show when={props.versions.state() === "error"}>
+          <Placeholder
+            state="error"
+            align="left"
+            class="px-0 py-1"
+            description={h().versionsFailed}
+            action={
+              <Button size="xs" variant="text" onClick={() => void props.versions.refresh()}>
+                {t().retry}
+              </Button>
+            }
+          />
+        </Show>
         <Switch>
           <Match when={props.versions.state() === "off"}>
             <p class="text-xs text-dimmed">{t().versionsUnavailable}</p>
           </Match>
-          <Match when={props.versions.state() === "error"}>
-            <Placeholder
-              state="error"
-              align="left"
-              class="px-0 py-1"
-              description={h().versionsFailed}
-              action={
-                <Button size="xs" variant="text" onClick={() => void props.versions.refresh()}>
-                  {t().retry}
-                </Button>
-              }
-            />
-          </Match>
           <Match when={props.versions.state() === "loading"}>
             <Placeholder state="loading" align="left" class="px-0 py-1" description={t().loadingDetails} />
           </Match>
-          <Match when={props.versions.state() === "ready"}>
+          <Match when={props.versions.items() !== null}>
             <div class="flex flex-col gap-1">
               {/* The file as it is now, numbered after the saved versions as the history counts it. */}
               <DetailPanel.Action
                 type="button"
-                title={`${h().versionN.replace("{n}", String(items().length + 1))} · ${h().versionCurrent}`}
+                title={
+                  props.versions.state() === "ready"
+                    ? `${h().versionN.replace("{n}", String(items().length + 1))} · ${h().versionCurrent}`
+                    : h().versionCurrent
+                }
                 description={when(props.entry.modified)}
                 leading={<i class="ti ti-file" aria-hidden="true" />}
                 trailing={<Format.Bytes value={props.entry.size} />}
@@ -808,24 +814,34 @@ function VersionsSection(props: {
                     description={version.comment ? `${version.comment}${version.author ? ` · ${version.author}` : ""}` : undefined}
                     leading={<i class="ti ti-history" aria-hidden="true" />}
                     trailing={<Format.Bytes value={version.size} />}
-                    disabled={busy() || props.busy}
+                    disabled={busy() || props.busy || props.versions.state() !== "ready"}
                     onClick={() => (props.entry.actions?.write === false ? void downloadVersion(version) : void comment(version))}
                     menuLabel={`${t().actions}: ${when(version.created)}`}
                     menuItems={[
                       {
-                        disabled: props.entry.actions?.write === false,
+                        disabled: props.versions.state() !== "ready" || props.entry.actions?.write === false,
                         label: t().commentVersion,
                         icon: "ti ti-message",
                         action: () => void comment(version),
                       },
-                      { label: t().downloadVersion, icon: "ti ti-download", action: () => void downloadVersion(version) },
                       {
-                        disabled: props.entry.actions?.write === false,
+                        disabled: props.versions.state() !== "ready",
+                        label: t().downloadVersion,
+                        icon: "ti ti-download",
+                        action: () => void downloadVersion(version),
+                      },
+                      {
+                        disabled: props.versions.state() !== "ready" || props.entry.actions?.write === false,
                         label: t().restoreVersion,
                         icon: "ti ti-arrow-back-up",
                         action: () => void restore(version),
                       },
-                      { label: t().restoreVersionAs, icon: "ti ti-file-plus", action: () => void restoreAs(version) },
+                      {
+                        disabled: props.versions.state() !== "ready",
+                        label: t().restoreVersionAs,
+                        icon: "ti ti-file-plus",
+                        action: () => void restoreAs(version),
+                      },
                     ]}
                   />
                 )}

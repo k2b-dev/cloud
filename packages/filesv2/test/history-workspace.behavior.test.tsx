@@ -35,7 +35,11 @@ if (!isServer) {
           entries: { $get: request("entries") },
           search: { $get: request("search") },
           entry: { $get: request("entry") },
-          versions: { $get: request("versions"), restore: { $post: request("version-restore") } },
+          versions: {
+            $get: request("versions"),
+            restore: { $post: request("version-restore") },
+            comment: { $post: request("version-comment") },
+          },
           trash: { $get: request("trash") },
           thumbnail: { $post: request("thumbnail") },
         },
@@ -616,7 +620,18 @@ describe("Files history in the workspace", () => {
         source,
         directory: { base: home, path: "Kunden", items: [file], next: null },
         detail: { base: home, entry: file },
-        history: { source: JSON.stringify(request), page: page([]) },
+        history: {
+          source: JSON.stringify(request),
+          page: page([
+            entry({
+              action: "file.overwrite",
+              after: {
+                ...(current(file.path, { directory: false }) as Extract<ReturnType<typeof current>, { visibility: "full" }>),
+                revision: "rev-3",
+              },
+            }),
+          ]),
+        },
       }),
     );
     await flush();
@@ -624,14 +639,16 @@ describe("Files history in the workspace", () => {
     const toggle = () => inspector().querySelector<HTMLButtonElement>(".filesv2-inspector-info [aria-controls]")!;
     const section = () => inspector().querySelector<HTMLElement>(".filesv2-inspector-versions")!;
     const titles = () => [...section().querySelectorAll(".k2b-detail-panel__action-title")].map((title) => title.textContent?.trim());
-    // While the list loads, neither Info nor the section claims a count.
+    // While the list loads, neither Info, the section nor history claims a count.
+    expect(inspector().textContent).not.toContain("Version 1");
     expect(toggle().getAttribute("aria-controls")).toBe(section().id);
     expect(toggle().textContent?.trim()).toBe("Loading details…");
     expect(section().querySelector(".k2b-count-chip, .k2b-detail-panel__none")).toBeNull();
     pending("shares").resolve(Response.json({ items: [], next: null }));
     pending("versions").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
     await flush();
-    // A failed list is no empty list.
+    // A failed list is no empty list and does not invent the current version number.
+    expect(inspector().textContent).not.toContain("Version 1");
     expect(toggle().textContent?.trim()).toBe("Versions not loaded.");
     expect(section().textContent).toContain("Versions not loaded.");
     expect(section().textContent).not.toContain("No earlier versions");
@@ -655,6 +672,40 @@ describe("Files history in the workspace", () => {
         .slice(1)
         .map((title) => title?.split(" · ")[0]),
     ).toEqual(["Version 2", "Version 1"]);
+    // Saving a comment may succeed while its canonical refresh fails. Keep last good rows, show retry,
+    // and disable stale actions until a successful read replaces them.
+    const { prompts } = await import("@k2b/ui");
+    const form = spyOn(prompts, "form").mockResolvedValue({ comment: "Approved copy" });
+    try {
+      section().querySelectorAll<HTMLButtonElement>("button.k2b-detail-panel__action")[1]!.click();
+      await flush();
+      expect(pending("version-comment").input).toEqual({
+        param: { baseId: home.id },
+        json: { path: file.path, id: "v-2", comment: "Approved copy" },
+      });
+      pending("version-comment").resolve(Response.json({ ok: true }));
+      await flush();
+      pending("versions").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+      await flush();
+      expect(section().textContent).toContain("Versions not loaded.");
+      expect(titles()).toHaveLength(3);
+      expect(section().querySelectorAll<HTMLButtonElement>("button.k2b-detail-panel__action")[1]!.disabled).toBe(true);
+      expect(section().textContent).not.toContain("Approved copy");
+      button(section(), "Try again")!.click();
+      await flush();
+      pending("versions").resolve(
+        Response.json([
+          { id: "v-1", created: "2026-10-13T08:30:00.000Z", size: 1, pinned: false, comment: null, author: null },
+          { id: "v-2", created: "2026-10-19T15:20:00.000Z", size: 1, pinned: false, comment: "Approved copy", author: null },
+        ]),
+      );
+      await flush();
+      expect(section().textContent).not.toContain("Versions not loaded.");
+      expect(section().textContent).toContain("Approved copy");
+      expect(section().querySelectorAll<HTMLButtonElement>("button.k2b-detail-panel__action")[1]!.disabled).toBe(false);
+    } finally {
+      form.mockRestore();
+    }
     // Phones show the list once the count opens it; wider panels always show it.
     expect(section().hasAttribute("data-open")).toBe(false);
     expect(toggle().getAttribute("aria-expanded")).toBe("false");
