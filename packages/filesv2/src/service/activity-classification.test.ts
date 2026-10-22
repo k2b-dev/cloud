@@ -58,9 +58,9 @@ const files: Record<string, Classification> = {
   uploadLease: mixed("lifecycle.operation"),
   commitUpload: mutation("lifecycle.operation"),
   abortUpload: mutation("lifecycle.operation"),
-  rename: mutation("lifecycle.operation", "files.rename"),
-  move: mutation("lifecycle.operation", "files.move"),
-  copy: mutation("lifecycle.operation", "files.copy"),
+  rename: { kind: "mutation", coverage: "converted" },
+  move: { kind: "mutation", coverage: "converted" },
+  copy: { kind: "mutation", coverage: "converted" },
   bundle: base(),
   versions: base(),
   commentVersion: mutation("lifecycle.operation", "files.version_comment"),
@@ -109,9 +109,6 @@ function unclassified(methods: readonly string[], table: Record<string, Classifi
   return methods.filter((name) => !Object.hasOwn(table, name));
 }
 const frozen = [
-  "files.rename",
-  "files.move",
-  "files.copy",
   "files.ensure_trash",
   "files.version_comment",
   "files.version_restore",
@@ -125,9 +122,6 @@ function addedKeys(keys: readonly string[]): string[] {
   return keys.filter((key) => !frozen.some((known) => known === key));
 }
 const frozenCallSites: Readonly<Record<string, number>> = {
-  "files.rename": 1,
-  "files.move": 1,
-  "files.copy": 1,
   "files.ensure_trash": 1,
   "files.version_comment": 1,
   "files.version_restore": 1,

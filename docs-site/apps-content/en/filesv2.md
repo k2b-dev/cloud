@@ -247,22 +247,31 @@ pass siblings as separate arguments or use shell expansion.
 
 ## History
 
-Files records folder creation, uploads, document creation, template use, and
-Office saves through the web, mobile app, API and CLI, other apps, and agents. Each created folder has its own entry; folders created in
-one batch share a batch ID. Planning a batch or finding an existing folder
-creates no entry.
+Files records folder creation, renames, moves, copies, uploads, document creation,
+template use, and Office saves through the web, mobile app, API and CLI, other
+apps, and agents. Each selected item has its
+own entry; items changed in one batch share a batch ID. Moving a folder
+records one entry for the whole tree. Planning folder creation or finding an
+existing folder creates no entry.
+
+Transfer entries retain the old and confirmed new paths. Copies also record
+the source and destination storage areas; a copy in the same folder records
+the new name Filegate chose. On storage with stable IDs, renames and moves
+keep the item identity, while a new copy has its own identity.
 
 | State | Meaning |
 | --- | --- |
 | `pending` | The intent is saved; the outcome is not yet confirmed. |
 | `done` | Files has evidence that the operation completed. |
 | `failed` | Files has a certain refusal that made no change. |
-| `unclear` | The response is missing; the current folder cannot prove the outcome. |
+| `unclear` | The response is missing; the current contents cannot prove the outcome. |
 | `not_done` | Confirmed upload abort or expiry; no file was published. |
 
 Files marks an operation done only with evidence. A folder that looks right
-could have been created by someone else. Later steps extend history to other
-changes.
+could have been created by someone else. A missing source and an existing
+destination do not prove a move completed. A lost transfer response stays
+unclear, with separate observations of the old and intended new locations.
+Later steps extend history to other changes.
 
 History is kept for 365 days by default. Administrators change this under
 **Settings → History → Keep history for**, from 30 to 3,650 days; the CLI and

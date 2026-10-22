@@ -25,7 +25,15 @@ export type FilesCall =
   | { kind: "visitor"; shareId: string; requestId: string | null }
   | { kind: "system"; job: string };
 export type UserFilesCall = Extract<FilesCall, { kind: "user" }>;
-export type ActivityAction = "folder.create" | "file.upload" | "file.overwrite" | "file.create" | "file.edit";
+export type ActivityAction =
+  | "folder.create"
+  | "item.rename"
+  | "item.move"
+  | "item.copy"
+  | "file.upload"
+  | "file.overwrite"
+  | "file.create"
+  | "file.edit";
 export type Intent = {
   action: ActivityAction;
   serverUrl: string;
@@ -43,6 +51,7 @@ export type Intent = {
   revisionBefore?: string | null;
   versionId?: string | null;
   batchId?: string | null;
+  onConflict?: "error" | "rename";
   detail?: Record<string, unknown>;
   writeOptions?: WriteOptions;
 };
@@ -56,9 +65,6 @@ export type Finished = {
 
 // May only shrink; the freeze test fails if this list grows.
 export const PENDING_MIGRATION = Object.freeze([
-  "files.rename",
-  "files.move",
-  "files.copy",
   "files.ensure_trash",
   "files.version_comment",
   "files.version_restore",
@@ -82,9 +88,6 @@ export type Mutation =
   | "deleteVersion"
   | "remove";
 export const PENDING_MIGRATION_METHODS: Readonly<Record<PendingMigrationKey, readonly Mutation[]>> = Object.freeze({
-  "files.rename": ["transfer"],
-  "files.move": ["transfer"],
-  "files.copy": ["transfer"],
   "files.ensure_trash": ["mkdir"],
   "files.version_comment": ["updateVersion"],
   "files.version_restore": ["restore"],
@@ -112,7 +115,7 @@ export async function filegateMutation<T>(
   method: Mutation,
   path: string,
   run: () => Promise<T>,
-  _transfer?: { root: string; path: string; move: boolean; onConflict: string },
+  transfer?: { root: string; path: string; move: boolean; onConflict: string },
   write?: { size: number; options: WriteOptions; key?: string },
 ): Promise<T> {
   const scope = scopes.getStore();
@@ -135,15 +138,27 @@ export async function filegateMutation<T>(
           : (method === "commitSession" || method === "abortSession") && !!uploadSessionId(upload) && path === uploadSessionId(upload))
       : intent.action === "folder.create"
         ? method === "mkdir" && !!intent.pathAfter && (path === intent.pathAfter || intent.pathAfter.startsWith(`${path}/`))
-        : (intent.action === "file.create" || intent.action === "file.edit") &&
-          scope.sent === 0 &&
-          method === "put" &&
-          path === intent.pathAfter &&
-          !!write &&
-          !!intent.writeOptions &&
-          sameUploadOptions(write.options, { ...intent.writeOptions, metadata: { ...intent.writeOptions.metadata, activity: scope.id } }) &&
-          write.size === intent.size &&
-          (write.options.onConflict ?? "error") === (intent.action === "file.edit" ? "overwrite" : "error");
+        : intent.action === "file.create" || intent.action === "file.edit"
+          ? scope.sent === 0 &&
+            method === "put" &&
+            path === intent.pathAfter &&
+            !!write &&
+            !!intent.writeOptions &&
+            sameUploadOptions(write.options, {
+              ...intent.writeOptions,
+              metadata: { ...intent.writeOptions.metadata, activity: scope.id },
+            }) &&
+            write.size === intent.size &&
+            (write.options.onConflict ?? "error") === (intent.action === "file.edit" ? "overwrite" : "error")
+          : (intent.action === "item.rename" || intent.action === "item.move" || intent.action === "item.copy") &&
+            scope.sent === 0 &&
+            method === "transfer" &&
+            !!transfer &&
+            path === intent.pathBefore &&
+            transfer.root === (intent.rootAfter ?? intent.root) &&
+            transfer.path === intent.pathAfter &&
+            transfer.move === (intent.action !== "item.copy") &&
+            transfer.onConflict === (intent.onConflict ?? "error");
     if (intent.serverUrl !== serverUrl || intent.root !== root || !matches) throw new FilesError("activity_scope_mismatch", 500);
     scope.sent++;
   }
@@ -167,6 +182,8 @@ const log = logger("filesv2:activity");
 function certainNoChange(scope: Extract<GuardScope, { kind: "activity" }>, error: unknown): boolean {
   if (scope.sent === 0) return (error instanceof FilesError || error instanceof FilegateError) && [403, 404].includes(error.status);
   return (
+    // Tree copies may prepare ancestors before refusing publication; no receipt proves rollback.
+    scope.intent.action !== "item.copy" &&
     scope.sent === 1 &&
     error === scope.refused &&
     error instanceof FilegateError &&
@@ -246,6 +263,8 @@ type RecoveryRow = {
   state: "pending" | "unclear";
   server_url: string;
   root: string;
+  root_after: string | null;
+  path_before: string | null;
   path_after: string | null;
   final: boolean;
   upload_id: string | null;
@@ -308,19 +327,26 @@ export async function recoverActivity(input: {
         log.warn("Upload history receipt unavailable", { id: row.id, error });
       }
     }
-    let observed: Record<string, unknown> = { state: "unavailable" };
-    if (input.config && !input.config.unreadable && input.config.url === row.server_url && row.path_after !== null) {
-      try {
-        const node = await input.connect(input.config).root(row.root).stat(row.path_after);
-        observed = { exists: true, directory: node.directory, ...(node.id ? { id: node.id } : {}) };
-      } catch (error) {
-        if (error instanceof FilegateError && error.status === 404) observed = { exists: false, directory: false };
+    const observe = async (root: string, path: string): Promise<Record<string, unknown>> => {
+      if (input.config && !input.config.unreadable && input.config.url === row.server_url) {
+        try {
+          const node = await input.connect(input.config).root(root).stat(path);
+          return { exists: true, directory: node.directory, ...(node.id ? { id: node.id } : {}) };
+        } catch (error) {
+          if (error instanceof FilegateError && error.status === 404) return { exists: false, directory: false };
+        }
       }
-    }
-    // folder.create: only its response proves completion. Appearance may come from another writer.
+      return { state: "unavailable" };
+    };
+    const observations = {
+      ...(row.path_before !== null ? { observed_before: await observe(row.root, row.path_before) } : {}),
+      ...(row.path_after !== null ? { observed_after: await observe(row.root_after ?? row.root, row.path_after) } : {}),
+    };
+    // Folder creation, same-root moves and copies have no retained operation receipt.
+    // Appearance alone never proves completion, even when the source has disappeared.
     await sql`UPDATE filesv2.activity SET state='unclear',
       next_check_at=CASE WHEN ${row.final} THEN 'infinity'::timestamptz ELSE next_check_at END,
-      detail=detail || ${{ observed_after: observed, ...(row.final ? { final: true } : {}) }}::jsonb
+      detail=detail || ${{ ...observations, ...(row.final ? { final: true } : {}) }}::jsonb
       WHERE id=${row.id}::uuid AND state=${row.state}`;
     checked++;
   }

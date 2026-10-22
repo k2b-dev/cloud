@@ -9,6 +9,7 @@ import { suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
 import { filesCapabilities } from "../src/capabilities";
 import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
+import { withRootLock } from "../src/data/operations";
 import { persistedEntryRefId } from "../src/data/references";
 import { uploadSessionId, uploads } from "../src/data/uploads";
 import { migrate } from "../src/migrate";
@@ -51,6 +52,7 @@ suite("Files activity with real storage", () => {
   let actor: Extract<RequestActor, { kind: "user" }>;
   let ipa: Extract<RequestActor, { kind: "user" }>;
   let bindingId: string;
+  const copyGroup = { id: Bun.randomUUIDv7(), provider: "local" as const, name: "copy-team", gidNumber: 32002, personal: false };
   const home = `${prefix}/users/alice`;
   const baseId = () => `cloud:users:${actor.user.id}`;
   const intent = (name: string): Intent => ({
@@ -161,7 +163,7 @@ suite("Files activity with real storage", () => {
             availability: { localLinuxEnabled: true, freeipaEnabled: true },
           };
         },
-        groups: async () => ({ items: [], nextCursor: null }),
+        groups: async () => ({ items: [copyGroup], nextCursor: null }),
       },
       displayNames: resolveDisplayNames,
       bindings,
@@ -944,6 +946,268 @@ suite("Files activity with real storage", () => {
     const [stored] = await sql<{ state: string; path_after: string }[]>`SELECT state,path_after FROM filesv2.activity`;
     expect(stored).toEqual({ state: "done", path_after: path });
   });
+  test.each(["rename", "move", "copy"] as const)("%s cannot change storage when its history insert fails", async (action) => {
+    const name = `blocked-${action}.txt`;
+    const folder = `blocked-${action}-target`;
+    await client.root("cloud").put(`${home}/${name}`, new Blob(["original"]));
+    await client.root("cloud").mkdir(`${home}/${folder}`);
+    let sent = 0;
+    const transport: typeof fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        if (init?.method === "POST" && String(input).endsWith("/transfers")) sent++;
+        return fetch(input, init);
+      },
+      { preconnect: fetch.preconnect },
+    );
+    const counted = createFilesService({ ...serviceDependencies(), connect: (configuration) => connectFilegate(configuration, transport) });
+    await sql`CREATE OR REPLACE FUNCTION filesv2.reject_activity() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'intent unavailable'; END $$`.simple();
+    await sql`CREATE TRIGGER reject_activity BEFORE INSERT ON filesv2.activity FOR EACH ROW EXECUTE FUNCTION filesv2.reject_activity()`.simple();
+    try {
+      if (action === "rename")
+        await expect(counted.rename(testCall(actor), { baseId: baseId(), path: name, name: `renamed-${name}` })).rejects.toThrow(
+          "intent unavailable",
+        );
+      else {
+        const input = { baseId: baseId(), paths: [name], folder, targetBaseId: baseId() };
+        const result = action === "move" ? await counted.move(testCall(actor), input) : await counted.copy(testCall(actor), input);
+        expect(result.results[0]?.ok).toBe(false);
+      }
+      expect(sent).toBe(0);
+      expect((await client.root("cloud").stat(`${home}/${name}`)).size).toBe(8);
+      expect(await sql`SELECT id FROM filesv2.activity`).toHaveLength(0);
+    } finally {
+      await sql`DROP TRIGGER reject_activity ON filesv2.activity`.simple();
+      await sql`DROP FUNCTION filesv2.reject_activity()`.simple();
+    }
+  });
+  test("a move batch retains successful and refused entries under one batch ID", async () => {
+    const root = client.root("cloud");
+    await root.mkdir(`${home}/partial-source`);
+    await root.mkdir(`${home}/partial-target`);
+    for (const name of ["one.txt", "two.txt"]) await root.put(`${home}/partial-source/${name}`, new Blob(["data"]));
+    await root.put(`${home}/partial-target/two.txt`, new Blob(["keep"]));
+    const result = await service.move(testCall(actor), {
+      baseId: baseId(),
+      paths: ["partial-source/one.txt", "partial-source/two.txt"],
+      folder: "partial-target",
+    });
+    expect(result.results.map((item) => item.ok)).toEqual([true, false]);
+    const rows = await sql`SELECT * FROM filesv2.activity ORDER BY name`;
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ action: "item.move", state: "done" });
+    expect(rows[1]).toMatchObject({ action: "item.move", state: "failed", error_code: "path_conflict" });
+    expect(rows[0]!.batch_id).toBe(rows[1]!.batch_id);
+    expect(rows[0]!.batch_id).not.toBeNull();
+  });
+  test("rename and a normalized directory move record stable identity and one batch row per selection", async () => {
+    const root = client.root("cloud");
+    await root.mkdir(`${home}/rename-source`);
+    await root.mkdir(`${home}/rename-source/child`);
+    await root.mkdir(`${home}/move-target`);
+    const original = await root.stat(`${home}/rename-source`);
+    const call = {
+      ...testCall(actor),
+      via: "agent" as const,
+      callingApp: "assistant",
+      origin: "assistant",
+      invocationId: "move-invocation",
+    };
+    await service.rename(call, { baseId: baseId(), path: "rename-source", name: "renamed" });
+    const moved = await service.move(call, { baseId: baseId(), paths: ["renamed", "renamed/child"], folder: "move-target" });
+    expect(moved.results).toHaveLength(1);
+    const rows = await sql`SELECT * FROM filesv2.activity ORDER BY started_at,id`;
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      action: "item.rename",
+      state: "done",
+      path_before: `${home}/rename-source`,
+      path_after: `${home}/renamed`,
+      actor_user_id: actor.user.id,
+      via: "agent",
+      invocation_id: "move-invocation",
+    });
+    expect(rows[1]).toMatchObject({
+      action: "item.move",
+      state: "done",
+      path_before: `${home}/renamed`,
+      path_after: `${home}/move-target/renamed`,
+      base_id: bindingId,
+      base_after_id: bindingId,
+    });
+    expect(rows[1]!.batch_id).not.toBeNull();
+    if ((await root.info()).stableIds) {
+      expect(rows[0]!.item_id).toBe(original.id);
+      expect(rows[1]!.item_after_id).toBe(original.id);
+    }
+  });
+  test("same-folder copy records the returned conflict-renamed path and new identity", async () => {
+    const root = client.root("cloud");
+    await root.put(`${home}/copy-original.txt`, new Blob(["copy"]));
+    const original = await root.stat(`${home}/copy-original.txt`);
+    const copied = await service.copy(testCall(actor), {
+      baseId: baseId(),
+      paths: ["copy-original.txt"],
+      targetBaseId: baseId(),
+      folder: "",
+    });
+    expect(copied.results[0]?.ok).toBe(true);
+    const rows = await sql`SELECT * FROM filesv2.activity`;
+    expect(rows).toHaveLength(1);
+    const entry = rows[0]!;
+    expect(entry).toMatchObject({
+      action: "item.copy",
+      state: "done",
+      path_before: `${home}/copy-original.txt`,
+      root: "cloud",
+      root_after: "cloud",
+    });
+    expect(entry.path_after).not.toBe(entry.path_before);
+    expect((await root.stat(entry.path_after)).size).toBe(4);
+    if ((await root.info()).stableIds) {
+      expect(entry.item_id).toBe(original.id);
+      expect(entry.item_after_id).not.toBe(original.id);
+    }
+  });
+  test("copy holds the source publication lock while sending the identity-bound transfer", async () => {
+    await client.root("cloud").put(`${home}/locked-copy.txt`, new Blob(["original"]));
+    const source = await client.root("cloud").stat(`${home}/locked-copy.txt`);
+    let checked = false;
+    const transport: typeof fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        if (init?.method === "POST" && String(input).endsWith("/transfers")) {
+          await expect(
+            withRootLock("cloud", async () => {
+              throw new Error("source was not protected");
+            }),
+          ).rejects.toThrow("operation_busy");
+          checked = true;
+        }
+        return fetch(input, init);
+      },
+      { preconnect: fetch.preconnect },
+    );
+    const copying = createFilesService({ ...serviceDependencies(), connect: (configuration) => connectFilegate(configuration, transport) });
+    const result = await copying.copy(testCall(actor), {
+      baseId: baseId(),
+      paths: ["locked-copy.txt"],
+      targetBaseId: baseId(),
+      folder: "",
+    });
+    expect(result.results[0]?.ok).toBe(true);
+    expect(checked).toBe(true);
+    const [entry] = await sql`SELECT * FROM filesv2.activity`;
+    expect(entry!.state).toBe("done");
+    if ((await client.root("cloud").info()).stableIds) expect(entry!.item_id).toBe(source.id);
+  });
+  test("a transfer scope authorizes one effect only", async () => {
+    const f = guardedTransport();
+    const input: Intent = { ...intent("target"), action: "item.copy", pathBefore: `${home}/source`, onConflict: "rename" };
+    await fileAction(
+      testCall(actor),
+      input,
+      async () => {
+        await f.client.root("cloud").transfer(`${home}/source`, "cloud", `${home}/target`, { onConflict: "rename" });
+        await expect(
+          f.client.root("cloud").transfer(`${home}/source`, "cloud", `${home}/target`, { onConflict: "rename" }),
+        ).rejects.toMatchObject({ code: "activity_scope_mismatch" });
+      },
+      async () => {},
+    );
+    expect(f.sent()).toBe(1);
+  });
+  test("cross-root copy records both bindings and roots through the real service", async () => {
+    const cloudHome = `${prefix}/groups/copy-team`;
+    await client.root("cloud").mkdir(`${prefix}/groups`);
+    await client.root("cloud").mkdir(cloudHome);
+    await bindings.claim({
+      area: "cloud",
+      kind: "groups",
+      identity_id: copyGroup.id,
+      identity_name: copyGroup.name,
+      root: "cloud",
+      path: cloudHome,
+      uid_number: null,
+      gid_number: copyGroup.gidNumber,
+    });
+    const source = `${prefix}/users/ipa-alice/cross-root.txt`;
+    await client.root("freeipa").put(source, new Blob(["cross"]), { ownership: { uid: 31001, gid: 32001, mode: "0600" } });
+    const copied = await service.copy(testCall(ipa), {
+      baseId: `freeipa:users:${ipa.user.id}`,
+      paths: ["cross-root.txt"],
+      targetBaseId: `cloud:groups:${copyGroup.id}`,
+      folder: "",
+    });
+    expect(copied.results[0]?.ok).toBe(true);
+    const rows = await sql`SELECT * FROM filesv2.activity`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      action: "item.copy",
+      state: "done",
+      root: "freeipa",
+      root_after: "cloud",
+      path_before: source,
+      path_after: `${cloudHome}/cross-root.txt`,
+    });
+    expect(rows[0]!.base_id).not.toBe(rows[0]!.base_after_id);
+  });
+  test.each(["rename", "move", "copy"] as const)("a lost %s response never becomes done from appearance", async (action) => {
+    const name = `lost-${action}.txt`;
+    const folder = `lost-${action}-target`;
+    await client.root("cloud").put(`${home}/${name}`, new Blob(["data"]));
+    await client.root("cloud").mkdir(`${home}/${folder}`);
+    const transport: typeof fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const response = await fetch(input, init);
+        if (init?.method === "POST" && String(input).endsWith("/transfers") && response.ok) throw new Error("lost transfer response");
+        return response;
+      },
+      { preconnect: fetch.preconnect },
+    );
+    const losing = createFilesService({ ...serviceDependencies(), connect: (configuration) => connectFilegate(configuration, transport) });
+    if (action === "rename")
+      await expect(losing.rename(testCall(actor), { baseId: baseId(), path: name, name: `renamed-${name}` })).rejects.toThrow(
+        "lost transfer response",
+      );
+    else {
+      const input = { baseId: baseId(), paths: [name], folder, targetBaseId: baseId() };
+      const result = action === "move" ? await losing.move(testCall(actor), input) : await losing.copy(testCall(actor), input);
+      expect(result.results[0]?.ok).toBe(false);
+    }
+    const [entry] = await sql`SELECT * FROM filesv2.activity`;
+    expect(entry!.state).toBe("pending");
+    await sql`UPDATE filesv2.activity SET started_at=${new Date(now.getTime() - day)},heartbeat_at=${new Date(now.getTime() - 120_000)},next_check_at=${now}`;
+    await recover();
+    const recovered = await row(entry!.id);
+    expect(recovered.state).toBe("unclear");
+    expect(recovered.detail.observed_before).toMatchObject({ exists: action === "copy" });
+    expect(recovered.detail.observed_after).toMatchObject({ exists: true });
+  });
+  test.each(["source", "target", "target-root", "move", "conflict", "method"])(
+    "persisted transfer intent rejects a different %s before transport",
+    async (part) => {
+      const f = guardedTransport();
+      const root = f.client.as({ uid: 31001, gid: 32001 }).root("cloud");
+      const input: Intent = { ...intent("target"), action: "item.move", pathBefore: `${home}/source`, rootAfter: "cloud" };
+      await expect(
+        fileAction(
+          testCall(actor),
+          input,
+          () =>
+            part === "method"
+              ? root.remove(`${home}/source`)
+              : root.transfer(
+                  part === "source" ? `${home}/other` : `${home}/source`,
+                  part === "target-root" ? "freeipa" : "cloud",
+                  part === "target" ? `${home}/elsewhere` : `${home}/target`,
+                  { move: part !== "move", onConflict: part === "conflict" ? "rename" : "error" },
+                ),
+          async () => {},
+        ),
+      ).rejects.toMatchObject({ code: "activity_scope_mismatch" });
+      expect(f.sent()).toBe(0);
+    },
+  );
+
   test("web mkdir records one done row with actor, path, and request context", async () => {
     const call = { ...testCall(actor), requestId: "web-request" };
     await service.mkdir(call, { baseId: baseId(), path: "web-folder" });

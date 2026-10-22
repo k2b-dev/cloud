@@ -7,6 +7,7 @@ export async function insertActivity(call: FilesCall, intent: Intent, db: SQL | 
   const userId = call.kind === "user" ? (call.actor.kind === "user" ? call.actor.user.id : (call.actor.delegatedUser?.id ?? null)) : null;
   const detail = {
     ...intent.detail,
+    ...(intent.onConflict ? { on_conflict: intent.onConflict } : {}),
     ...(intent.writeOptions ? { write_options: intent.writeOptions } : {}),
     ...(call.kind === "system" ? { job: call.job } : {}),
   };
