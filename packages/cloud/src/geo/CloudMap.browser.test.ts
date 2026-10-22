@@ -19,12 +19,17 @@ const snapshot = (configured: boolean) => ({
   cloud: { exhausted: false, resetsAt: "2026-11-01T00:00:00Z" },
   person: { exhausted: false, resetsAt: "2026-10-23T00:00:00Z" },
 });
-const html = (configured: boolean) =>
+const html = (configured: boolean, locale = "de") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
-      locale: "de",
+      locale,
       get children() {
-        return createComponent(CloudMap, { height: 280, markers, availability: snapshot(configured) });
+        return createComponent(CloudMap, {
+          height: 280,
+          markers,
+          availability: snapshot(configured),
+          notice: configured ? undefined : "Saved places remain available",
+        });
       },
     }),
   );
@@ -49,7 +54,7 @@ beforeAll(async () => {
     const props = JSON.parse(root.dataset.props);
     window.serverHeight = root.getBoundingClientRect().height;
     root.innerHTML = '';
-    render(() => createComponent(LocaleProvider, { locale: 'de', get children() { return createComponent(CloudMap, props); } }), root);
+    render(() => createComponent(LocaleProvider, { locale: root.dataset.locale, get children() { return createComponent(CloudMap, props); } }), root);
     window.clientHeight = root.getBoundingClientRect().height;
   `,
     },
@@ -84,9 +89,15 @@ beforeAll(async () => {
       const url = new URL(request.url);
       if (url.pathname === "/") {
         const configured = url.searchParams.get("configured") !== "false";
-        const props = JSON.stringify({ height: 280, markers, availability: snapshot(configured) });
+        const locale = url.searchParams.get("locale") ?? "de";
+        const props = JSON.stringify({
+          height: 280,
+          markers,
+          availability: snapshot(configured),
+          notice: configured ? undefined : "Saved places remain available",
+        });
         return new Response(
-          `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui"><main style="padding:16px"><div id="map" data-props='${props}'>${html(configured)}</div></main><script type="module" src="/entry.js"></script></body></html>`,
+          `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui"><main style="padding:16px"><div id="map" data-locale="${locale}" data-props='${props}'>${html(configured, locale)}</div></main><script type="module" src="/entry.js"></script></body></html>`,
           { headers: { "Content-Type": "text/html" } },
         );
       }
@@ -145,6 +156,29 @@ test("unconfigured SSR snapshot keeps saved pins and makes no map requests", asy
     expect(requests.filter((url) => url.includes("/api/geo/"))).toEqual([]);
     expect(await page.locator(".k2b-map-view__pin").count()).toBe(1);
     expect(await page.locator("canvas").count()).toBe(0);
+  } finally {
+    await page.close();
+  }
+});
+
+test("CloudMap uses the inherited French map language", async () => {
+  const page = await browser.newPage();
+  try {
+    const requests: string[] = [];
+    page.on("request", (request) => requests.push(request.url()));
+    await page.goto(`${server.url.href}?locale=fr-FR`);
+    await page.waitForFunction(() => document.querySelector(".maplibregl-canvas") !== null);
+    expect(requests.some((url) => url.includes("locale=fr"))).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+test("CloudMap preserves the host recovery notice when paid maps are disabled", async () => {
+  const page = await browser.newPage();
+  try {
+    await page.goto(`${server.url.href}?configured=false`);
+    expect(await page.getByText("Saved places remain available").isVisible()).toBe(true);
   } finally {
     await page.close();
   }

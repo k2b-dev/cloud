@@ -44,11 +44,23 @@ export function CloudMap(props: CloudMapProps) {
         /* MapView already displays its retry state. */
       });
   };
-  const language = () => (locale().startsWith("de") ? "de" : "en");
+  const language = () => encodeURIComponent(new Intl.Locale(locale()).language);
   const enabled = () =>
     !local.availability || (local.availability.configured && !local.availability.cloud.exhausted && !local.availability.person.exhausted);
   return (
-    <Show when={enabled()} fallback={<MapViewFrame {...map} attribution={<CloudMapAttribution />} />}>
+    <Show
+      when={enabled()}
+      fallback={
+        <div class="relative" style={{ height: `${map.height}px` }}>
+          <MapViewFrame {...map} attribution={<CloudMapAttribution />} />
+          <Show when={local.notice}>
+            <div class="k2b-map-view__messages">
+              <div class="k2b-map-view__notice">{local.notice}</div>
+            </div>
+          </Show>
+        </div>
+      }
+    >
       <MapView
         {...map}
         onStateChange={onStateChange}

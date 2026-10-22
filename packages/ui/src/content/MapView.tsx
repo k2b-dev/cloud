@@ -166,32 +166,35 @@ export function MapView(props: MapViewProps): JSX.Element {
       if (!f) return;
       currentStyle = resolvedStyle();
       const t = messages();
-      const instance = createMap({
-        container: live,
-        style: currentStyle,
-        ...fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING),
-        attributionControl: false,
-        cooperativeGestures: true,
-        dragRotate: false,
-        // Shift-drag box zoom needs MapLibre's own stylesheet for its rectangle and starts without an input event.
-        boxZoom: false,
-        pitchWithRotate: false,
-        touchPitch: false,
-        maxPitch: 0,
-        bearing: 0,
-        pitch: 0,
-        keyboard: true,
-        trackResize: false,
-        // MapLibre's own gestures (keyboard and double-click zoom, inertia) follow the same choice as our buttons.
-        // The value is read when the map starts; MapLibre keeps one setting for all maps on the page.
-        reduceMotion: prefersReducedMotion(),
-        locale: {
-          "Map.Title": t.canvasTitle,
-          "CooperativeGesturesHandler.WindowsHelpText": t.gestureWindows,
-          "CooperativeGesturesHandler.MacHelpText": t.gestureMac,
-          "CooperativeGesturesHandler.MobileHelpText": t.gestureMobile,
+      const instance = createMap(
+        {
+          container: live,
+          style: currentStyle,
+          ...fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING),
+          attributionControl: false,
+          cooperativeGestures: true,
+          dragRotate: false,
+          // Shift-drag box zoom needs MapLibre's own stylesheet for its rectangle and starts without an input event.
+          boxZoom: false,
+          pitchWithRotate: false,
+          touchPitch: false,
+          maxPitch: 0,
+          bearing: 0,
+          pitch: 0,
+          keyboard: true,
+          trackResize: false,
+          // MapLibre's own gestures (keyboard and double-click zoom, inertia) follow the same choice as our buttons.
+          // The value is read when the map starts; MapLibre keeps one setting for all maps on the page.
+          reduceMotion: prefersReducedMotion(),
+          locale: {
+            "Map.Title": t.canvasTitle,
+            "CooperativeGesturesHandler.WindowsHelpText": t.gestureWindows,
+            "CooperativeGesturesHandler.MacHelpText": t.gestureMac,
+            "CooperativeGesturesHandler.MobileHelpText": t.gestureMobile,
+          },
         },
-      });
+        fail,
+      );
       map = instance;
       instance.on("error", (event) => {
         // A missing paid resource must remain visible and recoverable, including failures after initial load.
