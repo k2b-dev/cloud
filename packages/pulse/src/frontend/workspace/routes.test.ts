@@ -8,7 +8,7 @@ test("base pages default to overview and source URLs restore selection", () => {
 });
 
 test("navigation exposes sources and dashboards", () => {
-  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "dashboards" } })).toBe("/app/pulse/Base01/dashboards");
+  expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "dashboards" } })).toBe("/app/pulse/Base01/dashboards?range=24h");
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources" } })).toBe("/app/pulse/Base01/sources");
   expect(buildPulseWorkspaceHref({ baseId: "Base01", state: { view: "sources", sourceId: "Src001" } })).toBe(
     "/app/pulse/Base01/sources/Src001",
