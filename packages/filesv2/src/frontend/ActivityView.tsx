@@ -1,3 +1,4 @@
+import { startOfDay } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import {
   Avatar,
@@ -306,8 +307,9 @@ export type ActivityWhen = "today" | "7" | "30" | "365";
 /** URL state of the Activity view; the parent keeps it in the address so reload and back restore it. */
 export type ActivityFilters = {
   baseId?: string;
-  /** One item's base-relative path, together with `baseId`; "All in Activity" from a detail opens with it. */
+  /** A base-relative item or folder path; "All in Activity" preserves its scope. */
   path?: string;
+  scope?: ActivityInput["scope"];
   actor?: string;
   action?: HistoryAction;
   when?: ActivityWhen;
@@ -338,24 +340,13 @@ const DAYS: Record<ActivityWhen, number> = { today: 0, "7": 7, "30": 30, "365": 
 export function rangeStart(when: ActivityWhen, env: HistoryEnvironment): string {
   const now = new Date(env.now);
   if (when !== "today") return new Date(now.getTime() - DAYS[when] * 86_400_000).toISOString();
-  const clock = new Intl.DateTimeFormat("en-GB", {
-    timeZone: env.timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  })
-    .format(now)
-    .split(":")
-    .map(Number);
-  const elapsed = ((clock[0] ?? 0) * 3600 + (clock[1] ?? 0) * 60 + (clock[2] ?? 0)) * 1000 + now.getUTCMilliseconds();
-  return new Date(now.getTime() - elapsed).toISOString();
+  return startOfDay(now, { timeZone: env.timeZone }).toISOString();
 }
 
 export function activityRequest(filters: ActivityFilters, env: HistoryEnvironment): ActivityRequest {
   return {
     ...(filters.baseId ? { baseId: filters.baseId } : {}),
-    ...(filters.baseId && filters.path ? { path: filters.path, scope: "item" as const } : {}),
+    ...(filters.baseId && filters.path !== undefined ? { path: filters.path, scope: filters.scope ?? "item" } : {}),
     ...(filters.actor ? { actor: filters.actor } : {}),
     ...(filters.action ? { action: filters.action } : {}),
     ...(filters.when ? { from: rangeStart(filters.when, env) } : {}),
@@ -366,6 +357,7 @@ const filterKey = (filters: ActivityFilters) =>
   JSON.stringify([
     filters.baseId ?? null,
     filters.path ?? null,
+    filters.scope ?? "item",
     filters.actor ?? null,
     filters.action ?? null,
     filters.when ?? null,
@@ -418,10 +410,12 @@ export default function ActivityView(props: ActivityViewProps) {
     !!(props.filters.baseId || props.filters.path || props.filters.actor || props.filters.action || props.filters.when);
   const change = (patch: Partial<ActivityFilters>) => {
     const next: ActivityFilters = { ...props.filters, ...patch };
-    for (const key of Object.keys(next) as (keyof ActivityFilters)[]) if (next[key] === undefined || next[key] === "") delete next[key];
+    for (const key of Object.keys(next) as (keyof ActivityFilters)[])
+      if (next[key] === undefined || (next[key] === "" && key !== "path")) delete next[key];
     props.onFiltersChange(next);
   };
-  const resetFilters = () => change({ baseId: undefined, path: undefined, actor: undefined, action: undefined, when: undefined });
+  const resetFilters = () =>
+    change({ baseId: undefined, path: undefined, scope: undefined, actor: undefined, action: undefined, when: undefined });
   const submit = () => change({ q: text().trim() || undefined });
   const single = (value: string[]) => value.at(-1);
   const placeLabel = () => props.bases.find((base) => base.id === props.filters.baseId)?.label;
@@ -483,7 +477,7 @@ export default function ActivityView(props: ActivityViewProps) {
             icon="ti ti-folders"
             showValue
             value={props.filters.baseId ? [props.filters.baseId] : []}
-            onValueChange={(value) => change({ baseId: single(value), path: undefined })}
+            onValueChange={(value) => change({ baseId: single(value), path: undefined, scope: undefined })}
             options={[{ options: props.bases.map((base) => ({ value: base.id, label: base.label })) }]}
           />
           <Show when={props.filters.baseId && props.filters.path}>
@@ -493,7 +487,7 @@ export default function ActivityView(props: ActivityViewProps) {
                 icon="ti ti-file"
                 showValue
                 value={[path()]}
-                onValueChange={(value) => change({ path: single(value) })}
+                onValueChange={(value) => change({ path: single(value), scope: single(value) ? props.filters.scope : undefined })}
                 options={[{ options: [{ value: path(), label: path().split("/").at(-1) ?? path() }] }]}
               />
             )}

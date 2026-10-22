@@ -42,6 +42,11 @@ export function createWorkspaceState<T extends { source: string }>(options: {
   const [enabled, setEnabled] = createSignal(true);
   const [pending, setPending] = createSignal<Transition | null>(null);
   const [failure, setFailure] = createSignal<{ source: string; message: string } | null>(null);
+  let navigationLifetime = new AbortController();
+  const cancelNavigationActions = () => {
+    navigationLifetime.abort();
+    navigationLifetime = new AbortController();
+  };
   let committedSource = options.initial.source;
   let lastApplied = options.initial;
   let previousError: Error | null = null;
@@ -82,6 +87,7 @@ export function createWorkspaceState<T extends { source: string }>(options: {
   });
 
   const navigate = (target: string, commit: () => void = () => {}, rollback: () => void = () => {}) => {
+    cancelNavigationActions();
     pending()?.resolve();
     // A retry can begin before the query clears its previous failed attempt.
     previousError = state.error();
@@ -97,15 +103,22 @@ export function createWorkspaceState<T extends { source: string }>(options: {
       if (sameSource) void state.refresh();
     });
   };
-  onCleanup(() => pending()?.resolve());
+  onCleanup(() => {
+    navigationLifetime.abort();
+    pending()?.resolve();
+  });
   return {
     snapshot: () => state.data() ?? options.initial,
     pending: () => pending() !== null,
     failure,
     navigate,
+    // Deferred navigation work belongs to this location and ends on navigation, selection or disposal.
+    navigationSignal: () => navigationLifetime.signal,
+    cancelNavigationActions,
     committedSource: () => committedSource,
     // Selection may replace the URL without loading a different directory.
     rememberSource: (target: string) => {
+      cancelNavigationActions();
       committedSource = target;
     },
   };

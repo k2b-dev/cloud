@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, setSystemTime, test } from "bun:test";
+import { afterEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -10,15 +10,16 @@ import { chain, current, entry, gone, page, snapshot } from "./history-fixtures"
  * The history wired into the real Files workspace: navigation, address state, SSR snapshots, old addresses and the
  * detail. Requests stay pending until a test answers them, so every transition is observed in order.
  */
-type ApiRequest = { kind: string; input?: unknown; settled?: boolean; resolve: (response: Response) => void };
+type ApiRequest = { kind: string; input?: unknown; signal?: AbortSignal; settled?: boolean; resolve: (response: Response) => void };
 const apiRequests: ApiRequest[] = [];
 if (!isServer) {
   mock.module("@k2b/cloud/browser/search", () => ({ openGlobalSearch: () => {} }));
-  const request = (kind: string) => (input?: unknown) =>
+  const request = (kind: string) => (input?: unknown, options?: { init?: { signal?: AbortSignal } }) =>
     new Promise<Response>((resolve) => {
       const entry: ApiRequest = {
         kind,
         input,
+        signal: options?.init?.signal,
         resolve: (response) => {
           entry.settled = true;
           resolve(response);
@@ -226,6 +227,8 @@ describe("Files history in the workspace", () => {
     expect(apiRequests).toHaveLength(0);
     const main = () => dom.root.querySelector(".k2b-app-workspace__main")!;
     expect(main().textContent).toContain("This folder has moved");
+    expect(main().textContent).not.toContain("Files could not be loaded");
+    expect(button(main(), "Try again")).toBeUndefined();
     expect(main().textContent).toContain("Team Vertrieb › Archiv › 2025");
     expect(main().textContent).toContain("Team Vertrieb › Kunden › Angebote 2025");
     expect(button(main(), "View history")!.getAttribute("href")).toBe("/app/filesv2?view=activity&q=Angebote+2025");
@@ -241,6 +244,68 @@ describe("Files history in the workspace", () => {
     await flush();
     expect(new URL(dom.window.location.href).searchParams.get("path")).toBe("Archiv/2025/Angebote 2025");
   });
+
+  for (const leave of ["navigation", "back", "unmount"] as const) {
+    for (const denied of [false, true]) {
+      test(`a deferred history target cannot override ${leave} or report an obsolete ${denied ? "error" : "result"}`, async () => {
+        const { toast } = await import("@k2b/ui");
+        const report = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+        try {
+          const oldPath = "Kunden/Angebote";
+          const targetPath = "Archiv/Angebote";
+          const moved = entry({ action: "item.move", before: gone(`team/${oldPath}`), after: current(`team/${targetPath}`) });
+          const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&path=${encodeURIComponent(oldPath)}`;
+          const dom = mount(
+            snapshotOf({
+              source,
+              moved: {
+                baseId: home.id,
+                path: oldPath,
+                entry: moved,
+                chain: chain({ endpoint: { baseId: home.id, path: targetPath, itemId: null }, certainty: "verified" }),
+              },
+            }),
+          );
+          await flush();
+          button(dom.root, "Go there")!.click();
+          await flush();
+          const resolving = pending("entry");
+          expect(resolving.signal?.aborted).toBe(false);
+          const destination = `/app/filesv2?base=${encodeURIComponent(home.id)}`;
+          if (leave === "unmount") {
+            cleanup();
+            cleanup = () => {};
+          } else {
+            if (leave === "back") {
+              dom.window.history.replaceState(null, "", destination);
+              dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+            } else {
+              dom.root.querySelector<HTMLAnchorElement>(`a[href="${destination}"]`)!.click();
+            }
+            await flush();
+            pending("bases").resolve(Response.json(bases));
+            await flush();
+            pending("entries").resolve(Response.json({ base: home, path: "", items: [], next: null }));
+            await flush();
+          }
+          expect(resolving.signal?.aborted).toBe(true);
+          const count = apiRequests.length;
+          // The mock deliberately ignores abort, as a transport or a completed response may do.
+          resolving.resolve(
+            denied
+              ? Response.json({ code: "forbidden", message: "Access changed" }, { status: 403 })
+              : Response.json({ base: home, entry: { name: "Angebote", path: targetPath, directory: true, size: 0, modified: NOW } }),
+          );
+          await flush();
+          expect(apiRequests).toHaveLength(count);
+          expect(report).not.toHaveBeenCalled();
+          if (leave !== "unmount") expect(dom.window.location.search).toBe(new URL(destination, "https://files.test").search);
+        } finally {
+          report.mockRestore();
+        }
+      });
+    }
+  }
 
   test("a client navigation to a vanished folder uses the same history lookup and stays an error without one", async () => {
     const directory = { base: home, path: "", items: [], next: null };
@@ -305,6 +370,7 @@ describe("Files history in the workspace", () => {
       pending("chain").resolve(Response.json(movedChain));
       await flush();
       expect(notice().textContent).toBe(initialText);
+      expect(button(dom.root.querySelector(".k2b-app-workspace__main")!, "Try again")).toBeUndefined();
       expect(apiRequests.some((request) => request.kind === "entry-by-id" || request.kind === "entry")).toBe(false);
       expect(dom.window.location.search).toBe(new URL(source, "https://files.test").search);
       button(notice(), "Go there")!.click();
@@ -356,6 +422,38 @@ describe("Files history in the workspace", () => {
     expect(inspector().textContent).toContain("Version 1");
     expect(inspector().textContent).toContain("Version 2 ·");
   });
+  test("a stable folder inspector includes a visible child upload and keeps folder scope in Activity after reload", async () => {
+    const folder: FileEntry = {
+      name: "Kunden",
+      path: "Kunden",
+      directory: true,
+      size: 0,
+      modified: NOW,
+      resourceId: `n:${home.id}:7d1e2f3a-4b5c-4d6e-8f90-a1b2c3d4e5f6`,
+    };
+    const child = entry({ action: "file.upload", after: current("team/Kunden/report.pdf", { directory: false }) });
+    const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&file=Kunden`;
+    const dom = mount(
+      snapshotOf({ source, directory: { base: home, path: "", items: [folder], next: null }, detail: { base: home, entry: folder } }),
+    );
+    await flush();
+    const request = { baseId: home.id, path: "Kunden", scope: "folder" };
+    expect(query(pending("activity"))).toEqual(request);
+    pending("activity").resolve(Response.json(page([child])));
+    pending("shares").resolve(Response.json({ items: [], next: null }));
+    await flush();
+    const inspector = dom.root.querySelector("#filesv2-inspector, [id*='filesv2-inspector']")!;
+    expect(inspector.textContent).toContain("uploaded");
+    expect(inspector.textContent).toContain("report.pdf");
+    const href = button(inspector, "All in Activity")!.getAttribute("href")!;
+    expect(new URL(href, "https://files.test").searchParams.get("scope")).toBe("folder");
+    cleanup();
+    cleanup = () => {};
+    mount(snapshotOf({ source: href }));
+    await flush();
+    expect(query(pending("activity"))).toEqual(request);
+  });
+
   test("item links preserve server matching, page past 50 and retry a failed page without losing loaded links", async () => {
     const file: FileEntry = { name: "Proof.bin", path: "Kunden/Proof.bin", directory: false, size: 3, modified: NOW };
     const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&path=Kunden&file=${encodeURIComponent(file.path)}`;

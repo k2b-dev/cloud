@@ -53,11 +53,14 @@ export const showsOverview = (params: URLSearchParams, storageCount: number) =>
 const WHEN: readonly ActivityWhen[] = ["today", "7", "30", "365"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The Activity address: `base`, `path`, `who`, `what`, `when` and `q` keep the filters across reload, back and links. */
+/** The Activity address: `base`, `path`, `scope`, `who`, `what`, `when` and `q` keep the filters across reload, back and links. */
 export function activityUrl(filters: ActivityFilters = {}) {
   const query = new URLSearchParams({ view: "activity" });
   if (filters.baseId) query.set("base", filters.baseId);
-  if (filters.baseId && filters.path) query.set("path", filters.path);
+  if (filters.baseId && filters.path !== undefined) {
+    query.set("path", filters.path);
+    if (filters.scope) query.set("scope", filters.scope);
+  }
   if (filters.actor) query.set("who", filters.actor);
   if (filters.action) query.set("what", filters.action);
   if (filters.when) query.set("when", filters.when);
@@ -73,6 +76,7 @@ export function parseActivityFilters(params: URLSearchParams): ActivityFilters |
   const filters: ActivityFilters = {};
   const base = params.get("base") ?? "";
   const path = params.get("path") ?? "";
+  const scope = params.get("scope");
   const who = params.get("who") ?? "";
   const what = params.get("what") ?? "";
   const when = params.get("when") ?? "";
@@ -80,7 +84,11 @@ export function parseActivityFilters(params: URLSearchParams): ActivityFilters |
   if (base.length > 256 || path.length > 4096 || q.length > 4096) return null;
   if (path && (!base || path.startsWith("/") || path.split("/").some((part) => !part || part === "." || part === ".."))) return null;
   if (base) filters.baseId = base;
-  if (path) filters.path = path;
+  if (params.has("path") && base) filters.path = path;
+  if (scope !== null) {
+    if ((scope !== "item" && scope !== "folder") || !base || !params.has("path")) return null;
+    filters.scope = scope;
+  }
   if (who) {
     if (!UUID.test(who)) return null;
     filters.actor = who;

@@ -18,15 +18,30 @@ const base: BaseSummary = {
 describe("shared history requests", () => {
   test("an item asks by stable ID on its own base and by path otherwise", () => {
     const fileId = "7d1e2f3a-4b5c-4d6e-8f90-a1b2c3d4e5f6";
-    expect(itemHistoryRequest(base, { path: "Kunden/Proof.pdf", resourceId: `n:${base.id}:${fileId}` })).toEqual({
+    expect(itemHistoryRequest(base, { path: "Kunden/Proof.pdf", directory: false, resourceId: `n:${base.id}:${fileId}` })).toEqual({
       baseId: base.id,
       itemId: fileId,
     });
-    expect(itemHistoryRequest(base, { path: "Kunden/Proof.pdf" })).toEqual({ baseId: base.id, path: "Kunden/Proof.pdf", scope: "item" });
+    expect(itemHistoryRequest(base, { path: "Kunden/Proof.pdf", directory: false })).toEqual({
+      baseId: base.id,
+      path: "Kunden/Proof.pdf",
+      scope: "item",
+    });
     // A stable ref of another base never filters this base by a foreign ID.
     expect(
-      itemHistoryRequest(base, { path: "Kunden/Proof.pdf", resourceId: `n:cloud:groups:11111111-2222-4333-8444-555555555555:${fileId}` }),
+      itemHistoryRequest(base, {
+        path: "Kunden/Proof.pdf",
+        directory: false,
+        resourceId: `n:cloud:groups:11111111-2222-4333-8444-555555555555:${fileId}`,
+      }),
     ).toEqual({ baseId: base.id, path: "Kunden/Proof.pdf", scope: "item" });
+  });
+
+  test("a directory asks for its descendants by the current path even with a stable ID", () => {
+    const resourceId = `n:${base.id}:7d1e2f3a-4b5c-4d6e-8f90-a1b2c3d4e5f6`;
+    for (const path of ["Kunden", ""]) {
+      expect(itemHistoryRequest(base, { path, resourceId, directory: true })).toEqual({ baseId: base.id, path, scope: "folder" });
+    }
   });
 
   test("an old address selects exact moves and directory ancestors only by the approved relative path", () => {

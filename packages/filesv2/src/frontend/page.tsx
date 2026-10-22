@@ -103,7 +103,7 @@ export default ssr<AuthContext>(async (c) => {
         initial.detail = await filesService.entry(requestCall(c), { baseId: selected.id, path: requestedFile }).catch(() => null);
         if (initial.detail) {
           const request = itemHistoryRequest(initial.detail.base, {
-            path: initial.detail.entry.path,
+            ...initial.detail.entry,
             resourceId: initial.detail.entry.resourceId ?? initial.detail.resourceId,
           });
           initial.history = await filesService

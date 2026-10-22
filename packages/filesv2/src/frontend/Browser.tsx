@@ -79,7 +79,7 @@ export type InspectorHistory = {
   env: HistoryEnvironment;
   initial?: WorkspaceSnapshot["history"];
   actions: HistoryActions;
-  activityHref: (baseId: string, path: string) => string;
+  activityHref: (baseId: string, path: string, scope: "folder" | "item") => string;
 };
 type Branch = { items: FileEntry[]; next: string | null; loading: boolean; error: boolean; pages?: number };
 const nameValid = (value: string | undefined) =>

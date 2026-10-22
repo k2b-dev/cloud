@@ -9,9 +9,13 @@ import type { HistoryEnvironment, HistoryPlace } from "./history-actions";
  * reader the same question. Nothing here authorizes anything; the reader and the action endpoints decide.
  */
 
-/** One item's history: by stable ID where the root has one, otherwise by its base-relative path. */
+/** Folders include descendants at their current path; files use a stable ID where available, otherwise the exact path. */
 export type ItemHistoryRequest = Pick<ActivityInput, "baseId" | "itemId" | "path" | "scope">;
-export function itemHistoryRequest(base: Pick<BaseSummary, "id">, entry: Pick<FileEntry, "path" | "resourceId">): ItemHistoryRequest {
+export function itemHistoryRequest(
+  base: Pick<BaseSummary, "id">,
+  entry: Pick<FileEntry, "path" | "resourceId" | "directory">,
+): ItemHistoryRequest {
+  if (entry.directory) return { baseId: base.id, path: entry.path, scope: "folder" };
   const stable = entry.resourceId ? parseStableEntryRefId(entry.resourceId) : null;
   return stable && stable.baseId === base.id
     ? { baseId: base.id, itemId: stable.fileId }

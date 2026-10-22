@@ -169,6 +169,57 @@ describe("vanished items", () => {
     expect(missingCase(entry({ action: "file.upload", after: current("b/A") }))).toBeNull();
   });
 
+  test("homonyms without fixed IDs only merge at the same visible full path and scope", () => {
+    const full = (path: string) => {
+      const side = current(path, { directory: false });
+      if (side.visibility !== "full") throw new Error("Expected full fixture");
+      return side;
+    };
+    const same = full("team/Reports/report.pdf");
+    const sides = [
+      same,
+      { ...same },
+      full("team/Other/report.pdf"),
+      { ...same, baseId: "binding-2", publicBaseId: "cloud:groups:other" },
+      { ...same, root: "other-root" },
+      { ...same, publicBaseId: null },
+      { ...same, publicBaseId: null },
+      gone("team/Reports/report.pdf", { publicBaseId: "cloud:groups:team", relativePath: "Reports/report.pdf" }),
+      gone("team/Reports/report.pdf", { publicBaseId: "cloud:groups:team", relativePath: "Reports/report.pdf" }),
+      gone("other/Reports/report.pdf", { publicBaseId: "cloud:groups:other", relativePath: "Reports/report.pdf" }),
+      gone("team/Other/report.pdf", { publicBaseId: "cloud:groups:team", relativePath: "Other/report.pdf" }),
+      gone("team/Reports/report.pdf"),
+      gone("team/Reports/report.pdf"),
+    ];
+    const hits = searchHits(
+      sides.map((after) => entry({ action: "file.upload", after })),
+      "report.pdf",
+    );
+    expect(hits.map((hit) => hit.entries.length)).toEqual([2, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1]);
+  });
+
+  test("a fixed ID never merges across roots, bindings, public bases or unbound server snapshots", () => {
+    const side = current("team/report.pdf", { itemId: "same-id", directory: false });
+    if (side.visibility !== "full") throw new Error("Expected full fixture");
+    const sides = [
+      side,
+      { ...side, path: "team/renamed.pdf" },
+      { ...side, root: "another-root" },
+      { ...side, baseId: "another-binding" },
+      { ...side, publicBaseId: "cloud:groups:another" },
+      { ...side, source: "snapshot" as const, publicBaseId: null },
+      { ...side, source: "snapshot" as const, publicBaseId: null },
+      { ...side, baseId: null },
+      { ...side, baseId: null },
+    ];
+    expect(
+      searchHits(
+        sides.map((after) => entry({ action: "item.rename", after })),
+        "report.pdf",
+      ).map((hit) => hit.entries.length),
+    ).toEqual([2, 1, 1, 1, 1, 1, 1, 1]);
+  });
+
   test("search hits keep one item together across a rename and put the exact name first", () => {
     const renamed = entry({
       action: "item.rename",

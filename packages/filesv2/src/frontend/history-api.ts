@@ -79,13 +79,13 @@ export async function revokeShare(share: ShareView, fallback: string) {
  * Resolves a history target to the item where it is now, with the person's current rights: a stable ID through
  * `/entries/:id`, a base-relative path through the entry endpoint. The reader marks only fresh sides as targets.
  */
-export async function resolveTarget(target: HistoryTarget, fallback: string): Promise<EntryResult> {
+export async function resolveTarget(target: HistoryTarget, fallback: string, signal?: AbortSignal): Promise<EntryResult> {
   const stable =
     target.kind === "side"
       ? target.side.itemId && stableEntryRefId(target.side.publicBaseId, target.side.itemId)
       : target.endpoint.itemId && stableEntryRefId(target.endpoint.baseId, target.endpoint.itemId);
   if (stable) {
-    const response = await apiClient.entries[":id"].$get({ param: { id: stable } });
+    const response = await apiClient.entries[":id"].$get({ param: { id: stable } }, { init: { signal } });
     if (!response.ok) return apiFailure(response, fallback);
     return response.json();
   }
@@ -96,10 +96,10 @@ export async function resolveTarget(target: HistoryTarget, fallback: string): Pr
         ? { baseId: target.side.publicBaseId, path: target.side.relativePath }
         : null;
   if (!place) throw new Error(fallback);
-  const response = await apiClient.bases[":baseId"].entry.$get({
-    param: { baseId: place.baseId },
-    query: { path: place.path },
-  });
+  const response = await apiClient.bases[":baseId"].entry.$get(
+    { param: { baseId: place.baseId }, query: { path: place.path } },
+    { init: { signal } },
+  );
   if (!response.ok) return apiFailure(response, fallback);
   return response.json();
 }

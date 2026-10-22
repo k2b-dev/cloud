@@ -1100,3 +1100,41 @@ test("unmanaged descendants remain probable, and invalid old paths fail before h
     expect(invalid.database).toEqual([]);
   }
 });
+
+test("folder history includes readable child uploads while exact file history excludes unrelated items", async () => {
+  const uploaded = candidate(1, {
+    action: "file.upload",
+    path_before: null,
+    path_after: `${home}/Docs/report.pdf`,
+    directory: false,
+    item_id: null,
+    item_after_id: null,
+  });
+  const unrelated = candidate(2, {
+    action: "file.upload",
+    path_before: null,
+    path_after: `${home}/Elsewhere/report.pdf`,
+    directory: false,
+    item_id: null,
+    item_after_id: null,
+  });
+  const sibling = candidate(3, {
+    action: "file.upload",
+    path_before: null,
+    path_after: `${home}/Docs/other.pdf`,
+    directory: false,
+    item_id: null,
+    item_after_id: null,
+  });
+  const f = historyFixture([uploaded, unrelated, sibling]);
+  for (const path of ["Docs", "Elsewhere", "Docs/report.pdf", "Elsewhere/report.pdf", "Docs/other.pdf"]) {
+    f.nodes.set(`${home}/${path}`, f.node(`${home}/${path}`, `id:${path}`, !path.endsWith(".pdf")));
+  }
+  expect((await f.reader.activity(call, { baseId: publicBaseId, path: "Docs", scope: "folder" })).items.map((item) => item.id)).toEqual([
+    sibling.id,
+    uploaded.id,
+  ]);
+  expect(
+    (await f.reader.activity(call, { baseId: publicBaseId, path: "Docs/report.pdf", scope: "item" })).items.map((item) => item.id),
+  ).toEqual([uploaded.id]);
+});

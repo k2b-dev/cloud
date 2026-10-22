@@ -9,8 +9,49 @@ import FileList, { type FileRow } from "../src/frontend/FileList";
 import FileThumbnail from "../src/frontend/FileThumbnail";
 import { DirectoryStatus, IssueMessage } from "../src/frontend/feedback";
 import Inventory from "../src/frontend/Inventory";
+import Workspace from "../src/frontend/Workspace.island";
+import { chain, current, entry, gone } from "./history-fixtures";
 
 describe("Filesv2 server-rendered feedback", () => {
+  test("an old folder SSR snapshot shows its move without a false loading error", () => {
+    const base = {
+      id: "cloud:groups:team",
+      area: "cloud" as const,
+      kind: "groups" as const,
+      name: "Team",
+      status: "existing" as const,
+      reason: null,
+      indexEnabled: true,
+      versioningEnabled: true,
+    };
+    const moved = entry({ action: "item.move", before: gone("team/Old"), after: current("team/New") });
+    const html = renderToString(() => (
+      <LocaleProvider locale="en">
+        <Workspace
+          cloudUrl="https://cloud.test"
+          timeZone="Europe/Berlin"
+          initial={{
+            source: `/app/filesv2?base=${encodeURIComponent(base.id)}&path=Old`,
+            bases: { items: [base], issues: [], editor: null },
+            selectedId: base.id,
+            directory: null,
+            errorCode: null,
+            now: "2026-10-20T12:30:00.000Z",
+            moved: {
+              baseId: base.id,
+              path: "Old",
+              entry: moved,
+              chain: chain({ endpoint: { baseId: base.id, path: "New", itemId: null }, certainty: "verified" }),
+            },
+          }}
+        />
+      </LocaleProvider>
+    ));
+    expect(html).toContain("This folder has moved");
+    expect(html).not.toContain("Files could not be loaded");
+    expect(html).not.toContain("Try again");
+  });
+
   test("all inventory states have readable localized labels independent of color", () => {
     const html = renderToString(() => (
       <LocaleProvider locale="de">

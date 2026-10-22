@@ -231,11 +231,17 @@ export default function Workspace(props: {
     describePlace: placeDescriber(snapshot().bases.items, b(), locale()),
   }));
   /** Opens where a history entry's item is now, after the server checked identity and rights again. */
+  let historyTargetRequest: AbortController | undefined;
   const openHistoryTarget = async (target: HistoryTarget) => {
+    if (workspace.pending()) return;
+    historyTargetRequest?.abort();
+    historyTargetRequest = new AbortController();
+    const signal = AbortSignal.any([historyTargetRequest.signal, workspace.navigationSignal()]);
     try {
-      await go(entryHref(await resolveTarget(target, h().actionFailed)));
+      const resolved = await resolveTarget(target, h().actionFailed, signal);
+      if (!signal.aborted) await go(entryHref(resolved), false, signal);
     } catch (error) {
-      toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+      if (!signal.aborted) toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
     }
   };
   /*
@@ -276,6 +282,7 @@ export default function Workspace(props: {
   };
   let editorGuard: (() => Promise<boolean>) | null = null;
   const onNavigate = async (event: LinkNavigateEvent) => {
+    workspace.cancelNavigationActions();
     if (editorGuard && !(await editorGuard())) return;
     setCursorNotice(false);
     if (event.url.pathname !== "/app/filesv2") {
@@ -290,8 +297,10 @@ export default function Workspace(props: {
     });
     await resetCursor(target);
   };
-  const go = async (target: string, replace = false) => {
+  const go = async (target: string, replace = false, signal?: AbortSignal) => {
+    if (!signal) workspace.cancelNavigationActions();
     if (editorGuard && !(await editorGuard())) return;
+    if (signal?.aborted) return;
     setCursorNotice(false);
     await workspace.navigate(target, () => commitHistory(target, { replace, scroll: "manual" }));
     await resetCursor(target);
@@ -363,6 +372,7 @@ export default function Workspace(props: {
   onMount(() =>
     onCleanup(
       listenPopState(async ({ url }) => {
+        workspace.cancelNavigationActions();
         if (url.pathname !== "/app/filesv2") return;
         const target = `${url.pathname}${url.search}`;
         if (target === workspace.committedSource() && !workspace.pending()) return;
@@ -905,11 +915,8 @@ export default function Workspace(props: {
                               when={!workspace.pending()}
                               fallback={centered(() => <Placeholder state="loading" variant="panel" description={t().loadingFiles} />)}
                             >
-                              <Show when={!problem() && snapshot().moved} keyed>
-                                {(moved) => <MovedHere moved={moved} />}
-                              </Show>
                               <Show
-                                when={!problem() && !snapshot().moved}
+                                when={!problem()}
                                 fallback={centered(() => (
                                   <Placeholder
                                     state="error"
@@ -921,53 +928,61 @@ export default function Workspace(props: {
                                 ))}
                               >
                                 <Show
-                                  when={selected()}
-                                  fallback={centered(() => (
-                                    <Placeholder
-                                      variant="panel"
-                                      icon="ti ti-folder-off"
-                                      title={t().noStorage}
-                                      description={
-                                        <div class="flex flex-col gap-2">
-                                          <p>{t().noStorageDescription}</p>
-                                          <For each={snapshot().bases.issues}>
-                                            {(issue) => (
-                                              <p>
-                                                <strong>{t()[issue.area]}: </strong>
-                                                <IssueMessage code={issue.code} />
-                                              </p>
-                                            )}
-                                          </For>
-                                        </div>
-                                      }
-                                      action={retry()}
-                                    />
-                                  ))}
-                                >
-                                  {(base) => (
+                                  when={snapshot().moved}
+                                  keyed
+                                  fallback={
                                     <Show
-                                      when={base().status === "existing"}
+                                      when={selected()}
                                       fallback={centered(() => (
                                         <Placeholder
                                           variant="panel"
-                                          state={base().status === "conflict" || base().status === "unknown" ? "error" : "empty"}
                                           icon="ti ti-folder-off"
-                                          title={t()[base().status]}
-                                          description={<IssueMessage code={base().reason ?? base().status} />}
+                                          title={t().noStorage}
+                                          description={
+                                            <div class="flex flex-col gap-2">
+                                              <p>{t().noStorageDescription}</p>
+                                              <For each={snapshot().bases.issues}>
+                                                {(issue) => (
+                                                  <p>
+                                                    <strong>{t()[issue.area]}: </strong>
+                                                    <IssueMessage code={issue.code} />
+                                                  </p>
+                                                )}
+                                              </For>
+                                            </div>
+                                          }
                                           action={retry()}
                                         />
                                       ))}
                                     >
-                                      <For each={snapshot().bases.issues}>
-                                        {(issue) => (
-                                          <InlineGuidance tone="info">
-                                            <strong>{t()[issue.area]}: </strong>
-                                            <IssueMessage code={issue.code} />
-                                          </InlineGuidance>
-                                        )}
-                                      </For>
+                                      {(base) => (
+                                        <Show
+                                          when={base().status === "existing"}
+                                          fallback={centered(() => (
+                                            <Placeholder
+                                              variant="panel"
+                                              state={base().status === "conflict" || base().status === "unknown" ? "error" : "empty"}
+                                              icon="ti ti-folder-off"
+                                              title={t()[base().status]}
+                                              description={<IssueMessage code={base().reason ?? base().status} />}
+                                              action={retry()}
+                                            />
+                                          ))}
+                                        >
+                                          <For each={snapshot().bases.issues}>
+                                            {(issue) => (
+                                              <InlineGuidance tone="info">
+                                                <strong>{t()[issue.area]}: </strong>
+                                                <IssueMessage code={issue.code} />
+                                              </InlineGuidance>
+                                            )}
+                                          </For>
+                                        </Show>
+                                      )}
                                     </Show>
-                                  )}
+                                  }
+                                >
+                                  {(moved) => <MovedHere moved={moved} />}
                                 </Show>
                               </Show>
                             </Show>
@@ -1010,7 +1025,8 @@ export default function Workspace(props: {
                               env: historyEnv(),
                               initial: snapshot().history,
                               actions: { onOpen: openHistoryTarget, onRecheck: activityActions.onRecheck },
-                              activityHref: (baseId, path) => activityUrl({ baseId, path }),
+                              activityHref: (baseId, path, scope) =>
+                                activityUrl({ baseId, path, ...(scope === "folder" ? { scope } : {}) }),
                             }}
                             onBrowseChange={(options) =>
                               void go(

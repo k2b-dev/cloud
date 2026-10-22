@@ -318,7 +318,8 @@ back, and links keep them; an invalid value answers `400` instead of showing
 another filter. From a storage location, Activity opens filtered to it. The
 server renders the first page with the same request the browser uses for
 later pages. An empty page with a next cursor offers older entries and claims
-no absence. A failed load keeps the filters beside **Try again**.
+no absence. A failed load keeps the filters beside **Try again**. **Today** starts
+at midnight in your time zone, including on clock-change days.
 
 A search in Activity matches names and old paths. Its top result shows where
 the item is now, from the movement chain: confirmed by stable identity, or
@@ -329,7 +330,8 @@ offers **Search in history** with the same words. An old folder address can
 show **This folder has moved** when visible history records its move or a move
 of an ancestor folder. A location inferred from an ancestor move is marked
 probable and checked at the opened folder’s current address. The old address
-stays open until you choose **Go there**.
+stays open until you choose **Go there**. Leaving the view cancels a pending
+**Go there** lookup, so its response cannot change your later navigation.
 
 Recovery actions of a vanished item come from
 `GET /api/filesv2/activity/:activityId/recovery`, loaded beside the chain:
@@ -349,8 +351,10 @@ returns to the Files view and its history filters.
 
 The details panel lists the four newest entries of the selected item below
 its versions, then older entries and **All in Activity**, filtered to that
-item. Rows name version numbers for entries that carry a version ID, counted
-over the versions the list holds; the current content is the next number. An
+item. A folder includes changes to its descendants, such as uploaded files;
+**All in Activity** keeps that folder scope across reload and Back. A file
+keeps its exact item scope. Rows name version numbers for entries that carry
+a version ID, counted over the versions the list holds; the current content is the next number. An
 overwrite or editor save whose new revision is the file's current revision
 offers **Restore version N** for the newest retained version, through the
 existing version restore. A revision is never treated as a version ID. For public links the person created, the
