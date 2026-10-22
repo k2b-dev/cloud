@@ -954,6 +954,13 @@ PNG input, and report unavailable images with linked source lists.
 - **Error class:** A rendering mode crossed from server export to browser preview without resolving its assets.
 - **Guard:** The Book renderer explicitly retains authorized browser image URLs for Print and preview. Image-form tests preserve the offline default; browser tests verify decoded map and attachment images, cancellation during decoding, and temporary-document cleanup.
 
+### TextInput swallowed its caller's keyboard actions
+
+- **What happened:** Escape did not close Notebook map suggestions, and arrow keys could not select them.
+- **Root cause:** The native input's internal submit handler replaced the caller's `onKeyDown` prop.
+- **Error class:** An internal event handler overwrites a supported consumer handler.
+- **Guard:** TextInput invokes function and bound-data keyboard handlers before its default submit behavior, respecting `defaultPrevented`. Native input/textarea behavior tests and the Notebook map browser flow cover the regression.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
