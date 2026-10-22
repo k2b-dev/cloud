@@ -110,7 +110,7 @@ const unrelatedSurfaces = async (f: Scene) => {
         const snapshot = SpacesViewSnapshotSchema.parse(body);
         expect(snapshot.kind).toBe(view === "table" ? "list" : view);
         if (snapshot.kind === "calendar") throw new Error("Expected a task view");
-        if (snapshot.kind === "list") expect(snapshot.currentView).toBe(view);
+        if (snapshot.kind === "list") expect(view).toBe(snapshot.currentView);
         const items = snapshot.kind === "kanban" ? snapshot.buckets.flatMap((bucket) => bucket.items) : snapshot.itemsResult.items;
         expect(items.map((item) => item.id)).toContain(f.taskId);
         // Retain the complete response, including counters and any unexpected fields.
