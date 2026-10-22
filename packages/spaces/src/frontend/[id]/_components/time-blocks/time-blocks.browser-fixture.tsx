@@ -1,5 +1,6 @@
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
+import SpacesOverview from "../../../SpacesOverview.island";
 import ItemDetailRoute from "../detail/ItemDetailRoute.island";
 import SpacesCalendarRoute from "../workspace/SpacesCalendarRoute.island";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
@@ -41,6 +42,25 @@ export default function TimeBlocksFixture(props: TimeBlocksFixtureProps) {
           />
         </AppWorkspace.Content>
       </AppWorkspace>
+    </LocaleProvider>
+  );
+}
+
+/** The real My work island, with the same explicit transport props as the production page. */
+export function TimeBlocksOverviewFixture(props: ComponentProps<typeof SpacesOverview>) {
+  return (
+    <LocaleProvider locale="de">
+      <SpacesOverview
+        spaces={props.spaces}
+        canCreate={props.canCreate}
+        sidebarHint={props.sidebarHint}
+        initialView={props.initialView}
+        initialPinnedSpaceIds={props.initialPinnedSpaceIds}
+        initialWork={props.initialWork}
+        initialActivity={props.initialActivity}
+        initialActivityError={props.initialActivityError}
+        dateConfig={props.dateConfig}
+      />
     </LocaleProvider>
   );
 }

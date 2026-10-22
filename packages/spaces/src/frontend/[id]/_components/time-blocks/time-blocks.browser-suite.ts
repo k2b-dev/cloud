@@ -15,6 +15,9 @@ import { launchBrowser, pageErrors, settled } from "../../../../../../ui/test/br
 import { timeBlockScreenshotDirectory } from "../../../../../test/time-blocks-browser-fixture";
 import api from "../../../../api";
 import { SpaceDetailSchema } from "../../../../contracts";
+import { OverviewWorkSchema } from "../../../../overview-contracts";
+import { spacesService } from "../../../../service";
+import { loadSpacesSidebar } from "../../../../service/overview";
 import { SpaceTimeBlockSchema } from "../../../../time-block-contracts";
 import { SpaceItemDetailSchema, SpacesViewSnapshotSchema } from "../workspace/workspace-types";
 import type { TimeBlocksFixtureProps } from "./time-blocks.browser-fixture";
@@ -42,11 +45,12 @@ const { plugin } = createConfig({
   dev: false,
   verbose: false,
   rootDir: root,
-  componentRoots: [resolve(import.meta.dir, "../workspace"), resolve(import.meta.dir, "../detail")],
+  // The overview and the workspace/detail islands share the production frontend root.
+  componentRoots: [resolve(import.meta.dir, "../../..")],
 });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: Fixture } = await import("./time-blocks.browser-fixture");
+const { default: Fixture, TimeBlocksOverviewFixture } = await import("./time-blocks.browser-fixture");
 const ui = resolve(import.meta.dir, "../../../../../../ui/dist");
 const shots = timeBlockScreenshotDirectory;
 const cases = new Map<string, Scene>();
@@ -79,7 +83,7 @@ type Scene = {
 };
 const uuid = (n: number) => `17010000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const href = (f: Scene) => `/app/spaces/${f.spaceId}?view=calendar&cv=day&cd=${TODAY}`;
-const request = (f: Scene, path: string, init?: RequestInit) =>
+const request = async (f: Scene, path: string, init?: RequestInit) =>
   api.request(path, { ...init, headers: { authorization: `Bearer ${f.token}`, "content-type": "application/json", ...init?.headers } });
 const json = async (response: Response) => {
   const body: unknown = await response.json();
@@ -169,6 +173,8 @@ const viewAsColleague = async (f: Scene) => {
   f.viewerId = id;
   f.canWrite = false;
 };
+const documentHtml = (body: string) =>
+  `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-island,solid-client{display:contents}</style></head><body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${body}</main><script type="module">await Promise.all(Array.from(document.querySelectorAll('solid-island'),e=>import('/_ssr/'+e.dataset.id+'.js')));document.documentElement.dataset.timeBlocksFixtureReady='true'</script></body></html>`;
 const render = async (f: Scene, detail = false, route = href(f)) => {
   const target = new URL(route, "http://spaces.local");
   if (detail) target.searchParams.set("item", f.taskId);
@@ -192,9 +198,43 @@ const render = async (f: Scene, detail = false, route = href(f)) => {
     detail: itemDetail,
   };
   const body = renderToString(() => createComponent(Fixture, props));
-  f.html = `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-island,solid-client{display:contents}</style></head><body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${body}</main><script type="module">await Promise.all(Array.from(document.querySelectorAll('solid-island'),e=>import('/_ssr/'+e.dataset.id+'.js')));document.documentElement.dataset.timeBlocksFixtureReady='true'</script></body></html>`;
+  f.html = documentHtml(body);
 };
-const open = async (f: Scene, detail = false, width = 1440, view: "day" | "week" = "day"): Promise<Page> => {
+const renderOverview = async (f: Scene, url: URL) => {
+  const initialView = url.searchParams.get("view") === "upcoming" ? "upcoming" : "today";
+  const dateConfig = { locale: "de", timeZone: "UTC", firstDayOfWeek: 1 as const };
+  const [sidebar, initialWork, activity] = await Promise.all([
+    // The production SSR readers provide sidebar and activity; selected work comes through the real API.
+    loadSpacesSidebar({ userId: f.ownerId, dateConfig }),
+    request(f, `/overview/work?view=${initialView}`)
+      .then(json)
+      .then((body) => OverviewWorkSchema.parse(body)),
+    spacesService.activity.list({ subject: { type: "user", userId: f.ownerId }, limit: 30 }),
+  ]);
+  f.html = documentHtml(
+    renderToString(() =>
+      createComponent(TimeBlocksOverviewFixture, {
+        spaces: sidebar.spaces,
+        canCreate: true,
+        sidebarHint: false,
+        initialView,
+        initialPinnedSpaceIds: sidebar.pinnedSpaceIds,
+        initialWork,
+        initialActivity: {
+          items: activity.items.map((item) => ({
+            ...item,
+            space: { id: item.space.shortId, name: item.space.name, color: item.space.color },
+            item: item.item ? { id: item.item.shortId, title: item.item.title } : null,
+          })),
+          nextCursor: activity.nextCursor,
+        },
+        initialActivityError: null,
+        dateConfig,
+      }),
+    ),
+  );
+};
+const open = async (f: Scene, detail = false, width = 1440, view: "day" | "week" = "day", path?: string): Promise<Page> => {
   const context = await browser.newContext({
     viewport: { width, height: width === 390 ? 844 : 760 },
     locale: "de-DE",
@@ -225,7 +265,7 @@ const open = async (f: Scene, detail = false, width = 1440, view: "day" | "week"
   }, ++clientSequence * 1000);
   const page = await context.newPage();
   runtimeErrors.push(pageErrors(page));
-  await page.goto(`${server.url.origin}${href(f).replace("cv=day", `cv=${view}`)}${detail ? `&item=${f.taskId}` : ""}`);
+  await page.goto(`${server.url.origin}${path ?? `${href(f).replace("cv=day", `cv=${view}`)}${detail ? `&item=${f.taskId}` : ""}`}`);
   await page.evaluate(() => document.fonts.ready);
   await page.waitForFunction(() => document.documentElement.dataset.timeBlocksFixtureReady === "true");
   return page;
@@ -325,7 +365,8 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
           }
           return response;
         }
-        if (url.pathname.startsWith("/app/spaces/")) {
+        if (url.pathname === "/app/spaces") await renderOverview(f, url);
+        else if (url.pathname.startsWith("/app/spaces/")) {
           await render(f, url.searchParams.get("item") === f.taskId, `${url.pathname}${url.search}`);
         }
         return new Response(f.html, { headers: { "content-type": "text/html; charset=utf-8" } });
@@ -708,6 +749,51 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         await page.context().close();
         page = await open(f, false, width, "week");
         await shot(page, "06-calendar-blocks");
+      } finally {
+        await page.context().close();
+      }
+    });
+
+  for (const width of [1440, 390])
+    regression(`My work Today and Upcoming show own blocks through the real API, navigation and reload at ${width}px`, async () => {
+      const f = await scene();
+      const n = Number(f.key.slice(4));
+      const today = { id: uuid(9400 + n), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
+      const upcoming = { id: uuid(9500 + n), startsAt: "2030-03-15T13:00:00.000Z", endsAt: "2030-03-15T13:45:00.000Z" };
+      for (const block of [today, upcoming])
+        await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(block) }));
+      for (const [view, block] of [
+        ["today", today],
+        ["upcoming", upcoming],
+      ] as const) {
+        const data = OverviewWorkSchema.parse(await json(await request(f, `/overview/work?view=${view}`)));
+        expect(data.timeBlocks?.map((item) => item.id)).toEqual([block.id]);
+        expect(data.timeBlockCounts).toEqual({ today: 1, upcoming: 1 });
+      }
+      const page = await open(f, false, width, "day", "/app/spaces?view=today");
+      const row = (id: string) => page.locator(`.spaces-overview-work-row[href$="block=${id}"]`);
+      try {
+        await row(today.id).waitFor();
+        expect(await row(upcoming.id).count()).toBe(0);
+        expect(await row(today.id).textContent()).toContain("Zeitblöcke");
+        await shot(page, "12-my-work-today");
+        const upcomingTab = page.locator('[data-view-tab="upcoming"] a');
+        if (await upcomingTab.isVisible()) await upcomingTab.click();
+        else {
+          await page.getByRole("button", { name: "Weitere Ansichten", exact: true }).click();
+          await page.getByRole("menuitem", { name: /^Demnächst/ }).click();
+        }
+        await row(upcoming.id).waitFor();
+        expect(new URL(page.url()).searchParams.get("view")).toBe("upcoming");
+        expect(await row(today.id).count()).toBe(0);
+        await page.reload();
+        await row(upcoming.id).waitFor();
+        expect(new URL(page.url()).searchParams.get("view")).toBe("upcoming");
+        await shot(page, "13-my-work-upcoming");
+        await page.goBack();
+        await row(today.id).waitFor();
+        expect(new URL(page.url()).searchParams.get("view")).toBe("today");
+        expect(await blocks(f)).toHaveLength(2);
       } finally {
         await page.context().close();
       }
