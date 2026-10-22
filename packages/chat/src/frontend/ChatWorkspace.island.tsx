@@ -18,7 +18,14 @@ import {
 import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
-import { type ConversationPageSchema, type ConversationSchema, type MessagePageSchema, readStart } from "../service/contracts";
+import {
+  type ConversationPageSchema,
+  type ConversationSchema,
+  MESSAGE_MAX_CODE_POINTS,
+  MessageBodySchema,
+  type MessagePageSchema,
+  readStart,
+} from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
 import { openAddPeopleDialog } from "./AddPeopleDialog";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
@@ -91,6 +98,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [now, setNow] = createSignal(new Date(props.now));
   const drafts = new Map<string, string>();
   const [draft, setDraft] = createSignal("");
+  const draftError = createMemo(() => {
+    const body = draft();
+    if (!body.trim() || MessageBodySchema.safeParse(body).success) return undefined;
+    return body.includes("\u0000")
+      ? t().messageInvalidCharacters
+      : t().messageTooLong({ limit: MESSAGE_MAX_CODE_POINTS.toLocaleString(locale()) });
+  });
   // A stored message keeps the key of the send it came from, so its row is not replaced when it arrives.
   const sendKeys = new Map<string, string>();
   let store: Store | undefined;
@@ -450,7 +464,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
-    if (!current || !outbox || !text.trim()) return false;
+    if (!current || !outbox || !MessageBodySchema.safeParse(text).success) return false;
     if (current.hasNewer) await store?.loadLatest();
     outbox.send(current.id, text);
     feed?.scrollToEnd();
@@ -621,11 +635,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       hint={
                         current().permission === "read"
                           ? t().readOnly
-                          : liveStopped()
-                            ? t().liveStopped
-                            : waiting()
-                              ? t().messagesWaiting
-                              : undefined
+                          : draftError()
+                            ? draftError()
+                            : liveStopped()
+                              ? t().liveStopped
+                              : waiting()
+                                ? t().messagesWaiting
+                                : undefined
                       }
                       draft={draft()}
                       onDraftChange={setDraft}
