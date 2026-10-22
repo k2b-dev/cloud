@@ -311,6 +311,7 @@ export default function ItemDetailRoute(props: Props) {
   return (
     <AppWorkspace.Detail
       id="space-detail-panel"
+      maxWidth={400}
       open={hasDetailSelection()}
       onStep={props.steppable ? (direction) => requestSpacesDetailStep(direction, detailRequest(source())) : undefined}
       onClose={() => requestSpacesRouteNavigation(detailBaseHref(source()), { scroll: "preserve" })}

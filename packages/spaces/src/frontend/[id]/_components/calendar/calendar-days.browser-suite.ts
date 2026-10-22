@@ -9,6 +9,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceItem, SpaceTag } from "@/contracts";
+import { CreateTimeBlockSchema, type SpaceTimeBlock, UpdateTimeBlockSchema } from "@/time-block-contracts";
 import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
 import type { CalendarTray } from "../workspace/workspace-types";
 import { parseCalendarRoute } from "./filter";
@@ -163,7 +164,7 @@ const trayTask = (id: string, title: string, deadline: string | null = null, ext
   createdBy: null,
   createdAt: "2026-09-01T10:00:00.000Z",
   updatedAt: "2026-09-01T10:00:00.000Z",
-  assignees: [],
+  assignees: [{ kind: "user", id: READER, displayName: "Mara", avatarHash: null }],
   tags: [],
   ...extra,
 });
@@ -193,7 +194,7 @@ const waitingTray = (tray: CalendarTray): CalendarTray => {
   return { overdue: waiting(tray.overdue), undated: waiting(tray.undated) };
 };
 
-type Case = { html: string; items: CalendarItem[]; tray: CalendarTray };
+type Case = { html: string; items: CalendarItem[]; tray: CalendarTray; blocks: SpaceTimeBlock[] };
 
 const serverBody = (options: { canWrite: boolean; items: CalendarItem[]; tray: CalendarTray; href: string }) => {
   setSystemTime(NOW);
@@ -264,6 +265,7 @@ beforeAll(async () => {
           ...route,
           range,
           items: (data?.items ?? []).filter((item) => inRange(item, range)),
+          timeBlocks: data?.blocks ?? [],
           weather: {},
           tray: route.view === "day" && url.searchParams.get("includeTray") !== "false" && data ? waitingTray(data.tray) : null,
         };
@@ -271,6 +273,35 @@ beforeAll(async () => {
         return Response.json(body);
       }
       const item = /^\/api\/spaces\/Space1\/items\/(\w+)$/.exec(url.pathname);
+      const blockTask = /^\/api\/spaces\/Space1\/items\/(\w+)\/time-blocks$/.exec(url.pathname);
+      if (blockTask && request.method === "POST" && data) {
+        const body = CreateTimeBlockSchema.parse(await request.json());
+        writes.push({ method: request.method, path: url.pathname, body });
+        const task = [...data.tray.overdue.items, ...data.tray.undated.items].find((entry) => entry.id === blockTask[1])!;
+        const block: SpaceTimeBlock = {
+          ...body,
+          itemId: task.id,
+          spaceId: "Space1",
+          title: task.title,
+          ownerId: READER,
+          ownerName: "Mara",
+          spaceName: "Team Logistik",
+          spaceColor: "#8b5cf6",
+          taskState: "open",
+          canWrite: true,
+          canDelete: true,
+        };
+        data.blocks.push(block);
+        return Response.json(block);
+      }
+      const blockRoute = /^\/api\/spaces\/blocks\/([\w-]+)$/.exec(url.pathname);
+      if (blockRoute && request.method === "PATCH" && data) {
+        const body = UpdateTimeBlockSchema.parse(await request.json());
+        writes.push({ method: request.method, path: url.pathname, body });
+        const block = data.blocks.find((entry) => entry.id === blockRoute[1])!;
+        Object.assign(block, body);
+        return Response.json(block);
+      }
       if (item && request.method === "GET") return Response.json({ ...trayTask(item[1]!, item[1]!), claim: null });
       if (request.method !== "GET" && url.pathname.startsWith("/api/spaces/Space1/items")) {
         const body = request.headers.get("content-type")?.includes("json") ? await request.json() : null;
@@ -321,7 +352,7 @@ const open = async (view: View, options: { canWrite?: boolean; href?: string; mo
   const href = options.href ?? hrefOf(TODAY);
   const items = sample();
   const tray = sampleTray();
-  cases.set(id, { html: pageHtml({ canWrite: options.canWrite ?? true, items, tray, href }), items, tray });
+  cases.set(id, { html: pageHtml({ canWrite: options.canWrite ?? true, items, tray, href }), items, tray, blocks: [] });
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     isMobile: view.touch && browserName === "chromium",
@@ -573,10 +604,10 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     await page.locator('.k2b-calendar-gap[data-hit="fit"]').waitFor();
     expect(await page.locator(".k2b-calendar-ghost__fit").textContent()).toBe("passt");
     await page.mouse.up();
-    expect(await eventually(() => writes.find((write) => write.method === "PATCH")?.body)).toMatchObject({ allDay: false });
-    const patch = writes.find((write) => write.method === "PATCH")!;
-    expect(patch.path).toBe("/api/spaces/Space1/items/Open01");
-    const planned = patch.body as { startsAt: string; endsAt: string };
+    const created = await eventually(() => writes.find((write) => write.method === "POST"));
+    expect(created.path).toBe("/api/spaces/Space1/items/Open01/time-blocks");
+    expect(writes.some((write) => write.method === "PATCH")).toBe(false);
+    const planned = CreateTimeBlockSchema.parse(created.body);
     // An hour inside the gap from 11:15 to 12:30.
     expect(Date.parse(planned.endsAt) - Date.parse(planned.startsAt)).toBe(3_600_000);
     expect(Date.parse(planned.startsAt)).toBeGreaterThanOrEqual(Date.parse(at("10-09", "11:15")));
@@ -865,7 +896,7 @@ describe(`Spaces day and week views in ${browserName}`, () => {
     }
   }, 60_000);
 
-  test("a task planned from the row below leaves it, and keeps its deadline when its slot moves", async () => {
+  test("a task planned from the row below stays a task while only its block moves", async () => {
     const page = await open(desktop);
     try {
       writes.splice(0);
@@ -879,24 +910,26 @@ describe(`Spaces day and week views in ${browserName}`, () => {
       await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 12 });
       await page.locator('.k2b-calendar-gap[data-hit="fit"]').waitFor();
       await page.mouse.up();
-      expect(await eventually(() => writes.find((write) => write.method === "PATCH")?.body)).not.toHaveProperty("deadline");
-      // The planned task is a band with its box, as its deadline stays, and the row below no longer lists it.
-      const planned = page.locator(band("Late01"));
+      const created = CreateTimeBlockSchema.parse(await eventually(() => writes.find((write) => write.method === "POST")?.body));
+      expect(writes.some((write) => write.method === "PATCH")).toBe(false);
+      // Planning creates a separate band and retains the task in the tray for another block.
+      const planned = page.locator(band(created.id));
       await planned.waitFor();
-      await chip.waitFor({ state: "detached" });
-      expect(await planned.getAttribute("data-checkbox")).toBe("true");
+      expect(await chip.count()).toBe(1);
+      expect(await planned.getAttribute("data-checkbox")).not.toBe("true");
 
       writes.splice(0);
-      await dragBy(page, `${band("Late01")} .k2b-calendar-event`, (await hourHeight(page)) / 4);
+      await dragBy(page, `${band(created.id)} .k2b-calendar-event`, (await hourHeight(page)) / 4);
       const moved = (await eventually(() => writes.find((write) => write.method === "PATCH")?.body)) as Record<string, unknown>;
       expect(moved).not.toHaveProperty("deadline");
-      expect(moved).toMatchObject({ allDay: false });
+      expect(writes.find((write) => write.method === "PATCH")?.path).toBe(`/api/spaces/blocks/${created.id}`);
+      expect(moved).toHaveProperty("startsAt");
       await rested(page);
-      expect(await page.locator(band("Late01")).getAttribute("data-checkbox")).toBe("true");
-      // The planned task is still open today, so checking off the last deadline does not finish the day.
+      expect(await page.locator(band(created.id)).count()).toBe(1);
+      // A block does not add a task to today's completion counter; the overdue task keeps yesterday's deadline.
       await page.getByRole("checkbox", { name: "Erledigt: Frachtbriefe prüfen" }).click();
       await eventually(() => writes.find((write) => write.path === "/api/spaces/Space1/items/Fracht/completed"));
-      expect(await page.locator(".k2b-calendar-days__note[data-cheer]").count()).toBe(0);
+      expect(await page.locator(".k2b-calendar-days__note[data-cheer]").count()).toBe(1);
     } finally {
       await page.context().close();
     }

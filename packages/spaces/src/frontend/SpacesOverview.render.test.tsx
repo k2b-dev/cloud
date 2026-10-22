@@ -1,10 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import type { OverviewWork } from "../overview-contracts";
+import type { SpaceTimeBlock } from "../time-block-contracts";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-overview-render-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -14,7 +16,7 @@ const { default: SpacesOverview } = await import("./SpacesOverview.island.tsx");
 const { overviewMessages } = await import("./overview-messages");
 const { LocaleProvider } = await import("@k2b/ui");
 
-const render = (initialActivityError: string | null = null, locale = "en") =>
+const render = (initialActivityError: string | null = null, locale = "en", work?: OverviewWork) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -36,9 +38,9 @@ const render = (initialActivityError: string | null = null, locale = "en") =>
               openItemCount: 0,
             },
           ],
-          initialView: "mine",
+          initialView: work?.view ?? "mine",
           initialPinnedSpaceIds: ["Space1"],
-          initialWork: {
+          initialWork: work ?? {
             view: "mine",
             items: [
               {
@@ -80,6 +82,52 @@ const render = (initialActivityError: string | null = null, locale = "en") =>
   );
 
 describe("Spaces overview", () => {
+  beforeAll(() => setSystemTime(new Date("2032-08-20T07:00:00.000Z")));
+  afterAll(() => setSystemTime());
+  test("Today and Upcoming render task blocks as their own linked work rows, including completed and deleted tasks", () => {
+    const block: SpaceTimeBlock = {
+      id: "00000000-0000-4000-8000-000000000101",
+      itemId: "Item01",
+      spaceId: "Space1",
+      ownerId: "00000000-0000-4000-8000-000000000001",
+      ownerName: "Sofie",
+      spaceName: "Launch",
+      spaceColor: "#3b82f6",
+      title: "Review launch plan",
+      startsAt: "2032-08-20T08:00:00.000Z",
+      endsAt: "2032-08-20T09:00:00.000Z",
+      taskState: "done",
+      canWrite: true,
+      canDelete: true,
+    };
+    for (const view of ["today", "upcoming"] as const) {
+      const html = render(null, "en", {
+        view,
+        items: [],
+        counts: { mine: 0, today: 0, upcoming: 0 },
+        timeBlocks: [
+          block,
+          {
+            ...block,
+            id: "00000000-0000-4000-8000-000000000102",
+            itemId: null,
+            taskState: "deleted",
+            canWrite: false,
+            title: "Preserved planning",
+          },
+        ],
+        timeBlockCounts: { today: 2, upcoming: 2 },
+      });
+      expect(html).toContain("Review launch plan");
+      expect(html).toContain(`href="/app/spaces/Space1?item=Item01&amp;block=${block.id}"`);
+      expect(html).toContain("ti-circle-check");
+      expect(html).toContain("Preserved planning");
+      expect(html).toContain("Task deleted");
+      expect(html).not.toContain("?item=null");
+      expect(html).not.toContain("Nothing planned");
+    }
+  });
+
   test("keeps the catalog complete and renders regional German locales", () => {
     expect(overviewMessages.check()).toEqual([]);
     const html = render(null, "de-CH");

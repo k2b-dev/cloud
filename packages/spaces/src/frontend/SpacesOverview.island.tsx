@@ -342,7 +342,9 @@ export default function SpacesOverview(props: Props) {
       <>
         <span
           class="spaces-overview-space-mark"
-          style={{ "background-color": block.taskState === "deleted" ? CALENDAR_NEUTRAL_COLOR : (block.spaceColor ?? "var(--ui-accent)") }}
+          style={{
+            "background-color": block.taskState === "deleted" ? CALENDAR_NEUTRAL_COLOR : (block.spaceColor ?? CALENDAR_NEUTRAL_COLOR),
+          }}
           aria-hidden="true"
         />
         <span class="spaces-overview-work-copy">

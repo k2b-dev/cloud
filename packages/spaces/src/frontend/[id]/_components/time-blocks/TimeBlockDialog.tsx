@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Button, bottomSheetAdaptiveOptions, DatePicker, dialogCore, NumberInput, PanelDialog, TextInput } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { BottomSheet, Button, bottomSheetAdaptiveOptions, Combobox, DatePicker, dialogCore, NumberInput, TextInput } from "@k2b/ui";
+import { createSignal, createUniqueId, Show } from "solid-js";
 import type { SpaceItem } from "@/contracts";
 import { formatDeadline } from "@/presentation/deadline";
 import type { SpaceTimeBlock } from "../../../../time-block-contracts";
@@ -40,6 +40,7 @@ export function TimeBlockDialog(props: Props) {
   const [error, setError] = createSignal<string>();
   const [invalid, setInvalid] = createSignal<"date" | "start" | "duration" | null>(null);
   let form: HTMLFormElement | undefined;
+  const formId = createUniqueId();
   const id = crypto.randomUUID();
   let submitted: { id: string; startsAt: string; endsAt: string } | undefined;
   const times = () => {
@@ -82,10 +83,15 @@ export function TimeBlockDialog(props: Props) {
     }
   };
   return (
-    <form ref={form} onSubmit={submit} class="spaces-time-block-form">
-      <PanelDialog>
-        <PanelDialog.Header title={props.block ? t.edit : t.block} subtitle={props.item.title} />
-        <PanelDialog.Body>
+    <BottomSheet
+      onDismiss={() => {
+        if (!busy()) props.close(null);
+      }}
+      dismissDisabled={busy()}
+    >
+      <BottomSheet.Header title={props.block ? t.edit : t.block} subtitle={props.item.title} />
+      <BottomSheet.Body>
+        <form id={formId} ref={form} onSubmit={submit} class="spaces-time-block-form">
           <Show when={props.block}>
             <TextInput label={t.title} value={title()} onValueChange={setTitle} disabled={busy()} maxLength={200} required />
           </Show>
@@ -94,22 +100,44 @@ export function TimeBlockDialog(props: Props) {
               <DatePicker
                 label={t.date}
                 value={date()}
-                onValueChange={setDate}
+                onValueChange={(value) => {
+                  setDate(value);
+                  if (invalid() === "date") setInvalid(null);
+                }}
                 dateConfig={props.dateConfig}
                 disabled={busy() || Boolean(!props.block && submitted && error())}
                 error={invalid() === "date" ? t.chooseDate : undefined}
               />
             </div>
             <div data-field="start">
-              <TextInput
+              <Combobox
                 label={t.start}
-                value={start()}
-                onValueChange={setStart}
-                placeholder="HH:MM"
+                query={start()}
+                onQueryChange={(value) => {
+                  setStart(value);
+                  if (invalid() === "start") setInvalid(null);
+                }}
+                placeholder={t.choose}
+                debounceMs={0}
+                fetchData={async (query) =>
+                  Array.from({ length: 96 }, (_, index) => {
+                    const time = `${String(Math.floor(index / 4)).padStart(2, "0")}:${String((index % 4) * 15).padStart(2, "0")}`;
+                    return { id: time, label: time };
+                  }).filter((option) => option.label.includes(query))
+                }
+                onSelect={(option) => {
+                  setStart(option.id);
+                  if (invalid() === "start") setInvalid(null);
+                }}
                 disabled={busy() || Boolean(!props.block && submitted && error())}
                 error={invalid() === "start" ? t.chooseStart : undefined}
-                description={times() ? t.until({ time: dates.formatTime(times()!.endsAt, props.dateConfig) }) : "\u00a0"}
+                aria-describedby={invalid() === "start" ? undefined : `${formId}-start-hint`}
               />
+              <Show when={invalid() !== "start"}>
+                <p id={`${formId}-start-hint`} class="spaces-time-block-hint">
+                  {times() ? t.until({ time: dates.formatTime(times()!.endsAt, props.dateConfig) }) : "\u00a0"}
+                </p>
+              </Show>
             </div>
             <div data-field="duration">
               <NumberInput
@@ -117,12 +145,24 @@ export function TimeBlockDialog(props: Props) {
                 icon=""
                 label={t.duration}
                 value={duration()}
-                onValueChange={setDuration}
+                onValueChange={(value) => {
+                  setDuration(value);
+                  if (invalid() === "duration") setInvalid(null);
+                }}
                 suffix={t.minutes}
                 disabled={busy() || Boolean(!props.block && submitted && error())}
                 error={invalid() === "duration" ? t.positiveDuration : undefined}
-                description={props.item.estimatedDurationMinutes ? t.estimate : t.suggestion}
+                aria-describedby={invalid() === "duration" ? undefined : `${formId}-duration-hint`}
               />
+              <Show when={invalid() !== "duration"}>
+                <p id={`${formId}-duration-hint`} class="spaces-time-block-hint">
+                  {props.item.estimatedDurationMinutes
+                    ? duration() === props.item.estimatedDurationMinutes
+                      ? t.estimate
+                      : t.estimateValue({ minutes: props.item.estimatedDurationMinutes })
+                    : t.suggestion}
+                </p>
+              </Show>
             </div>
           </div>
           <div class="spaces-time-block-context text-sm text-dimmed">
@@ -141,27 +181,33 @@ export function TimeBlockDialog(props: Props) {
           <div class="spaces-time-block-error text-sm" role={error() ? "alert" : undefined}>
             <Show when={error()}>
               {(reason) => (
-                <>
-                  <p>{t.failed({ reason: reason() })}</p>
-                  <p class="text-dimmed">{t.retained}</p>
-                </>
+                <div class="flex items-start gap-1.5">
+                  <i class="ti ti-alert-circle mt-0.5" aria-hidden="true" />
+                  <div>
+                    <p>{t.failed({ reason: reason() })}</p>
+                    <p class="text-dimmed">{t.retained}</p>
+                  </div>
+                </div>
               )}
             </Show>
           </div>
-        </PanelDialog.Body>
-        <PanelDialog.Footer>
-          <Button variant="ghost" disabled={busy()} onClick={() => props.close(null)}>
-            {t.cancel}
-          </Button>
-          <Button type="submit" disabled={busy()}>
-            <Show when={busy()}>
-              <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-            </Show>
-            {busy() ? t.saving : error() ? t.retry : props.block ? t.save : t.block}
-          </Button>
-        </PanelDialog.Footer>
-      </PanelDialog>
-    </form>
+        </form>
+      </BottomSheet.Body>
+      <BottomSheet.Footer>
+        <Button variant="ghost" disabled={busy()} onClick={() => props.close(null)}>
+          {t.cancel}
+        </Button>
+        <Button type="submit" form={formId} disabled={busy()} class="spaces-time-block-submit">
+          <Show when={busy()}>
+            <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
+          </Show>
+          <Show when={error() && !busy()}>
+            <i class="ti ti-refresh" aria-hidden="true" />
+          </Show>
+          {busy() ? t.saving : error() ? t.retry : props.block ? t.save : t.block}
+        </Button>
+      </BottomSheet.Footer>
+    </BottomSheet>
   );
 }
 export const openTimeBlockDialog = (props: Omit<Props, "close" | "registerDismiss">) =>

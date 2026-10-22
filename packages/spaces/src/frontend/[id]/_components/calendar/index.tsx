@@ -1045,14 +1045,10 @@ export default function Calendar(props: CalendarProps) {
         navigationPending={props.navigationPending}
         onEventActivate={selectEvent}
         onEventDrop={
-          (props.canWrite || props.timeBlocks?.some((block) => block.canWrite)) && !updateEventTime.loading()
-            ? (event, next) => void updateTime(event, next)
-            : undefined
+          props.canWrite || props.timeBlocks?.some((block) => block.canWrite) ? (event, next) => void updateTime(event, next) : undefined
         }
         onEventResize={
-          (props.canWrite || props.timeBlocks?.some((block) => block.canWrite)) && !updateEventTime.loading()
-            ? (event, next) => void updateTime(event, next)
-            : undefined
+          props.canWrite || props.timeBlocks?.some((block) => block.canWrite) ? (event, next) => void updateTime(event, next) : undefined
         }
         onSlotActivate={
           props.canWrite && !creatingEvent() && (props.view === "day" || props.view === "week")
