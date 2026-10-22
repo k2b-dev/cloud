@@ -643,31 +643,37 @@ test("known partial note resumes after cancellation and a refreshed opening-hour
   }
 });
 
-test.each(["source", "note"])("changed %s blocks partial save with a known recovery link", async (changed) => {
+describe.each(["source", "note"])("partial save with changed %s", (changed) => {
   const scenario = `route-conflict-save-${changed}`;
-  largeSource(scenario);
-  const { page, context } = await open(scenario);
-  await page.route("**/actions/notebooks/note.edit", async (route) =>
-    route.fulfill({
-      status: 403,
-      contentType: "application/json",
-      body: JSON.stringify({ code: "NOT_ALLOWED", message: "Not allowed to edit this note." }),
-    }),
-  );
-  try {
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    largeSource(scenario);
+    opened = await open(scenario);
+    const { page } = opened;
+    await page.route("**/actions/notebooks/note.edit", async (route) =>
+      route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({ code: "NOT_ALLOWED", message: "Not allowed to edit this note." }),
+      }),
+    );
     await beginSave(page);
     await page.getByText("Not allowed to edit this note.", { exact: true }).waitFor();
+    await page.unroute("**/actions/notebooks/note.edit");
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("refuses resume and retains the known recovery link", async () => {
+    const { page } = opened;
     if (changed === "source") fixture.get(scenario).map.title = "Changed at the same revision";
     else fixture.notes.set(scenario, `${fixture.notes.get(scenario)}\nExternal edit`);
-    await page.unroute("**/actions/notebooks/note.edit");
     await reopenSave(page);
     await page.getByRole("button", { name: "Speichern fortsetzen", exact: true }).click();
     await page.getByText(changed === "source" ? /Die Kartenquelle hat sich geändert/ : /Die Notiz hat sich geändert/).waitFor();
     await page.getByRole("link", { name: "Teilweise gespeicherte Notiz öffnen" }).waitFor();
     expect(await page.getByRole("button", { name: "Speichern fortsetzen", exact: true }).isDisabled()).toBe(true);
-  } finally {
-    await context.close();
-  }
+  });
 });
 
 test("unknown create remains blocked beyond claim retention and exposes Notebook recovery", async () => {
@@ -694,25 +700,34 @@ test("unknown create remains blocked beyond claim retention and exposes Notebook
   }
 });
 
-test.each(["owner", "conversation", "revision"] as const)("%s isolates retained checkpoints", async (dimension) => {
+describe.each(["owner", "conversation", "revision"] as const)("retained checkpoint %s boundary", (dimension) => {
   const scenario = `places-isolation-${dimension}`;
-  const { page, context } = await open(scenario);
+  let opened: Awaited<ReturnType<typeof open>>;
   let ownerUserId = "owner-one";
   let creates = 0;
-  await page.route("**/export", async (route) => {
-    const response = await route.fetch();
-    await route.fulfill({ response, json: { ...(await response.json()), ownerUserId } });
-  });
-  await page.route("**/actions/notebooks/note.create", async (route) => {
-    creates++;
-    await route.continue();
-  });
-  const savedKeys = () => page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("cloud.ai.map-save:v1:")));
-  try {
+  let initialKeys: string[] = [];
+  const savedKeys = () => opened.page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("cloud.ai.map-save:v1:")));
+  beforeAll(async () => {
+    opened = await open(scenario);
+    const { page } = opened;
+    await page.route("**/export", async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), ownerUserId } });
+    });
+    await page.route("**/actions/notebooks/note.create", async (route) => {
+      creates++;
+      await route.continue();
+    });
     await beginSave(page);
     await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    const initialKeys = await savedKeys();
+    initialKeys = await savedKeys();
     expect(initialKeys).toHaveLength(1);
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("keeps the old receipt separate from the new save", async () => {
+    const { page } = opened;
     if (dimension === "owner") ownerUserId = "owner-two";
     if (dimension === "revision") fixture.get(scenario).map.revision++;
     if (dimension === "conversation") await page.goto(`${fixture.server.url}?scenario=places-other-conversation-isolation`);
@@ -725,9 +740,7 @@ test.each(["owner", "conversation", "revision"] as const)("%s isolates retained 
     expect(keys.filter((key) => key.includes("owner-one"))).toHaveLength(dimension === "owner" ? 1 : 2);
     expect(keys.filter((key) => key.includes("owner-two"))).toHaveLength(dimension === "owner" ? 1 : 0);
     expect(creates).toBe(2);
-  } finally {
-    await context.close();
-  }
+  });
 });
 
 test("a signed-in owner change between selection and save cannot reuse the previous owner's receipt", async () => {
