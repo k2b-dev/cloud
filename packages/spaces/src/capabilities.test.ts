@@ -37,9 +37,12 @@ import {
   TemplateListInputSchema,
   TemplateUpdateInputSchema,
 } from "./capability-contracts";
-import type { SpaceComment, SpaceItem, SpaceItemTemplate, SpaceTag } from "./contracts";
+import { TimeBlockCreateInputSchema, TimeBlockDataSchema, TimeBlockListInputSchema } from "./capability-time-block-contracts";
+import { CreateItemSchema, type SpaceComment, type SpaceItem, type SpaceItemTemplate, type SpaceTag, UpdateItemSchema } from "./contracts";
 import { spacesService } from "./service";
 import { type ResourceTable, spacesPublicResources } from "./service/public-resources";
+import { revisionForTimeBlock } from "./service/time-blocks";
+import type { SpaceTimeBlock } from "./time-block-contracts";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const serviceAccountId = "22222222-2222-4222-8222-222222222222";
@@ -872,6 +875,8 @@ describe("spaces capabilities", () => {
       "task.work.read",
       "template.list",
       "template.read",
+      "time-block.list",
+      "time-block.read",
     ]);
     expect(Object.keys(spacesCapabilities.actions).sort()).toEqual([
       "calendar-invitation.import",
@@ -903,6 +908,9 @@ describe("spaces capabilities", () => {
       "template.create",
       "template.delete",
       "template.update",
+      "time-block.create",
+      "time-block.delete",
+      "time-block.update",
     ]);
     expect(spacesCapabilities.queries["space.list"].description).toContain("Normal entry for Space-scoped work");
     expect(spacesCapabilities.queries["item.search"].description).toContain("Direct cross-Space entry");
@@ -942,6 +950,9 @@ describe("spaces capabilities", () => {
       "template.create",
       "template.delete",
       "template.update",
+      "time-block.create",
+      "time-block.delete",
+      "time-block.update",
     ]);
     expect(spacesCapabilities.actions["task.create"]).toMatchObject({
       destructive: false,
@@ -2484,4 +2495,319 @@ test("panel place refs select the owning app's public resource reader", () => {
   const reader = resolveCapabilityResourceReader(manifest, ref);
   expect(reader?.localId).toBe("space.read");
   expect(spacesCapabilities.queries["space.read"].input.parse({ id: ref.id })).toEqual({ id: ref.id });
+});
+
+const timeBlock: SpaceTimeBlock = {
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  itemId,
+  spaceId,
+  title: "Focused release work",
+  startsAt: "2026-10-23T08:00:00.000Z",
+  endsAt: "2026-10-23T09:00:00.000Z",
+  ownerId: userId,
+  ownerName: "Ada",
+  spaceName: "Roadmap",
+  spaceColor: "#3b82f6",
+  taskState: "open",
+  canWrite: true,
+  canDelete: true,
+};
+const timeBlockInput = { id: timeBlock.id, revision: revisionForTimeBlock(timeBlock) };
+
+test("time-block mutations preserve UUIDs, reader identity, partial fields and atomic expected revisions", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  const get = spyOn(spacesService.timeBlocks, "get").mockResolvedValue({ ok: true, data: timeBlock });
+  const create = spyOn(spacesService.timeBlocks, "create").mockResolvedValue({ ok: true, data: timeBlock });
+  const update = spyOn(spacesService.timeBlocks, "update").mockResolvedValue({ ok: true, data: { ...timeBlock, title: "Review tests" } });
+  const remove = spyOn(spacesService.timeBlocks, "remove").mockResolvedValue({ ok: true, data: undefined });
+  const input = { itemId, taskTitle: task.title, id: timeBlock.id, startsAt: timeBlock.startsAt, endsAt: timeBlock.endsAt };
+  expect((await spacesCapabilities.actions["time-block.create"].run(input, userContext)).ok).toBeTrue();
+  expect(create).toHaveBeenCalledWith({
+    itemId: itemUuid,
+    data: { id: timeBlock.id, startsAt: input.startsAt, endsAt: input.endsAt },
+    expectedTaskTitle: task.title,
+    reader: { actor: userContext.actor, subject: userContext.accessSubject },
+  });
+  const read = await spacesCapabilities.queries["time-block.read"].run({ id: timeBlock.id }, userContext);
+  expect(read).toMatchObject({ ok: true, data: { data: { ...timeBlock, revision: timeBlockInput.revision } } });
+  expect(
+    (await spacesCapabilities.actions["time-block.update"].run({ ...timeBlockInput, title: "Review tests" }, userContext)).ok,
+  ).toBeTrue();
+  expect(update).toHaveBeenCalledWith({
+    id: timeBlock.id,
+    data: { title: "Review tests" },
+    expectedRevision: timeBlockInput.revision,
+    reader: { actor: userContext.actor, subject: userContext.accessSubject },
+  });
+  expect((await spacesCapabilities.actions["time-block.delete"].run(timeBlockInput, userContext)).ok).toBeTrue();
+  expect(remove).toHaveBeenCalledWith({
+    id: timeBlock.id,
+    expectedRevision: timeBlockInput.revision,
+    reader: { actor: userContext.actor, subject: userContext.accessSubject },
+  });
+  get.mockResolvedValue({ ok: true, data: { ...timeBlock, title: "Concurrent edit" } });
+  update.mockClear();
+  remove.mockClear();
+  for (const action of ["time-block.update", "time-block.delete"] as const) {
+    const data = action === "time-block.update" ? { ...timeBlockInput, title: "Review tests" } : timeBlockInput;
+    expect(await spacesCapabilities.actions[action].review(data, userContext)).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+    expect(await spacesCapabilities.actions[action].run(data, userContext)).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+  }
+  expect(update).not.toHaveBeenCalled();
+  expect(remove).not.toHaveBeenCalled();
+});
+
+test("time-block reviews are complete, deterministic and refuse non-owners", async () => {
+  const get = spyOn(spacesService.timeBlocks, "get").mockResolvedValue({ ok: true, data: timeBlock });
+  const input = { ...timeBlockInput, startsAt: "2026-10-23T10:00:00.000Z", endsAt: "2026-10-23T11:00:00.000Z", title: "Independent title" };
+  const action = spacesCapabilities.actions["time-block.update"];
+  const review = await action.review(input, { ...userContext, locale: "de" });
+  expect(review).toEqual(await action.review(input, { ...userContext, locale: "de" }));
+  if (!review.ok) throw new Error(review.error.message);
+  expect(CapabilityActionReviewSchema.safeParse(review.data).success).toBeTrue();
+  expect(JSON.stringify(review.data)).toContain(timeBlock.title);
+  expect(JSON.stringify(review.data)).toContain(input.title);
+  expect(JSON.stringify(review.data)).toContain(input.startsAt);
+  expect(JSON.stringify(review.data)).toContain(input.endsAt);
+  expect(review.data).not.toHaveProperty("approvalScope");
+  get.mockResolvedValue({ ok: true, data: { ...timeBlock, canWrite: false } });
+  expect(await action.review(input, userContext)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+});
+
+test("time-block create review recognizes only the assigned person, including delegated user tokens", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  spyOn(spacesService.item, "get").mockResolvedValue({
+    ...task,
+    assignees: [{ id: userId, kind: "user", displayName: "Ada", avatarHash: null }],
+  });
+  const input = { itemId, taskTitle: task.title, id: timeBlock.id, startsAt: timeBlock.startsAt, endsAt: timeBlock.endsAt };
+  expect((await spacesCapabilities.actions["time-block.create"].review(input, userContext)).ok).toBeTrue();
+  expect(
+    await spacesCapabilities.actions["time-block.create"].review({ ...input, taskTitle: "An older task title" }, userContext),
+  ).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+  const delegated: CapabilityExecutionContext = {
+    ...serviceAccountContext,
+    user,
+    actor: {
+      ...serviceAccountContext.actor,
+      delegatedUser: user,
+      serviceAccount: { ...serviceAccountContext.actor.serviceAccount, kind: "user_delegated" },
+    },
+    accessSubject: userContext.accessSubject,
+  };
+  expect((await spacesCapabilities.actions["time-block.create"].review(input, delegated)).ok).toBeTrue();
+  expect((await spacesCapabilities.actions["time-block.create"].review(input, serviceAccountContext)).ok).toBeFalse();
+});
+
+test("time-block lists bind cursors to filters, page size and principal, without binding invocation provenance", async () => {
+  const list = spyOn(spacesService.timeBlocks, "list").mockResolvedValue({
+    ok: true,
+    data: { items: [timeBlock], total: 2, page: 1, perPage: 1, hasNext: true },
+  });
+  const input = TimeBlockListInputSchema.parse({ from: timeBlock.startsAt, to: timeBlock.endsAt, limit: 1 });
+  const first = await spacesCapabilities.queries["time-block.list"].run(input, userContext);
+  if (!first.ok) throw new Error(first.error.message);
+  expect(first.data.page?.hasMore).toBeTrue();
+  if (!first.data.page?.hasMore) throw new Error("Expected continuation");
+  const cursor = first.data.page.nextCursor;
+  expect(
+    (await spacesCapabilities.queries["time-block.list"].run({ ...input, cursor }, { ...userContext, requestId: "new-request" })).ok,
+  ).toBeTrue();
+  expect(list).toHaveBeenLastCalledWith(
+    expect.objectContaining({ page: 2, perPage: 1, reader: { actor: userContext.actor, subject: userContext.accessSubject } }),
+  );
+  list.mockClear();
+  for (const change of [{ mine: true }, { limit: 2 }, { itemId }, { from: "2026-10-23T07:00:00.000Z" }]) {
+    expect(await spacesCapabilities.queries["time-block.list"].run({ ...input, cursor, ...change }, userContext)).toMatchObject({
+      ok: false,
+      error: { code: "BAD_INPUT" },
+    });
+  }
+  expect(list).not.toHaveBeenCalled();
+});
+
+test("task-filtered block lists resolve public IDs and preserve service authorization", async () => {
+  const list = spyOn(spacesService.timeBlocks, "list").mockResolvedValue({
+    ok: true,
+    data: { items: [timeBlock], total: 2, page: 1, perPage: 1, hasNext: true },
+  });
+  const input = TimeBlockListInputSchema.parse({ itemId, limit: 1 });
+  const first = await spacesCapabilities.queries["time-block.list"].run(input, userContext);
+  expect(first.ok).toBeTrue();
+  expect(list).toHaveBeenCalledWith({
+    itemId: itemUuid,
+    spaceId: undefined,
+    mine: false,
+    page: 1,
+    perPage: 1,
+    reader: { actor: userContext.actor, subject: userContext.accessSubject },
+  });
+  if (!first.ok || !first.data.page?.hasMore) throw new Error("Expected continuation");
+  const cursor = first.data.page.nextCursor;
+  expect((await spacesCapabilities.queries["time-block.list"].run({ ...input, cursor }, userContext)).ok).toBeTrue();
+  expect(list).toHaveBeenLastCalledWith(expect.objectContaining({ itemId: itemUuid, page: 2 }));
+  list.mockClear();
+  expect(await spacesCapabilities.queries["time-block.list"].run({ ...input, itemId: "Other1", cursor }, userContext)).toMatchObject({
+    ok: false,
+    error: { code: "BAD_INPUT" },
+  });
+  expect(list).not.toHaveBeenCalled();
+  list.mockResolvedValue({ ok: false, error: { code: "NOT_FOUND", status: 404, message: "Item not found" } });
+  expect(await spacesCapabilities.queries["time-block.list"].run(input, serviceAccountContext)).toMatchObject({
+    ok: false,
+    error: { code: "NOT_FOUND" },
+  });
+  expect(list).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      itemId: itemUuid,
+      reader: { actor: serviceAccountContext.actor, subject: serviceAccountContext.accessSubject },
+    }),
+  );
+  list.mockClear();
+  spyOn(spacesPublicResources, "resolvePublicId").mockResolvedValue(null);
+  expect(await spacesCapabilities.queries["time-block.list"].run(input, userContext)).toMatchObject({
+    ok: false,
+    error: { code: "NOT_FOUND" },
+  });
+  expect(list).not.toHaveBeenCalled();
+});
+
+test("time-block capabilities retain service denial and never infer human authority for agents", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  const get = spyOn(spacesService.timeBlocks, "get").mockResolvedValue({
+    ok: false,
+    error: { code: "NOT_FOUND", status: 404, message: "Time block not found" },
+  });
+  expect(await spacesCapabilities.queries["time-block.read"].run({ id: timeBlock.id }, serviceAccountContext)).toMatchObject({
+    ok: false,
+    error: { code: "NOT_FOUND" },
+  });
+  expect(get).toHaveBeenCalledWith({
+    id: timeBlock.id,
+    reader: { actor: serviceAccountContext.actor, subject: serviceAccountContext.accessSubject },
+  });
+  spyOn(spacesService.timeBlocks, "create").mockResolvedValue({
+    ok: false,
+    error: { code: "FORBIDDEN", status: 403, message: "Only an assigned person can plan their time" },
+  });
+  expect(
+    await spacesCapabilities.actions["time-block.create"].run(
+      { itemId, taskTitle: task.title, id: timeBlock.id, startsAt: timeBlock.startsAt, endsAt: timeBlock.endsAt },
+      serviceAccountContext,
+    ),
+  ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+});
+
+test("task reader preserves the complete multibyte title needed to pin block creation", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const title = "😀".repeat(200);
+  expect(TaskCreateInputSchema.safeParse({ title, spaceId, columnId }).success).toBeTrue();
+  expect(TaskCreateInputSchema.safeParse({ title: title + "😀", spaceId, columnId }).success).toBeFalse();
+  expect(TaskUpdateInputSchema.safeParse({ itemId, title }).success).toBeTrue();
+  expect(TaskUpdateInputSchema.safeParse({ itemId, title: title + "😀" }).success).toBeFalse();
+  expect(CreateItemSchema.safeParse({ title, columnId }).success).toBeTrue();
+  expect(CreateItemSchema.safeParse({ title: title + "😀", columnId }).success).toBeFalse();
+  expect(UpdateItemSchema.safeParse({ title }).success).toBeTrue();
+  expect(UpdateItemSchema.safeParse({ title: title + "😀" }).success).toBeFalse();
+  expect(
+    TimeBlockCreateInputSchema.safeParse({
+      itemId,
+      taskTitle: title,
+      id: timeBlock.id,
+      startsAt: timeBlock.startsAt,
+      endsAt: timeBlock.endsAt,
+    }).success,
+  ).toBeTrue();
+  const item = spyOn(spacesService.item, "get").mockResolvedValue({
+    ...task,
+    title,
+    assignees: [{ id: userId, kind: "user", displayName: "Ada", avatarHash: null }],
+  });
+  spyOn(spacesService.item.attachments, "list").mockResolvedValue([]);
+  spyOn(spacesService.timeBlocks, "get").mockResolvedValue({ ok: true, data: { ...timeBlock, title } });
+  const result = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
+  expect(result).toMatchObject({ ok: true, data: { data: { title, titleTruncated: false } } });
+  expect(result.ok && capabilityResultSchema(ItemDataSchema).safeParse(result.data).success).toBeTrue();
+  const block = await spacesCapabilities.queries["time-block.read"].run({ id: timeBlock.id }, userContext);
+  expect(block.ok && capabilityResultSchema(TimeBlockDataSchema).safeParse(block.data).success).toBeTrue();
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  const create = spyOn(spacesService.timeBlocks, "create").mockResolvedValue({ ok: true, data: { ...timeBlock, title } });
+  const input = TimeBlockCreateInputSchema.parse({
+    itemId,
+    taskTitle: title,
+    id: timeBlock.id,
+    startsAt: timeBlock.startsAt,
+    endsAt: timeBlock.endsAt,
+  });
+  const action = spacesCapabilities.actions["time-block.create"];
+  const review = await action.review(input, userContext);
+  expect(review.ok).toBeTrue();
+  expect(review.ok && CapabilityActionReviewSchema.safeParse(review.data).success).toBeTrue();
+  expect(review).toEqual(await action.review(input, userContext));
+  expect((await action.run(input, userContext)).ok).toBeTrue();
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ expectedTaskTitle: title }));
+  item.mockResolvedValue({ ...task, title: "Renamed after review" });
+  expect(await action.review(input, userContext)).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+});
+
+test("block mutation reviews and runs enforce their separate edit and delete permissions", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  const get = spyOn(spacesService.timeBlocks, "get");
+  const update = spyOn(spacesService.timeBlocks, "update");
+  const remove = spyOn(spacesService.timeBlocks, "remove");
+  for (const taskState of ["open", "no_access"] as const) {
+    get.mockResolvedValue({ ok: true, data: { ...timeBlock, taskState, canWrite: false, canDelete: false } });
+    for (const action of ["time-block.update", "time-block.delete"] as const) {
+      const input = action === "time-block.update" ? { ...timeBlockInput, title: "Changed" } : timeBlockInput;
+      expect(await spacesCapabilities.actions[action].review(input, userContext)).toMatchObject({
+        ok: false,
+        error: { code: "FORBIDDEN" },
+      });
+      expect(await spacesCapabilities.actions[action].run(input, userContext)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    }
+  }
+  expect(update).not.toHaveBeenCalled();
+  expect(remove).not.toHaveBeenCalled();
+});
+
+test("time-block reads preserve inaccessible and deleted source state without rereading the task", async () => {
+  spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
+  spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+  const item = spyOn(spacesService.item, "get");
+  const get = spyOn(spacesService.timeBlocks, "get");
+  for (const taskState of ["no_access", "deleted"] as const) {
+    const block = {
+      ...timeBlock,
+      taskState,
+      itemId: null,
+      spaceId: null,
+      spaceName: null,
+      spaceColor: null,
+      canWrite: false,
+      canDelete: taskState === "deleted",
+    };
+    get.mockResolvedValue({ ok: true, data: block });
+    expect(await spacesCapabilities.queries["time-block.read"].run({ id: block.id }, userContext)).toMatchObject({
+      ok: true,
+      data: { data: block },
+    });
+    if (taskState === "deleted") {
+      const remove = spyOn(spacesService.timeBlocks, "remove").mockResolvedValue({ ok: true, data: undefined });
+      const input = { id: block.id, revision: revisionForTimeBlock(block) };
+      expect((await spacesCapabilities.actions["time-block.delete"].review(input, userContext)).ok).toBeTrue();
+      expect((await spacesCapabilities.actions["time-block.delete"].run(input, userContext)).ok).toBeTrue();
+      expect(remove).toHaveBeenCalledWith(expect.objectContaining({ id: block.id, expectedRevision: input.revision }));
+      expect(
+        (await spacesCapabilities.actions["time-block.update"].review({ ...input, title: "Keep task history" }, userContext)).ok,
+      ).toBeFalse();
+      expect(
+        (await spacesCapabilities.actions["time-block.update"].run({ ...input, title: "Keep task history" }, userContext)).ok,
+      ).toBeFalse();
+    }
+  }
+  expect(item).not.toHaveBeenCalled();
 });

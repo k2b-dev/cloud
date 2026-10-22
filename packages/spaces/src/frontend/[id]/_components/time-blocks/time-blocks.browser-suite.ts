@@ -1,0 +1,615 @@
+import { afterAll, beforeAll, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { accounts, serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
+import { createConfig } from "@k2b/ssr";
+import { sql } from "bun";
+import tailwind from "bun-plugin-tailwind";
+import type { Browser, Page } from "playwright";
+import { createComponent } from "solid-js";
+import { renderToString } from "solid-js/web";
+import { databaseSuite } from "../../../../../../../scripts/fixtures/test-infra";
+import "../../../../../../../scripts/fixtures/authorization-preload";
+import { browserName, launchBrowser, pageErrors } from "../../../../../../ui/test/browser";
+import api from "../../../../api";
+import { SpaceDetailSchema } from "../../../../contracts";
+import { SpaceTimeBlockSchema } from "../../../../time-block-contracts";
+import { SpaceItemDetailSchema, SpacesViewSnapshotSchema } from "../workspace/workspace-types";
+import type { TimeBlocksFixtureProps } from "./time-blocks.browser-fixture";
+
+const suite = databaseSuite();
+setDefaultTimeout(45_000);
+const NOW = new Date("2030-03-14T08:00:00.000Z");
+const TODAY = "2030-03-14";
+const packageCache = resolve(import.meta.dir, "../../../../../node_modules/.cache");
+mkdirSync(packageCache, { recursive: true });
+const root = mkdtempSync(join(packageCache, "spaces-time-blocks-browser-"));
+const { plugin } = createConfig({
+  dev: false,
+  verbose: false,
+  rootDir: root,
+  componentRoots: [resolve(import.meta.dir, "../workspace"), resolve(import.meta.dir, "../detail")],
+});
+Bun.plugin(plugin());
+process.once("exit", () => rmSync(root, { recursive: true, force: true }));
+const { default: Fixture } = await import("./time-blocks.browser-fixture");
+const ui = resolve(import.meta.dir, "../../../../../../ui/dist");
+const shots = process.env.SPACES_TIME_BLOCK_SCREENSHOTS ?? join(tmpdir(), "spaces-time-blocks", browserName);
+const cases = new Map<string, Scene>();
+const runtimeErrors: string[][] = [];
+const additionalAccounts: string[] = [];
+const cleanup: { spaceUuid: string; ownerId: string; userIds: string[]; accountId?: string }[] = [];
+let browser: Browser;
+let server: ReturnType<typeof Bun.serve>;
+let css = "";
+let sequence = 0;
+let clientSequence = 0;
+type Fault = "none" | "lost-response" | "delay";
+type Scene = {
+  key: string;
+  spaceId: string;
+  spaceUuid: string;
+  taskId: string;
+  taskUuid: string;
+  ownerId: string;
+  viewerId?: string;
+  canWrite?: boolean;
+  userIds: string[];
+  token: string;
+  accountId: string;
+  html: string;
+  fault: Fault;
+  release?: () => void;
+  posts: { id: string; status: number }[];
+  moves: { status: number }[];
+};
+const uuid = (n: number) => `17010000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const href = (f: Scene) => `/app/spaces/${f.spaceId}?view=calendar&cv=day&cd=${TODAY}`;
+const request = (f: Scene, path: string, init?: RequestInit) =>
+  api.request(path, { ...init, headers: { authorization: `Bearer ${f.token}`, "content-type": "application/json", ...init?.headers } });
+const json = async (response: Response) => {
+  const body: unknown = await response.json();
+  expect({ status: response.status, ...(response.ok ? {} : { body }) }).toEqual({ status: 200 });
+  return body;
+};
+const blocks = async (f: Scene) => {
+  const body = await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`));
+  return SpaceTimeBlockSchema.array().parse(body);
+};
+const taskState = async (f: Scene) => ({
+  task: await sql`SELECT * FROM spaces.items WHERE id = ${f.taskUuid}::uuid`,
+  work: await sql`SELECT * FROM spaces.task_work WHERE item_id = ${f.taskUuid}::uuid`,
+  checklist: await sql`SELECT * FROM spaces.item_checklist_entries WHERE item_id = ${f.taskUuid}::uuid ORDER BY rank`,
+  assignees: await sql`SELECT * FROM spaces.item_assignees WHERE item_id = ${f.taskUuid}::uuid ORDER BY user_id`,
+});
+const scene = async (assigned = true): Promise<Scene> => {
+  const n = ++sequence;
+  const ownerId = uuid(n * 10 + 1),
+    colleagueId = uuid(n * 10 + 2);
+  const spaceUuid = uuid(n * 10 + 3),
+    columnUuid = uuid(n * 10 + 4),
+    taskUuid = uuid(n * 10 + 5);
+  const spaceId = `B${String(n).padStart(5, "0")}`,
+    columnId = `C${String(n).padStart(5, "0")}`,
+    taskId = `T${String(n).padStart(5, "0")}`;
+  const owned: (typeof cleanup)[number] = { spaceUuid, ownerId, userIds: [ownerId, colleagueId] };
+  cleanup.push(owned);
+  await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name) VALUES
+    (${ownerId}::uuid, ${`block-browser-owner-${n}`}, 'local', 'user', 'Mira Sommer'),
+    (${colleagueId}::uuid, ${`block-browser-colleague-${n}`}, 'local', 'user', 'Jan Winter')`;
+  await sql`INSERT INTO spaces.spaces (id, short_id, name, color) VALUES (${spaceUuid}::uuid, ${spaceId}, 'Produktteam Nord', '#4d7c0f')`;
+  await sql`INSERT INTO spaces.columns (id, short_id, space_id, name, rank) VALUES (${columnUuid}::uuid, ${columnId}, ${spaceUuid}::uuid, 'Offen', 1024)`;
+  await sql`INSERT INTO spaces.items (id, short_id, space_id, column_id, title, estimated_duration_minutes, deadline, created_at, updated_at)
+    VALUES (${taskUuid}::uuid, ${taskId}, ${spaceUuid}::uuid, ${columnUuid}::uuid, 'Angebot für Stadtwerke prüfen', 45, '2030-03-13T09:00:00Z', ${NOW.toISOString()}::timestamptz, ${NOW.toISOString()}::timestamptz)`;
+  await sql`INSERT INTO spaces.item_assignees (item_id, user_id) VALUES (${taskUuid}::uuid, ${assigned ? ownerId : colleagueId}::uuid)`;
+  const claim = { id: uuid(n * 10 + 6), actor: { kind: "user", id: assigned ? ownerId : colleagueId }, claimedAt: NOW.toISOString() };
+  await sql`INSERT INTO spaces.task_work (item_id, claim) VALUES (${taskUuid}::uuid, ${claim}::jsonb)`;
+  await sql`INSERT INTO spaces.item_checklist_entries (short_id, item_id, label, completed, rank) VALUES
+    (${`K${String(n).padStart(4, "0")}1`}, ${taskUuid}::uuid, 'Preise vergleichen', true, 1024),
+    (${`K${String(n).padStart(4, "0")}2`}, ${taskUuid}::uuid, 'Rückfragen notieren', false, 2048)`;
+  const [access] = await sql<
+    { id: string }[]
+  >`INSERT INTO auth.access (user_id, permission) VALUES (${ownerId}::uuid, 'write') RETURNING id`;
+  await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${spaceUuid}::uuid, ${access!.id}::uuid)`;
+  const user = await accounts.users.get({ id: ownerId });
+  if (!user) throw new Error("Missing browser fixture user");
+  const credential = await serviceAccountCredentials.createUserApiToken({
+    user,
+    browserSignIn: await createTestBrowserSignIn(ownerId),
+    name: "Time block browser",
+  });
+  if (!credential.ok) throw new Error(credential.error.message);
+  owned.accountId = credential.data.credential.serviceAccountId;
+  const f: Scene = {
+    key: `case${n}`,
+    spaceId,
+    spaceUuid,
+    taskId,
+    taskUuid,
+    ownerId,
+    userIds: [ownerId, colleagueId],
+    token: credential.data.token,
+    accountId: credential.data.credential.serviceAccountId,
+    html: "",
+    fault: "none",
+    posts: [],
+    moves: [],
+  };
+  cases.set(f.key, f);
+  return f;
+};
+const viewAsColleague = async (f: Scene) => {
+  const id = f.userIds[1]!;
+  const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access (user_id, permission) VALUES (${id}::uuid, 'read') RETURNING id`;
+  await sql`INSERT INTO spaces.space_access (space_id, access_id) VALUES (${f.spaceUuid}::uuid, ${access!.id}::uuid)`;
+  const user = await accounts.users.get({ id });
+  if (!user) throw new Error("Missing colleague fixture");
+  const credential = await serviceAccountCredentials.createUserApiToken({
+    user,
+    browserSignIn: await createTestBrowserSignIn(id),
+    name: "Time block reader browser",
+  });
+  if (!credential.ok) throw new Error(credential.error.message);
+  additionalAccounts.push(credential.data.credential.serviceAccountId);
+  f.token = credential.data.token;
+  f.viewerId = id;
+  f.canWrite = false;
+};
+const render = async (f: Scene, detail = false, route = href(f)) => {
+  const target = new URL(route, "http://spaces.local");
+  if (detail) target.searchParams.set("item", f.taskId);
+  const source = `${target.pathname}${target.search}`;
+  const view = SpacesViewSnapshotSchema.parse(await json(await request(f, `/workspace/view?href=${encodeURIComponent(source)}`)));
+  if (view.kind !== "calendar") throw new Error("Expected calendar snapshot");
+  const { columns } = SpaceDetailSchema.parse(await json(await request(f, `/${f.spaceId}`)));
+  const itemDetail = detail
+    ? SpaceItemDetailSchema.parse(await json(await request(f, `/${f.spaceId}/items/${f.taskId}/detail`)))
+    : undefined;
+  const props: TimeBlocksFixtureProps = {
+    spaceId: f.spaceId,
+    baseUrl: source,
+    columns,
+    tags: [],
+    initialState: view,
+    selectedItemId: detail ? f.taskId : "",
+    dateConfig: { locale: "de", timeZone: "UTC", firstDayOfWeek: 1 },
+    canWrite: f.canWrite ?? true,
+    currentUserId: f.viewerId ?? f.ownerId,
+    detail: itemDetail,
+  };
+  const body = renderToString(() => createComponent(Fixture, props));
+  f.html = `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-island,solid-client{display:contents}</style></head><body class="k2b-ui" style="margin:0"><main style="display:flex;flex-direction:column;height:100dvh;box-sizing:border-box">${body}</main><script type="module">document.querySelectorAll('solid-island').forEach(e=>import('/_ssr/'+e.dataset.id+'.js'))</script></body></html>`;
+};
+const open = async (f: Scene, detail = false, width = 1440): Promise<Page> => {
+  const context = await browser.newContext({
+    viewport: { width, height: width === 390 ? 844 : 760 },
+    locale: "de-DE",
+    timezoneId: "UTC",
+    colorScheme: "light",
+    reducedMotion: "reduce",
+    extraHTTPHeaders: { "x-case": f.key },
+  });
+  await context.clock.setFixedTime(NOW);
+  // Stable UUIDs for client mutation intents; real auth/session randomness stays untouched.
+  await context.addInitScript((seed) => {
+    let n = seed;
+    crypto.randomUUID = () => `1701bbbb-0000-4000-8000-${String(++n).padStart(12, "0")}`;
+  }, ++clientSequence * 1000);
+  const page = await context.newPage();
+  runtimeErrors.push(pageErrors(page));
+  await page.goto(`${server.url.origin}${href(f)}${detail ? `&item=${f.taskId}` : ""}`);
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForFunction(() => [...document.querySelectorAll("button,a")].some((el) => Boolean(Reflect.get(el, "$$click"))));
+  return page;
+};
+const waitFor = async (condition: () => Promise<boolean>) => {
+  for (let n = 0; n < 200; n++) {
+    if (await condition()) return;
+    await Bun.sleep(25);
+  }
+  throw new Error("Time block condition did not settle");
+};
+const shot = async (page: Page, motif: string) => {
+  mkdirSync(shots, { recursive: true });
+  await page.screenshot({ path: join(shots, `${motif}-light-${page.viewportSize()!.width}.png`), animations: "disabled" });
+};
+const drop = async (page: Page, f: Scene) => {
+  const source = page.locator(`[data-spaces-tray-item="${f.taskId}"] a`);
+  const target = page.locator(`[data-calendar-body="${TODAY}"]`);
+  await target.scrollIntoViewIfNeeded();
+  const from = await source.boundingBox(),
+    to = await target.boundingBox(),
+    scroll = await page.locator(".k2b-calendar-days__scroll").boundingBox();
+  if (!from || !to || !scroll) throw new Error("Calendar drop target is missing");
+  // The calendar scrolls to the current time, so the day's top can be above the viewport.
+  const top = Math.max(to.y + 20, scroll.y + 70);
+  const bottom = Math.min(to.y + to.height - 20, scroll.y + scroll.height - 70);
+  if (bottom <= top) throw new Error("No visible free time for the browser drop");
+  const y = (top + bottom) / 2;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, y, { steps: 12 });
+  await page.waitForSelector(".k2b-calendar-ghost[data-live]");
+  await page.mouse.up();
+};
+
+suite("Task time blocks through real SSR islands and Spaces API", () => {
+  beforeAll(async () => {
+    setSystemTime(NOW);
+    const builds = await Promise.all(
+      ["../../../../styles/app.css", "../../../../../../cloud/src/styles/global.css"].map((entry) =>
+        Bun.build({ entrypoints: [resolve(import.meta.dir, entry)], plugins: [tailwind] }),
+      ),
+    );
+    for (const build of builds) if (!build.success) throw new AggregateError(build.logs, "Could not build fixture CSS");
+    css = [
+      "@layer properties,theme,base,components,utilities;",
+      ...(await Promise.all(builds.map((build) => build.outputs[0]!.text()))),
+    ].join("\n");
+    server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url);
+        if (url.pathname.startsWith("/_ssr/")) return new Response(Bun.file(join(root, url.pathname)));
+        if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))));
+        const f = cases.get(req.headers.get("x-case") ?? "");
+        if (!f) return new Response("Fixture not found", { status: 404 });
+        if (url.pathname.startsWith("/api/spaces/")) {
+          url.pathname = url.pathname.slice("/api/spaces".length);
+          const headers = new Headers(req.headers);
+          headers.set("authorization", `Bearer ${f.token}`);
+          const response = await api.fetch(
+            new Request(url, {
+              method: req.method,
+              headers,
+              ...(req.method === "GET" || req.method === "HEAD" ? {} : { body: await req.arrayBuffer() }),
+            }),
+          );
+          if (req.method === "PATCH" && url.pathname.startsWith("/blocks/")) f.moves.push({ status: response.status });
+          if (req.method === "POST" && url.pathname.endsWith("/time-blocks")) {
+            const saved = response.ok ? SpaceTimeBlockSchema.parse(await response.clone().json()) : null;
+            f.posts.push({ id: saved?.id ?? "failed", status: response.status });
+            if (f.fault === "delay")
+              await new Promise<void>((done) => {
+                f.release = done;
+              });
+            // Transport fault AFTER the real handler committed: no fake create endpoint or fake persisted block.
+            if (f.fault === "lost-response") {
+              f.fault = "none";
+              return new Response("response lost", { status: 502 });
+            }
+          }
+          return response;
+        }
+        if (url.pathname.startsWith("/app/spaces/")) {
+          await render(f, url.searchParams.get("item") === f.taskId, `${url.pathname}${url.search}`);
+        }
+        return new Response(f.html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      },
+    });
+    browser = await launchBrowser();
+  }, 120_000);
+  afterAll(async () => {
+    for (const f of cases.values()) f.release?.();
+    await browser?.close();
+    await server?.stop(true);
+    for (const id of additionalAccounts) {
+      await sql`DELETE FROM auth.service_account_credentials WHERE service_account_id = ${id}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
+    }
+    for (const f of cleanup) {
+      await sql`DELETE FROM spaces.time_blocks WHERE owner_id = ${f.ownerId}::uuid`;
+      await sql`DELETE FROM spaces.spaces WHERE id = ${f.spaceUuid}::uuid`;
+      if (f.accountId) {
+        await sql`DELETE FROM auth.service_account_credentials WHERE service_account_id = ${f.accountId}::uuid`;
+        await sql`DELETE FROM auth.service_accounts WHERE id = ${f.accountId}::uuid`;
+      }
+      for (const id of f.userIds) {
+        await sql`DELETE FROM auth.access WHERE user_id = ${id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${id}::uuid`;
+      }
+    }
+    setSystemTime();
+    expect(runtimeErrors.flat()).toEqual([]);
+  });
+
+  test("#1701: dropping an assigned estimated and claimed task creates one block, keeps task/checklist/claim, and Undo deletes only the block", async () => {
+    const f = await scene(),
+      before = await taskState(f),
+      page = await open(f);
+    const errors = pageErrors(page);
+    try {
+      await drop(page, f);
+      await waitFor(async () => (await blocks(f)).length === 1);
+      const saved = (await blocks(f))[0]!;
+      expect(f.posts).toEqual([{ id: saved.id, status: 200 }]);
+      expect(Date.parse(saved.endsAt) - Date.parse(saved.startsAt)).toBe(45 * 60_000);
+      expect(await taskState(f)).toEqual(before);
+      expect(await page.locator(".spaces-time-block-dialog").count()).toBe(0);
+      await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+      await waitFor(async () => (await blocks(f)).length === 0);
+      expect(await taskState(f)).toEqual(before);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("non-assignee drop opens the task first without creating a block or changing assignment", async () => {
+    const f = await scene(false),
+      before = await taskState(f),
+      page = await open(f);
+    try {
+      await page.evaluate(() => {
+        window.addEventListener(
+          "spaces-detail-navigation",
+          (event) => (document.documentElement.dataset.openedTask = (event as CustomEvent<{ itemId: string }>).detail.itemId),
+        );
+      });
+      await drop(page, f);
+      await page.waitForFunction((id) => document.documentElement.dataset.openedTask === id, f.taskId);
+      expect(f.posts).toEqual([]);
+      expect(await blocks(f)).toEqual([]);
+      expect(await taskState(f)).toEqual(before);
+      expect(await page.getByRole("alert").textContent()).toContain("Weise dir die Aufgabe zu");
+      await page.getByRole("button", { name: "Mir zuweisen", exact: true }).waitFor();
+      expect(await page.getByRole("button", { name: "Zeit blocken", exact: true }).count()).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  for (const width of [1440, 390])
+    test(`dialog validates input, locks saving, retains inputs and reconciles a lost response at ${width}px`, async () => {
+      const f = await scene(),
+        page = await open(f, true, width);
+      try {
+        await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
+        const dialog = page.locator(".spaces-time-block-dialog");
+        await dialog.waitFor();
+        await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())));
+        expect(await dialog.getByLabel("Beginn", { exact: true }).inputValue()).toBe("");
+        expect(await dialog.getByLabel("Dauer", { exact: true }).inputValue()).toBe("45");
+        await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
+        expect(await dialog.textContent()).toContain("Wähle einen Beginn");
+        expect(await dialog.getByLabel("Beginn", { exact: true }).evaluate((el) => el === document.activeElement)).toBe(true);
+        expect(f.posts).toEqual([]);
+        await dialog.getByLabel("Beginn", { exact: true }).fill("10:00");
+        await dialog.getByLabel("Dauer", { exact: true }).fill("0");
+        await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
+        expect(await dialog.textContent()).toContain("Gib eine Dauer größer als 0 Minuten ein");
+        expect(f.posts).toEqual([]);
+        await dialog.getByLabel("Dauer", { exact: true }).fill("45");
+        expect(await dialog.textContent()).toContain("Liegt nach der Frist");
+        // Measure saving from a valid form; validation/deadline hints may legitimately change its earlier height.
+        await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+        await dialog.waitFor({ state: "detached" });
+        await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
+        await dialog.waitFor();
+        await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())));
+        await dialog.getByLabel("Beginn", { exact: true }).fill("10:00");
+        const beforeHeight = (await dialog.boundingBox())!.height;
+        f.fault = "delay";
+        await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
+        await waitFor(async () => f.posts.length === 1);
+        expect(await dialog.getByLabel("Beginn", { exact: true }).isDisabled()).toBe(true);
+        expect(await dialog.getByLabel("Dauer", { exact: true }).isDisabled()).toBe(true);
+        expect(await dialog.getByRole("button", { name: "Abbrechen", exact: true }).isDisabled()).toBe(true);
+        await page.keyboard.press("Escape");
+        expect(await dialog.count()).toBe(1);
+        expect(Math.abs((await dialog.boundingBox())!.height - beforeHeight)).toBeLessThanOrEqual(1);
+        await shot(page, "03-dialog-saving");
+        f.fault = "lost-response";
+        f.release?.();
+        await dialog.getByRole("button", { name: "Erneut versuchen", exact: true }).waitFor();
+        expect(await dialog.getByLabel("Beginn", { exact: true }).inputValue()).toBe("10:00");
+        expect(await dialog.getByLabel("Dauer", { exact: true }).inputValue()).toBe("45");
+        await shot(page, "04-dialog-recovery");
+        await dialog.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
+        await dialog.waitFor({ state: "detached" });
+        expect(await blocks(f)).toHaveLength(1);
+        expect(f.posts).toHaveLength(1);
+      } finally {
+        f.release?.();
+        await page.context().close();
+      }
+    });
+
+  test("only the assigned owner can move or resize an existing block; task fields and checklist stay unchanged", async () => {
+    const f = await scene();
+    const input = { id: uuid(9101), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
+    await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
+    const beforeTask = await taskState(f);
+    let page = await open(f);
+    const band = () => page.locator(`[data-calendar-entry="${input.id}"]`);
+    const drag = async (readonly: boolean) => {
+      const chip = band().locator("[data-calendar-event]");
+      await chip.scrollIntoViewIfNeeded();
+      const box = (await chip.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 56, { steps: 10 });
+      if (!readonly) await page.waitForSelector(".k2b-calendar-ghost[data-live]");
+      else expect(await page.locator(".k2b-calendar-ghost[data-live]").count()).toBe(0);
+      await page.mouse.up();
+    };
+    try {
+      await band().waitFor();
+      expect(await band().locator("[data-calendar-event]").getAttribute("data-editable")).not.toBe("false");
+      expect(await band().locator(".k2b-calendar-band__grip").count()).toBe(2);
+      await drag(false);
+      await waitFor(async () => f.moves.length === 1 && (await blocks(f))[0]!.startsAt !== input.startsAt);
+      const moved = (await blocks(f))[0]!;
+      await page.waitForFunction(
+        ({ id, time }) =>
+          document.querySelector(`[data-calendar-entry="${id}"] [data-calendar-event]`)?.getAttribute("aria-label")?.includes(time),
+        { id: input.id, time: moved.startsAt.slice(11, 16) },
+      );
+      expect(Date.parse(moved.endsAt) - Date.parse(moved.startsAt)).toBe(45 * 60_000);
+      expect(await taskState(f)).toEqual(beforeTask);
+      const grip = band().locator('.k2b-calendar-band__grip[data-edge="end"]');
+      await grip.scrollIntoViewIfNeeded();
+      const box = (await grip.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 28, { steps: 8 });
+      await page.mouse.up();
+      await waitFor(async () => f.moves.length === 2 && (await blocks(f))[0]!.endsAt !== moved.endsAt);
+      const resized = (await blocks(f))[0]!;
+      expect(resized.startsAt).toBe(moved.startsAt);
+      expect(Date.parse(resized.endsAt)).toBeGreaterThan(Date.parse(moved.endsAt));
+      expect(await taskState(f)).toEqual(beforeTask);
+      expect(f.moves).toEqual([{ status: 200 }, { status: 200 }]);
+      await page.context().close();
+      await viewAsColleague(f);
+      page = await open(f);
+      await band().waitFor();
+      expect(await band().locator("[data-calendar-event]").getAttribute("data-editable")).toBe("false");
+      expect(await band().locator(".k2b-calendar-band__grip").count()).toBe(0);
+      await drag(true);
+      expect((await blocks(f))[0]).toMatchObject({ startsAt: resized.startsAt, endsAt: resized.endsAt, canWrite: false });
+      expect(f.moves).toHaveLength(2);
+      expect(await taskState(f)).toEqual(beforeTask);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("clicking a calendar block selects it in the real detail, and reload/Back preserve task and block selection", async () => {
+    const f = await scene();
+    const input = { id: uuid(9201), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
+    await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
+    const page = await open(f);
+    try {
+      await page.locator(`[data-calendar-entry="${input.id}"] [data-calendar-event]`).click();
+      const selected = page.locator(`#time-block-${input.id}[data-selected]`);
+      await selected.waitFor();
+      expect(new URL(page.url()).searchParams.get("block")).toBe(input.id);
+      expect(new URL(page.url()).searchParams.get("item")).toBe(f.taskId);
+      await page.reload();
+      await selected.waitFor();
+      expect(new URL(page.url()).searchParams.get("block")).toBe(input.id);
+      await page.goBack();
+      await selected.waitFor({ state: "detached" });
+      expect(new URL(page.url()).searchParams.has("item")).toBe(false);
+      expect(new URL(page.url()).searchParams.has("block")).toBe(false);
+      expect(await blocks(f)).toHaveLength(1);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("unestimated tasks suggest 60 minutes and non-assignees see assignment before blocking", async () => {
+    const f = await scene();
+    await sql`UPDATE spaces.items SET estimated_duration_minutes = NULL WHERE id = ${f.taskUuid}::uuid`;
+    let page = await open(f, true, 390);
+    try {
+      await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
+      const dialog = page.locator(".spaces-time-block-dialog");
+      await dialog.waitFor();
+      expect(await dialog.getByLabel("Dauer", { exact: true }).inputValue()).toBe("60");
+      expect(await dialog.textContent()).toContain("Vorschlag");
+      await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+      expect(await blocks(f)).toEqual([]);
+      await page.context().close();
+      const unassigned = await scene(false);
+      page = await open(unassigned, true, 390);
+      expect(await page.getByRole("button", { name: "Mir zuweisen", exact: true }).count()).toBe(1);
+      expect(await page.getByRole("button", { name: "Zeit blocken", exact: true }).count()).toBe(0);
+      await shot(page, "07-task-assignment-first");
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("done/reopened tasks keep their block; deleting the task leaves a readable, deletable orphan in the calendar", async () => {
+    const f = await scene();
+    const input = { id: uuid(9001), startsAt: "2030-03-14T10:00:00.000Z", endsAt: "2030-03-14T10:45:00.000Z" };
+    await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
+    await json(
+      await request(f, `/${f.spaceId}/items/${f.taskId}/completed`, {
+        method: "POST",
+        body: JSON.stringify({ completed: true, claimId: uuid(Number(f.key.slice(4)) * 10 + 6) }),
+      }),
+    );
+    expect((await blocks(f))[0]?.taskState).toBe("done");
+    let page = await open(f);
+    try {
+      const event = () =>
+        page.locator(`[data-calendar-body="${TODAY}"] [data-calendar-event]`, { hasText: "Angebot für Stadtwerke prüfen" });
+      await event().waitFor();
+      expect(await event().locator(".ti-circle-check").count()).toBeGreaterThan(0);
+      await shot(page, "08-calendar-task-done");
+      await json(
+        await request(f, `/${f.spaceId}/items/${f.taskId}/completed`, { method: "POST", body: JSON.stringify({ completed: false }) }),
+      );
+      expect((await blocks(f))[0]?.taskState).toBe("open");
+      await json(await request(f, `/${f.spaceId}/items/${f.taskId}`, { method: "DELETE" }));
+      const orphan = SpaceTimeBlockSchema.parse(await json(await request(f, `/blocks/${input.id}`)));
+      expect(orphan).toMatchObject({
+        title: "Angebot für Stadtwerke prüfen",
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        taskState: "deleted",
+        itemId: null,
+        canWrite: false,
+        canDelete: true,
+      });
+      await page.context().close();
+      page = await open(f);
+      await event().waitFor();
+      expect(await event().textContent()).toContain("Aufgabe gelöscht");
+      expect(await event().getAttribute("data-editable")).toBe("false");
+      expect(await page.locator(`[data-calendar-entry="${input.id}"] .k2b-calendar-band__grip`).count()).toBe(0);
+      await event().click();
+      await page.getByRole("button", { name: "Termin löschen", exact: true }).waitFor();
+      expect(await page.getByText("Die Aufgabe wurde gelöscht.", { exact: false }).count()).toBeGreaterThan(0);
+      await shot(page, "09-calendar-task-deleted");
+      await page.getByRole("button", { name: "Termin löschen", exact: true }).click();
+      await waitFor(async () => (await request(f, `/blocks/${input.id}`)).status === 404);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  for (const width of [1440, 390])
+    test(`real task detail, multiple blocks and dialog screenshots at ${width}px`, async () => {
+      const f = await scene();
+      let page = await open(f, true, width);
+      try {
+        await shot(page, "01-task-unplanned");
+        await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
+        const dialog = page.locator(".spaces-time-block-dialog");
+        await dialog.waitFor();
+        const dialogBounds = (await dialog.boundingBox())!;
+        if (width === 1440) expect(Math.round(dialogBounds.width)).toBe(440);
+        else expect(dialogBounds.width).toBeLessThanOrEqual(390);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        await shot(page, "02-dialog-open");
+        await dialog.getByLabel("Beginn", { exact: true }).fill("10:00");
+        await shot(page, "02-dialog-after-deadline");
+        await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
+        await dialog.waitFor({ state: "detached" });
+        expect(await blocks(f)).toHaveLength(1);
+        await page.context().close();
+        page = await open(f, true, width);
+        await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
+        await page.locator(".spaces-time-block-dialog").getByLabel("Beginn", { exact: true }).fill("13:00");
+        await page.locator(".spaces-time-block-dialog").getByRole("button", { name: "Zeit blocken", exact: true }).click();
+        await page.locator(".spaces-time-block-dialog").waitFor({ state: "detached" });
+        expect(await blocks(f)).toHaveLength(2);
+        await page.context().close();
+        page = await open(f, true, width);
+        expect(await page.locator(".spaces-time-block-row").count()).toBe(2);
+        await shot(page, "05-task-multiple-blocks");
+        await page.context().close();
+        page = await open(f, false, width);
+        await shot(page, "06-calendar-blocks");
+      } finally {
+        await page.context().close();
+      }
+    });
+});

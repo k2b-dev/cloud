@@ -42,9 +42,12 @@ import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { allDayEnd, allDayStart, instantFromLocalDateTime } from "../shared/item-form/date";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
+import { createTimeBlock, deleteTimeBlock, updateTimeBlock } from "../time-blocks/client";
+import { useTimeBlockMessages } from "../time-blocks/messages";
+import { isAssignedPerson, openOrphanTimeBlock } from "../time-blocks/TimeBlocksSection";
 import { invalidateSpacesData, requestSpacesDetailNavigation, requestSpacesRouteNavigation } from "../workspace/workspace-events";
-import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
-import { countCalendarEvents } from "./count";
+import { CALENDAR_NEUTRAL_COLOR, calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
+import { countCalendarEvents, countTimeBlocks } from "./count";
 import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
 import { CalendarItemContent } from "./ItemContent";
 import QuickCreate, {
@@ -82,6 +85,7 @@ const buildCalendarHref = (
   url.searchParams.set("cv", view);
   url.searchParams.set("cd", calendar.formatDateKey(date, dateConfig));
   writeCalendarFilter(url, filter);
+  url.searchParams.delete("block");
   if (item) {
     url.searchParams.set("item", item);
     if (occurrence) url.searchParams.set("occurrence", occurrence);
@@ -235,6 +239,9 @@ const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>):
 
 export default function Calendar(props: CalendarProps) {
   const t = useSpaceMessages();
+  const bt = useTimeBlockMessages();
+  const [blockError, setBlockError] = createSignal<string>();
+  const [blockRetry, setBlockRetry] = createSignal<() => Promise<void>>();
   const retryToast = createRetryToasts();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
@@ -269,9 +276,12 @@ export default function Calendar(props: CalendarProps) {
   const shownCount = () => {
     if (isScrollingCalendarView(props.view)) {
       const days = visibleDays() ?? routeDays();
-      return countCalendarDays(props.items, days.first, days.last, props.dateConfig);
+      return (
+        countCalendarDays(props.items, days.first, days.last, props.dateConfig) +
+        countTimeBlocks(props.timeBlocks ?? [], days.first, days.last, props.dateConfig)
+      );
     }
-    if (props.view !== "month") return props.items.length;
+    if (props.view !== "month") return events().length;
     const days = visibleDays();
     if (days)
       return countCalendarEvents(
@@ -315,14 +325,50 @@ export default function Calendar(props: CalendarProps) {
       return { source: itemId, item: await response.json() };
     },
   });
-  const events = () =>
-    props.items.map((item) => {
-      const event = toCalendarEvent(item, props.columns, props.baseUrl, props.view, props.date, props.filter, props.dateConfig);
+  const events = () => [
+    ...props.items.map((item) => {
+      const event = {
+        ...toCalendarEvent(item, props.columns, props.baseUrl, props.view, props.date, props.filter, props.dateConfig),
+        editable: props.canWrite,
+      };
       const optimistic = optimisticTimes()[item.id];
       return optimistic ? { ...event, start: optimistic.start, end: optimistic.end, allDay: optimistic.allDay } : event;
-    });
+    }),
+    ...(props.timeBlocks ?? []).map((block): CalendarEvent => {
+      const href = block.itemId
+        ? new URL(
+            buildCalendarHref(props.baseUrl, props.view, shownDate(), props.filter, block.itemId, undefined, props.dateConfig),
+            "http://spaces.local",
+          )
+        : null;
+      href?.searchParams.set("block", block.id);
+      return {
+        id: block.id,
+        title: block.title,
+        start: optimisticTimes()[block.id]?.start ?? block.startsAt,
+        end: optimisticTimes()[block.id]?.end ?? block.endsAt,
+        colorHex: block.taskState === "deleted" ? CALENDAR_NEUTRAL_COLOR : (block.spaceColor ?? undefined),
+        editable: block.canWrite && block.taskState !== "deleted",
+        meta: block.ownerName,
+        accessibleDetail: `${bt.blocks}, ${block.ownerName}${block.taskState === "deleted" ? `, ${bt.deleted}` : ""}`,
+        href: href ? `${href.pathname}${href.search}` : undefined,
+        dataSpaceItemId: block.itemId ?? undefined,
+      };
+    }),
+  ];
+  const blocksById = createMemo(() => new Map((props.timeBlocks ?? []).map((block) => [block.id, block])));
   const itemsById = createMemo(() => new Map(props.items.map((item) => [item.id, item])));
   const renderEvent = (event: CalendarEvent, context: CalendarEventRenderContext) => {
+    const block = blocksById().get(event.id);
+    if (block)
+      return (
+        <div class="min-w-0 text-xs">
+          <div class="truncate font-medium">
+            <i class={`ti ${block.taskState === "done" ? "ti-circle-check" : "ti-checkbox"}`} aria-hidden="true" /> {block.title}
+          </div>
+          <div class="truncate">{block.taskState === "deleted" ? bt.deleted : block.ownerName}</div>
+        </div>
+      );
     const item = itemsById().get(event.id);
     if (!item) return undefined;
     return (
@@ -343,14 +389,19 @@ export default function Calendar(props: CalendarProps) {
     setOptimisticTimes(next);
   };
   let previousItems = props.items;
+  let previousBlocks = props.timeBlocks;
   createEffect(() => {
     const items = props.items;
-    const itemsChanged = items !== previousItems;
+    const blocks = props.timeBlocks;
+    const itemsChanged = items !== previousItems || blocks !== previousBlocks;
     previousItems = items;
+    previousBlocks = blocks;
     const current = optimisticTimes();
     if (!itemsChanged) return;
     const settled = Object.entries(current).filter(([eventId, optimistic]) => {
       const item = items.find((candidate) => candidate.id === eventId);
+      const block = blocks?.find((candidate) => candidate.id === eventId);
+      if (block) return Date.parse(block.startsAt) === optimistic.start.getTime() && Date.parse(block.endsAt) === optimistic.end.getTime();
       return (
         !item ||
         (new Date(eventStart(item, props.dateConfig)).getTime() === optimistic.start.getTime() &&
@@ -441,13 +492,21 @@ export default function Calendar(props: CalendarProps) {
     const selection = new URL(window.location.href).searchParams;
     const item = selection.get("item") ?? undefined;
     const occurrence = selection.get("occurrence") ?? undefined;
-    void navigateRoute(
+    const target = new URL(
       buildCalendarHref(props.baseUrl, props.view, shownDate(), { ...props.filter, colorBy }, item, occurrence, props.dateConfig),
-      { replace: true },
+      window.location.origin,
     );
+    const block = selection.get("block");
+    if (block) target.searchParams.set("block", block);
+    void navigateRoute(`${target.pathname}${target.search}`, { replace: true });
   };
   // The day and week views keep the URL on the day the reader scrolled to, so an item opens on the URL as it stands.
   const selectEvent = (event: CalendarEvent) => {
+    const block = blocksById().get(event.id);
+    if (block && !block.itemId) {
+      void openOrphanTimeBlock(block);
+      return;
+    }
     if (event.href) requestSpacesDetailNavigation(event.href, { scroll: "preserve" });
   };
   const loadSeriesItem = async (itemId: string) => {
@@ -620,6 +679,30 @@ export default function Calendar(props: CalendarProps) {
     if (updateSubmitting || updateEventTime.loading()) return;
     updateSubmitting = true;
     try {
+      const block = blocksById().get(event.id);
+      if (block) {
+        if (!block.canWrite || block.taskState === "deleted") {
+          setBlockRetry(undefined);
+          setBlockError(bt.ownOnly);
+          return;
+        }
+        const save = async () => {
+          setOptimisticTimes({ ...optimisticTimes(), [block.id]: next });
+          setBlockError(undefined);
+          try {
+            await updateTimeBlock(block.id, { startsAt: next.start.toISOString(), endsAt: next.end.toISOString() }, bt.updateFailed);
+            setBlockError(undefined);
+            reconcileAfterWrite();
+          } catch (cause) {
+            clearOptimisticTime(block.id);
+            setBlockError(cause instanceof Error ? cause.message : String(cause));
+            setBlockRetry(() => save);
+          }
+        };
+        await save();
+        return;
+      }
+      if (!props.canWrite) return;
       let recurringScope: RecurringEditScope | undefined;
       let parent: SpaceItem | undefined;
       const sourceItem = props.items.find((item) => item.id === event.id);
@@ -751,23 +834,43 @@ export default function Calendar(props: CalendarProps) {
     reconcileAfterWrite();
   };
 
-  /** Plans a task from the row below the day into the free time it was dropped on; its deadline stays. */
+  /** A planning gesture creates a block; it never patches task/event fields. */
   const scheduleItem = async (item: SpaceItem, slot: CalendarEventTimeChange) => {
-    try {
-      await patchItemTime(item.id, { startsAt: slot.start.toISOString(), endsAt: slot.end.toISOString(), allDay: false });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t.eventTimeUpdateFailed);
+    if (!isAssignedPerson(item, props.currentUserId)) {
+      setBlockRetry(undefined);
+      setBlockError(bt.assignedFirst);
+      requestSpacesDetailNavigation(
+        buildCalendarHref(props.baseUrl, props.view, shownDate(), props.filter, item.id, undefined, props.dateConfig),
+        { scroll: "preserve" },
+      );
       return;
     }
-    const day = new Intl.DateTimeFormat(props.dateConfig?.locale ?? "en", {
-      weekday: "short",
-      day: "numeric",
-      month: "short",
-      timeZone: props.dateConfig?.timeZone,
-    }).format(slot.start);
-    const time = (date: Date) => calendar.formatTime(date, props.dateConfig);
-    toast.success(t.taskScheduled({ title: item.title, when: `${day}, ${time(slot.start)}–${time(slot.end)}` }));
-    reconcileAfterWrite();
+    const intent = { id: crypto.randomUUID(), startsAt: slot.start.toISOString(), endsAt: slot.end.toISOString() };
+    let attempted = false;
+    const save = async () => {
+      try {
+        const retry = attempted;
+        attempted = true;
+        const block = await createTimeBlock(props.spaceId, item.id, intent, bt.createFailed, retry);
+        setBlockError(undefined);
+        const undo = async () => {
+          try {
+            await deleteTimeBlock(block.id, bt.deleteFailed);
+            setBlockError(undefined);
+            reconcileAfterWrite();
+          } catch (cause) {
+            setBlockError(cause instanceof Error ? cause.message : String(cause));
+            setBlockRetry(() => undo);
+          }
+        };
+        toast.success(bt.saved, { action: { label: bt.undo, onClick: () => void undo() } });
+        reconcileAfterWrite();
+      } catch (cause) {
+        setBlockError(bt.failed({ reason: cause instanceof Error ? cause.message : String(cause) }));
+        setBlockRetry(() => save);
+      }
+    };
+    await save();
   };
 
   /** The year view has no quick create, so a task opens in the full dialog on the shown date, as New event does. */
@@ -816,6 +919,16 @@ export default function Calendar(props: CalendarProps) {
 
   return (
     <div class="flex min-h-0 flex-1 flex-col">
+      <Show when={blockError()}>
+        <div role="alert" class="flex items-center gap-2 text-sm text-danger">
+          {blockError()}
+          <Show when={blockRetry()}>
+            <Button size="sm" variant="ghost" onClick={() => void blockRetry()?.()}>
+              {bt.retry}
+            </Button>
+          </Show>
+        </div>
+      </Show>
       <CoreCalendar
         class="flex-1"
         view={props.view}
@@ -931,8 +1044,16 @@ export default function Calendar(props: CalendarProps) {
         onPrefetch={props.onPrefetch}
         navigationPending={props.navigationPending}
         onEventActivate={selectEvent}
-        onEventDrop={props.canWrite && !updateEventTime.loading() ? (event, next) => void updateTime(event, next) : undefined}
-        onEventResize={props.canWrite && !updateEventTime.loading() ? (event, next) => void updateTime(event, next) : undefined}
+        onEventDrop={
+          (props.canWrite || props.timeBlocks?.some((block) => block.canWrite)) && !updateEventTime.loading()
+            ? (event, next) => void updateTime(event, next)
+            : undefined
+        }
+        onEventResize={
+          (props.canWrite || props.timeBlocks?.some((block) => block.canWrite)) && !updateEventTime.loading()
+            ? (event, next) => void updateTime(event, next)
+            : undefined
+        }
         onSlotActivate={
           props.canWrite && !creatingEvent() && (props.view === "day" || props.view === "week")
             ? (slot) => void createEventFromSlot(slot)
@@ -978,7 +1099,7 @@ export default function Calendar(props: CalendarProps) {
           }}
           dateConfig={props.dateConfig}
           onSchedulePointerDown={
-            props.canWrite
+            props.currentUserId
               ? (event, item) =>
                   controller()?.dragIn(
                     event,

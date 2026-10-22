@@ -44,6 +44,13 @@ import { DeadlineInputSchema } from "./contracts";
 import type { EventInvitationContext, EventInvitationDraft } from "./integration";
 import { hasEscapedLineBreak } from "./lib/escaped-line-break";
 import { describeTemplateDateRule, formatTemplateDate, localNow, proposeTemplateDates } from "./presentation/item-templates";
+import {
+  CreateTimeBlockSchema,
+  type SpaceTimeBlock,
+  SpaceTimeBlockSchema,
+  TimeBlockListQuerySchema,
+  UpdateTimeBlockSchema,
+} from "./time-block-contracts";
 import type { TaskWork } from "./work-contracts";
 
 const SHORT_ID = /^[0-9A-Za-z]{6}$/;
@@ -432,6 +439,7 @@ function spacesCommands(locale?: string) {
         en: "List, upload, download, and delete task images",
         de: "Aufgabenbilder auflisten, hochladen, laden und löschen",
       }),
+      blocks: t({ en: "Plan task time blocks", de: "Zeitblöcke für Aufgaben planen" }),
       checklist: t({ en: "Manage a task checklist", de: "Die Checkliste einer Aufgabe pflegen" }),
       references: t({ en: "Link Cloud resources to an item", de: "Cloud-Ressourcen mit einem Eintrag verknüpfen" }),
       links: t({ en: "External links on an item, with GitHub previews", de: "Externe Links an einem Eintrag, mit GitHub-Vorschau" }),
@@ -1342,6 +1350,161 @@ function spacesCommands(locale?: string) {
             withQuery(itemApi(item, "/activity"), { limit: flags.limit ?? 30, cursor: flags.cursor }),
           );
           if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
+        },
+      }),
+
+      // ---------- Time blocks ----------
+      command("blocks ls", {
+        summary: t({
+          en: "List task time blocks or a bounded calendar interval",
+          de: "Zeitblöcke einer Aufgabe oder eines Zeitraums auflisten",
+        }),
+        args: {
+          item: arg.optional({
+            description: t({
+              en: "Task ID or <space>:<title>; omit for a date range",
+              de: "Aufgaben-ID oder <space>:<titel>; für einen Zeitraum weglassen",
+            }),
+          }),
+        },
+        flags: {
+          from: flag.string({ description: t({ en: "Inclusive interval start (ISO datetime)", de: "Inklusiver Beginn (ISO-Zeitpunkt)" }) }),
+          to: flag.string({
+            description: t({
+              en: "Exclusive interval end (ISO datetime), at most 366 days",
+              de: "Exklusives Ende (ISO-Zeitpunkt), höchstens 366 Tage",
+            }),
+          }),
+          space: flag.string({ description: spaceArgDescription }),
+          mine: flag.boolean({ description: t({ en: "Only time blocks owned by me", de: "Nur meine eigenen Zeitblöcke" }) }),
+          ...pageFlags,
+        },
+        async run({ ctx, args, flags }) {
+          let result: SpaceTimeBlock[] | Paginated<SpaceTimeBlock>;
+          if (args.item) {
+            if (flags.from || flags.to || flags.space || flags.mine)
+              throw new Error(
+                t({
+                  en: "With a task address, omit interval, space and mine flags.",
+                  de: "Mit Aufgabenadresse die Zeitraum-, Space- und mine-Optionen weglassen.",
+                }),
+              );
+            const pagination = {
+              page: TimeBlockListQuerySchema.shape.page.parse(flags.page),
+              perPage: TimeBlockListQuerySchema.shape.perPage.parse(flags.perPage),
+            };
+            result = await readApi<SpaceTimeBlock[]>(
+              ctx,
+              withQuery(itemApi(await resolveItem(ctx, args.item), "/time-blocks"), {
+                page: flags.page === undefined ? undefined : pagination.page,
+                perPage: flags.perPage === undefined ? undefined : pagination.perPage,
+              }),
+            );
+          } else {
+            // Reuse the server's range and pagination contract before any request.
+            const range = TimeBlockListQuerySchema.parse({
+              from: flags.from,
+              to: flags.to,
+              mine: flags.mine ? "true" : "false",
+              page: flags.page,
+              perPage: flags.perPage,
+            });
+            const spaceId = flags.space ? (await resolveSpace(ctx, flags.space)).id : undefined;
+            result = await readApi<Paginated<SpaceTimeBlock>>(
+              ctx,
+              withQuery(api("/blocks"), {
+                from: range.from,
+                to: range.to,
+                page: range.page,
+                perPage: range.perPage,
+                spaceId,
+                mine: range.mine ? "true" : undefined,
+              }),
+            );
+          }
+          const items = Array.isArray(result) ? result : result.items;
+          printRows(ctx, result, items, [
+            { key: "id", label: "ID" },
+            { key: "title", label: t({ en: "TITLE", de: "TITEL" }) },
+            { key: "startsAt", label: t({ en: "START", de: "BEGINN" }) },
+            { key: "endsAt", label: t({ en: "END", de: "ENDE" }) },
+            { key: "ownerName", label: t({ en: "OWNER", de: "EIGENTÜMER" }) },
+            { key: "taskState", label: "STATUS" },
+          ]);
+        },
+      }),
+      command("blocks show", {
+        summary: t({ en: "Read a time block by UUID", de: "Einen Zeitblock per UUID lesen" }),
+        args: { id: arg.required({ description: t({ en: "Time-block UUID", de: "UUID des Zeitblocks" }) }) },
+        async run({ ctx, args }) {
+          const id = SpaceTimeBlockSchema.shape.id.parse(args.id);
+          const block = await readApi<SpaceTimeBlock>(ctx, api(`/blocks/${id}`));
+          if (!printStructured(ctx, block))
+            ctx.print(`${block.title} (${block.id})\n${block.startsAt} – ${block.endsAt} · ${block.ownerName} · ${block.taskState}`);
+        },
+      }),
+      command("blocks add", {
+        summary: t({ en: "Block time for a task as its assigned person", de: "Als zuständige Person Zeit für eine Aufgabe blocken" }),
+        args: itemArg,
+        flags: {
+          id: flag.string({
+            required: true,
+            description: t({
+              en: "Client UUID; reuse the same UUID and interval when retrying",
+              de: "Client-UUID; bei Wiederholung dieselbe UUID und denselben Zeitraum verwenden",
+            }),
+          }),
+          startsAt: flag.string({
+            name: "starts-at",
+            required: true,
+            description: t({ en: "Start instant (ISO datetime with offset)", de: "Beginn (ISO-Zeitpunkt mit Zeitzone)" }),
+          }),
+          endsAt: flag.string({
+            name: "ends-at",
+            required: true,
+            description: t({ en: "End instant (ISO datetime with offset)", de: "Ende (ISO-Zeitpunkt mit Zeitzone)" }),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const data = CreateTimeBlockSchema.parse({ id: flags.id, startsAt: flags.startsAt, endsAt: flags.endsAt });
+          const block = await send<SpaceTimeBlock>(ctx, "POST", itemApi(await resolveItem(ctx, args.item), "/time-blocks"), data);
+          if (!printStructured(ctx, block))
+            ctx.print(`${t({ en: "Created time block", de: "Zeitblock angelegt" })} ${block.title} (${block.id})`);
+        },
+      }),
+      command("blocks set", {
+        summary: t({ en: "Change your own time block's title or interval", de: "Titel oder Zeitraum deines Zeitblocks ändern" }),
+        args: { id: arg.required({ description: t({ en: "Time-block UUID", de: "UUID des Zeitblocks" }) }) },
+        flags: {
+          title: flag.string({ description: t({ en: "Independent time-block title", de: "Eigener Titel des Zeitblocks" }) }),
+          startsAt: flag.string({
+            name: "starts-at",
+            description: t({ en: "New start instant (ISO datetime with offset)", de: "Neuer Beginn (ISO-Zeitpunkt mit Zeitzone)" }),
+          }),
+          endsAt: flag.string({
+            name: "ends-at",
+            description: t({ en: "New end instant (ISO datetime with offset)", de: "Neues Ende (ISO-Zeitpunkt mit Zeitzone)" }),
+          }),
+        },
+        async run({ ctx, args, flags }) {
+          const id = SpaceTimeBlockSchema.shape.id.parse(args.id);
+          const data = UpdateTimeBlockSchema.parse(flags);
+          if (data.title === undefined && data.startsAt === undefined && data.endsAt === undefined)
+            throw new Error(t({ en: "Pass --title, --starts-at or --ends-at.", de: "Übergib --title, --starts-at oder --ends-at." }));
+          const block = await send<SpaceTimeBlock>(ctx, "PATCH", api(`/blocks/${id}`), data);
+          if (!printStructured(ctx, block))
+            ctx.print(`${t({ en: "Updated time block", de: "Zeitblock geändert" })} ${block.title} (${block.id})`);
+        },
+      }),
+      command("blocks rm", {
+        summary: t({ en: "Delete your own time block", de: "Deinen Zeitblock löschen" }),
+        args: { id: arg.required({ description: t({ en: "Time-block UUID", de: "UUID des Zeitblocks" }) }) },
+        flags: yesFlag({ en: "Confirm deleting this time block", de: "Löschen dieses Zeitblocks bestätigen" }),
+        async run({ ctx, args, flags }) {
+          requireYes(flags.yes);
+          const id = SpaceTimeBlockSchema.shape.id.parse(args.id);
+          await readApi<unknown>(ctx, api(`/blocks/${id}`), { method: "DELETE" });
+          if (!printStructured(ctx, { id, deleted: true })) ctx.print(t({ en: "Time block deleted.", de: "Zeitblock gelöscht." }));
         },
       }),
 

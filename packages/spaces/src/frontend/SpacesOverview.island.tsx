@@ -12,6 +12,7 @@ import {
   DetailPanel,
   dialogCore,
   IconButton,
+  InlineGuidance,
   PanelDialog,
   Placeholder,
   panelDialogOptions,
@@ -23,6 +24,8 @@ import { apiClient } from "@/api/client";
 import { formatDeadline } from "@/presentation/deadline";
 import { spaceCommandMessages } from "../commands";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
+import type { SpaceTimeBlock } from "../time-block-contracts";
+import { CALENDAR_NEUTRAL_COLOR } from "./[id]/_components/calendar/colors";
 import SpacesSidebarList from "./[id]/_components/sidebar/SpacesSidebarList";
 import {
   createNewSpace,
@@ -31,6 +34,8 @@ import {
   listenSpacesNavigationHints,
   type SidebarSpace,
 } from "./[id]/_components/sidebar/spaces-navigation";
+import { useTimeBlockMessages } from "./[id]/_components/time-blocks/messages";
+import { openOrphanTimeBlock } from "./[id]/_components/time-blocks/TimeBlocksSection";
 import { subscribeToSpacesDataInvalidation } from "./[id]/_components/workspace/workspace-events";
 import { createRetryToasts } from "./lib/feedback";
 import { readResponseError } from "./lib/response";
@@ -78,6 +83,7 @@ const activityIcon = (action: string) =>
 export default function SpacesOverview(props: Props) {
   createSpaceCommands({ dateConfig: props.dateConfig });
   const locale = useLocale();
+  const bt = useTimeBlockMessages();
   const { t } = overviewMessages.resolve([locale()]);
   const activityDescription = (entry: ActivityItem) => {
     const title = entry.item?.title ?? String(entry.metadata.itemTitle ?? entry.space.name);
@@ -146,7 +152,19 @@ export default function SpacesOverview(props: Props) {
   });
   const activeWork = () => (work.data()?.view === view() ? work.data() : undefined);
   const workItems = () => activeWork()?.items ?? [];
-  const counts = () => work.data()?.counts ?? props.initialWork.counts;
+  const workRows = () =>
+    [
+      ...workItems().map((item) => ({ kind: "item" as const, item, at: item.startsAt ?? item.deadline ?? "9999" })),
+      ...(activeWork()?.timeBlocks ?? []).map((block) => ({ kind: "block" as const, block, at: block.startsAt })),
+    ].sort((a, b) => a.at.localeCompare(b.at));
+  const counts = () => {
+    const data = work.data() ?? props.initialWork;
+    return {
+      ...data.counts,
+      today: data.counts.today + (data.timeBlockCounts?.today ?? 0),
+      upcoming: data.counts.upcoming + (data.timeBlockCounts?.upcoming ?? 0),
+    };
+  };
   const priorityLabel = (priority: NonNullable<WorkItem["priority"]>) =>
     ({ urgent: t.urgent, high: t.high, medium: t.medium, low: t.low })[priority];
 
@@ -319,9 +337,45 @@ export default function SpacesOverview(props: Props) {
       panelDialogOptions,
     );
 
+  const blockRow = (block: SpaceTimeBlock) => {
+    const content = (
+      <>
+        <span
+          class="spaces-overview-space-mark"
+          style={{ "background-color": block.taskState === "deleted" ? CALENDAR_NEUTRAL_COLOR : (block.spaceColor ?? "var(--ui-accent)") }}
+          aria-hidden="true"
+        />
+        <span class="spaces-overview-work-copy">
+          <strong>
+            <i class={`ti ${block.taskState === "done" ? "ti-circle-check" : "ti-calendar-time"}`} aria-hidden="true" /> {block.title}
+          </strong>
+          <span>
+            {block.taskState === "deleted"
+              ? bt.deleted
+              : block.taskState === "no_access"
+                ? bt.noAccess
+                : `${bt.blocks} · ${block.spaceName}`}
+          </span>
+        </span>
+        <time datetime={block.startsAt}>
+          {dates.formatDateTimeRelative(block.startsAt, props.dateConfig)}–{dates.formatTime(block.endsAt, props.dateConfig)}
+        </time>
+      </>
+    );
+    return block.itemId && block.spaceId ? (
+      <a class="spaces-overview-work-row" href={`/app/spaces/${block.spaceId}?item=${block.itemId}&block=${block.id}`}>
+        {content}
+      </a>
+    ) : (
+      <button type="button" class="spaces-overview-work-row" onClick={() => void openOrphanTimeBlock(block)}>
+        {content}
+      </button>
+    );
+  };
+
   const workList = () => (
     <Show
-      when={workItems().length > 0}
+      when={workRows().length > 0}
       fallback={
         <Placeholder
           state={work.error() ? "error" : !activeWork() ? "loading" : "empty"}
@@ -350,31 +404,38 @@ export default function SpacesOverview(props: Props) {
       }
     >
       <div class="spaces-overview-work-list">
-        <For each={workItems()}>
-          {(item) => (
-            <a class="spaces-overview-work-row" href={`/app/spaces/${item.spaceShortId}?item=${item.shortId}`}>
-              <span
-                class="spaces-overview-space-mark"
-                style={{ "background-color": item.spaceColor ?? "var(--ui-accent)" }}
-                aria-hidden="true"
-              />
-              <span class="spaces-overview-work-copy">
-                <strong>{item.title}</strong>
-                <span>{item.spaceName}</span>
-              </span>
-              <Show when={item.priority}>
-                <span class={`spaces-overview-priority is-${item.priority}`}>{priorityLabel(item.priority!)}</span>
-              </Show>
-              <Show when={item.startsAt || item.deadline}>
-                <time datetime={item.startsAt ?? item.deadline ?? undefined}>
-                  {item.startsAt
-                    ? dates.formatDateTimeRelative(item.startsAt, props.dateConfig)
-                    : formatDeadline(item.deadline!, props.dateConfig)}
-                </time>
-              </Show>
-              <i class="ti ti-chevron-right text-dimmed" aria-hidden="true" />
-            </a>
-          )}
+        <For each={workRows()}>
+          {(row) =>
+            row.kind === "block"
+              ? blockRow(row.block)
+              : (() => {
+                  const item = row.item;
+                  return (
+                    <a class="spaces-overview-work-row" href={`/app/spaces/${item.spaceShortId}?item=${item.shortId}`}>
+                      <span
+                        class="spaces-overview-space-mark"
+                        style={{ "background-color": item.spaceColor ?? "var(--ui-accent)" }}
+                        aria-hidden="true"
+                      />
+                      <span class="spaces-overview-work-copy">
+                        <strong>{item.title}</strong>
+                        <span>{item.spaceName}</span>
+                      </span>
+                      <Show when={item.priority}>
+                        <span class={`spaces-overview-priority is-${item.priority}`}>{priorityLabel(item.priority!)}</span>
+                      </Show>
+                      <Show when={item.startsAt || item.deadline}>
+                        <time datetime={item.startsAt ?? item.deadline ?? undefined}>
+                          {item.startsAt
+                            ? dates.formatDateTimeRelative(item.startsAt, props.dateConfig)
+                            : formatDeadline(item.deadline!, props.dateConfig)}
+                        </time>
+                      </Show>
+                      <i class="ti ti-chevron-right text-dimmed" aria-hidden="true" />
+                    </a>
+                  );
+                })()
+          }
         </For>
       </div>
     </Show>
@@ -417,6 +478,16 @@ export default function SpacesOverview(props: Props) {
       <AppWorkspace.Content>
         <AppWorkspace.Main class="spaces-overview-main" width="content" aria-busy={work.loading()}>
           <div class="spaces-overview-page">
+            <Show when={work.error() && workRows().length > 0}>
+              <InlineGuidance tone="danger" role="alert">
+                <p>
+                  {t.workLoadFailed}: {work.error()?.message}
+                </p>
+                <Button variant="secondary" size="sm" onClick={() => void work.refresh()}>
+                  {t.retry}
+                </Button>
+              </InlineGuidance>
+            </Show>
             <div class="spaces-overview-list">{workList()}</div>
           </div>
         </AppWorkspace.Main>

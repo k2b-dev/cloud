@@ -404,7 +404,7 @@ export const createTimeView = (props: TimeViewProps) => {
 
   const startMove = (pointerEvent: PointerEvent, event: CalendarEvent, key: string, start: number, end: number, scroller?: HTMLElement) => {
     const marker = event.display === "marker";
-    if (!props.owner.onEventDrop) return;
+    if (!props.owner.onEventDrop || event.editable === false) return;
     const body = bodies.get(key);
     if (!body) return;
     const rect = body.element.getBoundingClientRect();
@@ -476,7 +476,7 @@ export const createTimeView = (props: TimeViewProps) => {
     edge: "start" | "end",
     scroller?: HTMLElement,
   ) => {
-    if (!props.owner.onEventResize) return;
+    if (!props.owner.onEventResize || event.editable === false) return;
     pointerEvent.preventDefault();
     pointerEvent.stopPropagation();
     const body = bodies.get(key);
@@ -916,7 +916,7 @@ export const TimeBand = (props: {
             : undefined
         }
       />
-      <Show when={view.props.owner.onEventResize}>
+      <Show when={view.props.owner.onEventResize && event().editable !== false}>
         <span
           class="k2b-calendar-band__grip"
           data-edge="start"

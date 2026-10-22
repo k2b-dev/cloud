@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Deployment requirements
@@ -1752,3 +1752,26 @@ apply, and each user holds at most 16 disposable check copies at a time. Disposa
 scopes left by crashed hosts and queues unreachable database namespaces for deletion.
 See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
 for data-copy and output limits. No new configuration is required.
+
+
+## Spaces task time blocks
+
+Spaces adds a separate durable store for task time blocks. Its startup
+migration creates the block table and indexes in the existing Spaces
+Postgres schema. Include these records in the same database backup and
+restore boundary as tasks. Task or Space deletion preserves task time
+blocks, so deleting a task is not a retention operation for its blocks.
+
+The runtime contract adds the `spaces.time-block.*` capabilities, the
+`cld spaces blocks` command group and the `/api/spaces/blocks` routes. Refresh
+the installed CLI module after upgrading Spaces. No new environment variables
+or separately deployed application are required. Reassignment notifications
+use Cloud notifications after the ownership change commits.
+
+Verify an upgrade by creating a block with an explicit UUID, retrying the same
+create and confirming there is still one block. Check that a task reader can
+see it, another task writer cannot change it, and the assigned owner can.
+Completing the task must preserve the block. Replacing one owner with one new
+person must move the blocks and notify both people. These checks cover the
+new contract beyond container readiness; iCal and CalDAV continue to exclude
+blocks.

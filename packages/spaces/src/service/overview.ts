@@ -1,5 +1,5 @@
 import { toPgUuidArray } from "@k2b/cloud/services";
-import type { DateContext } from "@k2b/stdlib";
+import { type DateContext, dates } from "@k2b/stdlib";
 import { sql } from "bun";
 import { parsePinnedSpaceIds } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
 import type { SpacesSidebarData } from "../frontend/[id]/_components/sidebar/spaces-navigation";
@@ -7,16 +7,26 @@ import type { OverviewView, OverviewWork } from "../overview-contracts";
 import { spacesService } from "./index";
 import { dashboardSnapshot, listMyTasks } from "./items";
 import { spacesPublicResources } from "./public-resources";
+import { myTimeBlocks } from "./time-block-views";
 
 /** Both SSR and view navigation use the same permission-filtered reads and limits. */
 export async function loadOverviewWork(params: { userId: string; view: OverviewView; dateConfig: DateContext }): Promise<OverviewWork> {
-  const [dashboard, mine] = await Promise.all([
+  const today = dates.today(params.dateConfig);
+  const [dashboard, mine, planned] = await Promise.all([
     dashboardSnapshot({ ...params, view: params.view === "mine" ? "counts" : params.view, todoLimit: 30 }),
     params.view === "mine" ? listMyTasks({ userId: params.userId, limit: 100, dateConfig: params.dateConfig }) : Promise.resolve([]),
+    myTimeBlocks({
+      userId: params.userId,
+      view: params.view,
+      today: today.toISOString(),
+      tomorrow: dates.addDays(today, 1, params.dateConfig).toISOString(),
+    }),
   ]);
   const items = params.view === "mine" ? mine : params.view === "today" ? dashboard.events : dashboard.todos;
   return {
     view: params.view,
+    timeBlocks: planned.blocks,
+    timeBlockCounts: planned.counts,
     counts: { mine: dashboard.assignedToMeCount, today: dashboard.todayCount, upcoming: dashboard.upcomingCount },
     items: items.map((item) => ({
       shortId: item.shortId,

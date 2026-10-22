@@ -5,6 +5,7 @@ import { ClaimTaskSchema, type TaskWork, TaskWorkSchema, type WorkActor, WorkAct
 import { buildSpacePrincipalCondition } from "./access";
 import * as activity from "./activity";
 import { publishSpaceChange, spacesLive } from "./live";
+import { reconcileAssignees } from "./time-blocks";
 
 type Db = typeof sql;
 const empty = (): TaskWork => ({ claim: null, progress: null, result: null });
@@ -180,6 +181,7 @@ export const change = async (params: {
         OR (${takenOver.actor.kind} = 'service_account' AND service_account_id = ${takenOver.actor.id}::uuid)
       )`;
     }
+    if (takenOver) await reconcileAssignees(tx, params.itemId);
     if (takenOver)
       await recordTakeOver(
         { spaceId: params.spaceId, itemId: params.itemId, itemTitle: item.title, actor: params.actor, claim: takenOver },

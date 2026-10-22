@@ -765,6 +765,39 @@ export const migrate = async (): Promise<void> => {
     ON spaces.item_reactions(item_id, emoji, created_at)`.simple();
 
   await sql`
+    CREATE TABLE IF NOT EXISTS spaces.time_blocks (
+      id UUID PRIMARY KEY,
+      item_id UUID REFERENCES spaces.items(id) ON DELETE SET NULL,
+      space_id UUID REFERENCES spaces.spaces(id) ON DELETE SET NULL,
+      owner_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
+      starts_at TIMESTAMPTZ NOT NULL,
+      ends_at TIMESTAMPTZ NOT NULL CHECK (ends_at > starts_at),
+      creation_item_id UUID NOT NULL,
+      creation_owner_id UUID NOT NULL,
+      creation_starts_at TIMESTAMPTZ NOT NULL,
+      creation_ends_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS time_blocks_item ON spaces.time_blocks(item_id);
+    CREATE INDEX IF NOT EXISTS time_blocks_space_range ON spaces.time_blocks(space_id, starts_at);
+    CREATE INDEX IF NOT EXISTS time_blocks_owner_range ON spaces.time_blocks(owner_id, starts_at);
+    CREATE TABLE IF NOT EXISTS spaces.time_block_notifications (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      seq BIGINT GENERATED ALWAYS AS IDENTITY,
+      recipient_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      direction TEXT NOT NULL CHECK (direction IN ('received', 'released')),
+      attempts INT NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      claimed_until TIMESTAMPTZ,
+      last_error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS time_block_notifications_seq ON spaces.time_block_notifications(seq);
+    CREATE INDEX IF NOT EXISTS time_block_notifications_busy ON spaces.time_block_notifications(recipient_id)
+      WHERE claimed_until IS NOT NULL OR attempts > 0
+  `.simple();
+
+  await sql`
     CREATE OR REPLACE FUNCTION spaces.check_overlap(
       p_start TIMESTAMPTZ,
       p_end TIMESTAMPTZ,

@@ -1,11 +1,11 @@
 ---
 name: cloud-spaces
-description: "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, templates, assignees, blockers, comments, reactions, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue."
+description: "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, templates, time blocks, assignees, blockers, comments, reactions, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue."
 ---
 
 # Work with Cloud Spaces
 
-Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them. Load only the needed capabilities and reuse returned typed IDs unchanged.
+Load only the needed capabilities and reuse returned typed IDs unchanged.
 
 ## Start from the user's task
 
@@ -26,6 +26,10 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 - Use comments for discussion; read before replacing or deleting them. For tag replacement, preserve tags not included in the requested change.
 - Use `spaces.item.reference.find` to find existing items for a source resource. Link on creation through references rather than a redundant second mutation. For an existing item use `spaces.item.reference.add`; use `spaces.item.link-candidate.search` when a writable target is unknown.
 - Use `spaces.event.create` for interactive creation. Never blindly retry an uncertain mutation.
+
+## Task time blocks
+
+For task time blocks, read /skills/cloud-spaces/references/time-blocks.md.
 
 ## Templates
 

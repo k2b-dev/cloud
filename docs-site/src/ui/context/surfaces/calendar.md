@@ -40,7 +40,11 @@ import {
 ## Events
 
 Every `CalendarEvent` has an `id`, `title`, and `start`. `end` and `allDay`
-control placement. `color` accepts the shared semantic palette; `colorHex`
+control placement. Set `editable: false` on an event to disable moving and resizing it,
+even when the calendar has drop and resize callbacks. The event can still be opened;
+the application must also enforce its write permissions on the server.
+
+`color` accepts the shared semantic palette; `colorHex`
 supports an application-defined calendar color.
 
 Optional event detail includes `meta`, `description`, `location`,

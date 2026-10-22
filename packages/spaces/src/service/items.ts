@@ -47,6 +47,7 @@ import {
   splitRecurringEvent,
 } from "./recurrence";
 import * as taskWork from "./task-work";
+import { reconcileAssignees } from "./time-blocks";
 
 // ==========================
 // Items Service
@@ -316,6 +317,7 @@ const replaceItemAssignees = async (db: SqlExecutor, itemId: string, principals:
     FROM unnest(${toPgUuidArray(principals.filter((principal) => principal.kind === "service_account").map((principal) => principal.id))}::uuid[]) AS id
     ON CONFLICT DO NOTHING
   `;
+  await reconcileAssignees(db, itemId);
 };
 
 const replaceItemTags = async (db: SqlExecutor, itemId: string, tagIds: string[]): Promise<void> => {

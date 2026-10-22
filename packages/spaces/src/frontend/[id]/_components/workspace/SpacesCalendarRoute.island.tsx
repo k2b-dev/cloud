@@ -2,6 +2,7 @@ import type { DateContext } from "@k2b/stdlib";
 import { Button, InlineGuidance, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
+import type { SpaceTimeBlock } from "../../../../time-block-contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
@@ -12,6 +13,7 @@ import {
   type CalendarRange,
   calendarBlock,
   calendarBlockDays,
+  calendarItemsEnd,
   calendarWindow,
   isBlockLoadingCalendarView,
   mergeCalendarItems,
@@ -23,12 +25,25 @@ import type { CalendarTray } from "./workspace-types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+const mergeTimeBlocks = (
+  current: SpaceTimeBlock[] = [],
+  incoming: SpaceTimeBlock[] = [],
+  range: CalendarRange,
+  dateConfig?: DateContext,
+) => [
+  ...current.filter(
+    (b) => !incoming.some((n) => n.id === b.id) && !(b.startsAt < calendarItemsEnd(range.to, dateConfig) && b.endsAt > range.from),
+  ),
+  ...incoming,
+];
+
 type CalendarState = {
   view: CalendarView;
   date: string;
   filter: CalendarFilter;
   range: CalendarRange;
   items: CalendarItem[];
+  timeBlocks?: SpaceTimeBlock[];
   weather: Record<string, DayWeather>;
   tray: CalendarTray | null;
 };
@@ -44,6 +59,7 @@ type StreamState = CalendarRange & {
   anchor: string;
   filter: CalendarFilter;
   items: CalendarItem[];
+  timeBlocks?: SpaceTimeBlock[];
 };
 
 type Props = {
@@ -66,7 +82,15 @@ export default function SpacesCalendarRoute(props: Props) {
   const [selectedItemId, setSelectedItemId] = createSignal(props.selectedItemId);
   const streamOf = (source: string, snapshot: CalendarState): StreamState | null =>
     isBlockLoadingCalendarView(snapshot.view)
-      ? { source, view: snapshot.view, anchor: snapshot.date, filter: snapshot.filter, ...snapshot.range, items: snapshot.items }
+      ? {
+          source,
+          view: snapshot.view,
+          anchor: snapshot.date,
+          filter: snapshot.filter,
+          ...snapshot.range,
+          items: snapshot.items,
+          timeBlocks: snapshot.timeBlocks,
+        }
       : null;
   const [stream, setStream] = createSignal(streamOf(calendarViewSource(props.baseUrl), props.initialState));
   const [loadingBlocks, setLoadingBlocks] = createSignal(0);
@@ -100,7 +124,11 @@ export default function SpacesCalendarRoute(props: Props) {
         const current = untrack(stream);
         setStream(
           incoming && current && current.source === incoming.source && current.anchor === incoming.anchor
-            ? { ...current, ...mergeCalendarItems(current, incoming, props.dateConfig) }
+            ? {
+                ...current,
+                ...mergeCalendarItems(current, incoming, props.dateConfig),
+                timeBlocks: mergeTimeBlocks(current.timeBlocks, incoming.timeBlocks, incoming, props.dateConfig),
+              }
             : incoming,
         );
       },
@@ -173,7 +201,7 @@ export default function SpacesCalendarRoute(props: Props) {
         const merged = mergeCalendarItems(latest, { ...block, items: snapshot.items }, props.dateConfig);
         // Weeks at both ends load at once; together they must stay within the range a refresh may ask for.
         if (Date.parse(merged.to) - Date.parse(merged.from) > CALENDAR_MAX_DAYS * DAY_MS) return;
-        setStream({ ...latest, ...merged });
+        setStream({ ...latest, ...merged, timeBlocks: mergeTimeBlocks(latest.timeBlocks, snapshot.timeBlocks, block, props.dateConfig) });
         return;
       }
     } catch {
@@ -192,11 +220,11 @@ export default function SpacesCalendarRoute(props: Props) {
     const current = stream();
     const snapshot = state();
     if (current && current.view === snapshot.view && current.anchor === snapshot.date) {
-      return { range: { from: current.from, to: current.to }, items: current.items };
+      return { range: { from: current.from, to: current.to }, items: current.items, timeBlocks: current.timeBlocks };
     }
     const date = Date.parse(snapshot.date);
     if (current && current.view === snapshot.view && Date.parse(current.from) <= date && date < Date.parse(current.to))
-      return { range: { from: current.from, to: current.to }, items: current.items };
+      return { range: { from: current.from, to: current.to }, items: current.items, timeBlocks: current.timeBlocks };
     // A view that scrolls opens at the days its own snapshot will cover, not at those of the view it replaces, so the
     // month sets its first week on top at once and stays there when the items arrive.
     return {
@@ -204,6 +232,7 @@ export default function SpacesCalendarRoute(props: Props) {
         ? calendarWindow(snapshot.view, new Date(snapshot.date), props.dateConfig)
         : snapshot.range,
       items: snapshot.items,
+      timeBlocks: snapshot.timeBlocks,
     };
   };
 
@@ -229,6 +258,7 @@ export default function SpacesCalendarRoute(props: Props) {
       <Calendar
         spaceId={props.spaceId}
         items={shown().items}
+        timeBlocks={shown().timeBlocks}
         range={shown().range}
         columns={props.columns}
         tags={props.tags}

@@ -136,6 +136,13 @@ import {
 import type { ReactionViewer } from "../service/reactions";
 import * as taskWork from "../service/task-work";
 import { isTaskOverdue } from "../task-overdue";
+import {
+  CreateTimeBlockSchema,
+  SpaceTimeBlockPageSchema,
+  SpaceTimeBlockSchema,
+  TimeBlockListQuerySchema,
+  UpdateTimeBlockSchema,
+} from "../time-block-contracts";
 import { ClaimTaskSchema, ProgressTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "../work-contracts";
 import legacyLiveRoutes from "../ws";
 
@@ -3371,6 +3378,7 @@ const icalApp = new Hono().get(
 const combined = new Hono()
   .use(rateLimit())
   .use(localizeApiResponse)
+  .route("/", timeBlockRoutes())
   .route("/admin", adminApp)
   .route("/calendar", calendarApp)
   .route("/calendar", icalApp)
@@ -3648,4 +3656,93 @@ function discussionRoutes() {
         },
       )
   );
+}
+
+/** Blocks authorize inside the service, including direct SSR and capability callers. */
+function timeBlockRoutes() {
+  const reader = (c: Context<AuthContext>) => ({ actor: c.get("actor"), subject: c.get("accessSubject") });
+  const param = z.object({ blockId: z.string().uuid() });
+  const itemParam = z.object({ id: ResourceShortIdSchema, itemId: ResourceShortIdSchema });
+  const metadata = (summary: string, schema: Parameters<typeof jsonResponse>[0]) =>
+    describeRoute({
+      tags: ["Spaces"],
+      summary,
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(schema, summary),
+        400: jsonResponse(ErrorResponseSchema, "Invalid input"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Task or block not found"),
+        409: jsonResponse(ErrorResponseSchema, "Conflicting retry"),
+      },
+    });
+  const resolveItem = async (c: Context<AuthContext>, ids: { id: string; itemId: string }) => {
+    const spaceId = await resolvePublicId("spaces", ids.id);
+    return spaceId ? requireItemInSpace(spaceId, ids.itemId) : fail(err.notFound("Space"));
+  };
+  return new Hono<AuthContext>()
+    .use("/blocks", middleware.noTransform(), auth.requireRole("authenticated"))
+    .use("/blocks/*", middleware.noTransform(), auth.requireRole("authenticated"))
+    .use("/:id/items/:itemId/time-blocks", middleware.noTransform(), auth.requireRole("authenticated"))
+    .get("/blocks", metadata("List task time blocks", SpaceTimeBlockPageSchema), v("query", TimeBlockListQuerySchema), async (c) => {
+      const query = c.req.valid("query");
+      const spaceId = query.spaceId ? await resolvePublicId("spaces", query.spaceId) : undefined;
+      if (query.spaceId && !spaceId) return respond(c, fail(err.notFound("Space")));
+      const itemId = query.itemId ? await resolvePublicId("items", query.itemId) : undefined;
+      if (query.itemId && !itemId) return respond(c, fail(err.notFound("Task")));
+      const columnIds = query.columnIds ? await resolvePublicIds("columns", query.columnIds) : undefined;
+      const tagIds = query.tagIds ? await resolvePublicIds("tags", query.tagIds) : undefined;
+      if (columnIds === null || tagIds === null) return respond(c, fail(err.badInput("Unknown column or tag")));
+      return respond(
+        c,
+        spacesService.timeBlocks.list({
+          ...query,
+          spaceId: spaceId ?? undefined,
+          itemId: itemId ?? undefined,
+          columnIds,
+          tagIds,
+          reader: reader(c),
+        }),
+      );
+    })
+    .get(
+      "/:id/items/:itemId/time-blocks",
+      metadata("List a task's time blocks", z.array(SpaceTimeBlockSchema)),
+      v("param", itemParam),
+      v(
+        "query",
+        z.object({ page: z.coerce.number().int().min(1).optional(), perPage: z.coerce.number().int().min(1).max(100).optional() }),
+      ),
+      async (c) => {
+        const item = await resolveItem(c, c.req.valid("param"));
+        if (!item.ok) return respond(c, item);
+        return respond(c, spacesService.timeBlocks.listForItem({ itemId: item.data.id, reader: reader(c), ...c.req.valid("query") }));
+      },
+    )
+    .post(
+      "/:id/items/:itemId/time-blocks",
+      metadata("Plan time for an assigned task", SpaceTimeBlockSchema),
+      v("param", itemParam),
+      v("json", CreateTimeBlockSchema),
+      async (c) => {
+        const item = await resolveItem(c, c.req.valid("param"));
+        if (!item.ok) return respond(c, item);
+        return respond(c, spacesService.timeBlocks.create({ itemId: item.data.id, reader: reader(c), data: c.req.valid("json") }));
+      },
+    )
+    .get("/blocks/:blockId", metadata("Get a time block", SpaceTimeBlockSchema), v("param", param), async (c) =>
+      respond(c, spacesService.timeBlocks.get({ id: c.req.valid("param").blockId, reader: reader(c) })),
+    )
+    .patch(
+      "/blocks/:blockId",
+      metadata("Edit an owned time block", SpaceTimeBlockSchema),
+      v("param", param),
+      v("json", UpdateTimeBlockSchema),
+      async (c) =>
+        respond(c, spacesService.timeBlocks.update({ id: c.req.valid("param").blockId, reader: reader(c), data: c.req.valid("json") })),
+    )
+    .delete("/blocks/:blockId", metadata("Delete an owned time block", MessageResponseSchema), v("param", param), async (c) => {
+      const result = await spacesService.timeBlocks.remove({ id: c.req.valid("param").blockId, reader: reader(c) });
+      return respond(c, result.ok ? ok({ message: getLocale(c).startsWith("de") ? "Zeitblock gelöscht" : "Time block deleted" }) : result);
+    });
 }

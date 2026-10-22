@@ -192,7 +192,7 @@ export const EventChip = (props: {
       {props.trailing}
     </>
   );
-  const isActionable = () => isInteractive() || Boolean(props.onMovePointerDown);
+  const isActionable = () => isInteractive() || Boolean(props.onMovePointerDown && props.event.editable !== false);
   let suppressClickUntil = 0;
   const onClick = (event: MouseEvent) => {
     if (performance.now() < suppressClickUntil) {
@@ -224,7 +224,7 @@ export const EventChip = (props: {
     props.owner.onEventActivate?.(props.event);
   };
   const onPointerDown = (event: PointerEvent) => {
-    if (event.pointerType === "touch") return;
+    if (event.pointerType === "touch" || props.event.editable === false) return;
     if (props.onMovePointerDown) event.stopPropagation();
     props.onMovePointerDown?.(event, () => {
       suppressClickUntil = performance.now() + 400;
@@ -239,6 +239,7 @@ export const EventChip = (props: {
     "data-fill": props.fill ? "true" : undefined,
     "data-short": short() ? "true" : undefined,
     "data-moving": props.moving ? "true" : undefined,
+    "data-editable": props.event.editable === false ? "false" : undefined,
     "data-continues-before": props.continuesBefore ? "true" : undefined,
     "data-continues-after": props.continuesAfter ? "true" : undefined,
     "data-bar": props.bar ? "true" : undefined,

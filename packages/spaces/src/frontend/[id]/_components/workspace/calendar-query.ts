@@ -26,7 +26,8 @@ type PendingNavigation = {
 };
 
 const pathWithQuery = (url: URL) => `${url.pathname}${url.search}`;
-const selectionKey = (url: URL) => JSON.stringify([url.searchParams.get("item"), url.searchParams.get("occurrence")]);
+const selectionKey = (url: URL) =>
+  JSON.stringify([url.searchParams.get("item"), url.searchParams.get("occurrence"), url.searchParams.get("block")]);
 /**
  * The calendar data an href needs, in one form for equal data: the selected item and the color choice change no
  * calendar data, this query only loads the calendar view, and the order of the parameters means nothing. The page's
@@ -36,6 +37,7 @@ export const calendarViewSource = (href: string) => {
   const url = new URL(href, "http://spaces.local");
   url.searchParams.delete("item");
   url.searchParams.delete("occurrence");
+  url.searchParams.delete("block");
   url.searchParams.delete(CALENDAR_COLOR_PARAM);
   url.searchParams.set("view", "calendar");
   url.searchParams.sort();
@@ -123,7 +125,7 @@ export const useSpacesCalendarQuery = (params: {
       const selection = new URL(window.location.href);
       if (selectionKey(selection) !== request.selection) {
         const target = new URL(committedHref, window.location.origin);
-        for (const key of ["item", "occurrence"]) {
+        for (const key of ["item", "occurrence", "block"]) {
           const value = selection.searchParams.get(key);
           if (value === null) target.searchParams.delete(key);
           else target.searchParams.set(key, value);
@@ -147,7 +149,7 @@ export const useSpacesCalendarQuery = (params: {
       const target = new URL(request.href, window.location.origin);
       const selection = new URL(window.location.href);
       if (selectionKey(selection) !== request.selection) {
-        for (const key of ["item", "occurrence"]) {
+        for (const key of ["item", "occurrence", "block"]) {
           const value = selection.searchParams.get(key);
           if (value === null) target.searchParams.delete(key);
           else target.searchParams.set(key, value);
@@ -209,7 +211,7 @@ export const useSpacesCalendarQuery = (params: {
     // The tray comes with the snapshot like the items, so the row waits empty for it: tasks of the old filter may not
     // answer the new one, and their links would name a route the page has not reached, so opening one would load the
     // whole page instead of its detail.
-    setPreview((snapshot) => ({ ...snapshot, ...route, items: [], weather: {}, tray: null }));
+    setPreview((snapshot) => ({ ...snapshot, ...route, items: [], timeBlocks: [], weather: {}, tray: null }));
     setPending({
       id: ++nextNavigationId,
       href,

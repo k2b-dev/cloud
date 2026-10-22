@@ -132,6 +132,22 @@ const attachment = {
   kind: "image",
   createdAt: "2026-08-20T15:00:00.000Z",
 };
+const timeBlock = {
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  itemId: "Item01",
+  spaceId: "Space1",
+  title: "Ship release",
+  startsAt: "2026-10-23T08:00:00Z",
+  endsAt: "2026-10-23T09:00:00Z",
+  ownerId: USER_ID,
+  ownerName: "Ada",
+  spaceName: "Roadmap",
+  spaceColor: "#3b82f6",
+  taskState: "open",
+  canWrite: true,
+  canDelete: true,
+};
+const timeBlockPage = { items: [timeBlock], total: 1, page: 1, perPage: 100, hasNext: false };
 const work = { claim: { id: CLAIM_ID, claimedAt: "2026-09-08T12:00:00.000Z" }, progress: null, result: null };
 const link = {
   url: "https://github.com/k2b-dev/cloud/issues/263",
@@ -173,6 +189,9 @@ beforeAll(async () => {
       requests.push({ method: request.method, path: path + url.search, body });
       const json = (value: unknown) => Response.json(value);
 
+      if (path === "/api/spaces/blocks") return json(timeBlockPage);
+      if (path === `/api/spaces/blocks/${timeBlock.id}`)
+        return json(request.method === "DELETE" ? { deleted: true } : { ...timeBlock, ...(body as object) });
       if (path === "/api/me") return json({ id: USER_ID });
       if (path === "/api/spaces" && request.method === "GET") return json([space, { ...space, id: "Space2", name: "Hiring" }]);
       if (path === "/api/spaces" && request.method === "POST") return json({ ...space, id: "New001", ...(body as object) });
@@ -253,6 +272,7 @@ beforeAll(async () => {
         if (suffix === "/completed") return json({ ...task, completedAt: (body as { completed: boolean }).completed ? "now" : null });
         if (suffix === "/blockers" && request.method === "GET") return json(blockers);
         if (suffix === "/blockers") return json(request.method === "POST" ? blockers[0] : { message: "ok" });
+        if (suffix === "/time-blocks") return json(request.method === "GET" ? [timeBlock] : { ...timeBlock, ...(body as object) });
         if (suffix === "/blocks/page") return json(blocksPage);
         if (suffix === "/comments/page") return json(commentsPage);
         if (suffix === "/comments") return json({ id: "Cmt002", content: (body as { content: string }).content });
@@ -867,4 +887,100 @@ test("help is available in English and German with unchanged command names", asy
   expect(de.stdout).toContain("Spaces oder die Einträge eines Space auflisten");
   for (const name of ["ls", "show", "add", "set", "mv", "rm", "done", "assign", "due", "deps", "comments", "attachments"])
     expect(de.stdout).toContain(`  ${name} `);
+});
+
+describe("task time blocks", () => {
+  test("lists a task's time blocks separately from dependency output", async () => {
+    const listed = await run(["blocks", "ls", "Roadmap:Ship release"]);
+    expect(listed.json).toEqual([timeBlock]);
+    expect(listed.requests.at(-1)?.path).toBe("/api/spaces/Space1/items/Item01/time-blocks");
+    const deps = await run(["deps", "Item01"]);
+    expect(deps.json).toMatchObject({ blocks: { items: [{ dependent: { id: "Next01" } }] } });
+    expect(deps.requests.some((entry) => entry.path.includes("/blocks/page"))).toBeTrue();
+  });
+
+  test("pages task time blocks through the retained item route", async () => {
+    const result = await run(["blocks", "ls", "Item01", "--page", "2", "--per-page", "10"]);
+    expect(result.json).toEqual([timeBlock]);
+    expect(result.requests.at(-1)?.path).toBe("/api/spaces/Space1/items/Item01/time-blocks?page=2&perPage=10");
+    for (const args of [
+      ["blocks", "ls", "Item01", "--page", "0"],
+      ["blocks", "ls", "Item01", "--per-page", "101"],
+    ])
+      expect((await failing(args)).requests).toEqual([]);
+  });
+
+  test("lists a bounded interval with exact public Space and pagination query", async () => {
+    const result = await run([
+      "blocks",
+      "ls",
+      "--from",
+      timeBlock.startsAt,
+      "--to",
+      timeBlock.endsAt,
+      "--space",
+      "Roadmap",
+      "--mine",
+      "--page",
+      "2",
+      "--per-page",
+      "10",
+    ]);
+    expect(result.json).toEqual(timeBlockPage);
+    const url = new URL(result.requests.at(-1)!.path, "http://example.test");
+    expect(url.pathname).toBe("/api/spaces/blocks");
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      from: timeBlock.startsAt,
+      to: timeBlock.endsAt,
+      spaceId: "Space1",
+      mine: "true",
+      page: "2",
+      perPage: "10",
+    });
+  });
+
+  test("reads and edits a block directly by UUID, preserving omitted fields", async () => {
+    expect((await run(["blocks", "show", timeBlock.id])).json).toEqual(timeBlock);
+    const changed = await run(["blocks", "set", timeBlock.id, "--title", "Verify release"]);
+    expect(writes(changed.requests)).toEqual([
+      { method: "PATCH", path: `/api/spaces/blocks/${timeBlock.id}`, body: { title: "Verify release" } },
+    ]);
+    expect(changed.json).toMatchObject({ title: "Verify release", startsAt: timeBlock.startsAt });
+  });
+
+  test("requires a supplied UUID and reuses it for safe create retries", async () => {
+    const args = ["blocks", "add", "Item01", "--starts-at", timeBlock.startsAt, "--ends-at", timeBlock.endsAt];
+    const first = await run([...args, "--id", timeBlock.id]);
+    const retry = await run([...args, "--id", timeBlock.id]);
+    const request = {
+      method: "POST",
+      path: "/api/spaces/Space1/items/Item01/time-blocks",
+      body: { id: timeBlock.id, startsAt: timeBlock.startsAt, endsAt: timeBlock.endsAt },
+    };
+    expect(writes(first.requests)).toEqual([request]);
+    expect(writes(retry.requests)).toEqual([request]);
+    expect((await failing(args)).requests).toEqual([]);
+  });
+
+  test("rejects invalid bounds, IDs and empty edits before fetching", async () => {
+    for (const args of [
+      ["blocks", "add", "Item01", "--id", timeBlock.id, "--starts-at", timeBlock.endsAt, "--ends-at", timeBlock.startsAt],
+      ["blocks", "add", "Item01", "--id", timeBlock.id, "--starts-at", "2026-10-23", "--ends-at", timeBlock.endsAt],
+      ["blocks", "add", "Item01", "--id", "Item01", "--starts-at", timeBlock.startsAt, "--ends-at", timeBlock.endsAt],
+      ["blocks", "show", "Item01"],
+      ["blocks", "set", timeBlock.id],
+      ["blocks", "ls", "--from", timeBlock.startsAt],
+      ["blocks", "ls", "--from", timeBlock.endsAt, "--to", timeBlock.startsAt],
+      ["blocks", "ls", "--from", "2026-01-01T00:00:00Z", "--to", "2028-01-01T00:00:00Z"],
+      ["blocks", "ls", "Item01", "--mine"],
+    ])
+      expect((await failing(args)).requests).toEqual([]);
+  });
+
+  test("deletes only the block and requires confirmation", async () => {
+    expect((await failing(["blocks", "rm", timeBlock.id])).requests).toEqual([]);
+    const removed = await run(["blocks", "rm", timeBlock.id, "--yes"]);
+    expect(removed.json).toEqual({ id: timeBlock.id, deleted: true });
+    expect(removed.requests).toEqual([{ method: "DELETE", path: `/api/spaces/blocks/${timeBlock.id}`, body: undefined }]);
+  });
 });

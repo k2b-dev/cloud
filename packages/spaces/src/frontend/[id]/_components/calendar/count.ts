@@ -1,5 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import type { CalendarEvent } from "@k2b/ui";
+import { calendarItemsEnd } from "./range";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -30,4 +31,18 @@ export const countCalendarEvents = (
     if (event.display !== "marker" && !event.allDay) return start < to && start + HOUR > from;
     return start >= from && start < to;
   }).length;
+};
+
+/** Timed blocks follow the day grid's 06:00 boundary, including its following night. */
+export const countTimeBlocks = (
+  blocks: readonly { startsAt: string; endsAt: string }[],
+  firstKey: string,
+  lastKey: string,
+  dateConfig?: DateContext,
+): number => {
+  const start = dates.parseCalendarDate(firstKey, dateConfig);
+  const end = dates.addDays(dates.parseCalendarDate(lastKey, dateConfig), 1, dateConfig);
+  const from = Date.parse(calendarItemsEnd(start.toISOString(), dateConfig));
+  const to = Date.parse(calendarItemsEnd(end.toISOString(), dateConfig));
+  return blocks.filter((block) => Date.parse(block.startsAt) < to && Date.parse(block.endsAt) > from).length;
 };

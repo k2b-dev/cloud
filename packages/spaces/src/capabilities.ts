@@ -103,6 +103,16 @@ import {
 } from "./capability-contracts";
 import { spacesCapabilityPresentation } from "./capability-presentation";
 import {
+  TimeBlockCreateInputSchema,
+  TimeBlockDataSchema,
+  TimeBlockDeleteDataSchema,
+  TimeBlockDeleteInputSchema,
+  TimeBlockListDataSchema,
+  TimeBlockListInputSchema,
+  TimeBlockReadInputSchema,
+  TimeBlockUpdateInputSchema,
+} from "./capability-time-block-contracts";
+import {
   AgendaCursorError,
   decodeWorkCursor,
   EventAgendaDataSchema,
@@ -140,7 +150,9 @@ import { spacesPublicResources } from "./service/public-resources";
 import type { ReactionViewer } from "./service/reactions";
 import { CalendarReadLimitError } from "./service/recurrence";
 import * as taskWork from "./service/task-work";
+import { revisionForTimeBlock } from "./service/time-blocks";
 import { isTaskOverdue } from "./task-overdue";
+import type { SpaceTimeBlock } from "./time-block-contracts";
 import { ClaimTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "./work-contracts";
 
 const encodeCursor = (page: number): string => Buffer.from(JSON.stringify({ v: 1, page }), "utf8").toString("base64url");
@@ -454,7 +466,9 @@ const mapListRelations = (item: SpaceItem) => ({
 });
 
 const mapTask = (item: SpaceItem) => {
-  const title = truncateText(item.title, 200);
+  // Task titles are at most 200 characters. Readers retain the complete title so
+  // time-block creation can pin exactly the title reviewed, including multibyte text.
+  const title = { text: item.title, truncated: false };
   const description = boundedText(item.description, 5000);
   return {
     kind: "task" as const,
@@ -2166,9 +2180,124 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
     });
   });
 
+const timeBlockReader = (context: CapabilityExecutionContext) => ({ actor: context.actor, subject: context.accessSubject });
+const timeBlockData = (block: SpaceTimeBlock) => {
+  const ownerName = truncateText(block.ownerName, 200);
+  const spaceName = block.spaceName === null ? null : truncateText(block.spaceName, 100);
+  const spaceColor = block.spaceColor === null ? null : truncateText(block.spaceColor, 100);
+  return {
+    ...block,
+    ownerName: ownerName.text,
+    spaceName: spaceName?.text ?? null,
+    spaceColor: spaceColor?.text ?? null,
+    revision: revisionForTimeBlock(block),
+    presentationTruncated: ownerName.truncated || !!spaceName?.truncated || !!spaceColor?.truncated,
+  };
+};
+const timeBlockResult = (block: SpaceTimeBlock) => ({ data: timeBlockData(block) });
+const requireTimeBlock = async (
+  input: { id: string; revision: string },
+  context: CapabilityExecutionContext,
+  operation: "update" | "delete",
+) => {
+  const result = await spacesService.timeBlocks.get({ id: input.id, reader: timeBlockReader(context) });
+  if (!result.ok) return capabilityFail(context, result.error);
+  if (!(operation === "delete" ? result.data.canDelete : result.data.canWrite))
+    return capabilityFail(
+      context,
+      err.forbidden(
+        context.locale?.startsWith("de")
+          ? "Nur die zugewiesene Person kann ihren Zeitblock ändern."
+          : "Only the assigned owner can change this time block",
+      ),
+    );
+  if (revisionForTimeBlock(result.data) !== input.revision)
+    return capabilityFail(
+      context,
+      err.conflict(
+        context.locale?.startsWith("de")
+          ? "Der Zeitblock hat sich geändert. Lies ihn vor dem Ändern oder Löschen erneut."
+          : "Time block changed; read it again before editing or deleting it",
+      ),
+    );
+  return result;
+};
+const reviewTimeBlock = async (
+  operation: "update" | "delete",
+  input: z.output<typeof TimeBlockUpdateInputSchema> | z.output<typeof TimeBlockDeleteInputSchema>,
+  context: CapabilityExecutionContext,
+) => {
+  const current = await requireTimeBlock(input, context, operation);
+  if (!current.ok) return current;
+  const block = current.data;
+  const changes = TimeBlockUpdateInputSchema.safeParse(input);
+  const after = operation === "update" && changes.success ? { ...block, ...changes.data } : block;
+  if (Date.parse(after.endsAt) <= Date.parse(after.startsAt))
+    return capabilityFail(context, err.badInput("End time must be after start time"));
+  const t = spacesMessages(context.locale);
+  const de = context.locale?.startsWith("de");
+  return ok({
+    message:
+      operation === "delete"
+        ? de
+          ? "Diesen Zeitblock löschen. Die Aufgabe bleibt erhalten."
+          : "Delete this time block. The task is preserved."
+        : de
+          ? "Titel oder Zeitraum dieses Zeitblocks ändern. Die Aufgabe bleibt erhalten."
+          : "Change this time block's title or interval. The task is preserved.",
+    details: [
+      { label: t.title, value: block.title },
+      { label: de ? "Eigentümer" : "Owner", value: truncateText(block.ownerName, 200).text },
+      { label: t.starts, value: block.startsAt, format: "date-time" as const },
+      { label: t.ends, value: block.endsAt, format: "date-time" as const },
+      ...(operation === "update"
+        ? [
+            { label: de ? "Neuer Titel" : "New title", value: after.title },
+            { label: de ? "Neuer Beginn" : "New start", value: after.startsAt, format: "date-time" as const },
+            { label: de ? "Neues Ende" : "New end", value: after.endsAt, format: "date-time" as const },
+          ]
+        : []),
+    ],
+  });
+};
+
 export const spacesCapabilities = defineCapabilities({
   protocolVersion: 2,
-  presentation: spacesCapabilityPresentation,
+  presentation: {
+    ...spacesCapabilityPresentation,
+    translations: {
+      ...spacesCapabilityPresentation.translations,
+      de: {
+        ...spacesCapabilityPresentation.translations?.de,
+        queries: {
+          ...spacesCapabilityPresentation.translations?.de?.queries,
+          "time-block.read": {
+            title: "Zeitblock lesen",
+            description: "Einen Zeitblock per UUID mit Eigentümer, Aufgabenstatus, Schreibrecht und Revision lesen.",
+          },
+          "time-block.list": {
+            title: "Zeitblöcke auflisten",
+            description: "Lesbare Zeitblöcke eines begrenzten Zeitraums auflisten. Alle Folgeseiten mit unveränderten Filtern lesen.",
+          },
+        },
+        actions: {
+          ...spacesCapabilityPresentation.translations?.de?.actions,
+          "time-block.create": {
+            title: "Zeit für eine Aufgabe blocken",
+            description: "Als zuständige Person einen Zeitblock anlegen. Bei Wiederholung dieselbe Client-UUID verwenden.",
+          },
+          "time-block.update": {
+            title: "Zeitblock ändern",
+            description: "Eigenen Zeitblock mit der gelesenen Revision ändern. Der Aufgabentitel bleibt unabhängig.",
+          },
+          "time-block.delete": {
+            title: "Zeitblock löschen",
+            description: "Eigenen Zeitblock mit der gelesenen Revision löschen. Die Aufgabe bleibt erhalten.",
+          },
+        },
+      },
+    },
+  },
   commands: {
     "event.invite": {
       title: "Prepare event invitation",
@@ -2205,6 +2334,89 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "time-block.read": {
+      title: "Read task time block",
+      description:
+        "Read one task time block by its UUID, including owner, task state, edit and delete permissions and revision. Time blocks are independent of events and task dependencies.",
+      input: TimeBlockReadInputSchema,
+      data: TimeBlockDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const result = await spacesService.timeBlocks.get({ id: input.id, reader: timeBlockReader(context) });
+        return result.ok ? ok(timeBlockResult(result.data)) : capabilityFail(context, result.error);
+      },
+    },
+    "time-block.list": {
+      title: "List task time blocks",
+      description:
+        "List readable time blocks for a task (itemId), a bounded interval, or both. Use mine for the current person's planning; follow page.nextCursor with unchanged filters and limit. Not a list of dependency blockers or events.",
+      input: TimeBlockListInputSchema,
+      data: TimeBlockListDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        const { cursor, limit, ...filters } = input;
+        const scope = createHash("sha256")
+          .update(
+            JSON.stringify({
+              ...filters,
+              limit,
+              reader: {
+                subject: context.accessSubject,
+                actor:
+                  context.actor.kind === "user"
+                    ? { kind: "user", id: context.actor.user.id }
+                    : {
+                        kind: "service_account",
+                        id: context.actor.serviceAccount.id,
+                        accountKind: context.actor.serviceAccount.kind,
+                        scopes: [...context.actor.scopes].sort(),
+                        resourceId: context.actor.serviceAccount.resourceId,
+                        delegatedUserId: context.actor.delegatedUser?.id,
+                      },
+              },
+            }),
+          )
+          .digest("hex");
+        let page = 1;
+        if (cursor) {
+          try {
+            const decoded = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+            if (decoded.v !== 1 || decoded.scope !== scope || !Number.isSafeInteger(decoded.page) || decoded.page < 1)
+              throw new Error("Invalid cursor");
+            page = decoded.page;
+          } catch {
+            return capabilityFail(context, err.badInput("Invalid cursor"));
+          }
+        }
+        let spaceId: string | undefined;
+        if (filters.spaceId) {
+          const resolved = await spacesPublicResources.resolvePublicId("spaces", filters.spaceId);
+          if (!resolved) return capabilityFail(context, err.notFound("Space"), "spaceNotFound");
+          spaceId = resolved;
+        }
+        let itemId: string | undefined;
+        if (filters.itemId) {
+          const resolved = await spacesPublicResources.resolvePublicId("items", filters.itemId);
+          if (!resolved) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
+          itemId = resolved;
+        }
+        const result = await spacesService.timeBlocks.list({
+          ...filters,
+          itemId,
+          spaceId,
+          reader: timeBlockReader(context),
+          page,
+          perPage: limit,
+        });
+        if (!result.ok) return capabilityFail(context, result.error);
+        return ok({
+          data: result.data.items.map(timeBlockData),
+          page: capabilityPage(
+            result.data.hasNext ? Buffer.from(JSON.stringify({ v: 1, page: page + 1, scope })).toString("base64url") : undefined,
+          ),
+        });
+      },
+    },
     "task.work.read": {
       title: "Read task work state",
       description:
@@ -2464,6 +2676,109 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
   actions: {
+    "time-block.create": {
+      title: "Create task time block",
+      description:
+        "Reserve an interval for a task as its assigned human owner. The initial title comes from the task; later titles are independent. Reuse the client UUID for safe retries. Independent agents do not impersonate people.",
+      input: TimeBlockCreateInputSchema,
+      data: TimeBlockDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      review: async (input, context) => {
+        const resolved = await requireItem(input.itemId, context);
+        if (!resolved.ok) return resolved;
+        if (resolved.data.item.title !== input.taskTitle)
+          return capabilityFail(
+            context,
+            err.conflict(
+              context.locale?.startsWith("de")
+                ? "Der Aufgabentitel hat sich geändert. Lies die Aufgabe vor dem Zeitblocken erneut."
+                : "Task title changed; read the task again before blocking time",
+            ),
+          );
+        const person =
+          context.actor.kind === "user"
+            ? context.actor.user
+            : context.actor.serviceAccount.kind === "user_delegated"
+              ? context.actor.delegatedUser
+              : null;
+        if (!person || !resolved.data.item.assignees?.some((entry) => entry.kind === "user" && entry.id === person.id))
+          return capabilityFail(
+            context,
+            err.forbidden(
+              context.locale?.startsWith("de")
+                ? "Nur eine zugewiesene Person kann ihren Zeitblock anlegen."
+                : "Only the assigned person can create a time block",
+            ),
+          );
+        if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Time blocks belong to tasks"));
+        const t = spacesMessages(context.locale);
+        return ok({
+          message: context.locale?.startsWith("de")
+            ? "Zeit für diese Aufgabe blocken. Die Aufgabe bleibt erhalten."
+            : "Block time for this task. The task is preserved.",
+          details: [
+            { label: t.task, value: resolved.data.item.title },
+            { label: t.starts, value: input.startsAt, format: "date-time" as const },
+            { label: t.ends, value: input.endsAt, format: "date-time" as const },
+          ],
+        });
+      },
+      run: async (input, context) =>
+        audited(actionAudit(context, "time-block.create", "space_time_block", input.id), async () => {
+          const itemId = await spacesPublicResources.resolvePublicId("items", input.itemId);
+          if (!itemId) return capabilityFail(context, err.notFound("Item"), "itemNotFound");
+          const { itemId: _publicId, taskTitle, ...data } = input;
+          const result = await spacesService.timeBlocks.create({
+            itemId,
+            reader: timeBlockReader(context),
+            data,
+            expectedTaskTitle: taskTitle,
+          });
+          return result.ok ? ok(timeBlockResult(result.data)) : capabilityFail(context, result.error);
+        }),
+    },
+    "time-block.update": {
+      title: "Update task time block",
+      description:
+        "Change only the supplied title or interval of your own block, using the revision from time-block.read. The task's title and schedule stay independent.",
+      input: TimeBlockUpdateInputSchema,
+      data: TimeBlockDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      review: (input, context) => reviewTimeBlock("update", input, context),
+      run: async (input, context) =>
+        audited(actionAudit(context, "time-block.update", "space_time_block", input.id), async () => {
+          const current = await requireTimeBlock(input, context, "update");
+          if (!current.ok) return current;
+          const { id, revision, ...data } = input;
+          const result = await spacesService.timeBlocks.update({ id, reader: timeBlockReader(context), data, expectedRevision: revision });
+          return result.ok ? ok(timeBlockResult(result.data)) : capabilityFail(context, result.error);
+        }),
+    },
+    "time-block.delete": {
+      title: "Delete task time block",
+      description: "Delete your own time block using the revision from time-block.read. Deleting a time block never deletes its task.",
+      input: TimeBlockDeleteInputSchema,
+      data: TimeBlockDeleteDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      review: (input, context) => reviewTimeBlock("delete", input, context),
+      run: async (input, context) =>
+        audited(actionAudit(context, "time-block.delete", "space_time_block", input.id), async () => {
+          const current = await requireTimeBlock(input, context, "delete");
+          if (!current.ok) return current;
+          const result = await spacesService.timeBlocks.remove({
+            id: input.id,
+            reader: timeBlockReader(context),
+            expectedRevision: input.revision,
+          });
+          return result.ok ? ok({ data: { id: input.id, deleted: true as const } }) : capabilityFail(context, result.error);
+        }),
+    },
     "task.claim": {
       title: "Claim task work",
       description:

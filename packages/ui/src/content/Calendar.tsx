@@ -59,6 +59,8 @@ export type CalendarEvent = {
   colorHex?: string;
   href?: string;
   dataSpaceItemId?: string;
+  /** False disables moving and resizing this event; opening it remains available. Defaults to true. */
+  editable?: boolean;
   meta?: string;
   description?: string;
   /**
@@ -1047,7 +1049,7 @@ const MonthPickerView = (props: {
     return dayKey ? calendar.parseCalendarDate(dayKey, dateConfig()) : null;
   };
   const startMove = (pointerEvent: PointerEvent, event: NormalizedEvent, markDragged: () => void) => {
-    if (!props.owner.onEventDrop) return;
+    if (!props.owner.onEventDrop || event.editable === false) return;
     cancelInteraction?.();
     cancelInteraction = startCalendarPointerSession({
       event: pointerEvent,
@@ -2323,8 +2325,8 @@ const MonthView = (props: {
     setMovingEventId("");
   };
   const startMove = (pointerEvent: PointerEvent, item: MonthItem, markDragged: () => void) => {
-    if (!props.owner.onEventDrop) return;
     const event = item.event;
+    if (!props.owner.onEventDrop || event.editable === false) return;
     const grabbed = dayKeyAtPoint(pointerEvent.clientX, pointerEvent.clientY) ?? item.firstKey;
     const firstDay = startOfDay(event.sourceStartDate, dateConfig());
     cancelInteraction?.();
@@ -2932,7 +2934,7 @@ const TimeGridView = (props: {
     cancelInteraction = startCalendarPointerSession(options);
   };
   const startTimedMove = (pointerEvent: PointerEvent, event: NormalizedEvent, markDragged: () => void) => {
-    if (!props.owner.onEventDrop) return;
+    if (!props.owner.onEventDrop || event.editable === false) return;
     const pointerStart = timeAtPoint(pointerEvent.clientX, pointerEvent.clientY) ?? event.sourceStartDate;
     const duration = Math.max(15 * 60_000, event.sourceEndDate.getTime() - event.sourceStartDate.getTime());
     const offsetMinutes = Math.max(
@@ -2962,7 +2964,7 @@ const TimeGridView = (props: {
     });
   };
   const startAllDayMove = (pointerEvent: PointerEvent, event: NormalizedEvent, markDragged: () => void) => {
-    if (!props.owner.onEventDrop) return;
+    if (!props.owner.onEventDrop || event.editable === false) return;
     beginInteraction({
       event: pointerEvent,
       resolve: (clientX, clientY) => {
@@ -3276,7 +3278,7 @@ const TimeGridView = (props: {
                       const layout = eventLayout(event);
                       const position = laneStyle(layoutItem);
                       const resizeStart = (pointerEvent: PointerEvent) => {
-                        if (!props.owner.onEventResize) return;
+                        if (!props.owner.onEventResize || event.editable === false) return;
                         pointerEvent.preventDefault();
                         pointerEvent.stopPropagation();
                         beginInteraction({
@@ -3326,7 +3328,7 @@ const TimeGridView = (props: {
                                   : undefined
                               }
                             />
-                            <Show when={props.owner.onEventResize}>
+                            <Show when={props.owner.onEventResize && event.editable !== false}>
                               <button
                                 type="button"
                                 aria-label={calendarMessages().resizeEvent}
