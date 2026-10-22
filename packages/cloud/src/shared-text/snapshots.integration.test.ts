@@ -1,5 +1,6 @@
 import { expect, mock } from "bun:test";
 import { createSync, type Sync } from "@k2b/sync";
+import { applyChanges, findTables, insertRow, repairTables } from "@k2b/ui/text-editor/model";
 import { jetstreamManager } from "@nats-io/jetstream";
 import * as Y from "yjs";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
@@ -7,6 +8,7 @@ import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import {
   SHARED_TEXT_NAME,
   type SharedTextSaveInput,
+  type SharedTextSnapshotRepair,
   type SharedTextSnapshotStore,
   type SharedTextStoredState,
   sharedText,
@@ -34,7 +36,7 @@ const encode = (text: string) => {
 };
 const quietLogger = { info() {}, warn() {}, error() {}, debug() {} };
 
-const withFixture = async (run: (fixture: ReturnType<typeof setup>) => Promise<void>) => {
+const withFixture = async (run: (fixture: ReturnType<typeof setup>) => Promise<void>, repair?: SharedTextSnapshotRepair) => {
   const connection = await connectTestNats();
   const namespace = testSyncNamespace("shared-text-snapshots");
   const sync = createSync({ connection, namespace, application: "test", defaults: { replicas: 1 } });
@@ -45,7 +47,7 @@ const withFixture = async (run: (fixture: ReturnType<typeof setup>) => Promise<v
     bindProcessSync(sync);
     second = await connectTestNats();
     sync2 = createSync({ connection: second, namespace, application: "test", defaults: { replicas: 1 } });
-    fixture = setup(sync, sync2, connection, namespace);
+    fixture = setup(sync, sync2, connection, namespace, repair);
     await run(fixture);
   } finally {
     try {
@@ -68,7 +70,13 @@ const withFixture = async (run: (fixture: ReturnType<typeof setup>) => Promise<v
   }
 };
 
-const setup = (sync: Sync, sync2: Sync, connection: Awaited<ReturnType<typeof connectTestNats>>, namespace: string) => {
+const setup = (
+  sync: Sync,
+  sync2: Sync,
+  connection: Awaited<ReturnType<typeof connectTestNats>>,
+  namespace: string,
+  repair?: SharedTextSnapshotRepair,
+) => {
   const log = sharedText.define({
     id: "test.text",
     retention: { maxAgeMs: 604800000, maxBytes: 1024 * 1024 },
@@ -156,6 +164,7 @@ const setup = (sync: Sync, sync2: Sync, connection: Awaited<ReturnType<typeof co
       job: () => instance.job(config),
       store,
       logger: quietLogger,
+      repair,
     });
     pipelines.push(value);
     return value;
@@ -388,4 +397,79 @@ testFor("nats")(
     });
   },
   90000,
+);
+
+testFor("nats")(
+  "ordered repair retains peer text through append undo, repaired undo and redo on two workers",
+  async () => {
+    await withFixture(
+      async (f) => {
+        const id = "append-undo-208";
+        const source = "Before\n\n| A | B |\n| --- | --- |\n| old | row |\n\nAfter";
+        f.add(id, source);
+        const alice = new Y.Doc(),
+          bob = new Y.Doc();
+        alice.clientID = 101;
+        bob.clientID = 202;
+        const base = f.states.get(id)!.state!;
+        Y.applyUpdate(alice, base);
+        Y.applyUpdate(bob, base);
+        const own = Symbol("alice");
+        const history = new Y.UndoManager(alice.getText(SHARED_TEXT_NAME), { trackedOrigins: new Set([own]), captureTimeout: 0 });
+        let confirmed = f.log.topic().cursorAt(0);
+        const settle = async (doc: Y.Doc, vector: Uint8Array) => {
+          const event = await f.publish(id, Y.encodeStateAsUpdate(doc, vector));
+          await f.queue(f.first, id, event.cursor);
+          await until(() => {
+            const stored = f.states.get(id);
+            return !!stored?.cursor && f.log.topic().cursorSequence(stored.cursor) >= event.streamSequence;
+          }, "repaired snapshot");
+          const snapshot = f.states.get(id)!;
+          for await (const entry of f.log.topic().replay({ tenantId: id, after: confirmed, until: snapshot.cursor! })) {
+            const bytes = Buffer.from(entry.data.payload, "base64");
+            Y.applyUpdate(alice, bytes, "remote");
+            Y.applyUpdate(bob, bytes, "remote");
+          }
+          confirmed = snapshot.cursor!;
+          expect(alice.getText(SHARED_TEXT_NAME).toString()).toBe(snapshot.text!);
+          expect(bob.getText(SHARED_TEXT_NAME).toString()).toBe(snapshot.text!);
+          expect(repairTables(snapshot.text!)).toEqual([]);
+          expect(snapshot.text!.startsWith("Before\n\n")).toBe(true);
+          expect(snapshot.text!.endsWith("\n\nAfter")).toBe(true);
+          return snapshot.text!;
+        };
+        try {
+          await Promise.all([f.first.start(), f.second.start()]);
+          const append = insertRow(findTables(source)[0]!, 1);
+          let before = Y.encodeStateVector(alice);
+          alice.transact(() => {
+            for (const change of append) alice.getText(SHARED_TEXT_NAME).insert(change.from, change.insert);
+          }, own);
+          expect(await settle(alice, before)).toBe(applyChanges(source, append));
+          const current = bob.getText(SHARED_TEXT_NAME).toString();
+          const row = findTables(current)[0]!.lines.at(-1)!;
+          before = Y.encodeStateVector(bob);
+          bob.getText(SHARED_TEXT_NAME).insert(row.cells[0]!.from, "peer😀");
+          expect(await settle(bob, before)).toContain("peer😀");
+          for (const redo of [false, true, false]) {
+            before = Y.encodeStateVector(alice);
+            if (redo) history.redo();
+            else history.undo();
+            const result = await settle(alice, before);
+            expect(result).toContain("peer😀");
+            expect(result.match(/peer😀/gu)).toHaveLength(1);
+            const table = findTables(result)[0]!;
+            expect(table.lines.every((line) => line.cells.length === table.columns)).toBe(true);
+          }
+          expect(f.maxInFlight.get(id)).toBe(1);
+        } finally {
+          history.destroy();
+          alice.destroy();
+          bob.destroy();
+        }
+      },
+      { maxLength: 2_097_152, plan: repairTables },
+    );
+  },
+  90_000,
 );

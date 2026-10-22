@@ -10,6 +10,6 @@ export {
   toBase64,
 } from "./events";
 export { sharedText } from "./log";
-export type { SharedTextSnapshotBacklog, SharedTextSnapshotRequest, SharedTextSnapshotStore } from "./snapshots";
+export type { SharedTextSnapshotBacklog, SharedTextSnapshotRepair, SharedTextSnapshotRequest, SharedTextSnapshotStore } from "./snapshots";
 export { sharedTextSnapshotJobConfig } from "./snapshots";
 export * from "./types";

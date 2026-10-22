@@ -196,7 +196,7 @@ anchors; never fall back to a submitted ordinal after resolution fails.
 
 ## Snapshots
 
-Use `sharedText.snapshots({ log, job, store, input?, logger? })` to persist
+Use `sharedText.snapshots({ log, job, store, input?, logger?, repair? })` to persist
 accepted updates without rebuilding a snapshot worker for each application.
 It uses the same Yjs reconstruction as `read` and `edit`, including fallback
 text for documents without a binary snapshot.
@@ -243,6 +243,29 @@ The job contract is fixed:
 Changing the partition count or other provisioned job values later is a
 resource change. A mismatch raises `ResourceDriftError`; use a deliberate
 resource migration. Keep an installed dedupe window even for coalesced jobs.
+
+### Repair before saving
+
+Pass `repair: { maxLength, plan }` when the application needs to restore a
+text structure before taking a snapshot. `plan(text)` returns disjoint
+`{ from, to, insert }` changes in the original text's UTF-16 coordinates.
+Repair may only insert: every `from` must equal `to`. Invalid ranges,
+split Unicode characters and results exceeding `maxLength` reject the job
+before publication.
+
+The ordered writer publishes repair against the captured document head,
+then saves its state and cursor. If another writer advances that head,
+the job retries from the current snapshot and recomputes its plan. Repair
+has no human actor; replayed contributors remain credited. An already
+saved document can still be repaired when explicitly queued. A no-op plan
+creates no update. Documents with pending Yjs dependencies retain those
+bytes in the snapshot and skip repair until the dependencies arrive.
+
+Keep the planner idempotent and specific to structures it recognizes.
+For Markdown, `repairTables` from `@k2b/ui/text-editor/model` pads recognized
+ragged GFM tables without removing cell text. It leaves code, quotes and
+unrecognized damage unchanged. The application must still show unresolved
+damage and verify that its rendered output contains all visible text.
 
 ### Implement the snapshot store
 

@@ -369,3 +369,28 @@ test("complete columns preserves every cell and surrounding source", () => {
   expect(next.lines.every((line) => line.cells.length === 3)).toBe(true);
   expect(T.completeColumns(next)).toEqual([]);
 });
+
+test("repair settles surviving peer text after an appended row is undone, without rewriting any source", () => {
+  const source = "Before\n\n| A | B |\n| --- | --- |\n| one | two |peer😀\\\n\nAfter";
+  const changes = T.repairTables(source);
+  expect(changes.every((change) => change.from === change.to)).toBe(true);
+  const result = T.applyChanges(source, changes);
+  const table = T.findTables(result)[0]!;
+  expect(table.columns).toBe(3);
+  expect(table.lines.every((line) => line.cells.length === 3 && line.trailingPipe)).toBe(true);
+  expect(result).toContain("| one | two |peer😀\\ |");
+  expect(result.startsWith("Before\n\n")).toBe(true);
+  expect(result.endsWith("\n\nAfter")).toBe(true);
+  expect(T.repairTables(result)).toEqual([]);
+});
+
+test("repair leaves valid omitted pipes, formulas, fenced code, quotes and unrecognized damage unchanged", () => {
+  for (const source of [
+    "A | B\n--- | ---\nx | =A1+1",
+    "```md\n| A | B |\n| --- | --- |\n| x | y | extra |\n```",
+    "> | A | B |\n> | --- | --- |\n> | x | y | extra |",
+    "    | A | B |\n    | --- | --- |\n    | x | y | extra |",
+    "| A | B |\n| --- | BROKEN --- |\n| keep | all |",
+  ])
+    expect(T.repairTables(source)).toEqual([]);
+});

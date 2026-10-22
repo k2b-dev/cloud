@@ -371,3 +371,22 @@ export const applyChanges = (doc: string, changes: Change[]): string => {
   }
   return result + doc.slice(pos);
 };
+
+/**
+ * Settle recognized ragged GFM tables without deleting or rewriting source.
+ * Extra cells become named-grid positions with empty headers, never discarded.
+ * Unrecognizable tables remain raw text for the application's check state;
+ * code, quotes and lists are not repair candidates.
+ */
+export const repairTables = (doc: string): Change[] =>
+  findTables(doc).flatMap((table) => {
+    const columns = width(table);
+    if (table.lines.every((line) => line.cells.length === columns)) return [];
+    return table.lines.flatMap((line, row) => {
+      const padding = appendCells(line, columns - line.cells.length, row === 1);
+      if (padding.length) return padding;
+      // A peer's surviving text after undoing an appended row can lie after
+      // the previous row's closing pipe. Keep that text as an explicit cell.
+      return line.trailingPipe ? [] : [{ from: line.to, to: line.to, insert: " |" }];
+    });
+  });
