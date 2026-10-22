@@ -29,6 +29,7 @@ import {
   type MessageRowAuthor,
   type MessageRowFile,
   type MessageRowMedia,
+  type MessageRowOrigin,
   type MessageRowProgress,
   type MessageRowProps,
   type MessageRowQuote,
@@ -250,6 +251,15 @@ through `onOpen`. It shows up to three of the `participants`, the reply count,
 and "Last reply" with the application's formatted `lastReply` time; a long
 time ends in an ellipsis. Pass `thread` from the first reply on. The first
 reply adds the bar like a new line; every later reply only changes its text.
+
+### Origin
+
+`origin` names where a message belongs, as a quiet chip of fixed height under
+it: a `label`, an optional `icon`, and, with `onSelect`, a button that opens
+that place. Use it where messages from several places mix, such as the
+threads of a chat in one timeline. `selectLabel` gives the button a fuller
+name, such as "Open thread Updates". Pass it from the row's first render, so
+it never adds a line later.
 
 ### Messages in progress
 

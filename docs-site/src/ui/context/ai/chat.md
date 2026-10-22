@@ -868,6 +868,11 @@ command list and its search field instead; offer file selection as an
   collapses for a frame and the feed above keeps the newest message in place.
   A placeholder longer than the empty field stays on its one line and ends
   with an ellipsis.
+- **Reply:** `reply` shows the message the draft answers above the field,
+  on the same quiet tint as a quote in a message: the author and at most two
+  lines. Its × button calls `onCancel`; `onSelect` makes the quote a button,
+  for example to jump to the original. The application decides where the reply
+  goes and clears `reply` after sending.
 - **Hint line:** one line of fixed height above the field, always reserved,
   so a hint never moves the field. Pass `hint` for short application notes,
   such as what people without access see after a reference was attached.

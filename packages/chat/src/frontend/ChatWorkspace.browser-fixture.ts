@@ -54,6 +54,8 @@ export const viewer: Person = { id: "11111111-1111-4111-8111-111111111111", name
 export const nora: Person = { id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" };
 export const tobias: Person = { id: "33333333-3333-4333-8333-333333333333", name: "Tobias Brandt" };
 
+const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
+
 const ui = new URL("../../../ui/", import.meta.url).pathname;
 const buildHarness = async (): Promise<string> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -374,7 +376,13 @@ export const startChatHarness = async () => {
     const items = after
       ? all.filter((message) => message.seq > Number(after)).slice(0, 50)
       : all.filter((message) => (before ? message.seq < Number(before) : true)).slice(-50);
-    return { items, seqHead: all.length, rev: chat.conversation.rev };
+    return {
+      items,
+      seqHead: all.length,
+      rev: chat.conversation.rev,
+      from: after ? Number(after) + 1 : items.length === 50 ? items[0]!.seq : 1,
+      to: before ? Number(before) - 1 : after && items.length === 50 ? items.at(-1)!.seq : all.length,
+    };
   };
   const list = () => ({
     items: [...chats.values()].map((chat) => chat.conversation).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
@@ -390,7 +398,14 @@ export const startChatHarness = async () => {
     return {
       cursor: `c.${cursor}`,
       conversation: chat.conversation,
-      page: { items, seqHead: chat.messages.length, rev: chat.conversation.rev },
+      threads: noThreads,
+      page: {
+        items,
+        seqHead: chat.messages.length,
+        rev: chat.conversation.rev,
+        from: items[0]?.seq ?? 1,
+        to: position === null ? chat.messages.length : (items.at(-1)?.seq ?? chat.messages.length),
+      },
       focus: target?.id ?? null,
     };
   };
@@ -827,7 +842,9 @@ export const startChatHarness = async () => {
       return {
         cursor: `c.${cursor}`,
         sidebar: list(),
-        open: open && { conversation: open.conversation, page: open.page, focus: open.focus },
+        view: "all",
+        threadsPage: false,
+        open: open && { threads: noThreads, conversation: open.conversation, page: open.page, focus: open.focus },
         chatId: address.chat ?? null,
         guest: options.guest ?? false,
         panel: open && address.panel === "info" ? "info" : null,

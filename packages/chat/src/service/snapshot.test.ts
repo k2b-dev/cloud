@@ -7,6 +7,8 @@ import { chatLive } from "./live";
 import { messages } from "./messages";
 import { loadChatView } from "./snapshot";
 
+const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
+
 const userId = "11111111-1111-4111-8111-111111111111";
 const context: ChatContext = {
   accessSubject: { type: "user", userId },
@@ -67,7 +69,7 @@ test("SSR reads cursor, sidebar, then the same focused snapshot as the browser",
   });
   const snapshot = spyOn(messages, "snapshot").mockImplementation(async () => {
     order.push("snapshot");
-    return { ok: true, data: { conversation, page, focus: "message001" } };
+    return { ok: true, data: { threads: noThreads, conversation, page, focus: "message001" } };
   });
   const result = await loadChatView(context, { conversationId: "abcdef", messageId: "message001" });
   expect(order).toEqual(["cursor", "sidebar", "snapshot"]);
@@ -75,7 +77,7 @@ test("SSR reads cursor, sidebar, then the same focused snapshot as the browser",
   expect(result).toEqual({
     cursor: "before-reads",
     sidebar: { items: [conversation], nextCursor: null },
-    open: { conversation, page, focus: "message001" },
+    open: { threads: noThreads, conversation, page, focus: "message001" },
     noAccess: false,
   });
 });

@@ -88,7 +88,7 @@ test("snapshot documents its canonical response and hidden-chat 404", async () =
   const response = z
     .object({ content: z.object({ "application/json": z.object({ schema: z.object({ required: z.array(z.string()) }) }) }) })
     .parse(operation?.responses["200"]);
-  expect(response.content["application/json"].schema.required).toEqual(["cursor", "conversation", "page", "focus"]);
+  expect(response.content["application/json"].schema.required).toEqual(["cursor", "conversation", "page", "threads", "focus"]);
 });
 
 test("member list documents name search and opaque keyset cursors", async () => {

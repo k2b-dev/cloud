@@ -6,10 +6,19 @@ import { type ChatLiveEventSchema, ConversationSchema } from "../service/contrac
 import { rng } from "../service/rng.test-fixture";
 import { type ChatStoreApi, createChatStore } from "./chat-store";
 
+const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
+
 const unusedMemberRequest = async () => {
   throw new Error("Unused member request");
 };
 const memberApi = {
+  threads: async () => noThreads,
+  createThread: async () => {
+    throw new Error("Unused thread request");
+  },
+  updateThread: async () => {
+    throw new Error("Unused thread request");
+  },
   create: unusedMemberRequest,
   updateDetails: unusedMemberRequest,
   members: unusedMemberRequest,

@@ -97,7 +97,7 @@ suite("chat view snapshots", () => {
     const ssr = await loadChatView(owner.context, { conversationId: chat.shortId, messageId: target.id });
     expect(ssr.cursor.length).toBeGreaterThan(0);
     expect(ssr.noAccess).toBe(false);
-    expect(ssr.open).toEqual({ conversation: middle.conversation, page: middle.page, focus: middle.focus });
+    expect(ssr.open).toEqual({ threads: middle.threads, conversation: middle.conversation, page: middle.page, focus: middle.focus });
     expect(ssr.sidebar.items.some((row) => row.id === chat.shortId)).toBe(true);
   });
 

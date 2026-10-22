@@ -40,6 +40,8 @@ const props = (): ChatWorkspaceProps => ({
   sidebar: { items: [], nextCursor: null },
   open: null,
   chatId: null,
+  view: "all",
+  threadsPage: false,
   guest: false,
   panel: null,
   viewerId,
@@ -126,15 +128,21 @@ describe("ChatWorkspace server render", () => {
       test(`open ${permission} chat header and composer in ${locale}`, () => {
         const data = props();
         data.chatId = conversation.id;
-        data.open = { conversation: { ...conversation, permission }, page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 }, focus: null };
+        data.open = { conversation: { ...conversation, permission }, page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+          threads: { general: { unread: 0, lastMessage: null }, items: [] },
+          focus: null,
+        };
         const html = render(locale, data);
         expect(html).toContain(conversation.title);
         expect(html).toContain(t.members({ count: 3 }));
-        expect(html).toContain(`placeholder="${t.composerPlaceholder({ title: conversation.title })}"`);
+        // Readers get a quiet line in the composer's place instead of a field they cannot use.
         if (permission === "read") {
-          expect(html).toMatch(/<textarea[^>]*disabled/);
-          expect(html).toContain(t.readOnly);
-        } else expect(html).not.toContain(t.readOnly);
+          expect(html).not.toContain("<textarea");
+          expect(html).toContain(t.readOnlyIn({ title: conversation.title }));
+        } else {
+          expect(html).toContain(`placeholder="${t.composerPlaceholder({ title: conversation.title })}"`);
+          expect(html).not.toContain(t.readOnlyIn({ title: conversation.title }));
+        }
       });
     }
     test(`no access reveals neither chat title nor address identifier in ${locale}`, () => {

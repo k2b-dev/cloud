@@ -1032,17 +1032,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
                       focusKey={focusKey()}
                       canWrite={current().permission !== "read"}
-                      hint={
-                        current().permission === "read"
-                          ? t().readOnly
-                          : draftError()
-                            ? draftError()
-                            : liveStopped()
-                              ? t().liveStopped
-                              : waiting()
-                                ? t().messagesWaiting
-                                : undefined
-                      }
+                      hint={draftError() ?? (liveStopped() ? t().liveStopped : waiting() ? t().messagesWaiting : undefined)}
                       draft={draft()}
                       onDraftChange={setDraft}
                       onSend={send}

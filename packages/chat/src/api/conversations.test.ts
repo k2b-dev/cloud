@@ -7,6 +7,8 @@ import { ConversationSchema } from "../service/contracts";
 import { chatLive } from "../service/live";
 import chatApi from ".";
 
+const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
+
 const userId = "11111111-1111-4111-8111-111111111111";
 const account = ServiceAccountSchema.parse({
   id: "22222222-2222-4222-8222-222222222222",
@@ -230,7 +232,7 @@ test("snapshot reads the cursor before history and tolerates invalid message lin
     createdAt: textMessage.createdAt,
     lastActivityAt: textMessage.createdAt,
   });
-  const data = { conversation, page: { items: [textMessage], rev: 1, seqHead: 1, from: 1, to: 1 }, focus: null };
+  const data = { threads: noThreads, conversation, page: { items: [textMessage], rev: 1, seqHead: 1, from: 1, to: 1 }, focus: null };
   const order: string[] = [];
   spyOn(chatLive, "cursor").mockImplementation(async () => {
     order.push("cursor");
