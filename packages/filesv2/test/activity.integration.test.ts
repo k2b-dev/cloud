@@ -355,7 +355,11 @@ suite("Files activity with real storage", () => {
         root.createSession(`${home}/guard-session.txt`, 0, { ...stored.write_options, onConflict: "overwrite", idempotencyKey: stored.id }),
       () => root.put(`${home}/guard-session.txt`, new Blob([])),
     ])
-      await expect(uploadAction(opened.id, effect)).rejects.toMatchObject({ code: "activity_scope_mismatch" });
+      await expect(
+        uploadAction(opened.id, async () => {
+          await effect();
+        }),
+      ).rejects.toMatchObject({ code: "activity_scope_mismatch" });
     expect(f.sent()).toBe(0);
     await uploadAction(opened.id, async () => {
       await root.abortSession(uploadSessionId(stored)!);
@@ -1205,15 +1209,16 @@ suite("Files activity with real storage", () => {
         fileAction(
           testCall(actor),
           input,
-          () =>
-            part === "method"
+          async () => {
+            await (part === "method"
               ? root.remove(`${home}/source`)
               : root.transfer(
                   part === "source" ? `${home}/other` : `${home}/source`,
                   part === "target-root" ? "freeipa" : "cloud",
                   part === "target" ? `${home}/elsewhere` : `${home}/target`,
                   { move: part !== "move", onConflict: part === "conflict" ? "rename" : "error" },
-                ),
+                ));
+          },
           async () => {},
         ),
       ).rejects.toMatchObject({ code: "activity_scope_mismatch" });
@@ -1406,7 +1411,10 @@ suite("Files activity with real storage", () => {
       expect(requests).toBe(1);
       const after = await row(id);
       if (state === "unclear") expect(after).toMatchObject({ state: "failed", error_code: "path_conflict" });
-      else expect(after).toEqual(before);
+      else {
+        if (!before) throw new Error("missing state before refusal");
+        expect(after).toEqual(before);
+      }
     },
   );
 });

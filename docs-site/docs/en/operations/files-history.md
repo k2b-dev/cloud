@@ -116,7 +116,8 @@ survive recovery. Older journals are adopted with their stored person or link,
 History belonging to an open upload reservation is retained even if it is final
 and unclear. Closing the reservation makes it eligible for ordinary retention.
 Direct document, template, byte creation, and Office writes have separate entries;
-without a successful response they remain uncertain. The current Filegate Node
+a lost response remains uncertain. A certain refusal records `failed`, including a
+revision conflict when saving a document. The current Filegate Node
 contract exposes no revision metadata that can prove these direct writes later.
 
 Upload keys retain the exact spelling used by their journal and Filegate
