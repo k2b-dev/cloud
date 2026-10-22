@@ -48,8 +48,8 @@ export const dashboardStyles = `
 .pulse-dashboard__description{overflow-wrap:anywhere;color:var(--k2b-text-muted);font-size:12.5px;min-height:18px}
 .pulse-dashboard__plot{height:198px;min-width:0;margin-top:6px}
 .pulse-dashboard__plot .k2b-chart{height:100%}
-.pulse-dashboard__panels>[data-panel]:nth-child(3n+2) .pulse-dashboard__plot[data-single-series=true] .k2b-chart{--stdlib-chart-c1:var(--stdlib-chart-c2)}
-.pulse-dashboard__panels>[data-panel]:nth-child(3n+3) .pulse-dashboard__plot[data-single-series=true] .k2b-chart{--stdlib-chart-c1:var(--stdlib-chart-c3)}
+.pulse-dashboard__panels>[data-panel]:nth-child(3n+2) .pulse-dashboard__plot[data-single-series=true] .stdlib-chart{--stdlib-chart-c1:var(--stdlib-chart-c2)}
+.pulse-dashboard__panels>[data-panel]:nth-child(3n+3) .pulse-dashboard__plot[data-single-series=true] .stdlib-chart{--stdlib-chart-c1:var(--stdlib-chart-c3)}
 .pulse-dashboard__plot .stdlib-chart-reference{stroke:var(--k2b-danger-text);opacity:1}
 .pulse-dashboard__plot .stdlib-chart-reference-label{fill:var(--k2b-danger-text);opacity:1}
 .pulse-dashboard__feedback{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:8px;min-height:198px;margin-top:6px}
