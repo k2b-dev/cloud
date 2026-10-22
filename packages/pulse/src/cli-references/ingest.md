@@ -116,7 +116,13 @@ Pulse commits the reservation before measurement writes. The same key and
 identical batch return the same successful `{ metrics, events, states }`
 counts. Different content returns `409`. A failed write keeps the key pending;
 retrying it uses the same acceptance time and row identities, so it writes the
-same rows. Completed retries do not consume quota again.
+same rows. Completed retries do not consume quota again while the receipt's
+reset generation and committed/pending checkpoint identity match the validated
+base. If that identity changes, the next retry replays the original acceptance
+time and row identities under ordinary quotas and may return `429`. A successful
+replay renews completion for that identity. Checkpoint mismatches block writes
+until an administrator corrects and rechecks the restore. A matching hourly
+checkpoint cannot detect every batch lost between checkpoints.
 
 Without a key, a failed batch can already be partly stored. Its error includes
 **The batch may be partly stored, and sending it again can store those parts

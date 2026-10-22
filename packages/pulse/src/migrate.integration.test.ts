@@ -73,6 +73,7 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         { version: 3, name: "clickhouse_baseline" },
         { version: 4, name: "sql_console" },
         { version: 5, name: "overview_alerts" },
+        { version: 8, name: "receipt_checkpoints" },
       ]);
       expect(await sql`SELECT extname FROM pg_extension ORDER BY extname`).toEqual(extensions);
       const ddl = await readFile(`${import.meta.dir}/schema.ts`, "utf8");
@@ -165,6 +166,18 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
         { expect_daily_by: string; stale_since: Date | null }[]
       >`SELECT expect_daily_by,stale_since FROM pulse.sources WHERE id=${source}::uuid`,
     ).toEqual([{ expect_daily_by: "04:00", stale_since: null }]);
+  });
+  databaseTest("migration 8 preserves receipt identities and invalidates old completions once", async () => {
+    await sql`DELETE FROM pulse.schema_migrations WHERE version=8`;
+    await sql`ALTER TABLE pulse.ingest_idempotency DROP COLUMN reset_generation,DROP COLUMN checkpoint_id,DROP COLUMN pending_checkpoint_id`.simple();
+    await sql`INSERT INTO pulse.ingest_idempotency(source_id,idempotency_key,request_hash,state,accepted_at,planned_states,response,expires_at)
+      VALUES(${source}::uuid,'upgrade','preserved','done','2026-10-17T12:00:00Z','[]','{"metrics":0,"events":1,"states":0}','2026-10-18T12:00:00Z')`;
+    const before = await sql`SELECT * FROM pulse.ingest_idempotency WHERE idempotency_key='upgrade'`;
+    await Promise.all([migrate(), migrate()]);
+    expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=8`).toHaveLength(1);
+    expect(await sql`SELECT * FROM pulse.ingest_idempotency WHERE idempotency_key='upgrade'`).toEqual(
+      before.map((receipt) => ({ ...receipt, reset_generation: null, checkpoint_id: null, pending_checkpoint_id: null })),
+    );
   });
   databaseTest("refuses unknown newer versions before touching old data", async () => {
     await sql`INSERT INTO pulse.schema_migrations(version,name) VALUES(99,'future')`;

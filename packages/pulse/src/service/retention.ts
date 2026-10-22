@@ -1,8 +1,8 @@
 import { sql } from "bun";
 import { assertStoreName } from "../store/base-schema";
-import { baseStore } from "../store/base-store";
+import { baseStore, loadStoreRow } from "../store/base-store";
 import { CLICKHOUSE_UUID_CHUNK_SIZE } from "../store/client";
-import { dropExpiredRawPartition } from "../store/maintenance";
+import { admitBaseWrite, dropExpiredRawPartition, sameCheckpoint } from "../store/maintenance";
 import { requireBaseWritable } from "./access-control";
 import type { IngestStore } from "./ingest-bulk";
 
@@ -50,6 +50,8 @@ export const createRetention =
     const bases = await database<{ id: string }[]>`SELECT b.id FROM pulse.bases b JOIN pulse.base_stores s ON s.base_id=b.id
       WHERE s.state='active' AND s.write_block_reason IS NULL AND (${baseId ?? null}::uuid IS NULL OR b.id=${baseId ?? null}::uuid) AND (${after}::uuid IS NULL OR b.id>${after}::uuid) ORDER BY b.id LIMIT 1`;
     for (const base of bases) {
+      const checkpoint = await admitBaseWrite(base.id, store, database);
+      if (!checkpoint) return { ...result, done: false, nextAfter: base.id };
       // Commit seals, their pruning watermark, and retirement intent before irreversible ClickHouse effects.
       // A later rollback must neither reopen dropped raw hours nor acknowledge tombstoned identities.
       const retiring = await database.begin(async (tx) => {
@@ -58,15 +60,17 @@ export const createRetention =
         await tx`SELECT id FROM pulse.bases WHERE id=${base.id}::uuid FOR UPDATE`;
         const active = await requireBaseWritable(base.id, tx);
         if (!active.ok) return [];
+        const current = await loadStoreRow(base.id, tx);
+        if (!current || !sameCheckpoint(current, checkpoint)) return [];
         const [b] = await tx<{ retention_days: number; rollup_retention_days: number }[]>`
           SELECT retention_days,rollup_retention_days FROM pulse.bases WHERE id=${base.id}::uuid`;
         if (!b) return [];
         const rawCutoff = new Date(now.getTime() - b.retention_days * DAY_MS),
           registryCutoff = new Date(now.getTime() - Math.max(b.retention_days, b.rollup_retention_days) * DAY_MS);
-        // A pending keyed batch may still replay metrics back to its own acceptance time minus raw retention, and
-        // keeps that promise for the key's lifetime: hold the seal horizon there until the key is done or expired.
+        // Every valid keyed batch may replay back to its acceptance time minus raw retention,
+        // including completed receipts whose ClickHouse rows might need recovery.
         const [pending] = await tx<{ oldest: Date | null }[]>`SELECT min(i.accepted_at) AS oldest FROM pulse.ingest_idempotency i
-          JOIN pulse.sources src ON src.id=i.source_id WHERE src.base_id=${base.id}::uuid AND i.state='pending' AND i.expires_at>${now}`;
+          JOIN pulse.sources src ON src.id=i.source_id WHERE src.base_id=${base.id}::uuid AND i.expires_at>${now}`;
         const sealCutoff = new Date(
           Math.min(rawCutoff.getTime(), pending?.oldest ? pending.oldest.getTime() - b.retention_days * DAY_MS : Number.POSITIVE_INFINITY),
         );
@@ -97,6 +101,8 @@ export const createRetention =
         await tx`SELECT id FROM pulse.bases WHERE id=${base.id}::uuid FOR UPDATE`;
         const active = await requireBaseWritable(base.id, tx);
         if (!active.ok) return;
+        const current = await loadStoreRow(base.id, tx);
+        if (!current || !sameCheckpoint(current, checkpoint)) return;
         const [b] = await tx<{ database_name: string; retention_days: number; rollup_retention_days: number }[]>`
           SELECT s.database_name,b.retention_days,b.rollup_retention_days FROM pulse.bases b JOIN pulse.base_stores s ON s.base_id=b.id WHERE b.id=${base.id}::uuid`;
         if (!b) return;

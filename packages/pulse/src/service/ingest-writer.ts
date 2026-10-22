@@ -11,6 +11,7 @@ import {
 } from "../ingest-limits";
 import { BaseStoreError, baseStore } from "../store/base-store";
 import { StoreQueryError } from "../store/client";
+import { blockCheckpointMismatch, type CheckpointIdentity, inspectBaseCheckpoint, sameCheckpoint } from "../store/maintenance";
 import {
   validateDimensions,
   validateEventAttributes,
@@ -158,8 +159,8 @@ const lockIngestScope = async (baseId: string, sourceId: string, db: PulseSqlCli
   >`SELECT enabled,last_accepted_at FROM pulse.sources WHERE id=${sourceId}::uuid AND base_id=${baseId}::uuid AND NOT deleted FOR NO KEY UPDATE`;
   if (!source) throw new IngestTransactionFailure(err.notFound("Pulse source"));
   if (!source.enabled) throw new IngestTransactionFailure(err.conflict("Pulse source is disabled"));
-  const [base] = await db<{ database_name: string; retention_days: number; reset_generation: string }[]>`
-    SELECT s.database_name,b.retention_days,s.reset_generation::text AS reset_generation
+  const [base] = await db<(CheckpointIdentity & { database_name: string; retention_days: number })[]>`
+    SELECT s.database_name,b.retention_days,s.reset_generation::text AS reset_generation,s.checkpoint_id,s.pending_checkpoint_id
     FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE b.id=${baseId}::uuid`;
   if (!base) throw new IngestTransactionFailure(err.notFound("Pulse base"));
   return { ...base, lastAcceptedAt: source.last_accepted_at };
@@ -170,7 +171,19 @@ type KeyRow = {
   accepted_at: Date;
   response: IngestCounts | null;
   planned_states: PlannedStates | null;
+  reset_generation: string | null;
+  checkpoint_id: string | null;
+  pending_checkpoint_id: string | null;
 };
+export const completedIngestResponse = (
+  receipt: Pick<KeyRow, "state" | "response" | "reset_generation" | "checkpoint_id" | "pending_checkpoint_id">,
+  checkpoint: CheckpointIdentity,
+): IngestCounts | null =>
+  receipt.state === "done" &&
+  receipt.reset_generation !== null &&
+  sameCheckpoint({ ...receipt, reset_generation: receipt.reset_generation }, checkpoint)
+    ? receipt.response
+    : null;
 export type IngestParams = {
   baseId: string;
   sourceId: string;
@@ -178,7 +191,10 @@ export type IngestParams = {
   idempotencyKey?: string | null;
   requestBytes?: number;
   locale?: string;
+  /** Internal scrape fence captured before remote collection starts. */
+  resetGeneration?: string;
 };
+
 export const createIngestWriter = ({
   store = baseStore,
   database = sql,
@@ -206,30 +222,47 @@ export const createIngestWriter = ({
     const hash = createHash("sha256").update(JSON.stringify(params.batch)).digest("hex");
     let reserved = false,
       writing = false;
+    let resetGeneration = params.resetGeneration;
     try {
       const connectedStore = { ...store, query: await store.prepare() };
+      const writable = await requireBaseWritable(params.baseId, database);
+      if (!writable.ok) return writable;
+      const inspected = await inspectBaseCheckpoint(params.baseId, connectedStore, database);
+      resetGeneration ??= inspected.row.reset_generation;
+      if (inspected.reason) {
+        await blockCheckpointMismatch(inspected.row, inspected.reason, database);
+        const admission = await requireBaseWritable(params.baseId, database);
+        if (!admission.ok) return admission;
+        throw new BaseStoreError("CHECKPOINT_CHANGED");
+      }
       // T1 is deliberately a separate, committed transaction.
       const preflight = await database.begin(async (tx) => {
         await tx`SET LOCAL statement_timeout='30s'`.simple();
         await tx`SET LOCAL lock_timeout='30s'`.simple();
         const base = await lockIngestScope(params.baseId, params.sourceId, tx);
+        if (params.resetGeneration !== undefined && params.resetGeneration !== base.reset_generation)
+          throw new IngestTransactionFailure(err.conflict("Base data was reset during scrape"));
+        if (!sameCheckpoint(base, inspected.row)) throw new BaseStoreError("CHECKPOINT_CHANGED");
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`pulse.ingest:${params.baseId}`},0))`;
         let acceptedAt = new Date(Math.max(now.getTime(), base.lastAcceptedAt ? base.lastAcceptedAt.getTime() + 1 : now.getTime()));
         let plannedStates: PlannedStates | null = null;
+        let replay = false;
         if (key) {
           await tx`DELETE FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} AND expires_at<=${now}`;
           await tx`INSERT INTO pulse.ingest_idempotency(source_id,idempotency_key,request_hash,state,accepted_at,created_at,expires_at)
             VALUES(${params.sourceId}::uuid,${key},${hash},'pending',${acceptedAt},${now},${new Date(now.getTime() + PULSE_INGEST_IDEMPOTENCY_TTL_HOURS * 3_600_000)}) ON CONFLICT(source_id,idempotency_key) DO NOTHING`;
           const [existing] = await tx<
             KeyRow[]
-          >`SELECT * FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} FOR UPDATE`;
+          >`SELECT *,reset_generation::text AS reset_generation FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} FOR UPDATE`;
           if (!existing) throw new Error("Missing idempotency reservation");
           if (existing.request_hash !== hash)
             throw new IngestTransactionFailure(err.conflict("Idempotency key was already used for a different ingest batch"));
-          if (existing.state === "done" && existing.response)
-            return { response: existing.response, acceptedAt: existing.accepted_at, base };
+          const response = completedIngestResponse(existing, base);
+          if (response) return { response };
           acceptedAt = existing.accepted_at;
           plannedStates = existing.planned_states;
+          // A checkpoint transition invalidates completion, but never the original row identities.
+          replay = existing.state === "done" || existing.planned_states !== null;
         }
         const [limits] =
           await tx`SELECT values_per_minute,bytes_per_minute,storage_bytes,usage_bytes FROM pulse.base_stores WHERE base_id=${params.baseId}::uuid`;
@@ -276,7 +309,7 @@ export const createIngestWriter = ({
               WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key}`;
         }
         await tx`UPDATE pulse.sources SET last_accepted_at=greatest(last_accepted_at,${acceptedAt}) WHERE id=${params.sourceId}::uuid`;
-        return { response: null, acceptedAt, base, prepared, plannedStates };
+        return { response: null, acceptedAt, base, prepared, plannedStates, replay };
       });
       if (preflight.response) return ok(preflight.response);
       reserved = Boolean(key);
@@ -289,13 +322,15 @@ export const createIngestWriter = ({
         // Source locks serialize this source; lifecycle SHARE locks protect all inserts.
         if (base.reset_generation !== preflight.base.reset_generation)
           throw new IngestTransactionFailure({ code: "CONFLICT", status: 409, message: "Base data was reset during ingest" });
+        if (!sameCheckpoint(base, inspected.row)) throw new BaseStoreError("CHECKPOINT_CHANGED");
         if (key) {
           const [existing] = await tx<
             KeyRow[]
-          >`SELECT * FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} FOR UPDATE`;
+          >`SELECT *,reset_generation::text AS reset_generation FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} FOR UPDATE`;
           if (!existing || existing.request_hash !== hash || existing.accepted_at.getTime() !== preflight.acceptedAt.getTime())
             throw new Error("Idempotency reservation changed during ingest");
-          if (existing.state === "done" && existing.response) return ok(existing.response);
+          const response = completedIngestResponse(existing, base);
+          if (response) return ok(response);
         }
         // Every HTTP insert has a 30-second timeout; five collections fit comfortably inside the durable 10-minute lease.
         if (clock().getTime() - now.getTime() > 5 * 60_000) throw new Error("Ingest preflight lease expired; retry");
@@ -306,6 +341,7 @@ export const createIngestWriter = ({
           database: base.database_name,
           batch: prepared,
           plannedStates,
+          replay: preflight.replay,
           db: tx,
           // Leave the full request timeout before T1's lease expires, even if SQL locks delayed T2.
           store: {
@@ -322,13 +358,25 @@ export const createIngestWriter = ({
           await tx`UPDATE pulse.state_variants SET pending_change_id=NULL,pending_change_at=NULL
             WHERE base_id=${params.baseId}::uuid AND pending_change_id=ANY(${sql.array(changeIds, "UUID")})`;
         if (key)
-          await tx`UPDATE pulse.ingest_idempotency SET state='done',response=(${JSON.stringify(counts)}::jsonb #>> '{}')::jsonb WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key}`;
+          await tx`UPDATE pulse.ingest_idempotency SET state='done',response=(${JSON.stringify(counts)}::jsonb #>> '{}')::jsonb,
+            reset_generation=${base.reset_generation}::bigint,checkpoint_id=${base.checkpoint_id}::uuid,pending_checkpoint_id=${base.pending_checkpoint_id}::uuid
+            WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key}`;
         return ok(counts);
       });
     } catch (error) {
       if (error instanceof IngestRefusal) {
         if (error.failure.code === "PULSE_BASE_THROTTLED")
-          await database`UPDATE pulse.sources SET throttled_at=${now} WHERE id=${params.sourceId}::uuid`;
+          await database.begin(async (tx) => {
+            await tx`SET LOCAL statement_timeout='30s'`.simple();
+            await tx`SET LOCAL lock_timeout='30s'`.simple();
+            const writable = await requireBaseWritable(params.baseId, tx);
+            if (!writable.ok) return;
+            const [base] = await tx<
+              { generation: string }[]
+            >`SELECT reset_generation::text AS generation FROM pulse.base_stores WHERE base_id=${params.baseId}::uuid`;
+            if (base?.generation === resetGeneration)
+              await tx`UPDATE pulse.sources SET throttled_at=${now} WHERE id=${params.sourceId}::uuid`;
+          });
         return { ok: false, error: error.failure };
       }
       if (error instanceof IngestTransactionFailure) return fail(error.serviceError);

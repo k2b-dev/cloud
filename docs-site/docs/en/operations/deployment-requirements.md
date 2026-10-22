@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Deployment requirements
@@ -669,10 +669,39 @@ Without a saved connection, Cloud and Pulse still report ready; Pulse data APIs
 answer `503 PULSE_STORE_NOT_CONFIGURED`, and the Pulse page shows **Pulse is not
 set up yet**. Administration remains available for setup. Production Compose does not provision ClickHouse; the operator supplies it.
 
-After a restore, Pulse compares each database’s checkpoint with Postgres and
-blocks measurement writes if they differ or the database is missing. A Cloud
-admin can recheck a corrected restore or recreate an empty database. Recreating
-removes measurements while preserving sources, source credentials, settings, and access.
+Pulse verifies each base's checkpoint before accepting measurements, mirroring
+sources, computing rollups, or pruning stored data, even while its startup scan
+is still pending. An unavailable store refuses that work while other Cloud
+applications can start normally.
+
+After a restore, Pulse blocks measurement writes if the checkpoint differs
+from Postgres or the database is missing. A Cloud admin can recheck a corrected
+restore or recreate an empty database. Recreating removes measurements while
+preserving sources, source credentials, settings, and access.
+
+Within the 24-hour idempotency window, a completed receipt returns its saved
+counts without quota or repeat writes while its reset generation and both
+committed and pending checkpoint IDs match the currently validated base.
+A checkpoint identity transition invalidates that completion. The next retry
+replays the original acceptance time, event identities, and state plan, and
+rebuilds missing metric-series mirrors. Replays pass ordinary write limits,
+including quota, and can be refused until capacity is available. Only a
+successful replay renews completion for the new identity. Existing receipts
+from before this upgrade keep their acceptance times and plans; their first
+retry must replay before completion becomes valid.
+
+Raw metrics can remain longer than their retention period while an unexpired
+receipt could need them for replay. This guarantee detects hourly checkpoint
+mismatches; it does not detect per-batch data loss within a matching checkpoint.
+Checkpoints do not recover data automatically. Restore both stores as a
+consistent set.
+
+Clearing a base increments its reset generation. An earlier scrape cannot
+write measurements, scrape history, diagnostics, or source watermarks into the
+cleared generation, even if its endpoint responds after the clear completes.
+Clear also releases the previous scrape lease. An old worker cannot release a
+new generation's lease or defer its rollups after a failure. The source
+configuration and credentials remain available for the next scrape.
 
 ## Verify readiness and upgrades
 

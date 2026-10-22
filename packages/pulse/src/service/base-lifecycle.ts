@@ -195,8 +195,11 @@ export const createBaseLifecycle =
       if (operation === "clear") await step("truncate", store.truncate);
       if (operation !== "reconcile") {
         await step("checkpoint_pending", prepareCheckpoint);
-        await step("checkpoint_insert", async (row) => insertCheckpoint(row, store));
-        await step("checkpoint_accept", async (row, db) => acceptCheckpoint(row, db, store.clock));
+        let inserted: Awaited<ReturnType<typeof insertCheckpoint>> | undefined;
+        await step("checkpoint_insert", async (row) => {
+          inserted = await insertCheckpoint(row, store);
+        });
+        await step("checkpoint_accept", async (row, db) => acceptCheckpoint(row, db, inserted, store.clock));
       }
       await step("active", async (_row, db) => {
         await db`UPDATE pulse.base_stores SET state='active',operation=NULL,attempts=0,last_error=NULL,last_error_at=NULL,reconcile_needed=CASE WHEN updated_at::text=${initial.updated_at_version} THEN false ELSE reconcile_needed END,
@@ -209,7 +212,8 @@ export const createBaseLifecycle =
         write_blocked_at=CASE WHEN ${operation === "clear"} THEN NULL ELSE write_blocked_at END,updated_at=now() WHERE base_id=${baseId}::uuid`;
         if (operation === "clear") {
           await db`UPDATE pulse.bases SET data_clear_completed_at=now(),data_clear_failed_at=NULL,data_clear_error=NULL WHERE id=${baseId}::uuid`;
-          await db`UPDATE pulse.sources SET last_seen_at=NULL,last_data_at=NULL,throttled_at=NULL,last_error=NULL,last_error_at=NULL WHERE base_id=${baseId}::uuid`;
+          await db`UPDATE pulse.sources SET last_seen_at=NULL,last_data_at=NULL,throttled_at=NULL,last_error=NULL,last_error_at=NULL,
+            last_scrape_slot_at=NULL,scrape_lease_until=NULL,refused_histograms='[]'::jsonb,skipped_summaries=0 WHERE base_id=${baseId}::uuid`;
         }
       });
       return { done: true };

@@ -504,9 +504,15 @@ Values and bytes share a token bucket per base across replicas, HTTP ingest,
 CLI ingest, and scrapes. Buckets hold one minute's allowance and refill
 continuously. HTTP ingest counts original body bytes; other paths count their
 serialized batch. Completed keyed retries return their stored counts without
-using quota again. A batch larger than one minute's allowance can use a full
-bucket. Its full cost is charged, so later batches wait until enough quota has
-refilled.
+using quota again while their reset generation and committed/pending checkpoint
+identity still match the validated base. A checkpoint identity change invalidates
+that completion: retrying replays the original acceptance time and row identities
+under the ordinary quotas, and can return `429`. Successful replay renews the
+receipt's validity. Checkpoints detect hourly restore mismatches; a matching
+checkpoint does not detect every lost batch between checkpoints.
+
+A batch larger than one minute's allowance can use a full bucket. Its full cost
+is charged, so later batches wait until enough quota has refilled.
 
 | Condition | Response and recovery |
 | --- | --- |

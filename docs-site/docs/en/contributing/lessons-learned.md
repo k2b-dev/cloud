@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Lessons learned
@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Cross-store recovery identity | A receipt and its measurement store need a shared recovery boundary. | Test: Pulse `service/recovery.integration.test.ts` restores a checkpoint, replays the original event and state identities, covers partially pending checkpoints and quota-free completed retries, and checks admission before the startup scan. The same suite fences checkpoint acceptance to its inserted identity and fences scrape leases and failed rollups across clear or revision changes. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |

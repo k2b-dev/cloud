@@ -1,10 +1,10 @@
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { decryptSecret, logger } from "@k2b/cloud/services";
-import { sql } from "bun";
-import type { MetricType, PulseIngestBatch, PulseMetric } from "../contracts";
+import { sql, type TransactionSQL } from "bun";
+import type { MetricType, PulseMetric } from "../contracts";
 import { metricFamilyIncluded } from "../metric-filters";
-import { requireBaseWritable } from "./access-control";
-import type { IngestResult } from "./ingest-writer";
+import { requireBaseActive, requireBaseWritable } from "./access-control";
+import type { IngestParams, IngestResult } from "./ingest-writer";
 import { type MetricsHttpDeps, requestMetrics } from "./metrics-http";
 import { baseScrapeAllowlist } from "./scrape-target";
 
@@ -29,7 +29,7 @@ type MetricsScraperDeps = {
   database?: typeof sql;
   clock?: () => Date;
   http?: MetricsHttpDeps;
-  ingestBatch: (params: { baseId: string; sourceId: string; batch: PulseIngestBatch }) => Promise<IngestResult>;
+  ingestBatch: (params: IngestParams) => Promise<IngestResult>;
 };
 type MetricsSourceConfig = {
   endpointUrl: string;
@@ -39,7 +39,7 @@ type MetricsSourceConfig = {
 
 const markSourceError = async (
   params: { sourceId: string; message: string | null },
-  db: typeof sql,
+  db: TransactionSQL,
   clock: () => Date = () => new Date(),
 ): Promise<void> => {
   const now = clock();
@@ -66,7 +66,7 @@ const logSourceScrapeRecordFailure = (params: { baseId: string; sourceId: string
 
 const recordFailedSourceScrape = async (
   params: { baseId: string; sourceId: string; startedAt: Date; message: string },
-  db: typeof sql,
+  db: TransactionSQL,
   clock: () => Date = () => new Date(),
 ): Promise<void> => {
   await recordSourceScrape(
@@ -91,7 +91,7 @@ const recordIngestResult = async (
     result: IngestResult;
     warning?: string | null;
   },
-  db: typeof sql,
+  db: TransactionSQL,
   clock: () => Date = () => new Date(),
 ): Promise<void> => {
   if (params.result.ok) {
@@ -131,14 +131,15 @@ const recordSourceScrape = async (
     counts?: IngestCounts;
     errorMessage?: string | null;
   },
-  db: typeof sql,
+  db: TransactionSQL,
   clock: () => Date = () => new Date(),
 ): Promise<void> => {
   const finishedAt = clock();
   const durationMs = Math.max(0, finishedAt.getTime() - params.startedAt.getTime());
   const counts = scrapeCounts(params.counts);
   try {
-    await db`
+    await db.savepoint(async (audit) => {
+      await audit`
       INSERT INTO pulse.source_scrapes (
         base_id,
         source_id,
@@ -164,6 +165,7 @@ const recordSourceScrape = async (
         ${params.errorMessage ?? null}
       )
     `;
+    });
   } catch (error) {
     // Scrape history is diagnostic; never make the scrape itself fail because
     // the audit row could not be persisted.
@@ -400,11 +402,31 @@ export const parsePrometheusMetrics = (text: string, defaultTarget?: string, fil
   return { metrics, skippedSamples, skippedSummaries, refusedHistograms, sampleCount };
 };
 
+/** Metadata follows the same lifecycle fence as the measurement write. */
+const recordScrapeOutcome = async (
+  params: { baseId: string; resetGeneration: string },
+  db: typeof sql,
+  record: (tx: TransactionSQL) => Promise<void>,
+): Promise<Result<void>> =>
+  db.begin(async (tx) => {
+    await tx`SET LOCAL statement_timeout='30s'`.simple();
+    await tx`SET LOCAL lock_timeout='30s'`.simple();
+    const writable = await requireBaseWritable(params.baseId, tx);
+    if (!writable.ok) return writable;
+    const [store] = await tx<
+      { generation: string }[]
+    >`SELECT reset_generation::text AS generation FROM pulse.base_stores WHERE base_id=${params.baseId}::uuid`;
+    if (store?.generation !== params.resetGeneration) return fail(err.conflict("Base data was reset during scrape"));
+    await record(tx);
+    return ok();
+  });
+
 const scrapeSource = async (
   params: {
     baseId: string;
     sourceId: string;
     slotTs?: number;
+    resetGeneration: string;
   },
   deps: MetricsScraperDeps,
   db: typeof sql,
@@ -414,7 +436,9 @@ const scrapeSource = async (
   const source = await loadMetricsSourceConfig(params, db);
   if (!source) {
     const message = "Metrics source is missing or disabled";
-    await recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message }, db, clock);
+    await recordScrapeOutcome(params, db, (tx) =>
+      recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message }, tx, clock),
+    );
     return fail(err.notFound("Metrics source"));
   }
 
@@ -432,34 +456,41 @@ const scrapeSource = async (
     metricsResult = fail(err.internal(metricsScrapeErrorMessage(scrapeError)));
   }
   if (!metricsResult.ok) {
-    await db`UPDATE pulse.sources SET refused_histograms='[]'::jsonb,skipped_summaries=0 WHERE id=${params.sourceId}::uuid`;
-    await db`UPDATE pulse.sources SET last_scrape_slot_at = GREATEST(last_scrape_slot_at, ${slot}) WHERE id = ${params.sourceId}::uuid`;
-    await recordFailedSourceScrape(
-      { baseId: params.baseId, sourceId: params.sourceId, startedAt, message: metricsResult.error.message },
-      db,
-      clock,
-    );
+    const failure = metricsResult.error;
+    const recorded = await recordScrapeOutcome(params, db, async (tx) => {
+      await tx`UPDATE pulse.sources SET refused_histograms='[]'::jsonb,skipped_summaries=0,last_scrape_slot_at=GREATEST(last_scrape_slot_at,${slot}) WHERE id=${params.sourceId}::uuid`;
+      await recordFailedSourceScrape({ baseId: params.baseId, sourceId: params.sourceId, startedAt, message: failure.message }, tx, clock);
+    });
+    if (!recorded.ok) return recorded;
     return fail(metricsResult.error);
   }
-  const metrics = metricsResult.data.metrics.map((metric) => ({ ...metric, ts: startedAt.toISOString() }));
+  const parsed = metricsResult.data;
+  const metrics = parsed.metrics.map((metric) => ({ ...metric, ts: startedAt.toISOString() }));
   const result = metrics.length
-    ? await deps.ingestBatch({ baseId: params.baseId, sourceId: params.sourceId, batch: { metrics } })
+    ? await deps.ingestBatch({
+        baseId: params.baseId,
+        sourceId: params.sourceId,
+        resetGeneration: params.resetGeneration,
+        batch: { metrics },
+      })
     : ok({ metrics: 0, events: 0, states: 0 });
-  await db`UPDATE pulse.sources SET refused_histograms=(${JSON.stringify(metricsResult.data.refusedHistograms)}::jsonb #>> '{}')::jsonb,skipped_summaries=${metricsResult.data.skippedSummaries} WHERE id=${params.sourceId}::uuid`;
-  await db`UPDATE pulse.sources SET last_scrape_slot_at = GREATEST(last_scrape_slot_at, ${slot}) WHERE id = ${params.sourceId}::uuid`;
-  await recordIngestResult(
-    {
-      baseId: params.baseId,
-      sourceId: params.sourceId,
-      startedAt,
-      result,
-      warning: metricsResult.data.skippedSamples
-        ? `${metricsResult.data.skippedSamples} unsupported, refused or nonfinite samples skipped; declared gauge, counter and valid histogram families are supported`
-        : null,
-    },
-    db,
-    clock,
-  );
+  const recorded = await recordScrapeOutcome(params, db, async (tx) => {
+    await tx`UPDATE pulse.sources SET refused_histograms=(${JSON.stringify(parsed.refusedHistograms)}::jsonb #>> '{}')::jsonb,skipped_summaries=${parsed.skippedSummaries},last_scrape_slot_at=GREATEST(last_scrape_slot_at,${slot}) WHERE id=${params.sourceId}::uuid`;
+    await recordIngestResult(
+      {
+        baseId: params.baseId,
+        sourceId: params.sourceId,
+        startedAt,
+        result,
+        warning: parsed.skippedSamples
+          ? `${parsed.skippedSamples} unsupported, refused or nonfinite samples skipped; declared gauge, counter and valid histogram families are supported`
+          : null,
+      },
+      tx,
+      clock,
+    );
+  });
+  if (!recorded.ok) return recorded;
   return result.ok
     ? ok(result.data)
     : fail({
@@ -474,20 +505,37 @@ export const runMetricsSourceScrape = async (
   deps: MetricsScraperDeps,
 ): Promise<Result<IngestCounts>> => {
   const db = deps.database ?? sql;
-  const active = await requireBaseWritable(params.baseId, db);
-  if (!active.ok) return active;
   const now = (deps.clock ?? (() => new Date()))();
   // The fetch is bounded to 15s and ingest to its existing 10-minute lease.
   // Commit the claim before either operation can need another pooled connection.
   const leaseUntil = new Date(now.getTime() + 15_000 + 10 * 60_000);
-  const [claim] = await db`UPDATE pulse.sources SET scrape_lease_until=${leaseUntil}
-    WHERE id=${params.sourceId}::uuid AND base_id=${params.baseId}::uuid
-      AND (scrape_lease_until IS NULL OR scrape_lease_until<=${now}) RETURNING id`;
-  if (!claim) return fail(err.conflict("A scrape for this source is already running"));
+  const claim = await db.begin(async (tx) => {
+    await tx`SET LOCAL statement_timeout='30s'`.simple();
+    await tx`SET LOCAL lock_timeout='30s'`.simple();
+    const active = await requireBaseWritable(params.baseId, tx);
+    if (!active.ok) return active;
+    const [store] = await tx<
+      { generation: string }[]
+    >`SELECT reset_generation::text AS generation FROM pulse.base_stores WHERE base_id=${params.baseId}::uuid`;
+    if (!store) return fail(err.notFound("Pulse base store"));
+    const [claimed] = await tx`UPDATE pulse.sources SET scrape_lease_until=${leaseUntil}
+      WHERE id=${params.sourceId}::uuid AND base_id=${params.baseId}::uuid
+        AND (scrape_lease_until IS NULL OR scrape_lease_until<=${now}) RETURNING id`;
+    return claimed ? ok(store.generation) : fail(err.conflict("A scrape for this source is already running"));
+  });
+  if (!claim.ok) return claim;
   try {
-    return await scrapeSource(params, deps, db);
+    return await scrapeSource({ ...params, resetGeneration: claim.data }, deps, db);
   } finally {
-    // An expired claimant must never release a newer scrape's lease.
-    await db`UPDATE pulse.sources SET scrape_lease_until=NULL WHERE id=${params.sourceId}::uuid AND scrape_lease_until=${leaseUntil}`;
+    // Clear can reuse the same deadline in a new generation. Lock lifecycle before releasing the source.
+    await db.begin(async (tx) => {
+      await tx`SET LOCAL statement_timeout='30s'`.simple();
+      await tx`SET LOCAL lock_timeout='30s'`.simple();
+      const active = await requireBaseActive(params.baseId, tx);
+      if (!active.ok) return;
+      await tx`UPDATE pulse.sources SET scrape_lease_until=NULL WHERE id=${params.sourceId}::uuid AND base_id=${params.baseId}::uuid
+        AND scrape_lease_until=${leaseUntil} AND EXISTS(SELECT 1 FROM pulse.base_stores
+          WHERE base_id=${params.baseId}::uuid AND reset_generation=${claim.data}::bigint)`;
+    });
   }
 };

@@ -1,40 +1,70 @@
-import type { sql } from "bun";
+import { sql } from "bun";
 import { notificationLocale } from "../service/base-notifications";
 import { recordInstanceDisk, recordStorageThreshold, recordStoreOutage } from "../service/store-health";
 import { assertStoreName } from "./base-schema";
 import { BaseOperationSuperseded, baseStore, loadStoreRow, type StoreRow } from "./base-store";
 import { StoreQueryError } from "./client";
 
+export type CheckpointIdentity = Pick<StoreRow, "checkpoint_id" | "pending_checkpoint_id" | "reset_generation">;
+export const sameCheckpoint = (a: CheckpointIdentity, b: CheckpointIdentity) =>
+  a.checkpoint_id === b.checkpoint_id && a.pending_checkpoint_id === b.pending_checkpoint_id && a.reset_generation === b.reset_generation;
+
+/** One bounded remote read, without holding Postgres locks or a pooled transaction. */
+export const inspectBaseCheckpoint = async (baseId: string, store: Pick<typeof baseStore, "query" | "prefix">, db: typeof sql = sql) => {
+  const row = await loadStoreRow(baseId, db);
+  if (!row || row.state !== "active") throw new BaseOperationSuperseded();
+  let reason: "database_missing" | "checkpoint_mismatch" | null = null;
+  try {
+    const [latest] = await store.query(
+      `SELECT toString(id) AS id FROM ${assertStoreName(row.database_name, store.prefix)}._checkpoints ORDER BY at DESC LIMIT 1`,
+    );
+    const id = latest?.id ?? null;
+    if (
+      id === null
+        ? row.checkpoint_id !== null || row.pending_checkpoint_id !== null
+        : id !== row.checkpoint_id && id !== row.pending_checkpoint_id
+    )
+      reason = "checkpoint_mismatch";
+  } catch (error) {
+    if (error instanceof StoreQueryError && error.code === 81) reason = "database_missing";
+    else if (error instanceof StoreQueryError && error.code === 60) reason = "checkpoint_mismatch";
+    else throw error;
+  }
+  return { row, reason };
+};
+
+/** Persist a mismatch only while the inspected lifecycle/checkpoint identity still applies. */
+export const blockCheckpointMismatch = async (row: StoreRow, reason: string, db: typeof sql = sql) => {
+  await db`UPDATE pulse.base_stores SET write_block_reason=${reason},write_blocked_at=now(),updated_at=now()
+    WHERE base_id=${row.base_id}::uuid AND state='active' AND reset_generation=${row.reset_generation}::bigint
+      AND checkpoint_id IS NOT DISTINCT FROM ${row.checkpoint_id}::uuid
+      AND pending_checkpoint_id IS NOT DISTINCT FROM ${row.pending_checkpoint_id}::uuid`;
+};
+
+/** Runtime callers also verify on demand; the asynchronous startup scan is not admission. */
+export const admitBaseWrite = async (baseId: string, store: Pick<typeof baseStore, "query" | "prefix">, db: typeof sql = sql) => {
+  const inspected = await inspectBaseCheckpoint(baseId, store, db);
+  if (inspected.row.write_block_reason) return null;
+  if (inspected.reason) {
+    await blockCheckpointMismatch(inspected.row, inspected.reason, db);
+    return null;
+  }
+  return inspected.row;
+};
+
 /** Verify before any new checkpoint. Never repairs or removes measurement data. */
 export const verifyBaseCheckpoint = async (baseId: string, store = baseStore, restoreReader = false) => {
   store = { ...store, query: await store.prepare() };
-  let matched = false;
+  const inspected = await inspectBaseCheckpoint(baseId, store);
   await store.step(baseId, "reconcile", "verify_checkpoint", async (row, db) => {
-    let reason: "database_missing" | "checkpoint_mismatch" | null = null;
-    try {
-      const [latest] = await store.query(
-        `SELECT toString(id) AS id FROM ${assertStoreName(row.database_name, store.prefix)}._checkpoints ORDER BY at DESC LIMIT 1`,
-      );
-      const id = latest?.id ?? null;
-      if (
-        id === null
-          ? row.checkpoint_id !== null || row.pending_checkpoint_id !== null
-          : id !== row.checkpoint_id && id !== row.pending_checkpoint_id
-      )
-        reason = "checkpoint_mismatch";
-    } catch (error) {
-      if (error instanceof StoreQueryError && error.code === 81) reason = "database_missing";
-      else if (error instanceof StoreQueryError && error.code === 60) reason = "checkpoint_mismatch";
-      else throw error;
-    }
-    matched = reason === null;
-    await db`UPDATE pulse.base_stores SET write_block_reason=${reason},write_blocked_at=CASE WHEN ${reason}::text IS NULL THEN NULL ELSE now() END,updated_at=now() WHERE base_id=${baseId}::uuid`;
-    if (matched && restoreReader) {
+    if (!sameCheckpoint(row, inspected.row)) throw new BaseOperationSuperseded();
+    await db`UPDATE pulse.base_stores SET write_block_reason=${inspected.reason},write_blocked_at=CASE WHEN ${inspected.reason}::text IS NULL THEN NULL ELSE now() END,updated_at=now() WHERE base_id=${baseId}::uuid`;
+    if (inspected.reason === null && restoreReader) {
       await store.reader(row);
       await store.grants(row);
     }
   });
-  return matched;
+  return inspected.reason === null;
 };
 export const prepareCheckpoint = async (row: StoreRow, db: typeof sql, id: string = crypto.randomUUID()) => {
   // Committed before the ClickHouse insert. A restart accepts either committed or pending id.
@@ -48,9 +78,19 @@ export const insertCheckpoint = async (row: StoreRow, store = baseStore) => {
     `INSERT INTO ${database}._checkpoints SELECT {id:UUID}, greatest(fromUnixTimestamp64Milli({at:Int64}), max(at) + INTERVAL 1 MILLISECOND) FROM ${database}._checkpoints`,
     { id: row.pending_checkpoint_id, at: store.clock().getTime() },
   );
+  return { checkpoint_id: row.checkpoint_id, pending_checkpoint_id: row.pending_checkpoint_id, reset_generation: row.reset_generation };
 };
-export const acceptCheckpoint = async (row: StoreRow, db: typeof sql, clock = () => new Date()) => {
-  await db`UPDATE pulse.base_stores SET checkpoint_id=pending_checkpoint_id,pending_checkpoint_id=NULL,checkpoint_at=${clock()} WHERE base_id=${row.base_id}::uuid AND pending_checkpoint_id IS NOT NULL`;
+export const acceptCheckpoint = async (
+  row: StoreRow,
+  db: typeof sql,
+  inserted: CheckpointIdentity | undefined,
+  clock = () => new Date(),
+) => {
+  if (!inserted?.pending_checkpoint_id || !sameCheckpoint(row, inserted)) throw new BaseOperationSuperseded();
+  await db`UPDATE pulse.base_stores SET checkpoint_id=${inserted.pending_checkpoint_id}::uuid,pending_checkpoint_id=NULL,checkpoint_at=${clock()}
+    WHERE base_id=${row.base_id}::uuid AND reset_generation=${inserted.reset_generation}::bigint
+      AND pending_checkpoint_id=${inserted.pending_checkpoint_id}::uuid
+      AND checkpoint_id IS NOT DISTINCT FROM ${inserted.checkpoint_id}::uuid`;
 };
 export const writeBaseCheckpoint = async (baseId: string, id: string, store = baseStore) => {
   store = { ...store, query: await store.prepare() };
@@ -61,11 +101,12 @@ export const writeBaseCheckpoint = async (baseId: string, id: string, store = ba
     if (row.write_block_reason) throw new BaseOperationSuperseded();
     await prepareCheckpoint(row, db, id);
   });
+  let inserted: CheckpointIdentity | undefined;
   await store.step(baseId, "reconcile", "checkpoint_insert", async (row) => {
     if (row.write_block_reason) throw new BaseOperationSuperseded();
-    await insertCheckpoint(row, store);
+    inserted = await insertCheckpoint(row, store);
   });
-  await store.step(baseId, "reconcile", "checkpoint_accept", async (row, db) => acceptCheckpoint(row, db, store.clock));
+  await store.step(baseId, "reconcile", "checkpoint_accept", async (row, db) => acceptCheckpoint(row, db, inserted, store.clock));
 };
 export const measureInstanceDisk = async (store = baseStore) => {
   try {
