@@ -1202,6 +1202,14 @@ for (const editDuringSave of [false, true]) {
       await panel.getByText(otherDraft, { exact: true }).waitFor();
       if (editDuringSave) await page.getByRole("button", { name: "Back to the panel", exact: true }).click();
       await composer.scrollIntoViewIfNeeded();
+      await page.waitForFunction(() => {
+        const frame = document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]");
+        const input = frame?.contentDocument?.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])');
+        if (!frame || !input) return false;
+        const bounds = input.getBoundingClientRect();
+        const top = frame.getBoundingClientRect().top + bounds.top;
+        return bounds.height > 0 && top >= 0 && top + bounds.height <= window.innerHeight;
+      });
       const composerBounds = await composer.boundingBox();
       expect(composerBounds && composerBounds.y >= 0 && composerBounds.y + composerBounds.height <= 900).toBe(true);
       if (process.env.PANEL_SCREENSHOTS) {
