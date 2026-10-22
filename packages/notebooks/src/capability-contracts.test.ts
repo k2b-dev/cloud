@@ -71,7 +71,7 @@ test("move supports an optional parent and mutually exclusive placements", () =>
 });
 
 test("only append accepts the explicit exact separator and existing bounds still apply", () => {
-  const operation = { kind: "append", content: "fragment", separator: "none" };
+  const operation = { kind: "append", content: "fragment", separator: "none" } as const;
   expect(NoteEditInputSchema.parse({ noteId: "abc123", operations: [operation] }).operations).toEqual([operation]);
   for (const kind of ["prepend", "set-content", "append-block"]) {
     expect(NoteEditInputSchema.safeParse({ noteId: "abc123", operations: [{ ...operation, kind, name: "block" }] }).success).toBeFalse();
