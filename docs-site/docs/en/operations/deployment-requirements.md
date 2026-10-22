@@ -97,12 +97,15 @@ before storing it as the secret `geo.api_key`. There is no endpoint setting or
 new environment variable.
 Choose `geo.plan`, then review the monthly and per-person daily credit limits.
 Core creates its durable geo ledger during startup migrations.
-Routing now shares these settings and counters. Its full provider chain is
-reserved against a caller-selected reference-distance allowance (default
-500 km per leg). Known distance overruns are debited even beyond the original
-reservation, and stop subsequent paid steps; later reservations see the
-exhausted counters. This reference budget is not a guaranteed provider-invoice
-ceiling. Review [routing accounting](/en/docs/platform/places-and-maps#set-a-reference-distance-allowance)
+Routing shares these settings and counters. Core atomically reserves its full
+provider chain using straight-line distance times a fixed detour factor of 2.0.
+Unknown address coordinates need a maximum-distance reservation; choosing
+coordinates from autocomplete first reduces that estimate. Known cost overruns
+are debited beyond the reservation and stop later paid steps without automatic
+retry. The administration page and audit log expose overruns.
+This is a **technical refinement of the hard budget limit**: Cloud reserves
+conservatively before every call; Geoapify does not guarantee a cap on its side.
+Review [routing accounting](/en/docs/platform/places-and-maps#reserve-estimated-routing-costs)
 before selecting budgets for long routes or optimized tours.
 
 Search text, addresses, coordinates, categories, and route corridor geometry
