@@ -708,7 +708,7 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
 
   return (
     <SettingsPage
-      class="@container @max-md:[&_.k2b-settings-page__heading>p]:hidden"
+      class="places-maps-settings"
       title={t().title}
       subtitle={t().lead}
       icon="ti ti-map-2"
