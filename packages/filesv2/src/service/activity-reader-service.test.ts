@@ -4,7 +4,7 @@ import { actorId, candidate, historyBinding, otherId } from "../../test/activity
 import { testActor, testCall } from "../../test/files-call";
 import { activityReaderData } from "../data/activity-reader";
 import { bindings } from "../data/bases";
-import { shares, type ShareRow } from "../data/shares";
+import { type ShareRow, shares } from "../data/shares";
 import { FilesError } from "./errors";
 import { createFilesService } from "./index";
 
@@ -19,6 +19,8 @@ const share: ShareRow = {
   base_id: historyBinding.id,
   root: "cloud",
   base_path: historyBinding.path,
+  server_url: null,
+  target_snapshots: null,
   scope: "",
   items: [],
   title: "Share",

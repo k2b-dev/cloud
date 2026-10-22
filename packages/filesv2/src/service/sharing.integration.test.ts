@@ -5,6 +5,7 @@ import { AccountIdentityError } from "@k2b/cloud/services";
 import type { ExecutionIdentity, Node, Session, WriteOptions } from "@k2b/filegate";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import type { BaseSummary } from "../contracts";
@@ -266,9 +267,11 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
     await migrate();
+    await migrateAudit();
+    await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${actor.user.id}::uuid,'alice','local','user',false) ON CONFLICT DO NOTHING`;
   });
   beforeEach(async () => {
-    await sql`TRUNCATE filesv2.bases CASCADE`;
+    await sql`TRUNCATE filesv2.bases,filesv2.activity,filesv2.share_access,filesv2.share_access_daily,audit.events CASCADE`;
     binding = (
       await bindings.claim({
         area: "cloud",
@@ -302,6 +305,34 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     listCalls.length = 0;
     config.url = "http://filegate.test:4000";
   });
+  test("public service paths account for page views, released downloads and failed passwords only", async () => {
+    const context = { network: "192.0.2.231", client: "chrome" as const };
+    const share = await create({ kind: "download", paths: ["Docs/public.txt"] });
+    await service.publicShare(token(share), "download", {}, undefined, context);
+    await service.publicShareDownload(token(share), "Docs/public.txt", undefined, context);
+    await service.publicShareArchive(token(share), undefined, context);
+    await service.listShares(testCall(actor));
+    const [count] = await sql`SELECT sum(pages)::int AS pages,sum(downloads)::int AS downloads,
+      sum(password_failed)::int AS password_failed FROM filesv2.share_access WHERE share_id=${share.id}::uuid`;
+    expect(count).toEqual({ pages: 1, downloads: 2, password_failed: 0 });
+    expect(
+      await sql<
+        { network: string; client: string }[]
+      >`SELECT DISTINCT network,client FROM filesv2.share_access WHERE share_id=${share.id}::uuid`,
+    ).toEqual([{ network: "192.0.2.0/24", client: "chrome" }]);
+    const locked = await create({ password: "fictional correct passphrase" });
+    await expect(service.unlockShare(token(locked), "inbox", "incorrect password", context)).rejects.toMatchObject({
+      code: "share_password_invalid",
+    });
+    const [failure] = await sql`SELECT sum(pages)::int AS pages,sum(downloads)::int AS downloads,
+      sum(password_failed)::int AS password_failed FROM filesv2.share_access WHERE share_id=${locked.id}::uuid`;
+    expect(failure).toEqual({ pages: 0, downloads: 0, password_failed: 1 });
+    denied = true;
+    await expect(service.publicShareDownload(token(share), "Docs/public.txt", undefined, context)).rejects.toThrow();
+    const [unchanged] = await sql`SELECT sum(downloads)::int AS downloads FROM filesv2.share_access WHERE share_id=${share.id}::uuid`;
+    expect(unchanged?.downloads).toBe(2);
+  });
+
   test("hashes links, reveals their URL once, and keeps internal notes private", async () => {
     const share = await create({ note: "internal secret", publicNote: "hello visitors" });
     const saved = await shares.get(share.id);
@@ -459,6 +490,15 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     await service.reconcileInboxUploads();
     expect((await uploads.getForShare(opened.id, share.id))?.state).toBe("expired");
   });
+  test("a committed receipt without its result leaves quota and history open", async () => {
+    const share = await create();
+    const opened = await service.publicInboxUpload(token(share), { idempotencyKey: randomUUID(), name: "a", size: 10 });
+    sessions.values().next().value!.state = "committed";
+    await expect(service.publicInboxCommit(token(share), opened.id)).rejects.toMatchObject({ code: "upload_changed" });
+    expect((await uploads.getForShare(opened.id, share.id))?.state).toBe("open");
+    expect((await sql`SELECT state FROM filesv2.activity WHERE upload_id=${opened.id}`)[0]?.state).toBe("pending");
+    expect(commitCalls).toBe(0);
+  });
   test("backend and session path changes fail closed without releasing quota", async () => {
     const share = await create();
     const opened = await service.publicInboxUpload(token(share), { idempotencyKey: randomUUID(), name: "a", size: 10 });
@@ -552,7 +592,12 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     await expect(service.publicInboxUpload(token(share), input)).rejects.toThrow("lost create response");
     const reservation = await uploads.getForShare(input.idempotencyKey, share.id);
     expect(reservation?.filegate_session_id).toBeNull();
-    expect(reservation?.write_options).toEqual({ onConflict: "rename", ownership: { mode: "0600" } });
+    const [activity] = await sql`SELECT id FROM filesv2.activity WHERE upload_id=${input.idempotencyKey}`;
+    expect(reservation?.write_options).toEqual({
+      onConflict: "rename",
+      ownership: { mode: "0600" },
+      metadata: { activity: activity!.id },
+    });
     expect(sessions.size).toBe(1);
     loseCreate = false;
     const restarted = makeService();

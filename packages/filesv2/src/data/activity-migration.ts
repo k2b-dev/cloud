@@ -27,7 +27,7 @@ export async function migrateActivity(): Promise<void> {
     via text NOT NULL,
     calling_app text, origin text, invocation_id text, request_id text,
     batch_id uuid,
-    upload_id uuid UNIQUE,
+    upload_id text UNIQUE,
     trash_id uuid, operation_id uuid, share_id uuid,
     error_code text,
     detail jsonb NOT NULL DEFAULT '{}'
@@ -37,6 +37,14 @@ export async function migrateActivity(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base_after_effective ON filesv2.activity(base_after_id, coalesce(finished_at,started_at) DESC, id DESC) WHERE base_after_id IS NOT NULL`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_actor_effective ON filesv2.activity(actor_user_id, coalesce(finished_at,started_at) DESC, id DESC) WHERE actor_kind='user'`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_chain_effective ON filesv2.activity(base_id, root, coalesce(finished_at,started_at), id) WHERE state='done'`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS filesv2_activity_operation ON filesv2.activity(operation_id) WHERE operation_id IS NOT NULL`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS filesv2_activity_trash_phase ON filesv2.activity(trash_id,action) WHERE trash_id IS NOT NULL AND action IN ('item.trash','item.restore')`.simple();
+  // Upload reservation keys are text and remain case-sensitive, including legacy UUID spellings.
+  const [uploadKey] = await sql<
+    { data_type: string }[]
+  >`SELECT data_type FROM information_schema.columns WHERE table_schema='filesv2' AND table_name='activity' AND column_name='upload_id'`;
+  if (uploadKey?.data_type === "uuid")
+    await sql`ALTER TABLE filesv2.activity ALTER COLUMN upload_id TYPE text USING upload_id::text`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base ON filesv2.activity(base_id, started_at DESC, id DESC)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base_after ON filesv2.activity(base_after_id, started_at DESC) WHERE base_after_id IS NOT NULL`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_item ON filesv2.activity(item_id) WHERE item_id IS NOT NULL`.simple();
