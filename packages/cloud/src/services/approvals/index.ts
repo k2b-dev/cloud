@@ -1,11 +1,14 @@
 import { type SQL, sql } from "bun";
 import { capabilityRequestHash } from "../../capabilities/claims";
+import { restoreReviewSnapshot, serializeReviewSnapshot } from "../../capabilities/review-storage";
 import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
 import type { CapabilityActionReviewData } from "../../contracts/capabilities";
+import { CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
 import { isAppSessionActor } from "../../server/actor";
 import type { RequestActor, RequestCredentialKind } from "../../server/middleware/auth";
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
+import { compactApprovalDetailsSql } from "./content";
 
 export { countPending, listPending, presentPendingApproval } from "./list";
 export { migrateApprovals } from "./migrate";
@@ -83,10 +86,10 @@ export type ApprovalRequest = {
 };
 // SQL aliases keep the public row shape identical for reads and locked transaction reads. A function, because a
 // fragment built at import time would bind the default sql handle before a test can choose its database.
-const columns = () => sql`id, app_id AS "appId", action, approval_scope AS "approvalScope",
+const columns = (compact = false) => sql`id, app_id AS "appId", action, approval_scope AS "approvalScope",
   requester_kind AS "requesterKind", requester_ref AS "requesterRef", requester_app_id AS "requesterAppId",
   requester_title AS "requesterTitle", subject_id AS "subjectId", approver_user_id AS "approverUserId",
-  assurance, sentence, details, args_digest AS "argsDigest", review_digest AS "reviewDigest", status,
+  assurance, sentence, ${compact ? compactApprovalDetailsSql("approvals.requests") : sql`details`} AS details, args_digest AS "argsDigest", review_digest AS "reviewDigest", status,
   decided_device_id AS "decidedDeviceId", approver_auth_epoch::text AS "approverAuthEpoch",
   decided_via AS "decidedVia", decided_at AS "decidedAt", consumed_at AS "consumedAt",
   created_at AS "createdAt", expires_at AS "expiresAt"`;
@@ -122,7 +125,7 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
         requester_title, subject_id, approver_user_id, approver_auth_epoch, assurance, sentence, details, args_digest, review_digest, expires_at)
       VALUES (${input.appId}, ${input.action}, ${input.approvalScope ?? null}, ${input.requester.kind}, ${input.requester.ref},
         ${input.requester.appId}, ${input.requester.title ?? null}, ${input.subjectId}::uuid, ${input.approverUserId}::uuid,
-        (SELECT auth_epoch FROM auth.users WHERE id=${input.approverUserId}::uuid), ${input.assurance}, ${input.sentence}, ${JSON.stringify(input.review ?? null)}::text::jsonb,
+        (SELECT auth_epoch FROM auth.users WHERE id=${input.approverUserId}::uuid), ${input.assurance}, ${input.sentence}, ${serializeReviewSnapshot(input.review ?? null)}::text::jsonb,
         ${approvalArgsDigest(input.input)}, ${approvalReviewDigest(input.review)}, now() + (${expiresInMs} * interval '1 millisecond'))
       ON CONFLICT (requester_kind, requester_ref) DO NOTHING
       RETURNING id
@@ -137,10 +140,15 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
   });
 };
 
-export const get = async (id: string, db?: SQL): Promise<ApprovalRequest | null> =>
+export const get = async (id: string, db?: SQL, compactReview = false): Promise<ApprovalRequest | null> =>
   transaction(db, async (tx) => {
-    const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests WHERE id=${id}::uuid`;
-    return row ?? null;
+    const [row] = await tx<ApprovalRequest[]>`SELECT ${columns(compactReview)} FROM approvals.requests WHERE id=${id}::uuid`;
+    return row
+      ? {
+          ...row,
+          details: row.details === null ? null : CapabilityActionReviewPresentationSchema.parse(restoreReviewSnapshot(row.details)),
+        }
+      : null;
   });
 
 export type ApprovalDecisionResult =

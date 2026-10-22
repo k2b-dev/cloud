@@ -4,6 +4,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { toAiActionFailureResponse } from "../ai/http";
 import { resolveAiChatRequestContext } from "../ai/request-context";
+import { readReviewContent } from "../ai/review-content";
 import { submitAiTurnAction } from "../ai/runtime";
 import { aiConversations } from "../ai/store";
 import {
@@ -14,6 +15,7 @@ import {
   ApprovalListQuerySchema,
   ApprovalPageSchema,
 } from "../contracts/approvals";
+import { CapabilityReviewContentSchema } from "../contracts/capabilities";
 import { ErrorResponseSchema } from "../contracts/shared";
 import { rateLimit } from "../server";
 import { respond } from "../server/api";
@@ -23,6 +25,7 @@ import { jsonResponse, requiresAuth } from "../server/middleware/openapi";
 import { v } from "../server/middleware/validator";
 import { ok } from "../server/services";
 import { approvalDecisionChannel, countPending } from "../services/approvals";
+import { readApprovalContent } from "../services/approvals/content";
 import { decodeApprovalCursor } from "../services/approvals/cursor";
 import { loadPendingApprovals } from "./approvals-loader";
 
@@ -30,6 +33,54 @@ export const approvalRoutes = new Hono<AuthContext>()
   .use("*", noTransform())
   .use(rateLimit())
   .use(auth.requireRole("authenticated"))
+  .get(
+    "/:id/content",
+    describeRoute({
+      tags: ["Approvals"],
+      summary: "Read one complete pending approval snapshot",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(CapabilityReviewContentSchema, "Complete reviewed content"),
+        404: jsonResponse(ErrorResponseSchema, "Snapshot unavailable"),
+      },
+    }),
+    v("param", z.object({ id: z.uuid() })),
+    v("query", z.object({ digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
+    async (c) => {
+      const ctx = await resolveAiChatRequestContext(c);
+      if (ctx instanceof Response) return ctx;
+      const content = await readApprovalContent({
+        ...c.req.valid("param"),
+        ...c.req.valid("query"),
+        approverUserId: ctx.ownerUserId,
+        signal: c.req.raw.signal,
+      });
+      c.header("Cache-Control", "private, no-store");
+      return content ? c.json(content) : c.json({ message: "This review is no longer available." }, 404);
+    },
+  )
+  .get(
+    "/conversations/:conversationId/turns/:turnId/reviews/:callId",
+    describeRoute({
+      tags: ["Approvals"],
+      summary: "Read one historical conversation review snapshot",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(CapabilityReviewContentSchema, "Complete reviewed content"),
+        404: jsonResponse(ErrorResponseSchema, "Snapshot unavailable"),
+      },
+    }),
+    v("param", z.object({ conversationId: z.uuid(), turnId: z.uuid(), callId: z.string().min(1).max(200) })),
+    v("query", z.object({ digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()),
+    async (c) => {
+      const ctx = await resolveAiChatRequestContext(c);
+      if (ctx instanceof Response) return ctx;
+      const location = c.req.valid("param");
+      c.header("Cache-Control", "private, no-store");
+      const content = await readReviewContent(location, c.req.valid("query").digest, ctx.ownerUserId, c.req.raw.signal);
+      return content ? c.json(content) : c.json({ message: "This review is no longer available." }, 404);
+    },
+  )
   .get(
     "/",
     describeRoute({

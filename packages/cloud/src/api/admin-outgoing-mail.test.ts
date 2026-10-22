@@ -494,6 +494,9 @@ test("log-access PUT validates app IDs and bounded distinct grants and forwards 
     for (const body of [
       {},
       { apps: "source" },
+      { apps: ["source"], contentApps: ["other"] },
+      { apps: ["source"], contentApps: ["source", "source"] },
+      { apps: ["source"], contentApps: "source" },
       { apps: ["core"] },
       { apps: ["a", "a"] },
       { apps: [""] },
@@ -504,7 +507,11 @@ test("log-access PUT validates app IDs and bounded distinct grants and forwards 
       expect(response.status).toBe(400);
       expect(await response.json()).toMatchObject({ code: "bad_input" });
     }
-    expect(set).toHaveBeenCalledTimes(3);
+    const response = await request(authorized(), "/apps/reader/log-access", "PUT", { apps: ["source"], contentApps: ["source"] });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store, no-transform");
+    expect(set).toHaveBeenLastCalledWith("reader", { apps: ["source"], contentApps: ["source"] }, expect.anything());
+    expect(set).toHaveBeenCalledTimes(4);
   } finally {
     set.mockRestore();
   }

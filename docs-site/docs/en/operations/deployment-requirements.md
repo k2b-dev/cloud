@@ -924,6 +924,32 @@ After rollout, ask Assistant to build a small app with `index.html` and `app.js`
 The turn should show one `code_write` per file, no approval, and each result
 should list line counts that match the files.
 
+### Store complete Action review content
+
+Update Core and capability callers before providers return complete review
+content. Cloud now accepts up to 16 MiB of serialized JSON content per review,
+in addition to the 32 KiB compact card. Ordinary capability results remain
+limited to 256 KiB. Old readers cannot present this contract safely.
+
+The existing `approvals.requests.details`, `ai.pending_actions.review`, and
+chat or task message review snapshots hold the content. Assistant script calls
+also keep their review in the existing `assistant.capability_calls.prepared`
+snapshot. There is no additional
+cache, table or retention setting. Budget database and backup capacity for
+these copies; a fork also copies its historical snapshots. Full-content text
+uses reversible JSON encoding inside JSONB, so control characters survive.
+Single readers load one bounded snapshot; list and stream projections omit it.
+
+Existing lifecycles still apply: open approvals wait at most 24 hours, approval
+requests are pruned 90 days after expiry, and conversation deletion removes
+its owned snapshots. Background turns and task transcripts follow the existing
+90-day run-history lifecycle, including after task deletion. Deleting an approval
+does not delete its historical chat copy. Roll back providers and callers together if reverting Core; an older
+reader does not understand complete-content references.
+
+Mail's coordinated caller migration is described under
+[required send fingerprints](/en/docs/reference/deprecations-and-migrations#mail-send-requires-a-content-fingerprint).
+
 ### Record approvals as platform requests
 
 This release records every approval that Assistant asks for as one

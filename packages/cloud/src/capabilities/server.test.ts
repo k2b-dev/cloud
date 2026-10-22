@@ -231,4 +231,62 @@ describe("server capability client", () => {
     expect(requests[0]?.url).toBe("https://core.internal/api/capabilities/v1/actions/demo/item.rename/review");
     expect(requests[0]?.headers.get("idempotency-key")).toBeNull();
   });
+  for (const mode of ["transport", "authority"] as const)
+    test(`review body cancellation stays a Result (${mode})`, async () => {
+      process.env.CLOUD_CORE_INTERNAL_ORIGIN = "https://core.internal";
+      const controller = new AbortController();
+      let chunks = 0;
+      let cancelled = false;
+      const response = () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            pull(stream) {
+              if (chunks++ === 0) stream.enqueue(new TextEncoder().encode('{"message":"'));
+              else controller.abort(new DOMException("cancel body", "AbortError"));
+            },
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      const authority: RequestAuthority = {
+        actor: {
+          kind: "service_account",
+          serviceAccount: {
+            id: crypto.randomUUID(),
+            name: "Review reader",
+            kind: "standalone",
+            status: "active",
+            delegatedUserId: null,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+            createdBy: null,
+            createdAt: "2026-10-20T00:00:00.000Z",
+          },
+          delegatedUser: null,
+          scopes: ["read"],
+          credentialId: crypto.randomUUID(),
+        },
+        accessSubject: { type: "service_account", serviceAccountId: crypto.randomUUID() },
+        credentialKind: "api_key",
+        scopes: ["read"],
+      };
+      const dispatch =
+        mode === "authority" ? spyOn(dispatcher, "dispatchCapability").mockImplementation(async () => response()) : undefined;
+      try {
+        const result = await reviewCapabilityAction(
+          { appId: "demo", capabilityId: "write", input: {} },
+          mode === "authority"
+            ? { authority, signal: controller.signal }
+            : { transport: async () => response(), signal: controller.signal },
+        );
+        expect(result).toMatchObject({ ok: false, error: { code: "REQUEST_CANCELLED", status: 499 } });
+        expect(chunks).toBe(2);
+        expect(cancelled).toBe(true);
+      } finally {
+        dispatch?.mockRestore();
+      }
+    });
 });
