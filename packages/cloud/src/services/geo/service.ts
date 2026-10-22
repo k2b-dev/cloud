@@ -25,7 +25,7 @@ import { cutGeoWindow, decodePolyline6, locateOnGeoLine, simplifyGeoLine } from 
 import { type GeoConfig, geoPlan, readGeoConfig } from "./settings";
 
 export type GeoContext = Partial<Pick<CapabilityExecutionContext, "actor" | "accessSubject" | "locale" | "signal" | "requestId">>;
-const authenticate = (context: GeoContext): { actor: RequestActor; accessSubject: AccessSubject } => {
+export const geoIdentity = (context: GeoContext): { actor: RequestActor; accessSubject: AccessSubject } => {
   const { actor, accessSubject } = context;
   if (
     !actor ||
@@ -81,7 +81,7 @@ export const createGeoService = (
     personDailyCredits: settings.personDailyCredits,
   });
   const recordTransition = async (event: "monthly_budget_exhausted" | "provider_key_rejected", timezone: string, context: GeoContext) => {
-    const identity = authenticate(context);
+    const identity = geoIdentity(context);
     try {
       await ledger.recordTransition(event, timezone, { ...context, ...identity }, now());
     } catch {
@@ -91,7 +91,7 @@ export const createGeoService = (
     }
   };
   const configured = async (context: GeoContext) => {
-    authenticate(context);
+    geoIdentity(context);
     const value = await config();
     if (!value.apiKey.trim()) throw new GeoError("GEO_NOT_CONFIGURED");
     return value;
@@ -107,7 +107,7 @@ export const createGeoService = (
     cacheInput = input,
     empty: (value: T) => boolean = () => false,
   ): Promise<T> => {
-    const identity = authenticate(context);
+    const identity = geoIdentity(context);
     const locale = context.locale ?? "en";
     const key = geoCacheKey(fn, cacheInput, locale);
     const hit = await cache.get(key, schema);
@@ -280,7 +280,7 @@ export const createGeoService = (
       );
     },
     async availability(context: GeoContext) {
-      const { accessSubject } = authenticate(context);
+      const { accessSubject } = geoIdentity(context);
       const settings = await config();
       if (!settings.apiKey.trim()) {
         const periods = geoPeriods(now(), settings.timezone);

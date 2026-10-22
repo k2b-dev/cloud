@@ -38,6 +38,7 @@ import { approvalRoutes } from "./approvals";
 import { appDiscoveryRoutes } from "./apps";
 import { createAuthRoutes } from "./auth";
 import { createCapabilityRoutes } from "./capabilities";
+import geoRoutes from "./geo";
 import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";
 import meRoutes from "./me";
@@ -79,6 +80,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/auth", createAuthRoutes(options.notifications))
     .route("/me", meRoutes)
     .route("/accounts", accountsEntitiesRoutes)
+    .route("/geo", geoRoutes)
     .route("/apps", appDiscoveryRoutes)
     .route("/approvals", approvalRoutes)
     .route("/announcements", announcementRoutes)

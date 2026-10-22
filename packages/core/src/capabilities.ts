@@ -40,11 +40,12 @@ import {
   capabilityPage,
   defineCapabilities,
   geoContract,
+  geoMapContract,
   PrincipalSchema,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
 import { accessRevision, isAppSessionActor, resolveDisplayNames } from "@k2b/cloud/server";
-import { type AuditActor, accountsAppService, audit, coreGeo } from "@k2b/cloud/services";
+import { type AuditActor, accountsAppService, audit, coreGeo, coreGeoMap } from "@k2b/cloud/services";
 import { principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
@@ -697,6 +698,14 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "map.style": {
+      title: "Show a map",
+      description: "Return a Cloud map style URL. All map assets stay on Cloud; tiles cost 0.25 credits within the operator budget. Keep the supplied attribution visible.",
+      input: geoMapContract.style.input,
+      data: geoMapContract.style.data,
+      openWorld: false,
+      run: (input, context) => runGeoQuery(context, () => coreGeoMap.style(input, context)),
+    },
     "address.autocomplete": {
       title: "Suggest addresses",
       description:

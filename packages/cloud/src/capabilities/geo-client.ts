@@ -1,9 +1,16 @@
 import type { z } from "zod";
 import { geoContract } from "../contracts/geo";
+import { geoMapContract } from "../contracts/geo-map";
 import { type CapabilityCaller, invokeCapabilityWithDataSchema } from "./server";
 
 /** Calls Core using the caller's interactive identity, invocation transport, or durable mandate. */
 export const geoClient = {
+  mapStyle: (input: z.input<typeof geoMapContract.style.input>, caller: CapabilityCaller) =>
+    invokeCapabilityWithDataSchema(
+      { kind: "query", appId: "core", capabilityId: geoMapContract.style.id, input },
+      geoMapContract.style.data,
+      caller,
+    ),
   autocomplete: (input: z.input<typeof geoContract.autocomplete.input>, caller: CapabilityCaller) =>
     invokeCapabilityWithDataSchema(
       { kind: "query", appId: "core", capabilityId: geoContract.autocomplete.id, input },

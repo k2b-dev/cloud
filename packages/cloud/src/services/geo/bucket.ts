@@ -4,7 +4,7 @@ import { requestCacheRedis } from "../request-cache-redis";
 import { busy, GeoError } from "./errors";
 
 export type GeoRedis = { send(command: string, args: string[]): Promise<unknown> };
-export const GEO_TIMEOUT_MS = { autocomplete: 2500, geocode: 5000, reverse: 5000, places: 8000 } as const;
+export const GEO_TIMEOUT_MS = { autocomplete: 2500, geocode: 5000, reverse: 5000, places: 8000, tiles: 10000 } as const;
 // One token bucket for all paid APIs; a separate lease set for each function.
 const ACQUIRE = `
 local clock = redis.call('TIME')
@@ -32,7 +32,7 @@ export const createGeoBucket = (options: { redis?: () => Promise<GeoRedis>; rand
   const client = options.redis ?? requestCacheRedis;
   const prefix = options.prefix ?? "geo:{admission}:v1";
   return {
-    async acquire(fn: GeoFunction, rps: number) {
+    async acquire(fn: GeoFunction | "tiles", rps: number) {
       try {
         if (!Number.isFinite(rps) || rps < 1) throw busy();
         const id = options.randomId ? options.randomId() : crypto.randomUUID();
@@ -44,7 +44,7 @@ export const createGeoBucket = (options: { redis?: () => Promise<GeoRedis>; rand
             await redis.send("EVAL", [
               ACQUIRE,
               "2",
-              `${prefix}:bucket`,
+              `${prefix}:bucket${fn === "tiles" ? ":tiles" : ""}`,
               key,
               String(rps),
               String(GEO_TIMEOUT_MS[fn] + 1000),

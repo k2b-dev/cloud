@@ -12,6 +12,12 @@ const areaInput = {
 };
 
 export const geoCapabilityPresentation = {
+  "map.style": {
+    title: "Karte anzeigen",
+    description:
+      "Liefert den Cloud-Kartenstil mit lokalen Kachel- und Schrift-URLs. Kacheln kosten 0,25 Credits im Betreiberbudget. Die Namensnennung bleibt sichtbar.",
+    input: { theme: "Helle oder dunkle Karte; Beschriftungen nutzen die Sprache der Anfrage." },
+  },
   "address.autocomplete": {
     title: "Adressen vorschlagen",
     description:

@@ -20,8 +20,7 @@ An operator must set `geo.api_key` under
 **Administration → Settings → Places and addresses**. This tab also contains
 the provider plan and credit budgets. All provider calls use
 `https://api-eu.geoapify.com`. The endpoint cannot be changed. No provider key
-appears in geo responses. This service does not supply routes,
-map tiles, a map style, or map components.
+appears in geo responses. Use `CloudMap` for the shared light and dark map.
 
 ## Choose a Query
 
@@ -34,6 +33,7 @@ never from Query input. Inputs are strict: unknown fields are refused.
 | `address.geocode` | Either `text` (1–300 characters) or `fields`; optional `countryCode` | One `address` and `provenance`; ambiguity returns candidates in error details |
 | `address.reverse` | `point` | One `address` and `provenance` |
 | `place.search` | `categories` (1–5), exactly one of `near`, `area`, or `along`; optional `limit` (1–20, default 20) | `places` and `provenance` |
+| `map.style` | Optional `theme` (`light` or `dark`) | Same-origin `styleUrl` and attribution links |
 | `geo.availability` | `{}` | `configured`, `person` and `cloud`; each balance has `exhausted` and `resetsAt` |
 
 Autocomplete `type` accepts `country`, `state`, `city`, `postcode`, `street`,
@@ -183,7 +183,7 @@ with `GEO_BUSY`.
 
 Import `geoClient` from `@k2b/cloud/server` and pass the same
 `CapabilityCaller` as other server capability calls. Methods are
-`autocomplete`, `geocode`, `reverse`, `searchPlaces`, and `availability`.
+`autocomplete`, `geocode`, `reverse`, `searchPlaces`, `mapStyle`, and `availability`.
 The client parses Core's response with schemas from `@k2b/cloud/contracts`.
 
 ```ts
@@ -205,3 +205,43 @@ revocable mandate and the owning app's workload credential. The shared broker
 preserves identity and mandate limits; never call the provider from an app.
 See [deployment requirements](/en/docs/operations/deployment-requirements#enable-addresses-and-places)
 for operator responsibilities.
+
+## Show a map
+
+Import `CloudMap` from `@k2b/cloud/geo/ui`. Pass markers, lines, selection and
+height as for `MapView` in `@k2b/ui`. CloudMap supplies the Cloud style and
+required attribution. It inherits the UI locale and theme.
+
+```tsx
+import { CloudMap } from "@k2b/cloud/geo/ui";
+
+<CloudMap
+  height={320}
+  markers={[{ id: "museum", mark: 1, label: "Museum", point: { lat: 48.4, lon: 10 } }]}
+/>
+```
+
+Pass the authorized SSR `geo.availability` result as `availability` when it
+is available. An unconfigured or exhausted snapshot retains the static pins
+without loading map assets. The host owns the explanatory message, retry,
+and the accessible list of saved places. Server output and the first client
+render use the same snapshot.
+
+`map.style` and `geoClient.mapStyle()` return a style URL for non-Solid clients.
+Keep every returned attribution link visible. Styles, glyphs, and tiles use
+`/api/geo`; no browser request goes to Geoapify. Core serves the bundled
+IBM Plex glyphs locally. Tile requests use the fixed EU endpoint and the
+server-only key header.
+
+Each tile costs 0.25 reference credits against the same monthly and personal
+daily budgets as address searches. Tile admission has a separate shared
+bucket at four times the plan's API rate and a 10-second deadline. A tile
+body is limited to 1 MiB: at the Free plan's maximum of 200 in-flight tile
+requests, buffered bodies are bounded to 200 MiB. Oversized or invalid
+responses fail visibly; they are never forwarded as map data.
+
+Tiles have `Cache-Control: private, max-age=604800`; Valkey does not cache
+tile bodies. The map uses vector zooms 0–14 and scales the last level above
+that. Authentication and read scope apply to every asset route. Failed
+requests are not cached, and ambiguous transport failures retain the
+reserved credit.
