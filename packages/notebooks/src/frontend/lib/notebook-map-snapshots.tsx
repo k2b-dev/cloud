@@ -22,6 +22,23 @@ async function availabilityReason(locale: string, signal: AbortSignal) {
   return result.ok ? mapStateMessage({ availability: result.data.data }, locale) : "";
 }
 
+/** Browser image loading shares the map preparation deadline and stops waiting when the dialog closes. */
+export function decodeNotebookPrintImages(host: HTMLElement, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const finish = (error?: unknown) => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const abort = () => finish(signal.reason);
+    const timer = setTimeout(() => finish(new Error("Print image preparation timed out")), 30_000);
+    signal.addEventListener("abort", abort, { once: true });
+    Promise.all([...host.querySelectorAll<HTMLImageElement>("img")].map((image) => image.decode())).then(() => finish(), finish);
+  });
+}
+
 /** Render fitted saved maps in the visible export preview; one GPU capture at a time. */
 export async function captureNotebookMaps(
   markdown: string,
@@ -45,6 +62,7 @@ export async function captureNotebookMaps(
     notebookId,
     noteId,
     print: true,
+    browserImages: true,
     querySource: true,
     mapImagesPending: true,
   }).html;
@@ -147,7 +165,16 @@ export async function captureNotebookMaps(
       }
     }
     signal.throwIfAborted();
-    host.innerHTML = renderNotebookBook({ markdown, locale, notebookId, noteId, print: true, querySource: true, mapImages: images }).html;
+    host.innerHTML = renderNotebookBook({
+      markdown,
+      locale,
+      notebookId,
+      noteId,
+      print: true,
+      browserImages: true,
+      querySource: true,
+      mapImages: images,
+    }).html;
     host.scrollIntoView({ block: "start" });
     form.set("mapSnapshots", JSON.stringify(manifest));
     return { form, images, release };

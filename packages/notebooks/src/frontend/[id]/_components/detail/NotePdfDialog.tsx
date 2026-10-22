@@ -15,7 +15,7 @@ import { notePdfOmissionText } from "@/lib/book-renderer-messages";
 import { decodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, type NotePdfOmissionReport } from "@/lib/pdf-omissions";
 import { parseNotebookMapBlocks } from "../../../../lib/map-blocks";
 import { notebookMapMessages } from "../../../../lib/map-messages";
-import { captureNotebookMaps, NotebookMapCaptureError } from "../../../lib/notebook-map-snapshots";
+import { captureNotebookMaps, decodeNotebookPrintImages, NotebookMapCaptureError } from "../../../lib/notebook-map-snapshots";
 import { notebookWorkspaceMessages } from "../../messages";
 
 type NotePdfTemplateId = "document" | "report" | "compact" | "custom";
@@ -124,6 +124,7 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
           notebookId: props.notebookId,
           noteId: props.noteId,
           print: true,
+          browserImages: true,
           querySource: true,
         }).html;
       }
@@ -197,13 +198,14 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
           notebookId: props.notebookId,
           noteId: props.noteId,
           print: true,
+          browserImages: true,
           mapImages: captured?.images,
           querySource: true,
         }).html;
         document.body.append(article);
         document.documentElement.classList.add("notebook-map-printing");
         try {
-          await Promise.all([...article.querySelectorAll<HTMLImageElement>(".notebook-map__image")].map((image) => image.decode()));
+          await decodeNotebookPrintImages(article, controller.signal);
           controller.signal.throwIfAborted();
           window.print();
         } finally {

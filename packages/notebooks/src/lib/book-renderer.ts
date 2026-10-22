@@ -65,6 +65,8 @@ export type NotebookBookInput = {
    * placeholders by the service; math leaves out MathML the PDF drops.
    */
   print?: boolean;
+  /** Browser print/preview keeps authorized image URLs; server PDF exports use offline slots by default. */
+  browserImages?: boolean;
   /** Installation origin for links in exported PDFs; ignored by browser rendering. */
   publicOrigin?: string;
   /** Short ID of the rendered note. In print, a link to this note stays inside the document. */
@@ -347,7 +349,7 @@ export const renderNotebookBook = (
       : img;
   renderer.image = function ({ href, title, tokens }) {
     const alt = plainText(this.parser.parseInline(tokens));
-    if (input.print) return imageSlot({ href, alt, title: title ?? null, width: null, height: null });
+    if (input.print && !input.browserImages) return imageSlot({ href, alt, title: title ?? null, width: null, height: null });
     const url = resolveUrl(href, true);
     if (!url) return escape(alt);
     return imageHtml(
@@ -464,7 +466,7 @@ export const renderNotebookBook = (
         },
         renderer(token) {
           const alt = plainText(this.parser.parseInline(token.tokens ?? []));
-          if (input.print)
+          if (input.print && !input.browserImages)
             return imageSlot({
               href: String(token.href),
               alt,

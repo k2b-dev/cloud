@@ -66,6 +66,11 @@ export async function createNotebookMapFixtureServer(port = 0) {
     async fetch(request) {
       const url = new URL(request.url);
       requests.push(url.pathname);
+      if (url.pathname === "/api/notebooks/Book01/attachments/Img001/content")
+        return new Response(
+          Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNQSPj/HwAEogJ/NZccFwAAAABJRU5ErkJggg==", "base64"),
+          { headers: { "content-type": "image/png" } },
+        );
       if (url.pathname.endsWith("/pdf") && request.method === "POST") {
         const { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER } = await import("../../lib/pdf-omissions");
         return new Response(new Blob(["%PDF-fictional-source-list"], { type: "application/pdf" }), {
@@ -102,7 +107,7 @@ export async function createNotebookMapFixtureServer(port = 0) {
         const markdown = `# Wochenende in Ulm\n\nSamstag in der Innenstadt, Sonntag raus auf die Alb. Die Pins verlinken auf die Notizen dazu.\n\n## Samstag\n\n${serializeGeoDocument(document)}\n\n## Sonntag\n\n${serializeGeoDocument(fictionalRouteMap())}`;
         const fixtureMarkdown = url.searchParams.has("editor")
           ? `# Fictional editor\n\n${serializeGeoDocument(document)}\n\n${serializeGeoDocument(document)}`
-          : markdown;
+          : markdown + (url.searchParams.has("images") ? "\n\n![Fictional attachment](attach://Img001 =40x)" : "");
         const html = renderNotebookBook({
           markdown: fixtureMarkdown,
           notebookId: "Book01",

@@ -354,20 +354,56 @@ test("pending map export gates both actions; closing cancels preparation without
   }
 });
 
-test("Print receives decoded PNGs and removes its temporary document afterward", async () => {
-  const { context, page } = await open("?pdf=1");
+test("Print receives decoded maps and ordinary attachments and removes its temporary document afterward", async () => {
+  const { context, page } = await open("?pdf=1&images=1");
   try {
     await page.locator(".notebook-map-export__preview img.notebook-map__image").nth(1).waitFor();
+    const preview = page.locator(".notebook-map-export__preview");
+    expect(await preview.innerText()).not.toContain("NOTEBOOKBOOKSLOT");
+    expect(await preview.getByRole("img", { name: "Fictional attachment", exact: true }).getAttribute("src")).toContain(
+      "/attachments/Img001/content",
+    );
     await page.evaluate(() => {
       window.print = () => {
         const images = [...document.querySelectorAll<HTMLImageElement>(".notebook-map-print-document img.notebook-map__image")];
         document.body.dataset.printedMaps = String(images.filter((image) => image.complete && image.naturalWidth > 0).length);
+        const attachment = document.querySelector<HTMLImageElement>('.notebook-map-print-document img[alt="Fictional attachment"]');
+        document.body.dataset.printedAttachment = String(Boolean(attachment?.complete && attachment.naturalWidth > 0));
       };
     });
     await page.getByRole("button", { name: "Drucken", exact: true }).last().click();
-    await page.waitForFunction(() => document.body.dataset.printedMaps === "2");
+    await page.waitForFunction(() => document.body.dataset.printedMaps === "2" && document.body.dataset.printedAttachment === "true");
     expect(await page.locator(".notebook-map-print-document").count()).toBe(0);
   } finally {
+    await context.close();
+  }
+});
+
+test("closing Print while an ordinary image loads removes the temporary document without printing", async () => {
+  const { context, page } = await open("?pdf=1&images=1");
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  try {
+    await page.locator(".notebook-map-export__preview img.notebook-map__image").nth(1).waitFor();
+    await page.route("**/attachments/Img001/content?**", async (route) => {
+      await pending;
+      await route.continue().catch(() => {});
+    });
+    await page.evaluate(() => {
+      window.print = () => {
+        document.body.dataset.unexpectedPrint = "true";
+      };
+    });
+    await page.getByRole("button", { name: "Drucken", exact: true }).last().click();
+    await page.locator(".notebook-map-print-document").waitFor({ state: "attached" });
+    await page.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
+    await page.locator(".notebook-map-print-document").waitFor({ state: "detached" });
+    expect(await page.evaluate(() => document.body.dataset.unexpectedPrint)).toBeUndefined();
+    expect(await page.evaluate(() => document.documentElement.classList.contains("notebook-map-printing"))).toBe(false);
+  } finally {
+    release();
     await context.close();
   }
 });
