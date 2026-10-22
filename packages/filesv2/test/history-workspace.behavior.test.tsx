@@ -732,6 +732,7 @@ describe("Files history in the workspace", () => {
       expect(section().textContent).not.toContain("Approved copy");
       button(section(), "Try again")!.click();
       await flush();
+      expect(section().querySelectorAll<HTMLButtonElement>("button.k2b-detail-panel__action")[1]!.disabled).toBe(true);
       pending("versions").resolve(
         Response.json([
           { id: "v-1", created: "2026-10-13T08:30:00.000Z", size: 1, pinned: false, comment: null, author: null },
