@@ -302,10 +302,8 @@ describe("ChatWorkspace browser full view", () => {
         await page.locator('.k2b-message-row[data-status="pending"]', { hasText: `Waiting on ${name}` }).waitFor();
         await page.getByText("Later messages wait for the one that was not sent.", { exact: true }).waitFor();
         expect(harness.posted.slice(start).map((input) => input.body)).toEqual([`Refused on ${name}`]);
-        // A phone shows the row's actions on the first tap, a mouse while it rests on the row.
-        if (options.hasTouch) await failed.locator(".k2b-message-row__bubble").tap();
-        else await failed.hover();
-        await failed.getByRole("button", { name: "Discard message", exact: true }).click();
+        // "Discard" sits next to "Retry" where the failure shows, on a phone and with a mouse alike.
+        await failed.getByRole("button", { name: "Discard", exact: true }).click();
         await page.locator('.k2b-message-row[data-status="sent"]', { hasText: `Waiting on ${name}` }).waitFor();
         await failed.waitFor({ state: "detached" });
         expect(harness.posted.slice(start).map((input) => input.body)).toEqual([`Refused on ${name}`, `Waiting on ${name}`]);
@@ -831,6 +829,40 @@ describe("ChatWorkspace browser read state", () => {
         await page.locator("[data-k2b-live]").getByText("Copied", { exact: true }).waitFor({ state: "attached" });
         if (errors.length) expect(errors).toEqual([]);
         if (name === "desktop") expect(await page.evaluate(() => window.chatShifts)).toBeLessThan(0.001);
+      } finally {
+        await page.context().close();
+      }
+    }, 45_000);
+
+    test(`Undo restores an earlier unread boundary that is not loaded on ${name}`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], name: "Long history", count: 160, end: harness.now() });
+      const { page, errors } = await load(options, { chat });
+      try {
+        await until(() => harness.subscribed(chat));
+        // An earlier "Mark unread from here" far above the loaded page.
+        const earlier = harness.messageId(chat, 6);
+        expect(
+          await page.evaluate(
+            async ({ chat, earlier }) =>
+              (
+                await fetch(`/api/chat/conversations/${chat}/unread`, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ message: earlier }),
+                })
+              ).status,
+            { chat, earlier },
+          ),
+        ).toBe(200);
+        await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 6);
+        const target = page.locator(".k2b-message-row:not([data-own])").last().locator("xpath=ancestor::*[@data-key][1]");
+        await chooseFromMessageMenu(page, name, target, "Mark unread from here");
+        const done = page.locator(".k2b-toast").filter({ hasText: "Unread from" });
+        await done.waitFor();
+        expect(harness.props({ chat }).open!.conversation.read!.unreadFromSeq).toBeGreaterThan(6);
+        await done.getByRole("button", { name: "Undo", exact: true }).click();
+        await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 6);
+        expect(errors).toEqual([]);
       } finally {
         await page.context().close();
       }

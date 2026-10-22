@@ -165,6 +165,8 @@ export type MessageRowProps = {
   receipt?: string;
   /** Called by "Retry" while `status` is `"failed"`. */
   onRetry?: () => void;
+  /** Called by "Discard" next to "Retry" while `status` is `"failed"`, so both answers to a failure sit where it shows. */
+  onDiscard?: () => void;
   /**
    * The message's menu. A quiet "…" beside the bubble opens it while the message is hovered or focused; right-click,
    * the Context Menu key, and a long press open the same menu. Showing "…" never moves the layout.
@@ -482,7 +484,8 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
   };
 
   // The same entries serve "…", right-click, the keyboard, and a long press. Alt+click and keys show at the entry's end.
-  const menuItems = createMemo(() =>
+  // Each menu gets its own entries: a rendered shortcut is a DOM node and can live in only one menu.
+  const entries = () =>
     (props.actions ?? []).map((entry): GestureMenuAction & Pick<Extract<DropdownAction, { action: () => void }>, "immediate"> => ({
       label: entry.label,
       icon: entry.icon,
@@ -493,9 +496,10 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
       immediate: entry.immediate,
       trailing: entry.altClick ? <Kbd keys="alt+click" /> : entry.shortcut ? <Kbd keys={entry.shortcut} /> : undefined,
       action: () => entry.onSelect(),
-    })),
-  );
-  const hasMenu = () => menuItems().length > 0;
+    }));
+  const menuItems = createMemo(entries);
+  const gestureItems = createMemo(entries);
+  const hasMenu = () => (props.actions?.length ?? 0) > 0;
 
   // Alt+click (Option+click) on the message, not on a link or control inside it, runs the entry that asks for it.
   const altClick = (event: MouseEvent) => {
@@ -809,6 +813,13 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                             </Button>
                           )}
                         </Show>
+                        <Show when={props.onDiscard}>
+                          {(discard) => (
+                            <Button variant="text" size="xs" onClick={() => discard()()}>
+                              {chatMessages().messageDiscard}
+                            </Button>
+                          )}
+                        </Show>
                       </Show>
                       <Show when={props.status !== "pending" && props.status !== "failed"}>
                         <Show
@@ -855,7 +866,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
 
   return (
     <Show when={hasMenu()} fallback={row}>
-      <GestureMenu items={menuItems()} label={chatMessages().messageMenu({ author: props.author.name, time: props.time })}>
+      <GestureMenu items={gestureItems()} label={chatMessages().messageMenu({ author: props.author.name, time: props.time })}>
         {row}
       </GestureMenu>
     </Show>

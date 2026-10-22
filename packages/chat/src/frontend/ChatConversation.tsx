@@ -217,6 +217,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               groupStart={startsGroup(item, props.items[index() - 1])}
               status={item.status}
               onRetry={item.retry}
+              onDiscard={item.discard}
               actions={
                 item.messageId
                   ? [
