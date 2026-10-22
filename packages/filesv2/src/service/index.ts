@@ -511,6 +511,55 @@ export function createFilesService(
       async (_tx, node) => ({ itemAfterId: node.id ?? null }),
     );
   }
+  async function transferItem(
+    call: UserFilesCall,
+    source: Awaited<ReturnType<typeof authorized>>,
+    destination: Awaited<ReturnType<typeof authorized>>,
+    path: string,
+    action: "item.rename" | "item.move" | "item.copy",
+    options: NonNullable<Parameters<FilesRoot["transfer"]>[3]>,
+    batchId?: string,
+  ): Promise<Node> {
+    return fileAction(
+      call,
+      {
+        action,
+        serverUrl: source.state.config.url,
+        root: source.root.name,
+        rootAfter: destination.root.name,
+        baseId: source.inspection.binding!.id,
+        baseAfterId: destination.inspection.binding!.id,
+        itemId: source.info.stableIds ? source.node.id : null,
+        directory: source.node.directory,
+        name: source.relative.split("/").at(-1)!,
+        pathBefore: source.target,
+        pathAfter: path,
+        size: source.node.size,
+        revisionBefore: source.node.revision,
+        onConflict: options.onConflict === "rename" ? "rename" : "error",
+        batchId,
+      },
+      async () => {
+        const result = await source.root.transfer(source.target, destination.root.name, path, options);
+        if (result.state !== "completed") throw new FilesError("operation_pending", 409);
+        const node = result.node;
+        const parent = path.slice(0, path.lastIndexOf("/"));
+        if (
+          !node ||
+          node.root !== destination.root.name ||
+          !(options.onConflict === "rename" ? node.path.slice(0, node.path.lastIndexOf("/")) === parent : node.path === path)
+        )
+          throw new FilesError("unavailable", 503);
+        return node;
+      },
+      async (_tx, node) => ({
+        pathAfter: node.path,
+        itemAfterId: destination.info.stableIds ? node.id : null,
+        size: node.size,
+        revisionAfter: node.revision,
+      }),
+    );
+  }
   // Reuse the lifecycle lock: no expiry, no per-process mutex, and the same root
   // cannot be archived/trashed while a document publication is in progress.
   async function publish<T>(root: string, run: () => Promise<T>, wait: AbortSignal = rootLockWait()): Promise<T> {
@@ -1240,18 +1289,14 @@ export function createFilesService(
       const prepared = await movable(actor, input.baseId, input.path);
       return publish(prepared.root.name, async () => {
         const source = await movable(actor, input.baseId, input.path);
+        if (source.root.name !== prepared.root.name || source.state.config.url !== prepared.state.config.url)
+          throw new FilesError("configuration_changed", 409);
         const relative = userPath(joinPath(source.relative.split("/").slice(0, -1).join("/"), input.name));
         if (relative.split("/").length !== source.relative.split("/").length) throw new FilesError("invalid_path");
-        const transferred = await pendingMigration("files.rename", () =>
-          source.root.transfer(source.target, source.inspection.candidate.root, joinPath(source.inspection.candidate.path, relative), {
-            move: true,
-            onConflict: "error",
-          }),
-        );
-        if (transferred.state !== "completed") throw new FilesError("operation_pending", 409);
-        const node = transferred.node;
-        if (!node || node.root !== source.root.name || !node.path.startsWith(`${source.inspection.candidate.path}/`))
-          throw new FilesError("unavailable", 503);
+        const node = await transferItem(call, source, source, joinPath(source.inspection.candidate.path, relative), "item.rename", {
+          move: true,
+          onConflict: "error",
+        });
         await forgetMarks(source, source.relative);
         return {
           base: source.inspection.summary,
@@ -1275,22 +1320,27 @@ export function createFilesService(
       };
       const base = (await authorized(actor, input.baseId, input.folder, true)).inspection.summary;
       const wait = rootLockWait();
+      const batchId = Bun.randomUUIDv7();
       const result = await runFileBatch(input.paths, prepare, async (prepared, path) =>
         publish(
           prepared.source.root.name,
           async () => {
             const { source, destination } = await prepare(path);
+            if (source.root.name !== prepared.source.root.name || source.state.config.url !== prepared.source.state.config.url)
+              throw new FilesError("configuration_changed", 409);
             if (destination.relative === source.relative) return fileEntry(source.inspection.summary, source.relative, source.node);
-            const transferred = await pendingMigration("files.move", () =>
-              source.root.transfer(source.target, source.root.name, joinPath(destination.target, source.name), {
+            const node = await transferItem(
+              call,
+              source,
+              destination,
+              joinPath(destination.target, source.name),
+              "item.move",
+              {
                 move: true,
                 onConflict: "error",
-              }),
+              },
+              batchId,
             );
-            if (transferred.state !== "completed") throw new FilesError("operation_pending", 409);
-            const node = transferred.node;
-            if (!node || node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`))
-              throw new FilesError("unavailable", 503);
             await forgetMarks(source, source.relative);
             return fileEntry(
               destination.inspection.summary,
@@ -1327,23 +1377,39 @@ export function createFilesService(
         return { source, destination, name };
       };
       const base = (await authorized(actor, input.targetBaseId, input.folder, true)).inspection.summary;
-      const result = await runFileBatch(input.paths, prepare, async (_, path) => {
-        const { source, destination, name } = await prepare(path);
-        const sameFolder = destination.target === source.target.slice(0, -(name.length + 1)) && input.targetBaseId === input.baseId;
-        const transferred = await pendingMigration("files.copy", () =>
-          source.root.transfer(source.target, destination.root.name, joinPath(destination.target, name), {
-            targetExecution: targetExecution(destination),
-            move: false,
-            onConflict: sameFolder ? "rename" : "error",
-            ownership: { ...ownershipFor(destination, true), ...ownershipFor(destination, false) },
-          }),
-        );
-        if (transferred.state !== "completed") throw new FilesError("operation_pending", 409);
-        const node = transferred.node;
-        if (!node || node.root !== destination.root.name || !node.path.startsWith(`${destination.inspection.candidate.path}/`))
-          throw new FilesError("unavailable", 503);
-        return fileEntry(destination.inspection.summary, userPath(node.path.slice(destination.inspection.candidate.path.length + 1)), node);
-      });
+      const batchId = Bun.randomUUIDv7();
+      const wait = rootLockWait();
+      const result = await runFileBatch(input.paths, prepare, async (prepared, path) =>
+        publish(
+          prepared.source.root.name,
+          async () => {
+            const { source, destination, name } = await prepare(path);
+            if (source.root.name !== prepared.source.root.name || source.state.config.url !== prepared.source.state.config.url)
+              throw new FilesError("configuration_changed", 409);
+            const sameFolder = destination.target === source.target.slice(0, -(name.length + 1)) && input.targetBaseId === input.baseId;
+            const node = await transferItem(
+              call,
+              source,
+              destination,
+              joinPath(destination.target, name),
+              "item.copy",
+              {
+                targetExecution: targetExecution(destination),
+                move: false,
+                onConflict: sameFolder ? "rename" : "error",
+                ownership: { ...ownershipFor(destination, true), ...ownershipFor(destination, false) },
+              },
+              batchId,
+            );
+            return fileEntry(
+              destination.inspection.summary,
+              userPath(node.path.slice(destination.inspection.candidate.path.length + 1)),
+              node,
+            );
+          },
+          wait,
+        ),
+      );
       return { base, ...result };
     },
     async bundle(call: UserFilesCall, input: { baseId: string; paths: string[] }): Promise<ArchiveDownload> {
