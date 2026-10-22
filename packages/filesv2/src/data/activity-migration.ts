@@ -32,6 +32,8 @@ export async function migrateActivity(): Promise<void> {
     error_code text,
     detail jsonb NOT NULL DEFAULT '{}'
   )`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS filesv2_activity_operation ON filesv2.activity(operation_id) WHERE operation_id IS NOT NULL`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS filesv2_activity_trash_phase ON filesv2.activity(trash_id,action) WHERE trash_id IS NOT NULL AND action IN ('item.trash','item.restore')`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base ON filesv2.activity(base_id, started_at DESC, id DESC)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base_after ON filesv2.activity(base_after_id, started_at DESC) WHERE base_after_id IS NOT NULL`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_item ON filesv2.activity(item_id) WHERE item_id IS NOT NULL`.simple();

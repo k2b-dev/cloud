@@ -247,7 +247,8 @@ pass siblings as separate arguments or use shell expansion.
 
 ## History
 
-Files records folder creation, renames, moves, and copies through the web,
+Files records folder creation, renames, moves, copies, trash and restore actions,
+version changes, and permanent deletion through the web,
 mobile app, API and CLI, other apps, and agents. Each selected item has its
 own entry; items changed in one batch share a batch ID. Moving a folder
 records one entry for the whole tree. Planning folder creation or finding an
@@ -277,6 +278,19 @@ History is kept for 365 days by default. Administrators change this under
 API use the `activityRetentionDays` configuration key. Pending entries are
 kept until their outcome is known. See
 [Files history](/en/docs/operations/files-history) for operators.
+
+A trash action records one entry per selected item and keeps the old location.
+Restoring it records a separate entry with the destination. The trash journal and
+history finish together. Files can recover a lost trash response from its unique
+trash location and matching item. An ordinary restore destination is not proof:
+if the response is lost, the restoration stays unresolved and a retry does not
+move or overwrite another file.
+
+Version comments, restores, copies, and deletions each have their own entry.
+Comment updates carry a history reference in the saved version, so maintenance
+can confirm that specific update later. A lost restore, copy, or delete response
+stays uncertain. Permanent deletions and version deletions also write the
+security audit in the same transaction as history completion.
 
 ## Public shares
 

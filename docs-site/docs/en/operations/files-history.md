@@ -96,3 +96,36 @@ metadata and need no user-data history entry.
 The `filegate-facade` repository check prevents SDK access outside the facade.
 The activity classification test detects new service methods and migration
 keys that have not been reviewed.
+
+## Trash, versions, and permanent deletion
+
+The trash journal and its pending history entry are committed before Files creates
+the internal trash directory or moves an item. Restoration has a separate entry.
+A batch shares one batch ID, with one entry per selected top-level item. Completing
+the journal and history is atomic; retries retain the original call context.
+
+A missing source and the matching item at `trash/<uuid>` can confirm a trash
+operation. The UUID belongs to that journal. This evidence assumes an external
+writer has not reproduced that exact private target and snapshot. Restoration
+uses an ordinary destination, so its appearance alone does not prove completion.
+If its response or completion write is lost, the journal stays unresolved, even
+when the file is visible at the intended location. Listing and retry do not repeat
+the move or infer success from the destination.
+
+Each version comment, restore, copy, and deletion gets an entry. A comment's saved
+version carries `metadata.comment_activity`, leaving its content activity marker
+intact. Maintenance checks both the version ID and marker before confirming the
+comment. History stores an options fingerprint instead of copying comment text
+or author names. Other version mutations need their successful response; a missing
+version is not a deletion receipt, since pruning can also remove versions.
+
+Permanent deletion commits its intent with the operations journal. Success commits
+the journal, history, and `filesv2.delete` audit event together. Version deletion
+commits history with a `filesv2.version.delete` audit event. An audit failure leaves
+the operation unresolved. A missing target after a lost delete response is not
+proof of completion and never triggers another deletion.
+
+Retention preserves entries attached to an open trash or deletion journal. Older
+journals adopt their stored actor with an unknown channel when first contacted.
+Durable markers prevent terminal history from reappearing after its retention
+period. Old journals without a known storage server remain unresolved.

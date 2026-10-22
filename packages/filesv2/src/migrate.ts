@@ -118,6 +118,9 @@ export async function migrate(): Promise<void> {
   await migrateTemplates();
   await migrateTrash();
   await migrateSharing();
+  await sql`ALTER TABLE filesv2.trash ADD COLUMN IF NOT EXISTS activity_recorded boolean NOT NULL DEFAULT false`.simple();
+  await sql`ALTER TABLE filesv2.trash ADD COLUMN IF NOT EXISTS restore_activity_recorded boolean NOT NULL DEFAULT false`.simple();
+  await sql`ALTER TABLE filesv2.operations ADD COLUMN IF NOT EXISTS activity_recorded boolean NOT NULL DEFAULT false`.simple();
   await migrateActivity();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.entry_references(id TEXT PRIMARY KEY, base_id TEXT NOT NULL, path TEXT NOT NULL)`.simple();
 }
