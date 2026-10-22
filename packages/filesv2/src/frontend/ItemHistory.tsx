@@ -57,22 +57,34 @@ export default function ItemHistory(props: ItemHistoryProps) {
   const h = useHistoryMessages();
   const history = query.createInfinite({
     source: () => props.source,
-    initial: props.initial?.source === props.source ? { source: props.source, pages: [props.initial.page] } : undefined,
-    loadPage: (_source, { cursor, abortSignal }) => props.load(cursor ?? null, abortSignal),
-    getNextCursor: (page: ActivityPage) => page.next,
+    initial:
+      props.initial?.source === props.source
+        ? { source: props.source, pages: [{ source: props.source, page: props.initial.page }] }
+        : undefined,
+    loadPage: async (source, { cursor, abortSignal }) => ({ source, page: await props.load(cursor ?? null, abortSignal) }),
+    getNextCursor: (result: { source: string; page: ActivityPage }) => result.page.next,
   });
+  // Last-good pages survive failed loads, but belong only to the item that produced them.
+  const visiblePages = createMemo(() =>
+    history
+      .pages()
+      .filter((result) => result.source === props.source)
+      .map((result) => result.page),
+  );
   const [expanded, setExpanded] = createSignal(false);
   const activity = createMemo((): Stream => {
-    const entries = history.pages().flatMap((page) => page.items);
+    const pages = visiblePages();
+    const entries = pages.flatMap((page) => page.items);
     const last = entries.at(-1);
+    const hasMore = pages.at(-1)?.next != null;
     return {
       lines: historyRows(entries, { batches: false }).map((row) => ({ key: row.key, time: at(row.lead.time), kind: "entry", row })),
-      loaded: history.pages().length > 0,
-      hasMore: history.hasMore(),
+      loaded: pages.length > 0,
+      hasMore,
       oldest: last ? at(last.time) : Number.POSITIVE_INFINITY,
       failed: !!history.error(),
       loadMore: () => history.loadMore(),
-      retry: () => (history.hasMore() ? history.loadMore() : history.refresh()),
+      retry: () => (hasMore ? history.loadMore() : history.refresh()),
     };
   });
   const access = createMemo((): Stream[] =>
@@ -106,7 +118,8 @@ export default function ItemHistory(props: ItemHistoryProps) {
   const more = () => open().length > 0;
   const accessFailed = () => access().some((stream) => stream.failed);
   const accessWaiting = () =>
-    props.links?.state === "loading" || (props.links?.items ?? []).some(({ access: counts }) => !counts.pages().length && counts.loading());
+    props.links?.state === "loading" ||
+    (props.links?.items ?? []).some(({ access: counts }) => !counts.pages().length && (counts.loading() || counts.refreshing()));
   const loadingOlder = () => history.loadingMore() || (props.links?.items ?? []).some(({ access: counts }) => counts.loadingMore());
   const complete = () =>
     loaded() &&
@@ -140,7 +153,7 @@ export default function ItemHistory(props: ItemHistoryProps) {
           </Show>
         }
       >
-        <div class="filesv2-item-history" aria-busy={history.loading() || accessWaiting()}>
+        <div class="filesv2-item-history" aria-busy={history.loading() || (!loaded() && history.refreshing()) || accessWaiting()}>
           <Switch>
             <Match when={!loaded() && history.error()}>
               <p class="filesv2-item-history__line" role="alert">

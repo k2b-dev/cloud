@@ -696,6 +696,228 @@ describe("Files history components", () => {
   const rowTimes = (root: ParentNode) =>
     [...root.querySelectorAll(".filesv2-history-rows > li time")].map((time) => time.getAttribute("datetime"));
 
+  test("item source changes hide old rows and counts through failure, retry from the first page, and retain same-source pages", async () => {
+    const { default: ItemHistory } = await import("../src/frontend/ItemHistory");
+    const { Show } = await import("solid-js");
+    const old = entry({ action: "file.upload", after: current("vertrieb/Alt.pdf", { directory: false }) });
+    const fresh = entry({
+      action: "file.upload",
+      time: "2026-10-19T08:00:00.000Z",
+      after: current("vertrieb/Neu.pdf", { directory: false }),
+    });
+    const older = entry({
+      action: "file.create",
+      time: "2026-10-18T08:00:00.000Z",
+      after: current("vertrieb/Neu.pdf", { directory: false }),
+    });
+    const [source, setSource] = createSignal("old");
+    const [shown, setShown] = createSignal(true);
+    const calls: { source: string; cursor: string | null; signal: AbortSignal; reply: ReturnType<typeof deferred<ActivityPage>> }[] = [];
+    // The component's source contract holds independently of the parent's selection/remount strategy.
+    const dom = await mount(() => (
+      <Show when={shown()}>
+        <ItemHistory
+          env={env}
+          directory={false}
+          source={source()}
+          initial={{ source: "old", page: page([old]) }}
+          load={(cursor, signal) => {
+            const reply = deferred<ActivityPage>();
+            calls.push({ source: source(), cursor, signal, reply });
+            return reply.promise;
+          }}
+        />
+      </Show>
+    ));
+    await flush();
+    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip")].map((chip) => chip.textContent);
+    expect(calls).toHaveLength(0);
+    expect(rowTimes(dom.root)).toEqual([old.time]);
+    expect(chips()).toEqual(["1"]);
+
+    setSource("new");
+    await flush();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ source: "new", cursor: null });
+    expect(rowTimes(dom.root)).toEqual([]);
+    expect(chips()).toEqual([]);
+    expect(dom.root.querySelector(".filesv2-item-history")?.getAttribute("aria-busy")).toBe("true");
+    expect(dom.root.querySelectorAll(".filesv2-history-row--skeleton")).toHaveLength(4);
+    calls[0]!.reply.reject(new Error("offline"));
+    await flush();
+    expect(dom.root.querySelector("[role='alert']")?.textContent).toContain("Verlauf nicht geladen.");
+    expect(dom.root.querySelector(".filesv2-item-history")?.getAttribute("aria-busy")).toBe("false");
+    expect(rowTimes(dom.root)).toEqual([]);
+    expect(chips()).toEqual([]);
+    expect(dom.root.textContent).not.toContain("Noch keine Einträge");
+
+    buttonNamed(dom.root, "Erneut versuchen")!.click();
+    await flush();
+    expect(calls[1]).toMatchObject({ source: "new", cursor: null });
+    expect(rowTimes(dom.root)).toEqual([]);
+    calls[1]!.reply.resolve(page([fresh], "new-older"));
+    await flush();
+    expect(rowTimes(dom.root)).toEqual([fresh.time]);
+    expect(dom.root.textContent).not.toContain("Alt.pdf");
+    expect(chips()).toEqual([]);
+    buttonNamed(dom.root, "Ältere anzeigen")!.click();
+    await flush();
+    expect(calls[2]).toMatchObject({ source: "new", cursor: "new-older" });
+    calls[2]!.reply.reject(new Error("offline"));
+    await flush();
+    // A failed older page belongs to the same source: keep its good first page and retry its cursor.
+    expect(rowTimes(dom.root)).toEqual([fresh.time]);
+    expect(dom.root.querySelector("[role='alert']")?.textContent).toContain("Ältere Einträge konnten nicht geladen werden.");
+    buttonNamed(dom.root, "Erneut versuchen")!.click();
+    await flush();
+    expect(calls[3]).toMatchObject({ source: "new", cursor: "new-older" });
+    calls[3]!.reply.resolve(page([older]));
+    await flush();
+    expect(rowTimes(dom.root)).toEqual([fresh.time, older.time]);
+    expect(chips()).toEqual(["2"]);
+    expect(dom.root.querySelector("[role='alert']")).toBeNull();
+
+    setSource("pending");
+    await flush();
+    setSource("last");
+    await flush();
+    expect(calls[4]!.signal.aborted).toBe(true);
+    calls[4]!.reply.resolve(page([old]));
+    await flush();
+    expect(rowTimes(dom.root)).toEqual([]);
+    setShown(false);
+    await flush();
+    expect(calls[5]!.signal.aborted).toBe(true);
+    calls[5]!.reply.resolve(page([old]));
+    await flush();
+    expect(dom.root.textContent).toBe("");
+  });
+
+  test("a new access window hides old facts, rows and cursor through failure, while same-window refresh keeps good pages", async () => {
+    const { default: ItemHistory } = await import("../src/frontend/ItemHistory");
+    const { default: ShareHistory, createShareAccess } = await import("../src/frontend/ShareHistory");
+    const { Show } = await import("solid-js");
+    const share = accessShare("88888888-8888-4888-8888-888888888888", "Druckdaten");
+    const old = accessCounts([accessPeriod("2026-10-18T08:00:00.000Z", { pages: 99 })], "old-window-cursor");
+    const nextWindow = { from: "2026-10-01", to: "2026-10-20" };
+    const fresh = {
+      ...accessCounts([accessPeriod("2026-10-19T08:00:00.000Z", { pages: 7 })]),
+      ...nextWindow,
+      pages: 7,
+    };
+    const [period, setPeriod] = createSignal({ from: old.from, to: old.to });
+    const [shown, setShown] = createSignal(true);
+    const calls: {
+      request: ShareAccessRequest;
+      period: { from: string; to: string };
+      signal: AbortSignal;
+      reply: ReturnType<typeof deferred<ShareAccessCounts>>;
+    }[] = [];
+    const load = (request: ShareAccessRequest, signal: AbortSignal) => {
+      const reply = deferred<ShareAccessCounts>();
+      calls.push({ request, period: period(), signal, reply });
+      return reply.promise;
+    };
+    let links!: ReturnType<typeof createShareAccess>;
+    const dom = await mount(() => (
+      <Show when={shown()}>
+        {(() => {
+          links = createShareAccess({ shares: () => [{ share, creatorName: null }], period, initial: { [share.id]: old }, load });
+          return (
+            <>
+              <ShareHistory env={env} shares={links()} period={period()} load={load} />
+              <ItemHistory
+                env={env}
+                directory
+                source="druckdaten"
+                initial={{ source: "druckdaten", page: page([]) }}
+                load={async () => page([])}
+                links={{ items: links(), state: "complete" }}
+              />
+            </>
+          );
+        })()}
+      </Show>
+    ));
+    await flush();
+    const access = () => links()[0]!.access;
+    const facts = () => [...dom.root.querySelectorAll(".filesv2-share-facts__stats dd")].map((value) => value.textContent);
+    const history = () => dom.root.querySelector(".filesv2-item-history")!;
+    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip")].map((chip) => chip.textContent);
+    expect(calls).toHaveLength(0);
+    expect(facts()).toEqual(["99", "2", "21"]);
+    expect(rowTimes(dom.root)).toEqual(["2026-10-18T08:00:00.000Z"]);
+    expect(access().hasMore()).toBe(true);
+
+    setPeriod(nextWindow);
+    await flush();
+    expect(calls[0]).toMatchObject({ request: { shareId: share.id }, period: nextWindow });
+    expect(access().pages()).toEqual([]);
+    expect(access().hasMore()).toBe(false);
+    expect(facts()).toEqual([]);
+    expect(rowTimes(dom.root)).toEqual([]);
+    expect(history().getAttribute("aria-busy")).toBe("true");
+    expect(dom.root.querySelector(".filesv2-share-facts__skeleton")).not.toBeNull();
+    expect(chips()).toEqual(["1"]); // Only the known link count, never the old history count.
+    calls[0]!.reply.reject(new Error("offline"));
+    await flush();
+    expect(history().getAttribute("aria-busy")).toBe("false");
+    expect(history().querySelector("[role='alert']")?.textContent).toContain("Zugriffe nicht geladen.");
+    expect(facts()).toEqual([]);
+    expect(rowTimes(dom.root)).toEqual([]);
+    expect(access().hasMore()).toBe(false);
+    expect(dom.root.textContent).not.toContain("Noch keine Einträge");
+
+    buttonNamed(history(), "Erneut versuchen")!.click();
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toMatchObject({ request: { shareId: share.id }, period: nextWindow });
+    expect(calls[1]!.request.timelineAfter).toBeUndefined();
+    calls[1]!.reply.resolve(fresh);
+    await flush();
+    expect(access().pages()).toEqual([fresh]);
+    expect(facts()).toEqual(["7", "2", "21"]);
+    expect(rowTimes(dom.root)).toEqual(["2026-10-19T08:00:00.000Z"]);
+    expect(chips()).toEqual(["1", "1"]);
+
+    const refreshed = access().refresh();
+    await flush();
+    expect(facts()).toEqual(["7", "2", "21"]);
+    expect(rowTimes(dom.root)).toEqual(["2026-10-19T08:00:00.000Z"]);
+    calls[2]!.reply.reject(new Error("offline"));
+    await refreshed;
+    await flush();
+    expect(access().pages()).toEqual([fresh]);
+    expect(facts()).toEqual(["7", "2", "21"]);
+    expect(rowTimes(dom.root)).toEqual(["2026-10-19T08:00:00.000Z"]);
+    expect(history().querySelector("[role='alert']")?.textContent).toContain("Zugriffe nicht geladen.");
+    expect(chips()).toEqual(["1"]);
+    buttonNamed(history(), "Erneut versuchen")!.click();
+    await flush();
+    expect(calls[3]).toMatchObject({ request: { shareId: share.id }, period: nextWindow });
+    calls[3]!.reply.resolve({ ...fresh, pages: 8 });
+    await flush();
+    expect(facts()).toEqual(["8", "2", "21"]);
+    expect(history().querySelector("[role='alert']")).toBeNull();
+    expect(chips()).toEqual(["1", "1"]);
+
+    setPeriod({ from: "2026-10-02", to: "2026-10-20" });
+    await flush();
+    setPeriod({ from: "2026-10-03", to: "2026-10-20" });
+    await flush();
+    expect(calls[4]!.signal.aborted).toBe(true);
+    calls[4]!.reply.resolve(old);
+    await flush();
+    expect(facts()).toEqual([]);
+    expect(rowTimes(dom.root)).toEqual([]);
+    setShown(false);
+    await flush();
+    expect(calls[5]!.signal.aborted).toBe(true);
+    calls[5]!.reply.resolve(old);
+    await flush();
+    expect(dom.root.textContent).toBe("");
+  });
+
   test("link access joins the item history newest first, keeps four rows, and loads older access by cursor with one request per link", async () => {
     const { default: ItemHistory } = await import("../src/frontend/ItemHistory");
     const { default: ShareHistory, createShareAccess } = await import("../src/frontend/ShareHistory");

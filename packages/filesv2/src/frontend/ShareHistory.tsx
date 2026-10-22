@@ -41,11 +41,21 @@ export function createShareAccess(options: {
       const initial = options.initial?.[shareId];
       const access = query.createInfinite({
         source,
-        initial: initial ? { source: source(), pages: [initial] } : undefined,
-        loadPage: (_key, { cursor, abortSignal }) => options.load(cursor ? { shareId, timelineAfter: cursor } : { shareId }, abortSignal),
-        getNextCursor: (page: ShareAccessCounts) => page.timeline.next,
+        initial: initial ? { source: source(), pages: [{ source: source(), page: initial }] } : undefined,
+        loadPage: async (key, { cursor, abortSignal }) => ({
+          source: key,
+          page: await options.load(cursor ? { shareId, timelineAfter: cursor } : { shareId }, abortSignal),
+        }),
+        getNextCursor: (result: { source: string; page: ShareAccessCounts }) => result.page.timeline.next,
       });
-      return [shareId, access] as const;
+      // Facts, timeline rows and cursors must all describe the current counted window.
+      const pages = createMemo(() =>
+        access
+          .pages()
+          .filter((result) => result.source === source())
+          .map((result) => result.page),
+      );
+      return [shareId, { ...access, pages, hasMore: () => pages().at(-1)?.timeline.next != null }] as const;
     }),
   );
   return createMemo(() => {
