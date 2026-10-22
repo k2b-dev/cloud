@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # API surface
@@ -239,6 +239,32 @@ and types come from `@k2b/cloud/shared`. See
 `env.IS_DEVELOPMENT`, and `env.ADMIN_LOGIN_TOKEN`. The
 [runtime configuration guide](/en/docs/operations/runtime-configuration)
 documents all process variables; that larger list is not the shape of `env`.
+
+### Render Markdown for email
+
+Use `markdown.renderSync(source, { links: "plain", output: "email" })` from
+`@k2b/cloud/shared` to produce HTML for an email renderer. `markdown.render`
+accepts the same options. The email output keeps GFM strikethrough and places
+column alignment on table headers and cells as `align` attributes. Table
+formulas and math render as literal source without evaluation. It needs no
+Cloud table styles or formula widgets.
+
+```ts
+import { markdown, sanitizeEmailHtml } from "@k2b/cloud/shared";
+
+const html = sanitizeEmailHtml(
+  markdown.renderSync("~~Previous price~~\n\n| Amount |\n| ---: |\n| =1+2 |", {
+    links: "plain",
+    output: "email",
+  }),
+);
+```
+
+Apply the email sanitizer and your email styling before delivery. The Mail
+application uses this rendering mode for previews, signatures, provider draft
+copies, and outgoing messages. Its mailbox CSS may override column alignment. Omitting
+`output` keeps the existing Cloud rendering, including computed table
+formulas; `links: "plain"` alone does not disable formula evaluation.
 
 ### Evaluate Markdown table cells
 

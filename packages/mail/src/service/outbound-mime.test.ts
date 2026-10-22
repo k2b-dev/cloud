@@ -28,6 +28,46 @@ describe("outbound MIME", () => {
     expect(parsed.html).not.toContain(">ts<");
   });
 
+  test.each([false, true])("keeps Mail formatting and literal formulas in MIME with rendered snapshot %s", async (preRendered) => {
+    const body = "~~old~~\n\n---\n\n| Item | Formula |\n| :---: | ---: |\n| A | =1+2 |";
+    const rendered = renderComposeContent({
+      body,
+      format: "markdown",
+      customCss: "",
+      renderLiquid: false,
+      context: {
+        actor: { display_name: "Ada", email: "ada@example.test" },
+        mailbox: { name: "Support", description: "" },
+        sender: { display_name: "Support", email: "support@example.test", reply_to: "" },
+        message: { subject: "Formatting", to: ["alice@example.test"], cc: [] },
+      },
+    });
+    if (!rendered.ok) throw new Error(rendered.error.message);
+    const snapshot = outboundDraftSnapshotSchema.parse({
+      revision: 1,
+      from: { name: "Support", address: "support@example.test" },
+      replyTo: null,
+      envelopeFrom: null,
+      to: [{ name: null, address: "alice@example.test" }],
+      cc: [],
+      bcc: [],
+      subject: "Formatting",
+      body,
+      format: "markdown",
+      ...(preRendered ? { renderedHtml: rendered.data.html, renderedText: rendered.data.text } : {}),
+    });
+    const parsed = await simpleParser(
+      await buildMimeSource({ snapshot, messageId: "<formatting@example.test>", date: new Date("2026-01-02T03:04:05.000Z") }),
+    );
+    expect(parsed.html).toContain("<del>old</del>");
+    expect(parsed.html).toContain("<hr");
+    expect(parsed.html).toContain('align="center"');
+    expect(parsed.html).toContain('align="right"');
+    expect(parsed.html).toContain("=1+2");
+    expect(parsed.html).not.toMatch(/md-formula|ti-math-function/);
+    expect(parsed.text).toBe(preRendered ? rendered.data.text : body);
+  });
+
   test("builds a stable threaded multipart message without exposing Bcc", async () => {
     const snapshot = outboundDraftSnapshotSchema.parse({
       revision: 3,

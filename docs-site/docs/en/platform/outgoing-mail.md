@@ -5,7 +5,7 @@ section: Platform services
 order: 535
 description: Send application mail through operator-managed profiles and read its delivery status.
 tags: [mail, smtp, permissions, services]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Outgoing mail
@@ -79,7 +79,7 @@ to `mail.enqueue`; immediate `mail.send` delivery does not use it.
 | `to` | 1–50 addresses using HTML email syntax; write internationalized domains in ASCII/punycode form |
 | `subject` | At most 998 characters, without CR or LF |
 | `text` | Required plain text, at most 512 KiB in UTF-8, without NUL |
-| `html` | Optional HTML, at most 512 KiB in UTF-8; sanitized with Cloud's email sanitizer and sent without a frame. Quotes (`blockquote`), preformatted blocks (`pre`), and horizontal lines (`hr`) are kept. Links keep `http:`, `https:`, `mailto:`, and `tel:` addresses; a `tel:` address must hold a phone number such as `tel:+49-731-000000` |
+| `html` | Optional HTML, at most 512 KiB in UTF-8; sanitized with Cloud's email sanitizer and sent without a frame. Quotes (`blockquote`), preformatted blocks (`pre`), horizontal lines (`hr`), strikethrough (`del`), and table-cell alignment (`align`) are kept. Links keep `http:`, `https:`, `mailto:`, and `tel:` addresses; a `tel:` address must hold a phone number such as `tel:+49-731-000000` |
 | `fromName` | Optional sender display name, at most 998 characters without CR, LF, or NUL; the sender address always comes from the profile |
 | `replyTo` | Optional address using HTML email syntax; write internationalized domains in ASCII/punycode form |
 | `profile` | Optional profile key |

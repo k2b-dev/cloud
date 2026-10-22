@@ -5,7 +5,7 @@ section: Operations
 order: 945
 description: Configure senders, inspect the send log, and control outgoing mail retention.
 tags: [mail, smtp, administration, upgrades]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Outgoing mail operations
@@ -13,6 +13,16 @@ updated: 2026-10-21
 Configure sender profiles in **Administration → Outgoing mail**, or use
 `cld admin outgoing-mail` with an administrator account. This platform feature
 is independent of the Mail application and its `cld mail` commands.
+
+## Mail application formatting after an upgrade
+
+The Mail application's Markdown output keeps horizontal rules, strikethrough,
+and table-column alignment. Formulas that previously appeared as calculated
+values now appear as their source, such as `=SUM(Amount)`, in previews and
+sent messages. This also applies to signatures and provider draft copies.
+Existing drafts need no migration. Already frozen send snapshots retain their
+stored HTML and text. Notebooks keeps formula calculation.
+See [Format outgoing messages](/en/apps/mail#format-outgoing-messages).
 
 ## Configure a sender
 
