@@ -81,7 +81,7 @@ const parkDetailDrawer = (aside: HTMLElement, focus = false) => {
   detailDrawerContent(aside)?.style.removeProperty("--k2b-detail-space");
   const toggle = detailToggle(aside);
   toggle?.setAttribute("aria-expanded", "false");
-  if (focus) toggle?.focus({ preventScroll: true });
+  if (focus) detailReturnControl(aside)?.focus({ preventScroll: true });
 };
 
 /** Parks open waiting-detail drawers; focus follows only when it was inside one. */
@@ -151,6 +151,23 @@ const previewSidebarHidden = (root: HTMLElement, hidden: boolean) => {
 };
 const isVisible = (element: HTMLElement | null): element is HTMLElement =>
   Boolean(element && !element.hidden && getComputedStyle(element).display !== "none");
+// A pane-bound head can be absent on a phone. The visible control in Main
+// that names this same detail remains its return target, within the same root.
+const detailReturnControl = (aside: HTMLElement) => {
+  const root = workspaceRoot(aside);
+  if (!root) return undefined;
+  const shared = detailToggle(aside);
+  if (isVisible(shared ?? null) && shared && !shared.matches(":disabled")) return shared;
+  return rootElements(root, DETAIL_REQUEST_CONTROL_SELECTOR).find(
+    (control) =>
+      control.matches(FOCUSABLE_SELECTOR) &&
+      !aside.contains(control) &&
+      !control.matches(":disabled, [inert]") &&
+      !control.closest("[inert]") &&
+      control.getAttribute("aria-controls")?.split(/\s+/).includes(aside.id) &&
+      control.getClientRects().length > 0,
+  );
+};
 const elementSize = (element: HTMLElement | null, kind: AppWorkspaceResizeKind) => {
   if (!isVisible(element)) return 0;
   const rect = element.getBoundingClientRect();
@@ -731,7 +748,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           parkDetailDrawer(aside);
           if (toggle && toggleFocused && !isVisible(toggle)) focusTitle(aside);
         } else if (detailDrawer(aside)) syncDetailDrawerSpace(aside);
-        else if (before !== true && aside.contains(ownerDocument.activeElement)) detailToggle(aside)?.focus({ preventScroll: true });
+        else if (before !== true && aside.contains(ownerDocument.activeElement)) detailReturnControl(aside)?.focus({ preventScroll: true });
       }
     }
     syncDetailRequestControls();
@@ -1198,12 +1215,13 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       } else anchorItem(root, aside, snapshot);
       const focused = ownerDocument.activeElement;
       const toggle = detailToggle(aside);
+      const returnControl = detailReturnControl(aside);
       if (
         toggle?.dataset.workspaceDetailReopen === "true" &&
-        isVisible(toggle) &&
+        returnControl &&
         (aside.contains(focused) || (focused === ownerDocument.body && aside.contains(lastFocus.get(root) ?? null)))
       ) {
-        toggle.focus({ preventScroll: true });
+        returnControl.focus({ preventScroll: true });
       } else if (
         snapshot?.item.isConnected &&
         (aside.contains(lastFocus.get(root) ?? null) || aside.contains(focused) || focused === ownerDocument.body)
