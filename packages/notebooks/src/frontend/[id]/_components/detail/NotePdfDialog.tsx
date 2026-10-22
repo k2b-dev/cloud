@@ -303,7 +303,7 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
               <InlineGuidance
                 icon="ti ti-server"
                 class="[grid-area:1/1]"
-                classList={{ invisible: Boolean(report()) }}
+                style={{ "grid-area": "1 / 1", visibility: report() ? "hidden" : "visible" }}
                 aria-hidden={report() ? "true" : undefined}
               >
                 {t().pdfDataNotice}
@@ -312,7 +312,7 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
                 tone="warning"
                 icon="ti ti-alert-triangle"
                 class="[grid-area:1/1]"
-                classList={{ invisible: !report() }}
+                style={{ "grid-area": "1 / 1", visibility: report() ? "visible" : "hidden" }}
                 aria-hidden={report() ? undefined : "true"}
                 data-pdf-omissions={report() ? "" : undefined}
               >
@@ -376,15 +376,17 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
               <Show when={mapFailure()}>
                 <div role="status">
                   <p>{mapReason() || mt().printFailed}</p>
-                  <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void retryMaps()}>
-                    {mt().retry}
-                  </Button>
-                  <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void generate(true)}>
-                    {mt().printFallback}
-                  </Button>
-                  <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void generate(true, true)}>
-                    {mt().print}
-                  </Button>
+                  <div class="notebook-map-export__actions">
+                    <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void retryMaps()}>
+                      {mt().retry}
+                    </Button>
+                    <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void generate(true)}>
+                      {mt().printFallback}
+                    </Button>
+                    <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void generate(true, true)}>
+                      {mt().print}
+                    </Button>
+                  </div>
                 </div>
               </Show>
               <div class="notebook-map-export">

@@ -2560,3 +2560,5 @@
 .notebook-map-export__preview .notebook-map__pins { min-height: 0; }
 .notebook-map-export__slot { width: 100%; display: grid; align-items: center; margin-bottom: 8px; border-radius: var(--k2b-radius-control); background: #f1f5f9; }
 .notebook-map-export__slot .k2b-map-view { width: 100%; }
+
+.notebook-map-export__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
