@@ -1,5 +1,14 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { BottomSheet, Button, bottomSheetAdaptiveOptions, Combobox, DatePicker, dialogCore, NumberInput, TextInput } from "@k2b/ui";
+import {
+  AutocompleteSelect,
+  BottomSheet,
+  Button,
+  bottomSheetAdaptiveOptions,
+  DatePicker,
+  dialogCore,
+  NumberInput,
+  TextInput,
+} from "@k2b/ui";
 import { createSignal, createUniqueId, Show } from "solid-js";
 import type { SpaceItem } from "@/contracts";
 import { formatDeadline } from "@/presentation/deadline";
@@ -110,25 +119,24 @@ export function TimeBlockDialog(props: Props) {
               />
             </div>
             <div data-field="start">
-              <Combobox
+              <AutocompleteSelect
                 label={t.start}
-                query={start()}
-                onQueryChange={(value) => {
-                  setStart(value);
+                value={start() || null}
+                onValueChange={(value) => {
+                  setStart(value ?? "");
                   if (invalid() === "start") setInvalid(null);
                 }}
                 placeholder={t.choose}
                 debounceMs={0}
-                fetchData={async (query) =>
-                  Array.from({ length: 96 }, (_, index) => {
+                noMatchText={t.chooseStart}
+                search={async (query) => ({
+                  options: Array.from({ length: 96 }, (_, index) => {
                     const time = `${String(Math.floor(index / 4)).padStart(2, "0")}:${String((index % 4) * 15).padStart(2, "0")}`;
-                    return { id: time, label: time };
-                  }).filter((option) => option.label.includes(query))
-                }
-                onSelect={(option) => {
-                  setStart(option.id);
-                  if (invalid() === "start") setInvalid(null);
-                }}
+                    return { value: time, label: time };
+                  }).filter((option) => option.label.includes(query)),
+                  // Accept a complete clock time on Tab/blur, including times outside the quarter-hour suggestions.
+                  match: /^([01]\d|2[0-3]):[0-5]\d$/.test(query) ? { value: query, label: query } : undefined,
+                })}
                 disabled={busy() || Boolean(!props.block && submitted && error())}
                 error={invalid() === "start" ? t.chooseStart : undefined}
                 aria-describedby={invalid() === "start" ? undefined : `${formId}-start-hint`}

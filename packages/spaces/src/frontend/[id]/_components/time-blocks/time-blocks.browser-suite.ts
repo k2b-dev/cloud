@@ -17,6 +17,7 @@ import api from "../../../../api";
 import { SpaceDetailSchema } from "../../../../contracts";
 import { OverviewWorkSchema } from "../../../../overview-contracts";
 import { spacesService } from "../../../../service";
+import { generate as generateICal } from "../../../../service/ical";
 import { loadSpacesSidebar } from "../../../../service/overview";
 import { SpaceTimeBlockSchema } from "../../../../time-block-contracts";
 import { SpaceItemDetailSchema, SpacesViewSnapshotSchema } from "../workspace/workspace-types";
@@ -100,6 +101,35 @@ const taskState = async (f: Scene) => ({
   checklist: await sql`SELECT * FROM spaces.item_checklist_entries WHERE item_id = ${f.taskUuid}::uuid ORDER BY rank`,
   assignees: await sql`SELECT * FROM spaces.item_assignees WHERE item_id = ${f.taskUuid}::uuid ORDER BY user_id`,
 });
+const unrelatedSurfaces = async (f: Scene) => {
+  const [views, search, ical] = await Promise.all([
+    Promise.all(
+      (["list", "kanban", "table"] as const).map(async (view) => {
+        const source = `/app/spaces/${f.spaceId}?view=${view}`;
+        const body = await json(await request(f, `/workspace/view?href=${encodeURIComponent(source)}`));
+        const snapshot = SpacesViewSnapshotSchema.parse(body);
+        expect(snapshot.kind).toBe(view === "table" ? "list" : view);
+        if (snapshot.kind === "calendar") throw new Error("Expected a task view");
+        if (snapshot.kind === "list") expect(snapshot.currentView).toBe(view);
+        const items = snapshot.kind === "kanban" ? snapshot.buckets.flatMap((bucket) => bucket.items) : snapshot.itemsResult.items;
+        expect(items.map((item) => item.id)).toContain(f.taskId);
+        // Retain the complete response, including counters and any unexpected fields.
+        return body;
+      }),
+    ),
+    request(f, "/overview/search?q=Angebot").then(json),
+    generateICal({ spaceId: f.spaceUuid, baseUrl: "https://spaces.example.test", dateConfig: { locale: "de", timeZone: "UTC" } }),
+  ]);
+  expect(search).toEqual([
+    {
+      space: expect.objectContaining({ id: f.spaceId }),
+      item: expect.objectContaining({ id: f.taskId, title: "Angebot für Stadtwerke prüfen" }),
+    },
+  ]);
+  expect(ical).toContain("BEGIN:VEVENT");
+  expect(ical).toContain(`UID:${f.taskId}@spaces.cloud`);
+  return { views, search, ical };
+};
 const scene = async (assigned = true): Promise<Scene> => {
   const n = ++sequence;
   const ownerId = uuid(n * 10 + 1),
@@ -402,6 +432,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
     regression(`#1701: assigned estimated and claimed task drop + unchanged checklist + Undo at ${width}px`, async () => {
       const f = await scene(),
         before = await taskState(f),
+        surfacesBefore = width === 1440 ? await unrelatedSurfaces(f) : null,
         page = await open(f, false, width);
       const errors = pageErrors(page);
       try {
@@ -411,6 +442,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         expect(f.posts).toEqual([{ id: saved.id, status: 200 }]);
         expect(Date.parse(saved.endsAt) - Date.parse(saved.startsAt)).toBe(45 * 60_000);
         expect(await taskState(f)).toEqual(before);
+        if (surfacesBefore) expect(await unrelatedSurfaces(f)).toEqual(surfacesBefore);
         expect(await page.locator(".spaces-time-block-dialog").count()).toBe(0);
         await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
         await shot(page, "10-calendar-drop-undo");
@@ -486,6 +518,12 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         expect(await dialog.getByLabel("Beginn", { exact: true }).evaluate((el) => el === document.activeElement)).toBe(true);
         expect(f.posts).toEqual([]);
         await shot(page, "11-dialog-validation");
+        await dialog.getByLabel("Beginn", { exact: true }).fill("10:");
+        await page.getByRole("option", { name: "10:15", exact: true }).click();
+        await dialog.getByLabel("Beginn", { exact: true }).press("Tab");
+        expect(await dialog.getByLabel("Beginn", { exact: true }).inputValue()).toBe("10:15");
+        expect(await dialog.textContent()).toContain("bis 11:00");
+        expect(f.posts).toEqual([]);
         await dialog.getByLabel("Beginn", { exact: true }).fill("10:00");
         await dialog.getByLabel("Beginn", { exact: true }).press("Tab");
         await dialog.getByLabel("Dauer", { exact: true }).fill("0");
