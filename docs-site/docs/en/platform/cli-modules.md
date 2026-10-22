@@ -5,7 +5,7 @@ section: Platform services
 order: 595
 description: Expose application operations through the shared cld command-line interface.
 tags: [cli, cld, automation, plugins]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Application CLI modules
@@ -660,6 +660,52 @@ The CLI package also exports the helpers used by the generated commands:
 
 Use them when an application needs a different command shape. Keep the same
 principal resolution and output contracts.
+
+### Add app access commands
+
+For an application that declares `appAccess.grants()`, add
+`createAppAccessCommands(appId)` from `@k2b/cloud/cli` to its module. This helper
+uses the same audited API as `AppAccessEditor`; no resource adapter is needed:
+
+```ts
+import {
+  createAppAccessCommands,
+  defineCliCommands,
+} from "@k2b/cloud/cli";
+
+export default defineCliCommands({
+  name: "inventory",
+  summary: "Manage inventory access.",
+  requiresCloud: true,
+  commands: createAppAccessCommands("inventory"),
+});
+```
+
+It adds `access list`, `grant`, `set`, `revoke`, and `search-principals`.
+App access takes no resource argument. For a module installed as `inventory`:
+
+```sh
+cld inventory access list --json
+cld inventory access grant --user <user-id> --permission manage
+cld inventory access set --user <user-id> --permission use
+cld inventory access revoke --access-id <entry-id> --yes
+```
+
+Principal flags also include `--group`, `--service-account`, and
+`--authenticated`. App permission flags accept `use` or `manage`, mapped to
+`read` or `admin` only at the API boundary. List and mutation output retain
+those stored levels. The signed-in audience may receive only `use`; public
+grants are unsupported. `set` updates an existing direct grant or creates one;
+`grant` rejects duplicates. Revocation requires `--yes`.
+
+The helper calls `/_cloud/app-access/:appId`, follows the ordinary management
+redirect to the owning application, and never selects administrator repair.
+Both a management grant and any `canManage` restriction apply, alongside
+credential write authority and the last-manager guard. After a lost response,
+run `access list` to check the current state before retrying the write.
+Only applications that ship these commands expose them; all built-ins retain
+fixed rules in the first rollout. See [App access](/en/docs/identity/app-access)
+for editor integration, first configuration, and repair.
 
 ## Register the module
 

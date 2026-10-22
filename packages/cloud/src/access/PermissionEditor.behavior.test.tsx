@@ -66,6 +66,208 @@ const binding = (kind: ServiceAccountKind) =>
     ? { appId: "contacts", resourceType: "book", resourceId: "book-1" }
     : { appId: null, resourceType: null, resourceId: null };
 
+describe("PermissionEditor expanded interactions", () => {
+  if (isServer) {
+    test.skip("runs with browser export conditions", () => {});
+    return;
+  }
+
+  for (const locale of ["en", "de"] as const) {
+    test(`${locale}: clearing a selection and adding return focus to principal search`, async () => {
+      const dom = createDomTestHarness();
+      installPopoverApi(dom);
+      dom.document.documentElement.lang = locale;
+      setSystemTime(new Date("2026-10-22T12:00:00.000Z"));
+      const { default: PermissionEditor } = await import("./PermissionEditor");
+      delegateEvents(["input", "click"], dom.document);
+      const dispose = render(
+        () => (
+          <PermissionEditor
+            expanded
+            initialEntries={[]}
+            grantAccess={async (principal, permission, display) => ({
+              id: "new-grant",
+              principal,
+              permission,
+              createdAt: "2026-10-22T12:00:00.000Z",
+              ...display,
+            })}
+            updateAccess={async () => {}}
+            revokeAccess={async () => {}}
+          />
+        ),
+        dom.root,
+      );
+      const pick = async () => {
+        const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+        input.focus();
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        const results = () => dom.document.getElementById(input.getAttribute("aria-controls")!);
+        await waitFor(() => !!results()?.querySelector("[role=option]"), "the signed-in audience");
+        results()!.querySelector<HTMLButtonElement>("[role=option]")!.click();
+        await waitFor(
+          () => !!dom.root.querySelector('button[aria-label^="Auswahl entfernen:"], button[aria-label^="Remove selection:"]'),
+          "the selected principal",
+        );
+      };
+      try {
+        await pick();
+        const clear = dom.root.querySelector<HTMLButtonElement>(
+          locale === "de" ? 'button[aria-label^="Auswahl entfernen:"]' : 'button[aria-label^="Remove selection:"]',
+        )!;
+        expect(clear).not.toBeNull();
+        clear.focus();
+        clear.click();
+        await waitFor(() => dom.document.activeElement === dom.root.querySelector("input[role=combobox]"), "focus after clearing");
+        await pick();
+        const add = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find(
+          (button) => button.textContent === (locale === "de" ? "Hinzufügen" : "Add"),
+        )!;
+        add.focus();
+        add.click();
+        await waitFor(() => !!dom.root.querySelector(".group\\/access-row:not([aria-busy])"), "the confirmed grant");
+        await waitFor(() => dom.document.activeElement === dom.root.querySelector("input[role=combobox]"), "focus after adding");
+      } finally {
+        dispose();
+        setSystemTime();
+        dom.cleanup();
+      }
+    });
+  }
+
+  test("a blocked expanded editor leaves failure explanation to its caller and offers no row retry", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    delegateEvents(["click"], dom.document);
+    const [canEdit, setCanEdit] = createSignal(true);
+    let attempts = 0;
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          expanded
+          initialEntries={[serviceEntry("standalone")]}
+          canEdit={canEdit()}
+          grantAccess={async () => {
+            throw new Error("Not used");
+          }}
+          updateAccess={async () => {
+            attempts += 1;
+            throw new Error("The change could not be confirmed.");
+          }}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const row = dom.root.querySelector<HTMLElement>(".group\\/access-row")!;
+      Array.from(row.querySelectorAll<HTMLButtonElement>('[role="option"]'))
+        .find((option) => option.textContent?.includes("Edit"))!
+        .click();
+      await waitFor(() => !!dom.root.querySelector('[role="alert"] button'), "the retry action");
+      setCanEdit(false);
+      expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+      expect(attempts).toBe(1);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("re-enabled editing drops failed changes and retries but keeps rows, confirmations and the selection", async () => {
+    const dom = createDomTestHarness();
+    installPopoverApi(dom);
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    delegateEvents(["input", "click"], dom.document);
+    const [canEdit, setCanEdit] = createSignal(true);
+    let attempts = 0;
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          expanded
+          initialEntries={[serviceEntry("standalone"), serviceEntry("agent")]}
+          canEdit={canEdit()}
+          grantAccess={async () => {
+            throw new Error("Not used");
+          }}
+          updateAccess={async (accessId) => {
+            attempts += 1;
+            if (accessId === "access-standalone") throw new Error("Another manager must remain.");
+          }}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const rows = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"));
+      const chooseEdit = (row: HTMLElement) =>
+        Array.from(row.querySelectorAll<HTMLButtonElement>('[role="option"]'))
+          .find((option) => option.textContent?.includes("Edit"))!
+          .click();
+      chooseEdit(rows[1]!);
+      await waitFor(() => !!rows[1]!.querySelector(".ti-check.text-success"), "the confirmed change");
+      chooseEdit(rows[0]!);
+      await waitFor(() => !!dom.root.querySelector('[role="alert"] button'), "the retry action");
+      const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
+      input.focus();
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      const results = () => dom.document.getElementById(input.getAttribute("aria-controls")!);
+      await waitFor(() => !!results()?.querySelector("[role=option]"), "the signed-in audience");
+      results()!.querySelector<HTMLButtonElement>("[role=option]")!.click();
+      await waitFor(() => !!dom.root.querySelector('button[aria-label^="Remove selection:"]'), "the selection");
+      setCanEdit(false);
+      setCanEdit(true);
+      // An unchanged list after a canonical read: the same rows stay mounted, only the stale failure goes.
+      const after = Array.from(dom.root.querySelectorAll(".group\\/access-row"));
+      expect(after.length === rows.length && after.every((row, index) => row === rows[index])).toBe(true);
+      expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+      expect(rows[1]!.querySelector(".ti-check.text-success")).not.toBeNull();
+      expect(dom.root.querySelector('button[aria-label^="Remove selection:"]')).not.toBeNull();
+      expect(attempts).toBe(2);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+  test("own markers and service subtitles belong to expanded rows only", async () => {
+    const dom = createDomTestHarness();
+    const { default: PermissionEditor } = await import("./PermissionEditor");
+    const [expanded, setExpanded] = createSignal(true);
+    const entry = serviceEntry("agent");
+    const dispose = render(
+      () => (
+        <PermissionEditor
+          expanded={expanded()}
+          ownEntryIds={[entry.id]}
+          initialEntries={[entry]}
+          canEdit={false}
+          grantAccess={async () => {
+            throw new Error("Not used");
+          }}
+          updateAccess={async () => {}}
+          revokeAccess={async () => {}}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const row = dom.root.querySelector<HTMLElement>(".group\\/access-row")!;
+      expect(row.children[1]?.textContent).toContain("Agent · you");
+      expect(row.textContent).not.toContain("(Agent)");
+      expect(row.children[1]?.firstElementChild?.textContent).toBe("Granted agent");
+      setExpanded(false);
+      expect(row.textContent).not.toContain(" · you");
+      expect(row.textContent).toContain("(Agent)");
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+});
+
 describe("PermissionEditor service accounts", () => {
   if (isServer) {
     test.skip("runs with browser export conditions", () => {});
@@ -1015,6 +1217,7 @@ describe("PermissionEditor pending controls", () => {
     const view = await setup();
     try {
       const remove = view.rows.map((row) => row.querySelector<HTMLButtonElement>('button[aria-label^="Remove "]')!);
+      remove[1]!.focus();
       remove[1]!.click();
       await waitFor(() => remove[1]!.getAttribute("aria-busy") === "true", "the confirmed revoke");
       view.assertControls(true);
@@ -1023,6 +1226,8 @@ describe("PermissionEditor pending controls", () => {
       expect(view.triggers.map((chip) => chip.querySelectorAll(".ti-loader-2").length)).toEqual([0, 0, 0]);
       view.revoke.resolve();
       await waitFor(() => !view.rows[1]!.isConnected, "the removed row");
+      // Focus continues at the next row instead of falling back to the page.
+      await waitFor(() => view.dom.document.activeElement === remove[2], "focus on the next row");
       for (const index of [0, 2]) {
         expect(view.rows[index]!.querySelector("button.k2b-select-chip") === view.triggers[index]!).toBe(true);
         expect(view.triggers[index]!.disabled).toBe(false);

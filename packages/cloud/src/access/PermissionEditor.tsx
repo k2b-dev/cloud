@@ -1,12 +1,13 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { announce, IconButton, Placeholder, prompts, SelectChip, Tooltip, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { announce, Button, IconButton, Placeholder, prompts, Select, SelectChip, Tooltip, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { CloudAvatar } from "../account/Avatar";
 import type { AccessEntry, PermissionLevel, Principal, ServiceAccountKind } from "../contracts/shared";
 import { createGroupCoverage, type GroupCoverage, GroupCoveragePanel, GroupCoverageToggle } from "./GroupCoverage";
 import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
+import PrincipalAvatar from "./PrincipalAvatar";
 import PrincipalPicker, { principalKey } from "./PrincipalPicker";
 import { principalLabel } from "./principal-label";
 import { serviceAccountKindDisplay } from "./service-account-kind";
@@ -27,6 +28,13 @@ export type GrantableLevel = Exclude<PermissionLevel, "none">;
 export type AllowedLevel = GrantableLevel | { level: GrantableLevel; scope?: string; label?: string; icon?: string; description?: string };
 
 type PermissionEditorProps = {
+  /** Expanded form: choose a principal and level before adding; show durable inline feedback. */
+  expanded?: boolean;
+  /** Mark these entries as the viewer's own grants in the expanded form. */
+  ownEntryIds?: readonly string[];
+  /** Confirm a consequential change. When supplied, replaces the default removal confirmation. */
+  beforeChange?: (entry: AccessEntry, next: GrantableLevel | null) => Promise<boolean>;
+
   /** The editor mounts from this list and merges later lists by entry id once no change is saving.
    *  Rows the caller changed since its last list win; unchanged rows keep the editor's confirmed result.
    *  Keep the editor mounted (no keyed Show or unmount during refresh) and pass refetched data. */
@@ -34,7 +42,10 @@ type PermissionEditorProps = {
 
   /** Whether the current user can edit permissions. When `false`, the
    *  editor renders the entries read-only — no row dropdowns, no
-   *  delete buttons, no add form. */
+   *  delete buttons, no add form. When it becomes `true` again, failed
+   *  changes and their retries are cleared, so re-enable editing only
+   *  after the list passed in is canonical again. In expanded mode the caller
+   *  explains why editing stopped; row errors leave with editing. */
   canEdit?: boolean;
 
   /** Grant access. The caller closes over the resource id. The optional
@@ -73,6 +84,15 @@ type PermissionEditorProps = {
   /** Allow granting service accounts. Off by default so ordinary
    *  permission pickers stay user/group focused. */
   allowServiceAccounts?: boolean;
+
+  /** The principal search's placeholder, in the consumer's terms. Defaults to the principal kinds it offers. */
+  placeholder?: string;
+
+  /** The consumer's name and description for every signed-in person, in rows and in the principal search. */
+  signedIn?: { label: string; description: string };
+
+  /** Expanded form: a row's subtitle instead of its principal kind, such as a group's member count. */
+  entryDetail?: (entry: AccessEntry) => string | undefined;
 
   /** Which levels the UI offers — and what they're called. Bare strings
    *  use the default labels (View / Edit / Manage). Objects override
@@ -172,6 +192,21 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const initialEntries = props.initialEntries;
   let appliedCallerEntries = new Map(initialEntries.map((entry) => [entry.id, JSON.stringify(entry)]));
   const [entries, setEntries] = createStore<AccessEntry[]>(initialEntries.map((entry) => ({ ...entry })));
+  type Draft = {
+    principal: Principal;
+    display: { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind };
+  };
+  const [draft, setDraft] = createSignal<Draft>();
+  const [draftLevel, setDraftLevel] = createSignal("read");
+  const [feedback, setFeedback] = createStore<Record<string, { message: string; retry?: () => void } | undefined>>({});
+  const failure = (id: string, error: unknown, retry: () => void) => {
+    const message = error instanceof Error ? error.message : String(error);
+    if (props.expanded) setFeedback(id, { message, retry });
+    else prompts.error(message);
+  };
+  const saved = (id: string) => {
+    if (props.expanded) setFeedback(id, { message: t().saved });
+  };
   const [pending, setPending] = createSignal<string | null>(null);
   const grantPending = () => pending() !== null;
   let disposed = false;
@@ -183,6 +218,8 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const allowAuthenticated = () => props.allowAuthenticated !== false;
   const allowed = (principal: Principal) =>
     resolveAllowedLevels(typeof props.allowedLevels === "function" ? props.allowedLevels(principal) : props.allowedLevels, t());
+  const labelOf = (entry: AccessEntry) =>
+    entry.principal.type === "authenticated" && props.signedIn ? props.signedIn.label : principalLabel(entry, locale());
 
   // Defensive dev-warning: an empty allowedLevels array makes the editor
   // unable to grant anything.
@@ -197,14 +234,25 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const grant = async (
     principal: Principal,
     display: { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind },
+    choice?: ResolvedLevel,
   ) => {
     if (disposed || grantPending() || updateMut.loading() || revokeMut.loading()) return;
     const key = principalKey(principal);
-    if (entries.some((entry) => principalKey(entry.principal) === key)) return;
-    const first = allowed(principal)[0];
+    if (entries.some((entry) => principalKey(entry.principal) === key)) {
+      // A retry or selection for a principal already in the list has nothing left to add.
+      setFeedback("add", undefined);
+      if (draft() && principalKey(draft()!.principal) === key) {
+        setDraft(undefined);
+        if (props.expanded) focusPrincipalPicker();
+      }
+      return;
+    }
+    const first = choice ?? allowed(principal)[0];
     if (!first) return;
     const id = `pending:${key}`;
+    let granted = false;
     setPending(id);
+    setFeedback("add", undefined);
     setEntries(entries.length, {
       id,
       principal,
@@ -224,15 +272,19 @@ export default function PermissionEditor(props: PermissionEditorProps) {
         serviceAccountKind: entry.serviceAccountKind ?? display.serviceAccountKind,
       };
       if (index !== -1) setEntries(index, reconcile(saved));
-      announce(t().accessGranted({ name: principalLabel(saved, locale()) }));
+      announce(t().accessGranted({ name: labelOf(saved) }));
+      setDraft(undefined);
+      granted = true;
+      if (props.expanded) setFeedback(saved.id, { message: t().saved });
     } catch (err) {
       if (!disposed) setEntries((current) => current.filter((entry) => entry.id !== id));
       // Prompts are global, so a grant that fails after its dialog closed still says so.
       if (!(typeof err === "object" && err !== null && "name" in err && err.name === "AbortError")) {
-        prompts.error(err instanceof Error ? err.message : String(err));
+        failure("add", err, () => void grant(principal, display, first));
       }
     } finally {
       if (!disposed) setPending(null);
+      if (props.expanded && granted) focusPrincipalPicker();
     }
   };
 
@@ -244,18 +296,26 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     const change = updating();
     return change?.accessId === accessId ? change : undefined;
   };
-  const updateMut = mutation.create<LevelChange, LevelChange>({
+  const updateMut = mutation.create<LevelChange | null, LevelChange>({
     mutation: async (data) => {
+      const entry = entries.find((entry) => entry.id === data.accessId);
+      if (entry && props.beforeChange && !(await props.beforeChange(entry, data.permission))) return null;
       setUpdating(data);
+      setFeedback(data.accessId, undefined);
       await props.updateAccess(data.accessId, data.permission, data.scope);
       return data;
     },
     onSuccess: (result) => {
       if (result) {
         setEntries((entry) => entry.id === result.accessId, { permission: result.permission, scope: result.scope });
+        saved(result.accessId);
       }
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => {
+      const change = updating();
+      if (change) failure(change.accessId, err, () => void updateMut.mutate(change));
+      else prompts.error(err.message);
+    },
     onFinally: () => {
       if (!disposed) setUpdating(null);
     },
@@ -263,25 +323,52 @@ export default function PermissionEditor(props: PermissionEditorProps) {
 
   const revokeMut = mutation.create<string | null, AccessEntry>({
     mutation: async (entry) => {
-      const displayName = principalLabel(entry, locale());
-      const confirmed = await prompts.confirm(t().removeAccessConfirm({ name: displayName }), {
-        title: t().removeAccess,
-        variant: "danger",
-      });
+      const displayName = labelOf(entry);
+      const confirmed = props.beforeChange
+        ? await props.beforeChange(entry, null)
+        : await prompts.confirm(t().removeAccessConfirm({ name: displayName }), {
+            title: t().removeAccess,
+            variant: "danger",
+          });
       if (!confirmed) return null;
       setRevoking(entry.id);
+      setFeedback(entry.id, undefined);
       await props.revokeAccess(entry.id);
       return entry.id;
     },
     onSuccess: (accessId) => {
-      if (accessId) setEntries((current) => current.filter((entry) => entry.id !== accessId));
+      if (!accessId) return;
+      const index = entries.findIndex((entry) => entry.id === accessId);
+      setEntries((current) => current.filter((entry) => entry.id !== accessId));
+      focusAfterRemoval(index);
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => {
+      const entry = entries.find((entry) => entry.id === revoking());
+      if (entry) failure(entry.id, err, () => void revokeMut.mutate(entry));
+      else prompts.error(err.message);
+    },
     onFinally: () => {
       if (!disposed) setRevoking(null);
     },
   });
   const busy = () => grantPending() || updateMut.loading() || revokeMut.loading();
+  let editorRoot: HTMLDivElement | undefined;
+  let principalPickerHost: HTMLDivElement | undefined;
+  const focusPrincipalPicker = () => {
+    queueMicrotask(() => {
+      if (!disposed && canEdit() && !busy()) principalPickerHost?.querySelector<HTMLInputElement>('input[role="combobox"]')?.focus();
+    });
+  };
+  // A removed row takes its focused button along; continue at the neighbouring row, else the principal search.
+  const focusAfterRemoval = (index: number) => {
+    queueMicrotask(() => {
+      const active = document.activeElement;
+      if (disposed || busy() || (active && active !== document.body && active.isConnected)) return;
+      const removes = Array.from(editorRoot?.querySelectorAll<HTMLButtonElement>("button[data-access-remove]") ?? []);
+      const next = [removes[index], removes[index - 1]].find((button) => button && !button.disabled);
+      (next ?? editorRoot?.querySelector<HTMLInputElement>('input[role="combobox"]:enabled'))?.focus();
+    });
+  };
   createEffect(() => {
     const next = props.initialEntries;
     const nextCallerEntries = new Map(next.map((entry) => [entry.id, JSON.stringify(entry)]));
@@ -305,6 +392,16 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     setEntries(reconcile(merged, { key: "id" }));
     appliedCallerEntries = nextCallerEntries;
   });
+  // Editing returns once the caller has the canonical list again, even an unchanged one: earlier failures and their
+  // retries no longer apply. Rows, confirmations and an unrelated selection stay.
+  createEffect(
+    on(canEdit, (editable, wasEditable) => {
+      if (!editable || wasEditable !== false) return;
+      for (const [id, state] of Object.entries(feedback)) if (state?.retry) setFeedback(id, undefined);
+      const selection = draft();
+      if (selection && entries.some((entry) => principalKey(entry.principal) === principalKey(selection.principal))) setDraft(undefined);
+    }),
+  );
   // The service refuses to remove the last manager; the row says so up front.
   const lastManagerId = createMemo(() => {
     // A grant on part of the resource never manages it.
@@ -314,16 +411,112 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   });
 
   return (
-    <div class="flex flex-col gap-3">
+    <div
+      ref={editorRoot}
+      class={props.expanded ? "flex flex-col gap-4" : "flex flex-col gap-3"}
+      style={
+        props.expanded
+          ? { "--k2b-field-surface": "var(--k2b-surface)", "--k2b-field-border": "var(--k2b-border)", "--k2b-field-font-size": "15px" }
+          : undefined
+      }
+    >
+      <Show when={props.expanded && canEdit()}>
+        {/* Every control in the row stretches to the 36px field height, including the selection that replaces the search. */}
+        <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:grid-cols-[minmax(0,1fr)_176px_auto]">
+          <div ref={principalPickerHost} class="col-span-2 flex min-w-0 flex-col sm:col-span-1">
+            <Show
+              when={draft()}
+              fallback={
+                <PrincipalPicker
+                  existing={entries.map((entry) => entry.principal)}
+                  allowPublic={allowPublic()}
+                  allowAuthenticated={allowAuthenticated()}
+                  allowServiceAccounts={props.allowServiceAccounts}
+                  placeholder={props.placeholder}
+                  signedIn={props.signedIn}
+                  disabled={busy()}
+                  onSelect={(principal, display) => {
+                    setDraft({ principal, display });
+                    setDraftLevel(allowed(principal)[0]?.key ?? "read");
+                  }}
+                />
+              }
+            >
+              {(selection) => (
+                <Button
+                  variant="input"
+                  style={{ "font-size": "15px" }}
+                  align="start"
+                  disabled={busy()}
+                  class="w-full font-normal"
+                  aria-label={t().clearSelection({ name: selection().display.displayName })}
+                  onClick={() => {
+                    setDraft(undefined);
+                    focusPrincipalPicker();
+                  }}
+                >
+                  <span class="min-w-0 flex-1 truncate">{selection().display.displayName}</span>
+                  <i class="ti ti-x" aria-hidden="true" />
+                </Button>
+              )}
+            </Show>
+          </div>
+          <Select
+            aria-label={t().newPermission}
+            value={draftLevel}
+            disabled={busy()}
+            options={allowed(draft()?.principal ?? { type: "user", userId: "" }).map((option) => ({
+              value: option.key,
+              label: option.label,
+            }))}
+            onValueChange={(value) => {
+              if (value) setDraftLevel(value);
+            }}
+          />
+          <Button
+            style={{ "font-size": "15px" }}
+            disabled={!draft() || busy()}
+            loading={grantPending()}
+            onClick={() => {
+              const selection = draft();
+              if (selection)
+                void grant(
+                  selection.principal,
+                  selection.display,
+                  allowed(selection.principal).find((option) => option.key === draftLevel()),
+                );
+            }}
+          >
+            {t().add}
+          </Button>
+        </div>
+        <Show when={feedback.add}>
+          {(state) => (
+            <div role="alert" class="text-sm text-danger">
+              {state().message}{" "}
+              <Button variant="text" disabled={busy()} onClick={() => state().retry?.()}>
+                {t().retry}
+              </Button>
+            </div>
+          )}
+        </Show>
+      </Show>
       {/* Existing entries */}
-      <div class="flex flex-col gap-1">
+      <div class={props.expanded ? "flex flex-col" : "flex flex-col gap-1"}>
         <For each={entries}>
           {(entry) => {
-            // A row keeps its principal, so its group coverage is created once per row.
-            const coverage = entry.principal.type === "group" ? createGroupCoverage(entry.principal.groupId) : undefined;
+            // A row keeps its principal, so its group coverage is created once per row. Expanded rows name the
+            // group's size in their subtitle instead.
+            const coverage = entry.principal.type === "group" && !props.expanded ? createGroupCoverage(entry.principal.groupId) : undefined;
             return (
               <AccessEntryRow
                 entry={entry}
+                label={labelOf(entry)}
+                detail={props.expanded ? props.entryDetail?.(entry) : undefined}
+                signedInDescription={props.signedIn?.description}
+                expanded={props.expanded}
+                ownEntry={props.ownEntryIds?.includes(entry.id)}
+                feedback={feedback[entry.id]}
                 coverage={coverage}
                 canEdit={canEdit()}
                 pending={entry.id === pending()}
@@ -351,12 +544,14 @@ export default function PermissionEditor(props: PermissionEditorProps) {
       {/* Add access — single Combobox, granted at the lowest allowed
           level on pick. The user upgrades via the row pill if they want
           a higher level. KISS: one decision per step. */}
-      <Show when={canEdit()}>
+      <Show when={canEdit() && !props.expanded}>
         <PrincipalPicker
           existing={entries.map((e) => e.principal)}
           allowPublic={allowPublic()}
           allowAuthenticated={allowAuthenticated()}
           allowServiceAccounts={props.allowServiceAccounts}
+          placeholder={props.placeholder}
+          signedIn={props.signedIn}
           readOnly={grantPending()}
           disabled={updateMut.loading() || revokeMut.loading()}
           onSelect={(principal, display) => void grant(principal, display)}
@@ -372,6 +567,13 @@ export default function PermissionEditor(props: PermissionEditorProps) {
 
 function AccessEntryRow(props: {
   entry: AccessEntry;
+  label: string;
+  /** Replaces the expanded subtitle's principal kind. */
+  detail?: string;
+  signedInDescription?: string;
+  expanded?: boolean;
+  ownEntry?: boolean;
+  feedback?: { message: string; retry?: () => void };
   canEdit: boolean;
   /** Another change is saving: the row keeps its controls, disabled. */
   disabled: boolean;
@@ -394,7 +596,7 @@ function AccessEntryRow(props: {
 }) {
   const locale = useLocale();
   const t = () => accessMessages.resolve([locale()]).t;
-  const displayName = () => principalLabel(props.entry, locale());
+  const displayName = () => props.label;
   const entryKey = () => levelKey(props.entry.permission, props.entry.scope);
   const display = () => resolveEntryDisplay(props.entry.permission, props.entry.scope, props.allowed, t());
   const manageLabel = () => resolveEntryDisplay("admin", undefined, props.allowed, t()).label;
@@ -420,37 +622,65 @@ function AccessEntryRow(props: {
 
   return (
     <div>
-      <div class="group/access-row flex items-center gap-2 py-1.5" aria-busy={saving() ? "true" : undefined}>
-        <Show
-          when={props.entry.principal.type === "user"}
-          fallback={
-            <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-secondary dark:bg-zinc-700">
-              <i class={`ti ${getPrincipalIcon(props.entry, t())} text-sm`} />
-            </div>
-          }
-        >
-          <CloudAvatar
-            username={displayName()}
-            userId={props.entry.principal.type === "user" ? props.entry.principal.userId : undefined}
-            avatarHash={props.entry.avatarHash}
-            size="xs"
-            class="h-7 w-7"
-          />
+      <div
+        class={
+          props.expanded
+            ? "group/access-row grid min-h-[52px] grid-cols-[32px_minmax(0,1fr)_36px] items-center gap-x-3 gap-y-1.5 rounded-[var(--ui-radius-control)] py-2 sm:flex sm:px-2 sm:py-1.5 sm:hover:bg-[var(--ui-surface-subtle)]"
+            : "group/access-row flex items-center gap-2 py-1.5"
+        }
+        aria-busy={saving() ? "true" : undefined}
+      >
+        <Show when={!props.expanded} fallback={<PrincipalAvatar entry={props.entry} label={displayName()} />}>
+          <Show
+            when={props.entry.principal.type === "user"}
+            fallback={
+              <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-secondary dark:bg-zinc-700">
+                <i class={`ti ${getPrincipalIcon(props.entry, t())} text-sm`} />
+              </div>
+            }
+          >
+            <CloudAvatar
+              username={displayName()}
+              userId={props.entry.principal.type === "user" ? props.entry.principal.userId : undefined}
+              avatarHash={props.entry.avatarHash}
+              size="xs"
+              class="h-7 w-7"
+            />
+          </Show>
         </Show>
 
         {/* Display name. Name and label share one line so every row keeps its height on phones:
           when both do not fit, each gets an equal share and the shorter one stays whole. A group's
           members toggle always stays whole; the name takes the rest. */}
         <div
-          class="grid min-w-0 flex-1 auto-cols-[minmax(0,max-content)] grid-flow-col items-baseline gap-1"
+          class={
+            props.expanded ? "min-w-0 flex-1" : "grid min-w-0 flex-1 auto-cols-[minmax(0,max-content)] grid-flow-col items-baseline gap-1"
+          }
           classList={{ "grid-cols-[minmax(0,max-content)_max-content]": props.coverage !== undefined }}
         >
-          <span class="truncate text-sm">{displayName()}</span>
+          <span class={props.expanded ? "block truncate text-[15px] font-medium" : "truncate text-sm"}>{displayName()}</span>
+          <Show when={props.expanded}>
+            <span class="block text-[13px] text-dimmed">
+              {props.detail ??
+                (props.entry.principal.type === "user"
+                  ? t().person
+                  : props.entry.principal.type === "group"
+                    ? t().group
+                    : props.entry.principal.type === "authenticated"
+                      ? (props.signedInDescription ?? t().signedInDescription)
+                      : props.entry.principal.type === "service_account"
+                        ? (props.entry.serviceAccountKind && serviceAccountKindDisplay(props.entry.serviceAccountKind, t()).label) ||
+                          t().standaloneServiceAccount
+                        : "")}
+              <Show when={props.ownEntry}> · {t().you}</Show>
+            </span>
+          </Show>
           <Show when={props.entry.principal.type === "public"}>
             <span class="truncate text-xs text-dimmed">({t().anyoneWithLink})</span>
           </Show>
           <Show
             when={
+              !props.expanded &&
               props.entry.principal.type === "service_account" &&
               props.entry.serviceAccountKind &&
               serviceAccountKindDisplay(props.entry.serviceAccountKind, t()).label
@@ -463,58 +693,118 @@ function AccessEntryRow(props: {
           </Show>
         </div>
 
+        <Show when={props.expanded}>
+          <span class="col-start-3 row-start-2 w-5 text-center text-sm" role="status">
+            <Show
+              when={saving()}
+              fallback={
+                <Show when={props.feedback && !props.feedback.retry}>
+                  <>
+                    <i class="ti ti-check text-success" aria-hidden="true" />
+                    <span class="sr-only">{t().saved}</span>
+                  </>
+                </Show>
+              }
+            >
+              <>
+                <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
+                <span class="sr-only">{t().saving}</span>
+              </>
+            </Show>
+          </span>
+        </Show>
+
         {/* Permission badge — interactive single-value picker when editable,
           plain span otherwise. */}
-        <Show when={hasPicker()} fallback={<span class={`${badgeClass} cursor-default`}>{badgeContent}</span>}>
-          <SelectChip
-            aria-label={t().permissionFor({ name: displayName() })}
-            value={shownKey}
-            disabled={props.disabled}
-            loading={props.pending || props.updating !== undefined}
-            options={props.allowed.map((option) => {
-              const locked = props.lastManager && (option.level !== "admin" || option.scope !== undefined);
-              return {
+        <div class={props.expanded ? "col-start-2 row-start-2 min-w-0 sm:w-44 sm:flex-none" : "contents"}>
+          <Show
+            when={props.expanded}
+            fallback={
+              <Show when={hasPicker()} fallback={<span class={`${badgeClass} cursor-default`}>{badgeContent}</span>}>
+                <SelectChip
+                  aria-label={t().permissionFor({ name: displayName() })}
+                  value={shownKey}
+                  disabled={props.disabled}
+                  loading={props.pending || props.updating !== undefined}
+                  options={props.allowed.map((option) => {
+                    const locked = props.lastManager && (option.level !== "admin" || option.scope !== undefined);
+                    return {
+                      value: option.key,
+                      label: option.label,
+                      icon: `ti ${option.icon}`,
+                      disabled: locked,
+                      description: locked ? t().lastManagerOption({ level: manageLabel() }) : option.description,
+                    };
+                  })}
+                  icon={`ti ${shownDisplay().icon}`}
+                  position="bottom-left"
+                  onValueChange={(key) => {
+                    const option = props.allowed.find((candidate) => candidate.key === key);
+                    if (option && key !== entryKey()) props.onUpdatePermission(option);
+                  }}
+                />
+              </Show>
+            }
+          >
+            <Select
+              aria-label={t().permissionFor({ name: displayName() })}
+              value={shownKey}
+              disabled={props.disabled || !props.canEdit || props.singlePicker}
+              options={props.allowed.map((option) => ({
                 value: option.key,
                 label: option.label,
-                icon: `ti ${option.icon}`,
-                disabled: locked,
-                description: locked ? t().lastManagerOption({ level: manageLabel() }) : option.description,
-              };
-            })}
-            icon={`ti ${shownDisplay().icon}`}
-            position="bottom-left"
-            onValueChange={(key) => {
-              const option = props.allowed.find((candidate) => candidate.key === key);
-              if (option && key !== entryKey()) props.onUpdatePermission(option);
-            }}
-          />
-        </Show>
+                disabled: props.lastManager && option.level !== "admin",
+              }))}
+              onValueChange={(key) => {
+                const option = props.allowed.find((candidate) => candidate.key === key);
+                if (option && key !== entryKey()) props.onUpdatePermission(option);
+              }}
+            />
+          </Show>
+        </div>
 
         {/* Destructive row actions stay quiet until the row is engaged. They
           remain keyboard reachable and stay visible on touch-sized layouts. */}
         <Show when={props.canEdit}>
           <Tooltip.Anchor
             content={removeLabel()}
-            class="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/access-row:opacity-100 sm:group-focus-within/access-row:opacity-100"
+            class={
+              props.expanded
+                ? "col-start-3 row-start-1 shrink-0"
+                : "shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/access-row:opacity-100 sm:group-focus-within/access-row:opacity-100"
+            }
           >
             <IconButton
               type="button"
               label={t().remove({ name: displayName() })}
               variant="ghost"
-              size="xs"
+              size={props.expanded ? "md" : "xs"}
               onClick={props.onRevoke}
               disabled={props.disabled || props.pending || props.lastManager}
               loading={props.revoking}
               aria-label={t().remove({ name: displayName() })}
               // A disabled button takes no focus and touch has no hover, so the reason also reaches assistive technology.
               aria-description={props.lastManager ? removeLabel() : undefined}
+              data-access-remove=""
+              style={props.expanded ? { width: "2.25rem", height: "2.25rem", "min-height": "2.25rem" } : undefined}
               class="focus-ui flex h-7 w-7 items-center justify-center rounded text-dimmed transition-colors focus:opacity-100 enabled:hover:bg-red-500/[0.08] enabled:hover:text-red-600 dark:enabled:hover:text-red-400"
             >
-              <i class="ti ti-x text-sm" />
+              <i class={props.expanded ? "ti ti-x text-lg" : "ti ti-x text-sm"} />
             </IconButton>
           </Tooltip.Anchor>
         </Show>
       </div>
+      <Show when={props.expanded && props.lastManager && props.canEdit}>
+        <p class="pb-2 pl-11 text-[13px] text-dimmed sm:pl-13">{t().lastManager({ level: manageLabel() })}</p>
+      </Show>
+      <Show when={props.expanded && props.canEdit && props.feedback?.retry}>
+        <div role="alert" class="pl-11 text-[13px] text-danger sm:pl-13">
+          {props.feedback?.message}{" "}
+          <Button variant="text" disabled={props.disabled} onClick={() => props.feedback?.retry?.()}>
+            {t().retry}
+          </Button>
+        </div>
+      </Show>
       {/* Expanding pushes the rows below down, only on the viewer's own request. */}
       <Show when={props.coverage}>{(coverage) => <GroupCoveragePanel coverage={coverage()} groupName={displayName()} />}</Show>
     </div>

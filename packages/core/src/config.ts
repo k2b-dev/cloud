@@ -52,6 +52,7 @@ export const app = defineApp({
   routes: [
     "/",
     "/auth",
+    "/_cloud/app-access",
     "/cli",
     "/me",
     "/open",
