@@ -1,5 +1,6 @@
 import { err, fail, ok, type PageParams, type Paginated, paginate, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
+import type { GeoProvenance } from "../../contracts/geo";
 import { logger } from "../logging";
 import { withWeatherLocationShortId } from "./short-id";
 
@@ -11,6 +12,7 @@ export type Location = {
   state: string | null;
   lat: number;
   lon: number;
+  provenance?: GeoProvenance | null;
 };
 
 /**
@@ -23,6 +25,7 @@ const create = async (config: {
     state?: string;
     lat: number;
     lon: number;
+    provenance?: GeoProvenance;
   };
 }): Promise<Result<Location>> => {
   try {
@@ -30,10 +33,10 @@ const create = async (config: {
       await tx`SELECT pg_advisory_xact_lock(hashtext('cloud.weather.location-short-id-backfill'))`;
       return withWeatherLocationShortId(async (shortId) => {
         const [row] = await tx`
-          INSERT INTO weather_locations (short_id, user_id, name, state, lat, lon)
-          VALUES (${shortId}, ${config.userId}, ${config.data.name}, ${config.data.state ?? null}, ${config.data.lat}, ${config.data.lon})
+          INSERT INTO weather_locations (short_id, user_id, name, state, lat, lon, provenance)
+          VALUES (${shortId}, ${config.userId}, ${config.data.name}, ${config.data.state ?? null}, ${config.data.lat}, ${config.data.lon}, ${config.data.provenance ? JSON.stringify(config.data.provenance) : null}::jsonb)
           ON CONFLICT (short_id) DO NOTHING
-          RETURNING short_id AS id, name, state, lat, lon
+          RETURNING short_id AS id, name, state, lat, lon, provenance
         `;
         return (row as Location | undefined) ?? null;
       });
@@ -93,7 +96,7 @@ const list = async (config: { userId: string; pagination?: PageParams; filter?: 
   `;
 
   const items = (await sql`
-    SELECT short_id AS id, name, state, lat, lon
+    SELECT short_id AS id, name, state, lat, lon, provenance
     FROM weather_locations
     WHERE user_id = ${config.userId}
       AND ${queryMatch}
@@ -118,7 +121,7 @@ const list = async (config: { userId: string; pagination?: PageParams; filter?: 
  */
 const get = async (config: { id: string; userId: string }): Promise<Location | null> => {
   const [location] = await sql`
-    SELECT short_id AS id, name, state, lat, lon
+    SELECT short_id AS id, name, state, lat, lon, provenance
     FROM weather_locations
     WHERE short_id = ${config.id} AND user_id = ${config.userId}
   `;

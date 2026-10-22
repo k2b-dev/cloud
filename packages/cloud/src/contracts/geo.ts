@@ -8,9 +8,15 @@ export const GeoPointSchema = z
   .strict();
 export const GeoProvenanceSchema = z
   .object({
-    provider: z.literal("geoapify"),
-    attribution: z.object({ text: z.literal("Geoapify · OpenStreetMap"), links: z.array(z.url()).length(2) }).strict(),
-    computedAt: z.iso.datetime(),
+    provider: z.literal("geoapify").describe("Source provider."),
+    attribution: z
+      .object({
+        text: z.literal("Geoapify · OpenStreetMap").describe("Attribution to display with this result."),
+        links: z.array(z.url()).length(2).describe("Provider and data-source attribution links."),
+      })
+      .strict()
+      .describe("Required attribution; preserve when storing or reusing the result."),
+    computedAt: z.iso.datetime().describe("ISO timestamp when the provider result was computed."),
   })
   .strict();
 const text = z.string().max(300);

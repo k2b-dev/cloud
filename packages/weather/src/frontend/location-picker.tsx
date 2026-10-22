@@ -1,6 +1,7 @@
+import type { GeoProvenance } from "@k2b/cloud/contracts";
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { openSpotlightSearch, prompts, toast, useLocale } from "@k2b/ui";
+import { Combobox, prompts, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import { weatherMessages } from "../messages";
@@ -11,6 +12,7 @@ type GeoResult = {
   lon: number;
   country?: string;
   state?: string;
+  provenance: GeoProvenance;
 };
 
 const locationDescription = (location: GeoResult, locale: string) => {
@@ -24,7 +26,7 @@ const locationDescription = (location: GeoResult, locale: string) => {
 const searchLocations = async ({ query, abortSignal, locale }: { query: string; abortSignal: AbortSignal; locale: string }) => {
   const { t } = weatherMessages.resolve([locale]);
   const trimmed = query.trim();
-  if (trimmed.length < 2) return [];
+  if (trimmed.length < 3) return [];
 
   const res = await apiClient.geo.search.$get({ query: { q: trimmed, country: "DE" } }, { init: { signal: abortSignal } });
   if (!res.ok) {
@@ -33,12 +35,7 @@ const searchLocations = async ({ query, abortSignal, locale }: { query: string; 
   }
 
   const locations = (await res.json()) as GeoResult[];
-  return locations.map((location) => ({
-    label: location.name,
-    desc: locationDescription(location, locale),
-    icon: "ti ti-map-pin",
-    value: location,
-  }));
+  return locations;
 };
 
 export function createLocationPicker() {
@@ -55,6 +52,7 @@ export function createLocationPicker() {
             state: location.state,
             lat: location.lat,
             lon: location.lon,
+            provenance: location.provenance,
           },
         },
         { init: { signal: abortSignal } },
@@ -83,17 +81,54 @@ export function createLocationPicker() {
     if (selecting() || addMutation.loading()) return;
     setSelecting(true);
     try {
-      const selected = await openSpotlightSearch<GeoResult>({
-        resolve: ({ query, abortSignal }) => searchLocations({ query, abortSignal, locale: locale() }),
-        title: t().addLocation,
-        icon: "ti ti-map-pin",
-        placeholder: t().citySearchPlaceholder,
-        minQueryLength: 2,
-        emptyText: t().citySearchMinimum,
-        noResultsText: t().citySearchEmpty,
-        size: "small",
-      });
-      if (!disposed && selected?.value) await addMutation.mutate({ ...selected.value });
+      const selected = await prompts.dialog<GeoResult>(
+        (close) => {
+          let suggestions: GeoResult[] = [];
+          let currentQuery = "";
+          let suggestionsQuery = "";
+          return (
+            <div class="flex flex-col gap-3 p-4">
+              <Combobox
+                label={t().locationSearch}
+                placeholder={t().citySearchPlaceholder}
+                description={t().citySearchMinimum}
+                debounceMs={250}
+                onQueryChange={(query) => {
+                  currentQuery = query.trim();
+                }}
+                fetchData={async (query, abortSignal) => {
+                  const found = await searchLocations({ query, abortSignal, locale: locale() });
+                  abortSignal.throwIfAborted();
+                  suggestions = found;
+                  suggestionsQuery = query.trim();
+                  return found.map((location) => ({
+                    id: JSON.stringify([location.name, location.lat, location.lon]),
+                    label: location.name,
+                    description: locationDescription(location, locale()),
+                    icon: "ti ti-map-pin",
+                  }));
+                }}
+                onSelect={(option) => {
+                  if (currentQuery.length < 3 || currentQuery !== suggestionsQuery) return;
+                  const location = suggestions.find((item) => JSON.stringify([item.name, item.lat, item.lon]) === option.id);
+                  if (location) close(location);
+                }}
+              />
+              <p class="text-xs text-dimmed">
+                <a href="https://www.geoapify.com/" class="underline" target="_blank" rel="noopener noreferrer">
+                  Geoapify
+                </a>
+                {" · "}
+                <a href="https://www.openstreetmap.org/copyright" class="underline" target="_blank" rel="noopener noreferrer">
+                  OpenStreetMap
+                </a>
+              </p>
+            </div>
+          );
+        },
+        { title: t().addLocation, icon: "ti ti-map-pin", size: "small" },
+      );
+      if (!disposed && selected) await addMutation.mutate(selected);
     } finally {
       if (!disposed) setSelecting(false);
     }
