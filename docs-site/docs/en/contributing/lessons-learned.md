@@ -946,6 +946,13 @@ PNG input, and report unavailable images with linked source lists.
 - **Error class:** Driver-specific collection serialization at a database boundary.
 - **Guard:** `map-store.integration.test.ts` exercises persisted history, independent forks, interrupted tool recovery, owner isolation, and stale writes against PostgreSQL. The projection uses the existing `toPgTextArray` helper for every array parameter. Snapshot and fork writes cast serialized JSON through text, and the integration suite asserts `jsonb_typeof(snapshot)` is `object`.
 
+### Browser print received offline PDF image slots
+
+- **What happened:** Printing a map note showed internal placeholder text instead of ordinary attachment images.
+- **Root cause:** Browser Print used the offline PDF renderer mode without the server image preparation step.
+- **Error class:** A rendering mode crossed from server export to browser preview without resolving its assets.
+- **Guard:** The Book renderer explicitly retains authorized browser image URLs for Print and preview. Image-form tests preserve the offline default; browser tests verify decoded map and attachment images, cancellation during decoding, and temporary-document cleanup.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

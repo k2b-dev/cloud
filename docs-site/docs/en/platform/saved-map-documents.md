@@ -81,6 +81,11 @@ The PDF dialog prepares complete map images in a document preview. Print and
 PDF wait for all images. The browser captures the fitted saved maps through
 `CloudMap`; cancellation stops pending work. Missing tiles, glyphs or map access
 produce a visible failure with retry and an explicit source-list alternative.
+The dialog's Print action also includes ordinary note images and waits for them
+to load. Closing the dialog cancels preparation; a failed image leaves a visible
+error so the reader can retry. PDF downloads continue to prepare offline images
+through the authorized server export path.
+
 Native browser printing uses the labelled source-list fallback if no image was
 prepared. Headless exports also retain linked pin and route lists and report a
 `not_rendered` omission of kind `map`.
