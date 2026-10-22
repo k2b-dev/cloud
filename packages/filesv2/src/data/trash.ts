@@ -1,8 +1,11 @@
-import type { Node } from "@k2b/filegate";
+import { FilegateError, type Node } from "@k2b/filegate";
 import { sql, type TransactionSQL } from "bun";
 import type { FilesCall, Intent, UserFilesCall } from "../service/activity";
 import { FilesError } from "../service/errors";
+import type { FilesRoot } from "../service/filegate-facade";
+import { relativePath } from "../service/paths";
 import { finishActivity, insertActivity } from "./activity";
+import type { Operation } from "./operations";
 
 export type TrashRow = {
   id: string;
@@ -74,6 +77,75 @@ async function recordHistory(
     await tx`UPDATE filesv2.activity SET finished_at=${row.updated_at} WHERE id=${id}::uuid`;
   }
   return (await tx<TrashActivity[]>`SELECT id,state,path_before,path_after FROM filesv2.activity WHERE id=${id}::uuid`)[0]!;
+}
+/** Called only after confirmed deletion, while the caller holds the root publication lock. */
+export async function finishDeletedTrash(tx: TransactionSQL, operation: Operation, root: FilesRoot): Promise<void> {
+  if (!operation.base_id || operation.action !== "delete" || root.name !== operation.root) return;
+  // Archived bindings keep their original path. Only the linked archive can
+  // supply their physical base; never interpret the old path as its contents.
+  const [base] = await tx<{ path: string }[]>`SELECT CASE WHEN ${operation.archive_id}::uuid IS NULL THEN b.path ELSE a.target END AS path
+    FROM filesv2.bases b LEFT JOIN filesv2.operations a ON a.id=${operation.archive_id}::uuid
+    AND a.action='archive' AND a.state='complete' AND a.base_id=b.id AND a.root=b.root
+    AND a.server_url=${operation.server_url} AND a.source=b.path AND a.area=b.area AND a.kind=b.kind
+    WHERE b.id=${operation.base_id}::uuid AND b.root=${operation.root} AND b.area=${operation.area} AND b.kind=${operation.kind}
+    AND ((${operation.archive_id}::uuid IS NULL AND b.lifecycle NOT IN ('archived','deleted')) OR a.target IS NOT NULL)`;
+  if (!base?.path || !(operation.source === base.path || operation.source.startsWith(`${base.path}/`))) return;
+  // The existing list page size bounds memory. The initial journal count
+  // bounds the number of pages even if rows change during reconciliation.
+  const [count] = await tx<{ total: number }[]>`SELECT count(*)::integer AS total FROM filesv2.trash
+    WHERE base_id=${operation.base_id}::uuid AND root=${operation.root} AND server_url=${operation.server_url}`;
+  let after: string | null = null;
+  for (let remaining = count!.total; remaining > 0; remaining -= 50) {
+    const candidates: TrashRow[] = await tx<TrashRow[]>`SELECT * FROM filesv2.trash
+      WHERE base_id=${operation.base_id}::uuid AND root=${operation.root} AND server_url=${operation.server_url}
+      AND state IN ('pending','trashed','restoring') AND (${after}::uuid IS NULL OR id>${after}::uuid)
+      AND (EXISTS (SELECT 1 FROM unnest(ARRAY[trashed,CASE state WHEN 'pending' THEN original WHEN 'restoring' THEN restore_path END]) AS endpoints(endpoint)
+        WHERE ${base.path}||'/'||endpoint=${operation.source} OR starts_with(${base.path}||'/'||endpoint,${operation.source}||'/')))
+      ORDER BY id LIMIT 50`;
+    if (!candidates.length) break;
+    for (const candidate of candidates) {
+      // Same order as normal journal completion: journal advisory lock, then
+      // activity rows. Recovery may have changed the phase since selection.
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${candidate.id}))`;
+      const [row] = await tx<TrashRow[]>`SELECT * FROM filesv2.trash WHERE id=${candidate.id}::uuid
+        AND base_id=${operation.base_id}::uuid AND root=${operation.root} AND server_url=${operation.server_url}`;
+      if (!row || !["pending", "trashed", "restoring"].includes(row.state)) continue;
+      const opposite = row.state === "pending" ? row.original : row.state === "restoring" ? row.restore_path : null;
+      const endpoints = row.state === "trashed" ? [row.trashed] : [row.trashed, opposite];
+      if (
+        !endpoints.some(
+          (path) => path && (`${base.path}/${path}` === operation.source || `${base.path}/${path}`.startsWith(`${operation.source}/`)),
+        )
+      )
+        continue;
+      if (row.state !== "trashed") {
+        let absent = true;
+        for (const path of endpoints) {
+          if (!path) {
+            absent = false;
+            break;
+          }
+          try {
+            // Validate persisted paths too. Unknown/malformed endpoints and
+            // outages preserve the journal, including on a delayed retry.
+            await root.stat(`${base.path}/${relativePath(path, false)}`);
+            absent = false;
+          } catch (error) {
+            if (!(error instanceof FilegateError && error.status === 404)) absent = false;
+          }
+        }
+        if (!absent) continue;
+      }
+      // Adopt while the old phase still describes what is known. Adopting a
+      // pending row after 'gone' would manufacture completed trash history.
+      await recordHistory(tx, row, "item.trash");
+      if (row.state === "restoring") await recordHistory(tx, row, "item.restore");
+      await tx`UPDATE filesv2.activity SET state='unclear',next_check_at='infinity'::timestamptz,
+        detail=detail || '{"final":true}'::jsonb WHERE trash_id=${row.id}::uuid AND state IN ('pending','unclear')`;
+      await tx`UPDATE filesv2.trash SET state='gone',error_code=NULL,updated_at=now() WHERE id=${row.id}::uuid`;
+    }
+    after = candidates.at(-1)!.id;
+  }
 }
 export const trash = {
   async create(
