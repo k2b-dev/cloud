@@ -4,22 +4,28 @@ import { sql } from "bun";
 import { Hono } from "hono";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { sendWebsiteDelivery, WebsiteDeliverySchema } from "../../examples/website-tracking";
-import { pulseCapabilities } from "../capabilities";
-import { pulseService } from "../service";
-import { createBaseLifecycle } from "../service/base-lifecycle";
-import { ingestQuota } from "../service/ingest-quota";
-import { createIngestWriter } from "../service/ingest-writer";
-import { createOverviewQueries } from "../service/overview-queries";
-import { savedQueries } from "../service/saved-queries";
-import { createSourceApiKey } from "../service/source-management";
-import { sqlAdmission } from "../service/sql-admission";
-import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
-import { baseStore } from "../store/base-store";
-import { cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore, installFixtureStore } from "../store/base-store.test-fixture";
-import { settingsFixture } from "../store/settings.test-fixture";
-import { createSqlRunner } from "../store/sql-run";
-import { quoteIdentifier as q } from "../store/validation";
-import pulseApi from ".";
+
+let pulseCapabilities: typeof import("../capabilities")["pulseCapabilities"];
+let pulseService: typeof import("../service")["pulseService"];
+let createBaseLifecycle: typeof import("../service/base-lifecycle")["createBaseLifecycle"];
+let ingestQuota: typeof import("../service/ingest-quota")["ingestQuota"];
+let createIngestWriter: typeof import("../service/ingest-writer")["createIngestWriter"];
+let createOverviewQueries: typeof import("../service/overview-queries")["createOverviewQueries"];
+let savedQueries: typeof import("../service/saved-queries")["savedQueries"];
+let createSourceApiKey: typeof import("../service/source-management")["createSourceApiKey"];
+let sqlAdmission: typeof import("../service/sql-admission")["sqlAdmission"];
+let adminFixtureIdentity: typeof import("../store/admin-identity.test-fixture")["adminFixtureIdentity"];
+let baseStore: typeof import("../store/base-store")["baseStore"];
+let cleanupFixtureBase: typeof import("../store/base-store.test-fixture")["cleanupFixtureBase"];
+let fixtureBase: typeof import("../store/base-store.test-fixture")["fixtureBase"];
+let fixtureConnection: typeof import("../store/base-store.test-fixture")["fixtureConnection"];
+let fixtureStore: typeof import("../store/base-store.test-fixture")["fixtureStore"];
+let installFixtureStore: typeof import("../store/base-store.test-fixture")["installFixtureStore"];
+let settingsFixture: typeof import("../store/settings.test-fixture")["settingsFixture"];
+let createSqlRunner: typeof import("../store/sql-run")["createSqlRunner"];
+let q: typeof import("../store/validation")["quoteIdentifier"];
+
+let pulseApi: typeof import(".")["default"];
 
 suiteFor(
   "database",
@@ -31,6 +37,25 @@ suiteFor(
   let settings: ReturnType<typeof settingsFixture>;
   beforeAll(async () => {
     database = await useFreshDatabase("pulse_website");
+    ({ default: pulseApi } = await import("."));
+    // Domain singletons may capture Bun.sql during import; bind the disposable database first.
+    ({ pulseCapabilities } = await import("../capabilities"));
+    ({ pulseService } = await import("../service"));
+    ({ createBaseLifecycle } = await import("../service/base-lifecycle"));
+    ({ ingestQuota } = await import("../service/ingest-quota"));
+    ({ createIngestWriter } = await import("../service/ingest-writer"));
+    ({ createOverviewQueries } = await import("../service/overview-queries"));
+    ({ savedQueries } = await import("../service/saved-queries"));
+    ({ createSourceApiKey } = await import("../service/source-management"));
+    ({ sqlAdmission } = await import("../service/sql-admission"));
+    ({ adminFixtureIdentity } = await import("../store/admin-identity.test-fixture"));
+    ({ baseStore } = await import("../store/base-store"));
+    ({ cleanupFixtureBase, fixtureBase, fixtureConnection, fixtureStore, installFixtureStore } = await import(
+      "../store/base-store.test-fixture"
+    ));
+    ({ settingsFixture } = await import("../store/settings.test-fixture"));
+    ({ createSqlRunner } = await import("../store/sql-run"));
+    ({ quoteIdentifier: q } = await import("../store/validation"));
     await (await import("../../../core/src/runtime-helpers")).runCoreSetup();
     // The authority reads signing keys: bind SQL to this private test database first.
     await import("../../../../scripts/fixtures/authorization-preload");
@@ -41,8 +66,8 @@ suiteFor(
   afterAll(async () => {
     setSystemTime();
     settings?.restore();
-    sqlAdmission.close();
-    ingestQuota.close();
+    sqlAdmission?.close();
+    ingestQuota?.close();
     await sql.close();
     await database?.drop();
   });
