@@ -3,7 +3,12 @@ import { downstreamBudget } from "./downstream-budget";
 
 const downstream = process.argv[2];
 if (downstream !== "gotenberg" && downstream !== "smtp") throw new Error("Unknown downstream");
-const timeoutMs = Number(process.argv[3] ?? 60_000);
+// The package runner's inherited preload gives each child its own namespace.
+// Restore the parent-selected test namespace after that preload has completed.
+const namespace = process.argv[3];
+if (!namespace?.startsWith("test-")) throw new Error("Expected a shared test namespace");
+process.env.SYNC_NAMESPACE = namespace;
+const timeoutMs = Number(process.argv[4] ?? 60_000);
 const command = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
 try {
   const release = await downstreamBudget.acquire({ downstream, timeoutMs, signal: AbortSignal.timeout(timeoutMs) });

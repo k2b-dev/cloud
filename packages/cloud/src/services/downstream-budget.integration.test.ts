@@ -22,7 +22,15 @@ suiteFor("valkey")("shared downstream admission across processes", () => {
       const children: Probe[] = [];
       const spawn = (): Probe => {
         const child = Bun.spawn({
-          cmd: [process.execPath, "--no-env-file", new URL("./downstream-budget.test-fixture.ts", import.meta.url).pathname, downstream],
+          cmd: [
+            process.execPath,
+            "--no-env-file",
+            "--preload",
+            new URL("../../../../scripts/fixtures/test-infra.ts", import.meta.url).pathname,
+            new URL("./downstream-budget.test-fixture.ts", import.meta.url).pathname,
+            downstream,
+            namespace,
+          ],
           env: { ...process.env, REDIS_URL: requireInfraUrl("valkey"), SYNC_NAMESPACE: namespace },
           stdin: "pipe",
           stdout: "pipe",
@@ -53,9 +61,12 @@ suiteFor("valkey")("shared downstream admission across processes", () => {
         children.push(probe);
         return probe;
       };
+      const client = new RedisClient(requireInfraUrl("valkey"));
       try {
         const holders = Array.from({ length: capacity }, spawn);
         await Promise.all(holders.map((holder) => holder.wait("admitted")));
+        // Test preloads assign process-local namespaces; replicas must still use the shared test key.
+        expect(Number(await client.send("ZCARD", [`cloud:downstream:{${namespace}}:${downstream}`]))).toBe(capacity);
         const busy = spawn();
         await busy.wait("DownstreamBusyError");
         expect(await busy.child.exited).toBe(1);
@@ -72,7 +83,6 @@ suiteFor("valkey")("shared downstream admission across processes", () => {
             await Promise.all([probe.output, probe.errors]);
           }),
         );
-        const client = new RedisClient(requireInfraUrl("valkey"));
         try {
           await client.send("DEL", [`cloud:downstream:{${namespace}}:${downstream}`]);
         } finally {
