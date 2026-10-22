@@ -503,6 +503,9 @@ describe("Files history in the workspace", () => {
     expect([...inspector().querySelectorAll("button")].filter((item) => item.textContent?.trim() === "Restore version 2")).toHaveLength(1);
     button(inspector(), "Restore version 2")!.click();
     await flush();
-    expect(pending("version-restore").input).toEqual({ param: { baseId: home.id }, json: { path: file.path, id: "v-2" } });
+    expect(pending("version-restore").input).toEqual({
+      param: { baseId: home.id },
+      json: { path: file.path, id: "v-2", expectedRevision: file.revision },
+    });
   });
 });
