@@ -172,9 +172,11 @@ suiteFor("database")("#9 disposable Pulse ClickHouse baseline", () => {
     await sql`ALTER TABLE pulse.sources DROP COLUMN created_by_subject`.simple();
     await Promise.all([migrate(), migrate(), migrate()]);
     expect(await sql`SELECT version FROM pulse.schema_migrations WHERE version=6`).toHaveLength(1);
-    expect(await sql`SELECT name,created_by_subject FROM pulse.sources WHERE id=${source}::uuid`).toEqual([
-      { name: "Daily push", created_by_subject: null },
-    ]);
+    expect(
+      await sql<
+        { name: string; created_by_subject: string | null }[]
+      >`SELECT name,created_by_subject FROM pulse.sources WHERE id=${source}::uuid`,
+    ).toEqual([{ name: "Daily push", created_by_subject: null }]);
     await sql`UPDATE pulse.sources SET created_by_subject='service_account:fixture' WHERE id=${source}::uuid`;
     await migrate();
     expect((await sql`SELECT created_by_subject FROM pulse.sources WHERE id=${source}::uuid`)[0]?.created_by_subject).toBe(

@@ -68,7 +68,9 @@ suiteFor("database")("agent base actions enforce current policy, grants and revi
       if (!made.ok) throw new Error(made.error.message);
       const [base] = await sql<{ id: string }[]>`SELECT id FROM pulse.bases WHERE short_id=${made.data.data.id}`;
       expect(
-        await sql`SELECT permission FROM auth.access a JOIN pulse.base_access ba ON ba.access_id=a.id WHERE ba.base_id=${base!.id}::uuid AND a.service_account_id=${agentId}::uuid`,
+        await sql<
+          { permission: string }[]
+        >`SELECT permission FROM auth.access a JOIN pulse.base_access ba ON ba.access_id=a.id WHERE ba.base_id=${base!.id}::uuid AND a.service_account_id=${agentId}::uuid`,
       ).toEqual([{ permission: "admin" }]);
       await sql`UPDATE pulse.base_stores SET state='active',operation=NULL WHERE base_id=${base!.id}::uuid`;
       await sql`UPDATE pulse.bases SET updated_at='2026-10-20T12:00:00.123456Z' WHERE id=${base!.id}::uuid`;
