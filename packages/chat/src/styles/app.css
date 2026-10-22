@@ -365,3 +365,8 @@
     padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
   }
 }
+/* The title keeps its own width, so the thread picker stands right beside it. */
+.chat-conversation__header > .k2b-page-title {
+  flex: 0 1 auto;
+  min-width: 0;
+}

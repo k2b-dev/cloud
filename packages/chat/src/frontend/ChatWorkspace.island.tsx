@@ -1007,6 +1007,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
                       notice={notice()}
                       placeholder={placeholder()}
+                      target={threaded() ? (openChat()?.view === "all" ? t().general : viewTitle()) : undefined}
                       reply={
                         reply()
                           ? {

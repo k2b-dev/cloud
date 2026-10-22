@@ -100,6 +100,7 @@ export function ThreadDialog(
       >
         <TextInput
           label={t().threadName}
+          icon="ti ti-hash"
           placeholder={t().threadNamePlaceholder}
           maxLength={80}
           value={name}

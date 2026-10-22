@@ -66,6 +66,8 @@ export type ChatConversationProps = {
   /** Replaces the composer, for example where the reader cannot write. */
   notice?: JSX.Element;
   placeholder?: string;
+  /** Who the composer writes to, such as a thread; the chat's title by default. */
+  target?: string;
   /** The message the draft answers, above the field. */
   reply?: ChatComposerReply;
   /** "Reply" in a message's menu, with `r` and a swipe to the right; without it, messages offer no reply. */
@@ -333,7 +335,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
           formatting
           emoji={{ onOpen: setEmojiTarget, onPick: remember }}
           placeholder={props.placeholder ?? t().composerPlaceholder({ title: props.title })}
-          inputLabel={t().composerLabel({ title: props.title })}
+          inputLabel={t().composerLabel({ title: props.target ?? props.title })}
           disabled={!props.canWrite}
           hint={props.hint}
         />

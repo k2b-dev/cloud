@@ -51,7 +51,8 @@ export default function ChatList(props: {
             href={chatHref(row.id)}
             navigation="enhanced"
             onNavigate={(navigation) => props.onOpen(row.id, navigation)}
-            active={row.id === props.activeId}
+            // With its threads shown, the open thread's row carries the selection, not the chat's.
+            active={row.id === props.activeId && !expanded()}
             actions={
               <AppWorkspace.SidebarItemActions visibility="hover">
                 <Dropdown.Root
