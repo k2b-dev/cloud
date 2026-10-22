@@ -407,16 +407,67 @@ for (const [name, options] of Object.entries(profiles))
         });
         await page.locator(".cm-content").evaluate((el) => {
           const data = new DataTransfer();
-          data.setData("text/html", "<p>Hello<b> bold </b>world <i> italic </i>end</p>");
+          data.setData(
+            "text/html",
+            '<p>Hello<b> bold </b>world <i> italic </i>end</p><p><u style="font-weight:700">Important</u> <font style="font-style:italic">aside</font></p>',
+          );
           el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
         });
-        expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe("Hello **bold** world  *italic* end");
+        expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe(
+          "Hello **bold** world  *italic* end\n\n**Important** *aside*",
+        );
         await page.locator(".cm-content").evaluate((el) => {
           const data = new DataTransfer();
           data.items.add(new File(["fixture"], "image.png", { type: "image/png" }));
           el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
         });
         expect(await page.evaluate(() => window.sharedEditorHarness.errors())).toContain("images:1");
+      } finally {
+        await context.close();
+      }
+    });
+    test("HTML paste keeps supported content without mounting active elements or resource attributes", async () => {
+      const { context, page } = await open();
+      const requests: string[] = [];
+      page.on("request", (request) => {
+        if (request.url().includes("clipboard.invalid")) requests.push(request.url());
+      });
+      try {
+        const html =
+          '<script>document.body.dataset.clipboardExecuted="yes"</script>' +
+          '<iframe src="https://clipboard.invalid/frame"></iframe>' +
+          '<img src="https://clipboard.invalid/image" onerror="document.body.dataset.clipboardExecuted=1">' +
+          '<p><b>Kept</b> <a href="javascript:alert(1)">label</a></p>' +
+          "<table><tr><th>A</th><th>B</th></tr><tr><td>one</td><td>two</td></tr></table>";
+        await page.evaluate(() => {
+          window.sharedEditorHarness.load("");
+          window.sharedEditorHarness.selection(0);
+        });
+        await page.locator(".cm-content").evaluate((el, html) => {
+          const data = new DataTransfer();
+          data.setData("text/html", html);
+          el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+        }, html);
+        const text = await page.evaluate(() => window.sharedEditorHarness.text());
+        expect(text).toContain("**Kept** label");
+        expect(text).toContain("one");
+        expect(text).not.toContain("javascript:");
+        expect(await page.evaluate(() => window.sharedEditorHarness.errors())).toContain("images:1");
+        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
+        await page.locator(":focus").evaluate(
+          (el, html) => {
+            const data = new DataTransfer();
+            data.setData("text/html", html);
+            el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+          },
+          html.replace("one", "cell-pasted-value"),
+        );
+        expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("cell-pasted-value");
+        expect(await page.evaluate(() => window.sharedEditorHarness.errors().filter((error) => error === "images:1").length)).toBe(2);
+        await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        expect(await page.locator("#root script, #root iframe, #root img, #root [onerror]").count()).toBe(0);
+        expect(await page.locator("body").getAttribute("data-clipboard-executed")).toBeNull();
+        expect(requests).toEqual([]);
       } finally {
         await context.close();
       }

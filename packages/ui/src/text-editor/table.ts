@@ -27,7 +27,7 @@ import {
   Text,
 } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, keymap, ViewPlugin, WidgetType } from "@codemirror/view";
-import { inspectClipboard } from "./clipboard";
+import { inspectClipboard, parseClipboardHtml } from "./clipboard";
 import { type InlineFormat, inlineFormat } from "./format";
 import { markdownLanguage } from "./language";
 import * as T from "./markdown-table";
@@ -978,7 +978,7 @@ const leave = (view: EditorView, wrap: HTMLElement, where: "before" | "after") =
 
 /** First `<table>` of pasted HTML as a grid (Excel, Sheets, Word, web pages). */
 export const htmlTableGrid = (html: string): string[][] | null => {
-  const doc = new DOMParser().parseFromString(html, "text/html");
+  const doc = parseClipboardHtml(html);
   const table = doc.querySelector("table");
   if (!table) return null;
   const rows = [...table.querySelectorAll("tr")].map((tr) =>

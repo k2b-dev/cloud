@@ -4,7 +4,7 @@
  * Tab-separated text (Excel, Sheets, Numbers) becomes a table.
  */
 import { EditorView } from "@codemirror/view";
-import { inspectClipboard } from "./clipboard";
+import { inspectClipboard, parseClipboardHtml } from "./clipboard";
 import { tableFromGrid } from "./markdown-table";
 import { tableHost } from "./table";
 
@@ -121,11 +121,11 @@ const block = (node: Node, out: string[], prefix = ""): void => {
 
 /** HTML clipboard content as Markdown; `null` when it is better pasted as plain text. */
 export const htmlToMarkdown = (html: string): { markdown: string; droppedImages: number } | null => {
-  const doc = new DOMParser().parseFromString(html, "text/html");
+  const doc = parseClipboardHtml(html);
   doc.querySelectorAll("style,script,meta,link,title,o\\:p,xml").forEach((el) => el.remove());
   const droppedImages = doc.querySelectorAll("img").length;
   const out: string[] = [];
-  block(doc.body, out);
+  block(doc, out);
   // Block boundaries supply their own spacing; normalizing the result would alter literal code.
   const markdown = out.join("\n\n").trim();
   return markdown || droppedImages ? { markdown, droppedImages } : null;
