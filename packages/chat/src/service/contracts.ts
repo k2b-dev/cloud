@@ -13,6 +13,7 @@ export const MAX_EXISTING_MATCHES = 10;
 export const CREATE_LIMIT = 30;
 export const CREATE_WINDOW_SECONDS = 3_600;
 export const MESSAGE_PAGE_SIZE = 50;
+export const MESSAGE_MAX_CODE_POINTS = 20_000;
 export const CHANGES_PAGE_SIZE = 200;
 export const SEND_CONVERSATION_LIMIT = 10;
 export const SEND_CONVERSATION_WINDOW_SECONDS = 10;
@@ -226,10 +227,14 @@ export const MessageSchema = z.object({
   createdAt: z.iso.datetime(),
 });
 export const MessageViewSchema = MessageSchema.extend({ systemText: z.string().nullable() });
+// Shared by the API and the composer, which must keep rejected text out of the send queue.
+// Postgres text cannot store U+0000, so reject it here instead of failing the write.
+export const MessageBodySchema = z
+  .string()
+  .refine((body) => /\S/u.test(body) && !body.includes("\u0000") && [...body].length <= MESSAGE_MAX_CODE_POINTS);
 export const SendMessageSchema = z.strictObject({
   clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
-  // Postgres text cannot store U+0000, so reject it here instead of failing the write.
-  body: z.string().refine((body) => /\S/u.test(body) && !body.includes("\u0000") && [...body].length <= 20_000),
+  body: MessageBodySchema,
 });
 const sequenceQuery = (minimum: number) =>
   z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)]).pipe(z.number().int().min(minimum).max(Number.MAX_SAFE_INTEGER));

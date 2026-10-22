@@ -5,7 +5,7 @@ section: Platform services
 order: 535
 description: Send application mail through operator-managed profiles and read its delivery status.
 tags: [mail, smtp, permissions, services]
-updated: 2026-10-09
+updated: 2026-10-21
 ---
 
 # Outgoing mail
@@ -292,14 +292,98 @@ applies to the next call. Naming an application without `mail:read` returns
 (both status 403). Core's own mail (notifications, sign-in links, password
 resets) is never readable by applications.
 
-Other applications' records carry metadata only: `text` is returned for your
-own records, never for theirs. Read access does not let an application send,
+In `mail.list`, other applications' records carry metadata only, even with
+content access: `text` is returned for your own records, never for theirs.
+Read access does not let an application send,
 cancel, or change mail.
 
 Cloud only decides which applications' mail your application may read.
 **Your application decides which of its users may see it**: put the page and
 its API behind your own permission check, as in
 [the Emails page example](#emails-page-across-apps).
+
+### Read one approved mail text
+
+Use `mail.content(id, { actor, requestId })` from `@k2b/cloud/services` after
+your service has authorized the actual mail record. The operator must explicitly
+choose **Content** for the source application; **Metadata** remains the default
+and includes recipients, subject and attachment names. Content includes metadata
+and permits individual reads of existing and future mail within retention.
+Own mail needs `mail:send` or `mail:read`, without a self-grant; foreign mail
+needs `mail:read` and the current content grant. An administrator actor does
+not bypass application grants. Core mail remains unavailable to other apps.
+
+The result is `Result<MailContent, MailServiceError>`:
+
+- `{ purged: false, text: string | null, attachmentNames: string[] }`;
+- `{ purged: true, contentPurgedAt: string }` after content retention.
+
+An empty or null text is not a purge marker. This method returns no HTML,
+headers, attachment bytes or download links. It writes one
+`outgoing_mail.message.read` audit event, including the source app, reading app,
+acting user or service account and invocation provenance, before returning
+either successful result. An audit or storage failure returns `mail_unavailable`
+without content. The audit contains no mail text or attachment names.
+
+Pass the current authenticated `RequestActor` from trusted server code.
+`requestId` joins the application's request trail; without it an invocation's
+request ID is used when present. Actor validation checks structure, not
+credential authenticity. Never accept an actor from browser JSON, a saved job
+snapshot or a workload credential alone. Background work uses the existing
+[mandate and invocation flow](/en/docs/identity/background-mandates), which
+resolves current authority; this method adds no mandate evaluator or scopes.
+
+An invalid UUID or actor context returns `bad_input` (400). An unknown/deleted
+ID and mail outside the app's metadata grants return the same `message_unknown`
+(404), including Core mail. A metadata-visible record without a content grant
+returns `app_not_allowed` (403), without text or purge time. Revocation and
+content-to-metadata changes block subsequent reads. A read already admitted
+commits its audit before the policy change; delivered text cannot be recalled.
+Retention is serialized with the read: it returns the body or the committed
+purge marker, never a mixture. It does not cache or copy bodies.
+
+Authorize the actual `(appId, ref.scope, ref.id)` against current domain data,
+credential scope caps and resource binding. `ref` is optional and not unique;
+a subject or recipient is no substitute for that check. Without a recognized
+reference, deny access unless your domain explicitly grants application-wide
+visibility. Missing and domain-invisible records must have the same public
+response. The following Backoffice service accepts only invoice mail and uses
+its current domain service to check the access subject. Its existing credential
+scopes are `read`, `write` and `admin`; use your application's own scope contract.
+
+```ts
+import type { AccessSubject } from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
+import { mail } from "@k2b/cloud/services";
+import { fail } from "@k2b/stdlib";
+
+export const createInvoiceMailReader =
+  (mayReadInvoice: (subject: AccessSubject, invoiceId: string) => Promise<boolean>) =>
+  async (id: string, authority: RequestAuthority, requestId: string) => {
+    const hidden = () => fail({ code: "message_unknown" as const, message: "Mail unavailable.", status: 404 as const });
+    const { actor, accessSubject, credentialKind, scopes } = authority;
+    if (credentialKind !== "session" && !scopes.some((scope) => ["read", "write", "admin"].includes(scope))) return hidden();
+    const apps = await mail.readableApps();
+    if (!apps.ok) return apps;
+    const page = await mail.list({ ids: [id], apps: apps.data }, { perPage: 1 });
+    if (!page.ok) return page;
+    const record = page.data.items[0];
+    if (!record || record.appId !== "invoices" || record.ref?.scope !== "invoice") return hidden();
+    if (actor.kind === "service_account" && actor.serviceAccount.kind === "resource_bound") {
+      const account = actor.serviceAccount;
+      if (account.appId !== "backoffice" || account.resourceType !== "invoice" || account.resourceId !== record.ref.id) return hidden();
+    }
+    if (!(await mayReadInvoice(accessSubject, record.ref.id))) return hidden();
+    return mail.content(record.id, { actor, requestId });
+  };
+```
+
+Mount the consumer route behind its application route policy. Pass
+`auth.getAuthority(c)` and the current request ID to the service, return
+`Cache-Control: no-store`, and localize public messages in your application.
+Render returned text and filenames as escaped text, with no `innerHTML` or
+remote image loading. Recheck on reload and show failures with a retry action.
+Do not preload foreign bodies or embed them in SSR before authorization.
 
 ## Handle errors
 

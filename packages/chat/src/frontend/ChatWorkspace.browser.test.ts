@@ -212,6 +212,56 @@ describe("ChatWorkspace browser full view", () => {
         await page.context().close();
       }
     }, 30_000);
+    test(`oversized messages keep the draft and recover after shortening on ${name}`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], count: 4, end: harness.now() });
+      const locale = name === "phone" ? "de-DE" : "en";
+      const { page, errors } = await load(options, { chat }, false, undefined, { locale });
+      try {
+        const start = harness.posted.length;
+        const field = page.getByRole("textbox");
+        const hint = page.locator(".k2b-chat-composer__hint-text");
+        const send = page.getByRole("button", { name: locale === "en" ? "Send message" : "Nachricht senden", exact: true });
+        const messagesUrl = `**/api/chat/conversations/${chat}/messages`;
+        let rejectedPosts = 0;
+        // A server refusal must leave the browser assertions running, even if the client guard regresses.
+        await page.route(messagesUrl, async (route) => {
+          if (route.request().method() !== "POST") return route.continue();
+          rejectedPosts++;
+          await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ message: "Invalid input" }) });
+        });
+        for (const body of ["a".repeat(20_001), "😀".repeat(20_001)]) {
+          await field.fill(body);
+          // Keyboard and touch submission both preserve text that the server would reject.
+          if (name === "desktop") await field.press("Enter");
+          else await send.click();
+          // Touch submission first settles dialog history. The restored, enabled send button proves it finished.
+          await page.waitForFunction(() => {
+            const send = document.querySelector<HTMLButtonElement>(".k2b-chat-composer__send");
+            return send !== null && !send.disabled;
+          });
+          await page
+            .getByText(locale === "en" ? "Shorten to at most 20,000 characters." : "Kürze auf höchstens 20.000 Zeichen.", { exact: true })
+            .waitFor();
+          expect(await hint.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+          expect((await field.inputValue()) === body).toBe(true);
+          expect(rejectedPosts).toBe(0);
+          expect(harness.posted.slice(start)).toEqual([]);
+          expect(await page.locator('[data-status="failed"], [data-status="pending"]').count()).toBe(0);
+        }
+        await page.unroute(messagesUrl);
+        const valid = "😀".repeat(20_000);
+        await field.fill(valid);
+        expect(await hint.textContent()).toBe("");
+        await send.click();
+        await until(() => harness.posted.length === start + 1);
+        await page.locator('[data-status="pending"]').waitFor({ state: "detached" });
+        expect(await field.inputValue()).toBe("");
+        expect(harness.posted.slice(start).map((input) => input.body)).toEqual([valid]);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
     test(`failed send retries one message with the same client ID on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 4, end: harness.now() });
       const { page, errors } = await load(options, { chat });

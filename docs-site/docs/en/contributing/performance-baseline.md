@@ -576,8 +576,10 @@ boundary. Required document, script, and stylesheet responses retain their
 separate strict network checks.
 
 Request starts use the same browser-time window in Playwright and Chromium's
-CDP evidence. Playwright exposes start timing with the response; a delayed
-event for a request begun before the measurement is excluded after that
+CDP evidence. Both window boundaries retain fractional epoch milliseconds,
+matching browser request timestamps. Rounding the end down to a whole
+millisecond can discard a request that started before the observed end.
+Playwright exposes start timing with the response; a delayed event for a request begun before the measurement is excluded after that
 timing becomes available. Required requests inside the window still need
 their own successful response and transfer evidence.
 
