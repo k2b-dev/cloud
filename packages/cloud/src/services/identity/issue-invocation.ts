@@ -1,0 +1,51 @@
+import { getApp } from "../../_internal/registry";
+import type { AppMeta } from "../../contracts/app";
+import { AppAccessDeniedError } from "../../server/middleware/app-access";
+import type { RequestAuthority } from "../../server/middleware/auth";
+import { canUseApp } from "../app-access";
+import { recordAppAccessDenied } from "../app-access-metrics";
+import { CLOUD_INVOCATION_TOKEN_TTL_SECONDS } from "./constants";
+import { resolveInvocationAuthority } from "./invocation-actor";
+import { type InvocationAuthority, signInvocationToken } from "./invocation-token";
+
+/** Reload the principal while retaining the original credential's scopes and mobile-session restriction. */
+export const resolveIssuanceAuthority = (
+  authority: InvocationAuthority,
+  callingAppId: string,
+  query?: Parameters<typeof resolveInvocationAuthority>[1],
+): Promise<RequestAuthority | null> =>
+  resolveInvocationAuthority(
+    {
+      ...authority,
+      act: { sub: `app:${callingAppId}` },
+      jti: crypto.randomUUID(),
+      exp: Math.floor(Date.now() / 1_000) + CLOUD_INVOCATION_TOKEN_TTL_SECONDS,
+    },
+    query,
+  );
+
+export const requireRegisteredAppAccess = async (
+  authority: RequestAuthority | null,
+  appId: string,
+  lookup: (id: string) => Promise<Pick<AppMeta, "id" | "access"> | null> = getApp,
+): Promise<void> => {
+  const app = await lookup(appId).catch(() => null);
+  if (!app || !authority || !(await canUseApp(authority, app))) {
+    if (app) recordAppAccessDenied(app.id);
+    throw new AppAccessDeniedError(app ?? { id: appId });
+  }
+};
+
+/** The production broker seam for capability, widget, search, stream, and inter-app issuance. */
+export const issueInvocationToken = async (
+  params: Parameters<typeof signInvocationToken>[0],
+  dependencies: {
+    getApp?: Parameters<typeof requireRegisteredAppAccess>[2];
+    resolve?: typeof resolveIssuanceAuthority;
+    sign?: typeof signInvocationToken;
+  } = {},
+): ReturnType<typeof signInvocationToken> => {
+  const authority = await (dependencies.resolve ?? resolveIssuanceAuthority)(params.authority, params.callingAppId);
+  await requireRegisteredAppAccess(authority, params.targetAppId, dependencies.getApp);
+  return (dependencies.sign ?? signInvocationToken)(params);
+};

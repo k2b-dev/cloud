@@ -10,7 +10,7 @@ import { accounts } from "../services/accounts";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { migrateCloudAi } from "./migrate";
 import { listAiRecentResources } from "./recent-resources";
-import { recentTestApp, recentTestSkill } from "./recent-resources.test-fixture";
+import { recentTestApp, recentTestRegistryApp, recentTestSkill } from "./recent-resources.test-fixture";
 import { aiResourceMarker } from "./resource-markers";
 import { aiRoutes } from "./routes";
 import { createAiShortId } from "./short-id";
@@ -55,6 +55,7 @@ const fixture = async () => {
       locale: "de",
       signal: new AbortController().signal,
       dependencies: {
+        listApps: async () => [recentTestRegistryApp],
         listRegistry: async () => [recentTestApp],
         dispatch: async ({ input }) => {
           const { id } = z.object({ id: z.string() }).parse(input);

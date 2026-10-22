@@ -1,5 +1,6 @@
 import { CODE_CAPABILITY_TOKEN_HEADER, CODE_SOURCE_TOOLS } from "@k2b/cloud/ai";
 import { type AuthContext, getLocale, getTimeZone, requireInvocation } from "@k2b/cloud/server";
+import { appAccessAuthority } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import { readThemeFromCookieHeader } from "@k2b/cloud/shared";
 import { ok } from "@k2b/stdlib";
@@ -43,6 +44,7 @@ function register<S extends z.ZodType>(name: string, schema: S, run: (input: z.o
       if (!conversation) return c.json({ ok: false, error: { code: "ACCESS_DENIED", message: "Conversation access denied." } }, 403);
       return Response.json(
         await run(input, {
+          authority: appAccessAuthority(c),
           actor,
           accessSubject: c.get("accessSubject"),
           conversationId: conversation.id,

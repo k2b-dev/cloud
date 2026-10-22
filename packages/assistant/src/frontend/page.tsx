@@ -9,7 +9,7 @@ import {
 } from "@k2b/cloud/ai";
 import { aiLive } from "@k2b/cloud/ai/live";
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale, getTimeZone, loadPendingApprovals } from "@k2b/cloud/server";
+import { auth, expectUserBackedActor, getLocale, getTimeZone, loadPendingApprovals } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
@@ -61,9 +61,7 @@ export default ssr<AuthContext>(async (c) => {
         perPage: 20,
       })
     : null;
-  const projectContext = activeProject
-    ? await loadAssistantProjectContextSnapshot({ actor: c.get("actor"), accessSubject: subject }, activeProject.id)
-    : null;
+  const projectContext = activeProject ? await loadAssistantProjectContextSnapshot(auth.getAuthority(c), activeProject.id) : null;
 
   const selectedConversationId =
     activeProject || approvalsOpen

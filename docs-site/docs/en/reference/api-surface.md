@@ -221,7 +221,7 @@ inferring support from autocomplete.
 
 | Entry point | Application surface | Other exports |
 | --- | --- | --- |
-| `@k2b/cloud` | `defineApp`, declaration types, typed notifications | Registry, heartbeat, and runtime composition are platform-owned |
+| `@k2b/cloud` | `defineApp`, `appAccess`, declaration types, typed notifications | Registry, heartbeat, and runtime composition are platform-owned |
 | `@k2b/cloud/services` | Feature services used by capability guides | Raw stores, lifecycle starters, gateway telemetry, and migrations are maintainer APIs |
 | `@k2b/cloud/ai` | Structured model calls, local tools, and `listAiOpenQuestions` with `AiOpenQuestion` / `AiOpenQuestions` for [personal chat overviews](/en/docs/ai/chat-runtime-and-streaming#list-the-persons-open-questions) | Conversation stores, migrations, workers, and maintenance helpers are platform-owned |
 | `@k2b/cloud/browser` | Typed Hono client factory | Utility helpers are outside the documented typed-client contract |
@@ -492,3 +492,7 @@ render. Browser code uses `getContext()` and `onContextChange()` from
 `publishPageContext()`. `PanelPageContext` and its strict schema are exported
 from `@k2b/cloud/contracts`. See [Panels](/en/docs/platform/panels#page-context)
 for consent, ordering, and the rule that refs never grant access.
+
+Application entry declarations use `appAccess` from `@k2b/cloud`; see
+[App access](/en/docs/identity/app-access). The batch resolver and registry
+filtering helpers are platform-owned.

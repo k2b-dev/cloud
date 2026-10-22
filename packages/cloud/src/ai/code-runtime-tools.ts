@@ -4,7 +4,8 @@ import { readBoundedJson } from "../_internal/bounded-json";
 import { getApp } from "../_internal/registry";
 import type { RequestActor } from "../server";
 import { IDENTITY_REFRESH_TIMEOUT_MS } from "../services/identity/constants";
-import { signInvocationToken } from "../services/identity/invocation-token";
+import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
+import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { logger } from "../services/logging";
 import { LOCALE_HEADER } from "../shared/locale";
@@ -62,11 +63,12 @@ export const runManagedCodeTool =
     if (!runConfig || runConfig.kind === "compact" || Boolean(runConfig.background) !== Boolean(runConfig.mandate)) {
       throw new Error("Code execution requires a valid turn and task-scoped background authority.");
     }
-    const { actor } = await resolveAiCapabilityActor({
+    const authority = await resolveAiCapabilityActor({
       conversationId: context.conversationId,
       persistedActor: context.actor,
       store: aiConversations,
     });
+    const { actor } = authority;
     await authorizeCodeExecution(context.conversationId, context.turnId, actor.user.id);
     await context.reportProgress?.(context.locale?.startsWith("de") ? "Ausführungshost verbinden" : "Connecting execution host");
     const app = await getApp("assistant");
@@ -85,14 +87,7 @@ export const runManagedCodeTool =
               signInvocationToken({
                 ...audience,
                 schemaHash: null,
-                authority: {
-                  sub: actor.user.id,
-                  principal_type: "user",
-                  access_subject_type: "user",
-                  access_subject_id: actor.user.id,
-                  credential_kind: "session",
-                  scopes: [],
-                },
+                authority: invocationAuthorityFromRequest(authority),
                 signer,
                 issuer: signer.issuer,
               }),

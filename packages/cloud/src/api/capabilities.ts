@@ -54,11 +54,15 @@ import {
   requiresAuth,
   v,
 } from "../server/middleware";
+import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
 import { noTransform } from "../server/middleware/no-transform";
+import { appAccessAuthority } from "../services/app-access";
+import { discoverableApps } from "../services/app-discovery";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
 import type { InvocationAuthority } from "../services/identity/invocation-token";
-import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
+import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { logger } from "../services/logging";
 import { withMandateIssueAuthority } from "../services/mandates";
@@ -155,13 +159,14 @@ export const loadCapabilityCatalogPage = async (
   query: { cursor?: string; limit: number },
   dependencies: Pick<CapabilityRouteDependencies, "listApps" | "getCapability"> = {},
   locale?: string,
+  authority: RequestAuthority | null = null,
 ): Promise<CapabilityCatalog> => {
   if (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > MAX_CATALOG_LIMIT) {
     throw new RangeError(`Capability catalog limit must be between 1 and ${MAX_CATALOG_LIMIT}`);
   }
   const registry = dependencies.listApps ?? listApps;
   const capabilityLookup = dependencies.getCapability ?? getCapability;
-  const entries = await registry();
+  const entries = await discoverableApps(authority, await registry());
   const liveApps = entries
     .filter((entry) => entry.capabilities?.protocolVersion === CAPABILITY_PROTOCOL_VERSION)
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -440,6 +445,7 @@ const runCapabilityDispatch = async (
           });
         })();
   } catch (error) {
+    if (error instanceof AppAccessDeniedError) return Response.json(appAccessDeniedBody(error.app), { status: 403 });
     if (error instanceof MandateDispatchError) {
       const denied = errorResponse(
         error.status === 409 ? "MANDATE_REVISION_CHANGED" : "MANDATE_FORBIDDEN",
@@ -873,7 +879,7 @@ export const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies
         const query = c.req.valid("query");
         const messages = capabilityMessages(getLocale(c));
         try {
-          return c.json(await loadCapabilityCatalogPage(query, dependencies, getLocale(c)));
+          return c.json(await loadCapabilityCatalogPage(query, dependencies, getLocale(c), appAccessAuthority(c)));
         } catch (error) {
           log.warn("Capability catalog unavailable", { error: error instanceof Error ? error.message : String(error) });
           const unavailable = errorResponse(CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, messages.registryUnavailable, 503);

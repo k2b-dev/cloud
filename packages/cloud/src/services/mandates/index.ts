@@ -5,6 +5,7 @@ import type { CapabilityActionPolicy } from "../../contracts/capabilities";
 import { CapabilityAppIdSchema } from "../../contracts/capabilities";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { audit } from "../audit";
+import { requireRegisteredAppAccess, resolveIssuanceAuthority } from "../identity/issue-invocation";
 import { logger } from "../logging";
 import { parsePgJsonValue } from "../postgres";
 import { isMandatePolicyNarrowing, type MandatePolicyV1, MandatePolicyV1Schema, mandatePolicyAllows, parseMandatePolicy } from "./policy";
@@ -211,6 +212,27 @@ const validSubject = async (subject: MandateSubject, db: SQL): Promise<boolean> 
     ) AS active
   `;
   return row?.active === true;
+};
+
+const subjectAppAccess = async (subject: MandateSubject, appIds: readonly string[], db: SQL): Promise<boolean> => {
+  try {
+    const authority = await resolveIssuanceAuthority(
+      {
+        sub: subject.id,
+        principal_type: subject.type,
+        access_subject_type: subject.type,
+        access_subject_id: subject.id,
+        credential_kind: "mandate",
+        scopes: [],
+      },
+      "core",
+      db,
+    );
+    for (const appId of new Set(appIds)) await requireRegisteredAppAccess(authority, appId);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const canActForSubject = (authority: MandateInteractiveAuthority | MandateAdminAuthority, subject: MandateSubject): boolean =>
@@ -548,6 +570,12 @@ const setMandateState = async (
   return changedRow(input.mandateId, input.expectedRevision, input.authority, db, async (current) => {
     if (state === "active" && input.authority.kind === "workload") return fail(err.forbidden("Workloads cannot resume mandates"));
     if (state === "active" && !(await validSubject(current.subject, db))) return ok(null);
+    if (
+      state === "active" &&
+      !(await subjectAppAccess(current.subject, [current.ownerAppId, ...(current.policy.apps === "*" ? [] : current.policy.apps)], db))
+    ) {
+      return fail(err.forbidden("App access was denied. Ask someone who manages access before resuming this mandate."));
+    }
     if (current.state === state) return ok(current);
     if (state === "paused" && current.state !== "active") return ok(null);
     if (state === "active" && current.state !== "paused") return ok(null);
@@ -695,6 +723,9 @@ export const validateMandateIssueAuthority = async (
     return denyMandateIssue(err.forbidden(MANDATE_POLICY_DENIED_MESSAGE));
   }
   const mandate = mapMandate(row);
+  if (!(await subjectAppAccess(mandate.subject, [mandate.ownerAppId, target.data], db))) {
+    return denyMandateIssue(err.forbidden("App access was denied. Ask someone who manages access before running this mandate."));
+  }
   return ok({
     mandateId: mandate.id,
     mandateRevision: mandate.revision,

@@ -1,4 +1,6 @@
-import { getLocalizedRuntimeContext } from "@k2b/cloud/ssr";
+import { type AuthContext, auth } from "@k2b/cloud/server";
+import { appAccessAuthority, usableAppIds } from "@k2b/cloud/services";
+import { getLocalizedRuntimeContext } from "@k2b/cloud/ssr/runtime";
 import { Scalar } from "@scalar/hono-api-reference";
 import { Hono } from "hono";
 import { apiDocsHelp } from "../help";
@@ -14,11 +16,15 @@ import { buildApiDocsGuideSource, buildScalarSources } from "../sources";
  * out of the switcher on the next reload. No special cases: this file
  * maps registry entries into Scalar sources.
  */
-const pages = new Hono().get(
+const pages = new Hono<AuthContext>().use(auth.requireRole("*")).get(
   "/",
   Scalar(async (c) => {
     const runtime = getLocalizedRuntimeContext(c);
-    const sources = [buildApiDocsGuideSource(apiDocsHelp.getMarkdown("api-docs-start") ?? ""), ...buildScalarSources(runtime.apps)];
+    const allowed = await usableAppIds(appAccessAuthority(c), runtime.apps);
+    const sources = [
+      buildApiDocsGuideSource(apiDocsHelp.getMarkdown("api-docs-start") ?? ""),
+      ...buildScalarSources(runtime.apps.filter((app) => allowed.has(app.id))),
+    ];
 
     return {
       theme: "saturn",

@@ -15,9 +15,10 @@ import {
   capabilityResultSchema,
 } from "../contracts/capabilities";
 import type { RequestAuthority } from "../server";
+import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { capabilityInvocationOperation } from "../services/identity/invocation-operations";
-import { signInvocationToken } from "../services/identity/invocation-token";
+import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { logger } from "../services/logging";
 import { decryptSecret, encryptSecret } from "../services/secrets";
@@ -265,7 +266,11 @@ export async function dispatchCapabilityStream(
       if (!error.success || response.status === 401) return denied(status, "STREAM_FAILED");
     } else await record(response.status);
     return Response.json(receipt.data, { status: response.status, headers: { "cache-control": "no-store" } });
-  } catch {
+  } catch (error) {
+    if (error instanceof AppAccessDeniedError) {
+      await record(403, error.code);
+      return Response.json(appAccessDeniedBody(error.app), { status: 403 });
+    }
     const status = request.signal.aborted ? 499 : signal.aborted ? 504 : 502;
     const code = status === 499 ? "REQUEST_CANCELLED" : status === 504 ? "DEADLINE_EXCEEDED" : "STREAM_FAILED";
     await record(status, code);

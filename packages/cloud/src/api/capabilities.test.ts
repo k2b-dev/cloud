@@ -12,7 +12,7 @@ import { env } from "../config/env";
 import { CapabilityCatalogSchema, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { auth, type RequestAuthority } from "../server";
-import type { signInvocationToken } from "../services/identity/invocation-token";
+import { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import {
   createCapabilityRoutes as buildCapabilityRoutes,
@@ -163,9 +163,13 @@ const credentialAuthenticate: NonNullable<CapabilityRouteDependencies["authentic
 };
 
 const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies = {}) =>
-  buildCapabilityRoutes({ withActiveSigner, ...dependencies });
+  buildCapabilityRoutes({ withActiveSigner, signInvocation: signInvocationToken, ...dependencies });
 const dispatchCapability = (params: Parameters<typeof performDispatch>[0]) =>
-  performDispatch({ authority: resourceAuthority, ...params, dependencies: { withActiveSigner, ...params.dependencies } });
+  performDispatch({
+    authority: resourceAuthority,
+    ...params,
+    dependencies: { withActiveSigner, signInvocation: signInvocationToken, ...params.dependencies },
+  });
 
 describe("capability API", () => {
   test("paginates the live catalog deterministically", async () => {
@@ -1005,6 +1009,7 @@ test("ordinary invocation seals a stream offer and the transfer route accepts on
     {
       getCapability: async () => app,
       withActiveSigner,
+      signInvocation: signInvocationToken,
       fetch: async (_url, init) => {
         const forwarded = JSON.parse(Buffer.from(new Headers(init?.headers).get("x-cloud-stream-offer")!, "base64url").toString());
         expect(forwarded).toEqual(offer);
@@ -1690,4 +1695,25 @@ test("a stalled execution-history write cannot hold a Query response beyond its 
     recordExecution = previous;
     clock.restore();
   }
+});
+
+test("catalog app access filters before manifest lookup and pagination", async () => {
+  const legacy = entry("legacy");
+  const hidden = entry("hidden");
+  const lookedUp: string[] = [];
+  const dependencies: Pick<CapabilityRouteDependencies, "listApps" | "getCapability"> = {
+    listApps: async () => [summary(legacy), { ...summary(hidden), access: { kind: "roles", roles: ["admin"] } }],
+    getCapability: async (id) => {
+      lookedUp.push(id);
+      return id === legacy.appId ? legacy : hidden;
+    },
+  };
+  const catalog = await loadCapabilityCatalogPage({ limit: 1 }, dependencies, "en", resourceAuthority);
+  expect(catalog.apps.map((app) => app.appId)).toEqual(["legacy"]);
+  expect(catalog.page).toEqual({ hasMore: false });
+  expect(lookedUp).toEqual(["legacy"]);
+  const routes = createCapabilityRoutes({ ...dependencies, authenticate });
+  const response = await routes.request("/capabilities/v1/catalog");
+  expect(response.status).toBe(200);
+  expect(await response.text()).not.toContain("hidden");
 });

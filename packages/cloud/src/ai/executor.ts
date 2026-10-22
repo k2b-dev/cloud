@@ -966,7 +966,9 @@ export class AiTurnExecutor {
     // executions must not gain an implicit database dependency or extra tools.
     const skillSubject =
       defaultToolSource && resolved.profile.capabilities.includes("tools") ? accessSubjectForActor(material.actor) : null;
-    const availableSkills = skillSubject ? (await aiSkills.list(skillSubject)).filter((skill) => skill.enabled) : [];
+    const availableSkills = skillSubject
+      ? (await aiSkills.list(skillSubject, { authority: capabilityAuthority })).filter((skill) => skill.enabled)
+      : [];
     const localClient = !config.background && !config.mandate ? config.client : undefined;
     const localContext = localClient ? config.localContext : undefined;
     const localSkills = (localContext?.skills ?? []).map((skill) => ({
@@ -1003,15 +1005,15 @@ export class AiTurnExecutor {
         : undefined;
     const skillFiles = skillSubject
       ? {
-          list: () => aiSkills.listTurnFiles(turnId, skillSubject),
-          read: (path: string) => aiSkills.readTurnFile(turnId, path, skillSubject),
+          list: () => aiSkills.listTurnFiles(turnId, skillSubject, capabilityAuthority),
+          read: (path: string) => aiSkills.readTurnFile(turnId, path, skillSubject, capabilityAuthority),
         }
       : undefined;
     const runtimeTools = [
       ...material.tools,
       ...(memoryActive ? [createCloudAiMemoryTool(query)] : []),
-      ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject)] : []),
-      ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject, localSkills)] : []),
+      ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject, capabilityAuthority)] : []),
+      ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject, localSkills, capabilityAuthority)] : []),
       ...(config.project && resolvedProjectId && projectSubject
         ? [
             createCloudAiSearchProjectTool(resolvedProjectId, projectSubject),
@@ -1264,6 +1266,7 @@ export class AiTurnExecutor {
       ? createAiToolResolver({
           conversationId,
           actor: capabilityAuthority?.actor ?? toolActor,
+          authority: capabilityAuthority,
           staticTools: activeTools,
           ...(activeTools.some((tool) => tool.def.name === "load_skill") ? { skillNames: availableSkills.map((skill) => skill.name) } : {}),
           allowedTools,
@@ -1482,6 +1485,7 @@ export class AiTurnExecutor {
       turnId,
       skillSubject,
       activeTools.some((tool) => tool.def.name === "load_skill"),
+      capabilityAuthority,
     );
     const chat = await aiConversations.getConversation({ conversationId });
     const workingPlan = chat?.todoPlan;

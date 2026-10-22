@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
-import type { AuthContext } from "../server";
+import type { AuthContext, RequestAuthority } from "../server";
 import { aiProjects } from "./projects";
 import type { AiSkill } from "./skills";
 import { AiSkillAppForbiddenError, AiSkillRevisionConflictError, aiSkills } from "./skills";
@@ -11,11 +11,14 @@ const skillId = "22222222-2222-4222-8222-222222222222";
 const skillShortId = "sKi234";
 const subject = { type: "user" as const, userId };
 
+const user = { id: userId, roles: ["user"] } as AuthContext["Variables"]["user"];
+const authority: RequestAuthority = { actor: { kind: "user", user }, accessSubject: subject, credentialKind: "session", scopes: [] };
 const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
-  const user = { id: userId, roles: ["user"] } as AuthContext["Variables"]["user"];
   c.set("actor", { kind: "user", user });
   c.set("accessSubject", subject);
   c.set("user", user);
+  c.set("credentialKind", "session");
+  c.set("credentialScopes", []);
   await next();
 };
 const pass: MiddlewareHandler<AuthContext> = async (_c, next) => next();
@@ -63,7 +66,7 @@ describe("AI Skill routes", () => {
     const response = await routes.request("/project-links/proj12?q=finance&available=true&page=2");
     expect(response.status).toBe(200);
     expect(project).toHaveBeenCalledWith("proj12", subject, "admin");
-    expect(list).toHaveBeenCalledWith(projectId, subject, { query: "finance", available: true, page: 2 });
+    expect(list).toHaveBeenCalledWith(projectId, subject, { query: "finance", available: true, page: 2, authority });
     expect(await response.json()).toMatchObject({ items: [{ id: skillShortId }], page: 2, hasNext: true });
     const request = () =>
       routes.request(`/${skillShortId}/projects/proj12`, {
@@ -72,7 +75,7 @@ describe("AI Skill routes", () => {
         body: JSON.stringify({ linked: true }),
       });
     expect((await request()).status).toBe(200);
-    expect(link).toHaveBeenCalledWith(skillId, projectId, true, subject);
+    expect(link).toHaveBeenCalledWith(skillId, projectId, true, subject, authority);
     project.mockResolvedValue(null);
     link.mockClear();
     expect((await request()).status).toBe(404);
@@ -85,7 +88,7 @@ describe("AI Skill routes", () => {
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     const response = await routes.request("/?q=reciepts");
     expect(response.status).toBe(200);
-    expect(search).toHaveBeenCalledWith(subject, "reciepts");
+    expect(search).toHaveBeenCalledWith(subject, "reciepts", 30, { authority });
     expect((await response.json()).skills[0]).toMatchObject({ id: skillShortId, manualOnly: true });
     expect((await routes.request("/?q=" + "x".repeat(201))).status).toBe(400);
   });
@@ -96,7 +99,7 @@ describe("AI Skill routes", () => {
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     const response = await routes.request("/?name=%20weekly-status%20");
     expect(response.status).toBe(200);
-    expect(list).toHaveBeenCalledWith(subject, { name: "weekly-status" });
+    expect(list).toHaveBeenCalledWith(subject, { name: "weekly-status", authority });
     expect((await response.json()).skills[0]).toMatchObject({ id: skillShortId, enabled: false });
     list.mockClear();
     expect((await routes.request("/?q=a&name=b")).status).toBe(400);
@@ -142,7 +145,7 @@ describe("AI Skill routes", () => {
       });
     expect((await request()).status).toBe(200);
     const content = proposal;
-    expect(update).toHaveBeenCalledWith(skillId, subject, content);
+    expect(update).toHaveBeenCalledWith(skillId, subject, content, authority);
     expect(access).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
     expect(enabled).not.toHaveBeenCalled();
@@ -165,14 +168,17 @@ describe("AI Skill routes", () => {
     });
 
     expect(response.status).toBe(201);
-    expect(aiSkills.create).toHaveBeenCalledWith({
-      subject,
-      name: "weekly-status",
-      description: "Summarize recent work.",
-      instructions: "List wins and blockers.",
-      extraFrontmatter: {},
-      references: [{ path: "references/style.md", content: "Be concise." }],
-    });
+    expect(aiSkills.create).toHaveBeenCalledWith(
+      {
+        subject,
+        name: "weekly-status",
+        description: "Summarize recent work.",
+        instructions: "List wins and blockers.",
+        extraFrontmatter: {},
+        references: [{ path: "references/style.md", content: "Be concise." }],
+      },
+      authority,
+    );
     expect((await response.json()).skill).toMatchObject({ id: skillShortId, shortId: skillShortId, permission: "admin" });
   });
 
@@ -195,8 +201,8 @@ describe("AI Skill routes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, subject, "write");
-    expect(aiSkills.update).toHaveBeenCalledWith(skillId, subject, update);
+    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, subject, "write", authority);
+    expect(aiSkills.update).toHaveBeenCalledWith(skillId, subject, update, authority);
   });
 
   test("keeps access management and deletion behind admin permission", async () => {
@@ -204,7 +210,48 @@ describe("AI Skill routes", () => {
     const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
     expect((await routes.request(`/${skillShortId}/access`)).status).toBe(404);
     expect((await routes.request(`/${skillShortId}`, { method: "DELETE" })).status).toBe(404);
-    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, subject, "admin");
+    expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, subject, "admin", authority);
+  });
+
+  test("passes request authority through grant changes and deletion", async () => {
+    spyOn(aiSkills, "getByShortId").mockResolvedValue(skill());
+    const grant = {
+      id: "aCc234",
+      shortId: "aCc234",
+      principal: { type: "authenticated" as const },
+      permission: "read" as const,
+      createdAt: "2026-10-01T00:00:00Z",
+    };
+    const add = spyOn(aiSkills, "grantAccess").mockResolvedValue(grant);
+    const update = spyOn(aiSkills, "updateAccess").mockResolvedValue(true);
+    const revoke = spyOn(aiSkills, "revokeAccess").mockResolvedValue(true);
+    const remove = spyOn(aiSkills, "delete").mockResolvedValue(true);
+    const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
+    const input = { principal: grant.principal, permission: grant.permission };
+    expect(
+      (
+        await routes.request(`/${skillShortId}/access`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        })
+      ).status,
+    ).toBe(201);
+    expect(add).toHaveBeenCalledWith(skillId, subject, input, undefined, authority);
+    expect(
+      (
+        await routes.request(`/${skillShortId}/access/${grant.shortId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ permission: "write" }),
+        })
+      ).status,
+    ).toBe(200);
+    expect(update).toHaveBeenCalledWith(skillId, grant.shortId, subject, "write", undefined, authority);
+    expect((await routes.request(`/${skillShortId}/access/${grant.shortId}`, { method: "DELETE" })).status).toBe(200);
+    expect(revoke).toHaveBeenCalledWith(skillId, grant.shortId, subject, undefined, authority);
+    expect((await routes.request(`/${skillShortId}`, { method: "DELETE" })).status).toBe(200);
+    expect(remove).toHaveBeenCalledWith(skillId, subject, authority);
   });
 
   test("updates only the current user's Skill preference", async () => {
@@ -219,7 +266,7 @@ describe("AI Skill routes", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ enabled: false });
-    expect(aiSkills.setEnabled).toHaveBeenCalledWith(skillId, subject, false);
+    expect(aiSkills.setEnabled).toHaveBeenCalledWith(skillId, subject, false, authority);
   });
 
   test("rejects anonymous Skill reads and creation before invoking the service", async () => {

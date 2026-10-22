@@ -90,7 +90,10 @@ beforeEach(() => {
 const request = (href = "https://cloud.example.test/app/assistant?project=project123") => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
-    c.set("actor", { kind: "user", user });
+    c.set("actor", { kind: "user", user, sessionKind: "app" });
+    c.set("accessSubject", { type: "user", userId: user.id });
+    c.set("credentialKind", "session");
+    c.set("credentialScopes", []);
     c.set("user", user);
     c.set("runtime", { apps: [] });
     await next();
@@ -139,13 +142,21 @@ test("authorized project omitted by sidebar cap remains in the rendered workspac
   });
   spies.push(lookup, chats);
   spies.push(
-    spyOn(projectContext, "loadAssistantProjectContextSnapshot").mockResolvedValue({
-      projectId: project.shortId,
-      knowledge: [],
-      files: [],
-      references: [],
-      skills: { items: [], page: 1, hasNext: false },
-      apps: { items: [], page: 1, hasNext: false },
+    spyOn(projectContext, "loadAssistantProjectContextSnapshot").mockImplementation(async (authority) => {
+      expect(authority).toMatchObject({
+        actor: { kind: "user", sessionKind: "app" },
+        accessSubject: { type: "user", userId: user.id },
+        credentialKind: "session",
+        scopes: [],
+      });
+      return {
+        projectId: project.shortId,
+        knowledge: [],
+        files: [],
+        references: [],
+        skills: { items: [], page: 1, hasNext: false },
+        apps: { items: [], page: 1, hasNext: false },
+      };
     }),
   );
   const response = await request();

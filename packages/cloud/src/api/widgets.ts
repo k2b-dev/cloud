@@ -2,7 +2,7 @@ import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { readBoundedJson } from "../_internal/bounded-json";
-import { type DashboardWidget, listWidgets } from "../_internal/registry";
+import { type DashboardWidget, type listApps, listWidgets } from "../_internal/registry";
 import { parseWidgetSettings } from "../_internal/widget-settings";
 import {
   type DashboardWidgetSize,
@@ -20,12 +20,16 @@ import {
   widgetKey,
 } from "../contracts/widgets";
 import { type AuthContext, auth, preferredLocale, rejectReservedWorkloadCredential } from "../server";
+import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
 import { noTransform } from "../server/middleware/no-transform";
 import { WIDGET_SETTINGS_PARAM, WIDGET_SETTINGS_PARAM_MAX_LENGTH, WIDGET_SIZE_PARAM } from "../server/widget-request";
+import { appAccessAuthority } from "../services/app-access";
+import { discoverableAppEntries } from "../services/app-discovery";
 import { CLOUD_INVOCATION_TOKEN_TTL_SECONDS } from "../services/identity/constants";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { widgetInvocationOperation } from "../services/identity/invocation-operations";
-import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
+import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { logger } from "../services/logging";
 import { LOCALE_HEADER } from "../shared/locale";
@@ -35,6 +39,7 @@ type WidgetRouteDependencies = {
   listWidgets?: typeof listWidgets;
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   authenticate?: MiddlewareHandler<AuthContext>;
+  listApps?: typeof listApps;
   signInvocation?: typeof signInvocationToken;
   withActiveSigner?: typeof withActiveIdentitySigner;
   timeoutMs?: number;
@@ -316,7 +321,10 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
         let requested = new Map<string, DashboardWidgetSize | undefined>();
         try {
           const keys = new Set<string>();
-          const declared = await waitWithin(registry(), setup);
+          const declared = await waitWithin(
+            registry().then((entries) => discoverableAppEntries(appAccessAuthority(c), entries, dependencies.listApps)),
+            setup,
+          );
           const declaredKeys = new Set(declared.map((widget) => widgetKey(widget.appId, widget.widgetId)));
           requested = new Map((c.req.queries("widget") ?? []).map((value) => parseRequestedWidget(value, declaredKeys)));
           widgets = declared.filter((widget) => {
@@ -351,7 +359,10 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
           const setup = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(timeoutMs)]);
           let declared: DashboardWidget[];
           try {
-            declared = await waitWithin(registry(), setup);
+            declared = await waitWithin(
+              registry().then((entries) => discoverableAppEntries(appAccessAuthority(c), entries, dependencies.listApps)),
+              setup,
+            );
           } catch {
             log.warn("Widget registry unavailable", { reason: setup.aborted ? "deadline_exceeded" : "operation_failed" });
             return c.json({ message: "Widget registry is currently unavailable" }, 503);
@@ -372,7 +383,12 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
         const requestId = normalizeInvocationRequestId(c.req.header("x-request-id"));
         let phase: WidgetPhase = "registry";
         try {
-          const widget = (await waitWithin(registry(), signal)).find((entry) => entry.appId === appId && entry.widgetId === widgetId);
+          const widget = (
+            await waitWithin(
+              registry().then((entries) => discoverableAppEntries(appAccessAuthority(c), entries, dependencies.listApps)),
+              signal,
+            )
+          ).find((entry) => entry.appId === appId && entry.widgetId === widgetId);
           if (!widget) return c.json({ message: "Widget not found" }, 404);
 
           phase = "signing";
@@ -405,6 +421,7 @@ export const createWidgetRoutes = (dependencies: WidgetRouteDependencies = {}) =
                 : "Widget is unavailable";
           return Response.json({ message }, { status: 502 });
         } catch (error) {
+          if (error instanceof AppAccessDeniedError) return Response.json(appAccessDeniedBody(error.app), { status: 403 });
           const isTimeout = timeout.aborted || (error instanceof Error && error.name === "TimeoutError");
           const reason: WidgetRejectionReason = isTimeout ? "deadline_exceeded" : signal.aborted ? "request_cancelled" : "operation_failed";
           logRejection({ appId, widgetId }, phase, reason);
