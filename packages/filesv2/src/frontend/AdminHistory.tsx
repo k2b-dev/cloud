@@ -8,9 +8,8 @@ import {
   type AdminActivityBase,
   type AdminActivityFilters,
   type AdminBasesLoader,
-  adminBaseOptions,
-  loadAdminBaseLabels,
   adminBaseLabel,
+  adminBaseOptions,
   adminChannel,
   adminItem,
   adminPlaceDescriber,
@@ -18,6 +17,7 @@ import {
   adminWhat,
   adminWho,
   entryBase,
+  loadAdminBaseLabels,
 } from "./admin-history";
 import { useAdminHistoryMessages } from "./admin-history-messages";
 import { openAdminBasePicker, openExportHistoryDialog } from "./ExportHistoryDialog";
@@ -80,16 +80,28 @@ export default function AdminHistory(props: AdminHistoryProps) {
   const source = () => filterKey(props.filters);
   const pages = query.createInfinite({
     source,
-    initial: props.initial && filterKey(props.initial.filters) === source() ? { source: source(), pages: [props.initial.page] } : undefined,
-    loadPage: (_key, { cursor, abortSignal }) =>
-      props.load({ ...activityRequest(props.filters, props.env), ...(cursor ? { cursor } : {}) }, abortSignal),
-    getNextCursor: (page: ActivityPage) => page.next,
+    initial:
+      props.initial && filterKey(props.initial.filters) === source()
+        ? { source: source(), pages: [{ source: source(), page: props.initial.page }] }
+        : undefined,
+    loadPage: async (key, { cursor, abortSignal }) => ({
+      source: key,
+      page: await props.load({ ...activityRequest(props.filters, props.env), ...(cursor ? { cursor } : {}) }, abortSignal),
+    }),
+    getNextCursor: (result: { source: string; page: ActivityPage }) => result.page.next,
   });
-  const entries = createMemo(() => pages.pages().flatMap((page) => page.items));
+  // The query keeps its last good value while a new source loads; it is not a result for the new filters.
+  const visiblePages = createMemo(() =>
+    pages
+      .pages()
+      .filter((result) => result.source === source())
+      .map((result) => result.page),
+  );
+  const entries = createMemo(() => visiblePages().flatMap((page) => page.items));
   const rows = createMemo(() => historyRows(entries(), { batches: true }));
   const groups = createMemo(() => dayGroups(rows(), locale(), h(), env()));
-  const loadedOnce = () => pages.pages().length > 0;
-  const limited = () => pages.pages().some((page) => page.searchLimitReached);
+  const loadedOnce = () => visiblePages().length > 0;
+  const limited = () => visiblePages().some((page) => page.searchLimitReached);
 
   // People to filter by are the actors seen so far; the reader has no directory of them.
   const [people, setPeople] = createSignal<Record<string, string>>({});
@@ -351,7 +363,7 @@ export default function AdminHistory(props: AdminHistoryProps) {
           </Button>
         </div>
       </div>
-      <div class="filesv2-history-body" aria-busy={pages.loading()}>
+      <div class="filesv2-history-body" aria-busy={pages.loading() || pages.refreshing()}>
         <Switch>
           <Match when={!loadedOnce() && pages.error()}>
             <Placeholder
@@ -371,10 +383,10 @@ export default function AdminHistory(props: AdminHistoryProps) {
             <p class="sr-only" role="status">
               {h().loading}
             </p>
-            <div class="hidden @4xl:block" aria-hidden="true">
+            <div class="filesv2-admin-history-table" aria-hidden="true">
               <For each={Array.from({ length: 9 }, (_, index) => index)}>{() => <Skeleton class="my-3 h-5 w-full" />}</For>
             </div>
-            <div class="filesv2-history-list @4xl:hidden">
+            <div class="filesv2-history-list filesv2-admin-history-list">
               <Skeleton class="filesv2-history-skeleton__day" />
               <SkeletonRows count={4} variant="list" />
               <Skeleton class="filesv2-history-skeleton__day" />
@@ -408,7 +420,7 @@ export default function AdminHistory(props: AdminHistoryProps) {
             />
           </Match>
           <Match when={rows().length > 0}>
-            <div class="hidden @4xl:block">
+            <div class="filesv2-admin-history-table">
               <DataTable
                 rows={rows()}
                 columns={columns}
@@ -419,7 +431,7 @@ export default function AdminHistory(props: AdminHistoryProps) {
                 renderCell={({ row, col }) => cell(row, col.id)}
               />
             </div>
-            <div class="filesv2-history-list @4xl:hidden">
+            <div class="filesv2-history-list filesv2-admin-history-list">
               <For each={groups()}>
                 {(group) => (
                   <section class="filesv2-history-day" aria-label={group.detail ? `${group.label}, ${group.detail}` : group.label}>

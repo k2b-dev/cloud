@@ -8,8 +8,8 @@ import {
   prompts,
   SegmentedControl,
   Select,
-  toast,
   TextInput,
+  toast,
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js";
@@ -18,8 +18,8 @@ import type { ActivityBasesInput, ActivityBasesPage, HistoryAction } from "../ac
 import type { ActivityExportInput } from "../activity-export-contracts";
 import { apiClient } from "../api/client";
 import {
-  type AdminActivityFilters,
   type AdminActivityBase,
+  type AdminActivityFilters,
   type AdminBasesLoader,
   adminBaseOptions,
   defaultExportPeriod,
@@ -359,7 +359,8 @@ function ExportHistoryDialog(
         selectedLabel={() => baseOptions().find((base) => base.value === baseId())?.label ?? a().unknownBase}
         disabled={downloading()}
       />
-      <div class="flex flex-col gap-1.5">
+      <div class="flex flex-col items-start gap-1.5">
+        <span class="text-sm font-medium">{a().format}</span>
         <SegmentedControl<ExportFormat>
           label={a().format}
           value={format}

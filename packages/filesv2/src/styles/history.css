@@ -605,3 +605,10 @@
     margin: 28px 0 0;
   }
 }
+
+/* One named container owns the admin table/list switch across the Cloud and application stylesheets. */
+.filesv2-admin-history-table { display: none; }
+@container filesv2-history (min-width: 56rem) {
+  .filesv2-admin-history-table { display: block; }
+  .filesv2-admin-history-list { display: none; }
+}

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import type { JSX } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { createSignal, type JSX } from "solid-js";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { ActivityBasesPage, ActivityEntry, ActivityPage, ActivitySide } from "../src/activity-contracts";
 import type { ActivityRequest } from "../src/frontend/ActivityView";
@@ -77,6 +77,16 @@ const settle = async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await flush();
 };
+// Wait on the same compiled UI instance the application imports, after its own Back removes the entry.
+const dialogBack = async (action: () => void) => {
+  const { dialogHistorySettled }: Pick<typeof import("../../ui/src/feedback/dialog-core"), "dialogHistorySettled"> = await import(
+    new URL("./feedback/dialog-core.js", import.meta.resolve("@k2b/ui")).href
+  );
+  action();
+  await flush();
+  await dialogHistorySettled();
+  await flush();
+};
 const buttonNamed = (root: ParentNode, label: string) =>
   [...root.querySelectorAll<HTMLButtonElement>("button")].find((element) => element.textContent?.trim() === label);
 
@@ -114,11 +124,15 @@ describe("Files administration history", () => {
   beforeEach(() => {
     dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
+    delegateEvents(["click"]);
     cleanup = () => dom.cleanup();
   });
   afterEach(async () => {
     const { dialogCore } = await import("@k2b/ui");
-    while (dialogCore.isOpen()) dialogCore.close();
+    if (dialogCore.isOpen())
+      await dialogBack(() => {
+        while (dialogCore.isOpen()) dialogCore.close();
+      });
     // Closing a dialog returns its history entry asynchronously, before the window goes away.
     await settle();
     cleanup();
@@ -127,6 +141,7 @@ describe("Files administration history", () => {
   });
   const mount = async (view: () => JSX.Element, locale = "de") => {
     const { LocaleProvider } = await import("@k2b/ui");
+    dom.document.documentElement.lang = locale;
     const dispose = render(() => <LocaleProvider locale={locale}>{view()}</LocaleProvider>, dom.root);
     cleanup = () => {
       dispose();
@@ -167,6 +182,42 @@ describe("Files administration history", () => {
     await flush();
   };
   const text = () => dom.document.body.textContent ?? "";
+
+  test("a failed filter change hides the previous rows and retries only the requested filter", async () => {
+    const { default: AdminHistory } = await import("../src/frontend/AdminHistory");
+    const initial: AdminActivityFilters = { when: "30" };
+    const [filters, setFilters] = createSignal(initial);
+    const loads: { request: ActivityRequest; reply: ReturnType<typeof deferred<ActivityPage>> }[] = [];
+    await mount(() => (
+      <AdminHistory
+        env={env}
+        filters={filters()}
+        onFiltersChange={setFilters}
+        bases={{ items: [vertrieb], next: null }}
+        loadBases={async () => ({ items: [], next: null })}
+        initial={{ filters: initial, page: page([entry({ action: "item.move", after: side("groups/vertrieb/Old result") })]) }}
+        load={(request) => {
+          const reply = deferred<ActivityPage>();
+          loads.push({ request, reply });
+          return reply.promise;
+        }}
+      />
+    ));
+    setFilters({ when: "30", q: "New result" });
+    await flush();
+    expect(text()).not.toContain("Old result");
+    expect(dom.root.querySelector('[aria-busy="true"]')).not.toBeNull();
+    loads[0]!.reply.reject(new Error("offline"));
+    await flush();
+    expect(text()).not.toContain("Old result");
+    buttonNamed(dom.root, "Erneut versuchen")!.click();
+    await flush();
+    expect(loads[1]!.request.q).toBe("New result");
+    loads[1]!.reply.resolve(page([entry({ action: "item.move", after: side("groups/vertrieb/New result") })]));
+    await flush();
+    expect(text()).toContain("New result");
+    expect(text()).not.toContain("Old result");
+  });
 
   test("shows the SSR page across all storage as the approved table and as Activity's list, without a request", async () => {
     const loads: { request: ActivityRequest; reply: ReturnType<typeof deferred<ActivityPage>> }[] = [];
@@ -369,13 +420,12 @@ describe("Files administration history", () => {
       requests[1]!.reply.resolve({ items: [later], next: null });
       await flush();
       expect(buttonNamed(picker, locale === "de" ? "Weitere Ablagen laden" : "Load more storage")).toBeUndefined();
-      picker.querySelector<HTMLButtonElement>('[role="combobox"]')!.click();
+      [...picker.querySelectorAll<HTMLButtonElement>('[role="combobox"]')].at(-1)!.click();
       await flush();
       expect(
         [...dom.document.querySelectorAll('[role="option"]')].filter((option) => option.textContent?.includes("Team Vertrieb")),
       ).toHaveLength(1);
-      buttonNamed(dom.document.body, "Later team")!.click();
-      await settle();
+      await dialogBack(() => buttonNamed(dom.document.body, "Later team")!.click());
       expect(changes.at(-1)?.baseId).toBe(later.id);
       expect(requests).toHaveLength(2);
     },
@@ -475,10 +525,13 @@ describe("Files administration history", () => {
     buttonNamed(picker, "Load more storage")!.click();
     await flush();
     expect(requests).toEqual([{ after: vertrieb.bindingId }]);
-    picker.querySelector<HTMLButtonElement>('[role="combobox"]')!.click();
+    [...picker.querySelectorAll<HTMLButtonElement>('[role="combobox"]')].at(-1)!.click();
     await flush();
-    buttonNamed(dom.document.body, "Later export team")!.click();
-    await settle();
+    await dialogBack(() =>
+      [...dom.document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+        .findLast((option) => option.textContent?.trim() === "Later export team")!
+        .click(),
+    );
     expect(exportCalls.at(-1)?.query.baseId).toBe(later.id);
     expect(exportCalls[0]!.signal.aborted).toBeTrue();
     expect(primary(dialog).disabled).toBeTrue();
