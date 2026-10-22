@@ -90,7 +90,7 @@ function fixtureTree(
       onSelect: setSelectedId,
       infoTile: (marker) =>
         options.tallTile ? [marker.label, "Open until 18:00", "Category", "Street 1", "example.org"].join("\n") : marker.label,
-      attribution: options.longCredit ? "© OpenStreetMap contributors · © OpenMapTiles · Geoapify" : "Local fixture",
+      attribution: options.longCredit || options.vector ? "© OpenStreetMap contributors · © OpenMapTiles · Geoapify" : "Local fixture",
       notice: "Walking route",
       empty: "Choose a place",
       get ownLocation() {
