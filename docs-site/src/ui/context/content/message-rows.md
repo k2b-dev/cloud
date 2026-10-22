@@ -98,7 +98,9 @@ collapsed again.
 
 - `"pending"`: a clock and "Sending";
 - `"sent"`: a check;
-- `"failed"`: "Not sent" and, with `onRetry`, a "Retry" button.
+- `"failed"`: "Not sent" and, with `onRetry`, a "Retry" button; with
+  `onDiscard`, a "Discard" button beside it, so both answers to the failure
+  sit where it shows, also on a touch screen.
 
 `receipt` replaces the check with the application's text, such as "Read by
 Nora, Tobias"; it ends in an ellipsis when it is too long. The line exists
@@ -376,7 +378,7 @@ failed send. Code blocks are focusable so keyboard users can scroll them.
 
 The rows render the same markup on the server and in the browser. They read
 the inherited locale for their own words in English and German: "Sending",
-"Not sent", "Retry", "Show more", "Copy", "Message actions", "Message from",
+"Not sent", "Retry", "Discard", "Show more", "Copy", "Message actions", "Message from",
 "Click" in the Alt+click shortcut, "In reply
 to", "Forwarded", "edited", "This message was deleted", "Video", the count of
 hidden pictures, "Reactions", "Add reaction", the reaction counts and "your
