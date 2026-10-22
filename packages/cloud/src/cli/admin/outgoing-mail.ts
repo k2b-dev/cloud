@@ -183,7 +183,12 @@ export const outgoingMailCommands = [
       printJsonOrTable(
         ctx,
         result,
-        result.items.map((app) => ({ ...app, reads: app.readDeclared, profiles: app.profiles.join(","), logApps: app.logApps.join(",") })),
+        result.items.map((app) => ({
+          ...app,
+          reads: app.readDeclared,
+          profiles: app.profiles.join(","),
+          logApps: app.logApps.map((id) => `${id}:${app.logContentApps?.includes(id) ? "content" : "metadata"}`).join(","),
+        })),
         [
           { key: "appId" },
           { key: "name" },
@@ -226,15 +231,20 @@ export const outgoingMailCommands = [
     summary: "Choose which other applications' mail logs an app may read",
     args: { app: arg.required({ valueLabel: "app" }) },
     flags: {
-      apps: flag.string({ description: "Comma-separated source application IDs" }),
+      apps: flag.string({ description: "Comma-separated source application IDs (replaces all grants)" }),
+      contentApps: flag.string({ description: "Subset of --apps allowed to read text and attachment names" }),
       ownOnly: flag.boolean({ description: "Remove all other application log grants" }),
       yes: confirmFlag("Confirm application mail log access change"),
     },
     async run({ ctx, args, flags }) {
       confirmed(flags.yes);
       if ((flags.apps !== undefined) === !!flags.ownOnly) throw new Error("Choose exactly one of --apps or --own-only.");
+      if (flags.contentApps !== undefined && flags.apps === undefined) throw new Error("--content-apps requires --apps.");
       const reader = MailLogAppIdSchema.safeParse(args.app);
-      const value = MailLogAccessSchema.safeParse({ apps: flags.apps?.split(",").map((app) => app.trim()) ?? [] });
+      const value = MailLogAccessSchema.safeParse({
+        apps: flags.apps?.split(",").map((app) => app.trim()) ?? [],
+        ...(flags.contentApps !== undefined ? { contentApps: flags.contentApps.split(",").map((app) => app.trim()) } : {}),
+      });
       if (!reader.success || args.app === "core" || !value.success || value.data.apps.includes(args.app))
         throw new Error("Choose a valid reader and distinct source apps other than Core or the reader itself.");
       print(ctx, await apiJson(ctx, "PUT", `${root}/apps/${encodeURIComponent(args.app)}/log-access`, value.data));

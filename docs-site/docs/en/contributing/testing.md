@@ -836,9 +836,10 @@ Sync, runs before the file's own file-level `afterAll`. Put teardown that still
 needs either, such as stopping a live outbox, in an `afterAll` inside the
 suite's `describe`; Bun runs it when the suite ends.
 
-A new integration test needs no configuration of its own: import nothing
-special, use the resolved runtime variables, and name the file
-`*.integration.test.ts`.
+A new integration test needs no configuration of its own: import the appropriate
+suite gate from `scripts/fixtures/test-infra.ts`, use the resolved runtime
+variables, and conventionally name the file `*.integration.test.ts`. The shared
+gate import makes the file discoverable; the filename alone does not.
 
 bun:test does not stop a timed-out test body. An integration test ends the
 work it starts: teardown cancels and awaits every sync, job, or loop the test
@@ -856,6 +857,14 @@ must run every one of them. Assistant's runner, for example, gives its
 artifact service suite disposable PostgreSQL and rsql containers and runs
 every other Assistant integration file, such as the Code Mode PDF test against
 Gotenberg, against the `CLOUD_TEST_*` targets.
+
+Mail's entry point reuses the root runner's infrastructure-gate discovery,
+including gated files without an `.integration` suffix. It also retains the
+explicitly opted-in large-mailbox performance and IMAP connector suites. All
+selected files share the existing Mail disposable database and Sync preload;
+unit and browser files run through the normal test jobs instead. Inspect the
+selection without starting infrastructure with
+`bun run --cwd packages/mail test:integration --list`.
 
 ### Sync namespaces on the test broker
 
@@ -938,7 +947,7 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit and WebKit tests run in five shards each, balanced by
+Unit tests run in five shards and WebKit tests in seven, balanced by
 `scripts/test-weights.json`: measured seconds per suite, longest first. An
 unknown suite counts as the median of its table. Each shard prints its
 predicted and actual time. It fails with an annotation when it runs longer
@@ -1198,7 +1207,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in five shards with `bun run test --browser`, against
+them again in WebKit in seven shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the
@@ -1211,7 +1220,14 @@ slow for every pull request. Its `browser-smoke` job builds the Core, gateway,
 Accounts, Grids, Mail, and Chat images, boots them against fresh infrastructure,
 and runs the Grids, Mail, and Chat browser smokes against that stack. It runs
 independently of the Assistant browser suites, so a failure in one does not hide
-the other's result. The smokes accept pending legal documents using the version
+the other's result.
+
+The Nightly `grids` job retains complete phase logs, JUnit reports, and
+verification environment metadata in a `nightly-grids-certification-*` artifact
+when certification fails, as the pull request Grids job does. Read these
+reports before attributing a phase failure to a specific test.
+
+The smokes accept pending legal documents using the version
 rendered in the consent page's `data-legal-version` attribute; they must not read
 island props, whose encoding is internal.
 

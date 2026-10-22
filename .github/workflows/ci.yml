@@ -177,8 +177,7 @@ jobs:
       # Both modes balance measured suite times from scripts/test-weights.json:
       # longest first; unknown suites use the median. Choose the smallest count
       # with a predicted slowest shard <= 15 min (half the 30-minute job limit).
-      # Worst of the three newest green merge-queue runs: 5 unit shards, 12.7 min
-      # slowest, 64 min total; the 11.3-min @k2b/ui suite sets a lower bound.
+      # Current measured maxima predict 14.6 min for the slowest of 5 unit shards.
       # --max-minutes 20 fails above 2/3 of the job limit. The last third covers
       # setup and GitHub finalization, which counts against timeout-minutes and
       # took up to about 5 min during the Actions incident of 19 October 2026.
@@ -222,9 +221,10 @@ jobs:
   # The browser tests again in WebKit, the engine of Safari and of every
   # browser on iOS. The Playwright image of the catalog's version serves it
   # through `playwright run-server`; contributing/testing.md runs the same
-  # locally. The same measured-time rule as unit gives 5 shards: about 14.5 min
-  # slowest, 72 min total, at the worst of the three newest green merge-queue runs.
-  # Round-robin over 3 shards took up to 27.5 min. The 20-min guard reserves
+  # locally. Measured maxima from green runs 39674709624, 39674708604 and
+  # 39674705547 predict 13.6 min for the slowest of 7 shards (6 need 15.9 min).
+  # Two additional WebKit runners keep the expanded suite below the 15-min target.
+  # The 20-min guard reserves
   # the last third for setup and finalization; strategy.job-total is the divisor.
   webkit:
     needs: [changes, setup]
@@ -234,7 +234,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6, 7]
     env:
       TEST_BROWSER: webkit
       TEST_BROWSER_ENDPOINT: ws://127.0.0.1:3333/

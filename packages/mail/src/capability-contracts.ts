@@ -4,9 +4,9 @@ import {
   completeConversationsSchema,
   composeFormattingWarningsSchema,
   composeSafetyApprovalSchema,
-  composeSafetyReviewSchema,
   conversationCompletionResultSchema,
   draftEditableContentInputSchema,
+  draftSendReviewSchema,
   folderDisplaySchema,
   MAIL_CONVERSATION_ASSIGNEE_LIMIT,
   MAIL_CONVERSATION_BATCH_LIMIT,
@@ -689,7 +689,7 @@ export const DraftListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, 
 export const DraftSendReviewInputSchema = z
   .object({ mailboxId: MailboxIdInputSchema, draftId: DraftIdInputSchema, expectedRevision: ExpectedRevisionInputSchema })
   .strict();
-export const DraftSendReviewDataSchema = composeSafetyReviewSchema;
+export const DraftSendReviewDataSchema = draftSendReviewSchema;
 
 const InlineAttachmentInputSchema = z
   .object({
@@ -787,6 +787,12 @@ export const DraftSendInputSchema = z
     mailboxId: MailboxIdInputSchema,
     draftId: DraftIdInputSchema,
     expectedRevision: ExpectedRevisionInputSchema,
+    expectedContentHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .describe(
+        "Exact contentHash from draft.send.review under the same actor. Changed content requires a fresh manual review and send attempt.",
+      ),
     senderIdentityId: ResourceShortIdSchema.describe("Verified sender-identity ID."),
     scheduledAt: TimestampSchema.optional().describe("Optional future delivery time."),
     undoSeconds: z.number().int().min(0).max(60).default(20).describe("Undo-send window in seconds."),

@@ -78,7 +78,7 @@ suite("Pulse REST access for standalone agents", () => {
       await grant(granted.id, bound.id, "read");
       await grant(other.id, bound.id, "read");
 
-      // With a grant, an agent lists, reads, and changes the base like a person with the same grant.
+      // With a grant, an agent lists and reads the base like a person with the same grant.
       const call = await apiAs(agent, ["openid", "read", "write"]);
       const bases = await call("/bases");
       expect(bases.status).toBe(200);
@@ -87,8 +87,8 @@ suite("Pulse REST access for standalone agents", () => {
       expect((await call(`/bases/${granted.shortId}/sources`)).status).toBe(200);
       expect((await call(`/bases/${other.shortId}`)).status).toBe(403);
       const renamed = await call(`/bases/${granted.shortId}`, { method: "PATCH", body: { name: `Renamed ${suffix}` } });
-      expect(renamed.status).toBe(200);
-      expect(await renamed.json()).toMatchObject({ id: granted.shortId, name: `Renamed ${suffix}` });
+      expect(renamed.status).toBe(403);
+      // General base settings require a base-admin grant, including for agents.
       // Managing access needs an `admin` grant.
       expect((await call(`/bases/${granted.shortId}/access`)).status).toBe(403);
 

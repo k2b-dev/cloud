@@ -5,7 +5,7 @@ section: Operations
 order: 945
 description: Configure senders, inspect the send log, and control outgoing mail retention.
 tags: [mail, smtp, administration, upgrades]
-updated: 2026-10-09
+updated: 2026-10-21
 ---
 
 # Outgoing mail operations
@@ -229,33 +229,64 @@ In **Administration → Outgoing mail → Apps**, the **Send log** column shows
 whose mail each application reads and whether it requests `mail:read`; on
 narrow screens the same line appears under the application name when it
 reads more than its own mail. Open the application's **⋯** menu and choose
-**Change send log access** to select the applications. The CLI shows and
+**Change send log access** to choose **No access**, **Metadata** or **Content**
+for each source application. Content includes metadata. The CLI shows and
 changes the same setting:
 
 ```bash
 cld admin outgoing-mail apps list --json
-cld admin outgoing-mail apps set-log-access backoffice --apps invoices,customers,hr --yes
+cld admin outgoing-mail apps set-log-access backoffice --apps invoices,customers,hr --content-apps invoices --yes
 cld admin outgoing-mail apps set-log-access backoffice --own-only --yes
 ```
 
 `apps list` shows `reads` (whether the application declares `mail:read`) and
-`logApps` (the applications it may read besides its own). Choose exactly one of
+`logApps` (the applications it may read besides its own), with the content
+subset in `logContentApps`. The text table labels each source with its level.
+Choose exactly one of
 `--apps` with comma-separated application IDs or `--own-only`, which removes
 every grant. The selection replaces the previous one, takes effect on the
 application's next call, and writes `outgoing_mail.app_log_access.update` to
 the audit log. The administrator API is
 `PUT /api/admin/core/outgoing-mail/apps/:appId/log-access` with
-`{ "apps": ["invoices", "customers"] }`.
+`{ "apps": ["invoices", "customers"], "contentApps": ["invoices"] }`.
+`contentApps` is optional, unique and a subset of `apps` (at most 100 sources
+in total). In the CLI, `--content-apps` requires `--apps` and cannot be used
+with `--own-only`. Omitting it replaces every selected source with metadata
+access, including sources previously granted content. Old clients therefore
+can downgrade content grants but never elevate them. `--own-only` removes both
+levels. A rejected replacement leaves the previous policy intact.
 
 Grants are kept when the application stops declaring `mail:read`, but they
 have no effect until it declares it again. Core's mail cannot be granted, and
-Core cannot be a reader. A granted application sees everything the chosen
-applications' send log holds except the message text: recipients, subject,
+Core cannot be a reader. With metadata access, an application sees recipients,
+subject,
 status, delivery errors and failed recipients, the person or service account
 that sent the mail, the sender profile, the record reference and batch, and
-attachment names and sizes. It cannot cancel or change that mail. Which of its
-users see that information is the reading application's own decision: ask its
-author how the page is protected before you grant access.
+attachment names and sizes. Content access additionally allows individual
+plain-text reads and attachment names through `mail.content`, for all existing
+and future mail within retention. It grants no HTML, headers, attachment files,
+or bulk body export. Each successful body or purge-marker read commits an
+`outgoing_mail.message.read` event with the source, reading app and current
+acting user or service account; it contains no body or attachment names.
+The read fails without content if its audit cannot commit. Revocation or
+downgrade blocks subsequent reads; an already admitted read commits before the
+policy change. Delivered text cannot be recalled. The service's shared five-second
+budget for database work covers policy and message locks, body lookup and audit; pool
+acquisition, transaction start and commit are outside that budget. A timeout
+rolls back before returning `mail_unavailable`. Retention may skip a row while
+its read is locked and process it in a later batch.
+
+In these read events, `metadata.appId` identifies the source and `readingAppId`
+the reader. Their `appIdSha256` and `readingAppIdSha256` values fingerprint the
+complete, exact IDs when audit strings are truncated; compare them with a known
+ID's SHA-256, since a hash cannot recover a deleted ID. Grant updates record the
+before and after levels for all 100 supported sources. Technical actors use
+`metadata.serviceAccountId` and the existing service-account audit filter;
+a delegated user is recorded separately.
+
+The reading application cannot cancel or change another application's mail.
+Its author decides which users see that information: ask how the page is
+protected before you grant access.
 
 Grants follow application IDs, like sender access. When you remove an
 application for good, clear its own selection (`--own-only`) and remove it
@@ -448,6 +479,16 @@ mark the record `bounced` when a standard delivery report identifies failed
 recipients.
 
 ## Upgrade and rollback
+
+For application content grants, upgrade Core first: its repeatable migration
+adds `app_log_access.level`, defaulting every existing grant and old INSERT to
+`metadata`. Then upgrade application libraries and administration clients.
+Older servers reject the new `contentApps` request key; new clients must not
+silently retry without that selection. A code rollback leaves the additive
+column and stored content grants intact. New application libraries still honor
+those grants even with older Core code. To disable reads, explicitly downgrade
+to metadata or remove grants before rolling back; the rollback itself is not a
+revocation. Old replacement writes downgrade selected sources to metadata.
 
 Core adds the send log access table during setup and then builds two search
 indexes on recipients and subjects in the background. Core starts and sends

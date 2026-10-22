@@ -29,6 +29,7 @@ import {
   CAPABILITY_MAX_CATALOG_BYTES,
   CAPABILITY_MAX_REQUEST_BYTES,
   CAPABILITY_MAX_RESULT_BYTES,
+  CAPABILITY_MAX_REVIEW_RESPONSE_BYTES,
   CAPABILITY_ORIGIN_HEADER,
   CAPABILITY_PROTOCOL_VERSION,
   CapabilityActionReviewDataSchema,
@@ -603,7 +604,9 @@ const runCapabilityDispatch = async (
 
   let upstreamBody: Awaited<ReturnType<typeof readBoundedJson>>;
   try {
-    upstreamBody = await deadline.wait(() => readBoundedJson(response, CAPABILITY_MAX_RESULT_BYTES, signal));
+    upstreamBody = await deadline.wait(() =>
+      readBoundedJson(response, params.review ? CAPABILITY_MAX_REVIEW_RESPONSE_BYTES : CAPABILITY_MAX_RESULT_BYTES, signal),
+    );
   } catch {
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const cancelled = params.request.signal.aborted;

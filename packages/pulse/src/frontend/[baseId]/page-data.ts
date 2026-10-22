@@ -1,10 +1,17 @@
 import { type AuthContext, expectUserBackedActor, getDateConfig } from "@k2b/cloud/server";
 import { get as getSetting } from "@k2b/cloud/services";
 import type { ServiceError } from "@k2b/stdlib";
+import { sql } from "bun";
 import type { Context } from "hono";
 import { SHORT_ID_REGEX } from "../../lib/short-id";
 import { pulseService } from "../../service";
+import { accessScopeFor, requireBaseAccess } from "../../service/access-control";
+import { alertRules } from "../../service/alert-rules";
+import { readBasePolicy } from "../../service/base-policy";
+import { readOverview } from "../../service/overview";
 import { projectBases, projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
+import { savedQueries } from "../../service/saved-queries";
+import { baseSqlLimits } from "../../service/sql-service";
 import { readWorkspacePathState } from "../workspace/routes";
 import type { PulseWorkspaceProps } from "../workspace/types";
 
@@ -31,27 +38,69 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   if (!SHORT_ID_REGEX.test(publicBaseId)) return { kind: "error", status: 404 };
   const baseId = await resolvePublicId("bases", publicBaseId);
   if (!baseId) return { kind: "error", status: 404 };
-  const route = readWorkspacePathState(url.pathname, publicBaseId);
+  const route = readWorkspacePathState(`${url.pathname}${url.search}`, publicBaseId);
   const [base, bases, sources, appUrl] = await Promise.all([
     pulseService.base.get(baseId, user),
     pulseService.base.list(user),
-    pulseService.source.list(baseId, user),
+    route.view === "sources"
+      ? pulseService.source.list(baseId, user, { signal: c.req.raw.signal })
+      : Promise.resolve({ ok: true as const, data: [] }),
     getSetting<string>("app.url").catch(() => ""),
   ]);
   if (!base.ok) return { kind: "error", status: base.error.status };
   if (!sources.ok) return { kind: "error", status: sources.error.status };
+  const scope = accessScopeFor(c.get("actor"), c.get("accessSubject"));
+  const [write, admin] = scope.ok
+    ? await Promise.all([requireBaseAccess(baseId, scope.data, "write"), requireBaseAccess(baseId, scope.data, "admin")])
+    : [null, null];
+  const [policy, managers] = await Promise.all([
+    readBasePolicy(),
+    sql<{ name: string }[]>`SELECT COALESCE(u.display_name,sa.name,g.name,'Member') AS name
+      FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id
+      LEFT JOIN auth.users u ON u.id=a.user_id LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
+      LEFT JOIN auth.groups g ON g.id=a.group_id WHERE ba.base_id=${baseId}::uuid AND a.permission='admin'
+      ORDER BY a.created_at LIMIT 3`,
+  ]);
   const props: PulseWorkspaceProps = {
+    initialSettings: { maxRawRetentionDays: policy.maxRawRetentionDays, admins: managers.map((manager) => manager.name) },
+    initialPermissions: { write: write?.ok ?? false, admin: admin?.ok ?? false },
     initialBases: await projectBases(bases.ok ? bases.data : [base.data]),
     initialBaseId: publicBaseId,
     initialRouteState: route,
     initialSources: await projectSources(sources.data),
     initialSourceScrapes: {},
     initialSourceApiKeys: {},
-    initialQueryCoverage: { bases: bases.ok, baseData: true, sourceDetail: true },
+    initialQueryCoverage: { bases: bases.ok, baseData: route.view === "sources", sourceDetail: true },
     initialDateConfig: getDateConfig(c),
     initialNow: new Date().toISOString(),
     initialOrigin: publicOrigin(appUrl, url.origin),
   };
+  if (route.view === "overview") {
+    const overview = await readOverview({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId, signal: c.req.raw.signal });
+    if (!overview.ok && [403, 404].includes(overview.error.status)) return { kind: "error", status: overview.error.status };
+    props.initialOverview = overview.ok
+      ? { data: overview.data, error: null }
+      : { data: null, error: { code: overview.error.code, message: overview.error.message } };
+  }
+  if (route.view === "sql") {
+    const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId };
+    if (route.alertId) {
+      const rule = await alertRules.get({ ...identity, ruleId: route.alertId });
+      if (!rule.ok) return { kind: "error", status: rule.error.status };
+      route.sql = rule.data.sql;
+      route.params = rule.data.params;
+    }
+    const [limits, query] = await Promise.all([
+      baseSqlLimits(identity),
+      route.queryId ? savedQueries.get({ ...identity, queryId: route.queryId }) : Promise.resolve(null),
+    ]);
+    if (query && !query.ok) return { kind: "error", status: query.error.status };
+    props.initialSql = {
+      limits: limits.ok ? limits.data : null,
+      query: query?.ok ? query.data : null,
+      error: limits.ok ? null : { code: limits.error.code, details: { ...limits.error } },
+    };
+  }
   if (route.sourceId) {
     const sourceId = await resolveBasePublicId("sources", baseId, route.sourceId);
     const source = sources.data.find((source) => source.id === sourceId);

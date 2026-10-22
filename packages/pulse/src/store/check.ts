@@ -139,6 +139,7 @@ export const checkStore = async (options: CheckStoreOptions): Promise<StoreCheck
     if (Number(read[0]?.value) !== 1) fail("MISSING_RIGHT:SELECT");
     await right("SYSTEM PARTS", "SELECT 1 FROM system.parts LIMIT 0");
     await right("SYSTEM DISKS", "SELECT 1 FROM system.disks LIMIT 0");
+    await right("SYSTEM PROCESSES", "SELECT 1 FROM system.processes LIMIT 0");
     if (!grants.some((grant) => /\bKILL QUERY\b.*\bON\s+\*(?:\.\*)?(?:\s|$)/i.test(grant))) fail("MISSING_RIGHT:KILL QUERY");
     await right("OPTIMIZE", `OPTIMIZE TABLE ${table}`);
     result.steps.rights = "ok";

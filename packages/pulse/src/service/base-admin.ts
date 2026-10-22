@@ -131,7 +131,7 @@ export const updateBaseLimits = async (identity: StoreIdentity, id: string, inpu
     l = v.limits;
   const updated = await sql.begin(async (tx) => {
     await tx`SELECT id FROM pulse.bases WHERE id=${base.id}::uuid FOR UPDATE`;
-    return tx`UPDATE pulse.base_stores SET profile=COALESCE(${v.profile ?? null},profile),values_per_minute=COALESCE(${l?.valuesPerMinute ?? null},values_per_minute),bytes_per_minute=COALESCE(${l?.bytesPerMinute ?? null},bytes_per_minute),storage_bytes=COALESCE(${l?.storageBytes ?? null},storage_bytes),max_series=COALESCE(${l?.maxSeries ?? null},max_series),max_event_kinds=COALESCE(${l?.maxEventKinds ?? null},max_event_kinds),max_state_keys=COALESCE(${l?.maxStateKeys ?? null},max_state_keys),reconcile_needed=true,updated_at=now() WHERE base_id=${base.id}::uuid RETURNING base_id`;
+    return tx`UPDATE pulse.base_stores SET queries_per_hour=COALESCE(${l?.queriesPerHour ?? null},queries_per_hour),profile=COALESCE(${v.profile ?? null},profile),values_per_minute=COALESCE(${l?.valuesPerMinute ?? null},values_per_minute),bytes_per_minute=COALESCE(${l?.bytesPerMinute ?? null},bytes_per_minute),storage_bytes=COALESCE(${l?.storageBytes ?? null},storage_bytes),max_series=COALESCE(${l?.maxSeries ?? null},max_series),max_event_kinds=COALESCE(${l?.maxEventKinds ?? null},max_event_kinds),max_state_keys=COALESCE(${l?.maxStateKeys ?? null},max_state_keys),reconcile_needed=true,updated_at=now() WHERE base_id=${base.id}::uuid RETURNING base_id`;
   });
   if (!updated.length) throw new BaseAdminError("BASE_BUSY", 409);
   await submitBaseLifecycleJob(base.id, base.short_id);

@@ -177,6 +177,9 @@ export type CapabilityReach = (typeof CAPABILITY_REACHES)[number];
 export const CAPABILITY_ACTION_OUTCOMES = ["running", "done", "rejected", "not_run", "unknown"] as const;
 export type CapabilityActionOutcome = (typeof CAPABILITY_ACTION_OUTCOMES)[number];
 export const CAPABILITY_MAX_REVIEW_BYTES = 32 * 1024;
+/** Full review text and metadata, separate from the compact card and ordinary capability results. */
+export const CAPABILITY_MAX_REVIEW_CONTENT_BYTES = 16 * 1024 * 1024;
+export const CAPABILITY_MAX_REVIEW_RESPONSE_BYTES = CAPABILITY_MAX_REVIEW_CONTENT_BYTES + CAPABILITY_MAX_REVIEW_BYTES + 11;
 export const CapabilityActionPolicySchema = z.union([
   z.object({ silent: z.enum(CAPABILITY_REACHES), routines: z.literal(false).optional() }).strict(),
   z.object({ ask: z.enum(CAPABILITY_ASK_REASONS) }).strict(),
@@ -188,12 +191,12 @@ const reviewLine = (max: number, min = 1) =>
     .string()
     .min(min)
     .max(max)
-    .refine((text) => !/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(text), "Contains unsafe characters");
+    .refine((text) => !/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(text), "Contains unsafe characters");
 const reviewBlock = (max: number) =>
   z
     .string()
     .max(max)
-    .refine((text) => !/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(text.replace(/[\n\t]/g, "")), "Contains unsafe characters");
+    .refine((text) => !/[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(text.replace(/[\n\t]/g, "")), "Contains unsafe characters");
 export const CapabilityPersonSchema = z
   .object({ name: reviewLine(200).optional(), address: reviewLine(320).optional(), userId: z.uuid().optional() })
   .strict()
@@ -432,60 +435,143 @@ export const CapabilityPreviewSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 export type CapabilityPreview = z.infer<typeof CapabilityPreviewSchema>;
-export const CapabilityActionCallReviewSchema = z
-  .object({
-    locale: z.string(),
-    sentence: z
-      .object({
-        action: reviewTemplate,
-        running: reviewTemplate,
-        done: reviewTemplate,
-        confirm: reviewTemplate,
-        decline: reviewTemplate,
-        rejected: reviewTemplate.optional(),
-        notRun: reviewTemplate.optional(),
-        short: reviewTemplate.refine((text) => text.length <= 60, "short exceeds 60 characters").optional(),
-      })
-      .strict(),
-    slots: reviewSlots.readonly(),
-    preview: CapabilityPreviewSchema.optional(),
-    consequences: z.array(CapabilityConsequenceSchema).max(6).optional(),
-    ask: z.enum(CAPABILITY_ASK_REASONS).optional(),
-    reach: z.enum(CAPABILITY_REACHES).optional(),
-    effects: z.number().int().min(1).max(1000).optional(),
-    check: z
-      .object({ query: CapabilityLocalIdSchema, input: z.record(z.string(), z.unknown()) })
-      .strict()
-      .optional(),
-    scope: z.string().min(1).max(200).optional(),
-    links: z.array(CapabilitySemanticLinkSchema).max(10).optional(),
-  })
-  .strict()
-  .superRefine((review, ctx) => {
-    for (const [form, text] of Object.entries(review.sentence)) {
-      if (text === undefined) continue;
-      const complete = form === "action" || form === "running" || form === "done";
-      for (const message of capabilitySentenceIssues(text, review.slots, complete, form === "action"))
-        ctx.addIssue({ code: "custom", path: ["sentence", form], message });
-      if ((form === "confirm" || form === "decline") && [...text.matchAll(/\{[a-z][A-Za-z0-9]{0,31}\}/g)].length > 1)
-        ctx.addIssue({ code: "custom", path: ["sentence", form], message: "Buttons name at most one slot" });
-    }
-  });
+/** Complete passive content; no attachment bytes, HTML, omitted entries, or silently shortened strings. */
+// Construct complete review validators in pure calls: unrelated browser consumers of resource refs do not need them.
+export const CapabilityReviewContentSchema = /* @__PURE__ */ (() => {
+  const fullReviewPerson = z
+    .object({
+      name: z.string().max(200).optional(),
+      address: z.string().max(320).optional(),
+      userId: z.uuid().optional(),
+    })
+    .strict()
+    .refine((person) => person.name !== undefined || person.address !== undefined, "A person needs a name or address");
+  return z
+    .discriminatedUnion("kind", [
+      z
+        .object({
+          kind: z.literal("message"),
+          baseRevision: z.number().int().nonnegative().optional(),
+          from: fullReviewPerson.optional(),
+          to: z.array(fullReviewPerson).max(600),
+          cc: z.array(fullReviewPerson).max(600).optional(),
+          bcc: z.array(fullReviewPerson).max(600).optional(),
+          subject: z.string().max(998),
+          body: z.string().max(CAPABILITY_MAX_REVIEW_CONTENT_BYTES),
+          format: z.literal("plain"),
+          attachments: z
+            .array(
+              z
+                .object({
+                  name: z.string().min(1).max(255),
+                  size: z.number().int().nonnegative().optional(),
+                  ref: CloudResourceRefSchema.optional(),
+                })
+                .strict(),
+            )
+            .max(202)
+            .optional(),
+          sendAt: reviewTime.optional(),
+          warnings: z.array(z.string().max(300)).max(6).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          kind: z.literal("page"),
+          baseRevision: z.number().int().nonnegative().optional(),
+          title: z.string().max(200),
+          place: z.string().max(200).optional(),
+          body: z.string().max(CAPABILITY_MAX_REVIEW_CONTENT_BYTES),
+          format: z.literal("plain"),
+        })
+        .strict(),
+    ])
+    .superRefine((content, ctx) => {
+      if (content.kind === "message" && content.to.length + (content.cc?.length ?? 0) + (content.bcc?.length ?? 0) > 600)
+        ctx.addIssue({ code: "custom", message: "Full review content exceeds 600 recipients" });
+      if (new TextEncoder().encode(JSON.stringify(content)).byteLength > CAPABILITY_MAX_REVIEW_CONTENT_BYTES)
+        ctx.addIssue({ code: "custom", message: "Full review content exceeds 16 MiB" });
+    });
+})();
+export type CapabilityReviewContent = z.infer<typeof CapabilityReviewContentSchema>;
+/** Cloud supplies this after storing a review. It is a locator, never an authorization token. */
+export const CapabilityReviewContentRefSchema = /* @__PURE__ */ (() =>
+  z
+    .object({
+      href: z
+        .string()
+        .regex(
+          /^\/api\/approvals\/(?:[a-fA-F0-9-]{36}\/content|conversations\/[a-fA-F0-9-]{36}\/turns\/[a-fA-F0-9-]{36}\/reviews\/(?!\.{1,2}$)(?:[A-Za-z0-9_!~*'().-]|%[A-Fa-f0-9]{2})+)$/,
+        )
+        .max(2048),
+      digest: z.string().regex(/^[a-f0-9]{64}$/),
+    })
+    .strict())();
+export type CapabilityReviewContentRef = z.infer<typeof CapabilityReviewContentRefSchema>;
+export const CapabilityActionCallReviewSchema = /* @__PURE__ */ (() =>
+  z
+    .object({
+      locale: z.string(),
+      sentence: z
+        .object({
+          action: reviewTemplate,
+          running: reviewTemplate,
+          done: reviewTemplate,
+          confirm: reviewTemplate,
+          decline: reviewTemplate,
+          rejected: reviewTemplate.optional(),
+          notRun: reviewTemplate.optional(),
+          short: reviewTemplate.refine((text) => text.length <= 60, "short exceeds 60 characters").optional(),
+        })
+        .strict(),
+      slots: reviewSlots.readonly(),
+      preview: CapabilityPreviewSchema.optional(),
+      content: CapabilityReviewContentSchema.optional(),
+      consequences: z.array(CapabilityConsequenceSchema).max(6).optional(),
+      ask: z.enum(CAPABILITY_ASK_REASONS).optional(),
+      reach: z.enum(CAPABILITY_REACHES).optional(),
+      effects: z.number().int().min(1).max(1000).optional(),
+      check: z
+        .object({ query: CapabilityLocalIdSchema, input: z.record(z.string(), z.unknown()) })
+        .strict()
+        .optional(),
+      scope: z.string().min(1).max(200).optional(),
+      links: z.array(CapabilitySemanticLinkSchema).max(10).optional(),
+    })
+    .strict()
+    .superRefine((review, ctx) => {
+      for (const [form, text] of Object.entries(review.sentence)) {
+        if (text === undefined) continue;
+        const complete = form === "action" || form === "running" || form === "done";
+        for (const message of capabilitySentenceIssues(text, review.slots, complete, form === "action"))
+          ctx.addIssue({ code: "custom", path: ["sentence", form], message });
+        if ((form === "confirm" || form === "decline") && [...text.matchAll(/\{[a-z][A-Za-z0-9]{0,31}\}/g)].length > 1)
+          ctx.addIssue({ code: "custom", path: ["sentence", form], message: "Buttons name at most one slot" });
+      }
+    }))();
 export type CapabilityActionCallReview = z.infer<typeof CapabilityActionCallReviewSchema>;
 export type CapabilityActionReviewData = CapabilityActionCallReview | CapabilityActionReview;
-export const CapabilityActionReviewDataSchema = z
-  .unknown()
-  .transform((value, ctx) => {
-    const schema =
-      value !== null && typeof value === "object" && Object.hasOwn(value, "sentence")
-        ? CapabilityActionCallReviewSchema
-        : CapabilityActionReviewSchema;
-    const parsed = schema.safeParse(value);
-    if (parsed.success) return parsed.data;
-    for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
-    return z.NEVER;
-  })
-  .pipe(z.union([CapabilityActionCallReviewSchema, CapabilityActionReviewSchema]));
+export const CapabilityActionReviewDataSchema = /* @__PURE__ */ (() =>
+  z
+    .unknown()
+    .transform((value, ctx) => {
+      const schema =
+        value !== null && typeof value === "object" && Object.hasOwn(value, "sentence")
+          ? CapabilityActionCallReviewSchema
+          : CapabilityActionReviewSchema;
+      const parsed = schema.safeParse(value);
+      if (parsed.success) return parsed.data;
+      for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+      return z.NEVER;
+    })
+    .pipe(z.union([CapabilityActionCallReviewSchema, CapabilityActionReviewSchema])))();
+/** Compact Cloud presentation. Providers return the strict review above, never a client-supplied content locator. */
+export const CapabilityActionReviewPresentationSchema = /* @__PURE__ */ (() =>
+  z.union([
+    CapabilityActionCallReviewSchema.safeExtend({ contentRef: CapabilityReviewContentRefSchema.optional() }),
+    CapabilityActionReviewSchema,
+  ]))();
+export type CapabilityActionReviewPresentation = z.infer<typeof CapabilityActionReviewPresentationSchema>;
 export const CapabilityActionReceiptSchema = z
   .object({ ...sentenceShape, preview: CapabilityPreviewSchema.optional() })
   .strict()

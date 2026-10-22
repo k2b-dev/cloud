@@ -67,8 +67,14 @@ export const capabilityActionReviewIssues = (review: unknown, context: Capabilit
       data.links,
       // A per-call reason never lifts the declared `sends` completeness rule.
       data.ask === "sends" || ("ask" in context.policy && context.policy.ask === "sends"),
+      Boolean(data.content),
     ),
   );
+  if (data.content?.kind === "message" && "ask" in context.policy && context.policy.ask === "sends") {
+    if (!data.content.from) issues.push("Full sends content requires from");
+    if (!data.content.to.length && !data.content.cc?.length && !data.content.bcc?.length)
+      issues.push("Full sends content requires a recipient");
+  }
   return [...new Set(issues)];
 };
 /** A receipt's own rules; completeness links are the result envelope's top-level `links`. */
