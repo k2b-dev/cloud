@@ -34,7 +34,7 @@ Plain Postgres uses search fallback; BM25 availability is recorded.
   --seed N           Integer 0..4294967295 (default 20261001)
   --out <dir>        Inside this worktree (default .local/mail-perf/<UTC timestamp>)
                      Reserve result.json + summary.md; never overwrite files.
-  --compare <file>   Earlier Mail schemaVersion 1 result.json; median deltas
+  --compare <file>   Earlier Mail schemaVersion 1 or 2 result.json; median deltas
   --skip-build       Reuse .local/perf-baseline/build/<app>/dist (may be stale)
   --keep             Keep run-owned resources; print exact removal commands
   --browser a,b      Also measure in chromium and/or webkit after the server
@@ -43,8 +43,11 @@ Plain Postgres uses search fallback; BM25 availability is recorded.
                      recorded connect error.
   --browser-runs N   1..20 cold loads per page, interaction, engine and
                      profile (default 3). Adds roughly 10-30 minutes.
+  --page-changes     Also measure real Mail page changes (cold/warm), Help
+                     retention/context and 3 x 50 Chromium GC/resource samples.
+                     Requires --browser. No product opt-in.
   --browser-only     Seed both mailboxes but skip server scenarios (requires --browser)
-  --interactions ids Comma list of interaction ids (default all; see below)
+  --interactions ids Comma list of interaction ids, or none (default all)
   --loads pages      Comma list of mailbox,compose, or none (default both)
   --rank <result.json> --bottlenecks <candidates.json>
                      Print the top 5 bottlenecks as Markdown and exit: each
@@ -88,6 +91,7 @@ export function parseArgs(args: string[]) {
     browsers: [] as Engine[],
     browserRuns: 3,
     browserOnly: false,
+    pageChanges: false,
     interactions: [...interactionIds],
     loads: [...loadPages],
     rank: undefined as string | undefined,
@@ -99,6 +103,7 @@ export function parseArgs(args: string[]) {
     else if (flag === "--keep") options.keep = true;
     else if (flag === "--skip-build") options.skipBuild = true;
     else if (flag === "--browser-only") options.browserOnly = true;
+    else if (flag === "--page-changes") options.pageChanges = true;
     else if (
       [
         "--messages",
@@ -165,6 +170,7 @@ export function parseArgs(args: string[]) {
   if ((options.rank === undefined) !== (options.bottlenecks === undefined)) throw new Error("--rank and --bottlenecks go together");
   if (options.rank && args.some((arg) => arg.startsWith("--") && !["--rank", "--bottlenecks", "--help"].includes(arg)))
     throw new Error("--rank only takes --bottlenecks; it reads an existing result and starts nothing");
+  if (options.pageChanges && !options.browsers.length) throw new Error("--page-changes requires --browser");
   if (options.browserOnly && !options.browsers.length) throw new Error("--browser-only requires --browser");
   return options;
 }
@@ -239,7 +245,7 @@ export const scenarioSchema = z.object({
 });
 export type Scenario = z.infer<typeof scenarioSchema>;
 export const resultSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   kind: z.literal("mail"),
   metadata: z.object({
     commit: z.string(),
@@ -278,6 +284,12 @@ export type Result = z.infer<typeof resultSchema>;
 export function parsePrevious(value: unknown): Result {
   if (!value || typeof value !== "object" || !("kind" in value) || value.kind !== "mail")
     throw new Error("--compare requires a Mail result (kind: mail), not a page baseline");
+  if ("schemaVersion" in value && value.schemaVersion === 1) {
+    // Validate the old shape first; never manufacture new page-change evidence.
+    const old = resultSchema.extend({ schemaVersion: z.literal(1) }).parse(value);
+    if (old.browser?.pageChanges) throw new Error("Schema 1 cannot carry schema 2 page-change measurements");
+    return resultSchema.parse({ ...old, schemaVersion: 2 });
+  }
   return resultSchema.parse(value);
 }
 export const metrics = ["totalMs", "ttfbMs", "rawBytes", "brotliBytes", "propsBytes", "liveMs", "visibleMs"] as const;

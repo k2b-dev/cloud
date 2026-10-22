@@ -123,6 +123,14 @@ jobs:
       - uses: ./.github/actions/install
       - run: bun run --cwd packages/ui build
       - run: bun run --cwd packages/grids test:all
+        env:
+          GRIDS_VERIFY_REPORTS_DIR: ${{ runner.temp }}/grids-certification
+      - if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-grids-certification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/grids-certification
+          if-no-files-found: ignore
       - if: always()
         run: docker rm --force grids-postgres grids-nats
 
@@ -348,5 +356,6 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - uses: ./.github/actions/install
+      - run: bun run --cwd packages/ui build
       - run: bun run check dependencies
       - run: bun audit --audit-level=high

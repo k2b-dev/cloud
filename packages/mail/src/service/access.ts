@@ -684,3 +684,26 @@ export const revokeMailboxAccessAsPlatformAdmin = (params: {
   mailboxId: string;
   accessId: string;
 }): Promise<Result<void>> => revokeMailboxAccessWithAuthority({ ...params, authority: "platform_admin" });
+
+/** Conservative audience for draft reviews. All principals and both grant scopes count;
+ * admin lifecycle/access-management routes do not themselves grant draft read access.
+ * Callers authorize the mailbox/draft before using this bounded projection.
+ */
+export const draftReviewAudience = async (
+  mailboxId: string,
+  subject: AccessSubject,
+  db: SqlClient = sql,
+): Promise<{ name: string; shared: boolean }> => {
+  const userId = subject.type === "user" && !subject.delegatedByServiceAccountId ? subject.userId : null;
+  const [row] = await db<{ name: string; shared: boolean }[]>`
+    SELECT m.name, (${userId}::uuid IS NULL OR EXISTS (
+      SELECT 1 FROM (${accessRows(mailboxId)}) grants
+      JOIN auth.access a ON a.id = grants.access_id
+      WHERE a.permission IN ('read', 'write', 'admin')
+        AND (a.user_id IS DISTINCT FROM ${userId}::uuid OR a.group_id IS NOT NULL
+          OR a.service_account_id IS NOT NULL OR a.authenticated_only)
+    )) AS shared
+    FROM mail.mailboxes m WHERE m.id = ${mailboxId}::uuid AND m.deleted_at IS NULL
+  `;
+  return row ?? { name: "—", shared: true };
+};

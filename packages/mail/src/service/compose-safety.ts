@@ -1,6 +1,7 @@
 import { domainToASCII } from "node:url";
 import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import { type SQL, sql } from "bun";
+import type { DraftSendReview } from "../contracts";
 import {
   type ComposeSafetyApproval,
   type ComposeSafetyConfig,
@@ -13,8 +14,10 @@ import {
 } from "../contracts";
 import { requireDraftAccess } from "./access";
 import type { MailRequestContext } from "./auth";
+import { actorRefFromRequest } from "./auth";
 import { sha256Json } from "./canonical";
 import { hasUnrenderedTemplateSyntax } from "./compose-renderer";
+import { loadSendContent } from "./send-content";
 
 type SafetyDraft = {
   id: string;
@@ -271,14 +274,22 @@ export const reviewDraftComposeSafety = async (params: {
   draftId: string;
   expectedRevision: number;
   locale?: string;
-}): Promise<Result<ComposeSafetyReview>> => {
+}): Promise<Result<DraftSendReview>> => {
   return sql.begin(async (tx) => {
     const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
     if (!allowed.ok) return allowed;
     const source = await loadSafetySource({ db: tx, mailboxId: params.mailboxId, draftId: params.draftId });
     if (!source.ok) return source;
     if (source.data.revision !== params.expectedRevision) return fail(err.conflict("Draft changed before safety review"));
-    return ok(evaluateComposeSafety(source.data, params.locale));
+    const content = await loadSendContent({
+      db: tx,
+      mailboxId: params.mailboxId,
+      draftId: params.draftId,
+      expectedRevision: params.expectedRevision,
+      actor: actorRefFromRequest(params.context),
+    });
+    if (!content.ok) return content;
+    return ok({ ...evaluateComposeSafety(source.data, params.locale), contentHash: content.data.contentHash });
   });
 };
 

@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-10-19
+updated: 2026-10-21
 ---
 
 # App capabilities
@@ -400,9 +400,9 @@ the generic wording instead of showing a gap or losing its last words. A
 missing outcome sentence uses the generic state words around the approval
 sentence, such as "Rejected: Send email to jana@example.com". A `done`
 sentence takes the place of the Action's runtime `summary` in the receipt;
-leave `done` out when the summary says more about the call, as Mail does for
-sending, where the summary names the subject and whether the email was queued
-or scheduled.
+leave `done` out when the summary says more about the call. Mail uses per-call
+review forms and receipts for sending, naming the subject and whether delivery
+is queued or scheduled.
 The generic sentence takes labels from the first clause of the localized field
 descriptions, up to 40 characters, and skips identifiers, revisions, flags,
 and long text; start descriptions with a short noun phrase, such as
@@ -754,12 +754,13 @@ asks for every Action call. `approval: "rememberable"` lets a supporting client
 offer an explicit **Approve for this chat** or **Always approve** choice after
 showing the Action review. That review must return an opaque, app-owned
 `approvalScope`. A remembered choice matches the current actor, qualified
-Action, and exact scope, and a chat choice also the chat; for example, Mail
-uses one scope per mailbox. Choose the smallest stable domain in which repeated
+Action, and exact scope, and a chat choice also the chat. Mail now uses per-call
+reviews, with a mailbox scope on silent calls. Choose the smallest stable domain in which repeated
 calls have the same understandable consequence. A review may omit
 `approvalScope` for arguments whose consequence should be confirmed every time,
 for example a Files copy into another storage base or into a publicly shared
-folder, a Spaces task with assignees, or a Mail move to Trash.
+folder or a Spaces task with assignees. Mail moves to Trash use a silent shared
+policy because the conversation can be moved back.
 Cloud rejects this policy on `openWorld` Actions, on `destructive` Actions, and
 on Actions without a `review`. It does not weaken app-side authorization, input validation, audit,
 or concurrency checks, all of which still run for every invocation.
@@ -1056,7 +1057,7 @@ A **sends message must be complete**: show the effective `from`, every recipient
 class and attachment, scheduled `sendAt`, and the app's own safety `warnings`.
 Any positive `more.to`, `more.cc`, `more.bcc`, or `moreAttachments` requires an
 `open` link to the complete reviewed revision, on every message preview,
-including receipts. Every truncated preview also requires an `open` link.
+including receipts. Reviews can instead supply complete `content` as described below. Every truncated preview requires that content or an `open` link.
 Cloud rejects a message preview without `from` when the declared policy or the
 review's own `ask` is `sends`; the application is responsible
 for truthfully supplying its schedule and warnings. The `from` requirement
@@ -1078,10 +1079,53 @@ also checks:
 - Sentence forms, slot strings, consequences and single-line preview fields
   reject controls, invisible format characters and line separators. Multiline
   preview fields allow newline and tab, and reject the other unsafe characters.
+  These strings must be well-formed Unicode: do not split a surrogate pair when
+  shortening a preview. Full review content preserves the original code units.
 - The review locale is canonical BCP 47 and belongs to the app's presentation
   locales or falls back to one through its locale ancestors.
-- The serialized review is at most **32 KiB of UTF-8 JSON**, including all
-  preview fields and slots.
+- The serialized compact review is at most **32 KiB of UTF-8 JSON**, including
+  all preview fields and slots, but excluding the optional complete `content`.
+
+#### Supply the complete proposed content
+
+A policy review may include `content: CapabilityReviewContent` from
+`@k2b/cloud/contracts`. Use it when the proposal is unsaved or a resource link
+cannot reproduce exactly what the person is approving. Return the complete
+proposed value, including changes beyond the compact preview's limits.
+
+`content` is a passive `message` or `page` with `format: "plain"`. A message
+contains `subject`, `body`, `to`, optional `from`, `cc`, `bcc`, `attachments`
+(`name`, optional byte `size`), `sendAt`, and `warnings`. It supports 600 total
+recipients, 202 attachment descriptions and six warnings of 300 characters.
+Names are bounded to 200 characters, addresses to 320, subjects to 998 and
+attachment names to 255. A page contains `title`, optional `place`, and `body`.
+Both kinds may include the nonnegative integer `baseRevision` of the resource
+used to prepare the proposal. Recipient-free draft proposals are valid. A sends review, whether declared by
+policy or requested per call, requires a sender and at least one full recipient.
+Applications supply every attachment, schedule and safety warning themselves.
+
+The complete content is bounded to **16 MiB of serialized UTF-8 JSON**.
+Oversize content fails before approval; never shorten it or substitute a saved
+older version. HTML and attachment bytes do not belong in this field. Preserve
+source characters: Cloud displays control and invisible characters visibly,
+without changing the stored value or digest. Short and complete content both
+participate in the approval digest.
+
+Upgrade Core and callers before providers return this field. Review responses
+have a dedicated bound of 16 MiB plus the 32 KiB compact review and JSON
+structure. Ordinary Query and Action results retain their 256 KiB limit.
+Direct `reviewCapabilityAction()` calls return the full bounded review without
+creating an approval or application object. `cld capabilities review <app-id>
+<action-id> --input <json>` prints the review as JSON.
+
+Cloud persists the full snapshot in its existing approval and chat records.
+Lists, chat history and streams contain a compact presentation with a
+Cloud-generated `contentRef: { href, digest }`; providers must not supply it.
+Read that exact snapshot with `readCapabilityReviewContent(ref, options)` from
+`@k2b/cloud/capabilities`. The helper accepts the normal HTTP client options and
+an abort signal, validates the route and response, and disables caching.
+The reference grants no access. See [approval readers](/en/docs/identity/approvals#approval-routes)
+for authorization and [storage and upgrades](/en/docs/operations/deployment-requirements#store-complete-action-review-content).
 
 Use `assertCapabilityReview(review, context?)` and
 `checkActionReviewMessages({ locales, forms, slots })` from
@@ -1106,7 +1150,12 @@ same slot, sentence, and preview rules. Every receipt slot must appear in its
 text; its slots belong to the receipt itself. Receipt completeness uses the
 result's top-level links. A Query result must not contain `receipt` in its
 envelope. Query data may use `CapabilityActionCheckSchema`, returning
-`{ outcome: "done" | "not_done" | "pending", receipt? }`.
+`{ outcome: "done" | "not_done" | "pending", receipt? }`. Mail uses the dedicated
+`draft.send.check` Query to read the delivery state for an exact draft revision;
+queued or accepted delivery does not claim that the email has been sent.
+Mail send reviews link to a revision-checked read view of the complete rendered
+message, including its signature and generated attachments. A changed draft
+returns a conflict instead of substituting newer content.
 
 The five `CapabilityActionOutcome` states are `running`, `done`, `rejected`,
 `not_run`, and `unknown`. A done result uses its receipt when supplied, otherwise
@@ -1269,6 +1318,19 @@ change kind, remove fields or operations, add required input, weaken a
 previously guaranteed result field, change safety or idempotency semantics, or
 remove or replace an advertised reader, review, or search token. Publish a new
 local ID for those changes and migrate callers deliberately.
+
+New optional input fields require a previously closed object without
+`patternProperties`. Otherwise the new field's schema could reject values
+that callers were already allowed to send under that name.
+
+Input unions may add or reorder variants when every old variant remains
+compatible under the same field and constraint checks. For a changed `oneOf`,
+the checker also requires proof that every pair of resulting variants is
+disjoint: both must require a shared property whose scalar `const` or `enum`
+values do not overlap. Optional tags, overlapping variants, and cases without
+this proof are rejected. `anyOf` additions do not need disjointness. These
+rules apply recursively to nested input unions; they do not permit new result
+union variants or changes to the union's surrounding constraints.
 
 Keep a previous manifest fixture and check it in provider tests:
 

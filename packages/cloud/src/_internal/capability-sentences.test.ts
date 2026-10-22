@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
-import { mailCapabilities } from "../../../mail/src/capabilities";
-import { mailCapabilityPresentation } from "../../../mail/src/capability-presentation";
 import { type CapabilityActionSentences, type CapabilityPresentationCatalog, defineCapabilities } from "../contracts/capabilities";
 import { compileCapabilities, compileCapabilityPresentation, resolveCapabilityActionWording } from "./capabilities";
 import {
@@ -288,23 +286,33 @@ describe("sentence locales", () => {
 });
 
 describe("one contract for every app", () => {
-  /** A third-party app that declares Mail's draft sentences for an Action of its own, through the same public catalog. */
-  const thirdParty = () => {
-    const mailSentences = (locale: "en" | "de"): CapabilityActionSentences =>
-      (locale === "en"
-        ? mailCapabilityPresentation.sentences?.["draft.create"]
-        : mailCapabilityPresentation.translations.de?.actions?.["draft.create"]?.sentences)!;
-    return compileCapabilities(
-      "acme-mail",
+  // Legacy catalogs remain supported even when a built-in app moves to per-call reviews.
+  const draftSentences = (locale: "en" | "de"): CapabilityActionSentences =>
+    locale === "en"
+      ? {
+          approval: "Create a draft to {input.to}",
+          done: "Created a draft to {input.to}",
+          rejected: "Did not create the draft to {input.to}",
+          notRun: "Draft to {input.to} not created",
+        }
+      : {
+          approval: "Entwurf an {input.to} erstellen",
+          done: "Entwurf an {input.to} erstellt",
+          rejected: "Entwurf an {input.to} nicht erstellt",
+          notRun: "Entwurf an {input.to} nicht erstellt",
+        };
+  const draftApp = (appId: string, actionId: string) =>
+    compileCapabilities(
+      appId,
       defineCapabilities({
         protocolVersion: 2,
         presentation: {
           baseLocale: "en",
-          sentences: { "message.draft": mailSentences("en") },
-          translations: { de: { actions: { "message.draft": { title: "Entwurf erstellen", sentences: mailSentences("de") } } } },
+          sentences: { [actionId]: draftSentences("en") },
+          translations: { de: { actions: { [actionId]: { title: "Entwurf erstellen", sentences: draftSentences("de") } } } },
         },
         actions: {
-          "message.draft": {
+          [actionId]: {
             title: "Create draft",
             description: "Creates a draft.",
             input: z.object({ to: z.array(Recipient).max(200).describe("Primary recipients.") }).strict(),
@@ -317,11 +325,10 @@ describe("one contract for every app", () => {
         },
       }),
     );
-  };
 
-  test("a third-party app's sentences render exactly like Mail's", () => {
-    const mail = compileCapabilities("mail", mailCapabilities);
-    const acme = thirdParty();
+  test("the same legacy catalog renders equally for built-in and third-party app identities", () => {
+    const mail = draftApp("mail", "draft.create");
+    const acme = draftApp("acme-mail", "message.draft");
     const mailDraft = mail.manifest.actions.find((action) => action.localId === "draft.create")!;
     const acmeDraft = acme.manifest.actions[0]!;
     const input = { to: [{ name: "Jana Berger", address: "jana@example.com" }], mailboxId: "Mb1", senderIdentityId: "Si1" };

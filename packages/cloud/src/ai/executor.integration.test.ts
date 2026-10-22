@@ -39,6 +39,7 @@ import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
 import { completeThroughStream, createAiProvider } from "./provider";
 import { AiQuotaError } from "./quotas";
+import { readReviewContent } from "./review-content";
 import { listPendingAiTurnActions } from "./runtime";
 import * as settings from "./settings";
 import { aiSkills } from "./skills";
@@ -1395,7 +1396,7 @@ suite("AI executor integration", () => {
     }
   });
 
-  test("a linked Studio approval asks with its own record's question and only while that request is open", async () => {
+  test.each([false, true])("a linked Studio approval retains its stored question and content (full=%s)", async (fullContent) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
@@ -1430,7 +1431,18 @@ suite("AI executor integration", () => {
         approvalPolicies: new Map([["code_run", "never"]]),
         frontendModes: new Map(),
       };
-      const studio = async (kind: "studio_app" | "assistant_turn") => {
+      const content = {
+        kind: "page" as const,
+        title: "Unsaved proposal",
+        body: `${"x".repeat(80_000)}\u0000END`,
+        format: "plain" as const,
+      };
+      const fullReview = { ...reviewFixture(), ask: "app_asks" as const, content };
+      const reviews = new Map<string, CapabilityActionReviewData>();
+      pipeline.setApprovalReviews(reviews, new Map());
+      const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "linked-approval-test" });
+      await session.append({ role: "assistant", content: [{ type: "tool_call", id: "run", name: "code_run", args: {} }] });
+      const studio = async (kind: "studio_app" | "assistant_turn", review?: CapabilityActionReviewData) => {
         const record = await approvals.request({
           appId: "demo",
           action: "write",
@@ -1440,6 +1452,7 @@ suite("AI executor integration", () => {
           assurance: "standard",
           sentence: "Demo: Write item\nWrite one?",
           input: { value: "one" },
+          review,
           expiresInMs: 60_000,
         });
         if (!record.ok) throw new Error("Expected a new approval request");
@@ -1468,11 +1481,11 @@ suite("AI executor integration", () => {
           approvalContext: { actorUserId: userId },
           allowRememberedApprovals: true,
           rememberableCapabilityApprovals: new Map(),
-          capabilityActionReviews: new Map(),
+          capabilityActionReviews: reviews,
           approvalTargets: new Map(),
           linkedApprovals: new Map([[callId, approvalId]]),
         });
-      const linked = await studio("studio_app");
+      const linked = await studio("studio_app", fullContent ? fullReview : undefined);
       await ask("run-approval-0", linked);
       expect(
         await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "run-approval-0" }),
@@ -1480,6 +1493,32 @@ suite("AI executor integration", () => {
         approvalId: linked,
         message: "Demo: Write item\nWrite one?",
       });
+      if (fullContent) {
+        const block = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === "run-approval-0");
+        if (!block || block.kind !== "tool" || !block.review || !("contentRef" in block.review) || !block.review.contentRef)
+          throw new Error("The relayed proposal must carry its stored content reference");
+        const { digest, href } = block.review.contentRef;
+        expect(href).toContain(`/turns/${turn.id}/reviews/run`);
+        expect(JSON.stringify(pipeline.blocks)).not.toContain("x".repeat(1_000));
+        expect(block.approval?.review).toMatchObject({ contentRef: { href, digest } });
+        expect(await readReviewContent({ conversationId: chat.id, turnId: turn.id, callId: "run" }, digest, userId)).toEqual(content);
+        await pipeline.flush();
+        const history = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id });
+        expect(JSON.stringify(history)).not.toContain("x".repeat(1_000));
+        expect(buildBlocksFromMessages(history)).toContainEqual(
+          expect.objectContaining({ review: expect.objectContaining({ contentRef: { href, digest } }) }),
+        );
+        await approvals.decide(linked, { approved: true }, { userId, via: "web_session" });
+        const request = await approvals.get(linked);
+        expect(
+          await approvals.consume(linked, {
+            input: { value: "one" },
+            review: fullReview,
+            requester: { kind: "studio_app", ref: request!.requesterRef },
+          }),
+        ).toMatchObject({ ok: true });
+        expect(await readReviewContent({ conversationId: chat.id, turnId: turn.id, callId: "run" }, digest, userId)).toEqual(content);
+      }
       const decided = await studio("studio_app");
       await approvals.decide(decided, { approved: false }, { userId, via: "web_session" });
       for (const [callId, approvalId] of [

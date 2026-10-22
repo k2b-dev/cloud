@@ -1,4 +1,4 @@
-import { aiConversations, authorizeBackgroundAction, hasRememberedAiToolApproval, rememberAiToolApproval } from "@k2b/cloud/ai";
+import { authorizeBackgroundAction, hasRememberedAiToolApproval, rememberAiToolApproval } from "@k2b/cloud/ai";
 import { CodeResourceId } from "@k2b/cloud/ai/browser";
 import {
   type CapabilityCaller,
@@ -19,6 +19,7 @@ import {
 } from "@k2b/cloud/services/approvals";
 import { type SQL, sql } from "bun";
 import { z } from "zod";
+import { requireToolChat } from "./chat-access";
 import { codeApprovalMessage } from "./code-approval-message";
 import { LIMITS } from "./contracts";
 import { CHECK_UNAVAILABLE } from "./html/check-contracts";
@@ -46,7 +47,7 @@ const Prepared = z.object({
   approval: z.enum(["none", "rememberable"]).nullable(),
   resource: z.object({ id: CodeResourceId, title: z.string() }).optional(),
   title: z.string(),
-  review: CapabilityActionReviewDataSchema.nullable(),
+  review: z.preprocess((value) => decoded(value), CapabilityActionReviewDataSchema.nullable()),
   allowAlways: z.boolean(),
   scope: z.string().nullable(),
   /** Locale the person reviewed in; revalidation reviews in it again so a language switch is not a changed consequence. */
@@ -67,20 +68,14 @@ const decoded = (value: unknown): unknown => (typeof value === "string" ? JSON.p
 // Nested Assistant capabilities retain the authorized script's chat context.
 // A request ID alone grants nothing: it must belong to this user, exact target,
 // and a currently executing call; resource access is still checked by the target.
-async function authorize(request: Request, identity: ArtifactIdentity) {
-  return (await authorizeWithChat(request, identity)).resource;
-}
-async function authorizeWithChat(request: Request, identity: ArtifactIdentity) {
-  const actor = user(identity);
+async function authorizeWithChat(request: Request, identity: ArtifactIdentity, tool: string) {
+  user(identity);
   const resource = request.artifactId
     ? await artifacts.get(request.artifactId, { ...identity, conversationId: request.conversationId })
     : undefined;
   let conversationId: string | null = null;
   if (request.conversationId) {
-    const conversation = z.uuid().safeParse(request.conversationId).success
-      ? await aiConversations.getConversation({ conversationId: request.conversationId, ownerUserId: actor.id })
-      : await aiConversations.getConversationByShortId({ shortId: request.conversationId, ownerUserId: actor.id });
-    if (!conversation || conversation.archivedAt) throw new ArtifactError("ACCESS_DENIED");
+    const conversation = await requireToolChat(request.conversationId, identity, tool);
     if (conversation.allowedTools && !conversation.allowedTools.includes(request.name)) throw new ArtifactError("ACCESS_DENIED");
     conversationId = conversation.id;
   }
@@ -115,7 +110,7 @@ export const runtimeCapabilities = {
     caller: CapabilityCaller,
   ) {
     const request = RuntimeCapabilityRequest.parse({ ...input, id: crypto.randomUUID() });
-    const resource = await authorize(request, identity);
+    const { resource } = await authorizeWithChat(request, identity, "code_check");
     if (resource && resource.permission !== "admin") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
     // Discover first. Never prepare an action: even a review may have effects.
     const target = await operation(input.name, caller.locale);
@@ -147,7 +142,7 @@ export const runtimeCapabilities = {
     >`SELECT * FROM assistant.capability_calls WHERE id=${z.uuid().parse(id)}::uuid AND user_id=${actor.id}::uuid AND status='completed'`;
     if (!row) throw new ArtifactError("ACCESS_DENIED");
     const request = RuntimeCapabilityRequest.parse(decoded(row.request));
-    await authorize(request, identity);
+    await authorizeWithChat(request, identity, request.name);
     const result = z.object({ ok: z.literal(true), data: z.object({ stream: CapabilityStreamSchema }) }).parse(decoded(row.result));
     const stream = result.data.stream;
     if (stream.size > LIMITS.inputFileBytes) throw new ArtifactError("INVALID_INPUT");
@@ -161,7 +156,7 @@ export const runtimeCapabilities = {
   ) {
     const request = RuntimeCapabilityRequest.parse(input),
       actor = user(identity);
-    const { resource, conversationId } = await authorizeWithChat(request, identity);
+    const { resource, conversationId } = await authorizeWithChat(request, identity, request.name);
     const untrusted = resource && resource.permission !== "admin";
     const target = await operation(request.name, caller.locale);
     const getReview = async () => {
@@ -243,7 +238,7 @@ export const runtimeCapabilities = {
       >`SELECT count(*)::int AS count FROM assistant.capability_calls WHERE user_id=${actor.id}::uuid AND status IN ('pending','running')`;
       if (pending!.count >= LIMITS.pendingRequests) throw new ArtifactError("TOO_MANY_REQUESTS");
       await db`INSERT INTO assistant.capability_calls(id,user_id,artifact_id,conversation_id,request,prepared)
-        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId ?? null}),${conversationId},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify(prepared)}::text)::jsonb)`;
+        VALUES(${request.id}::uuid,${actor.id}::uuid,(SELECT id FROM assistant.artifacts WHERE short_id=${request.artifactId ?? null}),${conversationId},(${JSON.stringify(request)}::text)::jsonb,(${JSON.stringify({ ...prepared, review: JSON.stringify(prepared.review) })}::text)::jsonb)`;
       if (!automatic) {
         const approval = await requestApprovalRecord(request, prepared, actor.id, db, {
           sentence: codeApprovalMessage(response, caller.locale ?? "en"),
@@ -288,7 +283,7 @@ async function resolveCapability(
   }
   const request = RuntimeCapabilityRequest.parse(decoded(row.request)),
     prepared = Prepared.parse(decoded(row.prepared));
-  const resource = await authorize(request, identity);
+  const { resource } = await authorizeWithChat(request, identity, request.name);
   if (resource && resource.permission !== "admin" && !prepared.resource) throw new ArtifactError("CONFLICT");
   if (row.status === "completed") return { status: "completed" as const, result: decoded(row.result) };
   if (row.status !== "pending") throw new ArtifactError("CONFLICT");
