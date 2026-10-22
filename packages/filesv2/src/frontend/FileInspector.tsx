@@ -217,7 +217,7 @@ export default function FileInspector(props: {
     ];
   };
   return (
-    <DetailPanel>
+    <DetailPanel class="filesv2-inspector">
       <Show
         when={props.paths.length > 1}
         fallback={
@@ -845,8 +845,15 @@ function VersionsSection(props: {
     <DetailPanel.Group label={t().versions}>
       <DetailPanel.Section
         title={t().versions}
-        icon={props.versions.state() === "ready" && props.versions.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-versions"}
         tone="neutral"
+        actions={
+          <span class="inline-flex size-4" role="status">
+            <Show when={props.versions.state() === "ready" && props.versions.refreshing()}>
+              <i class="ti ti-loader-2 motion-safe:animate-spin" aria-hidden="true" />
+              <span class="sr-only">{t().loadingDetails}</span>
+            </Show>
+          </span>
+        }
         count={props.versions.state() === "ready" ? items().length + 1 : undefined}
       >
         <Show when={props.versions.state() === "error"}>
@@ -862,9 +869,6 @@ function VersionsSection(props: {
             }
           />
         </Show>
-        <span class="sr-only" role="status">
-          {props.versions.state() === "ready" && props.versions.refreshing() ? t().loadingDetails : ""}
-        </span>
         <Switch>
           <Match when={props.versions.state() === "off"}>
             <p class="text-xs text-dimmed">{t().versionsUnavailable}</p>
@@ -873,7 +877,7 @@ function VersionsSection(props: {
             <Placeholder state="loading" align="left" class="px-0 py-1" description={t().loadingDetails} />
           </Match>
           <Match when={props.versions.items() !== null}>
-            <div class="flex flex-col gap-1">
+            <div class="flex flex-col">
               {/* The file as it is now, numbered after the saved versions as the history counts it. */}
               <DetailPanel.Action
                 type="button"
