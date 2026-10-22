@@ -163,9 +163,10 @@ export const geoCapabilityPresentation = {
   "place.search": {
     title: "Orte suchen",
     description:
-      "Liefert bis zu 20 Orte aus höchstens 5 Kategorien nahe einem Punkt, im Kreis/Rechteck oder entlang polyline6. Routenfenster höchstens 200 km, Puffer 100–5.000 m. Bei truncated: true das Routenfenster verkleinern; ein leeres Ergebnis schließt dann Treffer nicht aus. Herkunft und Namensnennung beibehalten; Credits im Betreiberbudget.",
+      "Liefert bis zu 20 Orte aus höchstens 5 Kategorien nahe einem Punkt, im Kreis/Rechteck oder entlang polyline6. Optional nach Ortsnamen filtern. Routenfenster höchstens 200 km, Puffer 100–5.000 m. Bei truncated: true das Routenfenster verkleinern; ein leeres Ergebnis schließt dann Treffer nicht aus. Herkunft und Namensnennung beibehalten; Credits im Betreiberbudget.",
     input: {
       categories: "1–5 Ortskategorien aus dem Cloud-Vertrag.",
+      name: "Optionaler Ortsname als Anbieterfilter, nach Entfernen äußerer Leerzeichen 1–300 Zeichen; die Kategorien gelten weiterhin.",
       near: "Punkt zum Sortieren nach Entfernung; genau eine Option aus near, area oder along wählen.",
       "near.lat": "Breitengrad in Grad, −90 bis 90.",
       "near.lon": "Längengrad in Grad, −180 bis 180.",

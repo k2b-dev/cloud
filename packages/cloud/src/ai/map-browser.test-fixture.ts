@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
+import type { GeoPlaceSearchInput } from "../contracts/geo";
 import { mapAddress, mapFixture, mapGeoFixture, mapSuccess, mapTime } from "./map.test-fixture";
 import { AiMapActionSchema, AiMapCommandSchema, type AiMapToolResult, aiMapToolResult } from "./map-contracts";
-import { applyAiMap } from "./map-service";
+import { type AiMapContext, applyAiMap } from "./map-service";
 import type { AiMapStored } from "./map-store";
 export async function startMapBrowserFixture() {
   const fixtureDir = await mkdtemp(join(tmpdir(), "assistant-map-"));
@@ -57,6 +58,7 @@ export async function startMapBrowserFixture() {
   const { renderMapFixture } = await import("./map-ssr.test-fixture");
   const calls: string[] = [];
   const commands: unknown[] = [];
+  const placeSearches: GeoPlaceSearchInput[] = [];
   const geo = mapGeoFixture();
   const get = (name: string) => {
     let saved = states.get(name);
@@ -122,9 +124,18 @@ export async function startMapBrowserFixture() {
     states.set(name, saved);
     return saved;
   };
-  const contextFor = (name: string) => ({
+  const contextFor = (name: string): AiMapContext => ({
     geo: {
       ...geo.geo,
+      searchPlaces: async (input, caller) => {
+        placeSearches.push(structuredClone(input));
+        const result = await geo.geo.searchPlaces(input, caller);
+        if (input.name === "Wasserfall" && result.ok)
+          result.data.data.places.forEach((place, i) => {
+            place.name = `Fiktiver Wasserfall ${i + 1}`;
+          });
+        return result;
+      },
       availability: async () => {
         await geo.geo.availability({});
         return mapSuccess(get(name).map.availability);
@@ -256,7 +267,7 @@ export async function startMapBrowserFixture() {
     server.stop(true);
     await rm(fixtureDir, { recursive: true, force: true });
   };
-  return { server, stop, calls, commands, states, geo, get };
+  return { server, stop, calls, commands, placeSearches, states, geo, get };
 }
 if (import.meta.main) {
   const fixture = await startMapBrowserFixture();

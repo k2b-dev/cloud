@@ -33,7 +33,7 @@ never from Query input. Inputs are strict: unknown fields are refused.
 | `address.autocomplete` | `text` (3–300 characters), optional `limit` (1–5, default 5), `countryCode`, `type`, `bias` point, and `area` | `suggestions` (up to 5 addresses) and `provenance` |
 | `address.geocode` | Either `text` (1–300 characters) or `fields`; optional `countryCode` | One `address` and `provenance`; ambiguity returns candidates in error details |
 | `address.reverse` | `point` | One `address` and `provenance` |
-| `place.search` | `categories` (1–5), exactly one of `near`, `area`, or `along`; optional `limit` (1–20, default 20) | `places` and `provenance` |
+| `place.search` | `categories` (1–5), exactly one of `near`, `area`, or `along`; optional `name` (1–300 characters after trimming) and `limit` (1–20, default 20) | `places` and `provenance` |
 | `map.style` | Optional `theme` (`light` or `dark`) | Same-origin `styleUrl` and attribution links |
 | `route.calculate` | `{ plan }`: 2–26 stops, route/per-leg options, optional optimization and reference-distance allowance | A self-contained `route` with resolved stops, independent legs, meters, seconds, polyline6, and provenance |
 | `route.update` | `{ route, changes, distanceAllowanceMeters? }` | Proposed `route`, `before`, `after`, `delta`, and optional insertion details |
@@ -76,6 +76,14 @@ Place categories are `museum`, `cafe`, `restaurant`, `bar`, `pub`, `bakery`,
 `supermarket`, `pharmacy`, `hotel`, `accommodation`, `fuel`, `parking`,
 `charging`, `toilets`, `park`, `viewpoint`, and `attraction`.
 `GeoCategorySchema` and `GEO_CATEGORIES` export the verified mapping.
+
+Use optional `name` to ask the provider for places matching a name, such as
+`"Wasserfall"`, within the required categories and geographic controls. This
+works for both area searches and route corridors. Outer whitespace is removed;
+case and internal whitespace are preserved in requests and cache keys. Omitting
+`name` keeps category-only search. Blank or longer than 300-character names are
+refused. Cloud returns provider matches rather than filtering a cached category
+result page by name.
 
 A place carries `id`, `name`, provider `categories`, `point`, `address`, and
 `provenance`. It may include `distanceMeters`, `openingHours` (the raw OSM

@@ -113,12 +113,13 @@ describe("native Assistant map transitions", () => {
     expect(web[0]!.placeId).toBe("1");
     let fail = true;
     f.geo.searchPlaces = async (input) => {
-      expect(input.near).toEqual(original.groups[0]!.places[0]!.point);
+      expect(input.area).toEqual({ type: "circle", point: original.groups[0]!.places[0]!.point, radiusMeters: 2000 });
+      expect(input.name).toBe("Café");
       return fail
         ? { ok: false, error: { code: "GEO_PROVIDER_FAILED", status: 502, message: "failed" } }
         : mapSuccess({ places: [], provenance: mapAddress().provenance });
     };
-    const command = { type: "search" as const, search: { title: "Cafés", categories: ["cafe" as const], placeId: "1" } };
+    const command = { type: "search" as const, search: { title: "Cafés", categories: ["cafe" as const], placeId: "1", name: "Café" } };
     const failed = await applyAiMap({ map: original }, command, { ...f.ctx, placeReferences: "marks" });
     fail = false;
     const retry = await applyAiMap(failed, { type: "retry" }, f.ctx);
@@ -282,4 +283,33 @@ describe("native Assistant map transitions", () => {
     expect(markdown).toContain('"distanceAllowanceMeters":500000');
     expect(markdown).toContain('"computedAt":"2026-10-19T14:31:00.000Z"');
   });
+});
+
+test.each([false, true])("map named search reaches public Geo and survives lastSearch, corridor=%s", async (corridor) => {
+  const f = context();
+  const original = mapFixture(corridor ? "route" : "places");
+  const search = {
+    title: "Wasserfall",
+    categories: ["attraction"],
+    name: " Wasserfall ",
+    ...(corridor ? { along: { fromKm: 0, toKm: 10 } } : { near: "Ulm" }),
+  };
+  const command = AiMapToolInputSchema.parse({ command: { type: "search", search } }).command;
+  let called = false;
+  f.geo.searchPlaces = async (input) => {
+    called = true;
+    expect(input.name).toBe("Wasserfall");
+    expect(input.categories).toEqual(["attraction"]);
+    expect(Boolean(input.along)).toBe(corridor);
+    if (!corridor) {
+      expect(input.area?.type).toBe("circle");
+      expect(input.near).toBeUndefined();
+    }
+    return mapSuccess({ places: [], provenance: mapAddress().provenance });
+  };
+  const result = await applyAiMap({ map: original }, command, f.ctx);
+  expect(called).toBe(true);
+  expect(result.map.lastSearch?.name).toBe("Wasserfall");
+  for (const name of [" ", "x".repeat(301)])
+    expect(AiMapToolInputSchema.safeParse({ command: { type: "search", search: { ...search, name } } }).success).toBe(false);
 });

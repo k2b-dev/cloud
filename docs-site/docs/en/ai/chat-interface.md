@@ -626,10 +626,10 @@ Inserting or moving a stop, optimizing the order, and changing travel options
 produce a calculated proposal. The map keeps the original route until the person
 accepts it. **Discard** preserves the route; an accepted change has a timestamp
 and **Undo**. Options can apply to the entire tour or one leg. Along-route place
-searches use the saved route and an explicit kilometer window. The widget searches
-for attractions, restaurants, or cafés; the current Geo contract does not support
-free-text place-name searches along a route. Navigation opens
-the destination in an external navigation app; Cloud does not provide live
+searches use the saved route and an explicit kilometer window. The search form
+accepts an optional place name alongside the category controls; the provider
+searches for that name within the selected category and route corridor. Navigation
+opens the destination in an external navigation app; Cloud does not provide live
 turn-by-turn navigation.
 
 **Save as Notebook** asks for a writable notebook and creates a note through its

@@ -55,7 +55,7 @@ const searchPlaces = async (map: AiMap, search: Extract<AiMapCommand, { type: "p
   let input: GeoPlaceSearchInput;
   if (search.along) {
     if (!map.route) throw new Error("MAP_ROUTE_REQUIRED");
-    input = { categories: search.categories, along: { polyline6: map.route.polyline6, ...search.along }, limit };
+    input = { categories: search.categories, name: search.name, along: { polyline6: map.route.polyline6, ...search.along }, limit };
   } else {
     const point = search.placeId
       ? placeById(map, search.placeId, ctx).point
@@ -67,8 +67,8 @@ const searchPlaces = async (map: AiMap, search: Extract<AiMapCommand, { type: "p
     if (!point) throw new Error("MAP_LOCATION_REQUIRED");
     input = {
       categories: search.categories,
+      name: search.name,
       area: { type: "circle", point, radiusMeters: search.radiusMeters ?? 2000 },
-      near: point,
       limit,
     };
   }

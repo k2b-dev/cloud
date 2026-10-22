@@ -134,6 +134,13 @@ export const GEO_MAX_POLYLINE_CHARS = 102_400;
 export const GeoPlaceSearchInputSchema = z
   .object({
     categories: z.array(GeoCategorySchema).describe("1–5 Cloud categories."),
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(300)
+      .optional()
+      .describe("Optional provider place-name filter, 1–300 characters after trimming; categories still apply."),
     near: GeoPointSchema.optional().describe("Rank by distance to this point; choose near, area, or along."),
     area: GeoAreaSchema.optional().describe("Optional geographic filter."),
     along: z

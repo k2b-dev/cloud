@@ -92,6 +92,42 @@ describe.each([1440, 390])("saved map follow-up at %i", (width) => {
     }
   });
 });
+test.each([1440, 390])("named place search submits the provider name, fits all results and restores after reload at %i", async (width) => {
+  const scenario = `route-name-${width}`;
+  const { page, context } = await open(scenario, width);
+  try {
+    const before = await dimensions(page);
+    expect(before.height).toBe(width === 1440 ? 869 : 853);
+    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
+    await page.getByLabel("Ortsname (optional)", { exact: true }).fill(" Wasserfall ");
+    await settled(page);
+    expect(await dimensions(page)).toEqual(before);
+    if (process.env.PLACE_NAME_EVIDENCE_DIR)
+      await page.screenshot({ path: `${process.env.PLACE_NAME_EVIDENCE_DIR}/route-name-form-light-${width}.png`, fullPage: true });
+    await page.getByRole("button", { name: "Suchen", exact: true }).click();
+    await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
+    expect(fixture.commands.at(-1)).toMatchObject({
+      type: "search",
+      insert: true,
+      search: { name: "Wasserfall", categories: ["attraction"], along: { fromKm: 0, toKm: 162 } },
+    });
+    expect(fixture.get(scenario).map.lastSearch?.name).toBe("Wasserfall");
+    expect(fixture.placeSearches.at(-1)).toMatchObject({ name: "Wasserfall", categories: ["attraction"], limit: 5 });
+    await settled(page);
+    expect(await dimensions(page)).toEqual(before);
+    const stages = await page.locator(".ai-map__stages").boundingBox();
+    const lastChoice = await page.getByRole("button", { name: /5\. Fiktiver Wasserfall 5/ }).boundingBox();
+    expect(lastChoice!.y + lastChoice!.height).toBeLessThanOrEqual(stages!.y + stages!.height);
+    if (process.env.PLACE_NAME_EVIDENCE_DIR)
+      await page.screenshot({ path: `${process.env.PLACE_NAME_EVIDENCE_DIR}/route-name-results-light-${width}.png`, fullPage: true });
+    await page.reload();
+    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
+    expect(await page.getByLabel("Ortsname (optional)", { exact: true }).inputValue()).toBe("Wasserfall");
+    await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
+  } finally {
+    await context.close();
+  }
+});
 test.each([1440, 390])(
   "insert search, selected stop, real delta, discard, accept and timestamped undo keep route dimensions at %i",
   async (width) => {
@@ -101,9 +137,10 @@ test.each([1440, 390])(
       const before = await dimensions(page);
       expect(before.height).toBe(width === 1440 ? 869 : 853);
       await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
+      await page.getByLabel("Ortsname (optional)", { exact: true }).fill("Wasserfall");
       await page.getByRole("button", { name: "Suchen", exact: true }).click();
-      await page.getByRole("button", { name: /3\. Kleine Backstube/ }).click();
-      await page.getByRole("button", { name: /Vorschau für Kleine Backstube/ }).click();
+      await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
+      await page.getByRole("button", { name: /Vorschau für Fiktiver Wasserfall 3/ }).click();
       await page.getByRole("button", { name: "Verwerfen", exact: true }).waitFor();
       await settled(page);
       expect(await page.locator(".ai-map__facts").innerText()).toContain("+12 min");
@@ -114,9 +151,9 @@ test.each([1440, 390])(
       await page.getByRole("button", { name: "Stopp einfügen", exact: true }).waitFor();
       await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
       await page.getByRole("button", { name: "Suchen", exact: true }).click();
-      await page.getByRole("button", { name: /3\. Kleine Backstube/ }).click();
-      await page.getByRole("button", { name: /Vorschau für Kleine Backstube/ }).click();
-      await page.getByRole("button", { name: "Kleine Backstube einfügen", exact: true }).click();
+      await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
+      await page.getByRole("button", { name: /Vorschau für Fiktiver Wasserfall 3/ }).click();
+      await page.getByRole("button", { name: "Fiktiver Wasserfall 3 einfügen", exact: true }).click();
       await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
       expect(fixture.get(scenario).map.route?.stops).toHaveLength(5);
       await settled(page);

@@ -961,6 +961,16 @@ PNG input, and report unavailable images with linked source lists.
 - **Error class:** An internal event handler overwrites a supported consumer handler.
 - **Guard:** TextInput invokes function and bound-data keyboard handlers before its default submit behavior, respecting `defaultPrevented`. Native input/textarea behavior tests and the Notebook map browser flow cover the regression.
 
+### AiMap searches use one spatial selector
+
+- **What happened:** AiMap place searches supplied both a circle and its center
+  as `near`, which Core rejects before provider work.
+- **Root cause:** Synthetic Geo fixtures accepted inputs without the public
+  service's mutually exclusive spatial-selector rule.
+- **Error class:** Consumer input violates a shared service invariant.
+- **Guard:** AiMap service tests require a circle without `near`; named search
+  tests trace the filter through the browser, service, GET/POST, and cache.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

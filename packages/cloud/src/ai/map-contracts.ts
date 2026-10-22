@@ -5,6 +5,7 @@ import {
   GeoCategorySchema,
   GeoCostsSchema,
   GeoPlaceSchema,
+  GeoPlaceSearchInputSchema,
   GeoPointSchema,
 } from "../contracts/geo";
 import {
@@ -46,6 +47,7 @@ export const AiMapSchema = z
     lastSearch: z
       .object({
         categories: z.array(GeoCategorySchema),
+        name: GeoPlaceSearchInputSchema.shape.name,
         near: z.string().optional(),
         placeId: z.string().optional(),
         radiusMeters: z.number().optional(),
@@ -83,6 +85,7 @@ export type AiMap = z.infer<typeof AiMapSchema>;
 const search = z
   .object({
     categories: z.array(GeoCategorySchema).min(1).max(5),
+    name: GeoPlaceSearchInputSchema.shape.name,
     near: z.string().min(1).max(300).optional(),
     placeId: z.string().max(2048).optional(),
     radiusMeters: z.number().min(1).max(50000).optional(),

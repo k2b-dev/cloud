@@ -1790,3 +1790,11 @@ Geo in Core to enable provider queries; without configuration, Assistant keeps
 the conversation and shows the unavailable state without requesting map assets.
 The reference-distance allowance is an accounting reservation, not an invoice
 cap; actual overruns are recorded and require a new allowance before retry.
+
+### Named place searches
+
+Core's `place.search` accepts an optional `name` filter within its required
+categories and geographic controls. Assistant route searches expose this filter.
+Existing category-only callers continue to work. There is no new configuration,
+migration, or service requirement; searches use the existing Geoapify key and
+credit budget. See [Places and maps](/en/docs/platform/places-and-maps).

@@ -15,7 +15,7 @@ import { createGeoService } from "./service";
 import { readGeoConfig } from "./settings";
 
 const setup = (overrides: Partial<Parameters<typeof createGeoService>[0]> = {}, response: unknown = autocomplete) => {
-  const fetch = mock(async () => Response.json(response));
+  const fetch = mock(async (_url: URL, _init: RequestInit) => Response.json(response));
   const reserve = mock(async (_subject, _config, cost: number, group: string) => ({ cost, group, rows: [] }));
   const settle = mock(async () => {});
   const recordTransition = mock(async () => {});
@@ -498,4 +498,47 @@ test("an audit outage preserves the provider failure and costs without logging c
   });
   expect(log).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(log.mock.calls)).not.toContain(GEO_TEST_KEY);
+});
+
+test.each([false, true])("named search validates and caches only trimmed identical names, corridor=%s", async (corridor) => {
+  const entries = new Map<string, unknown>();
+  const f = setup(
+    {
+      cache: {
+        get: async (key, schema) => (entries.has(key) ? schema.parse(entries.get(key)) : null),
+        put: async (key, _fn, value) => {
+          entries.set(key, value);
+        },
+      },
+    },
+    { type: "FeatureCollection", features: [] },
+  );
+  const base: GeoPlaceSearchInput = {
+    categories: ["attraction"],
+    ...(corridor
+      ? {
+          along: {
+            polyline6: encodeGeoTestLine([
+              { lat: 48, lon: 10 },
+              { lat: 48.2, lon: 10 },
+            ]),
+            fromKm: 0,
+            toKm: 10,
+          },
+        }
+      : { near: { lat: 48, lon: 10 } }),
+  };
+  for (const name of ["", "   ", "x".repeat(301)])
+    await expect(f.service.searchPlaces({ ...base, name }, geoTestContext)).rejects.toMatchObject({ code: "GEO_UNSUPPORTED_OPTION" });
+  expect(f.fetch).not.toHaveBeenCalled();
+  expect(f.reserve).not.toHaveBeenCalled();
+  for (const name of [" Wasserfall ", "Wasserfall", "wasserfall", "Blautopf", "Wasser  fall", "Wasser fall", "x".repeat(300), undefined])
+    await f.service.searchPlaces({ ...base, name }, geoTestContext);
+  expect(f.fetch).toHaveBeenCalledTimes(7);
+  expect(entries.size).toBe(7);
+  expect(
+    f.fetch.mock.calls.map(([url, init]) =>
+      init.method === "POST" ? (JSON.parse(String(init.body)).name ?? null) : url.searchParams.get("name"),
+    ),
+  ).toEqual(["Wasserfall", "wasserfall", "Blautopf", "Wasser  fall", "Wasser fall", "x".repeat(300), null]);
 });

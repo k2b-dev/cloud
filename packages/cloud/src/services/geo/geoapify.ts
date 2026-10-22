@@ -248,6 +248,7 @@ export class GeoapifyAdapter {
     if (input.along && line)
       body = {
         categories,
+        ...(input.name !== undefined ? { name: input.name } : {}),
         limit: input.limit ?? 20,
         filter: {
           type: "polyline",
@@ -257,6 +258,7 @@ export class GeoapifyAdapter {
       };
     else {
       params.set("categories", categories.join(","));
+      if (input.name !== undefined) params.set("name", input.name);
       if (input.near) params.set("bias", `proximity:${input.near.lon},${input.near.lat}`);
       if (input.area) params.set("filter", areaFilter(input.area));
     }

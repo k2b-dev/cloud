@@ -106,3 +106,18 @@ test("routing queries dispatch through the same service context and structured r
     error: { code: "GEO_COST_OVERRUN", details: { costs: { settledCredits: 2, unknownCredits: 0 } } },
   });
 });
+
+test("named place search keeps its public schema and German input presentation", async () => {
+  const manifest = compileCapabilityManifest("core", aiCapabilities);
+  const entry = manifest.queries.find((query) => query.localId === "place.search")!;
+  expect(JSON.stringify(entry.inputSchema)).toContain('"name"');
+  expect(geoCapabilityPresentation["place.search"].input.name).toContain("1–300");
+  const input = geoContract.searchPlaces.input.parse({ categories: ["attraction"], name: " Wasserfall ", near: { lat: 48, lon: 10 } });
+  const call = spyOn(coreGeo, "searchPlaces").mockResolvedValue({ places: [], provenance: geoProvenance(GEO_TEST_NOW) });
+  const result = await aiCapabilities.queries["place.search"].run(input, { ...context, locale: "de" });
+  expect(result.ok).toBe(true);
+  expect(call).toHaveBeenCalledWith(
+    { categories: ["attraction"], name: "Wasserfall", near: { lat: 48, lon: 10 } },
+    { ...context, locale: "de" },
+  );
+});

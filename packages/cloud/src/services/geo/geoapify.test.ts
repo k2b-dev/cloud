@@ -179,3 +179,37 @@ test("geocode always requests five candidates regardless of extra caller input",
     expect((await service.geocode(input, GEO_TEST_KEY, "en")).candidates).toHaveLength(5);
   }
 });
+
+test.each([false, true])("named Places forwards the provider filter with categories, corridor=%s", async (corridor) => {
+  const service = new GeoapifyAdapter({
+    now: () => GEO_TEST_NOW,
+    fetch: async (url, init) => {
+      expect(init.method).toBe(corridor ? "POST" : "GET");
+      if (corridor) {
+        expect(JSON.parse(String(init.body))).toMatchObject({ name: "Wasserfall", categories: ["tourism.attraction"], limit: 5 });
+      } else {
+        expect(url.searchParams.get("name")).toBe("Wasserfall");
+        expect(url.searchParams.get("categories")).toBe("tourism.attraction");
+        expect(url.searchParams.get("limit")).toBe("5");
+      }
+      return Response.json({ type: "FeatureCollection", features: [] });
+    },
+  });
+  await service.places(
+    {
+      categories: ["attraction"],
+      name: "Wasserfall",
+      limit: 5,
+      ...(corridor ? { along: { polyline6: "fixture", fromKm: 0, toKm: 10 } } : { near: { lat: 48, lon: 10 } }),
+    },
+    GEO_TEST_KEY,
+    "de",
+    undefined,
+    corridor
+      ? [
+          { lat: 48, lon: 10 },
+          { lat: 48.1, lon: 10 },
+        ]
+      : undefined,
+  );
+});

@@ -144,6 +144,7 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
   const [locationError, setLocationError] = createSignal("");
   const [start, setStart] = createSignal("");
   const [category, setCategory] = createSignal<z.infer<typeof GeoCategorySchema>>("attraction");
+  const [placeName, setPlaceName] = createSignal(props.initial.lastSearch?.name ?? "");
   const [fromKm, setFromKm] = createSignal(40);
   const [toKm, setToKm] = createSignal(80);
   const [travelMode, setTravelMode] = createSignal<"car" | "bike" | "walk">("car");
@@ -443,7 +444,16 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
     await run({ type: "location", destinationId: place.id, point: location()!.point });
   };
   const search = (insert: boolean) =>
-    run({ type: "search", insert, search: { title: t().stopSearch, categories: [category()], along: { fromKm: fromKm(), toKm: toKm() } } });
+    run({
+      type: "search",
+      insert,
+      search: {
+        title: t().stopSearch,
+        name: placeName().trim() || undefined,
+        categories: [category()],
+        along: { fromKm: fromKm(), toKm: toKm() },
+      },
+    });
   const showOptions = () => {
     setMode("options");
     setTravelMode(map().route?.options.mode ?? "car");
@@ -815,8 +825,18 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
                       </div>
                     </Match>
                     <Match when={mode() === "insert" || mode() === "along"}>
-                      <Show when={!choices().length} fallback={<p>{t().choose}</p>}>
-                        <div class="ai-map__search">
+                      <div class="ai-map__search">
+                        <div class="ai-map__actions">
+                          <TextInput
+                            label={t().placeName}
+                            type="search"
+                            icon="ti ti-search"
+                            placeholder={t().placeNamePlaceholder}
+                            value={placeName()}
+                            maxLength={300}
+                            disabled={busy()}
+                            onValueChange={setPlaceName}
+                          />
                           <Select
                             label={t().category}
                             value={category()}
@@ -829,12 +849,14 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
                               { value: "cafe", label: t().cafe },
                             ]}
                           />
+                        </div>
+                        <Show when={!choices().length}>
                           <div class="ai-map__actions">
                             <NumberInput label={t().from} value={fromKm()} min={0} onValueChange={(v) => setFromKm(v ?? 0)} />
                             <NumberInput label={t().to} value={toKm()} min={0} onValueChange={(v) => setToKm(v ?? 0)} />
                           </div>
-                        </div>
-                      </Show>
+                        </Show>
+                      </div>
                       <For each={choices()}>
                         {(p, i) => (
                           <Button variant="ghost" size="sm" disabled={busy()} onClick={() => selectPlace(p.id)}>
@@ -1034,7 +1056,7 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
                 <div class="ai-map__actions">
                   <Button
                     size="sm"
-                    disabled={busy() || toKm() <= fromKm() || toKm() - fromKm() > 200}
+                    disabled={busy() || placeName().trim().length > 300 || toKm() <= fromKm() || toKm() - fromKm() > 200}
                     onClick={() => void search(mode() === "insert")}
                   >
                     {t().search}
