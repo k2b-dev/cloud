@@ -32,7 +32,7 @@ export function Fixture(props) {
     <AppWorkspace.Head mobilePane={props.unbound ? undefined : "list"} views={props.title ? <span id="pane-title">Records</span> : undefined} actions={<button>List action</button>} />
     <AppWorkspace.Content>
       {props.island ? <solid-island style="display:contents">{main()}</solid-island> : main()}
-      <AppWorkspace.Detail id="record" open={details()} available onOpen={() => setDetails(true)} onClose={() => setDetails(false)}>
+      <AppWorkspace.Detail id="record" open={details()} available={!props.unavailable} onOpen={() => setDetails(true)} onClose={() => setDetails(false)}>
         <DetailPanel><DetailPanel.Header title="Record information" onClose={() => setDetails(false)} /><DetailPanel.Body>Information</DetailPanel.Body></DetailPanel>
       </AppWorkspace.Detail>
     </AppWorkspace.Content>
@@ -133,7 +133,7 @@ beforeAll(async () => {
         return new Response(script, { headers: { "Content-Type": "application/javascript" } });
       }
       const params = new URL(request.url).searchParams;
-      const options = Object.fromEntries(["reader", "unbound", "unsplit", "nested", "island", "title"].map((key) => [key, params.has(key)]));
+      const options = Object.fromEntries(["reader", "unbound", "unsplit", "nested", "island", "title", "unavailable"].map((key) => [key, params.has(key)]));
       return new Response(
         `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head>
 <body class="k2b-ui" style="margin:0" data-options='${JSON.stringify(options)}'><div id="app" style="container:k2b-app-area / inline-size;height:900px">${render(options)}</div>${hydrationScript}</body></html>`,
@@ -238,7 +238,7 @@ test("phone selection, Back and reload use the existing pane state", async () =>
 }, 30_000);
 
 for (const island of [false, true]) {
-  test(`phone list head: a title keeps the inset and the reader owns Details, island=${island}`, async () => {
+  test(`phone list head without an object: a title keeps the inset, no Details, island=${island}`, async () => {
     const page = await browser!.newPage({ viewport: { width: 390, height: 900 }, reducedMotion: "reduce" });
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
@@ -256,7 +256,7 @@ for (const island of [false, true]) {
         };
       });
     try {
-      await page.goto(`${origin}?title=1${island ? "&island=1" : ""}`);
+      await page.goto(`${origin}?title=1&unavailable=1${island ? "&island=1" : ""}`);
       await settled(page);
       const before = await list();
       // The head's own 1 rem inset, as the view strip and filter row keep it.
@@ -265,14 +265,6 @@ for (const island of [false, true]) {
       await page.locator('body[data-ready="true"]').waitFor();
       await settled(page);
       expect(await list()).toEqual(before);
-      // The reader still opens and returns focus to its own Details control.
-      await page.getByRole("button", { name: "Open record" }).click();
-      await settled(page);
-      await page.locator("#reader-details").click();
-      await page.getByRole("heading", { name: "Record information" }).waitFor();
-      await page.keyboard.press("Escape");
-      await settled(page);
-      expect(await page.locator("#reader-details").evaluate((e) => e === document.activeElement)).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
@@ -280,13 +272,17 @@ for (const island of [false, true]) {
   }, 30_000);
 }
 
-test("phone head without a list pane keeps the shared Details control", async () => {
-  const page = await browser!.newPage({ viewport: { width: 390, height: 900 }, reducedMotion: "reduce" });
-  try {
-    await page.goto(`${origin}?unbound=1`);
-    await settled(page);
-    expect((await geometry(page)).toggle).toBe(true);
-  } finally {
-    await page.close();
-  }
-});
+// Only an unavailable control leaves a split list head; an available one, an
+// unbound head and an unsplit Main keep their only shared way to Details.
+for (const query of ["title=1", "unbound=1&unavailable=1", "unsplit=1&unavailable=1"]) {
+  test(`phone head keeps the shared Details control: ${query}`, async () => {
+    const page = await browser!.newPage({ viewport: { width: 390, height: 900 }, reducedMotion: "reduce" });
+    try {
+      await page.goto(`${origin}?${query}`);
+      await settled(page);
+      expect((await geometry(page)).toggle).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+}

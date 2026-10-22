@@ -4596,27 +4596,38 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   clip-path: none;
   white-space: normal;
 }
-/* On a phone, a split list/reader page shows its head only with the list;
-   the reader owns the object's Details control, so the list head neither
-   shows nor reserves room for the shared one. */
+/* On a phone, a split list/reader page shows its head only with the list,
+   and its reader owns the object's Details control. Without an available
+   object the shared control has nothing to open, so the list head neither
+   shows nor reserves room for it. */
 @media not all and (min-width: 48rem) {
   .k2b-ui
-    .k2b-app-workspace:has(> .k2b-app-workspace__head[data-workspace-head-pane])
+    .k2b-app-workspace:has(> .k2b-app-workspace__head[data-workspace-head-pane]):has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__main.has-panes:not([data-workspace-levels]),
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__main.has-panes:not([data-workspace-levels])
+    )
     > .k2b-app-workspace__content
-    > .k2b-app-workspace__detail-toggle,
+    > .k2b-app-workspace__detail-toggle:disabled,
   .k2b-ui
-    .k2b-app-workspace:has(> .k2b-app-workspace__head[data-workspace-head-pane])
+    .k2b-app-workspace:has(> .k2b-app-workspace__head[data-workspace-head-pane]):has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__main.has-panes:not([data-workspace-levels]),
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__main.has-panes:not([data-workspace-levels])
+    )
     > .k2b-app-workspace__content
     > :is(solid-island, solid-client)
-    > .k2b-app-workspace__detail-toggle {
+    > .k2b-app-workspace__detail-toggle:disabled {
     display: none;
   }
   .k2b-ui
-    .k2b-app-workspace:has(
-      > .k2b-app-workspace__content > .k2b-app-workspace__detail-toggle[data-workspace-detail-reopen="true"],
-      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail-toggle[data-workspace-detail-reopen="true"]
+    .k2b-app-workspace:has(> .k2b-app-workspace__head[data-workspace-head-pane]):has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__main.has-panes:not([data-workspace-levels]),
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__main.has-panes:not([data-workspace-levels])
+    ):has(
+      > .k2b-app-workspace__content > .k2b-app-workspace__detail-toggle:disabled,
+      > .k2b-app-workspace__content > :is(solid-island, solid-client) > .k2b-app-workspace__detail-toggle:disabled
     )
     > .k2b-app-workspace__head.k2b-app-workspace__head[data-workspace-head-pane] {
     --k2b-workspace-head-end: 1rem;
   }
 }
+
