@@ -208,6 +208,7 @@ export const startContactsGeoHarness = async () => {
     holdLocate: false,
     autocompleteRequests: [],
     locateRequests: 0,
+    saves: [],
   };
   let releaseLocate: () => void = () => {};
   const scenarios = new Map<string, Scenario>();

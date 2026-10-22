@@ -276,7 +276,7 @@ describe("ContactUpsertForm model", () => {
       computedAt: "2026-10-22T10:00:00.000Z",
     };
     const empty = emptyAddressRow(rowLabels);
-    const picked = pickAddressSuggestion(empty, {
+    const suggestion = {
       line1: "Frauenstraße 28",
       postalCode: "89073",
       city: "Ulm",
@@ -287,15 +287,20 @@ describe("ContactUpsertForm model", () => {
       confidence: 1,
       buildingConfidence: 1,
       provenance,
-    });
+    };
+    const picked = pickAddressSuggestion(empty, suggestion);
     expect(picked).toMatchObject({
       line1: "Frauenstraße 28",
       postalCode: "89073",
       city: "Ulm",
       countryCode: "DE",
-      stateRegion: "",
+      stateRegion: "Baden-Württemberg",
       geo: "picked",
     });
+    // Fields the suggestion lacks are cleared, never kept from the previous address beside the new point.
+    expect(
+      pickAddressSuggestion({ ...empty, postalCode: "89073", stateRegion: "Bayern" }, { ...suggestion, postalCode: "", stateRegion: "" }),
+    ).toMatchObject({ postalCode: "", stateRegion: "" });
     const payload = (row: EditableAddress) => buildContactPayload({ ...baseDraft, addresses: [row] }).addresses?.[0];
     expect(payload(picked)?.location).toEqual({ point: { lat: 48.4, lon: 9.99 }, provenance });
 

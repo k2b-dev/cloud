@@ -194,4 +194,23 @@ suite("Contacts address location", () => {
     expect(result).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
     expect((await get(slow.id)).addresses[0]!.location).toBeNull();
   });
+  test("concurrent readers share one paid lookup; a failed claimant lets the next reader try", async () => {
+    const contact = await create({ line1: "Frauenstraße 50" });
+    let calls = 0;
+    const slow = async (): Promise<AddressGeocodeOutcome> => {
+      calls += 1;
+      await Bun.sleep(300);
+      return { kind: "candidates", candidates: [sure(48.45)] };
+    };
+    const results = await Promise.all([locate(reader, contact, slow), locate(writer, contact, slow), locate(reader, contact, slow)]);
+    expect(calls).toBe(1);
+    for (const result of results)
+      expect(unwrap(result)).toMatchObject({ state: "located", location: { status: "found", point: { lat: 48.45 } } });
+
+    const failing = await create({ line1: "Frauenstraße 52" });
+    expect(unwrap(await locate(reader, failing, geocoder({ kind: "failed" }).geocode))).toEqual({ state: "failed" });
+    const retry = geocoder({ kind: "candidates", candidates: [sure(48.46)] });
+    expect(unwrap(await locate(reader, failing, retry.geocode))).toMatchObject({ state: "located", location: { status: "found" } });
+    expect(retry.calls).toHaveLength(1);
+  });
 });

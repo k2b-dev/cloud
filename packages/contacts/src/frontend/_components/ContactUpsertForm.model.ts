@@ -48,13 +48,17 @@ export const editAddressField = (
   return { ...row, [field]: value, geo, location: null };
 };
 
-/** A chosen suggestion fills street, postal code, city and country; every field stays editable. */
+/**
+ * A chosen suggestion replaces every location field, also with an empty value, so its point never sits beside a
+ * postal code or region of the previous address. Every field stays editable.
+ */
 export const pickAddressSuggestion = (row: EditableAddress, address: GeoAddress): EditableAddress => ({
   ...row,
-  line1: address.line1 || row.line1,
-  postalCode: address.postalCode || row.postalCode,
-  city: address.city || row.city,
-  countryCode: address.countryCode || row.countryCode,
+  line1: address.line1,
+  postalCode: address.postalCode,
+  city: address.city,
+  stateRegion: address.stateRegion,
+  countryCode: address.countryCode,
   geo: "picked",
   location: { point: address.point, provenance: address.provenance },
 });

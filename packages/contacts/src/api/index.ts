@@ -470,6 +470,10 @@ const UpdateContactSchema = z.object({
   addresses: z.array(ContactAddressInputSchema).optional(),
   websites: z.array(ContactWebsiteInputSchema).optional(),
   bankAccounts: z.array(ContactBankAccountInputSchema).optional(),
+  expectedUpdatedAt: z.iso
+    .datetime()
+    .optional()
+    .describe("The contact's updatedAt as read; a newer change answers 409 instead of being overwritten."),
 });
 
 const MoveContactSchema = z.object({
@@ -1760,7 +1764,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const bookId = c.req.param("bookId") ?? "";
       const contactId = c.req.param("contactId") ?? "";
-      const data = c.req.valid("json");
+      const { expectedUpdatedAt, ...data } = c.req.valid("json");
 
       const internalBookId = await resolvePublicId("books", bookId);
       if (!internalBookId) return respond(c, fail(err.notFound("Book")));
@@ -1774,6 +1778,7 @@ const app = new Hono<AuthContext>()
         bookId: internalBookId!,
         id: ids[0]!,
         data: internalData,
+        expectedUpdatedAt,
       });
       return respond(c, result.ok ? ok((await projectContacts([result.data]))[0]!) : result);
     },

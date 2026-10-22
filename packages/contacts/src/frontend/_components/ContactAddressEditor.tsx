@@ -31,7 +31,8 @@ export default function ContactAddressEditor(props: Props) {
   const edit = (field: Parameters<typeof editAddressField>[1], value: string) =>
     setRow((current) => editAddressField(current, field, value));
 
-  const saveMutation = mutations.create<Contact, ReturnType<typeof buildContactPayload>>({
+  type AddressPatch = { addresses: NonNullable<ReturnType<typeof buildContactPayload>["addresses"]>; expectedUpdatedAt: string };
+  const saveMutation = mutations.create<Contact, AddressPatch>({
     mutation: async (payload, { abortSignal }) => {
       const response = await apiClient.books[":bookId"].contacts[":contactId"].$patch(
         { param: { bookId: props.contact.bookId, contactId: props.contact.id }, json: payload },
@@ -52,9 +53,12 @@ export default function ContactAddressEditor(props: Props) {
     if (saveMutation.loading()) return;
     setSaveError(null);
     try {
-      void saveMutation.mutate(
-        buildContactPayload({ ...draft, addresses: draft.addresses.map((current, index) => (index === props.index ? row() : current)) }),
-      );
+      // Only the addresses travel, guarded by the revision this dialog read: a concurrent edit answers 409.
+      const { addresses } = buildContactPayload({
+        ...draft,
+        addresses: draft.addresses.map((current, index) => (index === props.index ? row() : current)),
+      });
+      void saveMutation.mutate({ addresses: addresses ?? [], expectedUpdatedAt: props.contact.updatedAt });
     } catch (error) {
       setSaveError(contactFormErrorMessage(error, t(), t().prepareFailed));
     }

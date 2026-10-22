@@ -152,7 +152,7 @@ test("an exhausted budget answers in the list without asking; without setup the 
   }
 });
 
-test("the focused address editor saves a picked point with its fields and keeps the rest of the contact", async () => {
+test("the focused address editor saves a picked point with its fields and only the addresses", async () => {
   const page = await open("address", { view: "address", contact: jana(null), availability: availability.configured });
   try {
     const street = page.getByRole("combobox", { name: /Straße und Hausnummer/ });
@@ -166,10 +166,12 @@ test("the focused address editor saves a picked point with its fields and keeps 
     await (await saved).response();
     expect(harness.state.saves).toHaveLength(1);
     const body = harness.state.saves[0] as {
-      emails: { email: string }[];
+      expectedUpdatedAt: string;
       addresses: { line1: string; postalCode: string; city: string; location?: { point: { lat: number } } }[];
     };
-    expect(body.emails.map((email) => email.email)).toEqual(["jana.berger@hoffmann-druck.example"]);
+    // Only the addresses travel, with the revision the dialog read.
+    expect(Object.keys(body).sort()).toEqual(["addresses", "expectedUpdatedAt"]);
+    expect(body.expectedUpdatedAt).toBe("2026-10-22T10:00:00.000Z");
     expect(body.addresses).toHaveLength(1);
     expect(body.addresses[0]).toMatchObject({ line1: "Frauenstraße 28", postalCode: "89079", city: "Ulm-Wiblingen" });
     expect(body.addresses[0]!.location?.point.lat).toBeCloseTo(48.40841, 5);

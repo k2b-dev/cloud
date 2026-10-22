@@ -115,6 +115,7 @@ export type ContactAddressLocateResult =
   | { state: "failed" };
 
 type AddressRow = AddressGeoColumns & {
+  geo_lookup_at: Date | null;
   line1: string;
   postal_code: string;
   city: string;
@@ -125,7 +126,7 @@ type AddressRow = AddressGeoColumns & {
 const readAddress = async (contactId: string, addressId: string) =>
   (
     await sql<AddressRow[]>`
-      SELECT line1, postal_code, city, state_region, country_code, geo_hash, geo_lat, geo_lon, geo_provenance, geo_checked_at
+      SELECT line1, postal_code, city, state_region, country_code, geo_hash, geo_lat, geo_lon, geo_provenance, geo_checked_at, geo_lookup_at
       FROM contacts.contact_addresses
       WHERE id = ${addressId}::uuid AND contact_id = ${contactId}::uuid
     `
@@ -143,32 +144,72 @@ const fields = (row: AddressRow): AddressFields => ({
  * contact first and pass a geocoder that runs as the requesting person, on that person's budget.
  * A stored answer is returned without a new lookup; only a changed address searches again.
  */
+/**
+ * A claimed lookup outlives Core's geocode deadline (5 s) with margin; an older claim belongs to a lookup that died.
+ * Waiting readers poll the row for that deadline plus slack, then report a retryable failure.
+ */
+const LOOKUP_CLAIM_SECONDS = 20;
+const LOOKUP_WAIT_MS = 6000;
+const LOOKUP_POLL_MS = 250;
+
 export const locateAddress = async (config: {
   contactId: string;
   addressId: string;
   geocode: (input: GeoGeocodeInput) => Promise<AddressGeocodeOutcome>;
   now?: () => Date;
+  /** Test seam for the bounded wait on another reader's lookup. */
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<Result<ContactAddressLocateResult>> => {
   const row = await readAddress(config.contactId, config.addressId);
   if (!row) return fail(err.notFound("Address"));
   const address = fields(row);
   const stored = addressLocation(address, row);
   if (stored) return ok({ state: "located", location: stored });
+  const hash = addressGeoHash(address);
 
-  const outcome = await config.geocode({
-    fields: {
-      line1: address.line1,
-      postalCode: address.postalCode,
-      city: address.city,
-      ...(address.stateRegion ? { stateRegion: address.stateRegion } : {}),
-    },
-    countryCode: address.countryCode,
-  });
+  // One paid lookup per address: concurrent readers wait for the claimant's stored answer instead of calling Core.
+  const claimed = await sql`
+    UPDATE contacts.contact_addresses
+    SET geo_lookup_at = now()
+    WHERE id = ${config.addressId}::uuid
+      AND contact_id = ${config.contactId}::uuid
+      AND geo_hash IS DISTINCT FROM ${hash}
+      AND (geo_lookup_at IS NULL OR geo_lookup_at < now() - make_interval(secs => ${LOOKUP_CLAIM_SECONDS}))
+    RETURNING id
+  `;
+  if (!claimed.length) {
+    const sleep = config.sleep ?? Bun.sleep;
+    for (let waited = 0; waited < LOOKUP_WAIT_MS; waited += LOOKUP_POLL_MS) {
+      const current = await readAddress(config.contactId, config.addressId);
+      if (!current) return fail(err.notFound("Address"));
+      const location = addressLocation(fields(current), current);
+      if (location) return ok({ state: "located", location });
+      if (current.geo_lookup_at === null) break;
+      await sleep(LOOKUP_POLL_MS);
+    }
+    return ok({ state: "failed" });
+  }
+
+  let outcome: AddressGeocodeOutcome = { kind: "failed" };
+  try {
+    outcome = await config.geocode({
+      fields: {
+        line1: address.line1,
+        postalCode: address.postalCode,
+        city: address.city,
+        ...(address.stateRegion ? { stateRegion: address.stateRegion } : {}),
+      },
+      countryCode: address.countryCode,
+    });
+  } finally {
+    // Unstored answers release the claim at once, so the next reader may try again.
+    if (outcome.kind !== "candidates" && outcome.kind !== "not_found")
+      await sql`UPDATE contacts.contact_addresses SET geo_lookup_at = NULL WHERE id = ${config.addressId}::uuid`;
+  }
   if (outcome.kind === "not_configured" || outcome.kind === "failed") return ok({ state: outcome.kind });
   if (outcome.kind === "budget_exhausted") return ok({ state: outcome.kind, scope: outcome.scope, resetsAt: outcome.resetsAt });
 
   const match = outcome.kind === "candidates" ? safeAddressMatch(outcome.candidates) : null;
-  const hash = addressGeoHash(address);
   const checkedAt = match ? new Date(match.provenance.computedAt) : (config.now?.() ?? new Date());
   // An edit replaces the row, so a lookup for the old text never lands on the new one.
   await sql`
@@ -177,7 +218,8 @@ export const locateAddress = async (config: {
         geo_lat = ${match?.point.lat ?? null},
         geo_lon = ${match?.point.lon ?? null},
         geo_provenance = (${geoProvenanceJson(match?.provenance)}::text)::jsonb,
-        geo_checked_at = ${checkedAt}
+        geo_checked_at = ${checkedAt},
+        geo_lookup_at = NULL
     WHERE id = ${config.addressId}::uuid
       AND contact_id = ${config.contactId}::uuid
       AND geo_hash IS DISTINCT FROM ${hash}
