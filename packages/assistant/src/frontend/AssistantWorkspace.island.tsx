@@ -57,7 +57,7 @@ import {
   reconcileChatMentions,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
 import { revokeChatWebsite } from "../artifacts/approval-preferences";
