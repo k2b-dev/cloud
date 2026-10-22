@@ -45,7 +45,7 @@ export const runGeoRouteChain = async <T>(
   let reservation: Awaited<ReturnType<typeof ledger.reserve>>;
   try {
     // One atomic admission for all known geocodes and every possible paid routing step.
-    reservation = await ledger.reserve(context.accessSubject, config, reserveCost, "routing", now());
+    reservation = await ledger.reserve(context.accessSubject, config, reserveCost, "route", now());
   } catch (error) {
     if (error instanceof GeoError && error.code === "GEO_BUDGET_EXHAUSTED" && error.details.scope === "cloud")
       await dependencies.recordTransition("monthly_budget_exhausted", config.timezone, context);

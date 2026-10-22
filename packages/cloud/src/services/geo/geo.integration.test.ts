@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { RedisClient, SQL } from "bun";
 import { createDisposableDatabase, suiteFor, testInfra } from "../../../../../scripts/fixtures/test-infra";
 import { createGeoBucket } from "./bucket";
@@ -34,6 +34,9 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
       target_type text, target_id text, target_label text, target_provider text,
       reason text, error_code text, error_message text, request_id text, metadata jsonb
     )`.simple();
+  });
+  beforeEach(async () => {
+    await db`TRUNCATE geo.shares, geo.usage, geo.audit_transitions, audit.events`;
   });
   afterAll(async () => {
     if (redis) {
@@ -254,21 +257,19 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
   test("concurrent admitted routing reservations settle actual overruns atomically and refuse further admission", async () => {
     const instant = new Date("2028-01-12T10:00:00.000Z");
     const settings = { ...geoTestConfig, monthlyCredits: 3, personDailyCredits: 3 };
-    const results = await Promise.allSettled(
-      Array.from({ length: 12 }, () => ledger().reserve(subject, settings, 1000, "routing", instant)),
-    );
+    const results = await Promise.allSettled(Array.from({ length: 12 }, () => ledger().reserve(subject, settings, 1000, "route", instant)));
     const reservations = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
     expect(reservations).toHaveLength(3);
     const outcomes = await Promise.allSettled([
       ...reservations.map((reservation) => ledger().settle(reservation, 2000)),
-      ...Array.from({ length: 12 }, () => ledger().reserve(subject, settings, 1000, "routing", instant)),
+      ...Array.from({ length: 12 }, () => ledger().reserve(subject, settings, 1000, "route", instant)),
     ]);
     expect(outcomes.slice(0, 3).every((result) => result.status === "fulfilled")).toBeTrue();
     expect(outcomes.slice(3).every((result) => result.status === "rejected")).toBeTrue();
     const usage = await db<{ used: number }[]>`SELECT used::int AS used FROM geo.usage WHERE period IN ('2028-01','2028-01-12')`;
     const shares = await db<
       { used: number }[]
-    >`SELECT used::int AS used FROM geo.shares WHERE period IN ('2028-01','2028-01-12') AND function_group='routing'`;
+    >`SELECT used::int AS used FROM geo.shares WHERE period IN ('2028-01','2028-01-12') AND function_group='route'`;
     expect(usage.map((row) => row.used)).toEqual([6000, 6000]);
     expect(shares.map((row) => row.used)).toEqual([6000, 6000]);
     expect(await ledger().availability(subject, settings, instant)).toMatchObject({
@@ -277,7 +278,7 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
     });
     for (const actual of [-1, NaN, Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1])
       await expect(ledger().settle(reservations[0]!, actual)).rejects.toThrow("Invalid geo settlement");
-    await expect(ledger().reserve(subject, settings, -1000, "routing", instant)).rejects.toThrow("Invalid geo reservation");
+    await expect(ledger().reserve(subject, settings, -1000, "route", instant)).rejects.toThrow("Invalid geo reservation");
   });
   test("routing overrun debits real usage and shares beyond reservation and stops later paid legs", async () => {
     const instant = new Date("2028-02-12T10:00:00.000Z");
