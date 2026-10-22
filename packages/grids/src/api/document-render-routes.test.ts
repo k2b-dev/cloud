@@ -225,7 +225,7 @@ let metadataResult: { ok: true; data: { data: typeof enrichedData } } | { ok: fa
 let htmlResult: { ok: true; data: string } | { ok: false; error: { message: string; status: 400 | 500 } };
 let previewPdfResult:
   | { ok: true; pdf: { pdf: Uint8Array } }
-  | { ok: false; error: { message: string; phase: "html" | "pdf"; code: string; status: 400 | 500 | 502 } };
+  | { ok: false; error: { message: string; phase: "html" | "pdf"; code: string; status: 400 | 500 | 502 | 503 } };
 let createResult: { ok: true; data: typeof document } | { ok: false; error: { message: string; status: 400 | 500 | 502 } };
 let permissionChecks: PermissionLevel[] = [];
 let liveInputs: unknown[] = [];
@@ -898,18 +898,24 @@ describe("document render routes", () => {
     for (const [serviceStatus, expectedStatus] of [
       [400, 400],
       [502, 502],
+      [503, 503],
       [500, 500],
     ] as const) {
       test(`POST ${suffix} maps PDF status ${serviceStatus} to ${expectedStatus}`, async () => {
         previewPdfResult = {
           ok: false,
-          error: { message: "PDF render failed", phase: "pdf", code: "PDF_FAILED", status: serviceStatus },
+          error: {
+            message: serviceStatus === 503 ? "The PDF renderer is busy. Try again shortly." : "PDF render failed",
+            phase: "pdf",
+            code: serviceStatus === 503 ? "busy" : "PDF_FAILED",
+            status: serviceStatus,
+          },
         };
 
         const response = await app().request(path(suffix), postJson(body));
 
         expect(response.status).toBe(expectedStatus);
-        expect(await response.json()).toEqual({ message: "PDF render failed", phase: "pdf", code: "PDF_FAILED" });
+        expect(await response.json()).toEqual({ message: previewPdfResult.error.message, phase: "pdf", code: previewPdfResult.error.code });
         expect(callOrder).toEqual(["live-data", "metadata", "preview-pdf"]);
       });
     }

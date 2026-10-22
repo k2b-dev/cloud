@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Lessons learned
@@ -23,6 +23,10 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Shared admission changes caller dependencies and error projections | A mocked HTTP transport still reaches real admission; application wrappers turn retryable PDF saturation into generic failures. | PDF unit callers mock admission; real renderer suites gate on Valkey. Assistant PDF tests and Grids document rendering, profile preview, template-route and merge-download tests preserve busy/503 and retry guidance. |
+| Cross-application extension creation races | Per-app setup locks leave two applications free to race on the same PostgreSQL extension catalog entry. | Core owns `pgcrypto`; `core/migrate/core/extensions.integration.test.ts` provisions it on a fresh database before two different application migrations run concurrently. |
+| HTTP outlives its dependencies | A stopping process accepts HTTP while stop hooks disconnect shared services, then cuts active responses at exit. | Cloud `_internal/http-drain.test.ts` covers admission and stream cancellation; `_internal/http-drain.integration.test.ts` sends real SIGTERM and verifies current requests use Sync until HTTP drains, readiness is 503, and stream abort precedes lifecycle cleanup. |
+| A downstream limit multiplies with replicas | Local counters protect process memory but allow several replicas to overload a shared service. | Cloud `services/downstream-budget.integration.test.ts` holds Gotenberg and SMTP slots in separate processes and verifies fleet capacity and release; unit tests guard cancellation, late admission and fail-closed busy. Operations names the local limits and what they protect. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |

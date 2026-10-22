@@ -713,8 +713,9 @@ expires.
 
 During the rollout to this release, a replica of the previous version takes no
 setup lock. Restart old and new replicas of one app one at a time until all
-run this release. Keep Core first: it creates the shared schemas other
-applications need.
+run this release. Keep Core first: it creates the shared schemas and the
+installation-wide `pgcrypto` extension other applications need. Updated app
+migrations no longer create that extension independently.
 
 ### Prepare Pulse's new data store
 

@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { Socket } from "node:net";
 import * as nodemailer from "nodemailer";
+import { smtpSink } from "../../../../../scripts/fixtures/smtp-sink";
+import { DownstreamBusyError, downstreamBudget } from "../downstream-budget";
 import * as settings from "../settings";
 import * as endpoint from "./resolve-host";
 import * as store from "./store";
 import { smtpFailureMessage } from "./test-send";
 import * as transport from "./transport";
 
+let admission: ReturnType<typeof spyOn<typeof downstreamBudget, "acquire">>;
 let target: ReturnType<typeof spyOn<typeof endpoint, "resolveMailHost">>;
 beforeEach(() => {
+  admission = spyOn(downstreamBudget, "acquire").mockResolvedValue(() => {});
   target = spyOn(endpoint, "resolveMailHost").mockResolvedValue({
     host: "smtp.example.org",
     addresses: [
@@ -18,7 +22,10 @@ beforeEach(() => {
     servername: "smtp.example.org",
   });
 });
-afterEach(() => target.mockRestore());
+afterEach(() => {
+  target.mockRestore();
+  admission.mockRestore();
+});
 
 const credentials = {
   smtpHost: "smtp.example.org",
@@ -199,7 +206,7 @@ for (const scenario of ["connection", "all connections", "authentication", "reci
     const resolved = await transport.resolveMailTransport(credentials);
     const first = resolved.build(0);
     const second = resolved.build(1);
-    const build = spyOn(resolved, "build").mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const build = spyOn(resolved, "build").mockImplementation((index) => (index === 0 ? first : second));
     const builder = spyOn(transport, "resolveMailTransport").mockResolvedValue(resolved);
     const resolve = spyOn(store, "resolveMailCredentials").mockResolvedValue(credentials);
     const record = spyOn(audit, "record").mockResolvedValue();
@@ -231,11 +238,11 @@ for (const scenario of ["connection", "all connections", "authentication", "reci
       const sending = outgoingMailTest.send("alerts", "recipient@example.org", { actor: { uid: "admin" } });
       if (scenario === "connection") {
         await sending;
-        expect(build.mock.calls).toEqual([[0], [1]]);
+        expect(build.mock.calls.map(([index]) => index)).toEqual([0, 1, 1]);
         expect(firstSent).not.toHaveBeenCalled();
         expect(secondVerified).toHaveBeenCalledTimes(1);
         expect(secondSent).toHaveBeenCalledTimes(1);
-        expect(secondClosed).toHaveBeenCalledTimes(1);
+        expect(secondClosed).toHaveBeenCalledTimes(2);
         expect(failed).not.toHaveBeenCalled();
       } else {
         await expect(sending).rejects.toMatchObject({
@@ -243,13 +250,15 @@ for (const scenario of ["connection", "all connections", "authentication", "reci
           status: 502,
           message: scenario === "all connections" ? "final connection failed" : error.message,
         });
-        expect(build.mock.calls).toEqual(scenario === "all connections" ? [[0], [1]] : [[0]]);
+        expect(build.mock.calls.map(([index]) => index)).toEqual(
+          scenario === "all connections" ? [0, 1] : scenario === "authentication" ? [0] : [0, 0],
+        );
         expect(secondVerified).toHaveBeenCalledTimes(scenario === "all connections" ? 1 : 0);
         expect(secondSent).not.toHaveBeenCalled();
         expect(failed).toHaveBeenCalledTimes(1);
       }
       expect(firstVerified).toHaveBeenCalledTimes(1);
-      expect(firstClosed).toHaveBeenCalledTimes(1);
+      expect(firstClosed).toHaveBeenCalledTimes(scenario === "recipient" || scenario === "socket after preflight" ? 2 : 1);
     } finally {
       for (const spy of [
         build,
@@ -271,3 +280,46 @@ for (const scenario of ["connection", "all connections", "authentication", "reci
     }
   });
 }
+
+test("profile test refuses shared SMTP overload before connecting", async () => {
+  const { outgoingMailTest } = await import("./test-send");
+  const { audit } = await import("../audit");
+  const resolve = spyOn(store, "resolveMailCredentials").mockResolvedValue(credentials);
+  const record = spyOn(audit, "record").mockResolvedValue();
+  const failed = spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async (value) => value.result);
+  admission.mockRejectedValueOnce(new DownstreamBusyError("smtp"));
+  try {
+    await expect(outgoingMailTest.send("alerts", "recipient@example.org", { actor: { uid: "admin" } })).rejects.toMatchObject({
+      status: 503,
+      message: "smtp is busy; retry later.",
+    });
+    expect(target).not.toHaveBeenCalled();
+  } finally {
+    for (const mock of [resolve, record, failed]) mock.mockRestore();
+  }
+});
+
+test("profile preflight and delivery use fresh owned sockets within one SMTP slot", async () => {
+  const { outgoingMailTest } = await import("./test-send");
+  const { audit } = await import("../audit");
+  const sink = smtpSink();
+  target.mockResolvedValue({ host: "smtp.test", addresses: [{ address: "127.0.0.1", family: 4 }], servername: "smtp.test" });
+  const resolve = spyOn(store, "resolveMailCredentials").mockResolvedValue({ ...credentials, smtpPort: sink.port });
+  const record = spyOn(audit, "record").mockResolvedValue();
+  const read = spyOn(settings, "get").mockResolvedValue("Cloud");
+  let released = false;
+  admission.mockResolvedValueOnce(() => {
+    released = true;
+  });
+  try {
+    await outgoingMailTest.send("alerts", "recipient@example.org", { actor: { uid: "admin" } });
+    expect(sink.connections).toBe(2);
+    expect(sink.messages).toHaveLength(1);
+    expect(sink.messages[0]?.to).toEqual(["recipient@example.org"]);
+    expect(admission).toHaveBeenCalledTimes(1);
+    expect(released).toBe(true);
+  } finally {
+    sink.stop();
+    for (const mock of [resolve, record, read]) mock.mockRestore();
+  }
+});

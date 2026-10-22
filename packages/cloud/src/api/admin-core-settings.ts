@@ -334,7 +334,10 @@ const app = new Hono<AuthContext>()
       return c.json({ ok: true, bytes: result.bytes, contentType: result.contentType });
     } catch (error) {
       if (error instanceof GotenbergRenderError) {
-        return c.json({ message: error.message, code: error.code, status: error.status }, error.code === "not_configured" ? 400 : 502);
+        return c.json(
+          { message: error.message, code: error.code, status: error.status },
+          error.code === "busy" ? 503 : error.code === "not_configured" ? 400 : 502,
+        );
       }
       return c.json({ message: "Failed to test Gotenberg PDF rendering" }, 500);
     }

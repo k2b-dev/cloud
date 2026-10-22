@@ -1,6 +1,13 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { DownstreamBusyError, downstreamBudget } from "../../../cloud/src/services/downstream-budget";
 import { validateDocumentQueryOutput } from "./document-query-output";
 import { renderDocumentHtmlPdf, renderDocumentPdfPreview } from "./document-rendering";
+
+let admission: ReturnType<typeof spyOn<typeof downstreamBudget, "acquire">>;
+beforeEach(() => {
+  admission = spyOn(downstreamBudget, "acquire").mockResolvedValue(() => {});
+});
+afterEach(() => admission.mockRestore());
 
 test("query PDFs render multiple rows and nested items through the shared bounded renderer", async () => {
   const files = new Map<string, string>();
@@ -128,3 +135,34 @@ test("other renderer failures keep the generic message", async () => {
     expect.objectContaining({ code: "bad_response", error: "Gotenberg returned HTTP 503." }),
   );
 });
+
+for (const [locale, message] of [
+  ["en", "The PDF renderer is busy. Try again shortly."],
+  ["de", "Die PDF-Erstellung ist ausgelastet. Versuche es in Kürze erneut."],
+] as const) {
+  test(`document rendering and PDF previews preserve retryable saturation in ${locale}`, async () => {
+    using warn = spyOn(console, "warn").mockImplementation(() => {});
+    admission.mockRejectedValue(new DownstreamBusyError("gotenberg"));
+    const config = { url: "http://renderer.invalid", timeoutMs: 1000, maxHtmlBytes: 10_000, maxPdfBytes: 10_000 };
+    const fetch = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Busy renders must not reach HTTP"));
+    try {
+      const document = await renderDocumentHtmlPdf({ content: { body: "<p>Report</p>" }, data: {}, filename: "report.pdf" }, locale, {
+        config,
+      });
+      expect(document).toMatchObject({ ok: false, error: { code: "busy", status: 503, message } });
+      const preview = await renderDocumentPdfPreview(
+        { renderer: { kind: "html", body: "<p>Report</p>", numberTemplate: "", filenameTemplate: "" } },
+        {},
+        "report.pdf",
+        config,
+        locale,
+      );
+      expect(preview).toMatchObject({ ok: false, error: { phase: "pdf", code: "busy", status: 503, message } });
+      expect(admission).toHaveBeenCalledTimes(2);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      fetch.mockRestore();
+    }
+  });
+}

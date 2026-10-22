@@ -1,11 +1,18 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { AuthContext } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { DownstreamBusyError, downstreamBudget } from "../../../cloud/src/services/downstream-budget";
 import { createArtifactServiceRoutes } from "./api";
 import { decodePdfRequest, encodePdfRequest, PdfRequest } from "./pdf-contracts";
 import { authorizePdf, executePdf, studioPdf } from "./pdf-service";
 import { ArtifactError, artifacts } from "./service";
 import { testIdentity } from "./test-identity";
+
+let admission: ReturnType<typeof spyOn<typeof downstreamBudget, "acquire">>;
+beforeEach(() => {
+  admission = spyOn(downstreamBudget, "acquire").mockResolvedValue(() => {});
+});
+afterEach(() => admission.mockRestore());
 
 const config = { url: "http://pdf.test", timeoutMs: 1000, maxHtmlBytes: 1024 * 1024, maxPdfBytes: 1024 * 1024 };
 
@@ -179,4 +186,10 @@ test("runtime PDF denies before parsing or executing and returns binary PDF on s
     access.mockRestore();
     execute.mockRestore();
   }
+});
+
+test("PDF rendering preserves retryable shared admission failures", async () => {
+  admission.mockRejectedValueOnce(new DownstreamBusyError("gotenberg"));
+  await expect(executePdf({ operation: "render", html: "hello" }, config)).rejects.toMatchObject({ code: "busy", status: 503 });
+  expect(admission).toHaveBeenCalledTimes(1);
 });
