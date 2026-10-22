@@ -84,9 +84,11 @@ for (const width of [1440, 390]) {
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
       const composer = panel.locator('textarea:not([aria-hidden="true"])');
       if (width === 1440) expect(await page.locator("[data-cloud-panel-frame]").getAttribute("src")).toContain("cloud_panel_context");
+      const idleBox = await composer.boundingBox();
       await composer.fill("Assistant draft from this panel");
       expect(await composer.inputValue()).toBe("Assistant draft from this panel");
-      await panel.getByText("Draft not saved yet", { exact: true }).waitFor({ state: "visible" });
+      expect(await panel.getByText("Draft not saved yet", { exact: true }).isVisible()).toBe(false);
+      expect(await composer.boundingBox()).toEqual(idleBox);
       await page.locator('[data-cloud-panel-provider="second"]').click();
       expect(await page.locator("#cloud-panel").getAttribute("data-provider")).toBe("assistant");
       await panel.getByText("Draft not saved yet", { exact: true }).waitFor({ state: "hidden" });
@@ -118,6 +120,7 @@ for (const width of [1440, 390]) {
       await panel.getByText("The project plan is ready for your review.", { exact: true }).waitFor();
       expect(await composer.inputValue()).toBe("");
       await composer.fill("Next unsent draft");
+      await page.locator("[data-cloud-panel-close]").click();
       await panel.getByText("Draft not saved yet", { exact: true }).waitFor({ state: "hidden" });
       await page.locator("[data-cloud-panel-close]").click();
       await page.locator("#open-chat").click();
@@ -197,6 +200,7 @@ test("Assistant keeps an uploading panel mounted and restores the confirmed file
       .setInputFiles({ name: "planning.txt", mimeType: "text/plain", buffer: Buffer.from("Synthetic project notes") });
     await panel.getByText("planning.txt", { exact: true }).waitFor();
     const upload = page.waitForRequest((request) => request.url().endsWith("/files") && request.method() === "POST");
+    await page.locator("[data-cloud-panel-close]").click();
     await panel.getByRole("button", { name: "Save drafts", exact: true }).click();
     await upload;
     await page.locator('[data-cloud-panel-provider="second"]').click();
@@ -881,6 +885,7 @@ for (const width of [1440, 390]) {
       const composer = panel.locator('textarea:not([aria-hidden="true"])');
       await composer.fill("Local draft A");
       fixture.assistant.loseCreate();
+      await page.locator("[data-cloud-panel-close]").click();
       await panel.getByRole("button", { name: "Save drafts", exact: true }).click();
       await panel.getByText("Conversation creation is unclear", { exact: true }).waitFor();
       const created = [...fixture.assistant.conversations.values()][0]!;
@@ -1232,6 +1237,7 @@ for (const editDuringSave of [false, true]) {
       const composer = panel.locator('textarea:not([aria-hidden="true"])');
       await composer.fill("Local creation draft A");
       fixture.assistant.loseCreate();
+      await page.locator("[data-cloud-panel-close]").click();
       await panel.getByRole("button", { name: "Save drafts", exact: true }).click();
       await panel.getByText("Conversation creation is unclear", { exact: true }).waitFor();
       const created = [...fixture.assistant.conversations.values()][0]!;
@@ -1570,3 +1576,212 @@ for (const openFailure of [false, true]) {
     }
   }, 30_000);
 }
+
+test("Chat synchronizes panel and full-view drafts and preserves a simultaneous conflicting edit", async () => {
+  fixture.backend.reset();
+  const id = fixture.backend.addChat({ members: [viewer, nora], name: "Shared draft", count: 1, end: fixture.backend.now() });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+  const page = await context.newPage();
+  page.setDefaultTimeout(8_000);
+  try {
+    await page.goto(fixture.url + "app/fixture");
+    await page.locator('html[data-fixture-ready="true"]').waitFor();
+    await page.locator("#open-chat").click();
+    const panel = page.frameLocator("[data-cloud-panel-frame]");
+    await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
+    const panelComposer = panel.locator('textarea:not([aria-hidden="true"])');
+    await panelComposer.fill("Original draft");
+    await panel.getByRole("link", { name: "Open full view", exact: true }).click();
+    await page.waitForURL(`**/app/chat/c/${id}`);
+    await page.locator('html[data-fixture-ready="true"]').waitFor();
+    await panel.locator('html[data-fixture-ready="true"]').waitFor();
+    const fullComposer = page.locator('textarea:not([aria-hidden="true"])');
+    await fullComposer.fill("Edited in full view");
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")
+          ?.contentDocument?.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')?.value === "Edited in full view",
+    );
+    await panelComposer.fill("Edited in panel");
+    await page.waitForFunction(
+      () => document.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')?.value === "Edited in panel",
+    );
+    // Interleave a competing write and input before the iframe can receive its storage event.
+    await page.evaluate(
+      ({ id, viewerId }) => {
+        sessionStorage.setItem(`cloud.chat.draft:${viewerId}:${id}`, "Competing saved text");
+        const input = document
+          .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")!
+          .contentDocument!.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')!;
+        input.value = "My simultaneous edit";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      },
+      { id, viewerId: viewer.id },
+    );
+    await panel.getByText("Another view changed this draft", { exact: true }).waitFor();
+    expect(await panelComposer.inputValue()).toBe("My simultaneous edit");
+    await panel.getByText("Competing saved text", { exact: true }).waitFor();
+    await page.locator("[data-cloud-panel-close]").click();
+    expect(await page.locator("[data-cloud-panel-frame]").count()).toBe(1);
+    await panel.getByRole("button", { name: "Keep my text", exact: true }).click();
+    await panel.getByText("Another view changed this draft", { exact: true }).waitFor({ state: "hidden" });
+    await page.waitForFunction(
+      () => document.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')?.value === "My simultaneous edit",
+    );
+    await panel.getByRole("button", { name: "Send message", exact: true }).click();
+    await panel.locator('[data-status="sent"]').filter({ hasText: "My simultaneous edit" }).waitFor();
+    await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')?.value === "");
+    expect(fixture.backend.posted).toHaveLength(1);
+    await page.reload();
+    await page.locator('html[data-fixture-ready="true"]').waitFor();
+    expect(await fullComposer.inputValue()).toBe("");
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+for (const embedded of [false, true]) {
+  test(`Assistant keeps other conversations usable after an uncertain send in ${embedded ? "panel" : "full view"}`, async () => {
+    fixture.assistant.reset();
+    fixture.assistant.addConversation("Chat2A", "Unclear conversation");
+    fixture.assistant.addConversation("Chat2B", "Other conversation");
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const page = await context.newPage();
+    page.setDefaultTimeout(8_000);
+    try {
+      await page.goto(fixture.url + (embedded ? "app/fixture" : "app/assistant?conversation=Chat2A"));
+      await page.locator('html[data-fixture-ready="true"]').waitFor();
+      if (embedded) {
+        await page.evaluate(() => sessionStorage.setItem("cloud.assistant.panel:fixture-user", "Chat2A"));
+        await page.locator("#open-chat").click();
+        await page.locator('[data-cloud-panel-provider="assistant"]').click();
+      }
+      const view = embedded ? page.frameLocator("[data-cloud-panel-frame]") : page;
+      const composer = view.locator('textarea:not([aria-hidden="true"])');
+      await composer.fill("Unclear submission");
+      fixture.assistant.rejectSend();
+      await view.getByRole("button", { name: "Send message", exact: true }).click();
+      await view.getByText("Message status is unclear", { exact: true }).waitFor();
+      expect(await composer.isDisabled()).toBe(true);
+      if (embedded) {
+        await view.getByRole("button", { name: "Recent and all chats", exact: true }).click();
+        await view.getByRole("dialog").getByText("Other conversation", { exact: true }).click();
+      } else await view.getByRole("link", { name: "Other conversation", exact: true }).click();
+      await composer.fill("Independent draft");
+      expect(await composer.isEnabled()).toBe(true);
+      await view.getByRole("button", { name: "Unclear conversation", exact: true }).click();
+      expect(await composer.isDisabled()).toBe(true);
+      await view.getByRole("button", { name: "Retry the same message", exact: true }).click();
+      await view.getByText("Message status is unclear", { exact: true }).waitFor({ state: "hidden" });
+      expect(fixture.assistant.submitted()).toBe(1);
+      if (embedded) {
+        await view.getByRole("button", { name: "Recent and all chats", exact: true }).click();
+        await view.getByRole("dialog").getByText("Other conversation", { exact: true }).click();
+      } else await view.getByRole("link", { name: "Other conversation", exact: true }).click();
+      expect(await composer.inputValue()).toBe("Independent draft");
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+}
+
+test("Assistant offers a fresh creation after a definitive replay refusal without losing the draft", async () => {
+  fixture.assistant.reset();
+  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en" });
+  const page = await context.newPage();
+  page.setDefaultTimeout(8_000);
+  try {
+    await page.goto(fixture.url + "app/fixture");
+    await page.locator('html[data-fixture-ready="true"]').waitFor();
+    await page.locator("#open-chat").click();
+    await page.locator('[data-cloud-panel-provider="assistant"]').click();
+    const panel = page.frameLocator("[data-cloud-panel-frame]");
+    const composer = panel.locator('textarea:not([aria-hidden="true"])');
+    await composer.fill("Keep this draft after a deleted creation");
+    fixture.assistant.loseCreate();
+    await page.locator("[data-cloud-panel-close]").click();
+    await panel.getByRole("button", { name: "Save drafts", exact: true }).click();
+    await panel.getByText("Conversation creation is unclear", { exact: true }).waitFor();
+    fixture.assistant.denyCreate(404);
+    await panel.getByRole("button", { name: "Retry creating conversation", exact: true }).click();
+    await panel.getByText("Conversation could not be created", { exact: true }).waitFor();
+    expect(await panel.getByText("Conversation creation is unclear", { exact: true }).count()).toBe(0);
+    expect(await composer.inputValue()).toBe("Keep this draft after a deleted creation");
+    await page.locator("[data-cloud-panel-close]").click();
+    expect(await page.locator("[data-cloud-panel-frame]").count()).toBe(1);
+    const attempts = fixture.assistant.requests.filter((request) => request.path === "/api/ai/conversations");
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]!.body).toEqual(attempts[1]!.body);
+    fixture.assistant.denyCreate(0);
+    await panel.getByRole("button", { name: "Retry creating conversation", exact: true }).click();
+    await panel.getByText("Conversation could not be created", { exact: true }).waitFor({ state: "hidden" });
+    await panel.getByText("Draft not saved yet", { exact: true }).waitFor({ state: "hidden" });
+    const retried = fixture.assistant.requests.filter((request) => request.path === "/api/ai/conversations");
+    expect(retried).toHaveLength(3);
+    expect(retried[2]!.body).not.toEqual(retried[0]!.body);
+    await page.locator("[data-cloud-panel-close]").click();
+    await page.locator("[data-cloud-panel-frame]").waitFor({ state: "detached" });
+    await page.locator("#open-chat").click();
+    await page.locator('[data-cloud-panel-provider="assistant"]').click();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")
+          ?.contentDocument?.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')?.value ===
+        "Keep this draft after a deleted creation",
+    );
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+test("Chat can close during a read-only conversation load and restores the saved draft", async () => {
+  fixture.backend.reset();
+  const id = fixture.backend.addChat({ members: [viewer, nora], name: "Slow snapshot", count: 1, end: fixture.backend.now() });
+  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en" });
+  const page = await context.newPage();
+  page.setDefaultTimeout(8_000);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let loading!: () => void;
+  const started = new Promise<void>((resolve) => {
+    loading = resolve;
+  });
+  let hold = true;
+  await page.route(`**/api/chat/conversations/${id}/snapshot*`, async (route) => {
+    if (hold) {
+      loading();
+      await gate;
+    }
+    await route.continue().catch(() => undefined);
+  });
+  try {
+    await page.goto(fixture.url + "app/fixture");
+    await page.locator('html[data-fixture-ready="true"]').waitFor();
+    await page.evaluate(({ id, viewerId }) => sessionStorage.setItem(`cloud.chat.draft:${viewerId}:${id}`, "Saved before loading"), {
+      id,
+      viewerId: viewer.id,
+    });
+    await page.locator("#open-chat").click();
+    const panel = page.frameLocator("[data-cloud-panel-frame]");
+    await panel.locator('html[data-fixture-ready="true"]').waitFor();
+    await started;
+    await page.locator("[data-cloud-panel-close]").click();
+    await page.locator("[data-cloud-panel-frame]").waitFor({ state: "detached" });
+    hold = false;
+    release();
+    await page.locator("#open-chat").click();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")
+          ?.contentDocument?.querySelector<HTMLTextAreaElement>('textarea:not([aria-hidden="true"])')?.value === "Saved before loading",
+    );
+  } finally {
+    release();
+    await context.close();
+  }
+}, 30_000);

@@ -202,6 +202,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   let disposed = false;
   const submissionBodies = new Map<string, string>();
   // Only a confirmed draft-save response can give this submission its identity.
+  const [creationErrorStatus, setCreationErrorStatus] = createSignal<number | null>(null);
   const [uncertainSubmissions, setUncertainSubmissions] = createSignal<Record<string, number>>({});
   const clearUncertainSubmission = (conversationId: string) =>
     setUncertainSubmissions((current) => {
@@ -716,6 +717,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   ) => {
     const generation = ++conversationOpenGeneration;
     clearErrors();
+    setCreationErrorStatus(null);
     try {
       const conversation = await request<AiConversation>(
         `/conversations`,
@@ -734,6 +736,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       return conversation;
     } catch (createError) {
       if (generation === conversationOpenGeneration) {
+        setCreationErrorStatus(createError instanceof AiRequestError ? createError.status : null);
         setGlobalError(createError instanceof Error ? createError.message : "Failed to create conversation");
       }
       return null;
@@ -1567,6 +1570,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     openConversation,
     refreshActiveConversation,
     createConversation,
+    /** HTTP refusal from the last creation attempt; null also covers an unknown network outcome. */
+    creationErrorStatus,
     uncertainSubmissions,
     reconcileSubmission,
     retrySubmission,

@@ -28,7 +28,7 @@ import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
-import { chatDrafts } from "./chat-drafts";
+import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { createChatStore, type OpenChat } from "./chat-store";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
@@ -99,6 +99,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [order, setOrder] = createSignal<readonly string[]>(props.sidebar.items.map((row) => row.id));
   const [now, setNow] = createSignal(new Date(props.now));
   const drafts = new Map<string, string>();
+  const savedTexts = new Map<string, string>();
+  const [draftConflicts, setDraftConflicts] = createSignal<Record<string, string>>({});
   const [draft, setDraft] = createSignal("");
   const [draftStorageFailed, setDraftStorageFailed] = createSignal(false);
   const [composerReady, setComposerReady] = createSignal(!props.embedded);
@@ -110,6 +112,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (!savedDrafts) throw new Error("Draft storage unavailable");
       const text = savedDrafts.read(id);
       drafts.set(id, text);
+      savedTexts.set(id, text);
       return text;
     } catch {
       setDraftStorageFailed(true);
@@ -124,21 +127,30 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     unsavedDrafts.add(id);
     try {
       if (!savedDrafts) throw new Error("Draft storage unavailable");
-      savedDrafts.write(id, text);
+      savedDrafts.write(id, text, savedTexts.get(id) ?? "");
+      savedTexts.set(id, text);
       unsavedDrafts.delete(id);
-    } catch {
-      setDraftStorageFailed(true);
+    } catch (error) {
+      if (error instanceof ChatDraftConflict) setDraftConflicts((all) => ({ ...all, [id]: error.saved }));
+      else setDraftStorageFailed(true);
     }
   };
   const retryDraftStorage = () => {
     try {
       savedDrafts = chatDrafts(props.viewerId, window.sessionStorage);
       for (const id of unsavedDrafts) {
-        savedDrafts.write(id, drafts.get(id)!);
-        unsavedDrafts.delete(id);
+        try {
+          const text = drafts.get(id)!;
+          savedDrafts.write(id, text, savedTexts.get(id) ?? "");
+          savedTexts.set(id, text);
+          unsavedDrafts.delete(id);
+        } catch (error) {
+          if (error instanceof ChatDraftConflict) setDraftConflicts((all) => ({ ...all, [id]: error.saved }));
+          else throw error;
+        }
       }
       const id = route().chatId;
-      if (id && !drafts.has(id)) drafts.set(id, savedDrafts.read(id));
+      if (id && !drafts.has(id)) readDraft(id);
       if (id) setDraft(drafts.get(id) ?? "");
       if (props.embedded) savedDrafts.select(id);
       setDraftStorageFailed(false);
@@ -146,14 +158,59 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       setDraftStorageFailed(true);
     }
   };
+  const resolveDraftConflict = (id: string, useSaved: boolean) => {
+    if (!savedDrafts) return;
+    try {
+      const expected = draftConflicts()[id];
+      if (expected === undefined) return;
+      const saved = savedDrafts.read(id);
+      // A newer edit requires a fresh choice; never overwrite text absent from the displayed comparison.
+      if (saved !== expected) {
+        setDraftConflicts((all) => ({ ...all, [id]: saved }));
+        return;
+      }
+      if (useSaved) {
+        drafts.set(id, saved);
+        savedTexts.set(id, saved);
+        unsavedDrafts.delete(id);
+        if (route().chatId === id) setDraft(saved);
+      } else {
+        const local = drafts.get(id) ?? "";
+        savedDrafts.write(id, local, expected);
+        savedTexts.set(id, local);
+        unsavedDrafts.delete(id);
+      }
+      setDraftConflicts((all) => {
+        const next = { ...all };
+        delete next[id];
+        return next;
+      });
+    } catch (error) {
+      if (error instanceof ChatDraftConflict) setDraftConflicts((all) => ({ ...all, [id]: error.saved }));
+      else setDraftStorageFailed(true);
+    }
+  };
   const draftNotice = () => (
-    <Show when={draftStorageFailed()}>
-      <NoticeCard tone="danger" title={t().draftNotSaved} detail={t().draftNotSavedDescription}>
-        <Button variant="ghost" onClick={retryDraftStorage}>
-          {t().retry}
-        </Button>
-      </NoticeCard>
-    </Show>
+    <>
+      <Show when={draftStorageFailed()}>
+        <NoticeCard tone="danger" title={t().draftNotSaved} detail={t().draftNotSavedDescription}>
+          <Button variant="ghost" onClick={retryDraftStorage}>
+            {t().retry}
+          </Button>
+        </NoticeCard>
+      </Show>
+      <Show when={route().chatId && draftConflicts()[route().chatId!] !== undefined}>
+        <NoticeCard tone="warning" title={t().draftChangedElsewhere} detail={t().draftChangedElsewhereDescription}>
+          <pre class="max-h-32 overflow-auto whitespace-pre-wrap">{draftConflicts()[route().chatId!]}</pre>
+          <Button variant="secondary" onClick={() => resolveDraftConflict(route().chatId!, true)}>
+            {t().useSavedDraft}
+          </Button>
+          <Button variant="ghost" onClick={() => resolveDraftConflict(route().chatId!, false)}>
+            {t().keepLocalDraft}
+          </Button>
+        </NoticeCard>
+      </Show>
+    </>
   );
   // A stored message keeps the key of the send it came from, so its row is not replaced when it arrives.
   const sendKeys = new Map<string, string>();
@@ -524,7 +581,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
-    if (!current || !outbox || !text.trim() || draftStorageFailed() || pendingOpen !== 0) return false;
+    if (!current || !outbox || !text.trim() || draftStorageFailed() || draftConflicts()[current.id] !== undefined || pendingOpen !== 0)
+      return false;
     // The composer has cleared its draft, but the outbox does not own it until history is ready.
     pendingSends++;
     try {
@@ -544,6 +602,27 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       setDraftStorageFailed(true);
     }
     if (route().chatId) setDraft(readDraft(route().chatId!));
+    const storageChanged = (event: StorageEvent) => {
+      if (!savedDrafts) return;
+      try {
+        if (event.storageArea !== window.sessionStorage) return;
+        for (const id of drafts.keys()) {
+          if (event.key !== null && event.key !== savedDrafts.key(id)) continue;
+          const text = savedDrafts.read(id);
+          if (unsavedDrafts.has(id)) {
+            if (text !== savedTexts.get(id)) setDraftConflicts((all) => ({ ...all, [id]: text }));
+            continue;
+          }
+          drafts.set(id, text);
+          savedTexts.set(id, text);
+          if (route().chatId === id) setDraft(text);
+        }
+      } catch {
+        setDraftStorageFailed(true);
+      }
+    };
+    window.addEventListener("storage", storageChanged);
+    onCleanup(() => window.removeEventListener("storage", storageChanged));
     phone = window.matchMedia("(max-width: 47.999rem)");
     const live = createChatStore({
       viewerId: props.viewerId,
@@ -570,11 +649,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
     const box = createChatSends({ post: createChatSendsApi() });
     outbox = box;
-    onCleanup(
-      onPanelBeforeLeave(
-        () => !box.unsent() && unsavedDrafts.size === 0 && !dialogCore.isOpen() && pendingOpen === 0 && pendingSends === 0,
-      ),
-    );
+    onCleanup(onPanelBeforeLeave(() => !box.unsent() && unsavedDrafts.size === 0 && !dialogCore.isOpen() && pendingSends === 0));
     setComposerReady(true);
     const leave = (event: BeforeUnloadEvent) => {
       if (box.unsent() || unsavedDrafts.size > 0 || pendingSends > 0) {
@@ -753,7 +828,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
                         onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
                         focusKey={focusKey()}
-                        canWrite={composerReady() && !busy() && current().permission !== "read" && !draftStorageFailed()}
+                        canWrite={
+                          composerReady() &&
+                          !busy() &&
+                          current().permission !== "read" &&
+                          !draftStorageFailed() &&
+                          draftConflicts()[current().id] === undefined
+                        }
                         notice={draftNotice()}
                         hint={
                           current().permission === "read"

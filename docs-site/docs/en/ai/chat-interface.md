@@ -116,6 +116,11 @@ The controller exposes:
 - file URLs and file counts;
 - one error state for the active chat.
 
+`createConversation()` returns `null` on failure. `creationErrorStatus()` exposes
+the last attempt's HTTP status, or `null` for a new attempt or an unknown network
+outcome. Applications can distinguish a definitive refusal (such as an unavailable
+creation replay) from an uncertain write; retain local drafts in either case.
+
 After a lost turn response, `uncertainSubmissions()` maps conversation IDs to
 their confirmed submitted draft revisions. Those conversations reject further
 saves and sends until resolved. `reconcileSubmission(id)` checks the exact

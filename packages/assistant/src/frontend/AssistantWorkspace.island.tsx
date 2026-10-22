@@ -690,10 +690,12 @@ export default function AssistantWorkspace(props: Props) {
     navigate(href, { replace, scroll: "manual", viewTransition: false });
   };
   const creationRequests = new Map<string, { requestId: string; title: string; projectId?: string }>();
+  const [rejectedCreations, setRejectedCreations] = createSignal<ReadonlySet<string>>(new Set());
   const [creationVersion, setCreationVersion] = createSignal(0);
   const hasUnknownCreations = () => (creationVersion(), creationRequests.size > 0 && !newConversation.loading());
   const [savingPanelDrafts, setSavingPanelDrafts] = createSignal(false);
   const [panelStorageFailed, setPanelStorageFailed] = createSignal(false);
+  const [panelLeaveAttempted, setPanelLeaveAttempted] = createSignal(false);
   const panelSelectionKey = `cloud.assistant.panel:${props.userId}`;
   const rememberPanelConversation = (id: string) => {
     if (!props.embedded) return;
@@ -730,7 +732,13 @@ export default function AssistantWorkspace(props: Props) {
         creationRequests.set(key, request);
         setCreationVersion((version) => version + 1);
       }
+      setRejectedCreations((keys) => new Set([...keys].filter((item) => item !== key)));
       const conversation = await chat.createConversation(request);
+      if (!conversation && [400, 401, 403, 404, 409, 413, 422].includes(chat.creationErrorStatus() ?? 0)) {
+        creationRequests.delete(key);
+        setRejectedCreations((keys) => new Set([...keys, key]));
+        setCreationVersion((version) => version + 1);
+      }
       const existing = conversation && !projectId ? sessions.get(conversation.id) : undefined;
       if (existing && (existing.dirty || existing.conflict || existing.saving)) {
         // A replay can find a conversation already edited in this workspace. Never replace that session.
@@ -812,6 +820,9 @@ export default function AssistantWorkspace(props: Props) {
       })
     );
   };
+  createEffect(() => {
+    if (!hasUnsavedPanelState()) setPanelLeaveAttempted(false);
+  });
   const hasUnknownSends = () => Object.keys(chat.uncertainSubmissions()).length > 0;
   const unknownExitLabel = () => (hasUnknownSends() ? t().panelLeaveUnknown : t().panelLeaveUnknownCreate);
   const leaveUnknownSubmission = async () => {
@@ -863,6 +874,9 @@ export default function AssistantWorkspace(props: Props) {
         if (chat.uncertainSubmissions()[key] !== undefined) continue;
         if (!(await saveComposer(key, key))) return;
       }
+      for (const key of [...rejectedCreations()]) {
+        if (!(await createConversation(false, key.startsWith("project:") ? key.slice(8) : undefined, false))) return;
+      }
       for (const request of [...creationRequests.values()]) {
         if (!(await createConversation(false, request.projectId, false))) return;
       }
@@ -893,7 +907,9 @@ export default function AssistantWorkspace(props: Props) {
       onPanelBeforeLeave(() => {
         const exit = confirmedUnknownExit;
         confirmedUnknownExit = undefined;
-        return !hasUnsavedPanelState(exit) && !dialogCore.isOpen();
+        const safe = !hasUnsavedPanelState(exit) && !dialogCore.isOpen();
+        setPanelLeaveAttempted(!safe);
+        return safe;
       }),
     );
     const selectors = new URLSearchParams(window.location.search);
@@ -919,7 +935,7 @@ export default function AssistantWorkspace(props: Props) {
     const key = composerSessionKey();
     creationVersion();
     // An unknown creation is retried only by the person's explicit Save/Retry action.
-    if (creationRequests.has(key)) return;
+    if (creationRequests.has(key) || rejectedCreations().has(key)) return;
     const text = composerDraft(key);
     const files = composerAttachmentsFor(key);
     mentionsFor(key);
@@ -1777,6 +1793,10 @@ export default function AssistantWorkspace(props: Props) {
 
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
+    const currentSubmissionUnknown = () => {
+      const id = sessionConversation(sessionKey());
+      return id !== undefined && chat.uncertainSubmissions()[id] !== undefined;
+    };
     const projectComposer = () => Boolean(composerProps.projectId);
     // A Project composer starts new chats; a response still running in the previous chat does not block it.
     const composerRunning = () => !projectComposer() && chat.running();
@@ -1920,7 +1940,12 @@ export default function AssistantWorkspace(props: Props) {
             />
           )}
         </Show>
-        <Show when={props.embedded && (hasUnsavedPanelState() || panelStorageFailed())}>
+        <Show
+          when={
+            props.embedded &&
+            ((panelLeaveAttempted() && hasUnsavedPanelState()) || panelStorageFailed() || hasUnknownSends() || hasUnknownCreations())
+          }
+        >
           <NoticeCard tone="warning" title={t().panelUnsaved}>
             <p>{t().panelSaveHint}</p>
             <Button
@@ -1930,6 +1955,18 @@ export default function AssistantWorkspace(props: Props) {
               onClick={() => void savePanelDrafts()}
             >
               {t().panelSave}
+            </Button>
+          </NoticeCard>
+        </Show>
+        <Show when={rejectedCreations().size > 0}>
+          <NoticeCard tone="danger" title={t().panelCreateRejected} detail={t().panelCreateRejectedHint}>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={savingPanelDrafts() || composerBusy() || composerSubmitting()}
+              onClick={() => void savePanelDrafts()}
+            >
+              {t().panelRetryCreate}
             </Button>
           </NoticeCard>
         </Show>
@@ -1948,6 +1985,13 @@ export default function AssistantWorkspace(props: Props) {
             </Show>
             <Show when={hasUnknownSends()}>
               <p>{t().panelUnknownHint}</p>
+              <For each={Object.keys(chat.uncertainSubmissions())}>
+                {(id) => (
+                  <Button size="sm" variant="ghost" onClick={() => void openAndFocusConversation(id)}>
+                    {conversations().find((conversation) => conversation.id === id)?.title ?? t().newChat}
+                  </Button>
+                )}
+              </For>
               <Button size="sm" variant="secondary" disabled={submissionChecking()} onClick={() => void checkSubmissions()}>
                 {t().panelCheckSend}
               </Button>
@@ -1969,7 +2013,7 @@ export default function AssistantWorkspace(props: Props) {
           </NoticeCard>
         </Show>
         <dictation.Status />
-        <Show when={(sessionVersion(), session(sessionKey()).conflict) && Object.keys(chat.uncertainSubmissions()).length === 0}>
+        <Show when={(sessionVersion(), session(sessionKey()).conflict) && !currentSubmissionUnknown()}>
           <div role="status" class="space-y-2 rounded-lg border border-border p-3 text-sm">
             <p>{audioCopy().conflict}</p>
             <Show when={serverDrafts()[sessionKey()]}>
@@ -2204,8 +2248,7 @@ export default function AssistantWorkspace(props: Props) {
             composerPicking() > 0 ||
             !canUseComposer() ||
             panelStorageFailed() ||
-            submissionChecking() ||
-            Object.keys(chat.uncertainSubmissions()).length > 0 ||
+            currentSubmissionUnknown() ||
             (newConversation.loading() && !commandCreating()) ||
             chat.loadingConversation()
           }
@@ -2474,8 +2517,7 @@ export default function AssistantWorkspace(props: Props) {
                     (props.embedded && !workspaceMounted()) ||
                     !canUseComposer() ||
                     panelStorageFailed() ||
-                    submissionChecking() ||
-                    Object.keys(chat.uncertainSubmissions()).length > 0 ||
+                    currentSubmissionUnknown() ||
                     composerSubmitting() ||
                     newConversation.loading() ||
                     chat.loadingConversation() ||

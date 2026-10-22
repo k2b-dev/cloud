@@ -22,12 +22,17 @@ the slot, subject to their normal route and conversation permissions. All
 three use the same `panel`, `PanelLayout`, and context APIs as other applications.
 
 Chat keeps text drafts per reader and conversation in the current browser tab.
+Panel and full view synchronize their saved text. If both edit before synchronization,
+Chat preserves the local text and shows the competing saved text for an explicit choice.
+Loading a conversation does not prevent closing the panel.
 Assistant saves drafts and uploaded references through its existing conversation
 service. Switching providers, closing, and opening the full view retain saved
 drafts; unfinished uploads, conflicting drafts, and unconfirmed sends keep the
 current provider open with recovery controls. Pending resource insertion and image
 preparation are protected too. A browser storage error keeps recovery controls
-visible; it does not prevent leaving when there is no unsaved work. Chat also keeps
+visible and pauses Chat editing and sending until storage works again, so an unread
+or uncleared stored draft cannot be overwritten or reappear after sending. It does
+not prevent leaving when there is no unsaved work. Chat also keeps
 the current conversation open while preparing a send; if preparation fails, the
 text returns to the composer.
 Both composers become editable only
@@ -44,7 +49,12 @@ that conversation is saved before retrying creation. If it cannot be saved or
 changes during the retry, both local drafts stay protected until resolved.
 An empty creation attempt can be
 abandoned with a separate explanation in the same exit dialog; this does not delete
-a conversation that may already exist. A nonempty new draft remains protected.
+a conversation that may already exist. A nonempty new draft remains protected. A definitive creation refusal clears the old
+attempt and offers an explicit new attempt while retaining that draft. Network and
+server failures continue to retry the same creation identity.
+Assistant's ordinary autosave does not display a warning card. A blocked attempt to
+leave shows the save controls until the work is saved. An unclear send locks only
+its own conversation; the notice links back to it while other conversations remain usable.
 On phones, reopen the sheet after
 a page reload. Browser termination and forced native navigation cannot guarantee
 recovery of unsaved work.

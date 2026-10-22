@@ -47,3 +47,17 @@ test("panel selection is reader-bound and rejects malformed stored conversation 
   reader.select(null);
   expect(reader.selection()).toBeNull();
 });
+
+test("another view's write or deletion cannot be silently replaced by a stale draft", () => {
+  const tab = storage();
+  const panel = chatDrafts("reader", tab);
+  const full = chatDrafts("reader", tab);
+  panel.write("chat", "Original", "");
+  full.write("chat", "Newer text", "Original");
+  expect(() => panel.write("chat", "Stale edit", "Original")).toThrow("Another view changed this draft");
+  expect(panel.read("chat")).toBe("Newer text");
+  panel.write("chat", "Chosen local text", "Newer text");
+  full.write("chat", "", "Chosen local text");
+  expect(() => panel.write("chat", "Resurrected draft", "Chosen local text")).toThrow("Another view changed this draft");
+  expect(full.read("chat")).toBe("");
+});

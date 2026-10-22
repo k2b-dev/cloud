@@ -10,6 +10,8 @@ export const assistantMessages = i18n.define({
       panelSave: "Save drafts",
       panelUnknownSend: "Message status is unclear",
       panelUnknownCreate: "Conversation creation is unclear",
+      panelCreateRejected: "Conversation could not be created",
+      panelCreateRejectedHint: "Your draft is still here. Check your access and retry to start a new conversation.",
       panelUnknownCreateHint:
         "The conversation could not be confirmed. Retrying uses the same creation request. Only an empty creation attempt can be abandoned.",
       panelRetryCreate: "Retry creating conversation",
@@ -148,6 +150,8 @@ export const assistantMessages = i18n.define({
       panelSave: "Entwürfe speichern",
       panelUnknownSend: "Sendestatus ist unklar",
       panelUnknownCreate: "Erstellen der Unterhaltung ist unklar",
+      panelCreateRejected: "Unterhaltung konnte nicht erstellt werden",
+      panelCreateRejectedHint: "Dein Entwurf ist noch hier. Prüfe deinen Zugriff und versuche erneut, eine neue Unterhaltung zu erstellen.",
       panelUnknownCreateHint:
         "Die Unterhaltung konnte nicht bestätigt werden. Ein erneuter Versuch verwendet dieselbe Anfrage. Nur ein leerer Erstellversuch kann aufgegeben werden.",
       panelRetryCreate: "Erstellen erneut versuchen",

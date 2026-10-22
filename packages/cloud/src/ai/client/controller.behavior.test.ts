@@ -1496,3 +1496,24 @@ describe("AI controller silence", () => {
     }
   });
 });
+
+test("conversation creation exposes HTTP refusal separately from an unknown network outcome", async () => {
+  let response: () => Promise<Response> = async () => Response.json({ message: "Unavailable" }, { status: 404 });
+  globalThis.fetch = Object.assign(async () => response(), { preconnect: originalFetch.preconnect });
+  let dispose!: () => void;
+  const controller = createRoot((cleanup) => {
+    dispose = cleanup;
+    return createAiChatController({ baseUrl: "/api/ai" });
+  });
+  try {
+    expect(await controller.createConversation({ requestId: "replayed-creation" })).toBeNull();
+    expect(controller.creationErrorStatus()).toBe(404);
+    response = async () => {
+      throw new TypeError("Connection lost");
+    };
+    expect(await controller.createConversation({ requestId: "another-creation" })).toBeNull();
+    expect(controller.creationErrorStatus()).toBeNull();
+  } finally {
+    dispose();
+  }
+});

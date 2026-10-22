@@ -48,7 +48,7 @@ export function assistantPanelFixture() {
   let createGate: Promise<void> | undefined;
   let sendGate: Promise<void> | undefined;
   let statusDenied = false;
-  let creationDenied = false;
+  let creationDenied = 0;
   const running = new Set<string>();
   const queues = new Map<string, { conversationId: string; content: AiConversation["draft"]["content"] }>();
   let uploadGate: Promise<void> | undefined;
@@ -66,7 +66,7 @@ export function assistantPanelFixture() {
     createGate = undefined;
     sendGate = undefined;
     statusDenied = false;
-    creationDenied = false;
+    creationDenied = 0;
     running.clear();
     queues.clear();
   };
@@ -129,7 +129,7 @@ export function assistantPanelFixture() {
     if (path === "/api/approvals") return Response.json({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
     if (!path.startsWith("/api/ai/")) return null;
     if (path === "/api/ai/conversations" && request.method === "POST") {
-      if (creationDenied) return Response.json({ message: "Creation unavailable" }, { status: 404 });
+      if (creationDenied) return Response.json({ message: "Creation unavailable" }, { status: creationDenied });
       const input = await request.json();
       let id = creations.get(input.requestId);
       if (!id) {
@@ -246,8 +246,8 @@ export function assistantPanelFixture() {
       running.add(id);
       conversations.get(id)!.runStatus = "running";
     },
-    denyCreate: () => {
-      creationDenied = true;
+    denyCreate: (status = 503) => {
+      creationDenied = status;
     },
     denyStatus: () => {
       statusDenied = true;

@@ -5,6 +5,11 @@ export const chatMessages = i18n.define({
   messages: {
     en: {
       openFullView: "Open full view",
+      draftChangedElsewhere: "Another view changed this draft",
+      draftChangedElsewhereDescription:
+        "Your text is still in the composer. Compare it with the saved text below and choose which to keep.",
+      useSavedDraft: "Use saved text",
+      keepLocalDraft: "Keep my text",
       draftNotSaved: "Draft could not be kept in this tab",
       draftNotSavedDescription: "Keep this view open and copy your text before leaving. You can try saving again.",
       newChat: "New chat",
@@ -177,6 +182,11 @@ export const chatMessages = i18n.define({
     },
     de: {
       openFullView: "In Vollansicht öffnen",
+      draftChangedElsewhere: "Eine andere Ansicht hat diesen Entwurf geändert",
+      draftChangedElsewhereDescription:
+        "Dein Text steht weiter im Eingabefeld. Vergleiche ihn mit dem gespeicherten Text unten und wähle, welchen du behalten möchtest.",
+      useSavedDraft: "Gespeicherten Text verwenden",
+      keepLocalDraft: "Meinen Text behalten",
       draftNotSaved: "Entwurf konnte in diesem Tab nicht gesichert werden",
       draftNotSavedDescription:
         "Lass diese Ansicht geöffnet und kopiere deinen Text vor dem Verlassen. Du kannst das Sichern erneut versuchen.",
