@@ -44,7 +44,8 @@ type Row = {
 };
 
 suite("Files activity with real storage", () => {
-  const prefix = `filesv2-activity-${Bun.randomUUIDv7()}`;
+  const runId = Bun.randomUUIDv7();
+  const prefix = `filesv2-activity-${runId}`;
   let processSync: ProcessSync | undefined;
   let storage: Awaited<ReturnType<typeof activityFilegate>> | undefined;
   let client: Filegate;
@@ -545,7 +546,10 @@ suite("Files activity with real storage", () => {
     expect((await uploadRows(opened.id))[0]?.state).toBe("done");
   });
   test("case-distinct legacy UUID keys keep distinct history, recovery and retention", async () => {
-    const keys = ["12345678-1234-4abc-8def-123456789abc", "12345678-1234-4ABC-8DEF-123456789ABC"];
+    // Session idempotency mappings outlive aborted sessions on a reused test daemon.
+    // Isolate this run while keeping the two keys different only in letter case.
+    const lower = `a${runId.slice(1)}`;
+    const keys = [lower, lower.toUpperCase()];
     const opened = [];
     for (const [index, key] of keys.entries())
       opened.push(await service.upload(testCall(actor), { ...uploadInput(`case-key-${index}.txt`), idempotencyKey: key }));
