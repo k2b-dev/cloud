@@ -155,3 +155,13 @@ test("the export revision accepts the full Markdown byte budget without JSON esc
   expect(await notebookMapRevision(markdown)).toMatch(/^[a-f0-9]{64}$/);
   expect(await notebookMapRevision(markdown)).not.toBe(await notebookMapRevision(markdown.slice(1)));
 });
+
+test("PDF and browser Print preserve named block targets and keep self-note links internal", () => {
+  const markdown = `# Guide\n\n[Jump](note://SELF01#guide) [Profile](#block-profile)\n\n@profile\n:::data\nowner: Fictional\n:::\n\n${serializeGeoDocument(fictionalMap())}`;
+  for (const browserImages of [false, true]) {
+    const result = renderNotebookBook({ markdown, notebookId: "Book01", noteId: "SELF01", locale: "en", print: true, browserImages });
+    expect(result.html).toContain('href="#heading-guide"');
+    expect(result.html).toContain('href="#block-profile"');
+    expect(result.html).toContain('id="block-profile"');
+  }
+});

@@ -268,7 +268,7 @@ test("successful route calculation persists the complete route without recomputi
     expect(saved).toContain('"legs":');
     expect(saved).toContain('"inputHash":');
     expect(saved).toContain('"computedAt":"2026-10-19T12:00:00.000Z"');
-    expect(await first(page).locator(".notebook-map__route-summary").innerText()).toContain("95 km");
+    expect(await first(page).locator(".notebook-map__route-summary").first().innerText()).toContain("95 km");
   } finally {
     await context.close();
   }

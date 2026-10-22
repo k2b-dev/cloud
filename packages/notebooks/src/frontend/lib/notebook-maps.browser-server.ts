@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, resolve } from "node:path";
+import type { GeoAddress } from "@k2b/cloud/contracts/geo";
 import { serializeGeoDocument } from "@k2b/cloud/geo/document";
 import { createConfig } from "@k2b/ssr";
 import { renderNotebookBook } from "../../lib/book-renderer";
@@ -242,8 +243,9 @@ export async function createNotebookMapFixtureServer(port = 0) {
                     countryCode: "de",
                     point: { lat: 48.3984, lon: 9.9924 },
                     confidence: 1,
+                    buildingConfidence: 1,
                     provenance: mapProvenance,
-                  },
+                  } satisfies GeoAddress,
                 ],
           provenance: mapProvenance,
         });

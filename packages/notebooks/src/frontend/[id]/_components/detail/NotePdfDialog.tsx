@@ -209,6 +209,10 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
           controller.signal.throwIfAborted();
           window.print();
         } finally {
+          for (const image of article.querySelectorAll("img")) {
+            image.removeAttribute("src");
+            image.removeAttribute("srcset");
+          }
           article.remove();
           document.documentElement.classList.remove("notebook-map-printing");
         }

@@ -685,7 +685,7 @@ export const renderNotebookBook = (
     const restored = html.replace(new RegExp(`${prefix}CHART(\\d+)END`, "g"), (_raw, index: string) => chartSlots[Number(index)] ?? "");
     if (!input.print) return restored;
     // Trusted map links are restored after sanitization, once all document headings are known.
-    return restored.replace(/href="#([^" ]+)"/g, (raw, hash: string) => {
+    return restored.replace(/href="#(heading-[^" ]+)"/g, (raw, hash: string) => {
       try {
         return hash === "top" || headingIds.has(decodeURIComponent(hash)) ? raw : 'href="#top"';
       } catch {
