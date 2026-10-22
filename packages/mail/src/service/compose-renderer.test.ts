@@ -131,16 +131,13 @@ describe("Mail output formatting", () => {
     expect(result.data.html).not.toMatch(/<img|<strong|md-formula/);
   });
 
-  test.each(["$2^3+4^5$", "$$\n2^3+4^5\n$$", "```math\n  2^3+4^5  \n```"])(
-    "keeps math source literal without evaluating %j",
-    (source) => {
-      const result = renderComposeContent({ body: source, format: "markdown", customCss: "", context, renderLiquid: false });
-      if (!result.ok) throw new Error(result.error.message);
-      expect(result.data.html).not.toMatch(/katex|<sup|<math/);
-      expect(result.data.text).toContain("2^3+4^5");
-      if (source.startsWith("$")) expect(result.data.text).toContain("$");
-    },
-  );
+  test.each(["$2^3+4^5$", "$$\n2^3+4^5\n$$", "```math\n  2^3+4^5  \n```"])("keeps math source literal without evaluating %j", (source) => {
+    const result = renderComposeContent({ body: source, format: "markdown", customCss: "", context, renderLiquid: false });
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.data.html).not.toMatch(/katex|<sup|<math/);
+    expect(result.data.text).toContain("2^3+4^5");
+    if (source.startsWith("$")) expect(result.data.text).toContain("$");
+  });
 
   test("lets mailbox CSS override default column alignment and style strikethrough", () => {
     const customCss = "th, td { text-align: center; } del { color: #123456; text-decoration: line-through; }";
@@ -516,7 +513,7 @@ describe("Markdown blank lines", () => {
     try {
       content(body);
       expect(renderMarkdown).toHaveBeenCalledTimes(1);
-      expect(renderMarkdown).toHaveBeenCalledWith(body, { links: "plain" });
+      expect(renderMarkdown).toHaveBeenCalledWith(body, { links: "plain", output: "email" });
     } finally {
       renderMarkdown.mockRestore();
     }
@@ -569,7 +566,7 @@ describe("Markdown blank lines", () => {
       expect(result).toEqual(expected);
       expect(result.html).not.toContain("MAILBLANKLINE");
       expect(result.text).not.toContain("MAILBLANKLINE");
-      expect(renderMarkdown).toHaveBeenLastCalledWith(body, { links: "plain" });
+      expect(renderMarkdown).toHaveBeenLastCalledWith(body, { links: "plain", output: "email" });
     } finally {
       renderMarkdown.mockRestore();
     }

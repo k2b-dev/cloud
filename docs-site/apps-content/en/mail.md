@@ -440,6 +440,10 @@ them. Math source such as `$x^2$` also stays literal. The text alternative
 keeps formula source; a draft in plain-text format keeps its body unchanged.
 Notebooks continues to calculate its table formulas.
 
+If a row has more cells than the table header, preview and sending stop with
+**Check table**. Add the missing columns to the header and separator before
+sending. This keeps extra cell text from disappearing in the email.
+
 ## Write signatures and snippets
 
 The composer shows **Signature** below your text when a signature is available.

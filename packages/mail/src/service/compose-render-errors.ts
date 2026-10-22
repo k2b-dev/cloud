@@ -13,6 +13,7 @@ const composeRenderMessages = i18n.define({
       signatureFailed:
         "The signature of this message could not be filled in. Choose another signature or none, or check it in Settings → Writing.",
       conversionFailed: "This message could not be converted to email. Check its formatting and try again.",
+      tableNeedsReview: "Check table: a row has extra cells. Add the missing columns before sending so every cell is included.",
     },
     de: {
       tooLarge: "Diese Nachricht ist zu groß, um sie sicher darzustellen. Kürze sie und versuche es erneut.",
@@ -24,6 +25,8 @@ const composeRenderMessages = i18n.define({
       signatureFailed:
         "Die Signatur dieser Nachricht konnte nicht ausgefüllt werden. Wähle eine andere oder keine Signatur, oder prüfe sie unter Einstellungen → Schreiben.",
       conversionFailed: "Diese Nachricht konnte nicht in eine E-Mail umgewandelt werden. Prüfe die Formatierung und versuche es erneut.",
+      tableNeedsReview:
+        "Tabelle prüfen: Eine Zeile hat zusätzliche Zellen. Ergänze die fehlenden Spalten vor dem Senden, damit alle Zellen enthalten sind.",
     },
   },
 });
