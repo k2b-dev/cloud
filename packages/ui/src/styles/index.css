@@ -12048,6 +12048,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   box-shadow: none;
 }
 
+/* The answered message above the field: the same quiet quote as in a message, and a button that cancels the reply. */
+.k2b-ui .k2b-chat-composer__reply {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-chat-composer__reply > .k2b-message-row__quote {
+  max-width: none;
+  flex: 1 1 0;
+  margin: 0;
+}
+
+.k2b-ui .k2b-chat-composer__reply-cancel {
+  flex: none;
+}
+
 .k2b-ui .k2b-chat-composer__row {
   display: flex;
   min-width: 0;
