@@ -179,8 +179,8 @@ test("pending migration call sites can only shrink", async () => {
   expect(Object.values(counts).reduce((sum, count) => sum + count, 0)).toBe(calls);
 });
 test("call site comparison reports growth and unknown keys but permits shrinking", () => {
-  expect(grownCallSites({ ...frozenCallSites, "files.upload_session": 4 })).toEqual(["files.upload_session"]);
+  expect(grownCallSites({ ...frozenCallSites, "lifecycle.operation": 2 })).toEqual(["lifecycle.operation"]);
   expect(grownCallSites({ ...frozenCallSites, "fake.new_write": 1 })).toEqual(["fake.new_write"]);
-  expect(grownCallSites({ ...frozenCallSites, "files.upload_session": 0 })).toEqual([]);
+  expect(grownCallSites({ ...frozenCallSites, "lifecycle.operation": 0 })).toEqual([]);
   expect(grownCallSites({})).toEqual([]);
 });
