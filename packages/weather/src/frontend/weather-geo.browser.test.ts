@@ -84,8 +84,8 @@ afterAll(async () => {
 });
 
 for (const width of [390, 768, 1440])
-  test(`Weather city sources and settings fit ${width}px in light and dark`, async () => {
-    for (const dark of [false, true]) {
+  for (const dark of [false, true])
+    test(`Weather city sources and settings fit ${width}px in ${dark ? "dark" : "light"}`, async () => {
       const page = await browser.newPage({ viewport: { width, height: 1000 } });
       try {
         posted = undefined;
@@ -120,8 +120,7 @@ for (const width of [390, 768, 1440])
       } finally {
         await page.close();
       }
-    }
-  });
+    });
 
 test("Weather shows budget recovery and allows cancelling without a save", async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
