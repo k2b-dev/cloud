@@ -713,7 +713,11 @@ function VersionsSection(props: {
   // Newest first, below the current file, as the approved list reads.
   const listed = createMemo(() => [...items()].sort((a, b) => b.created.localeCompare(a.created)));
   const run = async (work: () => Promise<void>) => {
-    if (busy() || props.busy || props.versions.state() !== "ready") return;
+    if (busy() || props.busy) return;
+    if (props.versions.state() !== "ready") {
+      toast.error(h().versionsFailed);
+      return;
+    }
     setBusy(true);
     try {
       await work();
@@ -832,12 +836,14 @@ function VersionsSection(props: {
                     : h().versionCurrent
                 }
                 leading={
-                  <Avatar
-                    name={props.currentAuthor ?? h().versionCurrent}
-                    icon={props.currentAuthor ? undefined : "ti ti-file"}
-                    size="xs"
-                    style={{ width: "20px", height: "20px" }}
-                  />
+                  <span aria-hidden="true" class="flex">
+                    <Avatar
+                      name={props.currentAuthor ?? h().versionCurrent}
+                      icon={props.currentAuthor ? undefined : "ti ti-file"}
+                      size="xs"
+                      style={{ width: "20px", height: "20px" }}
+                    />
+                  </span>
                 }
                 trailing={
                   <time dateTime={props.entry.modified} title={when(props.entry.modified)}>
@@ -858,7 +864,11 @@ function VersionsSection(props: {
                     }
                     description={version.comment ? `${version.comment}${version.author ? ` · ${version.author}` : ""}` : undefined}
                     // Filegate's author metadata names the comment editor, not the content author.
-                    leading={<Avatar name={t().versions} icon="ti ti-history" size="xs" style={{ width: "20px", height: "20px" }} />}
+                    leading={
+                      <span aria-hidden="true" class="flex">
+                        <Avatar name={t().versions} icon="ti ti-history" size="xs" style={{ width: "20px", height: "20px" }} />
+                      </span>
+                    }
                     trailing={
                       <time dateTime={version.created} title={when(version.created)}>
                         {when(version.created)}
