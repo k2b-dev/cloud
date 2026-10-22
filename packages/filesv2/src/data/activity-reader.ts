@@ -5,13 +5,13 @@ import {
   ACTIVITY_SCAN_LIMIT,
   type ActivityEntry,
   type ShareAccessCounts,
-  type ShareAccessPeriod,
   ShareAccessInput,
   ShareAccessNetwork,
+  type ShareAccessPeriod,
 } from "../activity-contracts";
+import type { ActivityReadBudget } from "../service/activity-read-budget";
 import { FilesError } from "../service/errors";
 import type { Binding } from "./bases";
-import type { ActivityReadBudget } from "../service/activity-read-budget";
 
 /** Deliberately excludes raw detail, tokens, journal IDs and error messages. */
 export type ActivityCandidate = {
@@ -54,6 +54,8 @@ export type ActivityPosition = { time: string; id: string };
 export type CandidateInput = {
   scope: { admin: boolean; userId: string; bindingIds: string[] };
   baseId?: string;
+  /** Only supplied after projecting a visible anchor; peers exclude that already counted event. */
+  batch?: { id: string; anchorId: string };
   chain?: { serverUrl: string; root: string; baseId: string | null; path: string };
   position: ActivityPosition | null;
   direction: "asc" | "desc";
@@ -134,7 +136,8 @@ export const activityReaderData = {
         AND action IN ('folder.create','file.create','file.upload','file.overwrite','item.copy','item.restore',
           'version.restore_copy','place.provision','item.rename','item.move','place.archive','place.restore')))`;
     // Actor/action filters follow projection in the service; a sparse match must not make SQL walk an unbounded range.
-    const filters = sql`${scope} AND ${base} AND ${chain} AND (${input.from ?? null}::timestamptz IS NULL OR coalesce(finished_at,started_at)>=${input.from ?? null}::timestamptz)
+    const batch = input.batch ? sql`batch_id=${input.batch.id}::uuid AND activity.id<>${input.batch.anchorId}::uuid` : sql`TRUE`;
+    const filters = sql`${scope} AND ${base} AND ${chain} AND ${batch} AND (${input.from ?? null}::timestamptz IS NULL OR coalesce(finished_at,started_at)>=${input.from ?? null}::timestamptz)
       AND (${input.to ?? null}::timestamptz IS NULL OR coalesce(finished_at,started_at)<=${input.to ?? null}::timestamptz)`;
     budget?.check();
     const query =

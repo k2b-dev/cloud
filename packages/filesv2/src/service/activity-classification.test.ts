@@ -20,6 +20,7 @@ const base = () => mixed();
 const files: Record<string, Classification> = {
   activity: read,
   activityEntry: read,
+  activityBatchContext: read,
   activityForEntry: read,
   movementChain: read,
   shareAccess: read,

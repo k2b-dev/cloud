@@ -120,6 +120,8 @@ test("canonical guest demotion denies own activity/list, activity.get and share.
   const f = fixture();
   expect((await f.service.activity(call)).items[0]?.id).toBe(row.id);
   expect((await f.service.activityEntry(call, { activityId: row.id })).id).toBe(row.id);
+  f.candidates.mockResolvedValue([]);
+  expect(await f.service.activityBatchContext(call, { activityId: row.id })).toEqual({ visibleCount: 1, complete: true });
   expect((await f.service.shareAccess(call, input)).pages).toBe(1);
   f.candidates.mockClear();
   f.byId.mockClear();
@@ -129,6 +131,7 @@ test("canonical guest demotion denies own activity/list, activity.get and share.
   f.demote();
   await expect(f.service.activity(call)).rejects.toMatchObject({ code: "forbidden", status: 403 });
   await expect(f.service.activityEntry(call, { activityId: row.id })).rejects.toMatchObject({ code: "forbidden", status: 403 });
+  await expect(f.service.activityBatchContext(call, { activityId: row.id })).rejects.toMatchObject({ code: "forbidden", status: 403 });
   await expect(f.service.activityForEntry(call, "unknown-reference")).rejects.toMatchObject({ code: "forbidden", status: 403 });
   await expect(f.service.shareAccess(call, input)).rejects.toMatchObject({ code: "forbidden", status: 403 });
   f.setAdmin();
@@ -150,6 +153,7 @@ test("unreadable configuration fails history list/detail/chain explicitly while 
   for (const read of [
     () => f.service.activity(call),
     () => f.service.activityEntry(call, { activityId: row.id }),
+    () => f.service.activityBatchContext(call, { activityId: row.id }),
     () => f.service.activityForEntry(call, "unknown-reference"),
     () => f.service.movementChain(call, { activityId: row.id }),
   ])

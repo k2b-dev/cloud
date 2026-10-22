@@ -1,7 +1,7 @@
 import { type AuthContext, auth, getLocale, jsonResponse, middleware, requiresAdmin, requiresAuth, respond, v } from "@k2b/cloud/server";
 import { ok } from "@k2b/stdlib";
 import { Hono } from "hono";
-import { ActivityBasesInput, ActivityBasesPageSchema, ShareAccessInput } from "../activity-contracts";
+import { ActivityBasesInput, ActivityBasesPageSchema, ActivityBatchContextSchema, ShareAccessInput } from "../activity-contracts";
 import {
   ActivityChainSchema,
   ActivityEntrySchema,
@@ -88,6 +88,17 @@ export const activityApi = new Hono<AuthContext>()
     v("param", ActivityIdInput),
     async (c) =>
       respond(c, ok(await filesService.activityEntry({ ...requestCall(c), requestAbort: c.req.raw.signal }, c.req.valid("param")))),
+  )
+  .get(
+    "/activity/:activityId/batch",
+    middleware.openapi({
+      summary: "Count visible batch events anchored on a currently visible history event",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(ActivityBatchContextSchema, "Visible batch count and completeness") },
+    }),
+    v("param", ActivityIdInput),
+    async (c) =>
+      respond(c, ok(await filesService.activityBatchContext({ ...requestCall(c), requestAbort: c.req.raw.signal }, c.req.valid("param")))),
   )
   .get(
     "/activity/:activityId/chain",

@@ -163,6 +163,7 @@ export function historyFixture(rows: ActivityCandidate[] = [candidate()]) {
         database.push(input);
         return rows
           .filter((row) => {
+            if (input.batch && (row.batch_id !== input.batch.id || row.id === input.batch.anchorId)) return false;
             if (
               !input.scope.admin &&
               !input.scope.bindingIds.includes(row.base_id ?? "") &&

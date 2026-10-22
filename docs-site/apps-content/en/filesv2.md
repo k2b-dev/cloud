@@ -256,6 +256,18 @@ has its own entry; items changed in one batch share a batch ID. Moving a folder
 records one entry for the whole tree. Planning folder creation or finding an
 existing folder creates no entry.
 
+`GET /api/filesv2/activity/:activityId/batch` returns the visible count for an
+event's batch, independently of the current search text or history page.
+The response is `{visibleCount, complete}`. The count includes the selected
+event and counts each visible event once, even when only one side is readable.
+Own recorded snapshots follow the same visibility rules as other history reads.
+When `complete` is false, show the count as “at least”: the reader reached its
+500-event bound. Exactly 500 candidates also produce a lower bound. A complete
+count covers retained, currently visible events; it does not count descendants
+inside a selected folder or events removed by retention. An unknown, inaccessible,
+or unbatched event returns the same 404. This read returns no peer details and
+does not grant access to files.
+
 Transfer entries retain the old and confirmed new paths. Copies also record
 the source and destination storage areas; a copy in the same folder records
 the new name Filegate chose. On storage with stable IDs, renames and moves
