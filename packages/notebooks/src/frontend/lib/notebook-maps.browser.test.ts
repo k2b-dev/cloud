@@ -344,6 +344,12 @@ test("pending map export gates both actions; closing cancels preparation without
     await page.locator(".notebook-map-export__preview .k2b-map-view").waitFor();
     expect(await page.getByRole("button", { name: "PDF herunterladen", exact: true }).last().isDisabled()).toBe(true);
     expect(await page.getByRole("button", { name: "Drucken", exact: true }).last().isDisabled()).toBe(true);
+    expect(
+      await page
+        .locator('.k2b-inline-guidance[aria-hidden="true"]')
+        .last()
+        .evaluate((element) => getComputedStyle(element).visibility),
+    ).toBe("hidden");
     await page.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
     await page.locator(".notebook-map-export__preview").waitFor({ state: "detached" });
     release();
