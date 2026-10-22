@@ -389,15 +389,27 @@ export default function ActivityView(props: ActivityViewProps) {
   const source = () => filterKey(props.filters);
   const pages = query.createInfinite({
     source,
-    initial: props.initial && filterKey(props.initial.filters) === source() ? { source: source(), pages: [props.initial.page] } : undefined,
-    loadPage: (_key, { cursor, abortSignal }) =>
-      props.load({ ...activityRequest(props.filters, props.env), ...(cursor ? { cursor } : {}) }, abortSignal),
-    getNextCursor: (page: ActivityPage) => page.next,
+    initial:
+      props.initial && filterKey(props.initial.filters) === source()
+        ? { source: source(), pages: [{ source: source(), page: props.initial.page }] }
+        : undefined,
+    loadPage: async (key, { cursor, abortSignal }) => ({
+      source: key,
+      page: await props.load({ ...activityRequest(props.filters, props.env), ...(cursor ? { cursor } : {}) }, abortSignal),
+    }),
+    getNextCursor: (result: { source: string; page: ActivityPage }) => result.page.next,
   });
-  const entries = createMemo(() => pages.pages().flatMap((page) => page.items));
+  // The query keeps its last good value while a new source loads; it is not a result for the new filters.
+  const visiblePages = createMemo(() =>
+    pages
+      .pages()
+      .filter((result) => result.source === source())
+      .map((result) => result.page),
+  );
+  const entries = createMemo(() => visiblePages().flatMap((page) => page.items));
   const rows = createMemo(() => historyRows(entries(), { batches: true }));
   const groups = createMemo(() => dayGroups(rows(), locale(), h(), props.env));
-  const limited = () => pages.pages().some((page) => page.searchLimitReached);
+  const limited = () => visiblePages().some((page) => page.searchLimitReached);
   const [text, setText] = createSignal(props.filters.q ?? "");
   // Back and forward change the URL; the field follows it.
   createEffect(
@@ -430,7 +442,7 @@ export default function ActivityView(props: ActivityViewProps) {
     if (place) return h().emptyPlace.replace("{place}", place);
     return h().emptyAny;
   };
-  const loadedOnce = () => pages.pages().length > 0;
+  const loadedOnce = () => visiblePages().length > 0;
   const actionLabel = (action: HistoryAction) => {
     const labels: Partial<Record<HistoryAction, string>> = {
       "folder.create": h().whatCreated,
@@ -553,19 +565,21 @@ export default function ActivityView(props: ActivityViewProps) {
           </Show>
         </div>
       </div>
-      <div class="filesv2-history-body" aria-busy={pages.loading()}>
+      <div class="filesv2-history-body" aria-busy={pages.loading() || pages.refreshing()}>
         <Show
           when={!props.filters.q}
           fallback={
             <MissingItemView
               query={props.filters.q ?? ""}
               entries={entries()}
-              state={pages.error() && !loadedOnce() ? "error" : pages.loading() && !loadedOnce() ? "loading" : "ready"}
+              state={
+                pages.error() && !loadedOnce() ? "error" : (pages.loading() || pages.refreshing()) && !loadedOnce() ? "loading" : "ready"
+              }
               onRetry={() => void pages.refresh()}
               hasMore={pages.hasMore()}
               loadingMore={pages.loadingMore()}
               moreFailed={!!pages.error() && loadedOnce()}
-              onLoadMore={() => void pages.loadMore()}
+              onLoadMore={() => void (pages.hasMore() ? pages.loadMore() : pages.refresh())}
               limitReached={limited()}
               env={props.env}
               actions={props.actions}

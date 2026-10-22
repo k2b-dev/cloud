@@ -29,8 +29,9 @@ export const historyCatalog = i18n.define({
       pageViewsSentence: "The page was viewed {pages} times.",
       periodHour: "{date}, {from} to {to}",
       periodDay: "{date}, whole day",
-      accessPagesNetworks: "The link page was viewed {pages} times from {networks} networks",
-      accessPages: "The link page was viewed {pages} times",
+      accessPagesNetworks: (pages: number, networks: number) =>
+        `The link page was viewed ${pages === 1 ? "once" : `${pages} times`} from ${networks === 1 ? "1 network" : `${networks} networks`}`,
+      accessPages: (pages: number) => `The link page was viewed ${pages === 1 ? "once" : `${pages} times`}`,
       accessDownloads: "{count} downloads were released through the link",
       accessPasswords: "A wrong password was entered {count} times for the link",
       linkNamed: "Link “{title}”",
@@ -326,8 +327,9 @@ export const historyCatalog = i18n.define({
       pageViewsSentence: "Die Seite wurde {pages}-mal aufgerufen.",
       periodHour: "{date}, {from} bis {to}",
       periodDay: "{date}, ganzer Tag",
-      accessPagesNetworks: "Die Seite des Links wurde {pages}-mal aus {networks} Netzen aufgerufen",
-      accessPages: "Die Seite des Links wurde {pages}-mal aufgerufen",
+      accessPagesNetworks: (pages: number, networks: number) =>
+        `Die Seite des Links wurde ${pages}-mal aus ${networks === 1 ? "einem Netz" : `${networks} Netzen`} aufgerufen`,
+      accessPages: (pages: number) => `Die Seite des Links wurde ${pages}-mal aufgerufen`,
       accessDownloads: "Über den Link wurden {count} Downloads freigegeben",
       accessPasswords: "Am Link wurde {count}-mal ein falsches Passwort eingegeben",
       linkNamed: "Link „{title}“",

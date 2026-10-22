@@ -309,19 +309,11 @@ export const periodHasAccess = (period: ShareAccessPeriod) => period.pages + per
 export function AccessRow(props: { share: ShareView; period: ShareAccessPeriod; env: HistoryEnvironment }) {
   const h = useHistoryMessages();
   const locale = useLocale();
-  const networks = () =>
-    props.period.knownNetworks === null
-      ? null
-      : props.period.overflow
-        ? h().moreThanNetworks.replace("{count}", String(props.period.knownNetworks))
-        : String(props.period.knownNetworks);
   const text = () => {
     const period = props.period;
     if (period.pages > 0) {
-      const count = networks();
-      return count === null
-        ? h().accessPages.replace("{pages}", String(period.pages))
-        : h().accessPagesNetworks.replace("{pages}", String(period.pages)).replace("{networks}", count);
+      const count = period.pageNetworks;
+      return count === null ? h().accessPages(period.pages) : h().accessPagesNetworks(period.pages, count);
     }
     if (period.downloads > 0) return h().accessDownloads.replace("{count}", String(period.downloads));
     return h().accessPasswords.replace("{count}", String(period.passwordFailed));
