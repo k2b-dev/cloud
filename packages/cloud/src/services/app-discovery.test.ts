@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import type { AppRegistryEntry } from "../contracts/registry";
 import type { AuthContext, RequestAuthority } from "../server/middleware/auth";
 import { buildAdminGroups } from "../ssr/admin-navigation";
-import { visibleNavigationApps, visiblePanelProviders, visiblePwaParts } from "../ssr/app-navigation";
+import { hasDedicatedRuntimeRoute, visibleNavigationApps, visiblePanelProviders, visiblePwaParts } from "../ssr/app-navigation";
 import { getDisplayRuntimeContext, getRuntimeContext, preloadDisplayApps } from "../ssr/runtime";
 import * as access from "./app-access";
 import { discoverableAppEntries, discoverableApps } from "./app-discovery";
@@ -95,6 +95,7 @@ test("administration navigation hides app-owned destinations without a use grant
   const hidden = {
     ...app("hidden", { kind: "grants" }),
     adminHref: "/admin/hidden",
+    routes: ["/admin/gateway", "/admin/observability"],
     adminNav: [{ label: "Hidden app", links: [{ href: "/admin/hidden", label: "Hidden destination", icon: "ti ti-lock" }] }],
   };
   const resolver = spyOn(access, "usableAppIds").mockResolvedValue(new Set(["legacy"]));
@@ -108,7 +109,12 @@ test("administration navigation hides app-owned destinations without a use grant
         await preloadDisplayApps(c);
         await next();
       })
-      .get("/", (c) => c.json(buildAdminGroups(getDisplayRuntimeContext(c).apps)));
+      .get("/", (c) => {
+        const visible = getDisplayRuntimeContext(c).apps;
+        expect(hasDedicatedRuntimeRoute(visible, "/admin/gateway", "core")).toBe(false);
+        expect(hasDedicatedRuntimeRoute(visible, "/admin/observability", "core")).toBe(false);
+        return c.json(buildAdminGroups(visible));
+      });
     const text = await (await server.request("/")).text();
     expect(text).not.toContain("Hidden");
     expect(text).not.toContain("/admin/hidden");
