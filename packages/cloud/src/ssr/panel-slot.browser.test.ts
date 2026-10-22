@@ -7,7 +7,7 @@ import typescript from "@babel/preset-typescript";
 import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, storedCookie } from "../../../ui/test/browser";
+import { launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-panel-browser-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -204,6 +204,7 @@ for (const width of [1440, 390]) {
         window.parent.dispatchEvent(new CustomEvent("cloud.panel.request", { detail: { action: "close" } }));
       });
       const original = await frame.locator("html").evaluate(() => location.href);
+      const originalDocument = await frame.locator("html").evaluateHandle((element) => element.ownerDocument);
       for (const request of [
         { action: "close" },
         { action: "open", provider: "second", accepted: false },
@@ -218,10 +219,16 @@ for (const width of [1440, 390]) {
       await frame.locator("#leave-panel").click();
       expect(page.url()).not.toContain("/next");
       await page.setViewportSize({ width: width === 390 ? 1440 : 390, height: 900 });
+      // CSS sees the breakpoint before the MediaQuery change handler restores the vetoed editor.
+      await settled(page);
+      expect(await originalDocument.evaluate((previous) => previous === document)).toBe(true);
       expect(await frame.getByLabel("Panel input", { exact: true }).isVisible()).toBe(true);
       expect(await frame.getByLabel("Panel input", { exact: true }).inputValue()).toBe("Keep this unsent draft");
       await page.setViewportSize({ width, height: 900 });
+      await settled(page);
       await page.evaluate(() => window.dispatchEvent(new PopStateEvent("popstate")));
+      expect(await originalDocument.evaluate((previous) => previous === document)).toBe(true);
+      await originalDocument.dispose();
       expect(await frame.getByLabel("Panel input", { exact: true }).isVisible()).toBe(true);
       await page.evaluate(() =>
         window.dispatchEvent(

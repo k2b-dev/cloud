@@ -921,9 +921,16 @@ for (const width of [1440, 390]) {
     test(`Assistant full-view Command Escape restores editing during ${pending} at ${width}px`, async () => {
       fixture.assistant.reset();
       if (pending === "save") fixture.assistant.addConversation("Chat2B", "Command conversation");
-      const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en" });
+      const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
+      // The real ShellRuntime reloads once when it first learns the browser timezone.
+      // Match the SSR fixture before navigation so that fixture-ready belongs to the tested document.
+      await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
       const attachmentDuringCreate = pending === "create" && width === 390;
       const page = await context.newPage();
+      let documents = 0;
+      page.on("request", (request) => {
+        if (request.isNavigationRequest() && request.frame() === page.mainFrame()) documents++;
+      });
       page.setDefaultTimeout(8_000);
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
@@ -1030,6 +1037,7 @@ for (const width of [1440, 390]) {
           await savedImage;
         }
 
+        expect(documents).toBe(1);
         expect(opened).toBe(0);
         expect(fixture.assistant.conversations.size).toBe(1);
         expect(fixture.assistant.submitted()).toBe(0);
