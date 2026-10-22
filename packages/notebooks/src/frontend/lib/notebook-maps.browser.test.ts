@@ -379,31 +379,31 @@ test("Print receives decoded maps and ordinary attachments and removes its tempo
   }
 });
 
-test("closing Print while an ordinary image loads removes the temporary document without printing", async () => {
+test("closing Print while an ordinary image decodes removes the temporary document without printing", async () => {
   const { context, page } = await open("?pdf=1&images=1");
-  let release!: () => void;
-  const pending = new Promise<void>((resolve) => {
-    release = resolve;
-  });
   try {
     await page.locator(".notebook-map-export__preview img.notebook-map__image").nth(1).waitFor();
-    await page.route("**/attachments/Img001/content?**", async (route) => {
-      await pending;
-      await route.continue().catch(() => {});
-    });
     await page.evaluate(() => {
+      const decode = HTMLImageElement.prototype.decode;
+      HTMLImageElement.prototype.decode = async function () {
+        await decode.call(this);
+        if (this.alt === "Fictional attachment" && this.closest(".notebook-map-print-document")) {
+          document.body.dataset.printImageDecoding = "true";
+          await new Promise<void>((resolve) => document.addEventListener("release-print-image", () => resolve(), { once: true }));
+        }
+      };
       window.print = () => {
         document.body.dataset.unexpectedPrint = "true";
       };
     });
     await page.getByRole("button", { name: "Drucken", exact: true }).last().click();
-    await page.locator(".notebook-map-print-document").waitFor({ state: "attached" });
+    await page.waitForFunction(() => document.body.dataset.printImageDecoding === "true");
     await page.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
     await page.locator(".notebook-map-print-document").waitFor({ state: "detached" });
     expect(await page.evaluate(() => document.body.dataset.unexpectedPrint)).toBeUndefined();
     expect(await page.evaluate(() => document.documentElement.classList.contains("notebook-map-printing"))).toBe(false);
+    await page.evaluate(() => document.dispatchEvent(new Event("release-print-image")));
   } finally {
-    release();
     await context.close();
   }
 });
