@@ -668,6 +668,9 @@ describe("Files history in the workspace", () => {
     expect(toggle().textContent?.trim()).toBe("3");
     expect(section().querySelector(".k2b-count-chip")?.textContent).toBe("3");
     expect(titles()[0]).toBe("Version 3 · current");
+    const avatars = [...section().querySelectorAll('[role="img"]')];
+    expect(avatars).toHaveLength(3);
+    expect(avatars.every((avatar) => avatar.closest('[aria-hidden="true"]'))).toBe(true);
     expect(
       titles()
         .slice(1)
