@@ -1671,6 +1671,7 @@ const app = new Hono<AuthContext>()
           contactId: internalContactId,
           addressId: c.req.param("addressId") ?? "",
           geocode: async (input) => geocodeOutcome(await geoClient.geocode(input, geoCaller(c))),
+          signal: c.req.raw.signal,
         }),
       );
     },

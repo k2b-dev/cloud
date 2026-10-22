@@ -578,6 +578,8 @@ const replaceAddresses = async (contactId: string, addresses: ContactAddressInpu
         geo_lon,
         geo_provenance,
         geo_checked_at,
+        geo_lookup_at,
+        geo_lookup_hash,
         position
       ) VALUES (
         ${contactId}::uuid,
@@ -595,6 +597,8 @@ const replaceAddresses = async (contactId: string, addresses: ContactAddressInpu
         ${geo?.geo_lon ?? null},
         (${geoProvenanceJson(geo?.geo_provenance)}::text)::jsonb,
         ${geo?.geo_checked_at ?? null},
+        ${geo?.geo_lookup_at ?? null},
+        ${geo?.geo_lookup_hash ?? null},
         ${index}
       )
     `;

@@ -331,7 +331,7 @@ export const contactsService = {
     locateAddress: async (
       config: BookCaller & { bookId: string; contactId: string; addressId: string } & Pick<
           Parameters<typeof addressLocation.locateAddress>[0],
-          "geocode"
+          "geocode" | "signal"
         >,
     ) => {
       const access = await authorizeBook(config.bookId, config, "read");
@@ -339,7 +339,12 @@ export const contactsService = {
       if (!isUuid(config.addressId)) return fail(err.notFound("Address"));
       const contact = await contacts.get({ bookId: config.bookId, id: config.contactId });
       if (!contact) return fail(err.notFound("Contact"));
-      return addressLocation.locateAddress({ contactId: contact.id, addressId: config.addressId, geocode: config.geocode });
+      return addressLocation.locateAddress({
+        contactId: contact.id,
+        addressId: config.addressId,
+        geocode: config.geocode,
+        signal: config.signal,
+      });
     },
     getMany: async (config: BookCaller & Parameters<typeof contacts.getMany>[0]) => {
       const access = await authorizeBook(config.bookId, config, "read");

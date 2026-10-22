@@ -41,10 +41,11 @@ export const addressLocation = (address: AddressFields, row: AddressGeoColumns):
 };
 
 /** Columns for a new address row: a chosen suggestion, else the unchanged previous location, else pending. */
-export const addressGeoColumns = (
-  address: ContactAddressInput,
-  previous: ReadonlyMap<string, AddressGeoColumns>,
-): AddressGeoColumns | null => {
+/** An open lookup for the address text with this hash; it moves with the text when its row is replaced. */
+export type AddressGeoClaim = { geo_lookup_at: Date | null; geo_lookup_hash: string | null };
+type CarriedGeo = AddressGeoColumns & Partial<AddressGeoClaim>;
+
+export const addressGeoColumns = (address: ContactAddressInput, previous: ReadonlyMap<string, CarriedGeo>): CarriedGeo | null => {
   const hash = addressGeoHash(address);
   if (address.location)
     return {
@@ -61,13 +62,29 @@ export const addressGeoColumns = (
 export const geoProvenanceJson = (value: unknown): string | null =>
   value === null || value === undefined ? null : typeof value === "string" ? value : JSON.stringify(value);
 
-export const loadPreviousAddressGeo = async (contactId: string, db: SqlExecutor): Promise<Map<string, AddressGeoColumns>> => {
-  const rows = await db<AddressGeoColumns[]>`
-    SELECT geo_hash, geo_lat, geo_lon, geo_provenance, geo_checked_at
+/** Stored answers and open lookups of a contact, keyed by the address hash they belong to. */
+export const loadPreviousAddressGeo = async (contactId: string, db: SqlExecutor): Promise<Map<string, CarriedGeo>> => {
+  const rows = await db<(AddressGeoColumns & AddressGeoClaim)[]>`
+    SELECT geo_hash, geo_lat, geo_lon, geo_provenance, geo_checked_at, geo_lookup_at, geo_lookup_hash
     FROM contacts.contact_addresses
-    WHERE contact_id = ${contactId}::uuid AND geo_hash IS NOT NULL AND geo_checked_at IS NOT NULL
+    WHERE contact_id = ${contactId}::uuid
+      AND ((geo_hash IS NOT NULL AND geo_checked_at IS NOT NULL) OR geo_lookup_hash IS NOT NULL)
   `;
-  return new Map(rows.map((row) => [row.geo_hash!, row]));
+  const carried = new Map<string, CarriedGeo>();
+  for (const row of rows) {
+    if (row.geo_hash && row.geo_checked_at) carried.set(row.geo_hash, row);
+    else if (row.geo_lookup_hash && !carried.has(row.geo_lookup_hash))
+      carried.set(row.geo_lookup_hash, {
+        geo_hash: null,
+        geo_lat: null,
+        geo_lon: null,
+        geo_provenance: null,
+        geo_checked_at: null,
+        geo_lookup_at: row.geo_lookup_at,
+        geo_lookup_hash: row.geo_lookup_hash,
+      });
+  }
+  return carried;
 };
 
 /** The one sure candidate, or none: two different sure buildings are as unknown as none. */
@@ -114,21 +131,35 @@ export type ContactAddressLocateResult =
   | { state: "budget_exhausted"; scope: "person" | "cloud"; resetsAt: string }
   | { state: "failed" };
 
-type AddressRow = AddressGeoColumns & {
-  geo_lookup_at: Date | null;
-  line1: string;
-  postal_code: string;
-  city: string;
-  state_region: string | null;
-  country_code: string;
-};
+type AddressRow = AddressGeoColumns &
+  AddressGeoClaim & {
+    line1: string;
+    postal_code: string;
+    city: string;
+    state_region: string | null;
+    country_code: string;
+  };
 
 const readAddress = async (contactId: string, addressId: string) =>
   (
     await sql<AddressRow[]>`
-      SELECT line1, postal_code, city, state_region, country_code, geo_hash, geo_lat, geo_lon, geo_provenance, geo_checked_at, geo_lookup_at
+      SELECT line1, postal_code, city, state_region, country_code, geo_hash, geo_lat, geo_lon, geo_provenance, geo_checked_at,
+        geo_lookup_at, geo_lookup_hash
       FROM contacts.contact_addresses
       WHERE id = ${addressId}::uuid AND contact_id = ${contactId}::uuid
+    `
+  )[0];
+/** The row now holding this address text: the same row, or its replacement after an unchanged save. */
+const readByHash = async (contactId: string, addressId: string, hash: string) =>
+  (await readAddress(contactId, addressId)) ??
+  (
+    await sql<AddressRow[]>`
+      SELECT line1, postal_code, city, state_region, country_code, geo_hash, geo_lat, geo_lon, geo_provenance, geo_checked_at,
+        geo_lookup_at, geo_lookup_hash
+      FROM contacts.contact_addresses
+      WHERE contact_id = ${contactId}::uuid AND (geo_hash = ${hash} OR geo_lookup_hash = ${hash})
+      ORDER BY position
+      LIMIT 1
     `
   )[0];
 const fields = (row: AddressRow): AddressFields => ({
@@ -157,8 +188,8 @@ export const locateAddress = async (config: {
   addressId: string;
   geocode: (input: GeoGeocodeInput) => Promise<AddressGeocodeOutcome>;
   now?: () => Date;
-  /** Test seam for the bounded wait on another reader's lookup. */
-  sleep?: (ms: number) => Promise<void>;
+  /** The request's cancellation; a reader who left stops waiting. */
+  signal?: AbortSignal;
 }): Promise<Result<ContactAddressLocateResult>> => {
   const row = await readAddress(config.contactId, config.addressId);
   if (!row) return fail(err.notFound("Address"));
@@ -167,10 +198,11 @@ export const locateAddress = async (config: {
   if (stored) return ok({ state: "located", location: stored });
   const hash = addressGeoHash(address);
 
-  // One paid lookup per address: concurrent readers wait for the claimant's stored answer instead of calling Core.
+  // One paid lookup per address text: concurrent readers wait for the claimant's stored answer instead of calling
+  // Core. The claim names the hash, so it survives a save that replaces the row without changing the address.
   const claimed = await sql`
     UPDATE contacts.contact_addresses
-    SET geo_lookup_at = now()
+    SET geo_lookup_at = now(), geo_lookup_hash = ${hash}
     WHERE id = ${config.addressId}::uuid
       AND contact_id = ${config.contactId}::uuid
       AND geo_hash IS DISTINCT FROM ${hash}
@@ -178,14 +210,14 @@ export const locateAddress = async (config: {
     RETURNING id
   `;
   if (!claimed.length) {
-    const sleep = config.sleep ?? Bun.sleep;
-    for (let waited = 0; waited < LOOKUP_WAIT_MS; waited += LOOKUP_POLL_MS) {
-      const current = await readAddress(config.contactId, config.addressId);
+    const deadline = Date.now() + LOOKUP_WAIT_MS;
+    while (Date.now() < deadline && !config.signal?.aborted) {
+      const current = await readByHash(config.contactId, config.addressId, hash);
       if (!current) return fail(err.notFound("Address"));
       const location = addressLocation(fields(current), current);
       if (location) return ok({ state: "located", location });
-      if (current.geo_lookup_at === null) break;
-      await sleep(LOOKUP_POLL_MS);
+      if (current.geo_lookup_hash !== hash) break;
+      await Bun.sleep(LOOKUP_POLL_MS);
     }
     return ok({ state: "failed" });
   }
@@ -204,14 +236,17 @@ export const locateAddress = async (config: {
   } finally {
     // Unstored answers release the claim at once, so the next reader may try again.
     if (outcome.kind !== "candidates" && outcome.kind !== "not_found")
-      await sql`UPDATE contacts.contact_addresses SET geo_lookup_at = NULL WHERE id = ${config.addressId}::uuid`;
+      await sql`
+        UPDATE contacts.contact_addresses SET geo_lookup_at = NULL, geo_lookup_hash = NULL
+        WHERE contact_id = ${config.contactId}::uuid AND geo_lookup_hash = ${hash}
+      `;
   }
   if (outcome.kind === "not_configured" || outcome.kind === "failed") return ok({ state: outcome.kind });
   if (outcome.kind === "budget_exhausted") return ok({ state: outcome.kind, scope: outcome.scope, resetsAt: outcome.resetsAt });
 
   const match = outcome.kind === "candidates" ? safeAddressMatch(outcome.candidates) : null;
   const checkedAt = match ? new Date(match.provenance.computedAt) : (config.now?.() ?? new Date());
-  // An edit replaces the row, so a lookup for the old text never lands on the new one.
+  // The answer lands on whichever row still carries this address text; a changed address no longer carries the claim.
   await sql`
     UPDATE contacts.contact_addresses
     SET geo_hash = ${hash},
@@ -219,12 +254,13 @@ export const locateAddress = async (config: {
         geo_lon = ${match?.point.lon ?? null},
         geo_provenance = (${geoProvenanceJson(match?.provenance)}::text)::jsonb,
         geo_checked_at = ${checkedAt},
-        geo_lookup_at = NULL
-    WHERE id = ${config.addressId}::uuid
-      AND contact_id = ${config.contactId}::uuid
+        geo_lookup_at = NULL,
+        geo_lookup_hash = NULL
+    WHERE contact_id = ${config.contactId}::uuid
+      AND geo_lookup_hash = ${hash}
       AND geo_hash IS DISTINCT FROM ${hash}
   `;
-  const current = await readAddress(config.contactId, config.addressId);
+  const current = await readByHash(config.contactId, config.addressId, hash);
   const location = current ? addressLocation(fields(current), current) : null;
   return location ? ok({ state: "located", location }) : fail(err.notFound("Address"));
 };

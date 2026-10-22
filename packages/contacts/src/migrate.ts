@@ -215,7 +215,8 @@ export const migrate = async (): Promise<void> => {
       ADD COLUMN IF NOT EXISTS geo_lon DOUBLE PRECISION,
       ADD COLUMN IF NOT EXISTS geo_provenance JSONB,
       ADD COLUMN IF NOT EXISTS geo_checked_at TIMESTAMPTZ,
-      ADD COLUMN IF NOT EXISTS geo_lookup_at TIMESTAMPTZ
+      ADD COLUMN IF NOT EXISTS geo_lookup_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS geo_lookup_hash TEXT
   `.simple();
   console.log("  ✓ contacts.contact_addresses table");
 

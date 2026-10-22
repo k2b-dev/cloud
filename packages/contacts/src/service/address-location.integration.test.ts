@@ -213,4 +213,34 @@ suite("Contacts address location", () => {
     expect(unwrap(await locate(reader, failing, retry.geocode))).toMatchObject({ state: "located", location: { status: "found" } });
     expect(retry.calls).toHaveLength(1);
   });
+  test("a save that keeps the address text keeps the open lookup, so readers still share one paid call", async () => {
+    const contact = await create({ line1: "Frauenstraße 54" });
+    let calls = 0;
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const slow = async (): Promise<AddressGeocodeOutcome> => {
+      calls += 1;
+      await held;
+      return { kind: "candidates", candidates: [sure(48.47)] };
+    };
+    const first = locate(reader, contact, slow);
+    await Bun.sleep(100);
+    // A label-only save replaces the row while the lookup runs.
+    const relabeled = unwrap(
+      await contactsService.contact.update({
+        ...writer,
+        bookId,
+        id: contact.id,
+        data: { addresses: [{ ...address, line1: "Frauenstraße 54", label: "Büro" }] },
+      }),
+    );
+    expect(relabeled.addresses[0]!.id).not.toBe(contact.addresses[0]!.id);
+    const second = locate(reader, relabeled, slow);
+    await Bun.sleep(100);
+    release();
+    expect(unwrap(await first)).toMatchObject({ state: "located", location: { status: "found", point: { lat: 48.47 } } });
+    expect(unwrap(await second)).toMatchObject({ state: "located", location: { status: "found", point: { lat: 48.47 } } });
+    expect(calls).toBe(1);
+    expect((await get(contact.id)).addresses[0]!.location).toMatchObject({ status: "found", point: { lat: 48.47 } });
+  });
 });
