@@ -2,8 +2,12 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { createConfig } from "@k2b/ssr";
+import { ok } from "@k2b/stdlib";
 import type { Browser } from "playwright";
+import { z } from "zod";
 import { launchBrowser } from "../../../ui/test/browser";
 import type { startConversationPanelFixture } from "./ChatPanel.browser-fixture";
 import { nora, viewer } from "./ChatWorkspace.browser-fixture";
@@ -1212,32 +1216,209 @@ for (const editDuringSave of [false, true]) {
   }, 30_000);
 }
 
-test("Assistant panel keeps resource commands without promising unavailable app commands after a catalog failure", async () => {
-  fixture.assistant.reset();
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
-  const page = await context.newPage();
-  page.setDefaultTimeout(8_000);
-  await page.route("**/api/capabilities/v1/catalog?*", (route) =>
-    route.fulfill({ status: 503, json: { error: "Synthetic unavailable catalog" } }),
-  );
-  try {
-    await page.goto(fixture.url + "app/fixture");
-    await page.locator('html[data-fixture-ready="true"]').waitFor();
-    await page.locator("#open-chat").click();
-    await page.locator('[data-cloud-panel-provider="assistant"]').click();
-    const panel = page.frameLocator("[data-cloud-panel-frame]");
-    await panel.locator('html[data-fixture-ready="true"]').waitFor();
-    const failed = page.waitForResponse((response) => response.url().includes("/capabilities/v1/catalog") && response.status() === 503);
-    const composer = panel.locator('textarea:not([aria-hidden="true"])');
-    await composer.fill("/");
-    await composer.click();
-    await failed;
-    await panel.getByRole("listbox").waitFor();
-    expect(await panel.getByRole("option").count()).toBeGreaterThan(0);
-    expect(await panel.getByText("Commands from apps could not be loaded", { exact: true }).count()).toBe(0);
-    await composer.press("Escape");
-    expect(await composer.isEnabled()).toBe(true);
-  } finally {
-    await context.close();
-  }
-}, 30_000);
+const catalog = {
+  protocolVersion: 2,
+  apps: [
+    {
+      appId: "notebooks",
+      appName: "Notebooks",
+      appIcon: "ti ti-notebook",
+      appDescription: "Notes",
+      manifest: compileCapabilityManifest(
+        "notebooks",
+        defineCapabilities({
+          protocolVersion: 2,
+          types: { note: { title: "Note", description: "One note.", reader: "read" } },
+          queries: {
+            read: {
+              title: "Read note",
+              description: "Read one note.",
+              input: z.object({ id: z.string().describe("Note id.") }).strict(),
+              data: z.object({ title: z.string().describe("Title.") }).strict(),
+              openWorld: false,
+              run: async () => ok({ data: { title: "Synthetic recovery note" } }),
+            },
+            search: {
+              title: "Search notes",
+              description: "Find notes.",
+              input: UniversalSearchInputSchema,
+              data: UniversalSearchDataSchema,
+              openWorld: false,
+              universalSearch: { tags: [{ tag: "note", title: "Notes", description: "Search notes", aliases: ["notes"] }] },
+              run: async () => ok({ data: [] }),
+            },
+          },
+        }),
+      ),
+    },
+  ],
+  page: { hasMore: false },
+};
+for (const embedded of [true, false])
+  test(`catalog and resource recovery in real ${embedded ? "panel" : "fullview"}`, async () => {
+    fixture.assistant.reset();
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const page = await context.newPage();
+    page.setDefaultTimeout(8000);
+    let recoveredCatalogLoads = 0;
+    let searches = 0;
+    let catalogFailed = true;
+    await page.route("**/api/capabilities/v1/catalog?*", (route) => {
+      if (catalogFailed) return route.fulfill({ status: 503, json: { message: "Synthetic catalog failure" } });
+      recoveredCatalogLoads++;
+      return route.fulfill({ json: catalog });
+    });
+    await page.route("**/api/search?*", (route) => {
+      searches++;
+      if (searches === 1) return route.fulfill({ status: 503, json: { message: "Synthetic search failure" } });
+      return route.fulfill({
+        contentType: "application/x-ndjson",
+        body: [
+          { type: "start", query: "", apps: [{ id: "notebooks", name: "Notebooks", icon: "ti ti-notebook" }], providers: ["notebooks"] },
+          {
+            type: "provider",
+            provider: "notebooks",
+            status: "ok",
+            results: [
+              {
+                appId: "notebooks",
+                appName: "Notebooks",
+                appIcon: "ti ti-notebook",
+                readable: true,
+                ref: { type: "notebooks.note", id: "Q3note" },
+                title: "Synthetic recovery note",
+                href: "/app/notebooks/Q3note",
+              },
+            ],
+            ms: 5,
+          },
+          { type: "done", status: "complete", count: 1 },
+        ]
+          .map((line) => JSON.stringify(line) + "\n")
+          .join(""),
+      });
+    });
+    try {
+      await page.goto(fixture.url + (embedded ? "app/fixture" : "app/assistant"));
+      await page.locator('html[data-fixture-ready="true"]').waitFor();
+      if (embedded) {
+        await page.locator("#open-chat").click();
+        await page.locator('[data-cloud-panel-provider="assistant"]').click();
+      }
+      const view = embedded ? page.frameLocator("[data-cloud-panel-frame]") : page;
+      await view.locator('html[data-fixture-ready="true"]').waitFor();
+      const composer = view.locator('textarea:not([aria-hidden="true"])');
+      const failed = page.waitForResponse((r) => r.url().includes("/capabilities/v1/catalog") && r.status() === 503);
+      await composer.fill("/");
+      await composer.click();
+      await failed;
+      await view.getByRole("listbox").waitFor();
+      catalogFailed = false;
+      if (embedded) {
+        expect(await view.getByText("Commands from apps could not be loaded", { exact: true }).count()).toBe(0);
+        await composer.press("Escape");
+        await composer.fill("plain");
+        await composer.fill("/notes");
+      } else {
+        await view.getByRole("option").filter({ hasText: "Commands from apps could not be loaded" }).click();
+        await composer.press("Escape");
+        await composer.fill("plain");
+        await composer.fill("/notes");
+      }
+      const notes = view.getByRole("option", { name: "Notes Choose from Notebooks", exact: true });
+      await notes.waitFor();
+      expect(recoveredCatalogLoads).toBe(1);
+      await notes.click();
+      const dialog = view.getByRole("dialog");
+      await dialog.waitFor();
+      await dialog.locator(".cloud-resource-search__hint").filter({ hasText: "Search is currently unavailable. Try again." }).waitFor();
+      await dialog.getByRole("button", { name: "Try again", exact: true }).click();
+      await dialog.getByRole("option").filter({ hasText: "Synthetic recovery note" }).click();
+      await dialog.getByRole("button", { name: "Add", exact: true }).click();
+      await dialog.waitFor({ state: "hidden" });
+      expect(searches).toBe(2);
+      expect(await composer.inputValue()).toContain("Synthetic recovery note");
+      expect(await view.locator(".k2b-chat-composer__mention").allTextContents()).toEqual(["Synthetic recovery note"]);
+      expect(await composer.isEnabled()).toBe(true);
+      if (process.env.PANEL_SCREENSHOTS) {
+        mkdirSync(process.env.PANEL_SCREENSHOTS, { recursive: true });
+        await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `resource-recovery-${embedded ? "panel" : "fullview"}.png`) });
+      }
+    } catch (error) {
+      console.error(await (embedded ? page.frameLocator("[data-cloud-panel-frame]") : page).locator("body").innerText());
+      throw error;
+    } finally {
+      await context.close();
+    }
+  }, 30000);
+
+for (const openFailure of [false, true]) {
+  test(`Chat preserves both drafts when Back begins before send (open failure: ${openFailure})`, async () => {
+    fixture.backend.reset();
+    const older = fixture.backend.addChat({
+      members: [viewer, nora],
+      name: "Older draft",
+      count: 150,
+      unread: 120,
+      end: fixture.backend.now(),
+    });
+    const other = fixture.backend.addChat({ members: [viewer, nora], name: "Other draft", count: 3, end: fixture.backend.now() });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en" });
+    const page = await context.newPage();
+    page.setDefaultTimeout(8_000);
+    let releaseOpen!: () => void;
+    let releaseHistory!: () => void;
+    const opening = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    const history = new Promise<void>((resolve) => {
+      releaseHistory = resolve;
+    });
+    let historyReads = 0;
+    try {
+      await page.goto(fixture.url + `app/chat/c/${other}`);
+      await page.locator('html[data-fixture-ready="true"]').waitFor();
+      const composer = page.locator('textarea:not([aria-hidden="true"])');
+      await composer.fill("Other conversation's draft");
+      await page.locator(`a[href="/app/chat/c/${older}"]:visible`).click();
+      await page.waitForURL(`**/app/chat/c/${older}`);
+      await composer.fill("Original conversation's draft");
+      await page.route(`**/api/chat/conversations/${other}/snapshot*`, async (route) => {
+        await opening;
+        if (openFailure) await route.fulfill({ status: 503, json: { error: "Snapshot unavailable" } });
+        else await route.continue();
+      });
+      await page.route(`**/api/chat/conversations/${older}/messages`, async (route) => {
+        if (route.request().method() === "GET") {
+          historyReads++;
+          await history;
+          await route.fulfill({ status: 503, json: { error: "History unavailable" } });
+        } else await route.continue();
+      });
+      const requested = page.waitForRequest((request) => request.url().includes(`/conversations/${other}/snapshot`));
+      await page.evaluate(() => window.history.back());
+      await requested;
+      // A real keyboard submit while the previous chat is still on screen must not begin a send.
+      await page.keyboard.press("Enter");
+      const blocked = await composer.isDisabled();
+      const response = page.waitForResponse((result) => result.url().includes(`/conversations/${other}/snapshot`));
+      releaseOpen();
+      await response;
+      releaseHistory();
+      await page.getByRole("textbox", { name: "Message to Other draft", exact: true }).waitFor();
+      await page.locator('html[data-fixture-ready="true"]').waitFor();
+      expect(await composer.inputValue()).toBe("Other conversation's draft");
+      await page.locator(`a[href="/app/chat/c/${older}"]:visible`).click();
+      await page.waitForURL(`**/app/chat/c/${older}`);
+      expect(await composer.inputValue()).toBe("Original conversation's draft");
+      expect(blocked).toBe(true);
+      expect(historyReads).toBe(0);
+      expect(fixture.backend.posted).toHaveLength(0);
+      expect(await composer.isEnabled()).toBe(true);
+    } finally {
+      releaseOpen();
+      releaseHistory();
+      await context.close();
+    }
+  }, 30_000);
+}

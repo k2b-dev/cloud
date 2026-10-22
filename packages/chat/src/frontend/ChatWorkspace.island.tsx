@@ -524,7 +524,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
-    if (!current || !outbox || !text.trim() || draftStorageFailed()) return false;
+    if (!current || !outbox || !text.trim() || draftStorageFailed() || pendingOpen !== 0) return false;
     // The composer has cleared its draft, but the outbox does not own it until history is ready.
     pendingSends++;
     try {
@@ -753,7 +753,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
                         onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
                         focusKey={focusKey()}
-                        canWrite={composerReady() && current().permission !== "read" && !draftStorageFailed()}
+                        canWrite={composerReady() && !busy() && current().permission !== "read" && !draftStorageFailed()}
                         notice={draftNotice()}
                         hint={
                           current().permission === "read"
