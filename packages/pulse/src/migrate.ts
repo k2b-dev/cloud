@@ -9,7 +9,7 @@ const MIGRATIONS = [
   { version: 3, name: "clickhouse_baseline", up: installBaseline },
   { version: 4, name: "sql_console", up: installSqlConsole },
   { version: 5, name: "overview_alerts", up: installOverviewAlerts },
-  { version: 8, name: "agent_source_ownership", up: installAgentSourceOwnership },
+  { version: 6, name: "agent_source_ownership", up: installAgentSourceOwnership },
 ];
 const log = logger("pulse:migrate");
 
