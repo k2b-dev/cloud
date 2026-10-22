@@ -33,6 +33,7 @@ import { adminIdentity, artifactAdmin } from "./admin";
 import { agentHost } from "./agent-host";
 import { createArtifactServiceRoutes } from "./api";
 import { runtimeCapabilities } from "./capability-runtime";
+import * as chatAccess from "./chat-access";
 import { chatPresentations } from "./chat-presentations";
 import { clientCalls } from "./client-calls";
 import { evaluateStudioCase, type StudioEvalResult, studioEvalFailure, studioEvalSummary } from "./code-mode.eval";
@@ -1698,6 +1699,212 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       catalog.mockRestore();
       execute.mockRestore();
       transfer.mockRestore();
+    }
+  });
+
+  test("every capability runtime route rechecks chat Project access before catalog, execution, results, or streams", async () => {
+    const projectId = "00000000-0000-4000-8000-000000000091";
+    const conversationId = "00000000-0000-4000-8000-000000000092";
+    await sql`INSERT INTO ai.projects(id,short_id,name) VALUES(${projectId}::uuid,'Prj234','Runtime access')`;
+    const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission)
+      VALUES(${owner.user.id}::uuid,'read') RETURNING id`;
+    await sql`INSERT INTO ai.project_access VALUES(${projectId}::uuid,${grant!.id}::uuid)`;
+    const chat = {
+      ...checkConversation(conversationId, owner.user.id),
+      createdAt: "2026-10-22T00:00:00.000Z",
+      updatedAt: "2026-10-22T00:00:00.000Z",
+      lastUsedAt: "2026-10-22T00:00:00.000Z",
+      projectId,
+      allowedTools: ["code_check", "access.read", "access.write"],
+    };
+    // This suite has a minimal conversation table; Project grants and capability-call storage are real.
+    const conversation = spyOn(aiConversations, "getConversation").mockResolvedValue(chat);
+    const short = spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
+    const sharedAccess = spyOn(chatAccess, "requireToolChat");
+    const manifest = compileCapabilityManifest(
+      "access",
+      defineCapabilities({
+        protocolVersion: 2,
+        queries: {
+          read: {
+            title: "Read",
+            description: "Read test data",
+            openWorld: false,
+            input: z.object({}).strict(),
+            data: z.unknown(),
+            run: async () => ok({ data: {} }),
+          },
+        },
+        actions: {
+          write: {
+            title: "Write",
+            description: "Write test data",
+            openWorld: false,
+            destructive: false,
+            input: z.object({}).strict(),
+            data: z.unknown(),
+            idempotency: "required",
+            run: async () => ok({ data: {} }),
+          },
+        },
+      }),
+    );
+    const catalog = spyOn(capabilityClient, "getCapabilityCatalogApp").mockResolvedValue({
+      ok: true,
+      data: { appId: "access", appName: "Access", appDescription: "", appIcon: "", manifest },
+    });
+    const stream = {
+      id: "test-stream",
+      direction: "read" as const,
+      mediaType: "text/plain",
+      size: 3,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    };
+    const execute = spyOn(capabilityClient, "invokeCapability").mockResolvedValue({ ok: true, data: { data: {}, stream } });
+    const wording = spyOn(capabilityClient, "getCapabilityActionWording").mockResolvedValue(null);
+    const transfer = spyOn(capabilityClient, "transferCapabilityStream").mockImplementation(async () => new Response("abc"));
+    const routes = createArtifactServiceRoutes();
+    const api = new Hono<AuthContext>()
+      .use("*", async (c, next) => {
+        c.set("credentialKind", "session");
+        c.set("actor", owner.actor);
+        c.set("accessSubject", owner.accessSubject);
+        await next();
+      })
+      .route("/", routes);
+    const post = (path: string, body: unknown) =>
+      api.request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const readId = "00000000-0000-4000-8000-000000000093";
+    const pendingId = "00000000-0000-4000-8000-000000000094";
+    const rejectId = "00000000-0000-4000-8000-000000000095";
+    const request = (id: string, name: string, reference = conversationId) => ({ id, name, input: {}, conversationId: reference });
+    try {
+      expect((await aiProjects.get(projectId, owner.accessSubject, "read"))?.permission).toBe("read");
+      expect((await post("/runtime/capabilities", request(readId, "access.read"))).status).toBe(200);
+      for (const id of [pendingId, rejectId]) {
+        expect(await (await post("/runtime/capabilities", request(id, "access.write"))).json()).toMatchObject({
+          status: "approval",
+        });
+      }
+      for (const reference of [conversationId, chat.shortId]) {
+        await sql`UPDATE assistant.capability_calls SET request=jsonb_set(request, '{conversationId}', ${JSON.stringify(reference)}::jsonb)
+          WHERE id IN (${readId}::uuid,${pendingId}::uuid)`;
+        const cases = [
+          {
+            route: "/runtime/check/capability",
+            path: "/runtime/check/capability",
+            body: { name: "access.read", input: {}, conversationId: reference },
+            tool: "code_check",
+          },
+          {
+            route: "/runtime/capabilities",
+            path: "/runtime/capabilities",
+            body: request(crypto.randomUUID(), "access.read", reference),
+            tool: "access.read",
+          },
+          {
+            route: "/runtime/capabilities/:callId/resolve",
+            path: `/runtime/capabilities/${readId}/resolve`,
+            body: { approved: true },
+            tool: "access.read",
+          },
+          ...["read", "write", "status", "abort"].map((verb) => ({
+            route: "/runtime/capabilities/:callId/stream/:verb",
+            path: `/runtime/capabilities/${readId}/stream/${verb}`,
+            body: {},
+            tool: "access.read",
+          })),
+        ];
+        // Discover the real route table: a new capability route must join this behavioral access matrix.
+        expect(
+          [
+            ...new Set(
+              routes.routes.filter((route) => /\/runtime\/.*capabilit/.test(route.path)).map((route) => `${route.method} ${route.path}`),
+            ),
+          ].sort(),
+        ).toEqual([...new Set(cases.map((entry) => `POST ${entry.route}`))].sort());
+        for (const entry of cases) {
+          sharedAccess.mockClear();
+          expect((await post(entry.path, entry.body)).status, entry.path).toBe(200);
+          expect(sharedAccess).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ accessSubject: owner.accessSubject }),
+            entry.tool,
+          );
+        }
+        // Revoke the real Project grant while keeping ownership, tool scope and call records intact.
+        await sql`DELETE FROM ai.project_access WHERE project_id=${projectId}::uuid`;
+        expect(await aiProjects.get(projectId, owner.accessSubject, "read")).toBeNull();
+        catalog.mockClear();
+        execute.mockClear();
+        transfer.mockClear();
+        for (const entry of [
+          ...cases,
+          {
+            path: `/runtime/capabilities/${pendingId}/resolve`,
+            body: { approved: true },
+            tool: "access.write",
+          },
+        ]) {
+          sharedAccess.mockClear();
+          expect((await post(entry.path, entry.body)).status, entry.path).toBe(403);
+          expect(sharedAccess).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ accessSubject: owner.accessSubject }),
+            entry.tool,
+          );
+        }
+        // Managed/background callers use this same service entry, with no HTTP middleware to rely on.
+        await expect(
+          runtimeCapabilities.prepare(
+            request(crypto.randomUUID(), "access.write", reference),
+            owner,
+            {},
+            {
+              turnId: "00000000-0000-4000-8000-000000000096",
+              mandate: { id: "00000000-0000-4000-8000-000000000097", revision: 1 },
+            },
+          ),
+        ).rejects.toMatchObject({ code: "ACCESS_DENIED" });
+        expect(catalog).not.toHaveBeenCalled();
+        expect(execute).not.toHaveBeenCalled();
+        expect(transfer).not.toHaveBeenCalled();
+        await sql`INSERT INTO ai.project_access VALUES(${projectId}::uuid,${grant!.id}::uuid)`;
+        // Revoking the target tool also denies every continuation, even with Project read restored.
+        conversation.mockResolvedValue({ ...chat, allowedTools: ["code_check"] });
+        short.mockResolvedValue({ ...chat, allowedTools: ["code_check"] });
+        for (const entry of cases) expect((await post(entry.path, entry.body)).status, entry.path).toBe(403);
+        expect(catalog).not.toHaveBeenCalled();
+        expect(execute).not.toHaveBeenCalled();
+        expect(transfer).not.toHaveBeenCalled();
+        conversation.mockResolvedValue(chat);
+        short.mockResolvedValue(chat);
+      }
+      // The check tool and the target capability are independent grants.
+      for (const allowedTools of [["access.read"], ["code_check"]]) {
+        conversation.mockResolvedValue({ ...chat, allowedTools });
+        catalog.mockClear();
+        expect((await post("/runtime/check/capability", { name: "access.read", input: {}, conversationId })).status).toBe(403);
+        expect(catalog).not.toHaveBeenCalled();
+      }
+      conversation.mockResolvedValue(chat);
+      expect(await (await post(`/runtime/capabilities/${pendingId}/resolve`, { approved: true })).json()).toMatchObject({
+        status: "completed",
+      });
+      await sql`DELETE FROM ai.project_access WHERE project_id=${projectId}::uuid`;
+      expect(await (await post(`/runtime/capabilities/${rejectId}/resolve`, { approved: false })).json()).toMatchObject({
+        status: "denied",
+      });
+    } finally {
+      for (const spy of [conversation, short, sharedAccess, catalog, execute, wording, transfer]) spy.mockRestore();
+      await sql`DELETE FROM assistant.capability_calls WHERE conversation_id=${conversationId}`;
+      await sql`DELETE FROM ai.project_access WHERE project_id=${projectId}::uuid`;
+      await sql`DELETE FROM auth.access WHERE id=${grant!.id}::uuid`;
+      await sql`DELETE FROM ai.projects WHERE id=${projectId}::uuid`;
     }
   });
 
