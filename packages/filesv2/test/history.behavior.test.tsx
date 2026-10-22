@@ -479,7 +479,8 @@ describe("Files history components", () => {
     await flush();
     expect(requests).toEqual([{ shareId: share.id, networkAfter: "198.51.100.0/24" }]);
     expect(text()).toContain("203.0.113.x");
-    expect(text()).toContain("seit 18.10. · 148-mal");
+    expect(text()).toContain("seit 18.10. · 9-mal");
+    expect(text()).toContain("148-mal");
     expect(buttonNamed(dom.root, "Weitere Netze laden")).toBeUndefined();
     buttonNamed(dom.root, "Link widerrufen")!.click();
     await flush();

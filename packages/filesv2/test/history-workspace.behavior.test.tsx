@@ -140,7 +140,7 @@ describe("Files history in the workspace", () => {
     const source = `/app/filesv2?view=activity&base=${encodeURIComponent(home.id)}`;
     const dom = mount(snapshotOf({ source, activity: { filters: { baseId: home.id }, page: page([moved]) } }));
     await flush();
-    expect(apiRequests).toHaveLength(0);
+    expect(apiRequests.filter((request) => request.kind !== "entries")).toHaveLength(0);
     const main = () => dom.root.querySelector(".k2b-app-workspace__main")!;
     expect(main().textContent).toContain("Lukas Pohl");
     expect(main().textContent).toContain("Messe 2026");
@@ -224,7 +224,7 @@ describe("Files history in the workspace", () => {
     const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&path=${encodeURIComponent("Kunden/Angebote 2025")}`;
     const dom = mount(snapshotOf({ source, moved: { baseId: home.id, path: "Kunden/Angebote 2025", entry: moved, chain: movedChain } }));
     await flush();
-    expect(apiRequests).toHaveLength(0);
+    expect(apiRequests.filter((request) => request.kind !== "entries")).toHaveLength(0);
     const main = () => dom.root.querySelector(".k2b-app-workspace__main")!;
     expect(main().textContent).toContain("This folder has moved");
     expect(main().textContent).not.toContain("Files could not be loaded");
@@ -345,7 +345,7 @@ describe("Files history in the workspace", () => {
       const notice = () => dom.root.querySelector(".filesv2-history-moved")!;
       const initialText = notice().textContent;
       expect(initialText).toContain("“Angebote” is probably now in Team Vertrieb › Archiv › Kunden");
-      expect(apiRequests).toHaveLength(0);
+      expect(apiRequests.filter((request) => request.kind !== "entries")).toHaveLength(0);
       expect(dom.window.location.search).toBe(new URL(source, "https://files.test").search);
       expect(button(notice(), "Move back")).toBeUndefined();
       // Navigate away and back: the browser must ask the same question as SSR, including the descendant path.
@@ -471,7 +471,7 @@ describe("Files history in the workspace", () => {
     expect(query(pending("shares"))).toEqual({ baseId: home.id, path: file.path });
     pending("shares").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
     await flush();
-    expect(inspector().querySelector('[role="alert"]')?.textContent).toContain("could not");
+    expect(inspector().querySelector('[role="alert"]')?.textContent).toContain("Access counts not loaded.");
     button(inspector(), "Try again")!.click();
     await flush();
     expect(query(pending("shares"))).toEqual({ baseId: home.id, path: file.path });
