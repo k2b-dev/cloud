@@ -280,7 +280,7 @@ for (const width of [320, 390, 768, 1440]) {
         const ai = page.getByRole("button", { name: "Mit KI bearbeiten", exact: true });
         const view = page.getByRole("button", { name: "Ansicht", exact: true });
         const metrics = () =>
-          page.locator(".notebook-detail-actions button").evaluateAll((buttons) =>
+          page.locator('.notebook-detail-actions button[data-variant="ai"], .notebook-view-menu__trigger').evaluateAll((buttons) =>
             buttons.map((button) => {
               const style = getComputedStyle(button);
               const { x, y, width, height } = button.getBoundingClientRect();
@@ -366,6 +366,9 @@ for (const width of [390, 1440]) {
       await settled(page);
       sameBox(await box(page, selector), before);
       expect(await page.locator(selector).isDisabled()).toBe(true);
+      // Move off the button before the error dialog covers it, so its hover does not change mid-dialog animation.
+      await page.mouse.move(0, 0);
+      await settled(page);
       release();
       await page.getByText("Fixture: Assistant unavailable", { exact: true }).waitFor();
       await page.locator(`${selector}:not(:disabled)`).waitFor();
