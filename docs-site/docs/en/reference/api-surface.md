@@ -492,3 +492,7 @@ render. Browser code uses `getContext()` and `onContextChange()` from
 `publishPageContext()`. `PanelPageContext` and its strict schema are exported
 from `@k2b/cloud/contracts`. See [Panels](/en/docs/platform/panels#page-context)
 for consent, ordering, and the rule that refs never grant access.
+
+`clientIp` and `clientIpBucket` from `@k2b/cloud/server` resolve forwarded
+addresses and normalize shared network budgets. See
+[Limit requests](/en/docs/server/middleware#limit-requests).
