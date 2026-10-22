@@ -18,7 +18,8 @@ const unreadMark = (row: Conversation): number | true | undefined =>
 /**
  * The chats as navigation rows, newest activity first: title, the last message with its sender, the time, and the
  * unread count below it. Every row has the same two lines in every state, also before the first message, so rows never
- * change height and a count that comes or goes moves nothing. The open chat shows no marks: it is being read.
+ * change height and a count that comes or goes moves nothing. The open chat shows no marks while it is being read; after
+ * "Mark unread" it shows its count like any other.
  */
 export default function ChatList(props: {
   rows: readonly Conversation[];
@@ -75,7 +76,10 @@ export default function ChatList(props: {
                   {listTime(row.lastActivityAt, props.now(), config())}
                 </time>
                 <span class="chat-list__unread">
-                  <AppWorkspace.SidebarItemStatus unread={row.id === props.activeId ? undefined : unreadMark(row)} />
+                  {/* The open chat is being read, so it shows no mark, unless the reader marked it unread on purpose. */}
+                  <AppWorkspace.SidebarItemStatus
+                    unread={row.id === props.activeId && row.read?.unreadFromSeq == null ? undefined : unreadMark(row)}
+                  />
                 </span>
               </span>
             </AppWorkspace.SidebarItemMeta>
