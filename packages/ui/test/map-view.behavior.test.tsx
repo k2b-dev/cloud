@@ -59,7 +59,7 @@ else {
     }
   });
 
-  test("notice and empty JSX slots are constructed and mounted once", async () => {
+  test("notice, empty and attribution JSX slots are constructed and mounted once", async () => {
     const dom = createDomTestHarness();
     const { MapView } = await import("../src/content/MapView");
     const constructions = { notice: 0, empty: 0, attribution: 0 };

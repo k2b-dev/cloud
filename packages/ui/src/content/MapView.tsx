@@ -43,6 +43,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   const selectedId = createMemo(() => selected()?.id);
   const notice = children(() => props.notice);
   const empty = children(() => props.empty);
+  const attribution = children(() => props.attribution);
   const [state, setState] = createSignal<MapState>("static");
   createEffect(() => props.onStateChange?.(state()));
   const [dark, setDark] = createSignal(false);
@@ -430,7 +431,7 @@ export function MapView(props: MapViewProps): JSX.Element {
     // Deep reads also subscribe to in-place Solid store updates (tone/mark/labels included).
     JSON.stringify([props.markers, props.lines, props.areas, props.ownLocation, props.selectedId, props.class]);
     dark();
-    props.attribution;
+    attribution();
     revision++;
   });
   const zoom = (direction: "in" | "out") => {
@@ -536,7 +537,7 @@ export function MapView(props: MapViewProps): JSX.Element {
             }}
           </Show>
         </div>
-        <MapFootRow scale={scale()}>{props.attribution}</MapFootRow>
+        <MapFootRow scale={scale()}>{attribution()}</MapFootRow>
       </div>
     </div>
   );
