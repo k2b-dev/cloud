@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Lessons learned
@@ -920,3 +920,4 @@ with "Suspected:"; the fix pull request replaces it with the confirmed cause.
 When the guard does not exist yet, write "Pending in #n" with the issue that
 tracks it, or "None, because …". A pull request that adds a guard for a class
 updates that class's row in the table.
+| A source location is valid but no longer names its evidence | A ranking accepts an in-range line number even when the line is blank or different code now occupies it. | Test: Mail `scripts/perf-baseline/browser-model.test.ts` rejects blank, changed and moved source lines and missing or multiline anchors; ranking requires the complete source line ([#1472](https://github.com/k2b-dev/cloud/issues/1472)). |
