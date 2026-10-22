@@ -2,7 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import { historySnapshot } from "./History.browser-fixtures";
 import Workspace from "./Workspace.island";
 
-/** The same real workspace and fixed snapshot render on the server and hydrate in the browser. */
+/** The same real workspace and fixed snapshot render on the server and mount in the browser. */
 export default function HistoryHarness(props: { source: string; locale: string }) {
   return (
     <LocaleProvider locale={props.locale}>
