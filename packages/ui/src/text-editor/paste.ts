@@ -55,6 +55,24 @@ const inline = (node: Node): string => {
   return out;
 };
 
+const blockContents = (node: HTMLElement, out: string[], prefix = ""): void => {
+  const hasBlocks = [...node.children].some((c) => /^(P|DIV|H[1-6]|UL|OL|TABLE|BLOCKQUOTE|PRE|HR|SECTION|ARTICLE)$/.test(c.tagName));
+  if (hasBlocks) {
+    let run = "";
+    for (const child of node.childNodes) {
+      if (child instanceof HTMLElement && /^(P|DIV|H[1-6]|UL|OL|TABLE|BLOCKQUOTE|PRE|HR|SECTION|ARTICLE)$/.test(child.tagName)) {
+        if (run.trim()) out.push(prefix + run.trim());
+        run = "";
+        block(child, out, prefix);
+      } else run += inline(child);
+    }
+    if (run.trim()) out.push(prefix + run.trim());
+    return;
+  }
+  const text = inline(node).trim();
+  if (text) out.push(prefix + text);
+};
+
 const block = (node: Node, out: string[], prefix = ""): void => {
   if (!(node instanceof HTMLElement)) {
     const text = inline(node).trim();
@@ -81,8 +99,14 @@ const block = (node: Node, out: string[], prefix = ""): void => {
   }
   if (tag === "BLOCKQUOTE") {
     const inner: string[] = [];
-    [...node.childNodes].forEach((c) => block(c, inner));
-    inner.forEach((line) => out.push(`> ${line}`));
+    blockContents(node, inner);
+    out.push(
+      inner
+        .join("\n\n")
+        .split("\n")
+        .map((line) => `> ${line}`)
+        .join("\n"),
+    );
     return;
   }
   if (tag === "PRE") {
@@ -92,21 +116,7 @@ const block = (node: Node, out: string[], prefix = ""): void => {
     return;
   }
   if (tag === "HR") return void out.push("---");
-  const hasBlocks = [...node.children].some((c) => /^(P|DIV|H[1-6]|UL|OL|TABLE|BLOCKQUOTE|PRE|HR|SECTION|ARTICLE)$/.test(c.tagName));
-  if (hasBlocks) {
-    let run = "";
-    for (const child of node.childNodes) {
-      if (child instanceof HTMLElement && /^(P|DIV|H[1-6]|UL|OL|TABLE|BLOCKQUOTE|PRE|HR|SECTION|ARTICLE)$/.test(child.tagName)) {
-        if (run.trim()) out.push(prefix + run.trim());
-        run = "";
-        block(child, out, prefix);
-      } else run += inline(child);
-    }
-    if (run.trim()) out.push(prefix + run.trim());
-    return;
-  }
-  const text = inline(node).trim();
-  if (text) out.push(prefix + text);
+  blockContents(node, out, prefix);
 };
 
 /** HTML clipboard content as Markdown; `null` when it is better pasted as plain text. */

@@ -110,6 +110,61 @@ for (const [name, options] of Object.entries(profiles))
         await context.close();
       }
     });
+    test("IME completion follows a surviving cell through a same-size column change", async () => {
+      const { context, page } = await open();
+      try {
+        await page.evaluate(() => window.sharedEditorHarness.load("| A | B | C | D |\n| --- | --- | --- | --- |\n| a | b | c | d |"));
+        await page.locator('.ste-cell[data-r="1"][data-c="2"]').click();
+        await page.evaluate(() => {
+          const cell = document.activeElement!;
+          cell.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+          cell.textContent = "c日本";
+          const range = document.createRange();
+          range.selectNodeContents(cell);
+          range.collapse(false);
+          window.getSelection()!.removeAllRanges();
+          window.getSelection()!.addRange(range);
+          window.sharedEditorHarness.swapColumn();
+          cell.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "日本" }));
+        });
+        expect(await page.locator('.ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "c日本", "d", ""]);
+        expect(await page.locator(":focus").getAttribute("data-c")).toBe("1");
+        await page.keyboard.type("!");
+        expect(await page.locator('.ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "c日本!", "d", ""]);
+        await page.evaluate(() => window.sharedEditorHarness.action("deleteCol"));
+        expect(await page.locator('.ste-cell[data-r="1"]').allTextContents()).toEqual(["b", "d", ""]);
+      } finally {
+        await context.close();
+      }
+    });
+    test("remote structure cannot replace a neighbour from an unmaterialized cell", async () => {
+      const { context, page } = await open();
+      try {
+        for (const composing of [false, true]) {
+          await page.evaluate(() => window.sharedEditorHarness.load("| A | B | C |\n| --- | --- | --- |\n| x |"));
+          await page.locator('.ste-cell[data-r="1"][data-c="1"]').click();
+          await page.evaluate((composing) => {
+            const cell = document.activeElement!;
+            if (composing) {
+              cell.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+              cell.textContent = "新";
+            }
+            window.sharedEditorHarness.shiftColumn();
+            if (composing) cell.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "新" }));
+            else {
+              // A late native input must not use the new occupant as its baseline either.
+              cell.textContent = "new";
+              cell.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "new" }));
+            }
+          }, composing);
+          expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("| x |");
+          expect(await page.evaluate(() => window.sharedEditorHarness.errors())).toContain(composing ? "recovery:新" : "recovery:new");
+          expect(await page.locator('.ste-cell[data-r="1"][data-c="1"]').textContent()).toBe("x");
+        }
+      } finally {
+        await context.close();
+      }
+    });
     test("formatting an untouched missing cell does not change its neighbour or prose", async () => {
       const { context, page } = await open();
       try {
@@ -188,6 +243,8 @@ for (const [name, options] of Object.entries(profiles))
       try {
         for (const [html, expected] of [
           ["<b>one </b><i>two</i>", "**one** *two*"],
+          ["<blockquote><b>one </b><i>two</i></blockquote>", "> **one** *two*"],
+          ["<blockquote><p>one</p><p>two</p></blockquote>", "> one\n> \n> two"],
           ["<pre>one\n\n\nthree\n```\nend</pre>", "````\none\n\n\nthree\n```\nend\n````"],
         ]) {
           await page.evaluate(() => {
@@ -255,6 +312,20 @@ for (const [name, options] of Object.entries(profiles))
         expect(await page.locator('.ste-cell[data-r="1"][data-c="1"] code').textContent()).toBe("**literal**");
         expect(await page.locator('.ste-cell[data-r="2"][data-c="0"]').textContent()).toBe("*escaped*");
         expect(await page.locator('.ste-cell[data-r="2"][data-c="1"]').textContent()).toBe("<script>alert(1)</script>");
+      } finally {
+        await context.close();
+      }
+    });
+    test("code cells decode table escapes without interpreting their Markdown literals", async () => {
+      const { context, page } = await open();
+      try {
+        await page.evaluate(() => window.sharedEditorHarness.load("| A | B |\n| --- | --- |\n| `a\\|b` | `a\\\\b` |"));
+        expect(await page.locator('.ste-cell[data-r="1"][data-c="0"] code').textContent()).toBe("a|b");
+        expect(await page.locator('.ste-cell[data-r="1"][data-c="1"] code').textContent()).toBe(String.raw`a\b`);
+        await page.locator('.ste-cell[data-r="1"][data-c="0"]').click();
+        expect(await page.locator('.ste-cell[data-r="1"][data-c="0"]').textContent()).toBe("`a|b`");
+        await page.locator("#after-editor").focus();
+        expect(await page.locator('.ste-cell[data-r="1"][data-c="0"] code').textContent()).toBe("a|b");
       } finally {
         await context.close();
       }

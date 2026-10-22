@@ -75,6 +75,13 @@ window.sharedEditorHarness = {
     const append = intermediate.changes(insertColumn(table, table.columns));
     editor.view.dispatch({ changes: remove.compose(append) });
   },
+  shiftColumn: () => {
+    const state = editor.view.state;
+    const insert = state.changes(insertColumn(findTables(state.doc.toString())[0]!, 0));
+    const intermediate = state.update({ changes: insert }).state;
+    const table = findTables(intermediate.doc.toString())[0]!;
+    editor.view.dispatch({ changes: insert.compose(intermediate.changes(deleteColumn(table, table.columns - 1))) });
+  },
   map: (from: number, to: number, insert: string) => ChangeSet.of({ from, to, insert }, editor.view.state.doc.length).desc.toJSON(),
 };
 declare global {
@@ -95,6 +102,7 @@ declare global {
       command: (name: keyof typeof commands) => boolean;
       format: (name?: InlineFormat) => boolean;
       swapColumn: () => void;
+      shiftColumn: () => void;
       map: (from: number, to: number, insert: string) => unknown;
     };
   }

@@ -39,7 +39,7 @@ export const textEditorMessages = i18n.define({
       cellLabel: ({ row, column }: { row: number; column: number }) => `${row === 0 ? "Header" : `Row ${row}`}, column ${column + 1}`,
       structureUnavailable: "Reconnect to insert in the middle, change columns, delete or align. You can still type and append a row.",
       recoveredInput: "Preserved input — copy it before continuing",
-      cellRemoved: "The cell was removed. Your input is preserved below for copying.",
+      cellRemoved: "The table changed. Select the cell again to continue. Interrupted input is preserved below for copying.",
       structureFailed: "The table changed or the action could not be confirmed. Check the table before trying again.",
       pasteTooLarge: "This table is too large to paste. Paste a smaller selection.",
       textTooLarge: "This text is too long. Copy your changes and shorten the text before continuing.",
@@ -89,7 +89,7 @@ export const textEditorMessages = i18n.define({
       structureUnavailable:
         "Einfügen in der Mitte, Spalten ändern, Löschen und Ausrichten gehen wieder mit Verbindung. Tippen und Zeilen anhängen geht weiter.",
       recoveredInput: "Gesicherte Eingabe — vor dem Fortfahren kopieren",
-      cellRemoved: "Die Zelle wurde entfernt. Deine Eingabe bleibt unten zum Kopieren erhalten.",
+      cellRemoved: "Die Tabelle hat sich geändert. Wähle die Zelle erneut. Unterbrochene Eingaben bleiben unten zum Kopieren erhalten.",
       structureFailed:
         "Die Tabelle hat sich geändert oder die Aktion konnte nicht bestätigt werden. Prüfe die Tabelle, bevor du es erneut versuchst.",
       pasteTooLarge: "Diese Tabelle ist zu groß zum Einfügen. Füge eine kleinere Auswahl ein.",

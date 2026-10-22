@@ -100,7 +100,8 @@ transaction and reparse before another operation.
 `readOnly` blocks editing and formatting. The mode switch remains available.
 Neither replaces the application's server authorization.
 
-If a cell disappears during composition or the length limit rejects input,
+If a cell disappears during composition, an unmaterialized cell loses its
+position after another edit, or the length limit rejects input,
 the editor preserves that input in a read-only field for copying. Closing a
 notice does not discard it. Editing pauses until the person has copied and
 dismissed the preserved input, so another rejected edit cannot overwrite it.

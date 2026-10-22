@@ -84,6 +84,9 @@ type Sync = {
   edges: number[];
 };
 const syncs = new WeakMap<EditorView, Sync>();
+// An unmaterialized ragged cell has no source identity yet. Never infer its
+// baseline from a later numeric position after another transaction changes it.
+const missingCells = new WeakMap<EditorView, { el: HTMLElement; changed: boolean }>();
 const rebuilding = new WeakSet<EditorView>();
 /** A structural action that moves focus itself; a rebuild then does not restore the old caret. */
 const targeted = new WeakSet<EditorView>();
@@ -177,11 +180,12 @@ const renderInline = (raw: string) => {
     let result = spec?.[0] ?? "";
     let from = node.from;
     for (let child = node.firstChild; child; child = child.nextSibling) {
-      result += escapeHtml(text.slice(from, child.from));
+      result += escapeHtml(node.name === "InlineCode" ? T.displayCell(text.slice(from, child.from)) : text.slice(from, child.from));
       if (!spec?.[2].includes(child.name)) result += render(child);
       from = child.to;
     }
-    return result + escapeHtml(text.slice(from, node.to)) + (spec?.[1] ?? "");
+    const tail = text.slice(from, node.to);
+    return result + escapeHtml(node.name === "InlineCode" ? T.displayCell(tail) : tail) + (spec?.[1] ?? "");
   };
   return render(tree.topNode);
 };
@@ -376,7 +380,23 @@ const dispatchChanges = (view: EditorView, changes: T.Change[], structural = fal
   return true;
 };
 
+const recoverMissingCell = (view: EditorView, el: HTMLElement) => {
+  const input = el.textContent ?? "";
+  if (input) view.state.facet(tableHost)?.onRecovery(input);
+  view.state.facet(tableHost)?.onError("cellRemoved");
+  el.dataset.editing = "0";
+  const wrap = el.closest<HTMLElement>(".ste-table");
+  const table = wrap && currentTable(view, wrap);
+  if (table) renderCell(view, el, el.dataset.raw ?? "", table, Number(el.dataset.r), Number(el.dataset.c));
+  el.blur();
+};
+
 const commitCell = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
+  const missing = missingCells.get(view);
+  if (missing?.el === el && missing.changed) {
+    recoverMissingCell(view, el);
+    return;
+  }
   let sync = syncs.get(view);
   if (!sync || sync.el !== el) {
     const t = currentTable(view, wrap);
@@ -391,6 +411,7 @@ const commitCell = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
       const row = Number(el.dataset.r),
         column = Number(el.dataset.c);
       const changes = T.setCellText(t, row, column, T.escapeCell(el.textContent ?? ""));
+      missingCells.delete(view);
       if (!dispatchChanges(view, changes)) {
         view.state.facet(tableHost)?.onRecovery(el.textContent ?? "");
         el.textContent = "";
@@ -445,22 +466,28 @@ const commitCell = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
   if (!accepted) {
     view.state.facet(tableHost)?.onRecovery(next);
     el.textContent = T.displayCell(sync.base);
+    view.dispatch({ effects: refreshTables.of(null) });
     return;
   }
   // Keep the focused input's full extent, including a just-typed trailing space.
   // The Markdown parser trims padding and cannot distinguish it from that space.
   const raw = view.state.sliceDoc(from, to);
-  let target = el;
-  if (!target.isConnected) {
-    const current = cellAtPos(view.state, from);
-    const index = current ? tablesIn(view.state).findIndex((table) => table.from === current.table.from) : -1;
-    const currentWrap = findWrap(view, index);
-    const replacement = current && currentWrap && cellAt(currentWrap, current.r, current.c);
-    if (!replacement) {
-      syncs.delete(view);
-      return;
+  const current = cellAtPos(view.state, from);
+  const index = current ? tablesIn(view.state).findIndex((table) => table.from === current.table.from) : -1;
+  const currentWrap = findWrap(view, index);
+  const target = current && currentWrap && cellAt(currentWrap, current.r, current.c);
+  if (!target) {
+    syncs.delete(view);
+    return;
+  }
+  // Composition deferred reconciliation. Even a connected element may now
+  // occupy another column after a same-size structural edit.
+  if (target !== el) {
+    if (el.isConnected) {
+      el.dataset.editing = "0";
+      const oldTable = currentTable(view, wrap);
+      if (oldTable) renderCell(view, el, el.dataset.raw ?? "", oldTable, Number(el.dataset.r), Number(el.dataset.c));
     }
-    target = replacement;
     focusCell(target, 0);
   }
   target.dataset.raw = raw;
@@ -469,7 +496,11 @@ const commitCell = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
   const shown = T.displayCell(raw);
   if (((target.textContent ?? "") !== shown || target !== el) && !active.get(view)?.composing) {
     target.textContent = shown;
-    placeCaret(target, T.displayCell(view.state.sliceDoc(from, selection.head)).length);
+    placeSelection(
+      target,
+      T.displayCell(view.state.sliceDoc(from, selection.anchor)).length,
+      T.displayCell(view.state.sliceDoc(from, selection.head)).length,
+    );
   }
   if (wrap.dataset.pendingShape === "1") view.dispatch({ effects: refreshTables.of(null) });
   queueCellSelection(view, target);
@@ -479,6 +510,11 @@ const commitCell = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
 const followChanges = EditorView.updateListener.of((update) => {
   const view = update.view;
   const sync = syncs.get(view);
+  const missing = missingCells.get(view);
+  if (missing && !missing.changed && update.docChanged) {
+    missing.changed = true;
+    if (!active.get(view)?.composing) recoverMissingCell(view, missing.el);
+  }
   if (!sync) return;
   if (update.docChanged) sync.desc = sync.desc.composeDesc(update.changes.desc);
   if (sync.committing || active.get(view)?.composing) return;
@@ -650,8 +686,12 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
     wrap.dataset.activeC = el.dataset.c;
     const t = currentTable(view, wrap);
     const cell = t && T.gridLine(t, Number(el.dataset.r))?.cells[Number(el.dataset.c)];
+    missingCells.delete(view);
     if (cell) resync(view, el, cell);
-    else syncs.delete(view);
+    else {
+      syncs.delete(view);
+      missingCells.set(view, { el, changed: false });
+    }
     if (el.dataset.editing !== "1") {
       el.dataset.editing = "1";
       const shown = T.displayCell(el.dataset.raw ?? "");
@@ -806,6 +846,11 @@ export const formatActiveCell = (view: EditorView, name: InlineFormat): boolean 
   const el = act && wrap && cellAt(wrap, act.r, act.c);
   const table = wrap && currentTable(view, wrap);
   if (!el || !table || !act || view.state.readOnly) return false;
+  const missing = missingCells.get(view);
+  if (missing?.el === el && missing.changed) {
+    recoverMissingCell(view, el);
+    return true;
+  }
   let sync = syncs.get(view);
   let base = view.state;
   let materialized = ChangeSet.empty(base.doc.length);
@@ -829,6 +874,7 @@ export const formatActiveCell = (view: EditorView, name: InlineFormat): boolean 
   const changes: T.Change[] = [];
   materialized.compose(formatted.changes).iterChanges((from, to, _a, _b, insert) => changes.push({ from, to, insert: insert.toString() }));
   const selection = formatted.state.selection.main;
+  missingCells.delete(view);
   if (sync) sync.committing = true;
   const accepted = dispatchChanges(view, changes, true, selection);
   if (sync) sync.committing = false;
@@ -964,6 +1010,7 @@ export const tableGrid = (): Extension => [
       destroy() {
         view.dom.ownerDocument.removeEventListener("selectionchange", selection);
         syncs.delete(view);
+        missingCells.delete(view);
         active.delete(view);
         view.state.facet(tableHost)?.onCellSelection?.(null);
       },
