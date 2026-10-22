@@ -32,6 +32,12 @@ Deinen eigenen Kommentar kannst du bis zu 10 Minuten nach dem Absenden bearbeite
 
 ## Adressen eintragen und Routen planen {icon="map-pin"}
 
+Wähle **Bearbeiten** neben einer Adresse, um ihr Formular im Kontakt-Arbeitsbereich zu öffnen.
+**Speichern** und **Abbrechen** führen zum Kontakt zurück; Suche und Filter bleiben erhalten.
+Beim Neuladen bleibt die Adresse ausgewählt, ungespeicherte Eingaben werden aber durch die gespeicherten Werte ersetzt.
+Hat jemand den Kontakt vor deinem Speichern geändert, kopiere die Änderungen, die du behalten möchtest.
+Wähle dann **Kontakt neu laden** und übertrage sie in die aktuelle Fassung.
+
 :::reference
 - **Vorschläge:** Tippe mindestens 3 Zeichen in **Straße und Hausnummer**. Wähle einen Vorschlag. Er füllt Straße, PLZ, Ort und Land. Du kannst jedes Feld danach ändern.
 - **Eigene Eingabe:** Behalte den Text so, wie du ihn geschrieben hast. Wähle dafür die eigene Eingabe in der Liste oder drücke Escape.

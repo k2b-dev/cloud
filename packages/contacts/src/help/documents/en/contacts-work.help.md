@@ -32,6 +32,12 @@ You can edit or delete your own comment for 10 minutes after you post it. You ca
 
 ## Enter addresses and plan routes {icon="map-pin"}
 
+Choose **Edit** beside an address to open its form in the contact workspace.
+**Save** and **Cancel** return to the contact with your search and filters intact.
+Reloading keeps the selected address but replaces unsaved input with saved values.
+If someone changed the contact before you saved, copy any changes you want to keep,
+choose **Reload contact**, and apply them to the current version.
+
 :::reference
 - **Suggestions:** Type at least 3 characters in **Street and number**. Choose a suggestion to fill the street, postal code, city, and country. You can change each field after that.
 - **Own entry:** Keep the text as you typed it. Choose the own entry in the list, or press Escape.
