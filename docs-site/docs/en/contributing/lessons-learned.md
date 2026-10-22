@@ -25,6 +25,7 @@ convention still needs a check or a test.
 | --- | --- | --- |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Driver-specific collection serialization at a database boundary | Array or serialized JSON parameters reach PostgreSQL with the wrong representation, breaking history queries and forks. | Test: Cloud `ai/map-store.integration.test.ts` reloads and forks native maps, recovers interrupted calls, and asserts object-shaped JSONB. Writes cast serialized JSON through text; array queries use the existing PostgreSQL helper. |
+| Saved presentation bypasses live validation | Stored map JSON reaches renderers without complete geometry validation, or export preparation loses ordinary document content. | Tests: Cloud `geo-document.test.ts`, Notebook `map-blocks.test.ts` and `notebook-maps.browser.test.ts` cover geometry, provider IDs, image readiness, internal links and print cancellation. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |
 | Positional input-union compatibility | A manifest check rejects preserved input variants after additions or reordering, or accepts a `oneOf` change that makes old inputs match multiple variants. | Tests: Cloud `_internal/capabilities.test.ts` covers nested additive unions, required disjoint tags, removed or narrowed branches, overlaps, optional tags, and unchanged result-union restrictions. |
@@ -933,12 +934,10 @@ convention still needs a check or a test.
 
 ### Saved map blocks validate geometry and provider identifiers
 
-Saved JSON can bypass the live route calculation path. Validate complete polyline6
-coordinate pairs before mounting a map, and use the public place-ID contract:
-provider identifiers can exceed 100 characters. Notebook map schema and renderer
-regressions cover both cases. Browser images belong to the caller's export only;
-bind uploads to that export's text and complete map fingerprints, decode bounded
-PNG input, and report unavailable images with linked source lists.
+- **What happened:** Source review found that saved map JSON could bypass live route validation; a map-only export mode also bypassed ordinary image readiness and link handling.
+- **Root cause:** Presentation code treated stored geometry as trusted and reused only part of the document renderer's print behavior. A separate pin-ID limit also rejected valid provider IDs.
+- **Error class:** Saved presentation bypasses live validation.
+- **Guard:** Cloud `geo-document.test.ts` and Notebook `map-blocks.test.ts` cover complete coordinate pairs, public provider IDs, images and internal links. `notebook-maps.browser.test.ts` holds an ordinary image pending, requires all images before printing, and checks cancellation cleanup. Snapshot uploads remain bound to the caller's export text and complete map fingerprints, with bounded PNG decoding and explicit source-list recovery.
 
 ### Assistant map history rejected collection parameters
 
