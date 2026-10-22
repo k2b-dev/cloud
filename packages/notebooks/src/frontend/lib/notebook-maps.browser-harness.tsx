@@ -32,3 +32,9 @@ if (new URL(location.href).searchParams.has("editor")) {
   }
   Object.assign(window, { notebookMapFixture: { saved: (): GeoDocument => JSON.parse(saved), dispose: cleanup } });
 }
+
+if (new URL(location.href).searchParams.has("pdf")) {
+  const { openNotePdfDialog } = await import("../[id]/_components/detail/NotePdfDialog");
+  const markdown = JSON.parse(document.getElementById("fixture-markdown")!.textContent!);
+  void openNotePdfDialog({ notebookId: "Book01", noteId: "Note01", noteTitle: "Fictional map plan", markdown });
+}

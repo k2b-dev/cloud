@@ -1,7 +1,7 @@
 import type { GeoAvailabilityDataSchema } from "@k2b/cloud/contracts";
 import { type GeoDocument, type GeoDocumentLink, GeoDocumentSchema } from "@k2b/cloud/geo/document";
 import { highlight } from "@k2b/stdlib";
-import { LocaleProvider, MapViewFrame, type MapViewMarker } from "@k2b/ui";
+import { LocaleProvider, MapViewFrame, type MapViewMarker, mapAttribution } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { isServer, renderToString } from "solid-js/web";
 import type { z } from "zod";
@@ -13,8 +13,15 @@ export type NotebookMapState = {
   failed?: boolean;
   canAdmin?: boolean;
 };
+export type NotebookMapImage = { src: string; width: number; height: number };
 export type NotebookMapBlock = { line: number; document: GeoDocument; from: number; to: number };
 const escape = highlight.escape;
+
+/** Revision of the exact bounded UTF-8 export text; JSON escaping must not reduce the Markdown budget. */
+export async function notebookMapRevision(markdown: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(markdown));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
 
 export function parseNotebookMapBlocks(markdown: string) {
   const blocks: NotebookMapBlock[] = [];
@@ -104,6 +111,7 @@ export function renderNotebookMapFigure(
     mode?: string;
     state?: NotebookMapState;
     print?: boolean;
+    image?: NotebookMapImage;
     publicOrigin?: string;
     noteId?: string;
   },
@@ -119,8 +127,10 @@ export function renderNotebookMapFigure(
   const attrs = options.print
     ? ' data-map-print=""'
     : ` data-map-document="${json}" data-map-state="${escape(JSON.stringify(state ?? {}))}" data-notebook="${escape(options.notebookId)}" data-map-mode="${escape(options.mode ?? "book")}"`;
-  let frame = "";
-  if (!blocked && !options.print) {
+  let frame = options.image
+    ? `<img class="notebook-map__image" src="${escape(options.image.src)}" width="${options.image.width}" height="${options.image.height}" alt="${escape(document.title)}">`
+    : "";
+  if (!blocked && !options.print && !options.image) {
     try {
       frame = isServer
         ? renderToString(() =>
@@ -148,11 +158,12 @@ export function renderNotebookMapFigure(
     const href = mapLinkHref(link, options.notebookId, options.mode);
     return options.print && options.publicOrigin && href.startsWith("/") ? new URL(href, options.publicOrigin).href : href;
   };
+  const imageSource = mapAttribution.map((item) => `<a href="${escape(item.href)}">${escape(item.label)}</a>`).join(" · ");
   const list = document.pins
     .map(
       (pin, index) =>
         `<li class="notebook-map__pin"><span class="notebook-map__number">${index + 1}</span><span class="notebook-map__name">${escape(pin.label)}</span>${pin.link ? `<a class="notebook-map__link" data-reference="${pin.link.type === "url" ? "page" : pin.link.type}" href="${escape(linkHref(pin.link))}"><i class="ti ti-${pin.link.type === "url" ? "link" : pin.link.type === "heading" ? "heading" : "file-text"}" aria-hidden="true"></i><span>${escape(pin.link.label)}</span></a>` : ""}</li>`,
     )
     .join("");
-  return `<figure class="notebook-map${routeOnly ? " notebook-map--route" : ""}"${attrs}><figcaption class="notebook-map__header"><i class="ti ti-${routeOnly ? "route" : "map-2"}" aria-hidden="true"></i><strong>${escape(document.title)}</strong>${routeOnly ? `<span class="notebook-map__summary">${escape(routeMetrics(document, locale))}</span>` : ""}</figcaption><div class="notebook-map__body">${frame}${state && mapStateMessage(state, locale) ? `<p class="notebook-map__notice" role="status">${escape(mapStateMessage(state, locale))}${state.canAdmin ? ` <a href="/admin/settings?tab=places">${escape(state.availability?.configured ? t.changeLimit : t.configure)}</a>` : ""}</p>` : ""}${document.pins.length ? `<ol class="notebook-map__pins" aria-label="${escape(t.pins)}">${list}</ol>` : !routeOnly ? `<div class="notebook-map__empty"><strong>${escape(t.empty)}</strong><p>${escape(t.emptyDetail)}</p></div>` : ""}${document.route && (!routeOnly || options.print || blocked) ? `<p class="notebook-map__route-summary">${escape(routeSummary(document, locale))}</p>` : ""}${!options.print && !blocked ? `<div class="notebook-map__print-fallback"><p>${escape(t.printFailed)}</p>${document.route ? `<p>${escape(routeSummary(document, locale))}</p>` : ""}<p>${escape(document.route ? t.routeSource : t.source)}</p></div>` : ""}${options.print || blocked ? `<p class="notebook-map__source">${document.route ? t.routeSource.replace("Geoapify · OpenStreetMap", '<a href="https://www.geoapify.com/">Geoapify</a> · <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>') : t.source.replace("Geoapify · OpenStreetMap", '<a href="https://www.geoapify.com/">Geoapify</a> · <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>')}</p>` : ""}</div></figure>`;
+  return `<figure class="notebook-map${routeOnly ? " notebook-map--route" : ""}"${attrs}><figcaption class="notebook-map__header"><i class="ti ti-${routeOnly ? "route" : "map-2"}" aria-hidden="true"></i><strong>${escape(document.title)}</strong>${routeOnly ? `<span class="notebook-map__summary">${escape(routeMetrics(document, locale))}</span>` : ""}</figcaption><div class="notebook-map__body">${frame}${state && mapStateMessage(state, locale) ? `<p class="notebook-map__notice" role="status">${escape(mapStateMessage(state, locale))}${state.canAdmin ? ` <a href="/admin/settings?tab=places">${escape(state.availability?.configured ? t.changeLimit : t.configure)}</a>` : ""}</p>` : ""}${document.pins.length ? `<ol class="notebook-map__pins" aria-label="${escape(t.pins)}">${list}</ol>` : !routeOnly ? `<div class="notebook-map__empty"><strong>${escape(t.empty)}</strong><p>${escape(t.emptyDetail)}</p></div>` : ""}${document.route && (!routeOnly || options.print || blocked) ? `<p class="notebook-map__route-summary">${escape(routeSummary(document, locale))}</p>` : ""}${!options.print && !blocked ? `<div class="notebook-map__print-fallback"><p>${escape(t.printFailed)}</p>${document.route ? `<p>${escape(routeSummary(document, locale))}</p>` : ""}<p>${escape(document.route ? t.routeSource : t.source)}</p></div>` : ""}${options.print || blocked ? `<p class="notebook-map__source">${options.image ? imageSource : document.route ? t.routeSource.replace("Geoapify · OpenStreetMap", '<a href="https://www.geoapify.com/">Geoapify</a> · <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>') : t.source.replace("Geoapify · OpenStreetMap", '<a href="https://www.geoapify.com/">Geoapify</a> · <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>')}</p>` : ""}</div></figure>`;
 }

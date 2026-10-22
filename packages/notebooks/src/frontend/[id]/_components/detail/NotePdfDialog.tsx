@@ -9,10 +9,13 @@ import {
   Select,
   useLocale,
 } from "@k2b/ui";
-import { createSignal, createUniqueId, For, onCleanup, Show } from "solid-js";
+import { createSignal, createUniqueId, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { notePdfOmissionText } from "@/lib/book-renderer-messages";
 import { decodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER, type NotePdfOmissionReport } from "@/lib/pdf-omissions";
+import { parseNotebookMapBlocks } from "../../../../lib/map-blocks";
+import { notebookMapMessages } from "../../../../lib/map-messages";
+import { captureNotebookMaps, NotebookMapCaptureError } from "../../../lib/notebook-map-snapshots";
 import { notebookWorkspaceMessages } from "../../messages";
 
 type NotePdfTemplateId = "document" | "report" | "compact" | "custom";
@@ -63,6 +66,12 @@ const downloadBlob = (blob: Blob, filename: string): void => {
 function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  const mt = () => notebookMapMessages.resolve([locale()]).t;
+  const hasMaps = () => parseNotebookMapBlocks(props.markdown).blocks.length > 0;
+  const [mapFailure, setMapFailure] = createSignal(false);
+  const [mapReason, setMapReason] = createSignal("");
+  const [mapWaiting, setMapWaiting] = createSignal(false);
+  let mapHost!: HTMLDivElement;
   const templateOptions = () => [
     { id: "document", label: t().pdfDocument, description: t().pdfDocumentDescription },
     { id: "report", label: t().pdfReport, description: t().pdfReportDescription },
@@ -79,12 +88,66 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
   const detailsId = createUniqueId();
   const omissionSummary = () => t().pdfOmissionsTitle({ count: (report()?.items.length ?? 0) + (report()?.more ?? 0) });
   let request: AbortController | null = null;
+  let cachedMaps: Awaited<ReturnType<typeof captureNotebookMaps>> | undefined;
+  const [mapsReady, setMapsReady] = createSignal(false);
 
   const close = () => {
     request?.abort();
     props.close();
   };
-  onCleanup(() => request?.abort());
+  onCleanup(() => {
+    request?.abort();
+    cachedMaps?.release();
+  });
+  const prepareMaps = async (signal: AbortSignal) => {
+    cachedMaps?.release();
+    cachedMaps = undefined;
+    setMapsReady(false);
+    setMapWaiting(true);
+    setMapFailure(false);
+    try {
+      if (byteLength(props.markdown) > MAX_MARKDOWN_BYTES) throw new NotebookMapCaptureError(t().pdfTooLarge);
+      cachedMaps = await captureNotebookMaps(props.markdown, mapHost, locale(), signal, props.notebookId, props.noteId);
+      signal.throwIfAborted();
+      setMapsReady(true);
+    } catch (cause) {
+      cachedMaps?.release();
+      cachedMaps = undefined;
+      if (!signal.aborted) {
+        setMapFailure(true);
+        setMapReason(cause instanceof NotebookMapCaptureError ? cause.message : mt().printFailed);
+        const { renderNotebookBook } = await import("../../../../lib/book-renderer");
+        signal.throwIfAborted();
+        mapHost.innerHTML = renderNotebookBook({
+          markdown: props.markdown,
+          locale: locale(),
+          notebookId: props.notebookId,
+          noteId: props.noteId,
+          print: true,
+          querySource: true,
+        }).html;
+      }
+      throw cause;
+    } finally {
+      setMapWaiting(false);
+    }
+  };
+  const retryMaps = async () => {
+    request?.abort();
+    const controller = new AbortController();
+    request = controller;
+    setError("");
+    try {
+      await prepareMaps(controller.signal);
+    } catch {
+      if (!controller.signal.aborted) setError("");
+    } finally {
+      if (request === controller) request = null;
+    }
+  };
+  onMount(() => {
+    if (hasMaps()) void retryMaps();
+  });
 
   const selectTemplate = (value: string | null) => {
     if (!value) return;
@@ -93,7 +156,7 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
     if (next === "custom" && !customCss().trim()) setCustomCss(MINIMAL_NOTE_PDF_CSS);
   };
 
-  const generate = async () => {
+  const generate = async (fallback = false, print = false) => {
     if (!props.markdown.trim()) {
       setError(t().pdfNoContent);
       return;
@@ -102,11 +165,11 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
       setError(t().pdfTooLarge);
       return;
     }
-    if (templateId() === "custom" && !customCss().trim()) {
+    if (!print && templateId() === "custom" && !customCss().trim()) {
       setError(t().pdfCssRequired);
       return;
     }
-    if (templateId() === "custom" && byteLength(customCss()) > MAX_CUSTOM_CSS_BYTES) {
+    if (!print && templateId() === "custom" && byteLength(customCss()) > MAX_CUSTOM_CSS_BYTES) {
       setError(t().pdfCssTooLarge);
       return;
     }
@@ -117,18 +180,63 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
     setBusy(true);
     setError("");
     const selectedTemplate = templateId();
+    let captured: Awaited<ReturnType<typeof captureNotebookMaps>> | undefined;
     try {
-      const response = await apiClient[":id"].notes[":noteId"].pdf.$post(
-        {
-          param: { id: props.notebookId, noteId: props.noteId },
-          json: {
-            markdown: props.markdown,
-            templateId: selectedTemplate === "custom" ? undefined : selectedTemplate,
-            customCss: selectedTemplate === "custom" ? customCss() : undefined,
-          },
-        },
-        { init: { signal: controller.signal } },
-      );
+      if (hasMaps() && !fallback) {
+        if (!cachedMaps) await prepareMaps(controller.signal);
+        captured = cachedMaps;
+      }
+      if (print) {
+        const { renderNotebookBook } = await import("../../../../lib/book-renderer");
+        const article = document.createElement("article");
+        article.className = "notebook-map-print-document notebook-book-content";
+        article.setAttribute("data-print-region", "");
+        article.innerHTML = renderNotebookBook({
+          markdown: props.markdown,
+          locale: locale(),
+          notebookId: props.notebookId,
+          noteId: props.noteId,
+          print: true,
+          mapImages: captured?.images,
+          querySource: true,
+        }).html;
+        document.body.append(article);
+        document.documentElement.classList.add("notebook-map-printing");
+        try {
+          await Promise.all([...article.querySelectorAll<HTMLImageElement>(".notebook-map__image")].map((image) => image.decode()));
+          controller.signal.throwIfAborted();
+          window.print();
+        } finally {
+          article.remove();
+          document.documentElement.classList.remove("notebook-map-printing");
+        }
+        return;
+      }
+      const input = {
+        markdown: props.markdown,
+        templateId: selectedTemplate === "custom" ? undefined : selectedTemplate,
+        customCss: selectedTemplate === "custom" ? customCss() : undefined,
+      };
+      captured?.form.set("input", JSON.stringify(input));
+      const response = captured
+        ? await fetch(`/api/notebooks/${encodeURIComponent(props.notebookId)}/notes/${encodeURIComponent(props.noteId)}/pdf/maps`, {
+            method: "POST",
+            body: captured.form,
+            signal: controller.signal,
+            credentials: "same-origin",
+            headers: { "Accept-Language": locale() },
+          })
+        : await apiClient[":id"].notes[":noteId"].pdf.$post(
+            {
+              param: { id: props.notebookId, noteId: props.noteId },
+              json: {
+                markdown: props.markdown,
+                templateId: selectedTemplate === "custom" ? undefined : selectedTemplate,
+                customCss: selectedTemplate === "custom" ? customCss() : undefined,
+              },
+            },
+            { init: { signal: controller.signal } },
+          );
       if (!response.ok) throw new Error(await responseError(response, t().pdfRateLimited, t().pdfFailed));
       const blob = await response.blob();
       if (blob.type !== "application/pdf") throw new Error(t().pdfUnexpectedType);
@@ -144,7 +252,7 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
     } catch (cause) {
       if (!controller.signal.aborted) {
         setReport(null);
-        setError(cause instanceof Error ? cause.message : t().pdfFailed);
+        setError(mapFailure() ? "" : cause instanceof Error ? cause.message : t().pdfFailed);
       }
     } finally {
       if (request === controller) {
@@ -163,8 +271,11 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
         close={close}
       />
       <PanelDialog.Body>
-        <PanelDialog.Section title={t().printStyle} subtitle={t().printStyleDescription} icon="ti ti-template">
+        <PanelDialog.Section title={hasMaps() ? mt().pdfStyle : t().printStyle} subtitle={t().printStyleDescription} icon="ti ti-template">
           <div class="flex flex-col gap-4">
+            <Show when={hasMaps()}>
+              <InlineGuidance>{mt().printStyleHint}</InlineGuidance>
+            </Show>
             <Select
               label={t().template}
               icon="ti ti-template"
@@ -259,6 +370,28 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
                 </ul>
               )}
             </Show>
+            <Show when={hasMaps()}>
+              <Show when={mapFailure()}>
+                <div role="status">
+                  <p>{mapReason() || mt().printFailed}</p>
+                  <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void retryMaps()}>
+                    {mt().retry}
+                  </Button>
+                  <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void generate(true)}>
+                    {mt().printFallback}
+                  </Button>
+                  <Button variant="text" size="sm" disabled={busy() || mapWaiting()} onClick={() => void generate(true, true)}>
+                    {mt().print}
+                  </Button>
+                </div>
+              </Show>
+              <div class="notebook-map-export">
+                <Show when={mapWaiting()}>
+                  <p role="status">{mt().printWaiting}</p>
+                </Show>
+                <div ref={mapHost} class="notebook-map-export__preview notebook-book-content" />
+              </div>
+            </Show>
             <Show when={error()}>
               <div role="alert">
                 <NoticeCard tone="danger" title={t().pdfGenerationFailed}>
@@ -270,6 +403,11 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
         </PanelDialog.Section>
       </PanelDialog.Body>
       <PanelDialog.Footer>
+        <Show when={hasMaps()}>
+          <Button variant="secondary" size="sm" disabled={busy() || mapWaiting()} onClick={() => void generate(false, true)}>
+            {mt().print}
+          </Button>
+        </Show>
         <Button type="button" variant="secondary" size="sm" onClick={close}>
           {/* Both labels share one cell, so the button keeps its width when Cancel becomes Close. */}
           <span class="grid">
@@ -279,7 +417,14 @@ function NotePdfDialog(props: NotePdfDialogProps & { close: () => void }) {
             </span>
           </span>
         </Button>
-        <Button type="button" size="sm" onClick={() => void generate()} loading={busy()} loadingLabel={t().generatingPdf}>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void generate()}
+          disabled={mapWaiting() || (hasMaps() && !mapsReady())}
+          loading={busy()}
+          loadingLabel={t().generatingPdf}
+        >
           <i class="ti ti-download" aria-hidden="true" /> {t().downloadPdf}
         </Button>
       </PanelDialog.Footer>

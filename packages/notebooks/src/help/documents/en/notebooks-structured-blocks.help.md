@@ -206,4 +206,4 @@ With two or more pins, open **Map actions**, choose **Save route through pins**,
 
 If maps are not configured or a budget is exhausted, saved pins and routes remain readable as lists with their sources. Budget notices show when requests become available again. A failed map load keeps your pins and offers **Retry**. **Show as list** lets you read links without a map.
 
-PDF export currently includes linked pin and route lists with Geoapify and OpenStreetMap sources and reports that the map image was omitted.
+Open **Download PDF** to prepare a preview with map and route images and their sources. Print and PDF wait until all images are ready. If an image fails, retry or choose **Continue with source lists**. Closing cancels preparation. Native browser printing and exports without browser images use linked pin and route lists and report omitted images.

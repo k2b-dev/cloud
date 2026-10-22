@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { GeoDocumentSchema, serializeGeoDocument } from "@k2b/cloud/geo/document";
 import { renderNotebookBook } from "./book-renderer";
 import { fictionalMap, fictionalRouteMap } from "./map.test-fixture";
-import { mapLinkHref, parseNotebookMapBlocks, renderNotebookMapFigure } from "./map-blocks";
+import { mapLinkHref, notebookMapRevision, parseNotebookMapBlocks, renderNotebookMapFigure } from "./map-blocks";
 
 describe("saved Notebook geo documents", () => {
   test("round-trips genuine geo fields and the entire saved route without recalculation", () => {
@@ -129,4 +129,29 @@ test("invalid maps report PDF omissions, while missing own headings link to the 
   expect(result.html).toContain('href="#top"');
   expect(result.html).not.toContain('href="#heading-deleted"');
   expect(result.blocks[0]?.html).not.toContain('href="#heading-deleted"');
+});
+
+test("offline map images replace the omission, preserve links and spell out every map source", () => {
+  const markdown = serializeGeoDocument(fictionalMap());
+  const result = renderNotebookBook({
+    markdown,
+    notebookId: "Book01",
+    locale: "en",
+    print: true,
+    mapImages: new Map([[1, { src: "geo-map-0.jpg", width: 520, height: 186 }]]),
+  });
+  expect(result.omissions).toEqual([]);
+  expect(result.html).toContain('src="geo-map-0.jpg"');
+  expect(result.html).toContain('width="520"');
+  expect(result.html).toContain("OpenMapTiles");
+  expect(result.html).toContain("openstreetmap.org/copyright");
+  expect(result.html).toContain("https://example.org/museum");
+  expect(result.html).not.toContain("<svg");
+});
+
+test("the export revision accepts the full Markdown byte budget without JSON escape overhead", async () => {
+  const markdown = "\\\n".repeat((256 * 1024) / 2);
+  expect(new TextEncoder().encode(markdown).length).toBe(256 * 1024);
+  expect(await notebookMapRevision(markdown)).toMatch(/^[a-f0-9]{64}$/);
+  expect(await notebookMapRevision(markdown)).not.toBe(await notebookMapRevision(markdown.slice(1)));
 });

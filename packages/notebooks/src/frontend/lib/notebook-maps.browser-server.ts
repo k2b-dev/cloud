@@ -18,6 +18,7 @@ export async function createNotebookMapFixtureServer(port = 0) {
   let server: ReturnType<typeof Bun.serve>;
   let assets = new Map<string, ArrayBuffer>();
   const requests: string[] = [];
+  const uploads: FormData[] = [];
 
   const ui = resolve(import.meta.dir, "../../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -65,6 +66,19 @@ export async function createNotebookMapFixtureServer(port = 0) {
     async fetch(request) {
       const url = new URL(request.url);
       requests.push(url.pathname);
+      if (url.pathname.endsWith("/pdf") && request.method === "POST") {
+        const { encodeNotePdfOmissions, NOTE_PDF_OMISSIONS_HEADER } = await import("../../lib/pdf-omissions");
+        return new Response(new Blob(["%PDF-fictional-source-list"], { type: "application/pdf" }), {
+          headers: {
+            "content-type": "application/pdf",
+            [NOTE_PDF_OMISSIONS_HEADER]: encodeNotePdfOmissions([{ code: "not_rendered", kind: "map", label: "Fictional map" }])!,
+          },
+        });
+      }
+      if (url.pathname.endsWith("/pdf/maps") && request.method === "POST") {
+        uploads.push(await request.formData());
+        return new Response(new Blob(["%PDF-fictional"], { type: "application/pdf" }), { headers: { "content-type": "application/pdf" } });
+      }
       if (url.pathname === "/print") {
         const { html } = buildNotePdfHtml({
           markdown: `# Fictional map plan\n\n${serializeGeoDocument(fictionalMap())}\n\n${serializeGeoDocument(fictionalRouteMap())}`,
@@ -187,7 +201,18 @@ export async function createNotebookMapFixtureServer(port = 0) {
           ],
         });
       }
-      if (url.pathname.endsWith("/geo.availability")) return capability(available);
+      if (url.pathname.endsWith("/geo.availability")) {
+        const state = new URL(request.headers.get("referer") ?? request.url).searchParams.get("state");
+        return capability(
+          state === "off"
+            ? { ...available, configured: false }
+            : state === "person"
+              ? { ...available, person: { ...available.person, exhausted: true } }
+              : state === "cloud"
+                ? { ...available, cloud: { ...available.cloud, exhausted: true } }
+                : available,
+        );
+      }
       if (url.pathname.endsWith("/address.autocomplete")) {
         const body = (await request.json()) as { input: { text: string } };
         if (body.input.text === "Fehler")
@@ -227,6 +252,7 @@ export async function createNotebookMapFixtureServer(port = 0) {
   return {
     server,
     requests,
+    uploads,
     dispose: async () => {
       await server.stop(true);
       rmSync(directory, { recursive: true, force: true });

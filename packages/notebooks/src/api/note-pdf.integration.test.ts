@@ -5,6 +5,7 @@ import { expect, spyOn, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import * as pdfModule from "@k2b/cloud/services/pdf";
 import { sql } from "bun";
+import { notebookMapRevision } from "../lib/map-blocks";
 import api from ".";
 
 databaseSuite()("PDF route admission and idle timeout", () => {
@@ -43,9 +44,27 @@ databaseSuite()("PDF route admission and idle timeout", () => {
       expect([403, 404]).toContain(denied.status);
       await denied.body?.cancel();
       expect(timeouts).toEqual([]);
+      const deniedMaps = await fetch(`${url}/maps`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "multipart/form-data; boundary=invalid" },
+        body: "not a multipart body",
+      });
+      expect([403, 404]).toContain(deniedMaps.status);
+      await deniedMaps.body?.cancel();
       const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access (service_account_id, permission)
         VALUES (${account!.id}::uuid, 'read') RETURNING id`;
       await sql`INSERT INTO notebooks.notebook_access (notebook_id, access_id) VALUES (${notebook!.id}::uuid, ${access!.id}::uuid)`;
+      const invalidMaps = new FormData();
+      invalidMaps.set("input", JSON.stringify({ markdown: "# Timeout" }));
+      invalidMaps.set("mapSnapshots", JSON.stringify({ version: 1, revision: await notebookMapRevision("# Different"), images: [] }));
+      const staleMaps = await fetch(`${url}/maps`, {
+        method: "POST",
+        headers: { authorization: headers.authorization, "accept-language": "de" },
+        body: invalidMaps,
+      });
+      expect(staleMaps.status).toBe(422);
+      await staleMaps.body?.cancel();
+      timeouts.length = 0;
       // A streamed (chunked) body makes bodyLimit replace c.req.raw with a request Bun does not know.
       // The body stalls after admission: the route must not raise the idle timeout while it is still read.
       const encoder = new TextEncoder();

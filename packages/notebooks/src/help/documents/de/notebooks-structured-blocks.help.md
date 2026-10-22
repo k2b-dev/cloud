@@ -206,4 +206,4 @@ Wähle ab zwei Pins unter **Kartenaktionen** die Aktion **Route durch die Pins s
 
 Ohne eingerichtete Karten oder bei aufgebrauchtem Budget bleiben Pins und Routen als Listen mit Quellen lesbar. Der Budgethinweis zeigt, wann neue Anfragen möglich sind. Bei einem fehlgeschlagenen Kartenaufruf bleiben die Pins erhalten; **Erneut versuchen** lädt die Karte neu. **Als Liste** zeigt die Verknüpfungen ohne Karte.
 
-Der PDF-Export enthält derzeit verknüpfte Pin- und Routenlisten mit Geoapify und OpenStreetMap als Quellen und meldet das ausgelassene Kartenbild.
+Öffne **PDF herunterladen**, um die Vorschau mit Karten- und Routenbildern und ihren Quellen vorzubereiten. Drucken und PDF warten, bis alle Bilder bereit sind. Schlägt ein Bild fehl, versuche es erneut oder wähle **Mit Quellenlisten fortfahren**. Schließen bricht die Vorbereitung ab. Beim direkten Browserdruck und bei Exporten ohne Browserbilder stehen Pins und Route als verknüpfte Listen; ausgelassene Kartenbilder werden gemeldet.

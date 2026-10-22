@@ -17,7 +17,7 @@ import { bookRendererMessages, notebookBlockDiagnosticMessage } from "./book-ren
 import { parseNotebookChartBlocks, renderNotebookChartFigure } from "./chart-blocks";
 import { anchorHash, headingAnchor, parseNoteLink } from "./heading-anchors";
 import { frontMatterLength, LIGATURE_CLASS, ligatureHtml } from "./ligatures";
-import { type NotebookMapState, parseNotebookMapBlocks, renderNotebookMapFigure } from "./map-blocks";
+import { type NotebookMapImage, type NotebookMapState, parseNotebookMapBlocks, renderNotebookMapFigure } from "./map-blocks";
 import { notebookMapMessages } from "./map-messages";
 import { literalMarkdownLines, notebookDirectiveLength } from "./markdown-context";
 import { parseSizedMarkdownImage } from "./markdown-image";
@@ -75,6 +75,8 @@ export type NotebookBookInput = {
   querySource?: boolean;
   references?: BookReferences;
   mapState?: NotebookMapState;
+  mapImages?: ReadonlyMap<number, NotebookMapImage>;
+  mapImagesPending?: boolean;
 };
 
 const escape = highlight.escape;
@@ -550,13 +552,16 @@ export const renderNotebookBook = (
                 mode: linkMode,
                 state: input.mapState,
                 print: input.print,
+                image: input.mapImages?.get(start + 1),
                 publicOrigin: input.publicOrigin,
                 noteId: input.noteId,
               })
             : null;
           if (figure)
             return preview(
-              (input.print ? omission("not_rendered", "map", document!.title) : "") + `${prefix}CHART${chartSlots.push(figure) - 1}END`,
+              (input.print && !input.mapImagesPending && !input.mapImages?.has(start + 1)
+                ? omission("not_rendered", "map", document!.title)
+                : "") + `${prefix}CHART${chartSlots.push(figure) - 1}END`,
             );
           return preview(
             omission("invalid_block", "map", blockLabel(start + 1)) +

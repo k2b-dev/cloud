@@ -77,6 +77,21 @@ as source-attributed lists. Only platform administrators receive the setup or
 budget-settings link. The browser can retry failed requests and switch to a
 list without changing the saved document.
 
-PDF export includes linked pin and route lists with sources. It reports a
-`not_rendered` omission of kind `map` when a static map image is unavailable.
-The current public map API does not supply static map images.
+The PDF dialog prepares complete map images in a document preview. Print and
+PDF wait for all images. The browser captures the fitted saved maps through
+`CloudMap`; cancellation stops pending work. Missing tiles, glyphs or map access
+produce a visible failure with retry and an explicit source-list alternative.
+Native browser printing uses the labelled source-list fallback if no image was
+prepared. Headless exports also retain linked pin and route lists and report a
+`not_rendered` omission of kind `map`.
+
+The authenticated `POST /api/notebooks/:id/notes/:noteId/pdf/maps` endpoint
+accepts multipart `input` (the existing PDF JSON payload), `mapSnapshots` and
+binary map parts defined by the [snapshot contract](/en/docs/platform/pdf-and-templates#upload-browser-map-snapshots).
+Like the existing JSON PDF endpoint, it exports the caller's current Markdown
+snapshot, including unsaved changes, after authorizing read access to the note.
+It derives the revision from SHA-256 of the exact UTF-8 Markdown bytes and block
+IDs from their one-based source lines (`line-17`), then checks each complete
+GeoDocument fingerprint and decodes the PNGs before offline PDF conversion.
+Client pixels are used only in that caller's export and are never saved as
+Notebook data. HTML, attachments and map images share the PDF input budget.

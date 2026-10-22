@@ -939,3 +939,12 @@ updates that class's row in the table.
   `map-notebook-save.test.ts` covers serialized byte limits, surrogate
   boundaries, hash reconciliation, cancellation, and unknown creates. Chunked
   saves use explicit `separator: "none"` and full-source hash preconditions.
+
+### Saved map blocks validate geometry and provider identifiers
+
+Saved JSON can bypass the live route calculation path. Validate complete polyline6
+coordinate pairs before mounting a map, and use the public place-ID contract:
+provider identifiers can exceed 100 characters. Notebook map schema and renderer
+regressions cover both cases. Browser images belong to the caller's export only;
+bind uploads to that export's text and complete map fingerprints, decode bounded
+PNG input, and report unavailable images with linked source lists.

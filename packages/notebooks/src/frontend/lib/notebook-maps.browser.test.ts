@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { GeoMapSnapshotManifestSchema } from "@k2b/cloud/contracts/geo-snapshot";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
+import { notebookMapRevision, parseNotebookMapBlocks } from "../../lib/map-blocks";
 import { createNotebookMapFixtureServer } from "./notebook-maps.browser-server";
 
 declare global {
@@ -267,6 +269,104 @@ test("successful route calculation persists the complete route without recomputi
     expect(saved).toContain('"inputHash":');
     expect(saved).toContain('"computedAt":"2026-10-19T12:00:00.000Z"');
     expect(await first(page).locator(".notebook-map__route-summary").innerText()).toContain("95 km");
+  } finally {
+    await context.close();
+  }
+});
+
+test("PDF preview waits for complete map PNGs, preserves sources and uploads images with the document revision", async () => {
+  const { context, page } = await open("?pdf=1");
+  try {
+    const preview = page.locator(".notebook-map-export__preview");
+    await preview.locator("img.notebook-map__image").nth(1).waitFor();
+    expect(await preview.locator("img.notebook-map__image").count()).toBe(2);
+    expect(await preview.innerText()).toContain("OpenMapTiles");
+    const download = page.getByRole("button", { name: "PDF herunterladen", exact: true }).last();
+    await download.click();
+    await page.waitForFunction(() => !document.querySelector(".notebook-map-export__preview"));
+    const form = fixture.uploads.at(-1)!;
+    const manifest = GeoMapSnapshotManifestSchema.parse(JSON.parse(String(form.get("mapSnapshots"))));
+    const input: unknown = JSON.parse(String(form.get("input")));
+    if (!input || typeof input !== "object" || !("markdown" in input) || typeof input.markdown !== "string")
+      throw new Error("Missing export Markdown");
+    expect(manifest.revision).toBe(await notebookMapRevision(input.markdown));
+    expect(manifest.images.map(({ id }) => id)).toEqual(parseNotebookMapBlocks(input.markdown).blocks.map(({ line }) => `line-${line}`));
+    expect(manifest.images).toHaveLength(2);
+    expect(manifest.revision).toMatch(/^[a-f0-9]{64}$/);
+    for (const image of manifest.images) {
+      const data = form.get(`map-snapshot-${image.id}`);
+      expect(data).toBeInstanceOf(Blob);
+      if (!(data instanceof Blob)) throw new Error("Missing PNG");
+      expect(data.type).toBe("image/png");
+      expect(data.size).toBeGreaterThan(1000);
+      const header = new DataView(await data.slice(0, 24).arrayBuffer());
+      expect(header.getUint32(16)).toBe(image.width);
+      expect(header.getUint32(20)).toBe(image.height);
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test("PDF no-key preview keeps lists and sources, offers retry and exports fallback only explicitly", async () => {
+  const { context, page } = await open("?pdf=1&state=off");
+  try {
+    await page.getByRole("button", { name: "Mit Quellenlisten fortfahren", exact: true }).waitFor();
+    const preview = page.locator(".notebook-map-export__preview");
+    expect(await preview.innerText()).toContain("Münster");
+    expect(await preview.innerText()).toContain("Geoapify");
+    expect(await preview.locator("img.notebook-map__image").count()).toBe(0);
+    expect(await page.getByRole("button", { name: "PDF herunterladen", exact: true }).last().isDisabled()).toBe(true);
+    await page.getByRole("button", { name: "Mit Quellenlisten fortfahren", exact: true }).click();
+    await page.locator("[data-pdf-omissions]").waitFor();
+    expect(await page.getByRole("button", { name: "Erneut versuchen", exact: true }).last().isVisible()).toBe(true);
+    await page.getByRole("button", { name: "Erneut versuchen", exact: true }).last().click();
+    await page.getByRole("button", { name: "Mit Quellenlisten fortfahren", exact: true }).waitFor();
+  } finally {
+    await context.close();
+  }
+});
+
+test("pending map export gates both actions; closing cancels preparation without an upload", async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const page = await context.newPage();
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/geo/style?**", async (route) => {
+    await pending;
+    await route.continue().catch(() => {});
+  });
+  const count = fixture.uploads.length;
+  try {
+    await page.goto(`${server.url}?pdf=1`);
+    await page.locator(".notebook-map-export__preview .k2b-map-view").waitFor();
+    expect(await page.getByRole("button", { name: "PDF herunterladen", exact: true }).last().isDisabled()).toBe(true);
+    expect(await page.getByRole("button", { name: "Drucken", exact: true }).last().isDisabled()).toBe(true);
+    await page.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
+    await page.locator(".notebook-map-export__preview").waitFor({ state: "detached" });
+    release();
+    expect(fixture.uploads.length).toBe(count);
+  } finally {
+    release();
+    await context.close();
+  }
+});
+
+test("Print receives decoded PNGs and removes its temporary document afterward", async () => {
+  const { context, page } = await open("?pdf=1");
+  try {
+    await page.locator(".notebook-map-export__preview img.notebook-map__image").nth(1).waitFor();
+    await page.evaluate(() => {
+      window.print = () => {
+        const images = [...document.querySelectorAll<HTMLImageElement>(".notebook-map-print-document img.notebook-map__image")];
+        document.body.dataset.printedMaps = String(images.filter((image) => image.complete && image.naturalWidth > 0).length);
+      };
+    });
+    await page.getByRole("button", { name: "Drucken", exact: true }).last().click();
+    await page.waitForFunction(() => document.body.dataset.printedMaps === "2");
+    expect(await page.locator(".notebook-map-print-document").count()).toBe(0);
   } finally {
     await context.close();
   }

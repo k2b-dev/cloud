@@ -2546,3 +2546,17 @@
 .notebook-map__link > i { flex: none; font-size: 15px; }
 
 .notebook-map__search-placeholder { height: 36px; border-radius: var(--k2b-radius-control); background: var(--k2b-surface-muted); }
+
+.notebook-map__image { display: block; width: 100%; height: auto; border-radius: var(--k2b-radius-control); }
+.notebook-map-export__preview { min-height: 240px; }
+.notebook-map-print-document { display: none; }
+@media print {
+  html.notebook-map-printing body > :not(.notebook-map-print-document) { display: none !important; }
+  html.notebook-map-printing .notebook-map-print-document { display: block !important; padding: 0; }
+  .notebook-map__image { display: block !important; }
+}
+
+.notebook-map-export__preview { padding: 28px; margin-top: 12px; background: #fff; color: #1f2937; border: 1px solid var(--k2b-border); border-radius: var(--k2b-radius-control); font: 12px/1.5 var(--k2b-font-sans); }
+.notebook-map-export__preview .notebook-map__pins { min-height: 0; }
+.notebook-map-export__slot { width: 100%; display: grid; align-items: center; margin-bottom: 8px; border-radius: var(--k2b-radius-control); background: #f1f5f9; }
+.notebook-map-export__slot .k2b-map-view { width: 100%; }
