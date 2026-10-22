@@ -294,8 +294,8 @@ test("all five kinds render complete values and two-column sections without page
   }
 }, 30_000);
 
-test("range presets reload their selected value and Back restores the prior range; custom range is reloadable", async () => {
-  const { tab, requests } = await open();
+test("range presets reload their selected value and Back restores the prior range", async () => {
+  const { tab } = await open();
   try {
     await ready(tab);
     await tab.getByRole("link", { name: "7 Tage", exact: true }).click();
@@ -308,6 +308,15 @@ test("range presets reload their selected value and Back restores the prior rang
     await tab.goBack();
     await ready(tab);
     expect(new URL(tab.url()).searchParams.get("range")).toBe("24h");
+  } finally {
+    await tab.close();
+  }
+}, 60_000);
+
+test("custom dashboard range validates input and reloads the applied UTC time", async () => {
+  const { tab, requests } = await open();
+  try {
+    await ready(tab);
     await tab.getByRole("button", { name: "Eigener Zeitraum", exact: true }).click();
     await tab.getByRole("button", { name: "Zeitraum übernehmen", exact: true }).click();
     expect(await tab.getByRole("alert").count()).toBe(1);
@@ -326,8 +335,12 @@ test("range presets reload their selected value and Back restores the prior rang
     await tab.getByRole("button", { name: "Von (UTC)", exact: true }).click();
     const picker = tab.locator(".k2b-date-popover:popover-open");
     await picker.getByRole("textbox").fill("08:30");
+    expect(await picker.getByRole("textbox").inputValue()).toBe("08:30");
     await picker.locator(".k2b-date-apply").click();
+    expect(await tab.getByRole("button", { name: "Von (UTC)", exact: true }).textContent()).toContain("08:30");
     await tab.getByRole("button", { name: "Zeitraum übernehmen", exact: true }).click();
+    // Previous panel data can remain ready while the new document navigation commits.
+    await tab.waitForURL((url) => url.searchParams.get("from") === "2026-10-01T08:30:00.000Z");
     await ready(tab);
     expect(new URL(tab.url()).searchParams.get("from")).toBe("2026-10-01T08:30:00.000Z");
     expect(
