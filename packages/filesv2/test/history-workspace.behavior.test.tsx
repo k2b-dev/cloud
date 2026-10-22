@@ -424,7 +424,7 @@ describe("Files history in the workspace", () => {
     pending("shares").resolve(Response.json({ items: [], next: null }));
     await flush();
     expect(inspector().textContent).toContain("Version 1");
-    expect(inspector().textContent).toContain("Version 2 ·");
+    expect(inspector().textContent).toContain("Version 2");
   });
   test("a stable folder inspector includes a visible child upload and keeps folder scope in Activity after reload", async () => {
     const folder: FileEntry = {
@@ -601,6 +601,7 @@ describe("Files history in the workspace", () => {
     pending("shares").resolve(Response.json({ items: [], next: null }));
     await flush();
     expect(inspector().textContent).toContain("Version 3");
+    expect(inspector().querySelector(".filesv2-inspector-info")?.textContent).toContain("Mia Schulz");
     // Only the change that produced today's revision offers a restore; an older overwrite names no version.
     expect([...inspector().querySelectorAll("button")].filter((item) => item.textContent?.trim() === "Restore version 2")).toHaveLength(1);
     button(inspector(), "Restore version 2")!.click();
