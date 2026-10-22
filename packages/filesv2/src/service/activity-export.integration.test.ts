@@ -29,6 +29,43 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     displayNames: resolveDisplayNames,
   });
   const service = (overrides: Partial<ActivityExportDeps> = {}) => createActivityExportService({ ...deps(), ...overrides });
+  const requests = new Set<AbortController>();
+  type ExportResult = Awaited<ReturnType<ReturnType<typeof service>["export"]>>;
+  async function withExport(
+    exporter: ReturnType<typeof service>,
+    selected: ActivityExportInput,
+    signal: AbortSignal,
+    check: (result: ExportResult, reader: ReadableStreamDefaultReader<Uint8Array>) => Promise<void> = async () => undefined,
+  ) {
+    const request = new AbortController();
+    requests.add(request);
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    try {
+      const result = await exporter.export(call, selected, AbortSignal.any([signal, request.signal]));
+      reader = result.stream.getReader();
+      await check(result, reader);
+      // Check natural completion/cancellation before the safety net, so it cannot hide service leaks.
+      await noSnapshots();
+    } finally {
+      try {
+        // An errored stream rejects cancel with its existing error; afterEach still checks SQL cleanup.
+        await reader?.cancel().catch(() => undefined);
+      } finally {
+        reader?.releaseLock();
+        request.abort();
+        requests.delete(request);
+      }
+    }
+  }
+  async function readText(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
+    const decoder = new TextDecoder();
+    let text = "";
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) return text + decoder.decode();
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+  }
   async function seed(count = 1, options: { time?: Date; action?: string } = {}) {
     await sql`INSERT INTO filesv2.activity(id,state,action,server_url,root,base_id,base_after_id,directory,name,path_before,path_after,
       actor_kind,actor_user_id,via,started_at,finished_at,detail,error_code)
@@ -43,14 +80,15 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
   }
   async function noSnapshots() {
     // close() is awaited on explicit cancellation/completion; request abort cleanup may still be committing.
+    let remaining: { pid: number; state: string; wait: string | null }[] = [];
     for (let attempt = 0; attempt < 20; attempt++) {
-      const [row] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM pg_stat_activity
+      remaining = await sql<typeof remaining>`SELECT pid,state,wait_event_type AS wait FROM pg_stat_activity
         WHERE datname=current_database() AND pid<>pg_backend_pid() AND xact_start IS NOT NULL
           AND backend_type='client backend'`;
-      if (row?.count === 0) return;
+      if (remaining.length === 0) return;
       await Bun.sleep(10);
     }
-    throw new Error("Export leaked a transaction");
+    throw new Error(`Export leaked a transaction: ${JSON.stringify(remaining)}`);
   }
   beforeAll(async () => {
     await assertPrivateDatabase();
@@ -76,13 +114,24 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       (${otherBaseId}::uuid,'cloud','users',${otherBaseId}::uuid,'cloud','users/bob')`;
   });
   afterEach(async () => {
-    setSystemTime();
-    await noSnapshots();
+    try {
+      // Report a real leak before aborting any unfinished test, including one whose body timed out.
+      await noSnapshots();
+    } finally {
+      for (const request of requests) request.abort();
+      try {
+        await noSnapshots();
+      } finally {
+        setSystemTime();
+      }
+    }
   });
 
   test("count and streamed rows retain one set while another connection inserts, updates and deletes", async () => {
     await seed(501);
-    const result = await service({
+    // The batch cursor must retain sub-millisecond precision even though exported times are ISO milliseconds.
+    await sql`UPDATE filesv2.activity SET finished_at=finished_at+interval '1 microsecond'`;
+    const exporter = service({
       snapshot: async (filter, signal) => {
         const snapshot = await openActivityExportSnapshot(filter, signal);
         const count = snapshot.count.bind(snapshot);
@@ -98,45 +147,84 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
           },
         };
       },
-    }).export(call, input, new AbortController().signal);
-    expect(result.count).toBe(501);
-    const rows = (await new Response(result.stream).text())
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(rows).toHaveLength(501);
-    expect(rows.some((row) => row.pathAfter === "users/bob/file-1")).toBe(true);
-    expect(rows.some((row) => row.pathAfter === "users/bob/file-2")).toBe(true);
-    expect(rows.every((row) => row.action === "item.move")).toBe(true);
-    expect(authorizations).toBeGreaterThanOrEqual(4);
+    });
+    await withExport(exporter, input, new AbortController().signal, async (result, reader) => {
+      expect(result.count).toBe(501);
+      const rows = (await readText(reader))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(rows.map((row) => row.id)).toEqual(
+        Array.from({ length: 501 }, (_, index) => `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`),
+      );
+      expect(rows[0].pathAfter).toBe("users/bob/file-1");
+      expect(rows[1].pathAfter).toBe("users/bob/file-2");
+      expect(rows.every((row) => row.action === "item.move")).toBe(true);
+      expect(authorizations).toBeGreaterThanOrEqual(4);
+    });
   });
   test("committed start evidence has original actor/request and survives midstream cancellation", async () => {
     await seed(501);
-    const result = await service().export(call, input, new AbortController().signal);
-    expect(await auditRows()).toMatchObject([
-      { actor_user_id: userId, request_id: call.requestId, metadata: { phase: "authorized_export_start", count: 501 } },
-    ]);
-    const reader = result.stream.getReader();
-    const chunk = await reader.read();
-    expect(new TextDecoder().decode(chunk.value).trim().split("\n")).toHaveLength(ACTIVITY_EXPORT_BATCH);
-    await reader.cancel();
+    await withExport(service(), input, new AbortController().signal, async (_result, reader) => {
+      // Bun SQL returns an array subclass. Assert cardinality and the actual row, not a nested partial array match.
+      const evidence = await auditRows();
+      expect(evidence).toHaveLength(1);
+      expect(evidence[0]).toEqual({
+        actor_user_id: userId,
+        request_id: call.requestId,
+        metadata: {
+          phase: "authorized_export_start",
+          format: input.format,
+          from: input.from,
+          to: input.to,
+          baseId: null,
+          actor: null,
+          action: null,
+          q: null,
+          count: 501,
+          invocationId: call.invocationId,
+          callingApp: call.callingApp,
+          actorKind: call.actor.kind,
+          serviceAccountId: null,
+        },
+      });
+      const chunk = await reader.read();
+      expect(chunk.done).toBe(false);
+      expect(new TextDecoder().decode(chunk.value).trim().split("\n")).toHaveLength(ACTIVITY_EXPORT_BATCH);
+      await reader.cancel();
+      expect(Array.from(await auditRows())).toEqual(Array.from(evidence));
+    });
+  });
+  test.each(["before reading", "after the first batch"])("a failing check %s still releases the snapshot", async (phase) => {
+    await seed(501);
+    const failure = new Error("failed export assertion");
+    await expect(
+      withExport(service(), input, new AbortController().signal, async (_result, reader) => {
+        if (phase === "after the first batch") await reader.read();
+        throw failure;
+      }),
+    ).rejects.toBe(failure);
+    await noSnapshots();
     expect(await auditRows()).toHaveLength(1);
+    // This was the first blocked statement in the cascading run: it must not await the stream's idle timer.
+    await sql`TRUNCATE filesv2.activity`;
   });
   test.each(["reader", "request"])("early %s cancellation returns snapshot connection and retains evidence", async (kind) => {
     await seed();
     const request = new AbortController();
-    const result = await service().export(call, input, request.signal);
-    if (kind === "reader") await result.stream.cancel();
-    else {
-      request.abort();
-      await expect(result.stream.getReader().read()).rejects.toHaveProperty("code", "activity_export_failed");
-    }
-    await noSnapshots();
-    expect(await auditRows()).toHaveLength(1);
+    await withExport(service(), input, request.signal, async (_result, reader) => {
+      if (kind === "reader") await reader.cancel();
+      else {
+        request.abort();
+        await expect(reader.read()).rejects.toHaveProperty("code", "activity_export_failed");
+      }
+      await noSnapshots();
+      expect(await auditRows()).toHaveLength(1);
+    });
   });
   test("100001 rows rejects before any response/audit and returns snapshot connection", async () => {
     await seed(100001);
-    await expect(service().export(call, input, new AbortController().signal)).rejects.toMatchObject({
+    await expect(withExport(service(), input, new AbortController().signal)).rejects.toMatchObject({
       code: "activity_export_limit",
       status: 413,
     });
@@ -144,18 +232,18 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
   });
   test("exactly 100000 rows pass the SQL count and stream in bounded batches", async () => {
     await seed(100000);
-    const result = await service().export(call, input, new AbortController().signal);
-    expect(result.count).toBe(100000);
-    const reader = result.stream.getReader();
-    let total = 0;
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      const count = new TextDecoder().decode(chunk.value).trim().split("\n").length;
-      expect(count).toBeLessThanOrEqual(ACTIVITY_EXPORT_BATCH);
-      total += count;
-    }
-    expect(total).toBe(100000);
+    await withExport(service(), input, new AbortController().signal, async (result, reader) => {
+      expect(result.count).toBe(100000);
+      let total = 0;
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        const count = new TextDecoder().decode(chunk.value).trim().split("\n").length;
+        expect(count).toBeLessThanOrEqual(ACTIVITY_EXPORT_BATCH);
+        total += count;
+      }
+      expect(total).toBe(100000);
+    });
   });
   test("request abort cancels a blocked SQL count and releases the transaction before any audit", async () => {
     await seed();
@@ -165,7 +253,8 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     try {
       await blocker`BEGIN`;
       await blocker`LOCK filesv2.activity IN ACCESS EXCLUSIVE MODE`;
-      pending = service().export(call, input, request.signal);
+      pending = withExport(service(), input, request.signal);
+      void pending.catch(() => undefined);
       // Observe the count waiting on our table lock before cancelling it.
       let blocked = false;
       for (let attempt = 0; attempt < 50; attempt++) {
@@ -183,8 +272,11 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     } finally {
       request.abort();
       await pending?.catch(() => undefined);
-      await blocker`ROLLBACK`;
-      blocker.release();
+      try {
+        await blocker`ROLLBACK`;
+      } finally {
+        blocker.release();
+      }
     }
     expect(await auditRows()).toHaveLength(0);
   });
@@ -192,7 +284,7 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     await seed();
     await sql`ALTER TABLE audit.events ADD CONSTRAINT deny_export CHECK(action<>'filesv2.activity.export')`;
     try {
-      await expect(service().export(call, input, new AbortController().signal)).rejects.toBeInstanceOf(Error);
+      await expect(withExport(service(), input, new AbortController().signal)).rejects.toHaveProperty("errno", "23514");
       expect(await auditRows()).toHaveLength(0);
     } finally {
       await sql`ALTER TABLE audit.events DROP CONSTRAINT deny_export`;
@@ -206,7 +298,8 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     try {
       await blocker`BEGIN`;
       await blocker`LOCK audit.events IN ACCESS EXCLUSIVE MODE`;
-      pending = service().export(call, input, request.signal);
+      pending = withExport(service(), input, request.signal);
+      void pending.catch(() => undefined);
       let blocked = false;
       for (let attempt = 0; attempt < 50; attempt++) {
         const [state] = await sql<{ blocked: boolean }[]>`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
@@ -223,8 +316,11 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     } finally {
       request.abort();
       await pending?.catch(() => undefined);
-      await blocker`ROLLBACK`;
-      blocker.release();
+      try {
+        await blocker`ROLLBACK`;
+      } finally {
+        blocker.release();
+      }
     }
     await noSnapshots();
     expect(await auditRows()).toHaveLength(0);
@@ -236,47 +332,53 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     await sql`INSERT INTO filesv2.activity(id,state,action,server_url,root,directory,name,actor_kind,via,started_at)
       VALUES('90000000-0000-4000-8000-000000000002'::uuid,'done','folder.create','private','cloud',true,'outside','system','system','2030-05-16')`;
     for (const identity of [userId, otherBaseId]) {
-      const result = await service().export(
-        call,
+      await withExport(
+        service(),
         { ...input, from: "2030-05-15", to: "2030-05-15", baseId: `cloud:users:${identity}`, actor: userId, action: "item.move" },
         new AbortController().signal,
+        async (result, reader) => {
+          expect(result.count).toBe(1);
+          const text = await readText(reader);
+          expect(JSON.parse(text).actorName).toBe("Alice current");
+          expect(text).not.toContain("password");
+          expect(text).not.toContain("opaque");
+          expect(text).not.toContain("private-credential-server");
+        },
       );
-      expect(result.count).toBe(1);
-      const text = await new Response(result.stream).text();
-      expect(JSON.parse(text).actorName).toBe("Alice current");
-      expect(text).not.toContain("password");
-      expect(text).not.toContain("opaque");
-      expect(text).not.toContain("private-credential-server");
     }
   });
   test("deleted actor is null, live renamed actor is resolved at export, unknown actions are excluded", async () => {
     await seed();
     await sql`UPDATE auth.users SET display_name='Alice renamed'`;
-    let result = await service().export(call, input, new AbortController().signal);
-    expect(JSON.parse(await new Response(result.stream).text()).actorName).toBe("Alice renamed");
+    await withExport(service(), input, new AbortController().signal, async (_result, reader) => {
+      expect(JSON.parse(await readText(reader)).actorName).toBe("Alice renamed");
+    });
     await sql`DELETE FROM auth.users`;
     await sql`UPDATE filesv2.activity SET action='future.unsafe.action'`;
-    result = await service().export(call, input, new AbortController().signal);
-    expect(result.count).toBe(0);
-    expect(await new Response(result.stream).text()).toBe("");
+    await withExport(service(), input, new AbortController().signal, async (result, reader) => {
+      expect(result.count).toBe(0);
+      expect(await readText(reader)).toBe("");
+    });
     await sql`UPDATE filesv2.activity SET action='item.move'`;
-    result = await service().export(call, input, new AbortController().signal);
-    expect(JSON.parse(await new Response(result.stream).text())).toMatchObject({ actorUserId: null, actorName: null });
+    await withExport(service(), input, new AbortController().signal, async (_result, reader) => {
+      expect(JSON.parse(await readText(reader))).toMatchObject({ actorUserId: null, actorName: null });
+    });
   });
   test("unknown metadata follows the reader's minimal projection without inventing directory or identity facts", async () => {
     await seed();
     await sql`UPDATE filesv2.activity SET detail='{"metadata_unknown":true}'::jsonb,item_id='unconfirmed',item_after_id='unconfirmed'`;
-    const result = await service().export(call, input, new AbortController().signal);
-    expect(JSON.parse(await new Response(result.stream).text())).toMatchObject({
-      directory: null,
-      rootBefore: null,
-      rootAfter: null,
-      baseBeforeId: null,
-      baseAfterId: null,
-      itemBeforeId: null,
-      itemAfterId: null,
-      pathBefore: "users/alice/file-1",
-      pathAfter: "users/bob/file-1",
+    await withExport(service(), input, new AbortController().signal, async (_result, reader) => {
+      expect(JSON.parse(await readText(reader))).toMatchObject({
+        directory: null,
+        rootBefore: null,
+        rootAfter: null,
+        baseBeforeId: null,
+        baseAfterId: null,
+        itemBeforeId: null,
+        itemAfterId: null,
+        pathBefore: "users/alice/file-1",
+        pathAfter: "users/bob/file-1",
+      });
     });
   });
   test("preview and download apply the same literal case-insensitive path query without auditing the preview", async () => {
@@ -286,9 +388,10 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     const selected = { ...input, q: "100%_offer" };
     expect(await service().preview(call, selected, new AbortController().signal)).toEqual({ count: 1 });
     expect(await auditRows()).toHaveLength(0);
-    const result = await service().export(call, selected, new AbortController().signal);
-    expect(result.count).toBe(1);
-    expect(JSON.parse(await new Response(result.stream).text()).pathBefore).toBe("users/alice/100%_Offer.txt");
+    await withExport(service(), selected, new AbortController().signal, async (result, reader) => {
+      expect(result.count).toBe(1);
+      expect(JSON.parse(await readText(reader)).pathBefore).toBe("users/alice/100%_Offer.txt");
+    });
     expect((await auditRows())[0]?.metadata.q).toBe("100%_offer");
   });
   test("base-filtered preview and export retain recorded archive paths after the base moves", async () => {
@@ -296,8 +399,9 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     await sql`UPDATE filesv2.activity SET action='admin.read',path_before='archive/alice-op-123/file-1',path_after=NULL,base_after_id=NULL`;
     const selected = { ...input, baseId: `cloud:users:${userId}` };
     expect(await service().preview(call, selected, new AbortController().signal)).toEqual({ count: 1 });
-    const result = await service().export(call, selected, new AbortController().signal);
-    expect(result.count).toBe(1);
-    expect(JSON.parse(await new Response(result.stream).text()).pathBefore).toBe("archive/alice-op-123/file-1");
+    await withExport(service(), selected, new AbortController().signal, async (result, reader) => {
+      expect(result.count).toBe(1);
+      expect(JSON.parse(await readText(reader)).pathBefore).toBe("archive/alice-op-123/file-1");
+    });
   });
 });
