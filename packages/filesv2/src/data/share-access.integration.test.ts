@@ -97,10 +97,12 @@ suite("Files public share access accounting with private Postgres", () => {
     ]);
     for (const network of ["192.0.2.231", "2001:db8:abcd:1234::9", "192.0.2.231/24"])
       await expect(
-        sql`INSERT INTO filesv2.share_access(share_id,hour,network,client) VALUES(${other}::uuid,${hour},${network},'chrome')`,
+        sql`INSERT INTO filesv2.share_access(share_id,hour,network,client) VALUES(${other}::uuid,${hour},${network},'chrome')`.execute(),
       ).rejects.toThrow();
-    await expect(sql`INSERT INTO filesv2.share_access(share_id,hour,network,client)
-      VALUES(${other}::uuid,${hour},'unknown','Mozilla/5.0 raw user agent')`).rejects.toThrow();
+    await expect(
+      sql`INSERT INTO filesv2.share_access(share_id,hour,network,client)
+      VALUES(${other}::uuid,${hour},'unknown','Mozilla/5.0 raw user agent')`.execute(),
+    ).rejects.toThrow();
   });
 
   test("a failed record rolls back its counter and releases the cap lock", async () => {
