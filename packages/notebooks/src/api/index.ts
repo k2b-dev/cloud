@@ -151,6 +151,7 @@ const NoteSchema = z.object({
 
 const NoteWithContentSchema = NoteSchema.extend({
   yjsSnapshot: z.string().nullable().describe("Base64-encoded Yjs snapshot"),
+  yjsRestoreRevision: z.string(),
 });
 
 const NoteCommentSchema = z.object({
@@ -505,6 +506,7 @@ const EditableNoteRouteStateSchema = z.object({
     id: ResourceShortIdSchema,
     title: z.string(),
     yjsSnapshot: z.string().nullable(),
+    yjsRestoreRevision: z.string().nullable(),
     historyIncomplete: z.boolean(),
     contentMd: z.string().nullable(),
     createdAt: z.string(),
@@ -1992,7 +1994,7 @@ const app = new Hono<AuthContext>()
       const note = await notebooksService.note.getCurrentWithContent({ id: noteCheck.data.id });
       if (!note) return respond(c, fail(notFoundMessage(messages(c).noteNotFound)));
       const [data] = await toPublicNotes([note], notebook!.shortId);
-      return respond(c, ok({ ...data!, yjsSnapshot: note.yjsSnapshot }));
+      return respond(c, ok({ ...data!, yjsSnapshot: note.yjsSnapshot, yjsRestoreRevision: note.yjsRestoreRevision }));
     },
   )
 

@@ -45,6 +45,7 @@ type NotebooksYjsErrorPayload = {
   code: NotebooksYjsErrorCode;
   message: string;
   noteId?: string;
+  reopen?: true;
 };
 
 const SNAPSHOT_INTERVAL_MS = 8_000;
@@ -61,6 +62,12 @@ const MAX_PENDING_MESSAGES = 200;
 const MAX_AWARENESS_PAYLOAD_LENGTH = 256_000;
 const MAX_CLIENT_MESSAGE_LENGTH = notebooksYjs.maxSyncPayloadLength + 1_000;
 const BASE64_REGEX = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+// The note store uses a nonnegative Postgres bigint, serialized canonically.
+const RestoreRevisionSchema = z
+  .string()
+  .regex(/^(0|[1-9]\d*)$/)
+  .max(19)
+  .refine((value) => value.length <= 19 && /^(0|[1-9]\d*)$/.test(value) && BigInt(value) <= 9_223_372_036_854_775_807n);
 
 const ReplayRequestMessageSchema = z.object({
   type: z.literal(WS_TYPE.replayRequest),
@@ -68,6 +75,7 @@ const ReplayRequestMessageSchema = z.object({
     noteId: z.string().regex(SHORT_ID_REGEX),
     // A bounded opaque cursor is validated by the owning topic; stale formats resync.
     fromCursor: z.string().max(256).nullable().optional(),
+    restoreRevision: RestoreRevisionSchema.nullable(),
   }),
 });
 
@@ -76,6 +84,7 @@ const SyncPublishMessageSchema = z.object({
   payload: z.object({
     noteId: z.string().regex(SHORT_ID_REGEX),
     payload: z.string().min(1).max(notebooksYjs.maxSyncPayloadLength),
+    restoreRevision: RestoreRevisionSchema,
   }),
 });
 
@@ -115,6 +124,8 @@ type WsContext = {
   noteId: string | null;
   /** Stable public short-id used on the websocket wire. */
   noteShortId: string | null;
+  /** Revision of the document joined by this socket; never relabel old bytes after a restore. */
+  restoreRevision: string | null;
   canWrite: boolean;
   peerId: string;
   streamAbort: AbortController | null;
@@ -169,6 +180,7 @@ const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | 
   user: null,
   noteId: null,
   noteShortId: null,
+  restoreRevision: null,
   noteNotebookId: null,
   noteAccessWatchAbort: null,
   canWrite: false,
@@ -195,8 +207,9 @@ const send = (socket: ServerWebSocket<unknown>, type: string, payload?: unknown)
   }
 };
 
-const warn = (socket: ServerWebSocket<unknown>, code: NotebooksYjsErrorCode, message: string, noteId?: string) => {
+const warn = (socket: ServerWebSocket<unknown>, code: NotebooksYjsErrorCode, message: string, noteId?: string, reopen?: true) => {
   const payload: NotebooksYjsErrorPayload = noteId ? { code, message, noteId } : { code, message };
+  if (reopen) payload.reopen = true;
   send(socket, WS_TYPE.error, payload);
 };
 
@@ -427,6 +440,7 @@ const leaveCurrentNote = async (ctx: WsContext) => {
   }
   ctx.noteId = null;
   ctx.noteShortId = null;
+  ctx.restoreRevision = null;
   ctx.noteNotebookId = null;
   ctx.canWrite = false;
   ctx.dirty = false;
@@ -443,14 +457,16 @@ const leaveCurrentWorkspace = (ctx: WsContext) => {
   ctx.workspaceNotebookShortId = null;
 };
 
-const fatal = async (ctx: WsContext, code: NotebooksYjsErrorCode, message: string, noteId?: string) => {
+const fatal = async (ctx: WsContext, code: NotebooksYjsErrorCode, message: string, noteId?: string, reopen?: true) => {
   if (ctx.phase === "closing") return;
   ctx.phase = "closing";
-  warn(ctx.socket, code, message, noteId);
+  warn(ctx.socket, code, message, noteId, reopen);
   await leaveCurrentNote(ctx);
   leaveCurrentWorkspace(ctx);
   ctx.socket.close(closeCodeForError(code), code);
 };
+
+const requireReopen = (ctx: WsContext, noteId?: string) => fatal(ctx, ERROR_CODE.resyncRequired, ctx.messages.reopenRequired, noteId, true);
 
 const ensureValidBase64 = (payload: string): boolean => payload.length > 0 && payload.length % 4 === 0 && BASE64_REGEX.test(payload);
 
@@ -984,10 +1000,27 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
     await leaveCurrentNote(ctx);
   }
 
+  const snapshot = await notebooksService.note.getAnchoredYjsState({ noteId: dbNoteId });
+  if (!snapshot) {
+    await fatal(ctx, ERROR_CODE.noteNotFound, ctx.messages.noteNotFound, payload.noteId);
+    return;
+  }
+  // Only a truly initial empty document may adopt the snapshot's revision.
+  // A cursor (even an obsolete cursor format) proves the browser has a base.
+  if (
+    (payload.restoreRevision === null && payload.fromCursor != null) ||
+    (payload.restoreRevision !== null && payload.restoreRevision !== snapshot.restoreRevision) ||
+    (ctx.restoreRevision !== null && ctx.restoreRevision !== snapshot.restoreRevision)
+  ) {
+    await requireReopen(ctx, payload.noteId);
+    return;
+  }
+
   ctx.phase = "joined";
   ctx.user = user;
   ctx.noteId = dbNoteId;
   ctx.noteShortId = payload.noteId;
+  ctx.restoreRevision = snapshot.restoreRevision;
   ctx.noteNotebookId = access.notebookId ?? null;
   ctx.canWrite = access.canWrite ?? false;
 
@@ -1005,9 +1038,8 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
 
   const clientCursor = payload.fromCursor && notebooksYjs.streamCursorPattern.test(payload.fromCursor) ? payload.fromCursor : null;
   let replayCursor = clientCursor;
-  const snapshot = await notebooksService.note.getAnchoredYjsState({ noteId: dbNoteId });
   if (!clientCursor) {
-    if (snapshot?.yjsState) {
+    if (snapshot.yjsState) {
       send(ctx.socket, WS_TYPE.syncPush, {
         noteId: payload.noteId,
         historyIncomplete: snapshot.historyIncomplete,
@@ -1022,14 +1054,14 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
         ],
       });
     }
-    replayCursor = snapshot?.streamCursor ?? null;
+    replayCursor = snapshot.streamCursor;
   }
 
   // `replayReady` is deferred until retained history up to the captured head
   // has been delivered (see `startLiveStream`). Sending it earlier would let
   // the client publish edits while catch-up is still streaming.
   startLiveStream(ctx, dbNoteId, payload.noteId, { after: replayCursor, storedBase: !clientCursor }, (cursor) => {
-    send(ctx.socket, WS_TYPE.replayReady, { noteId: payload.noteId, cursor, restoreRevision: snapshot?.restoreRevision ?? null });
+    send(ctx.socket, WS_TYPE.replayReady, { noteId: payload.noteId, cursor, restoreRevision: snapshot.restoreRevision });
   });
   startAccessRefresh(ctx);
   if (ctx.noteNotebookId) startNoteAccessWatch(ctx, ctx.noteNotebookId);
@@ -1049,15 +1081,32 @@ const handleSyncPublish = async (ctx: WsContext, payload: z.infer<typeof SyncPub
     return;
   }
 
+  const noteId = ctx.noteId!;
+  const stored = await notebooksService.note.getYjsStateWithCursor({ noteId });
+  // An access watch can close or downgrade the socket while the store is read.
+  if (ctx.phase !== "joined" || ctx.noteId !== noteId) return;
+  if (!ensureWritableNote(ctx, payload.noteId)) return;
+  if (!stored) {
+    await fatal(ctx, ERROR_CODE.noteNotFound, ctx.messages.noteNotFound, payload.noteId);
+    return;
+  }
+  if (payload.restoreRevision !== ctx.restoreRevision || payload.restoreRevision !== stored.restoreRevision) {
+    await requireReopen(ctx, payload.noteId);
+    return;
+  }
+
   // Topic keys stay UUID-backed below the public short-id boundary.
   const noteTopic = createYjsTopic();
   const published = await noteTopic.publish({
-    tenantId: ctx.noteId!,
+    tenantId: noteId,
     data: {
       kind: "sync",
       payload: payload.payload,
       originNodeId: NODE_ID,
       originPeerId: ctx.peerId,
+      // A restore can race the store read above. Consumers must fence these
+      // bytes by their originating document, never by a newer store revision.
+      restoreRevision: payload.restoreRevision,
       actor: { kind: "user", id: ctx.user!.id },
     },
   });
@@ -1154,6 +1203,10 @@ const handleClientMessage = async (ctx: WsContext, raw: string): Promise<void> =
 
   const message = ClientMessageSchema.safeParse(parsed);
   if (!message.success) {
+    if (message.error.issues.some((issue) => issue.path[0] === "payload" && issue.path[1] === "restoreRevision")) {
+      await requireReopen(ctx, ctx.noteShortId ?? undefined);
+      return;
+    }
     warn(ctx.socket, ERROR_CODE.invalidMessage, ctx.messages.invalidMessage);
     return;
   }

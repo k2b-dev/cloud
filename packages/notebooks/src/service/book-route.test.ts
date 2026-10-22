@@ -43,6 +43,7 @@ const note: notes.NoteWithContent = {
   yjsSnapshotAt: timestamp,
   contentMd: "# Welcome\n\nOur **handbook**.",
   yjsSnapshot: "private-collaboration-state",
+  yjsRestoreRevision: "0",
   createdBy: params.userId,
   createdAt: timestamp,
   updatedAt: timestamp,

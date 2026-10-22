@@ -68,6 +68,7 @@ export type Note = {
 export type NoteWithContent = Note & {
   /** Yjs snapshot as base64 (null if no content yet) */
   yjsSnapshot: string | null;
+  yjsRestoreRevision: string;
 };
 
 export type NoteTreeNode = Note & {
@@ -206,9 +207,10 @@ const mapToNote = (row: DbNote): Note => ({
 /**
  * Extends `mapToNote` by serializing the optional Yjs snapshot buffer as base64.
  */
-const mapToNoteWithContent = (row: DbNote): NoteWithContent => ({
+const mapToNoteWithContent = (row: DbNote & { yjs_restore_revision: string }): NoteWithContent => ({
   ...mapToNote(row),
   yjsSnapshot: row.yjs_snapshot ? row.yjs_snapshot.toString("base64") : null,
+  yjsRestoreRevision: row.yjs_restore_revision,
 });
 
 const parentExistsInNotebook = async (parentId: string, notebookId: string): Promise<boolean> => {
@@ -714,11 +716,11 @@ export const titlesByShortIds = async (params: { notebookId: string; shortIds: s
 /**
  * Get a note with its Yjs content.
  */
-const getWithContentRow = async (id: string): Promise<DbNote | null> => {
-  const [row] = await sql<DbNote[]>`
+const getWithContentRow = async (id: string): Promise<(DbNote & { yjs_restore_revision: string }) | null> => {
+  const [row] = await sql<(DbNote & { yjs_restore_revision: string })[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot, n.yjs_stream_cursor, n.yjs_history_incomplete, n.yjs_snapshot_at,
+      n.yjs_snapshot, n.yjs_restore_revision::text, n.yjs_stream_cursor, n.yjs_history_incomplete, n.yjs_snapshot_at,
       n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
@@ -748,6 +750,7 @@ export const getCurrentWithContent = async (params: { id: string }): Promise<Not
     ...mapToNote(row),
     contentMd: current.text,
     yjsSnapshot: current.state ? toBase64(current.state) : null,
+    yjsRestoreRevision: current.restoreRevision,
   };
 };
 
@@ -806,10 +809,10 @@ export const resolveShortIdsToNotebookShortIds = async (params: {
 
 /** Resolve the public note identity and include its collaborative content. */
 export const getWithContentByShortId = async (params: { shortId: string }): Promise<NoteWithContent | null> => {
-  const [row] = await sql<DbNote[]>`
+  const [row] = await sql<(DbNote & { yjs_restore_revision: string })[]>`
     SELECT
       n.id, n.short_id, n.notebook_id, n.parent_id, n.title, n.position,
-      n.yjs_snapshot, n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
+      n.yjs_snapshot, n.yjs_restore_revision::text, n.yjs_history_incomplete, n.yjs_snapshot_at, n.content_md, n.created_by, n.created_at, n.updated_at, n.locked_at,
       EXISTS(SELECT 1 FROM notebooks.notes c WHERE c.parent_id = n.id) as has_children
     FROM notebooks.notes n
     WHERE n.short_id = ${params.shortId}

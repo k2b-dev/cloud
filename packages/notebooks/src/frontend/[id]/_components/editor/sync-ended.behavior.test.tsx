@@ -198,6 +198,7 @@ const mountNoteEditor = ({ pending: initialPending = true, readOnly = false } = 
           userId="User01"
           displayName="Reader"
           initialSnapshot={initialSnapshot}
+          initialRestoreRevision="0"
           initialPanelOpen={false}
           initialRichMode="source"
           initialHref={editorHref.split("#")[0]!}

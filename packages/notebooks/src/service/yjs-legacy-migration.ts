@@ -93,7 +93,14 @@ const republish = async (noteId: string, captured: number, last: number, signal?
     const published = await shared.publish({
       tenantId: noteId,
       idempotencyKey: `legacy-${captured}-${start}`,
-      data: { kind: "sync", payload: toBase64(Y.mergeUpdates(updates.slice(start, end))), originNodeId: NODE_ID, originPeerId: null },
+      // Legacy streams belong to the original document, never to a replacement snapshot.
+      data: {
+        kind: "sync",
+        payload: toBase64(Y.mergeUpdates(updates.slice(start, end))),
+        restoreRevision: "0",
+        originNodeId: NODE_ID,
+        originPeerId: null,
+      },
     });
     lastCursor = published.cursor;
     start = end;

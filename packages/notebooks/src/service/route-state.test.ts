@@ -55,6 +55,7 @@ test("the authorized route snapshot carries authors into soft-navigation detail"
     title: "Test",
     contentMd: "# Test",
     yjsSnapshot: null,
+    yjsRestoreRevision: "0",
     historyIncomplete: false,
     lockedAt: null,
     parentId: null,

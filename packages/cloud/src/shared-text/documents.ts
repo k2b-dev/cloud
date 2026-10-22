@@ -125,7 +125,7 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
           kind: "sync",
           payload: toBase64(updateBytes),
           ...(options.actionId ? { actionId: options.actionId } : {}),
-          ...(maxLength !== undefined ? { restoreRevision: stored.restoreRevision } : {}),
+          restoreRevision: stored.restoreRevision,
           originNodeId: sharedTextNodeId,
           originPeerId: null,
           ...(actor ? { actor } : {}),
@@ -174,11 +174,16 @@ export const bindDocuments = <Saved, Context>({ topic, replay }: DocumentLog, st
       if (!stored) return null;
       const latest = await topic().latestCursor({ tenantId: docId });
       if (!latest || (stored.cursor && compareStreamCursor(latest, stored.cursor) <= 0))
-        return { state: stored.state, text: stored.text, cursor: stored.cursor };
+        return { state: stored.state, text: stored.text, cursor: stored.cursor, restoreRevision: stored.restoreRevision };
       const doc = createDoc(stored);
       try {
         await replay({ docId, after: stored.cursor, until: latest, doc, restoreRevision: stored.restoreRevision, signal: options.signal });
-        return { state: Y.encodeStateAsUpdate(doc), text: doc.getText(SHARED_TEXT_NAME).toString(), cursor: latest };
+        return {
+          state: Y.encodeStateAsUpdate(doc),
+          text: doc.getText(SHARED_TEXT_NAME).toString(),
+          cursor: latest,
+          restoreRevision: stored.restoreRevision,
+        };
       } finally {
         doc.destroy();
       }

@@ -16,6 +16,7 @@ export type SelectedNoteRouteState = {
     id: string;
     title: string;
     yjsSnapshot: string | null;
+    yjsRestoreRevision: string | null;
     historyIncomplete: boolean;
     contentMd: string | null;
     lockedAt: string | null;
@@ -39,6 +40,7 @@ export type EditableNoteRouteData = {
     id: string;
     title: string;
     yjsSnapshot: string | null;
+    yjsRestoreRevision: string | null;
     historyIncomplete: boolean;
     contentMd: string | null;
     createdAt: string;
@@ -81,6 +83,7 @@ const toSelectedNote = async (note: NoteWithContent): Promise<SelectedNoteRouteS
   id: note.shortId,
   title: note.title,
   yjsSnapshot: note.yjsSnapshot,
+  yjsRestoreRevision: note.yjsRestoreRevision,
   historyIncomplete: note.historyIncomplete,
   contentMd: note.contentMd,
   lockedAt: note.lockedAt,
@@ -198,6 +201,7 @@ export const loadEditableNoteRouteData = async (params: ResolveEditableRoutePara
         id: state.note.id,
         title: state.note.title,
         yjsSnapshot: state.note.yjsSnapshot,
+        yjsRestoreRevision: state.note.yjsRestoreRevision,
         historyIncomplete: state.note.historyIncomplete,
         contentMd: state.note.contentMd,
         createdAt: state.note.createdAt,

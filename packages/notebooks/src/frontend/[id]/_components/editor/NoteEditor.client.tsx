@@ -98,6 +98,7 @@ type EditorInstanceProps = {
   userId: string;
   displayName: string;
   initialSnapshot: string | null;
+  initialRestoreRevision: string | null;
   initialContent?: string | null;
   initialPanelOpen: boolean;
   initialRichMode: "rich" | "source";
@@ -195,6 +196,7 @@ export default function NoteEditor(props: Props) {
         noteLockedAt: note.lockedAt,
         historyIncomplete: note.historyIncomplete,
         initialSnapshot: note.yjsSnapshot,
+        initialRestoreRevision: note.yjsRestoreRevision,
       },
       eventDetail: detail,
     };
@@ -609,6 +611,7 @@ function EditorInstance(
         awareness,
         noteId: props.noteId,
         appUrl: props.appUrl,
+        initialRestoreRevision: props.initialRestoreRevision ?? undefined,
         onConnectionChange: (value) => {
           setConnected(value);
           syncState.connectionChanged(value);

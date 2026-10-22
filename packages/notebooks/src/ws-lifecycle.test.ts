@@ -54,6 +54,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
       note: {
         getByShortId: async () => note,
         get: async () => note,
+        getYjsStateWithCursor: async () => ({ restoreRevision: "0" }),
         getAnchoredYjsState: async () => ({
           yjsState: new Uint8Array([0, 0]),
           streamCursor: "s6t.fixture.9",
@@ -118,7 +119,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
   const openSocket = async () => {
     await app.request("/");
     const handlers = events!;
-    const sent: Array<{ type: string; payload: { code?: string } }> = [];
+    const sent: Array<{ type: string; payload: { code?: string; reopen?: boolean } }> = [];
     const closed = Promise.withResolvers<number>();
     const raw = {
       send: (data: string) => sent.push(JSON.parse(data)),
@@ -132,7 +133,10 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     const request = (fromCursor?: string) =>
       handlers.onMessage?.(
         new MessageEvent("message", {
-          data: JSON.stringify({ type: "notes.yjs.replay.request", payload: { noteId: "abcdef", fromCursor } }),
+          data: JSON.stringify({
+            type: "notes.yjs.replay.request",
+            payload: { noteId: "abcdef", fromCursor, restoreRevision: fromCursor ? "0" : null },
+          }),
         }),
         socket,
       );
@@ -156,6 +160,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     expect(socket.sent.filter((message) => message.type === "notes.yjs.error").map((message) => message.payload.code)).toEqual([
       "RESYNC_REQUIRED",
     ]);
+    expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.reopen).toBeUndefined();
   }, 10_000);
 
   test("a client cursor below retention resyncs from the stored snapshot without re-anchoring", async () => {
@@ -168,6 +173,7 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     expect(socket.sent.filter((message) => message.type === "notes.yjs.error").map((message) => message.payload.code)).toEqual([
       "RESYNC_REQUIRED",
     ]);
+    expect(socket.sent.find((message) => message.type === "notes.yjs.error")?.payload.reopen).toBeUndefined();
     expect(adoptions).toEqual([]);
   }, 10_000);
 
@@ -219,14 +225,16 @@ if (process.env.NOTEBOOKS_WS_LIFECYCLE_CHILD !== "1") {
     const socket = new WSContext({ raw, readyState: 1, send: () => {}, close: () => {} });
     handlers.onOpen?.(new Event("open"), socket);
     handlers.onMessage?.(
-      new MessageEvent("message", { data: JSON.stringify({ type: "notes.yjs.replay.request", payload: { noteId: "abcdef" } }) }),
+      new MessageEvent("message", {
+        data: JSON.stringify({ type: "notes.yjs.replay.request", payload: { noteId: "abcdef", restoreRevision: null } }),
+      }),
       socket,
     );
     await replayReady.promise;
     expect(subscribedAfter).toEqual(["s6t.fixture.9"]);
     handlers.onMessage?.(
       new MessageEvent("message", {
-        data: JSON.stringify({ type: "notes.yjs.sync.publish", payload: { noteId: "abcdef", payload: "AAA=" } }),
+        data: JSON.stringify({ type: "notes.yjs.sync.publish", payload: { noteId: "abcdef", payload: "AAA=", restoreRevision: "0" } }),
       }),
       socket,
     );

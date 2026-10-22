@@ -96,7 +96,7 @@ const draftText = log.withStore<Saved, undefined>({
 ## Read and edit current text
 
 `draftText.read(docId, { signal? })` always reads to the end of the log. It
-returns `null` for a missing document, otherwise `{ state, text, cursor }`.
+returns `null` for a missing document, otherwise `{ state, text, cursor, restoreRevision }`.
 When no newer update exists, it returns the stored values unchanged, including
 nulls. Otherwise it replays newer updates and returns an encoded snapshot and
 its text. Reading does not save a snapshot.
@@ -221,7 +221,8 @@ retry. Dispose the tracker when the editor closes.
 
 ## Respect restored document versions
 
-Server `change` events and snapshot repairs carry the store's `restoreRevision`.
+Server `edit` and `change` events and snapshot repairs carry the store's
+`restoreRevision`.
 Replay applies them only to that revision; obsolete events still advance the
 cursor without altering the restored document. `read`, `edit`, `change`, and the
 snapshot pipeline supply the revision automatically. Advanced callers of
@@ -229,7 +230,11 @@ snapshot pipeline supply the revision automatically. Advanced callers of
 snapshot revision. Omitting it for a versioned event raises an error.
 
 Custom browser transports must retain this metadata and start from a snapshot
-with its matching revision. A client holding a different document version must
+with its matching revision. Browser writes must carry their originating revision,
+including full-state reconnects and retries. Validate it against the joined
+session and current store before publishing; retain that originating revision
+in the log event to cover a restore during publication. Never assign the current
+store revision to bytes from a different document. A client holding a different document version must
 preserve unsent text and reopen the current version. Do not merge a replacement
 snapshot into the old Y.Doc. Upgrade all log readers and browser transports
 before enabling these server actions or automatic repair; older readers do not

@@ -9,7 +9,7 @@ export type SharedTextEvent = {
   actor?: SharedTextActor;
   /** Echoed only by authorized server actions, for the initiating browser's undo history. */
   actionId?: string;
-  /** Server changes apply only to the store lineage from which they were planned. */
+  /** Updates apply only to the store lineage from which they originated. */
   restoreRevision?: string;
 };
 export type SharedTextSyncEvent = SharedTextEvent & { kind: "sync" };
@@ -31,7 +31,7 @@ export type SharedTextSaveInput = {
   actor: SharedTextActor | null;
   contributors: SharedTextContributor[];
 };
-export type SharedTextSnapshot = { state: Uint8Array | null; text: string | null; cursor: string | null };
+export type SharedTextSnapshot = SharedTextStoredState;
 /** A disjoint edit in the original document's UTF-16 coordinates. */
 export type SharedTextChange = { from: number; to: number; insert: string };
 

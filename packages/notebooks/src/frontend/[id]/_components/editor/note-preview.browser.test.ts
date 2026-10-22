@@ -156,6 +156,7 @@ beforeAll(async () => {
         userId: "writer",
         displayName: "Writer",
         initialSnapshot,
+        initialRestoreRevision: "0",
         initialContent: null,
         initialPanelOpen: false,
         initialRichMode: mode,

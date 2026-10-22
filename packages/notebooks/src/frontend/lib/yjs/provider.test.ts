@@ -230,7 +230,7 @@ describe("Yjs provider workspace cursor coverage", () => {
     provider.connect();
     const socket = FakeWebSocket.instances[0]!;
     socket.open();
-    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0" } });
     socket.message({
       type: notebooksYjs.wsType.syncPush,
       payload: { noteId: NOTE_ID, updates: [{ cursor: "s6t.note.12", payload: "AAA=", originPeerId: null }] },
@@ -338,7 +338,7 @@ describe("Yjs provider workspace cursor coverage", () => {
     expect(socket.sent.map((value) => JSON.parse(value)).some((value) => value.type === notebooksYjs.wsType.syncPublish)).toBe(false);
     remote.destroy();
 
-    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0" } });
     const publish = socket.sent.map((value) => JSON.parse(value)).find((value) => value.type === notebooksYjs.wsType.syncPublish);
     expect(publish.payload.noteId).toBe(NOTE_ID);
     provider.dispose();
@@ -414,7 +414,7 @@ describe("Yjs provider storage exhaustion", () => {
       timers.shift()!();
       const recovered = FakeWebSocket.instances[1]!;
       recovered.open();
-      recovered.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+      recovered.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0" } });
       expect(ready).toBe(1);
       recovered.onclose?.({ code: 1006, reason: "" });
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -455,7 +455,7 @@ describe("Yjs provider storage exhaustion", () => {
       provider.connect();
       const ready = (socket: FakeWebSocket) => {
         socket.open();
-        socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+        socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0" } });
       };
       const rejectWrite = (socket: FakeWebSocket) => {
         socket.message({ type: notebooksYjs.wsType.error, payload: { code: "STORAGE_EXHAUSTED", message: "full", noteId: NOTE_ID } });
@@ -502,7 +502,7 @@ describe("Yjs provider storage exhaustion", () => {
       provider.connect();
       const socket = FakeWebSocket.instances[0]!;
       socket.open();
-      socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+      socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0" } });
       for (let attempt = 1; attempt < 5; attempt++) {
         socket.message({ type: notebooksYjs.wsType.error, payload: { code: "STORAGE_EXHAUSTED", message: "full", noteId: NOTE_ID } });
       }
@@ -524,7 +524,8 @@ const syncPublishes = (socket: FakeWebSocket) =>
     .map((value) => JSON.parse(value) as { type: string; payload: { payload: string } })
     .filter((value) => value.type === notebooksYjs.wsType.syncPublish)
     .map((value) => value.payload.payload);
-const readyReplay = (socket: FakeWebSocket) => socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID } });
+const readyReplay = (socket: FakeWebSocket) =>
+  socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0" } });
 const echo = (socket: FakeWebSocket, payload: string) =>
   socket.message({ type: notebooksYjs.wsType.syncPush, payload: { noteId: NOTE_ID, updates: [{ payload }] } });
 
@@ -924,7 +925,14 @@ describe("server table action receipts", () => {
     Y.applyUpdate(server, Y.encodeStateAsUpdate(doc));
     const awareness = new Awareness(doc),
       undoManager = new Y.UndoManager(doc.getText("codemirror"));
-    const provider = createYjsProvider({ doc, awareness, undoManager, noteId: NOTE_ID, appUrl: "http://localhost" });
+    const provider = createYjsProvider({
+      doc,
+      awareness,
+      undoManager,
+      initialRestoreRevision: "7",
+      noteId: NOTE_ID,
+      appUrl: "http://localhost",
+    });
     try {
       provider.connect();
       const socket = FakeWebSocket.instances[0]!;
@@ -1070,6 +1078,7 @@ test("a stale versioned server update cannot alter a restored note; a newer line
   const provider = createYjsProvider({
     doc: local,
     awareness,
+    initialRestoreRevision: "1",
     noteId: NOTE_ID,
     appUrl: "http://localhost",
     onFatal: (error) => failures.push(error.code),
@@ -1109,5 +1118,129 @@ test("a stale versioned server update cannot alter a restored note; a newer line
     original.destroy();
     old.destroy();
     local.destroy();
+  }
+});
+
+test("cursor reconnect never relabels historical deletes after a restore or republishes offline text", () => {
+  const doc = new Y.Doc(),
+    restored = new Y.Doc();
+  doc.clientID = 101;
+  restored.clientID = 202;
+  doc.getText("codemirror").insert(0, "TOKEN");
+  Y.applyUpdate(restored, Y.encodeStateAsUpdate(doc));
+  doc.getText("codemirror").delete(0, 5);
+  const awareness = new Awareness(doc);
+  const failures: string[] = [];
+  let ready = 0;
+  const provider = createYjsProvider({
+    doc,
+    awareness,
+    noteId: NOTE_ID,
+    appUrl: "http://localhost",
+    initialRestoreRevision: "0",
+    onFatal: (error) => failures.push(error.code),
+    onReady: () => ready++,
+  });
+  try {
+    provider.connect();
+    const first = FakeWebSocket.instances[0]!;
+    first.open();
+    first.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, cursor: "s6t.fixture.1", restoreRevision: "0" } });
+    first.close();
+    provider.reconnectNow();
+    const next = FakeWebSocket.instances[1]!;
+    next.open();
+    expect(JSON.parse(next.sent[0]!).payload).toMatchObject({ fromCursor: "s6t.fixture.1", restoreRevision: "0" });
+    doc.getText("codemirror").insert(0, "OFFLINE");
+    next.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, cursor: "s6t.fixture.1", restoreRevision: "1" } });
+    expect(failures).toEqual(["RESYNC_REQUIRED"]);
+    expect(provider.restoreRevision()).toBe("0");
+    expect(ready).toBe(1);
+    expect(syncPublishes(next)).toEqual([]);
+    expect(doc.getText("codemirror").toString()).toBe("OFFLINE");
+    expect(restored.getText("codemirror").toString()).toBe("TOKEN");
+    expect(provider.hasUnsentChanges()).toBe(true);
+    provider.resume();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+  } finally {
+    provider.dispose();
+    awareness.destroy();
+    doc.destroy();
+    restored.destroy();
+  }
+});
+
+test("initial snapshot and cursor keep their revision during versioned catchup and every publication", () => {
+  const doc = new Y.Doc(),
+    server = new Y.Doc();
+  server.clientID = 101;
+  doc.clientID = 202;
+  server.getText("codemirror").insert(0, "BASE");
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(server));
+  const before = Y.encodeStateVector(server);
+  server.getText("codemirror").insert(4, " PEER");
+  const awareness = new Awareness(doc);
+  const provider = createYjsProvider({
+    doc,
+    awareness,
+    noteId: NOTE_ID,
+    appUrl: "http://localhost",
+    initialCursor: "s6t.fixture.1",
+    initialRestoreRevision: "3",
+  });
+  try {
+    provider.connect();
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    socket.message({
+      type: notebooksYjs.wsType.syncPush,
+      payload: {
+        noteId: NOTE_ID,
+        updates: [{ cursor: "s6t.fixture.2", payload: encoding.toBase64(Y.encodeStateAsUpdate(server, before)), restoreRevision: "3" }],
+      },
+    });
+    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, cursor: "s6t.fixture.2", restoreRevision: "3" } });
+    expect(doc.getText("codemirror").toString()).toBe("BASE PEER");
+    doc.getText("codemirror").insert(0, "LOCAL ");
+    socket.close();
+    provider.reconnectNow();
+    const next = FakeWebSocket.instances[1]!;
+    next.open();
+    next.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, cursor: "s6t.fixture.2", restoreRevision: "3" } });
+    for (const connection of [socket, next]) {
+      const publications = connection.sent
+        .map((value) => JSON.parse(value))
+        .filter((value) => value.type === notebooksYjs.wsType.syncPublish);
+      expect(publications).toHaveLength(1);
+      expect(publications[0].payload.restoreRevision).toBe("3");
+    }
+    next.message({
+      type: notebooksYjs.wsType.error,
+      payload: { code: "RESYNC_REQUIRED", reopen: true, message: "Reopen the restored note", noteId: NOTE_ID },
+    });
+    provider.resume();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(provider.hasUnsentChanges()).toBe(true);
+  } finally {
+    provider.dispose();
+    awareness.destroy();
+    doc.destroy();
+    server.destroy();
+  }
+});
+
+test("a populated document or initial cursor cannot initialize without its revision", () => {
+  const doc = new Y.Doc();
+  const awareness = new Awareness(doc);
+  const opts = { doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost" };
+  try {
+    expect(() => createYjsProvider({ ...opts, initialCursor: "s6t.fixture.1" })).toThrow("initialRestoreRevision");
+    doc.clientID = 101;
+    doc.getText("codemirror").insert(0, "TOKEN");
+    doc.getText("codemirror").delete(0, 5);
+    expect(() => createYjsProvider(opts)).toThrow("initialRestoreRevision");
+  } finally {
+    awareness.destroy();
+    doc.destroy();
   }
 });

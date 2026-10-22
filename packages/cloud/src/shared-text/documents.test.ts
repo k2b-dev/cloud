@@ -81,7 +81,7 @@ const fixture = () => {
 
 test("read preserves nullable snapshots and replays only newer log events", async () => {
   const f = fixture();
-  expect(await f.documents.read("doc")).toEqual({ state: null, text: null, cursor: null });
+  expect(await f.documents.read("doc")).toEqual({ state: null, text: null, cursor: null, restoreRevision: "revision" });
   f.setStored(null);
   expect(await f.documents.read("doc")).toBeNull();
   f.setStored({ state: null, text: "fallback", cursor: null, restoreRevision: "r" });
@@ -90,9 +90,15 @@ test("read preserves nullable snapshots and replays only newer log events", asyn
   expect(current?.text).toContain("live");
   expect(current?.text).toContain("fallback");
   expect(current?.cursor).toBe(receipt.cursor);
+  expect(current?.restoreRevision).toBe("r");
   expect(current?.state).toBeInstanceOf(Uint8Array);
   f.setStored({ state: current!.state, text: "stored projection", cursor: receipt.cursor, restoreRevision: "r" });
-  expect(await f.documents.read("doc")).toEqual({ state: current!.state, text: "stored projection", cursor: receipt.cursor });
+  expect(await f.documents.read("doc")).toEqual({
+    state: current!.state,
+    text: "stored projection",
+    cursor: receipt.cursor,
+    restoreRevision: "r",
+  });
   expect(f.replays).toHaveLength(1);
 });
 
@@ -139,7 +145,13 @@ test("edit reads the log end and persists a replay to its published cursor with 
     });
     expect(f.saves[0]!.input.text).toContain("foreign!");
     expect(f.saves[0]!.input.text).toContain("during callback");
-    expect(f.events.at(-1)?.data).toMatchObject({ actor, originNodeId: sharedTextNodeId, originPeerId: null, kind: "sync" });
+    expect(f.events.at(-1)?.data).toMatchObject({
+      actor,
+      restoreRevision: "revision",
+      originNodeId: sharedTextNodeId,
+      originPeerId: null,
+      kind: "sync",
+    });
     expect(f.docs.every((doc) => doc.isDestroyed)).toBe(true);
     expect(f.replays).toEqual([
       { after: null, until: "s6t.fixture.1", signal },
@@ -398,5 +410,35 @@ test("change returns and publishes the same action receipt before persistence, w
     } finally {
       peer.destroy();
     }
+  }
+});
+
+test("ordinary text edits keep their originating revision when a snapshot is restored during planning", async () => {
+  const f = fixture();
+  const old = new Y.Doc();
+  old.clientID = 101;
+  old.getText(SHARED_TEXT_NAME).insert(0, "TOKEN");
+  const historical = Y.encodeStateAsUpdate(old);
+  old.getText(SHARED_TEXT_NAME).delete(0, 5);
+  f.setStored({ state: Y.encodeStateAsUpdate(old), text: "", cursor: null, restoreRevision: "0" });
+  try {
+    await f.documents.edit("doc", { actor: null }, () => {
+      f.setStored({ state: historical, text: "TOKEN", cursor: null, restoreRevision: "1" });
+      return "OLD EDIT";
+    });
+    expect(f.events.at(-1)?.data.restoreRevision).toBe("0");
+    const current = await f.documents.read("doc");
+    expect(current?.text).toBe("TOKEN");
+    expect(current?.restoreRevision).toBe("1");
+    const replacement = new Y.Doc();
+    try {
+      Y.applyUpdate(replacement, current!.state!);
+      expect(replacement.store.pendingDs).toBeNull();
+      expect(replacement.store.pendingStructs).toBeNull();
+    } finally {
+      replacement.destroy();
+    }
+  } finally {
+    old.destroy();
   }
 });

@@ -296,6 +296,7 @@ async function loadSelectedNote(params: {
         title: book.note.title,
         contentMd: null,
         yjsSnapshot: null,
+        yjsRestoreRevision: null,
         historyIncomplete: book.note.historyIncomplete,
         lockedAt: book.note.lockedAt,
         parentId: null,
@@ -328,6 +329,7 @@ async function loadSelectedNote(params: {
         parentId: null,
         contentMd: null,
         yjsSnapshot: null,
+        yjsRestoreRevision: null,
       },
       routeState: null,
       tocItems: [],
@@ -346,6 +348,7 @@ async function loadSelectedNote(params: {
       title: noteMeta.title,
       historyIncomplete: noteMeta.historyIncomplete,
       yjsSnapshot: null,
+      yjsRestoreRevision: null,
       contentMd: noteMeta.contentMd,
       lockedAt: noteMeta.lockedAt,
       parentId: noteMeta.parentId

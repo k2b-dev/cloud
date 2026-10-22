@@ -27,6 +27,8 @@ export type YjsProviderOptions = {
   noteId: string;
   appUrl: string;
   initialCursor?: string | null;
+  /** Revision belonging to the initial Y.Doc, including its historical deletes. */
+  initialRestoreRevision?: string;
   onConnectionChange?: (connected: boolean) => void;
   onPresenceChange?: (participants: NotebookPresenceParticipant[]) => void;
   workspace?: {
@@ -88,6 +90,11 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   if (opts.workspace && !SHORT_ID_REGEX.test(opts.workspace.notebookId)) {
     throw new Error("workspace.notebookId must be a 6-character short id");
   }
+  if (opts.initialCursor && opts.initialRestoreRevision === undefined) throw new TypeError("initialCursor requires initialRestoreRevision");
+  if (opts.initialRestoreRevision !== undefined && !/^(0|[1-9]\d{0,18})$/.test(opts.initialRestoreRevision))
+    throw new TypeError("Invalid initialRestoreRevision");
+  if (doc.store.clients.size > 0 && opts.initialRestoreRevision === undefined)
+    throw new TypeError("An initial document requires initialRestoreRevision");
   const activeNoteId = opts.noteId;
   let ws: WebSocket | null = null;
   let isDisposed = false;
@@ -102,7 +109,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   let workspaceGeneration = 0;
   const activeWorkspaceId = opts.workspace?.notebookId ?? null;
   let replayReady = false;
-  let restoreRevision: string | null = null;
+  let restoreRevision: string | null = opts.initialRestoreRevision ?? null;
   let localStateSent = false;
   let needsFullResync = false;
   const unconfirmed = new Set<string>();
@@ -136,8 +143,9 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   };
 
   const sendSyncPublish = (data: Uint8Array): boolean => {
+    if (restoreRevision === null) return false;
     const payload = encoding.toBase64(data);
-    if (!sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload })) return false;
+    if (!sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload, restoreRevision })) return false;
     unconfirmed.add(payload);
     pendingChanged();
     return true;
@@ -150,6 +158,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     sendJson(WS_TYPE.replayRequest, {
       noteId: activeNoteId,
       fromCursor,
+      restoreRevision,
     });
 
   const sendWorkspaceSubscribe = (): boolean => {
@@ -188,7 +197,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
         pendingChanged();
       }
       for (const payload of unconfirmed) {
-        if (!sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload })) return;
+        if (restoreRevision === null || !sendJson(WS_TYPE.syncPublish, { noteId: activeNoteId, payload, restoreRevision })) return;
       }
     }
     localStateSent = true;
@@ -299,6 +308,17 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     if (msg.type !== WS_TYPE.error) return false;
     const error = normalizeError(msg.payload);
     opts.onError?.(error);
+    if (
+      error.code === notebooksYjs.errorCode.resyncRequired &&
+      msg.payload &&
+      typeof msg.payload === "object" &&
+      "reopen" in msg.payload &&
+      msg.payload.reopen === true
+    ) {
+      needsReopen = true;
+      terminate(error);
+      return true;
+    }
     if (error.code === notebooksYjs.errorCode.storageExhausted) {
       storageFailures += 1;
       if (storageFailures >= MAX_STORAGE_RETRIES) terminate(error);
@@ -379,9 +399,22 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     const payload = (msg.payload ?? {}) as { noteId?: unknown; cursor?: unknown; restoreRevision?: unknown };
     // A socket can still deliver queued messages after a terminal error; the editor must stay stopped.
     if (payload.noteId !== activeNoteId || isTerminated) return true;
+    if (
+      typeof payload.restoreRevision !== "string" ||
+      !/^(0|[1-9]\d{0,18})$/.test(payload.restoreRevision) ||
+      (restoreRevision !== null && restoreRevision !== payload.restoreRevision)
+    ) {
+      needsReopen = true;
+      terminate({
+        code: notebooksYjs.errorCode.resyncRequired,
+        message: "The note changed. Copy unsent text before reopening it",
+        noteId: activeNoteId,
+      });
+      return true;
+    }
+    restoreRevision = payload.restoreRevision;
     replayReady = true;
     if (typeof payload.cursor === "string") lastCursor = payload.cursor;
-    restoreRevision = typeof payload.restoreRevision === "string" ? payload.restoreRevision : null;
     // Reading works again, but with edits still unsent only their echo proves that storage accepts writes,
     // so backoff and storage budget keep counting until then.
     if (!needsFullResync && unconfirmed.size === 0) {
