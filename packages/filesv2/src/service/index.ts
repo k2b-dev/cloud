@@ -1295,10 +1295,11 @@ export function createFilesService(
         const state = await context(call.actor, budget);
         if (state.config.unreadable) throw new FilesError("configuration_unreadable", 409);
         try {
-          if (!(await historyContact(call, input, budget, state))) return emptyActivityPage();
+          await historyContact(call, input, budget, state);
         } catch (error) {
-          if (deniedHistoryContact(error)) return emptyActivityPage();
-          throw error;
+          // Contact authority controls observation, not the reader's independently
+          // authorized own snapshots and visible ancestor movements at an old path.
+          if (!deniedHistoryContact(error)) throw error;
         }
         return activityReader.activity({ ...call, requestAbort: budget.signal }, input);
       });

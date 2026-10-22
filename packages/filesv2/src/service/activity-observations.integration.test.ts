@@ -415,6 +415,22 @@ suite("contact observations with real Filegate and private history", () => {
     expect(await reader.activity(call, { baseId, itemId: node.id, q: "history-outside" })).toMatchObject({ items: [], next: null });
     expect(await observations()).toHaveLength(1);
   });
+  test("an old child path retains its visible ancestor move when contact has no readable parent", async () => {
+    const root = client.root("cloud");
+    const oldFolder = `old-parent-${Bun.randomUUIDv7()}`;
+    const newFolder = `new-parent-${Bun.randomUUIDv7()}`;
+    await root.mkdir(`${home}/${oldFolder}`);
+    await put("cloud", `${home}/${oldFolder}/child.txt`);
+    const reader = files();
+    await reader.rename(call, { baseId, path: oldFolder, name: newFolder });
+    const page = await reader.activity(call, { baseId, path: `${oldFolder}/child.txt`, scope: "item" });
+    const moved = page.items.find((entry) => entry.action === "item.rename");
+    expect(moved).toBeDefined();
+    const chain = await reader.movementChain(call, { activityId: moved!.id, oldPath: `${oldFolder}/child.txt` });
+    expect(chain.endpoint).toMatchObject({ baseId, path: `${newFolder}/child.txt` });
+    expect(await observations()).toHaveLength(0);
+  });
+
   test("history contact neither adopts unknown storage nor creates a baseline or durable reference", async () => {
     await put("cloud", path, "unknown external item");
     const reader = files();
