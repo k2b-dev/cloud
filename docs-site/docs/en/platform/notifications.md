@@ -186,6 +186,11 @@ definition is available as `app.notifications.stockLow`.
 Cloud registers the metadata when the application starts. Schemas and rendering
 functions stay inside the application.
 
+If Core has not created the notification schema, table, or required column yet,
+registration retries in the background without aborting application startup.
+Other failures during the initial registration, including permission errors,
+still fail startup.
+
 Removing a definition makes it inactive after the next registration.
 
 ## Choose a recipient
