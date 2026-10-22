@@ -919,6 +919,13 @@ convention still needs a check or a test.
 - **Error class:** Checking direct dependency versions instead of every resolved copy and its upstream range.
 - **Guard:** The existing nightly `bun audit --audit-level=high` checks the resolved graph. Verify upstream advisories and consumer paths before updating: Fibel still needs a supported SDK release, and the disputed cache advisory has no confirmed behavior fix in 4.3.0. Keep those findings visible rather than adding overrides or weakening the audit.
 
+### Venue fixtures changed offset at the daylight-saving boundary
+
+- **What happened:** The shift-leaving behavior test expected 11:00–14:00 but rendered 10:00–13:00 as the real date approached Berlin's autumn clock change.
+- **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
+- **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
+- **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
