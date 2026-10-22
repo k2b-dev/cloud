@@ -21,23 +21,24 @@ local size=string.len(key)+string.len(value)
 if size>maxBytes then return 0 end
 local previous=redis.call('HGET',KEYS[1],key)
 if previous and cjson.decode(previous).slot>cjson.decode(value).slot then return 0 end
+local previousSize=previous and string.len(key)+string.len(previous) or 0
 redis.call('HSET',KEYS[1],key,value)
+local total=redis.call('INCRBY',KEYS[3],size-previousSize)
 local t=redis.call('TIME'); local now=tonumber(t[1])*1000000+tonumber(t[2])
 redis.call('ZADD',KEYS[2],now,key)
-local all=redis.call('HGETALL',KEYS[1]);local total=0
-for i=1,#all,2 do total=total+string.len(all[i])+string.len(all[i+1]) end
-local count=#all/2
+local count=redis.call('HLEN',KEYS[1])
 for _,oldKey in ipairs(redis.call('ZRANGE',KEYS[2],0,-1)) do
  if count<=maxEntries and total<=maxBytes then break end
- local old=redis.call('HGET',KEYS[1],oldKey)
- if old then total=total-string.len(oldKey)-string.len(old);count=count-1;redis.call('HDEL',KEYS[1],oldKey) end
+ local oldSize=redis.call('HSTRLEN',KEYS[1],oldKey)
+ if oldSize>0 then total=total-string.len(oldKey)-oldSize;count=count-1;redis.call('HDEL',KEYS[1],oldKey) end
  redis.call('ZREM',KEYS[2],oldKey)
 end
+redis.call('SET',KEYS[3],total)
 return redis.call('HEXISTS',KEYS[1],key)`;
 export const createDashboardCache = (options: { url?: string; namespace?: string } = {}) => {
   let client: RedisClient | undefined;
   let connecting: Promise<void> | undefined;
-  const prefix = options.namespace ?? "pulse:dashboards:v1";
+  const prefix = options.namespace ?? "pulse:dashboards:v2";
   const close = () => {
     client?.close();
     client = undefined;
@@ -81,9 +82,10 @@ export const createDashboardCache = (options: { url?: string; namespace?: string
         Number(
           await send("EVAL", [
             PUT,
-            "2",
+            "3",
             `${prefix}:entries`,
             `${prefix}:age`,
+            `${prefix}:bytes`,
             key,
             JSON.stringify({ ...snapshot, slot: new Date(snapshot.slot).toISOString() }),
             String(DASHBOARD_CACHE_ENTRIES),

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "bun";
 import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
-import { dashboardCapabilities } from "../dashboard-capabilities";
+import { dashboardCapabilities } from "../capabilities";
 import { DashboardDefinitionSchema } from "../dashboard-contracts";
 import { migrate } from "../migrate";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";

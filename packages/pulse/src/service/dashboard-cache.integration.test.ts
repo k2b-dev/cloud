@@ -20,7 +20,7 @@ suiteFor("valkey")("bounded dashboard result cache", () => {
     b.close();
     const redis = new RedisClient(requireInfraUrl("valkey"));
     try {
-      await redis.send("DEL", [`${namespace}:entries`, `${namespace}:age`]);
+      await redis.send("DEL", [`${namespace}:entries`, `${namespace}:age`, `${namespace}:bytes`]);
     } finally {
       redis.close();
     }
