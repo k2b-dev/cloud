@@ -874,3 +874,9 @@ Cloud search exposes reply, reply-all when applicable, and forwarding for the se
 Available keyboard shortcuts appear next to actions and in Layout Help.
 
 Cmd/Ctrl+Shift+K searches conversations across accessible mailboxes. Cmd/Ctrl+Alt+N opens a new email from the current writable mailbox. R opens a reply to the selected conversation outside input fields; it never sends it. Search actions update the open palette in place. Actions for the selected object appear before page actions.
+
+## Check the complete message before approval
+
+When the Assistant asks to send or change a draft, choose **Read the complete proposal** to inspect the full proposed text, recipients and attachment list. The proposal can include unsaved changes. The draft link opens the current draft, which may have changed since the question was asked.
+
+If the sending content changes after your check, Mail stops and queues no message. Open the draft, check it again and approve a new attempt. A signature that changes with the current time may need editing first. Mail does not retry or approve the new content automatically.

@@ -21,6 +21,7 @@ test("setup contains exactly the allowed grants and READONLY constraints on ever
     "GRANT SELECT ON pulse_*.* TO `pulse_fixture` WITH GRANT OPTION;",
     "GRANT SELECT ON system.parts TO `pulse_fixture`;",
     "GRANT SELECT ON system.disks TO `pulse_fixture`;",
+    "GRANT SELECT ON system.processes TO `pulse_fixture`;",
     "GRANT KILL QUERY ON *.* TO `pulse_fixture`;",
   ]);
   expect(sql).toContain("pulse_maintenance` SETTINGS max_memory_usage = 1000000000 READONLY");

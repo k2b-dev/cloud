@@ -1,7 +1,17 @@
 import { defineApp } from "@k2b/cloud";
-import type { MailFilter, MailMessage, MailPage, MailProfile, MailRecord, PlatformPermission, RequestActor } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, expectUserBackedActor } from "@k2b/cloud/server";
+import type {
+  AccessSubject,
+  MailFilter,
+  MailMessage,
+  MailPage,
+  MailProfile,
+  MailRecord,
+  PlatformPermission,
+  RequestActor,
+} from "@k2b/cloud/contracts";
+import { type AuthContext, auth, expectUserBackedActor, type RequestAuthority } from "@k2b/cloud/server";
 import { mail, renderHtmlToPdf } from "@k2b/cloud/services";
+import { fail } from "@k2b/stdlib";
 import { Hono } from "hono";
 
 const permissions: readonly PlatformPermission[] = ["mail:send"];
@@ -187,3 +197,25 @@ export const createEmailRoutes = (mayReadSentMail: (userId: string) => Promise<b
         nextCursor: page.data.nextCursor,
       });
     });
+
+// The route must authenticate first and pass auth.getAuthority(c). This service owns the
+// domain check before it returns any metadata or asks Cloud for content.
+export const createInvoiceMailReader =
+  (mayReadInvoice: (subject: AccessSubject, invoiceId: string) => Promise<boolean>) =>
+  async (id: string, authority: RequestAuthority, requestId: string) => {
+    const hidden = () => fail({ code: "message_unknown" as const, message: "Mail unavailable.", status: 404 as const });
+    const { actor, accessSubject, credentialKind, scopes } = authority;
+    if (credentialKind !== "session" && !scopes.some((scope) => ["read", "write", "admin"].includes(scope))) return hidden();
+    const apps = await mail.readableApps();
+    if (!apps.ok) return apps;
+    const page = await mail.list({ ids: [id], apps: apps.data }, { perPage: 1 });
+    if (!page.ok) return page;
+    const record = page.data.items[0];
+    if (!record || record.appId !== "invoices" || record.ref?.scope !== "invoice") return hidden();
+    if (actor.kind === "service_account" && actor.serviceAccount.kind === "resource_bound") {
+      const account = actor.serviceAccount;
+      if (account.appId !== "backoffice" || account.resourceType !== "invoice" || account.resourceId !== record.ref.id) return hidden();
+    }
+    if (!(await mayReadInvoice(accessSubject, record.ref.id))) return hidden();
+    return mail.content(record.id, { actor, requestId });
+  };

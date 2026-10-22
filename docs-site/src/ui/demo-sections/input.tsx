@@ -20,6 +20,7 @@ import {
   FileDropTarget,
   FileDropzone,
   fileDropTarget,
+  highlightSql,
   IconInput,
   ImageCropper,
   type ImageCropState,
@@ -48,7 +49,7 @@ import {
   TagsInput,
   TextInput,
 } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { createSignal, createUniqueId } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { QrScannerDemo } from "./mobile-navigation";
 import { DemoGrid, type DemoSection } from "./types";
@@ -287,6 +288,7 @@ const emojiCompletion: Completion = {
 };
 
 const TextDemo = () => {
+  const externalErrorId = createUniqueId();
   const [project, setProject] = createSignal("Portable value");
   const [amountText, setAmountText] = createSignal("1933.30");
   const [expiresAt, setExpiresAt] = createSignal("");
@@ -302,6 +304,8 @@ const TextDemo = () => {
 <TextInput label="Token" description="The package owns the reveal control." value={token} onValueChange={setToken} password icon="ti ti-lock" autocomplete="current-password" />
 <TextInput label="Notes" value={notes} onValueChange={setNotes} multiline lines={3} icon="ti ti-notes" />
 <TextInput label="AI prompt" value={prompt} onValueChange={setPrompt} variant="ai" />
+<TextInput variant="compact" aria-label="Region" prefix=":region" value="" error="Enter a region before continuing." externalErrorId={externalErrorId} />
+<p id={externalErrorId} role="status">Enter a region before continuing.</p>
 <TextInput label="Expiry (placeholder)" value={expiresAt} onValueChange={setExpiresAt} placeholder="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
 <TextInput label="Expiry (entered value)" value="2027-01-01T00:00:00Z" icon="ti ti-calendar" />
 <TextInput label="Amount text" value={amountText} onValueChange={setAmountText} icon="ti ti-number" suffix="EUR" inputMode="decimal" />
@@ -320,6 +324,21 @@ const TextDemo = () => {
         />
         <TextInput label="Notes" value={notes} onValueChange={setNotes} multiline lines={3} icon="ti ti-notes" />
         <TextInput label="AI prompt" value={prompt} onValueChange={setPrompt} variant="ai" />
+        <TextInput variant="compact" aria-label="Region" prefix=":region" value="Europe" monospace />
+        <TextInput variant="compact" aria-label="Inline error example" prefix=":region" value="" error="Enter a region." />
+        <div>
+          <TextInput
+            variant="compact"
+            aria-label="External error example"
+            prefix=":region"
+            value=""
+            error="Enter a region before continuing."
+            externalErrorId={externalErrorId}
+          />
+          <p id={externalErrorId} role="status">
+            Enter a region before continuing.
+          </p>
+        </div>
         <TextInput
           label="Expiry (placeholder)"
           value={expiresAt}
@@ -378,6 +397,25 @@ const AutocompleteDemo = () => {
         completions={[mentionCompletion, emojiCompletion]}
         lines={5}
       />
+      <AutocompleteEditor
+        label="SQL with a marked line"
+        value={"SELECT :host, count()\nFROM events\nGROUP BY host"}
+        highlight={highlightSql}
+        lineNumbers
+        markedLine={2}
+        lines={5}
+      />
+      <div class="h-[232px] rounded-xl bg-(--k2b-surface-muted) text-[13px] leading-5 focus-within:outline-2 focus-within:outline-(--k2b-action)">
+        <AutocompleteEditor
+          variant="embedded"
+          fill
+          lineNumbers
+          readOnly
+          aria-label="Embedded read-only query"
+          value={"SELECT :region\nFROM events"}
+          highlight={highlightSql}
+        />
+      </div>
     </DemoCard>
   );
 };

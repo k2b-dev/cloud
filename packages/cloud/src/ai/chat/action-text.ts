@@ -107,7 +107,7 @@ export const actionNoteLabel = (locale: string): string => messages.resolve([loc
 export const actionCardText = (card: ActionCard): ActionQuestionText => {
   const t = messages.resolve([card.locale]).t;
   const rows: ActionTextRow[] = [];
-  let incomplete = false;
+  let incomplete = Boolean(card.contentRef);
   const row = (label: string, value: string | undefined, extra: Pick<ActionTextRow, "block" | "format"> = {}) => {
     if (value !== undefined && value !== "") rows.push({ label, value, ...extra });
   };

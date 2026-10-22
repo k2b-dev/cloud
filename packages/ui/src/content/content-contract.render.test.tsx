@@ -17,6 +17,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: Calendar } = await import("./Calendar");
 const { checkCalendarMessages } = await import("./calendar-messages");
+const { default: Chart } = await import("./Chart");
 const { default: CodeDisplay } = await import("./CodeDisplay");
 const { default: DataTable } = await import("./DataTable");
 const { LocaleProvider } = await import("../intl/locale");
@@ -908,8 +909,9 @@ describe("@k2b/ui Cloud content contract", () => {
       // Comments carry documentation examples, not rendered markup.
       const source = (await Bun.file(resolve(import.meta.dir, file)).text()).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
       for (const match of source.matchAll(/class(?:Name)?\s*[:=]\s*\{?\s*[`"']([^`"']*)[`"']/g)) {
-        // Interpolated segments are caller-owned classes, not package classes.
-        const literal = match[1]!.replace(/\$\{[^}]*\}?/g, " ");
+        // A template fragment is not a rendered class. Check complete dynamic
+        // Chart classes below instead of treating their prefix as a CSS token.
+        const literal = match[1]!.replace(/\S*\$\{[^}]*\}\S*/g, " ");
         for (const token of literal.split(/\s+/)) {
           // `ti*` icon classes ship in the optional Tabler preset, not here.
           if (!token || token.startsWith("ti-") || token === "ti") continue;
@@ -919,6 +921,35 @@ describe("@k2b/ui Cloud content contract", () => {
       }
     }
 
+    // Nine series exercise all eight palette classes and wrap back to zero.
+    // This checks real SSR output; no dynamic-class prefix is allowlisted.
+    const chart = renderToString(() =>
+      createComponent(Chart, {
+        kind: "line",
+        legend: true,
+        legendPlacement: "top-start",
+        series: Array.from({ length: 9 }, (_, index) => ({ label: `Series ${index + 1}`, data: [{ x: 1, y: index }] })),
+      }),
+    );
+    const markers = [...chart.matchAll(/<rect[^>]*class="(stdlib-chart-series-\d+)"/g)].map((match) => match[1]!);
+    expect(markers).toEqual(Array.from({ length: 9 }, (_, index) => `stdlib-chart-series-${index % 8}`));
+    for (const token of markers) if (!defined.has(token)) unstyled.push(`Chart rendered: ${token}`);
+    // DataTable appends a caller class through a nested template; source scanning
+    // cannot infer the complete token, so retain its real viewport contract too.
+    for (const scrollClass of [undefined, "caller-scroll"]) {
+      const table = renderToString(() =>
+        DataTable<{ id: string }>({
+          rows: [{ id: "one" }],
+          columns: [{ id: "id", header: "ID", value: "id" }],
+          scrollClass,
+        }),
+      );
+      const viewportClass = table.match(/class="(k2b-table-wrap[^"]*)"/)?.[1];
+      expect(viewportClass).toBe(`k2b-table-wrap${scrollClass ? ` ${scrollClass}` : ""}`);
+      for (const token of viewportClass!.split(/\s+/)) {
+        if (token !== scrollClass && !defined.has(token)) unstyled.push(`DataTable rendered: ${token}`);
+      }
+    }
     expect(unstyled).toEqual([]);
   });
 

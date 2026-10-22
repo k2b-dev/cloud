@@ -5,10 +5,44 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-20
+updated: 2026-10-21
 ---
 
 # Deprecations and migrations
+
+## Application mail content grants
+
+`mail.content(id, context)` adds audited plain-text and attachment-name reads.
+Existing grants stay at metadata, and `mail.list` still omits foreign bodies.
+Upgrade Core's additive schema before application libraries and admin clients.
+Older clients replace selected sources with metadata access; a Core code
+rollback alone does not revoke stored content grants. See the
+[upgrade and rollback sequence](/en/docs/operations/outgoing-mail#upgrade-and-rollback)
+for the required order and explicit downgrade.
+
+## Mail send requires a content fingerprint
+
+`mail.draft.send` now requires `expectedContentHash`. This is a breaking input
+change. Update HTTP, MCP, CLI and automation clients together with Mail.
+Read `draft.send.review` under the same actor and copy its returned
+`contentHash` into `expectedContentHash`, alongside the current draft revision
+and any required safety approval. Browser, Mail CLI and built-in workflows
+perform this preparation themselves. Built-in workflows resume already-issued
+send commands, including commands created before this upgrade, under their
+current execution authority and original inputs. Resuming an existing command
+does not render or approve a new message.
+
+The hash binds the effective text and HTML, sender, recipients, attachments and
+generated MIME parts. It grants neither permission nor consent. Mail renders
+once more in the final transaction and compares that exact snapshot before
+writing its outbox. A change returns `SEND_CONTENT_CHANGED` (HTTP 409), rolls
+back the command and outbox, and queues no message.
+
+Open the draft, check it again, read a fresh fingerprint and explicitly approve
+a new send attempt with a new idempotency key. There is no automatic retry or
+new approval. If a signature uses the current time and keeps changing, edit it
+before retrying. For an unknown network outcome, use the existing outcome check
+and retry identity instead of treating it as this confirmed conflict.
 
 ## Pulse requires ClickHouse and starts empty
 

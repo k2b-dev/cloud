@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-10-20
+updated: 2026-10-21
 ---
 
 # API surface
@@ -124,6 +124,8 @@ The widget setting types `WidgetSettingField`, `WidgetSettingsDeclaration`,
 | --- | --- | --- |
 | `GET /api/approvals` | List the person's waiting requests; filter by `app` and `link`; paginate with `cursor` | [Approval routes](/en/docs/identity/approvals#approval-routes) |
 | `GET /api/approvals/counts` | Read total and per-app open counts | [Approval routes](/en/docs/identity/approvals#approval-routes) |
+| `GET /api/approvals/:id/content` | Read the complete pending snapshot | [Approval readers](/en/docs/identity/approvals#approval-routes) |
+| `GET /api/approvals/conversations/:conversationId/turns/:turnId/reviews/:callId` | Read an owned historical review snapshot | [Approval readers](/en/docs/identity/approvals#approval-routes) |
 | `POST /api/approvals/:id/decision` | Approve or reject a request and continue its chat | [Approval routes](/en/docs/identity/approvals#approval-routes) |
 
 These routes require a user-backed actor.
@@ -143,7 +145,7 @@ Use the capability guide to choose the narrow API:
 
 - [Settings](/en/docs/platform/settings): `SettingUnreadableError`, `SettingRead`, and `StoredSettingState` from `@k2b/cloud/services`; `app.settings.read()` reports stored state before a partial update.
 - [Places and maps](/en/docs/platform/places-and-maps): `geoClient` from `@k2b/cloud/server` calls Core with a `CapabilityCaller`; `geoContract`, geo input/result schemas, and provenance types come from `@k2b/cloud/contracts`.
-- [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, and `mail.readableApps()` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
+- [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, `mail.readableApps()`, and audited `mail.content(id, context)` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
 - [App capabilities](/en/docs/platform/capabilities): `cloudResourceHref(ref)` from `@k2b/cloud/contracts` and `cloudResourceUrl(ctx, ref)` from `@k2b/cloud/cli` supply [resource permalinks](/en/docs/platform/capabilities#resource-links).
@@ -353,7 +355,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/styles/global.css` | Supported asset | Alias for the global stylesheet | [Styling](/en/docs/frontend/styling-and-accessibility) |
 | `@k2b/cloud/cli/access` | Supported | Resource access commands | [CLI modules](/en/docs/platform/cli-modules) |
 | `@k2b/cloud/cli/capabilities` | Platform-owned | Built-in generic capability client | [App capabilities](/en/docs/platform/capabilities) |
-| `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability clients and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
+| `@k2b/cloud/capabilities` | Supported, browser | Runtime-validated capability clients, `readCapabilityReviewContent`, and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/server` | Supported, server-only | Registry-backed capability clients and typed `actionReview` builder | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/store` | Platform-owned, server-only | Capability execution history: migration, recording, listing, summary, and retention | [App capabilities](/en/docs/platform/capabilities) |
 | `@k2b/cloud/capabilities/testing` | Supported, tests | Provider manifest, evolution, resource-link and localized review checks | [App capabilities](/en/docs/platform/capabilities) |

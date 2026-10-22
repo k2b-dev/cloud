@@ -1456,6 +1456,7 @@ export const actorCommandInputSchema = z.discriminatedUnion("kind", [
     kind: z.literal("send"),
     draftId: ResourceShortIdSchema,
     expectedDraftRevision: z.number().int().positive(),
+    expectedContentHash: z.string().regex(/^[a-f0-9]{64}$/),
     senderIdentityId: ResourceShortIdSchema,
     scheduledAt: z
       .string()
@@ -3561,6 +3562,8 @@ export const composeSafetyReviewSchema = z
   })
   .strict();
 export type ComposeSafetyReview = z.infer<typeof composeSafetyReviewSchema>;
+export const draftSendReviewSchema = composeSafetyReviewSchema.extend({ contentHash: z.string().regex(/^[a-f0-9]{64}$/) });
+export type DraftSendReview = z.infer<typeof draftSendReviewSchema>;
 
 export const composePreviewInputSchema = z
   .object({

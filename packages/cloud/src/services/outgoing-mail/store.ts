@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { type SQL, sql } from "bun";
 import { listApps } from "../../_internal/registry";
 import {
@@ -245,8 +246,8 @@ const appsState = async (
   const registered = registeredApps ?? (await listApps());
   const { access, grants } = await accessRows(db);
   const [profile] = await db<{ key: string }[]>`SELECT key FROM outgoing_mail.profiles WHERE is_default`;
-  const logGrants = await db<{ app_id: string; source_app_id: string }[]>`
-    SELECT app_id, source_app_id FROM outgoing_mail.app_log_access ORDER BY source_app_id`;
+  const logGrants = await db<{ app_id: string; source_app_id: string; level: string }[]>`
+    SELECT app_id, source_app_id, level FROM outgoing_mail.app_log_access ORDER BY source_app_id`;
   const ids = new Set([...registered.map((app) => app.id), ...access.map((a) => a.app_id), ...logGrants.map((g) => g.app_id)]);
   const items = [...ids]
     .map((appId): AdminMailApp => {
@@ -263,6 +264,12 @@ const appsState = async (
             ? []
             : logGrants
                 .filter((g) => g.app_id === appId && g.source_app_id !== "core" && g.source_app_id !== appId)
+                .map((g) => g.source_app_id),
+        logContentApps:
+          appId === "core"
+            ? []
+            : logGrants
+                .filter((g) => g.app_id === appId && g.source_app_id !== "core" && g.source_app_id !== appId && g.level === "content")
                 .map((g) => g.source_app_id),
         mode,
         profiles: mode === "selected" ? grants.filter((g) => g.app_id === appId).map((g) => g.key) : [],
@@ -300,6 +307,7 @@ const setAppAccess = async (appId: string, value: MailAppAccess, context: MailAu
         declared: false,
         readDeclared: false,
         logApps: [],
+        logContentApps: [],
         mode: "default",
         profiles: [],
       }
@@ -312,19 +320,40 @@ const logAppsFor = async (appId: string): Promise<string[]> => {
     WHERE app_id = ${appId} AND source_app_id <> 'core' AND source_app_id <> app_id ORDER BY source_app_id`;
   return rows.map((row) => row.source_app_id);
 };
+/** Full exact IDs remain distinguishable after audit metadata string truncation. */
+export const mailAppIdSha256 = (appId: string): string => createHash("sha256").update(appId, "utf8").digest("hex");
+const grantAuditGroups = (grants: { source_app_id: string; level: string }[]) => {
+  const entries = grants.map((grant) => ({
+    appId: grant.source_app_id,
+    appIdSha256: mailAppIdSha256(grant.source_app_id),
+    level: grant.level,
+  }));
+  // Audit arrays retain at most 50 entries; the public grant limit is 100.
+  return [entries.slice(0, 50), entries.slice(50)];
+};
 const setAppLogAccess = async (appId: string, value: MailLogAccess, context: MailAuditContext): Promise<AdminMailApp> => {
   const reader = MailLogAppIdSchema.safeParse(appId);
   const parsed = MailLogAccessSchema.safeParse(value);
   if (!reader.success || appId === "core" || !parsed.success || parsed.data.apps.includes(appId))
     throw new OutgoingMailError("bad_input", "Choose a valid reader and distinct source apps other than Core or the reader itself.");
   const apps = [...parsed.data.apps].sort();
+  const contentApps = parsed.data.contentApps ?? [];
   const registered = await listApps();
   return locked(async (tx) => {
+    const before = await tx<{ source_app_id: string; level: string }[]>`
+      SELECT source_app_id, level FROM outgoing_mail.app_log_access WHERE app_id = ${appId} ORDER BY source_app_id`;
     await tx`DELETE FROM outgoing_mail.app_log_access WHERE app_id = ${appId}`;
-    await tx`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id, created_by)
-      SELECT ${appId}, source_app_id, ${context.actor.userId ?? null}
+    await tx`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id, created_by, level)
+      SELECT ${appId}, source_app_id, ${context.actor.userId ?? null},
+        CASE WHEN source_app_id = ANY(${toPgTextArray(contentApps)}::text[]) THEN 'content' ELSE 'metadata' END
       FROM unnest(${toPgTextArray(apps)}::text[]) AS source_app_id`;
-    await record(tx, context, "app_log_access.update", appId, { apps });
+    await record(tx, context, "app_log_access.update", appId, {
+      apps,
+      readingAppId: appId,
+      readingAppIdSha256: mailAppIdSha256(appId),
+      before: grantAuditGroups(before),
+      after: grantAuditGroups(apps.map((id) => ({ source_app_id: id, level: contentApps.includes(id) ? "content" : "metadata" }))),
+    });
     return (
       (await appsState(tx, registered)).items.find((app) => app.appId === appId) ?? {
         appId,
@@ -333,6 +362,7 @@ const setAppLogAccess = async (appId: string, value: MailLogAccess, context: Mai
         declared: false,
         readDeclared: false,
         logApps: [],
+        logContentApps: [],
         mode: "default",
         profiles: [],
       }

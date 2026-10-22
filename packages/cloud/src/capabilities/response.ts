@@ -7,8 +7,9 @@ export const readCapabilityResponse = async <T>(
   response: Response,
   schema: z.ZodType<T>,
   maxBytes = CAPABILITY_MAX_RESULT_BYTES,
+  signal?: AbortSignal,
 ): Promise<CapabilityResultState<T>> => {
-  const parsedBody = await readBoundedJson(response, maxBytes);
+  const parsedBody = await readBoundedJson(response, maxBytes, signal);
   if (!parsedBody.ok && parsedBody.reason === "too_large") {
     return {
       ok: false,

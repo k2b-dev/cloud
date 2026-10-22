@@ -31,6 +31,7 @@ import {
   chatTaskStopSentence,
 } from "./chat-task-reasons";
 import { buildBlocksFromMessages } from "./protocol";
+import { compactReviewMetaSql } from "./review-content";
 import { withAiShortIdForDb } from "./short-id";
 import { aiConversations } from "./store";
 import { toolOutcome, toolWording } from "./tool-wording";
@@ -575,7 +576,7 @@ const deliverStoppedTurn = async (
   if (!claimed) return null;
   const locale = chatTaskLocale(config.locale ?? task?.locale, appLocale);
   const messages = await db<{ seq: number; message: Message; meta: AiStoredMessage["meta"] }[]>`
-    SELECT seq, message, meta FROM ai.task_messages WHERE loop_id = ${turn.id} ORDER BY seq`;
+    SELECT seq, message, ${compactReviewMetaSql(sql`meta`)} AS meta FROM ai.task_messages WHERE loop_id = ${turn.id} ORDER BY seq`;
   const done = buildBlocksFromMessages(messages).flatMap((block) => {
     if (block.kind !== "tool" || block.status !== "completed" || block.isError) return [];
     // Web reads have chat wording too, but do not change anything for a stop receipt.

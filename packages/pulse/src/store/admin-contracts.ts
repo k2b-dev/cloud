@@ -24,6 +24,8 @@ export const WRITE_BLOCK_REASONS = ["checkpoint_mismatch", "database_missing"] a
 export type WriteBlockReason = (typeof WRITE_BLOCK_REASONS)[number];
 
 export type BaseLimits = {
+  /** Questions and SQL runs per clock hour; default 600. */
+  queriesPerHour: number;
   /** Samples + events + states per minute (enforced at ingest from slice 3). */
   valuesPerMinute: number;
   bytesPerMinute: number;

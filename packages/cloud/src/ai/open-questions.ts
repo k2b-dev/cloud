@@ -1,12 +1,8 @@
 import { sql } from "bun";
 import { z } from "zod";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
-import {
-  CapabilityActionCallReviewSchema,
-  CapabilityActionReviewDataSchema,
-  CapabilitySemanticLinkSchema,
-} from "../contracts/capabilities";
-import { openRequests } from "../services/approvals/list";
+import { CapabilityActionReviewPresentationSchema, CapabilitySemanticLinkSchema } from "../contracts/capabilities";
+import { openRequests } from "../services/approvals/content";
 import { logger } from "../services/logging";
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";
 import { aiToolIcon } from "./chat/message-utils";
@@ -142,11 +138,11 @@ export const openQuestionFromRow = (row: QuestionRow, input: { locale: string; t
       !["running", "awaiting_approval", "awaiting_client", "completed", "failed", "rejected"].includes(block.status)
     )
       throw new Error("Malformed tool block");
-    if (block.review == null && block.approval?.review != null) CapabilityActionReviewDataSchema.parse(block.approval.review);
+    if (block.review == null && block.approval?.review != null) CapabilityActionReviewPresentationSchema.parse(block.approval.review);
     const review = toolBlockReview(block);
     if (review !== null) {
       if ("legacy" in review) legacyReviewSchema.parse(review.legacy);
-      else CapabilityActionCallReviewSchema.parse(review);
+      else CapabilityActionReviewPresentationSchema.parse(review);
     }
     const card = toolActionCard(block, {
       locale: input.locale,

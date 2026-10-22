@@ -7,10 +7,16 @@ import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
 import { type BaseSettingsSaveResult, openPulseBaseSettingsDialog } from "./base-settings-dialog";
 import { baseStoreMessages } from "./base-store-messages";
+import { createPulseSettingsNavigation } from "./navigation";
 import { baseUpdateError, confirmShorterRetention, RetentionConfirmationError } from "./retention-confirmation";
+import type { PulseSettingsTab } from "./routes";
 
 type BaseControllerDeps = {
   bases: Accessor<PulseBase[]>;
+  canAdmin?: Accessor<boolean>;
+  maxRawRetentionDays?: number;
+  admins?: string[];
+  initialTab?: PulseSettingsTab;
   selectedBase: Accessor<PulseBase | null>;
   loading: Accessor<boolean>;
   settingsDialogOpen: Accessor<boolean>;
@@ -26,9 +32,13 @@ export const createBaseController = (deps: BaseControllerDeps) => {
   const t = usePulseMessages();
   const locale = useLocale();
   let disposed = false;
+  let settingsAbort: AbortController | undefined;
   type SettingsIntent = {
     baseId: string;
     name: string;
+    icon: string;
+    color: string;
+    timezone: string;
     description: string | null;
     rawRetentionDays: number;
     rollupRetentionDays: number;
@@ -59,6 +69,7 @@ export const createBaseController = (deps: BaseControllerDeps) => {
   });
   onCleanup(() => {
     disposed = true;
+    settingsAbort?.abort();
     updateMutation.abort();
     retryMutation.abort();
     clearMutation.abort();
@@ -83,6 +94,9 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     base: PulseBase,
     input: {
       name: string;
+      icon: string;
+      color: string;
+      timezone: string;
       description: string;
       rawRetentionDays: number;
       rollupRetentionDays: number;
@@ -112,6 +126,9 @@ export const createBaseController = (deps: BaseControllerDeps) => {
       const intent: SettingsIntent = {
         baseId: base.id,
         name,
+        icon: input.icon,
+        color: input.color,
+        timezone: input.timezone,
         description: input.description.trim() || null,
         rawRetentionDays: input.rawRetentionDays,
         rollupRetentionDays: input.rollupRetentionDays,
@@ -219,18 +236,55 @@ export const createBaseController = (deps: BaseControllerDeps) => {
     if (!base) return;
     try {
       deps.setSettingsDialogOpen(true);
-      await openPulseBaseSettingsDialog({
-        base,
-        loading: deps.loading,
-        writeBlocked: deps.writeBlocked,
-        updateBaseSettings: updateSettings,
-        currentStore: () => deps.selectedBase()?.store ?? null,
-        retryStore: () => retryStore(base),
-        clearBaseData: () => clearData(base),
-        deleteBase: () => deleteBase(base),
+      const navigation = createPulseSettingsNavigation({
+        baseId: base.id,
+        currentState: () => window.history.state,
+        currentHref: () => window.location.href,
+        push: (href, state) => window.history.pushState(state ?? window.history.state, "", href),
+        replace: (href, state) => window.history.replaceState(state ?? window.history.state, "", href),
+        back: () => window.history.back(),
+        subscribe: (changed) => {
+          window.addEventListener("popstate", changed);
+          return () => window.removeEventListener("popstate", changed);
+        },
       });
+      const abort = new AbortController();
+      settingsAbort = abort;
+      navigation.open(deps.initialTab);
+      let requestClose: (() => Promise<boolean>) | undefined;
+      const unsubscribe = navigation.subscribe((tab) => {
+        if (!tab) {
+          navigation.restore();
+          void requestClose?.();
+        }
+      });
+      try {
+        await openPulseBaseSettingsDialog({
+          signal: abort.signal,
+          onCloseRequestReady: (request) => {
+            requestClose = request;
+          },
+          onTabChange: (tab) => navigation.open(tab),
+          base,
+          canAdmin: deps.canAdmin?.() ?? false,
+          maxRawRetentionDays: deps.maxRawRetentionDays ?? 3650,
+          admins: deps.admins ?? [],
+          initialTab: navigation.tab(),
+          loading: deps.loading,
+          writeBlocked: deps.writeBlocked,
+          updateBaseSettings: updateSettings,
+          currentStore: () => deps.selectedBase()?.store ?? null,
+          retryStore: () => retryStore(base),
+          clearBaseData: () => clearData(base),
+          deleteBase: () => deleteBase(base),
+        });
+      } finally {
+        unsubscribe();
+        if (settingsAbort === abort) settingsAbort = undefined;
+        if (!disposed) navigation.close();
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t().openSettingsFailed);
+      if (!disposed) toast.error(error instanceof Error ? error.message : t().openSettingsFailed);
     } finally {
       deps.setLoading(false);
       deps.setSettingsDialogOpen(false);

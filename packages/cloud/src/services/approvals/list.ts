@@ -4,8 +4,9 @@ import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals } from "../..
 import type { AiTurnRunConfig } from "../../ai/types";
 import type { RuntimeAppMeta } from "../../contracts/app";
 import { APPROVALS_PAGE_SIZE, type ApprovalCounts, type PendingApproval } from "../../contracts/approvals";
-import { type CapabilityActionPolicy, CapabilityActionReviewDataSchema } from "../../contracts/capabilities";
+import { type CapabilityActionPolicy, CapabilityActionReviewPresentationSchema } from "../../contracts/capabilities";
 import type { ApprovalAssurance } from ".";
+import { compactApprovalDetailsSql, openRequests } from "./content";
 import { decodeApprovalCursor, encodeApprovalCursor } from "./cursor";
 
 export type PendingApprovalRow = {
@@ -32,12 +33,6 @@ export type PendingApprovalRow = {
   runConfig: AiTurnRunConfig | null;
 };
 
-// Start with this person's indexed pending rows; a Studio page alone cannot continue a chat.
-export const openRequests = (approverUserId: string, id?: string) => sql`SELECT r.* FROM approvals.requests r
-  WHERE r.approver_user_id=${approverUserId}::uuid AND r.status='pending' AND r.expires_at > now()
-    AND r.approver_auth_epoch=(SELECT auth_epoch FROM auth.users WHERE id=${approverUserId}::uuid)
-    AND (${id ?? null}::uuid IS NULL OR r.id=${id ?? null}::uuid)
-    AND EXISTS (SELECT 1 FROM ai.pending_actions p WHERE p.approval_id=r.id AND p.status='pending')`;
 const matches = (appId?: string, link?: string) => sql`
   (${appId ?? null}::text IS NULL OR r.app_id=${appId ?? null} OR r.requester_app_id=${appId ?? null})
   AND (${link ?? null}::text IS NULL OR COALESCE(r.details->'links' @> jsonb_build_array(jsonb_build_object('href', ${link ?? null}::text)),false))`;
@@ -58,7 +53,7 @@ export const listPending = async (input: {
     SELECT count(*) FILTER (WHERE ${matches(input.appId, input.link)})::int AS count,
       count(*) FILTER (WHERE NOT (${matches(input.appId, input.link)}))::int AS elsewhere FROM open r`;
   const rows = await sql<PendingApprovalRow[]>`WITH open AS (${openRequests(input.approverUserId, input.id)})
-    SELECT r.id, r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, r.details, r.args_digest AS "argsDigest",
+    SELECT r.id, r.app_id AS "appId", r.action, r.requester_app_id AS "requesterAppId", r.requester_title AS "requesterTitle", r.assurance, r.sentence, ${compactApprovalDetailsSql()} AS details, r.args_digest AS "argsDigest",
       r.created_at AS "createdAt", r.expires_at AS "expiresAt",
       to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorCreatedAt",
       question.short_id AS "conversationShortId", question.title AS "conversationTitle",
@@ -67,7 +62,7 @@ export const listPending = async (input: {
       question.stored_review AS "storedReview"
     FROM open r JOIN LATERAL (
       SELECT c.short_id, c.title, p.allow_chat, p.allow_always, p.remember_tool_name, p.tool_name, t.run_config,
-        (SELECT m.meta->'toolReviews'->review.call_id FROM (
+        (SELECT (m.meta->'toolReviews'->review.call_id) - 'content' - 'contentRef' FROM (
           SELECT meta, conversation_id, loop_id, role, seq FROM ai.messages
           UNION ALL
           SELECT meta, conversation_id, loop_id, role, seq FROM ai.task_messages
@@ -109,12 +104,12 @@ export const presentPendingApproval = (
   policy?: CapabilityActionPolicy,
 ): PendingApproval => {
   const app = apps.find((entry) => entry.id === row.appId);
-  const review = CapabilityActionReviewDataSchema.nullable().safeParse(row.details);
+  const review = CapabilityActionReviewPresentationSchema.nullable().safeParse(row.details);
   const originalReview = review.success ? review.data : null;
   const displayReview =
     originalReview && "sentence" in originalReview
       ? row.storedReview && "sentence" in row.storedReview
-        ? row.storedReview
+        ? { ...originalReview, ask: originalReview.ask ?? row.storedReview.ask }
         : storedActionReview(originalReview, policy)
       : originalReview;
   const remember = row.assurance === "standard" && aiTurnAllowsRememberedApprovals(row.runConfig);
