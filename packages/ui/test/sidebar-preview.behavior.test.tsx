@@ -69,12 +69,15 @@ test("row preview shares hover and click opening, stays pinned, closes on select
     expect(scroll).not.toBeNull();
     Object.defineProperties(scroll, { scrollHeight: { value: 400 }, clientHeight: { value: 200 } });
     scroll.dispatchEvent(new Event("scroll"));
+    await new Promise<void>((done) => requestAnimationFrame(() => done()));
     expect(scroll.getAttribute("data-scroll-fade")).toBe("bottom");
     scroll.scrollTop = 80;
     scroll.dispatchEvent(new Event("scroll"));
+    await new Promise<void>((done) => requestAnimationFrame(() => done()));
     expect(scroll.getAttribute("data-scroll-fade")).toBe("both");
     scroll.scrollTop = 200;
     scroll.dispatchEvent(new Event("scroll"));
+    await new Promise<void>((done) => requestAnimationFrame(() => done()));
     expect(scroll.getAttribute("data-scroll-fade")).toBe("top");
     expect(panel.hasAttribute("data-scroll-fade")).toBe(false);
     expect(main.getAttribute("aria-controls")).toBe(panel.id);

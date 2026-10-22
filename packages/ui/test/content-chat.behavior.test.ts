@@ -385,6 +385,7 @@ describe("@k2b/ui content and chat behavior", () => {
     expect(viewport!.contains(dom.root.querySelector(".k2b-chat-timeline__latest"))).toBe(false);
     viewport!.scrollTop = 800;
     viewport!.dispatchEvent(new Event("scroll"));
+    await new Promise<void>((done) => requestAnimationFrame(() => done()));
     expect(viewport!.dataset.scrollFade).toBeUndefined();
 
     dispose();
