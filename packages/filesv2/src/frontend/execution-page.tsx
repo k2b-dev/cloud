@@ -8,7 +8,7 @@ import { requestCall } from "../files-call";
 import { filesService } from "../service";
 import ExecutionDetails from "./ExecutionDetails";
 import { executionMessages } from "./execution-messages";
-import { executionUrl } from "./execution-url";
+import { executionUrl, hasRun } from "./execution-url";
 import { filesMessages } from "./messages";
 
 const log = logger("filesv2:execution");
@@ -23,7 +23,7 @@ export default ssr<AuthContext>(async (c) => {
   try {
     const entry = await filesService.activityEntry({ ...requestCall(c), requestAbort: c.req.raw.signal }, { activityId: activityId.data });
     // A formerly full entry may now have only a disappearance projection. Do not recover stripped context.
-    if (!entry.execution) return ssr.error(c, 404);
+    if (!hasRun(entry.execution)) return ssr.error(c, 404);
     return () => (
       <Layout c={c} title={[{ title: files, href: "/app/filesv2" }, { title: t.title }]}>
         <ExecutionDetails entry={entry} timeZone={timeZone} />

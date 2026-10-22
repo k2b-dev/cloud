@@ -10,7 +10,7 @@ import { testActor } from "../../test/files-call";
 import { current, entry, hidden } from "../../test/history-fixtures";
 import type { ActivityEntry } from "../activity-contracts";
 import { FilesError } from "../service/errors";
-import { executionUrl } from "./execution-url";
+import { executionUrl, historyExecutionHref } from "./execution-url";
 
 await import("../../test/solid-ssr-preload");
 
@@ -140,6 +140,21 @@ describe("Files execution page guards and SSR", () => {
     expect(response.status).toBe(status);
     const html = await response.text();
     for (const value of ["Another actor", "Report.pdf", "request-reference", "secret-path-and-context"]) expect(html).not.toContain(value);
+  });
+  test("an ordinary request has no run link or execution page", async () => {
+    const ordinary: ActivityEntry = {
+      ...record(),
+      via: "web",
+      execution: {
+        requestId: "ordinary-request",
+        invocationId: null,
+        origin: null,
+        callingApp: null,
+      },
+    };
+    expect(historyExecutionHref(ordinary)).toBeNull();
+    read.mockImplementation(async () => ordinary);
+    expect((await request()).status).toBe(404);
   });
   test("a projection stripped of execution context cannot open stale details", async () => {
     read.mockImplementation(async () => {

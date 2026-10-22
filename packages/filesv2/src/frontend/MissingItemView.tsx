@@ -465,7 +465,7 @@ function MissingHit(props: {
       case "hidden": {
         const person = actor().person;
         return (
-          <Show when={actions.onContact && person?.userId ? { userId: person.userId, name: person.name } : null}>
+          <Show when={actions.onContact && person?.userId && lead().actor.name ? { userId: person.userId, name: person.name } : null}>
             {(contact) => (
               <Button variant="secondary" onClick={() => actions.onContact?.(contact())}>
                 <i class="ti ti-message" aria-hidden="true" />
