@@ -60,9 +60,9 @@ empty directory.
 
 ## Browse, select, and preview
 
-The sidebar is a folder tree per storage location; its footer offers **Search**
-(the global Cloud search restricted to files), **Recent**, **Favorites**, and
-**Shares**. After every navigation exactly the current path is
+The sidebar has **Recent**, **Favorites**, **Shares**, and **Activity** above
+the folder trees. Its footer offers **Search**, the global Cloud search
+restricted to files. After every navigation exactly the current path is
 expanded; the tree holds only storage locations and folders. The list is a flat striped list;
 folders open on click (the opened folder's icon becomes a spinner, a leading
 **Parent folder** row names the folder above and goes up; the header shows
@@ -122,10 +122,18 @@ contexts require distinct Filegate roots. Deleting moves entries into the reserv
 `trash` folder with a restorable record; only administrators empty it.
 Renaming, duplicating and moving reuse Filegate transfers.
 
-The details panel shows a preview hero (images enlarge into a dialog),
-facts including the storage area, an action list, and, where the root keeps
-versions, a versions section with comments (stored as version metadata),
-download, restore in place, and restore as a new file. Restoring as a new file
+The details panel shows a compact preview, actions, facts, versions, and history.
+On phones, the preview is hidden and the version count opens the versions list.
+Folder details show the number of loaded items; “at least” means more items
+remain. If the count cannot load, **Try again** retries it.
+
+Where storage keeps versions, the count includes the current file and retained
+versions. Each saved version offers a comment, download, restore in place, and
+restore as a new file. If refreshing the list fails, the last loaded versions
+remain visible with a retry; their actions stay disabled until the list loads.
+A person's name beside the current modification appears only when the recorded
+change matches the file's current revision. A version comment's author identifies
+the person who wrote the comment, not the content's author. Restoring as a new file
 uses Filegate's historical-copy operation and leaves
 the original file, modification time, identity, and history unchanged. Permanent
 version deletion is available only through the administrator file browser and CLI.
