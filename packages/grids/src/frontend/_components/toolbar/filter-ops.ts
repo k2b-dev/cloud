@@ -85,7 +85,7 @@ const RELATION_OPS: FilterOp[] = [
 ];
 
 const PRINCIPAL_OPS: FilterOp[] = [
-  { id: "containsAny", label: "contains", icon: "ti ti-users", description: "Includes any selected user or group", needsValue: true },
+  { id: "containsAny", label: "contains", icon: "ti ti-users", description: "Includes any selected identity", needsValue: true },
   {
     id: "notContainsAny",
     label: "does not contain",
@@ -93,8 +93,8 @@ const PRINCIPAL_OPS: FilterOp[] = [
     description: "Includes none of the selected identities",
     needsValue: true,
   },
-  { id: "isEmpty", label: "empty", icon: "ti ti-circle-dashed", description: "No assigned user or group", needsValue: false },
-  { id: "isNotEmpty", label: "not empty", icon: "ti ti-circle-check", description: "Has an assigned user or group", needsValue: false },
+  { id: "isEmpty", label: "empty", icon: "ti ti-circle-dashed", description: "No assigned identity", needsValue: false },
+  { id: "isNotEmpty", label: "not empty", icon: "ti ti-circle-check", description: "Has an assigned identity", needsValue: false },
 ];
 
 export const opsForType = (type: string): FilterOp[] => {

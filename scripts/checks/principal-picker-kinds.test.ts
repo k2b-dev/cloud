@@ -29,11 +29,11 @@ test("renaming an imported picker does not bypass the guard", () => {
   ).toHaveLength(1);
 });
 
-test("Grids may conditionally exclude machine recipients until its custom-app API accepts them", () => {
+test("Grids cannot reintroduce a machine-recipient exclusion", () => {
   expect(
     checkSource(
       "packages/grids/src/frontend/_components/permissions/ScopedPermissionEditor.tsx",
       '<PermissionEditor allowServiceAccounts={props.scope.type !== "customApp"} />',
     ),
-  ).toEqual([]);
+  ).toHaveLength(1);
 });

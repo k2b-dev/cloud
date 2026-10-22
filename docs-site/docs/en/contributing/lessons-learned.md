@@ -990,7 +990,7 @@ explicitly documented identity reason for an excluding shared picker.
 - **What happened:** The inclusive picker offered inactive accounts and Grids published-app recipients that grant creation rejects.
 - **Root cause:** Directory discovery defaults were reused without matching each resource's current recipient contract during PR slicing.
 - **Error class:** Selection eligibility differs from mutation validation.
-- **Guard:** PermissionEditor searches active accounts by default; API and DOM regressions cover filter forwarding, and SQL integration coverage checks eligibility before totals and pagination. Grids keeps its documented custom-app exclusion until its API accepts machine recipients.
+- **Guard:** PermissionEditor searches active accounts by default; API and DOM regressions cover filter forwarding, and SQL integration coverage checks eligibility before totals and pagination. Grids custom-app selection accepts active standalone and agent accounts, matching grant validation.
 
 ### The notebook AI action stretched beside View
 
@@ -1012,6 +1012,13 @@ explicitly documented identity reason for an excluding shared picker.
 - **Root cause:** Membership storage, selection and resolution represented only people and groups.
 - **Error class:** Incomplete propagation of a shared identity contract.
 - **Guard:** The canonical membership migration and authoritative group resolver cover both machine kinds. Tests check grant use and revocation, recursive relations, named rows, and eligible choices before pagination.
+
+### Full personal keys must retain their user grants
+
+- **What happened:** A full personal API key could not use an existing Grids grant.
+- **Root cause:** Grids applied machine credential scope limits to a delegated personal key, whose supported full-access form has an empty scope list.
+- **Error class:** Conflating a delegated user identity with an independent machine identity.
+- **Guard:** Permission and workflow tests preserve delegated user access while retaining machine scope limits. The route regression creates the key through `createUserApiToken`, rather than inventing scopes in a fixture.
 
 ## Add a lesson
 

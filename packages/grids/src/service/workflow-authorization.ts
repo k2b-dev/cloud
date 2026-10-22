@@ -217,7 +217,10 @@ export const revalidateWorkflowPrincipal = async (
     return {
       ok: true,
       subject,
-      permissionCap: minPermission(acceptedCredential.permissionCap, permissionFromCredentialScopes(acceptedCredential.scopes)),
+      permissionCap:
+        serviceAccount.kind === "user_delegated"
+          ? acceptedCredential.permissionCap
+          : minPermission(acceptedCredential.permissionCap, permissionFromCredentialScopes(acceptedCredential.scopes)),
       credential: acceptedCredential,
     };
   }
@@ -237,7 +240,10 @@ export const revalidateWorkflowPrincipal = async (
     kind: "api_token",
     id: current.id,
     scopes: current.scopes,
-    permissionCap: minPermission(acceptedCredential.permissionCap, permissionFromCredentialScopes(current.scopes)),
+    permissionCap:
+      serviceAccount.kind === "user_delegated"
+        ? acceptedCredential.permissionCap
+        : minPermission(acceptedCredential.permissionCap, permissionFromCredentialScopes(current.scopes)),
     expiresAt: current.expiresAt,
     resourceBinding: currentBinding,
   };

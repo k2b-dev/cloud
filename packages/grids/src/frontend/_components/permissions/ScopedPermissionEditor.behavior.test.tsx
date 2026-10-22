@@ -161,8 +161,9 @@ for (const scopeType of ["base", "customApp"] as const) {
       input.dispatchEvent(new Event("input", { bubbles: true }));
       await waitFor(() => requests.length > 0, "scoped directory request");
       expect(requests[0]!.pathname).toBe("/api/accounts/entities");
-      expect(requests[0]!.searchParams.get("kinds")).toBe(scopeType === "base" ? "user,group,service_account" : "user,group");
-      expect(requests[0]!.searchParams.get("service_account_status")).toBe(scopeType === "base" ? "active" : null);
+      expect(requests[0]!.searchParams.get("kinds")).toBe("user,group,service_account");
+      expect(requests[0]!.searchParams.get("service_account_status")).toBe("active");
+      expect(requests[0]!.searchParams.get("service_account_kinds")).toBe(scopeType === "customApp" ? "standalone,agent" : null);
     } finally {
       dispose();
       globalThis.fetch = originalFetch;

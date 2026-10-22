@@ -6,7 +6,7 @@
  * the cutover. They exist before anything imports the module.
  */
 
-import { describe, expect } from "bun:test";
+import { afterAll, describe, expect } from "bun:test";
 import { sql } from "bun";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
@@ -44,10 +44,12 @@ const PLAIN = `steps:
       message: Done`;
 
 let ready = false;
+const ownerId = Bun.randomUUIDv7();
 const base = async () => {
   if (!ready) {
     await migrateCoreWorkflows();
     await migrate();
+    await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name) VALUES (${ownerId}::uuid, ${`workflow-owner-${ownerId}`}, 'local', 'user', 'Workflow owner')`;
     ready = true;
   }
   const baseId = Bun.randomUUIDv7();
@@ -58,6 +60,10 @@ const base = async () => {
   return baseId;
 };
 
+afterAll(async () => {
+  if (ready) await sql`DELETE FROM auth.users WHERE id = ${ownerId}::uuid`;
+});
+
 const activations = (workflowId: string) =>
   sql<Array<{ event_type: string; enabled: boolean }>>`
     SELECT event_type, enabled FROM workflows.activation WHERE workflow_id = ${workflowId}::uuid ORDER BY key
@@ -66,7 +72,7 @@ const activations = (workflowId: string) =>
 describe("workflow definitions on the kernel", () => {
   postgresTest("creating a workflow publishes revision 1 and its activations", async () => {
     const baseId = await base();
-    const created = await createWorkflow(baseId, { name: "Nightly", source: SCHEDULED, enabled: true }, null);
+    const created = await createWorkflow(baseId, { name: "Nightly", source: SCHEDULED, enabled: true }, ownerId);
     expect(created.ok).toBe(true);
     if (!created.ok) return;
 
@@ -91,7 +97,7 @@ describe("workflow definitions on the kernel", () => {
 
   postgresTest("renaming does not publish a revision", async () => {
     const baseId = await base();
-    const created = await createWorkflow(baseId, { name: "Before", source: PLAIN, enabled: false }, null);
+    const created = await createWorkflow(baseId, { name: "Before", source: PLAIN, enabled: false }, ownerId);
     if (!created.ok) return;
 
     const renamed = await updateWorkflow(created.data.id, { name: "After" }, null, created.data.revision);
@@ -107,7 +113,7 @@ describe("workflow definitions on the kernel", () => {
 
   postgresTest("changing the source publishes a new revision and moves the activations", async () => {
     const baseId = await base();
-    const created = await createWorkflow(baseId, { name: "Editable", source: PLAIN, enabled: true }, null);
+    const created = await createWorkflow(baseId, { name: "Editable", source: PLAIN, enabled: true }, ownerId);
     if (!created.ok) return;
     // A plain workflow has no triggers, so only the two it always has.
     expect(await activations(created.data.id)).toEqual([
@@ -134,7 +140,7 @@ describe("workflow definitions on the kernel", () => {
 
   postgresTest("a stale revision is refused", async () => {
     const baseId = await base();
-    const created = await createWorkflow(baseId, { name: "Contested", source: PLAIN, enabled: false }, null);
+    const created = await createWorkflow(baseId, { name: "Contested", source: PLAIN, enabled: false }, ownerId);
     if (!created.ok) return;
     await updateWorkflow(created.data.id, { source: SCHEDULED }, null, created.data.revision);
 
@@ -147,7 +153,7 @@ describe("workflow definitions on the kernel", () => {
 
   postgresTest("concurrent publications with the same revision accept only one editor", async () => {
     const baseId = await base();
-    const created = await createWorkflow(baseId, { name: "Contested", source: PLAIN, enabled: true }, null);
+    const created = await createWorkflow(baseId, { name: "Contested", source: PLAIN, enabled: true }, ownerId);
     if (!created.ok) throw new Error(created.error.message);
     const results = await Promise.all([
       updateWorkflow(created.data.id, { source: SCHEDULED }, null, created.data.revision),
@@ -161,7 +167,7 @@ describe("workflow definitions on the kernel", () => {
   for (const edit of ["publish", "activate"] as const) {
     postgresTest(`can ${edit} with only one available pool connection`, async () => {
       const baseId = await base();
-      const created = await createWorkflow(baseId, { name: "Pool pressure", source: PLAIN, enabled: false }, null);
+      const created = await createWorkflow(baseId, { name: "Pool pressure", source: PLAIN, enabled: false }, ownerId);
       if (!created.ok) throw new Error(created.error.message);
       // Leave exactly one connection for the entire update. Catalog reads must
       // reuse its transaction, not wait for another connection from this pool.
@@ -201,7 +207,7 @@ describe("workflow definitions on the kernel", () => {
   for (const edit of ["source", "name"] as const) {
     postgresTest(`a queued ${edit} edit preserves a concurrent disable that did not change revision`, async () => {
       const baseId = await base();
-      const created = await createWorkflow(baseId, { name: "Disable race", source: SCHEDULED, enabled: true }, null);
+      const created = await createWorkflow(baseId, { name: "Disable race", source: SCHEDULED, enabled: true }, ownerId);
       if (!created.ok) throw new Error(created.error.message);
       const locked = Promise.withResolvers<number>();
       const release = Promise.withResolvers<void>();
@@ -262,7 +268,7 @@ describe("workflow definitions on the kernel", () => {
   for (const mode of ["execute", "dryRun"] as const) {
     postgresTest(`${mode} fences publication after admission and replays the original run revision`, async () => {
       const baseId = await base();
-      const created = await createWorkflow(baseId, { name: "Run fence", source: PLAIN, enabled: true }, null);
+      const created = await createWorkflow(baseId, { name: "Run fence", source: PLAIN, enabled: true }, ownerId);
       if (!created.ok) throw new Error(created.error.message);
       const input = {
         workflow: created.data,
@@ -305,7 +311,7 @@ describe("workflow definitions on the kernel", () => {
 
   postgresTest("disabling stops the activations matching", async () => {
     const baseId = await base();
-    const created = await createWorkflow(baseId, { name: "Switchable", source: SCHEDULED, enabled: true }, null);
+    const created = await createWorkflow(baseId, { name: "Switchable", source: SCHEDULED, enabled: true }, ownerId);
     if (!created.ok) return;
 
     const disabled = await updateWorkflow(created.data.id, { enabled: false }, null, created.data.revision);
@@ -326,8 +332,8 @@ describe("workflow definitions on the kernel", () => {
 
   postgresTest("only enabled workflows with the right trigger are listed for dispatch", async () => {
     const baseId = await base();
-    const scheduled = await createWorkflow(baseId, { name: "Scheduled", source: SCHEDULED, enabled: true }, null);
-    const plain = await createWorkflow(baseId, { name: "Plain", source: PLAIN, enabled: true }, null);
+    const scheduled = await createWorkflow(baseId, { name: "Scheduled", source: SCHEDULED, enabled: true }, ownerId);
+    const plain = await createWorkflow(baseId, { name: "Plain", source: PLAIN, enabled: true }, ownerId);
     if (!scheduled.ok || !plain.ok) return;
 
     const ids = (await listScheduledWorkflows()).map((workflow) => workflow.id);
@@ -340,7 +346,7 @@ describe("workflow definitions on the kernel", () => {
 
   postgresTest("restoring an old plan publishes it as the newest revision", async () => {
     const baseId = await base();
-    const created = await createWorkflow(baseId, { name: "History", source: PLAIN, enabled: false }, null);
+    const created = await createWorkflow(baseId, { name: "History", source: PLAIN, enabled: false }, ownerId);
     if (!created.ok) return;
     const second = await updateWorkflow(created.data.id, { source: SCHEDULED }, null, created.data.revision);
     if (!second.ok) return;
@@ -364,7 +370,7 @@ describe("workflow definitions on the kernel", () => {
 
   postgresTest("removing hides the workflow and stops it firing", async () => {
     const baseId = await base();
-    const created = await createWorkflow(baseId, { name: "Doomed", source: SCHEDULED, enabled: true }, null);
+    const created = await createWorkflow(baseId, { name: "Doomed", source: SCHEDULED, enabled: true }, ownerId);
     if (!created.ok) return;
 
     expect((await removeWorkflow(created.data.id, null)).ok).toBe(true);

@@ -2367,11 +2367,58 @@ describe("grids CLI", () => {
 
     expect(jsonValues[0]).toMatchObject({
       resourceTypes: [
-        { type: "base", principals: ["user", "group", "service_account", "authenticated"] },
-        { type: "app", principals: ["user", "group", "authenticated", "public"] },
+        {
+          type: "base",
+          permissions: ["read", "write", "admin", "none"],
+          principals: ["user", "group", "service_account", "authenticated"],
+        },
+        { type: "app", permissions: ["read", "none"], principals: ["user", "group", "service_account", "authenticated", "public"] },
       ],
     });
   });
+
+  for (const resourceType of ["base", "app"] as const) {
+    for (const kind of ["standalone", "agent"] as const) {
+      test(`grants ${resourceType} access to a named ${kind} account`, async () => {
+        const serviceAccount = {
+          id: "45454545-4545-4545-8545-454545454545",
+          name: "Grids integration",
+          kind,
+          status: "active",
+          delegatedUserId: null,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+          createdBy: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        };
+        const { ctx, calls } = createContext(
+          ["access", "grant", resourceType, baseId, ...(resourceType === "app" ? [customAppId] : [])],
+          { "service-account": serviceAccount.name, permission: "read" },
+          [
+            jsonResponse(resolved()),
+            ...(resourceType === "app" ? [jsonResponse([{ id: customAppId, name: "Catalog" }])] : []),
+            jsonResponse({ items: [{ kind: "service_account", serviceAccount }], pagination: { has_next: false } }),
+            jsonResponse({ accessId }, 201),
+          ],
+        );
+
+        await gridsCli.run(ctx);
+        const search = new URL(calls.at(-2)!.path, "http://cloud.test");
+        expect(search.pathname).toBe("/api/accounts/entities");
+        expect(search.searchParams.get("kinds")).toBe("service_account");
+        expect(search.searchParams.get("search")).toBe(serviceAccount.name);
+        expect(calls.at(-1)?.path).toBe(
+          resourceType === "base" ? `/api/grids/access/by-base/${baseId}` : `/api/grids/access/by-custom-app/${customAppId}`,
+        );
+        expect(calls.at(-1)?.init?.method).toBe("POST");
+        expect(JSON.parse(String(calls.at(-1)?.init?.body))).toEqual({
+          principal: { type: "service_account", serviceAccountId: serviceAccount.id },
+          permission: "read",
+        });
+      });
+    }
+  }
 
   test("creates custom forms for resolved tables", async () => {
     const { ctx, calls, lines } = createContext(

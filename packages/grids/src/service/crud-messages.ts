@@ -77,7 +77,7 @@ export const gridsCrudMessages = i18n.define({
       basePermissionInvalid: "Base grants only accept 'read', 'write', 'admin', or 'none'.",
       appPermissionInvalid: "Grids App grants only accept 'read' or 'none'.",
       publicAccessAppsOnly: "Public access is only supported for Grids Apps.",
-      appServiceAccountUnsupported: "Grids App access does not support service accounts. Grant access to the delegated user instead.",
+      appServiceAccountUnsupported: "Grids App account grants require a standalone or agent account.",
       user: "User",
       group: "Group",
       serviceAccount: "Service account",
@@ -248,8 +248,7 @@ export const gridsCrudMessages = i18n.define({
       basePermissionInvalid: "Base-Berechtigungen akzeptieren nur 'read', 'write', 'admin' oder 'none'.",
       appPermissionInvalid: "Grids-App-Berechtigungen akzeptieren nur 'read' oder 'none'.",
       publicAccessAppsOnly: "Öffentlicher Zugriff wird nur für Grids Apps unterstützt.",
-      appServiceAccountUnsupported:
-        "Grids-App-Zugriff unterstützt keine Servicekonten. Erteile stattdessen der delegierten Person Zugriff.",
+      appServiceAccountUnsupported: "Kontofreigaben für Grids-Apps benötigen ein eigenständiges Dienstkonto oder Agentenkonto.",
       user: "Person",
       group: "Gruppe",
       serviceAccount: "Servicekonto",
