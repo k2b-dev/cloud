@@ -356,6 +356,107 @@ moves and filesystem entries without Cloud records; an unknown `original` or
 area, including the name, and is required when the original location is
 unknown. Restore never overwrites an existing destination.
 
+## Find file history and old locations
+
+```bash
+cld filesv2 history me:/Documents/report.pdf --json
+cld filesv2 history team:/Projects --folder --json
+cld filesv2 history --search 'Old Projects/offer.pdf' --action item.move --json
+cld filesv2 history --actor <user-uuid> --from 2026-10-01T00:00:00Z --to 2026-10-20T23:59:59Z --limit 10 --json
+cld filesv2 history --search 'Old Projects/offer.pdf' --action item.move --after '<next>' --json
+cld filesv2 history show <activity-uuid> --json
+cld filesv2 history chain <activity-uuid> --json
+cld filesv2 shares access <share-uuid> --from 2026-10-01 --to 2026-10-20 --json
+```
+
+`history` reads one page, newest first. An address selects that path even
+when it no longer exists; `--folder` includes descendants. Without an address,
+it reads visible activity across bases. `--search` matches visible names and
+paths, including old paths and evidence from moved ancestor folders. Stable
+file IDs select identity history; inline path references select path history.
+Persisted `p:` references are resolved to their stored path without touching
+storage.
+History does not provision a missing home or adopt an unbound area.
+
+Filters are `--actor` (user UUID), `--action` (a history action code),
+`--from` and `--to` (inclusive ISO timestamps with a timezone). Use
+`cld filesv2 history --help` for action codes. `--limit` accepts 1–50 and
+defaults to 50. JSON and JSONL return the complete page object:
+`{items,next,visibleCount,batches,exhausted,scanLimitReached,searchLimitReached}`.
+Counts describe only the visible page. Pass `next` unchanged to `--after`
+with the same address and filters. A page can be empty and still have `next`:
+continue until it is null. Each request checks at most 500 candidate entries;
+a search stops after 200 visible matches. Narrow the filters when
+`searchLimitReached` is true.
+
+Current read permissions determine which sides of an entry are visible.
+Your own actions and administrator views can include saved snapshots;
+a snapshot grants no current access. A hidden side contains no path or
+identity. A disappearance-only side contains its old name and path,
+`directory` (null for unknown legacy metadata), and `publicBaseId` (null
+without current access to that base). It contains no size, revision, item ID,
+or observation. Fully visible `share.create` and `share.revoke` entries can
+include `share.expiresAt`; null means no expiry or a missing retained share.
+History
+never returns raw operation details, passwords or public-link tokens.
+
+`history show` reads one visible event by its UUID. Hidden or missing events
+return the same not-found result.
+
+`history chain` starts from an activity UUID returned by `history` and follows
+at most 20 movement steps. `endpoint` is null when no current authorized target
+can be established. `certainty: "verified"` means the endpoint's stable
+identity was checked; `"probable"` means only path evidence is available.
+`truncated` warns that the bounded chain stopped early. `historyComplete`
+is always false: retention gaps and changes outside Cloud remain possible.
+The command neither moves nor restores anything.
+
+`shares access` is available only to the link's creator and current
+administrators. Both UTC dates are inclusive; the inclusive window may not exceed
+3650 days. The result is `{from,to,pages,pageNetworks,downloads,passwordFailed,networks,timeline}`. A
+download count records an authorized download request, not proof of a
+completed transfer.
+
+`networks.items` contains shortened IPv4 `/24` or IPv6 `/48` networks from
+retained hourly buckets within the last 30 days, with per-network counters
+and `firstSeen`/`lastSeen` bucket times. These are not exact request times or
+individual people. Networks are ordered by page plus download counts,
+descending, with canonical network keys breaking ties. Password failures do
+not affect that order. `networks.known` counts distinct known retained networks;
+`overflow: true` means additional unclassified access exists, so the known
+count is only a lower bound. `rolledUp: true` means some totals have been
+aggregated by day and cannot identify networks. Follow `networks.next` with
+`shares access --after '<next>'` and the same dates. `--limit` selects 1–50
+networks per page (default 50). Ordering uses fresh totals on every page;
+concurrent access may reorder networks. `share_access_cursor_expired`/409
+means the cursor's network expired or the period changed: reload the first
+page. `networks.incomplete` also covers expired and unclassified accesses;
+when true, do not present `known` as the exact count for the whole period.
+
+`timeline.items` holds at most 50 latest UTC buckets with `date`,
+`granularity` (`hour` or `day`), `pages`, `downloads`, `passwordFailed`,
+`knownNetworks`, and `overflow`. Hourly detail covers at most 30 days;
+expired or rolled-up days use daily rows. A day containing any expired or
+rolled-up data is combined into one daily row. Daily rows have null
+`knownNetworks` and retain no overflow evidence. Unclassified hourly access
+also gives null `knownNetworks`; hourly overflow marks a lower bound.
+Pass `timeline.next` unchanged to `shares access --timeline-after '<next>'`
+with the same dates. Timeline and network cursors are independent; neither
+changes the period totals. There are no visitor identities or per-request
+timestamps in this response.
+
+`pageNetworks` is the exact number of networks with page views, excluding
+networks with only downloads or password failures. It is null when expired,
+rolled-up, or unclassified page views prevent an exact count. Use `pages`
+and non-null `pageNetworks` for a period sentence about page views; do not
+substitute the count of all access networks.
+
+Assistant and other capability clients use `activity.list`, `activity.get`, `activity.chain`
+and `share.access` with the same current-user authorization. Capability
+responses exceeding the platform byte limit fail with `result_too_large`;
+request a smaller `limit` for a history page, or use the CLI for a large chain.
+The CLI reads the API directly.
+
 ## Versions
 
 ```bash

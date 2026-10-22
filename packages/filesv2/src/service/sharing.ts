@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { RequestActor } from "@k2b/cloud/server";
+import type { RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { AccountIdentityError } from "@k2b/cloud/services";
 import { type ExecutionIdentity, FilegateError, type Node, type Ownership, type Session, type SessionCreated } from "@k2b/filegate";
 import type { z } from "zod";
@@ -10,6 +10,7 @@ import type {
   DownloadLease,
   PublicShare,
   SharePage,
+  SharePageQuerySchema,
   ShareView,
   UploadLease,
   UploadSession,
@@ -28,6 +29,7 @@ import { hashSharePassword, requireSharePassword, unlockSharePassword } from "./
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
 export type SharingAccess = {
   root: FilesRoot;
+  info: { stableIds?: boolean };
   node: Node;
   target: string;
   relative: string;
@@ -35,6 +37,9 @@ export type SharingAccess = {
   state: { config: Config; unix: UnixIdentity | null; self: { user: { id: string; username: string } } };
 };
 export type SharingDependencies<T extends SharingAccess> = {
+  /** Same current membership, traversal and leaf checks, without provisioning, adoption or observations. */
+  readOnlyAuthorized(actor: RequestActor, baseId: string, path: string): Promise<T>;
+  displayNames: typeof resolveDisplayNames;
   authorized(actor: RequestActor, baseId: string, path: string, directory?: boolean): Promise<T>;
   writableParent(actor: RequestActor, baseId: string, path: string): Promise<T>;
   executionFor(current: T): ExecutionIdentity | null;
@@ -287,13 +292,71 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
       const url = `${await deps.publicOrigin()}/share/filesv2/${row.kind === "inbox" ? "inbox" : "s"}/${token}`;
       return { ...shareView(row, binding), url };
     },
-    async listShares(call: UserFilesCall, input: { after?: string; admin?: boolean } = {}): Promise<SharePage> {
+    async listShares(call: UserFilesCall, input: z.input<typeof SharePageQuerySchema> & { admin?: boolean } = {}): Promise<SharePage> {
       const actor = call.actor;
       const userId = await deps.actorUserId(actor);
-      if (input.admin) await deps.requireAdmin(actor);
-      const page = await shares.list({ ownerId: input.admin ? undefined : userId, after: input.after });
+      if ((input.baseId === undefined) !== (input.path === undefined)) throw new FilesError("invalid_path");
+      // Scoped detail reads discover administration on the server once, never once per share.
+      let admin = input.admin === true;
+      if (admin) await deps.requireAdmin(actor);
+      else if (input.baseId !== undefined) {
+        try {
+          await deps.requireAdmin(actor);
+          admin = true;
+        } catch (error) {
+          if (!((error instanceof AccountIdentityError || error instanceof FilesError) && [403, 404].includes(error.status))) throw error;
+        }
+      }
+      const current = input.baseId !== undefined ? await deps.readOnlyAuthorized(actor, input.baseId, userPath(input.path!)) : null;
+      const binding = current?.inspection.binding;
+      if (
+        current &&
+        (!binding ||
+          binding.lifecycle !== "active" ||
+          binding.root !== current.inspection.candidate.root ||
+          binding.path !== current.inspection.candidate.path ||
+          current.target !== joinPath(binding.path, current.relative) ||
+          current.node.path !== current.target ||
+          current.node.root !== binding.root ||
+          current.inspection.summary.id !== input.baseId)
+      )
+        throw new FilesError("storage_changed", 409);
+      const page = await shares.list({
+        ownerId: admin ? undefined : userId,
+        after: input.after,
+        ...(current && binding
+          ? {
+              item: {
+                bindingId: binding.id,
+                serverUrl: current.state.config.url,
+                root: binding.root,
+                basePath: binding.path,
+                path: current.relative,
+                target: current.target,
+                directory: current.node.directory,
+                itemId: current.info.stableIds === true ? (current.node.id ?? null) : null,
+              },
+            }
+          : {}),
+      });
+      if (!current || !binding)
+        return {
+          items: await Promise.all(page.items.map(async (row) => shareView(row, await deps.bindings.byId(row.base_id)))),
+          next: page.next,
+        };
+      const names = await deps.displayNames(
+        [...new Set(page.items.map((row) => row.created_by))].map((id) => ({ principal: { type: "user" as const, userId: id } })),
+      );
+      const byId = new Map(
+        names.flatMap((row) => (row.principal.type === "user" ? [[row.principal.userId, row.displayName ?? ""] as const] : [])),
+      );
       return {
-        items: await Promise.all(page.items.map(async (row) => shareView(row, await deps.bindings.byId(row.base_id)))),
+        items: page.items.map((row) => ({
+          ...shareView(row, binding),
+          base: { id: current.inspection.summary.id, name: current.inspection.summary.name, kind: binding.kind },
+          createdBy: byId.get(row.created_by) ?? "",
+          managementMode: row.created_by === userId ? "creator" : "admin",
+        })),
         next: page.next,
       };
     },

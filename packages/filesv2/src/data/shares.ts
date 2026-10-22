@@ -35,6 +35,17 @@ const normalize = (row: ShareRow): ShareRow => ({
   max_total_size: Number(row.max_total_size),
   items: typeof row.items === "string" ? (JSON.parse(row.items) as string[]) : row.items,
 });
+/** Current item identity resolved by the service, never accepted from a browser or historical snapshot. */
+export type ShareItemFilter = {
+  bindingId: string;
+  serverUrl: string;
+  root: string;
+  basePath: string;
+  path: string;
+  target: string;
+  directory: boolean;
+  itemId: string | null;
+};
 export const shares = {
   async create(
     input: Omit<ShareRow, "id" | "created_at" | "revoked_at" | "revoked_by" | "access_count" | "last_accessed_at">,
@@ -45,10 +56,40 @@ export const shares = {
       VALUES(${input.token_hash},${input.password_hash},${input.kind},${input.base_id}::uuid,${input.root},${input.base_path},${input.scope},${input.items},${input.title},${input.note},${input.public_note},${input.owner_uid},${input.owner_gid},${input.created_by}::uuid,${input.created_by_name},${input.expires_at},${input.max_file_size},${input.max_total_size},${input.show_upload_names}) RETURNING *`;
     return normalize(row!);
   },
-  /** An owner's management list never depends on retaining access to the old storage. */
-  async list(input: { ownerId?: string; after?: string; limit?: number }): Promise<{ items: ShareRow[]; next: string | null }> {
+  /** An owner's unscoped management list never depends on retaining access to the old storage.
+   * Item matching uses PR5's retained server_url/target_snapshots, independently of activity retention.
+   * Filtering happens before the bounded keyset page; it never walks an owner's/all administrators' pages.
+   */
+  async list(input: {
+    ownerId?: string;
+    after?: string;
+    limit?: number;
+    item?: ShareItemFilter;
+  }): Promise<{ items: ShareRow[]; next: string | null }> {
     const limit = input.limit ?? 50;
-    const rows = await sql<ShareRow[]>`SELECT * FROM filesv2.shares
+    const item = input.item;
+    const rows = item
+      ? await sql<ShareRow[]>`SELECT * FROM filesv2.shares
+      WHERE (${input.ownerId ?? null}::uuid IS NULL OR created_by=${input.ownerId ?? null}::uuid)
+      AND base_id=${item.bindingId}::uuid AND root=${item.root} AND base_path=${item.basePath}
+        AND (server_url IS NULL OR server_url=${item.serverUrl})
+        AND (
+          (target_snapshots IS NOT NULL AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(target_snapshots) AS target
+            WHERE (kind='download' OR ${item.directory})
+            AND (target->>'directory')::boolean=${item.directory}
+            AND CASE WHEN ${item.itemId}::text IS NOT NULL AND target->>'itemId' IS NOT NULL
+              THEN target->>'itemId'=${item.itemId}
+              ELSE target->>'path'=${item.target} END
+          ))
+          OR (target_snapshots IS NULL AND (
+            (kind='download' AND items @> ${JSON.stringify([item.path])}::jsonb)
+            OR (kind='inbox' AND ${item.directory} AND scope=${item.path})
+          ))
+        )
+      AND (${input.after ?? null}::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM filesv2.shares WHERE id=${input.after ?? null}::uuid))
+      ORDER BY created_at DESC,id DESC LIMIT ${limit + 1}`
+      : await sql<ShareRow[]>`SELECT * FROM filesv2.shares
       WHERE (${input.ownerId ?? null}::uuid IS NULL OR created_by=${input.ownerId ?? null}::uuid)
       AND (${input.after ?? null}::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM filesv2.shares WHERE id=${input.after ?? null}::uuid))
       ORDER BY created_at DESC,id DESC LIMIT ${limit + 1}`;

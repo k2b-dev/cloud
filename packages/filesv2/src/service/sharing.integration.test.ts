@@ -64,6 +64,8 @@ const node = (path: string, directory = false): Node => ({
 suite("share authority, public privacy and durable inbox budgets", () => {
   let binding: Binding;
   let denied = false;
+  let stableIds = false;
+  let currentItemId: string | undefined;
   let admin = false;
   let inactiveCreator = false;
   let missingReceipts = false;
@@ -206,9 +208,10 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     if (denied || deniedPaths.has(path)) throw new FilesError("forbidden", 403);
     return {
       root: execution ? filegate.root("cloud").as(execution) : filegate.root("cloud"),
+      info: { stableIds },
       target: path ? `home/alice/${path}` : "home/alice",
       relative: path,
-      node: node(path ? `home/alice/${path}` : "home/alice", directory),
+      node: { ...node(path ? `home/alice/${path}` : "home/alice", directory), id: currentItemId },
       inspection: { binding, summary, candidate: { ...binding, name: "alice" } },
       state: { config, unix: null, self: { user: { id: actor.user.id, username: "alice" } } },
     };
@@ -216,6 +219,8 @@ suite("share authority, public privacy and durable inbox budgets", () => {
   const makeService = () =>
     createSharingService({
       authorized: authorize,
+      readOnlyAuthorized: (actor, baseId, path) => authorize(actor, baseId, path, path === "Inbox"),
+      displayNames: async (rows) => rows.map((row) => ({ ...row, displayName: "Current Alice" })),
       async writableParent(requestActor, baseId, path) {
         const current = await authorize(requestActor, baseId, path.split("/").slice(0, -1).join("/"), true);
         return { ...current, relative: path };
@@ -277,6 +282,8 @@ suite("share authority, public privacy and durable inbox budgets", () => {
       })
     )[0]!;
     denied = false;
+    stableIds = false;
+    currentItemId = undefined;
     admin = false;
     inactiveCreator = false;
     missingReceipts = false;
@@ -336,6 +343,74 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     denied = true;
     expect((await service.listShares(testCall(actor), { admin: true })).items).toHaveLength(1);
     expect((await service.revokeShare(testCall(actor), { id: share.id, admin: true })).state).toBe("revoked");
+  });
+  test("item filtering precedes 50-row pagination and legacy path matching keeps own management bounded", async () => {
+    await Promise.all(
+      Array.from({ length: 51 }, (_, i) =>
+        create({ kind: "download", paths: ["Docs/file.txt"], title: `Match ${i}`, expiresIn: "unlimited" }),
+      ),
+    );
+    await Promise.all(
+      Array.from({ length: 51 }, (_, i) =>
+        create({ kind: "download", paths: ["Other/file.txt"], title: `Other ${i}`, expiresIn: "unlimited" }),
+      ),
+    );
+    const input = { baseId: summary.id, path: "Docs/file.txt" };
+    const first = await service.listShares(testCall(actor), input);
+    expect(first.items).toHaveLength(50);
+    expect(first.items.every((row) => row.title.startsWith("Match") && row.managementMode === "creator")).toBe(true);
+    expect(first.items.every((row) => row.createdBy === "Current Alice" && row.url === null)).toBe(true);
+    const second = await service.listShares(testCall(actor), { ...input, after: first.next! });
+    expect(second.items).toHaveLength(1);
+    expect(second.next).toBeNull();
+    expect(new Set([...first.items, ...second.items].map((row) => row.id)).size).toBe(51);
+    const stranger: RequestActor = { ...actor, user: { ...actor.user, id: randomUUID() } };
+    expect((await service.listShares(testCall(stranger), input)).items).toEqual([]);
+    denied = true;
+    await expect(service.listShares(testCall(actor), input)).rejects.toMatchObject({ code: "forbidden" });
+    expect((await service.listShares(testCall(actor))).items).toHaveLength(50);
+  });
+  test("item links use fresh stable identity, and never a replaced item or a rebound server", async () => {
+    const link = await create({ kind: "download", paths: ["Docs/old.txt"], expiresIn: "unlimited" });
+    const targets = JSON.stringify([{ path: "home/alice/Docs/old.txt", directory: false, itemId: "stable-file" }]);
+    await sql`UPDATE filesv2.shares SET server_url=${config.url}, target_snapshots=${targets}::jsonb WHERE id=${link.id}::uuid`;
+    stableIds = true;
+    currentItemId = "stable-file";
+    expect((await service.listShares(testCall(actor), { baseId: summary.id, path: "Moved/new.txt" })).items.map((row) => row.id)).toEqual([
+      link.id,
+    ]);
+    currentItemId = "replacement";
+    expect((await service.listShares(testCall(actor), { baseId: summary.id, path: "Docs/old.txt" })).items).toEqual([]);
+    stableIds = false;
+    expect((await service.listShares(testCall(actor), { baseId: summary.id, path: "Docs/old.txt" })).items.map((row) => row.id)).toEqual([
+      link.id,
+    ]);
+    config.url = "http://replacement.test";
+    expect((await service.listShares(testCall(actor), { baseId: summary.id, path: "Docs/old.txt" })).items).toEqual([]);
+    config.url = "http://filegate.test:4000";
+    await sql`UPDATE filesv2.shares SET base_path='home/old-alice' WHERE id=${link.id}::uuid`;
+    expect((await service.listShares(testCall(actor), { baseId: summary.id, path: "Docs/old.txt" })).items).toEqual([]);
+  });
+  test("item administration is server-selected and every administrator revoke checks administration again", async () => {
+    const link = await create({ kind: "download", paths: ["Docs/file.txt"], expiresIn: "unlimited" });
+    const stranger: RequestActor = { ...actor, user: { ...actor.user, id: randomUUID() } };
+    admin = true;
+    const page = await service.listShares(testCall(stranger), { baseId: summary.id, path: "Docs/file.txt" });
+    expect(page.items).toMatchObject([{ id: link.id, managementMode: "admin", createdBy: "Current Alice", url: null }]);
+    admin = false;
+    await expect(service.revokeShare(testCall(stranger), { id: link.id, admin: true })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(service.revokeShare(testCall(stranger), { id: link.id })).rejects.toMatchObject({ code: "not_found" });
+    admin = true;
+    expect((await service.revokeShare(testCall(stranger), { id: link.id, admin: true })).state).toBe("revoked");
+  });
+  test("inbox item filtering requires the current folder and rejects incomplete scope inputs", async () => {
+    const link = await create({ kind: "inbox", folder: "Inbox", expiresIn: "unlimited" });
+    expect((await service.listShares(testCall(actor), { baseId: summary.id, path: "Inbox" })).items.map((row) => row.id)).toEqual([
+      link.id,
+    ]);
+    expect((await service.listShares(testCall(actor), { baseId: summary.id, path: "Inbox/file.txt" })).items).toEqual([]);
+    await expect(service.listShares(testCall(actor), { baseId: summary.id })).rejects.toMatchObject({ code: "invalid_path" });
+    await expect(service.listShares(testCall(actor), { path: "Inbox" })).rejects.toMatchObject({ code: "invalid_path" });
   });
   test("quota reservation is atomic across concurrent requests and rejects unsafe sizes", async () => {
     const share = await create();

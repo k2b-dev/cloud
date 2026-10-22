@@ -1,4 +1,12 @@
 const messages: Record<string, [string, string]> = {
+  share_access_cursor_expired: [
+    "The network page expired or the date range changed. Refresh the first page of link access counts.",
+    "Die Netzseite ist abgelaufen oder der Zeitraum wurde geändert. Lade die erste Seite der Linkzugriffe neu.",
+  ],
+  invalid_activity_filter: [
+    "Check the history filters and date range. Paths require a storage base; the start must not follow the end.",
+    "Prüfe Verlaufsfilter und Zeitraum. Pfade brauchen eine Ablage; der Anfang darf nicht nach dem Ende liegen.",
+  ],
   configuration_unreadable: [
     "Files cannot read its saved configuration. Enter the Filegate token again to replace it, or reset the configuration.",
     "Dateien kann die gespeicherte Konfiguration nicht lesen. Gib den Filegate-Token erneut ein, um sie zu ersetzen, oder setze die Konfiguration zurück.",

@@ -32,6 +32,11 @@ export async function migrateActivity(): Promise<void> {
     error_code text,
     detail jsonb NOT NULL DEFAULT '{}'
   )`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_effective ON filesv2.activity(coalesce(finished_at,started_at) DESC,id DESC)`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base_effective ON filesv2.activity(base_id, coalesce(finished_at,started_at) DESC, id DESC)`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base_after_effective ON filesv2.activity(base_after_id, coalesce(finished_at,started_at) DESC, id DESC) WHERE base_after_id IS NOT NULL`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_actor_effective ON filesv2.activity(actor_user_id, coalesce(finished_at,started_at) DESC, id DESC) WHERE actor_kind='user'`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_chain_effective ON filesv2.activity(base_id, root, coalesce(finished_at,started_at), id) WHERE state='done'`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base ON filesv2.activity(base_id, started_at DESC, id DESC)`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_base_after ON filesv2.activity(base_after_id, started_at DESC) WHERE base_after_id IS NOT NULL`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_activity_item ON filesv2.activity(item_id) WHERE item_id IS NOT NULL`.simple();

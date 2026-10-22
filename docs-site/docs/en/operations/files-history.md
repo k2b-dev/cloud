@@ -96,3 +96,94 @@ metadata and need no user-data history entry.
 The `filegate-facade` repository check prevents SDK access outside the facade.
 The activity classification test detects new service methods and migration
 keys that have not been reviewed.
+
+## Read visible history
+
+The Files history API, `cld filesv2 history`, and the `activity.list`,
+`activity.get`, and `activity.chain` capabilities use the same permission-aware
+reader. Reading history never provisions storage or adopts a new binding.
+Group management grants no additional history access.
+
+Each side of a change is checked separately against current membership,
+filesystem read permissions, and stable identity. A readable old parent can
+show that an item disappeared, its old name, actor, and time. The destination
+remains hidden unless it passes its own check. Without stable identities,
+other people's entries expose only these minimal fields. A disappearance side
+also carries `directory` (null for unknown legacy metadata) and `publicBaseId`
+(null unless current access establishes that base). It carries no item ID,
+size, revision, or later observation. Own actions retain
+their recorded snapshots; those snapshots do not authorize navigation to a
+current location. Administrators can read recorded snapshots across bases.
+Names are resolved from live accounts; deleted accounts have no retained name.
+Fully visible `share.create` and `share.revoke` entries include
+`share.expiresAt` from the retained share. Null means no recorded expiry or a
+missing share row. Disappearance-only entries carry no share metadata.
+
+Search and counts use only the projected fields. A page returns at most 50
+visible entries after inspecting at most 500 candidates. An empty page may
+still have a next cursor. Search stops after 200 visible matches. Keep filters
+unchanged when following a cursor. Movement chains follow path segments for at
+most 20 steps. A current endpoint is verified with stable identity and fresh
+read permissions, or explicitly marked probable when only path evidence is
+available. Chains never claim complete history across retention gaps.
+
+`GET /api/filesv2/activity/:activityId/chain` also accepts `oldPath`, the
+opened old address relative to its base. For example, a move of `Customers`
+can locate `Customers/Proposal.pdf` without a separate history row for that
+file. The old path must match the visible before-side or descend from that
+directory on a slash boundary. Absolute paths, empty or dot segments,
+backslashes, control characters and `.filegate` segments are rejected;
+unrelated addresses return 404.
+
+A descendant inferred from a folder move is always `probable`. The folder's
+stable ID never identifies its child, and the result grants no move-back
+authority. Later recorded child and ancestor moves continue the same chain;
+copies, replacements, deletions and truncated path evidence prevent an
+endpoint. A returned endpoint requires current membership, binding, server,
+traversal and leaf read checks at that child's current address. Saved own
+snapshots do not grant those rights. Opening an old folder address shows its
+own name and an explicit jump action; it never redirects automatically.
+Omitting `oldPath` keeps the existing exact-item chain behavior.
+
+Only a public link's creator and current administrators can read its access
+counts and shortened networks; a current full user profile is required.
+The access result repeats the selected inclusive UTC dates as `from` and `to`.
+Its `pages`, `downloads`, and `passwordFailed` totals cover the whole period,
+independently of either page cursor. Networks are shown only for the last 30 days,
+even while maintenance has a backlog. Overflow gives a lower bound, and daily
+rollups provide no network identities or counts. Counters measure released
+downloads, not completed transfers.
+
+Networks are ordered by page plus download counts, descending, with canonical
+network keys breaking ties. Password failures do not influence that order.
+`networks.incomplete` means the known count is only a lower bound: expired,
+rolled-up, overflow, or unclassified accesses prevent an exact period count.
+For a sentence such as “96 page views from 21 networks”, use `pages` and
+`pageNetworks`: the latter counts only networks with page views, excluding
+download-only and password-only networks. It is null when those page-view
+identities are incomplete; then show the page count without an exact network
+count. Follow `networks.next` with `networkAfter` and the same dates;
+an expired cursor returns `share_access_cursor_expired`/409. Refresh the first
+page. Ordering uses current totals, so concurrent access can reorder networks.
+
+`timeline.items` returns up to 50 latest UTC aggregates with `date` (bucket
+start), `granularity` (`hour` or `day`), `pages`, `downloads`, `passwordFailed`,
+`knownNetworks`, and `overflow`. These are bucket times, never individual
+request times. Hourly rows cover at most the last 30 days. Older data appears
+as daily rows, including while rollup is pending. If any part of a UTC day has
+expired or already rolled up, that whole day's timeline row uses daily
+granularity. `knownNetworks` is null for daily rows and unclassified hourly
+accesses; otherwise it counts known networks, with `overflow` marking a lower
+bound. Daily rows retain no overflow evidence. Follow `timeline.next` with
+`timelineAfter` and the same dates to read older aggregates. Both cursors are
+independent. Reads create no activity or audit action.
+
+Administrators use `GET /api/filesv2/admin/activity/bases?q=…&after=…` for
+history filter labels. It returns `{items:[{id,name,kind}],next}` with at most
+50 public base IDs, including archived recorded bindings. Names come from
+current accounts; deleted users are labeled “Deleted account”, while missing
+groups use the recorded base name. Search matches the displayed name or ID,
+examining at most 500 identities per request; an empty page can have `next`.
+Pass that public base ID unchanged as `after`. This read checks current
+administrator rights on every page and never inventories or provisions
+storage. The ordinary `/activity/bases` membership list is unchanged.
