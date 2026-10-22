@@ -249,9 +249,10 @@ pass siblings as separate arguments or use shell expansion.
 
 Files records folder creation, renames, moves, copies, uploads, document creation,
 template use, Office saves, trash and restores, version changes, and permanent
-deletion through the web, mobile app, API and CLI, other apps, and agents. Each
-selected item has its
-own entry; items changed in one batch share a batch ID. Moving a folder
+deletion through the web, mobile app, API and CLI, other apps, and agents. It also
+records storage creation, adoption, archiving and retirement, link creation and
+revocation, template administration, and administrative reads. Each selected item
+has its own entry; items changed in one batch share a batch ID. Moving a folder
 records one entry for the whole tree. Planning folder creation or finding an
 existing folder creates no entry.
 
