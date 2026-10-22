@@ -3,9 +3,12 @@ import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
   Chat,
+  type ChatComposerReply,
   EmojiPicker,
   IconButtonLink,
   MessageRow,
+  type MessageRowOrigin,
+  type MessageRowQuote,
   type MessageRowStatus,
   MessageSystemRow,
   PageTitle,
@@ -38,6 +41,10 @@ export type ChatFeedItem = {
   /** Position and ID of a stored message; a send the history does not hold yet has neither. */
   seq?: number;
   messageId?: string;
+  /** The message it answers. */
+  quote?: MessageRowQuote;
+  /** Its thread, shown under it where several threads mix. */
+  origin?: MessageRowOrigin;
 };
 
 export type ChatConversationProps = {
@@ -46,6 +53,24 @@ export type ChatConversationProps = {
   chatId: string;
   title: string;
   memberCount: number;
+  /** The line under the title; the member count by default. */
+  subtitle?: string;
+  /** Beside the title, such as the thread picker. */
+  titleExtra?: JSX.Element;
+  /** Where the back button leads below 64 rem; the list by default. */
+  backHref?: string;
+  /** Each part of a chat keeps its own draft. */
+  draftKey?: string;
+  /** Replaces the composer, for example where the reader cannot write. */
+  notice?: JSX.Element;
+  placeholder?: string;
+  /** The message the draft answers, above the field. */
+  reply?: ChatComposerReply;
+  /** "Reply" in a message's menu, with `r` and a swipe to the right; without it, messages offer no reply. */
+  onReply?: (item: ChatFeedItem) => void;
+  /** The sentence under "Reply" and "Mark unread from here", which names the message's thread. */
+  replyHint?: (item: ChatFeedItem) => string;
+  unreadHint?: (item: ChatFeedItem) => string;
   items: readonly ChatFeedItem[];
   hasOlder: boolean;
   hasNewer: boolean;
@@ -146,14 +171,34 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const remember = (emoji: string) => setRecent((current) => rememberEmoji(current, emoji));
 
   return (
-    <section ref={frame} class="chat-conversation" aria-label={props.title}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: `r` answers the message whose article has focus; the menu offers the same.
+    <section
+      ref={frame}
+      class="chat-conversation"
+      aria-label={props.title}
+      onKeyDown={(event) => {
+        if (event.key !== "r" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) return;
+        const article = event.target instanceof HTMLElement && event.target.matches(".k2b-virtual-feed__item") ? event.target : null;
+        const item = article && props.items.find((entry) => entry.key === article.dataset.key);
+        if (!item?.messageId || item.kind !== "text" || !props.onReply) return;
+        event.preventDefault();
+        props.onReply(item);
+      }}
+    >
       <header class="chat-conversation__header">
         <span class="chat-conversation__back">
-          <IconButtonLink href="/app/chat" navigation="enhanced" onNavigate={props.onBack} label={t().backToChats} tooltip={false}>
+          <IconButtonLink
+            href={props.backHref ?? "/app/chat"}
+            navigation="enhanced"
+            onNavigate={props.onBack}
+            label={props.backHref ? t().backToThreads : t().backToChats}
+            tooltip={false}
+          >
             <i class="ti ti-chevron-left" aria-hidden="true" />
           </IconButtonLink>
         </span>
-        <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={t().members({ count: props.memberCount })} />
+        <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={props.subtitle ?? t().members({ count: props.memberCount })} />
+        {props.titleExtra}
         <Show when={markerAway()}>
           {(direction) => (
             <Button
@@ -216,11 +261,26 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               own={item.own}
               groupStart={startsGroup(item, props.items[index() - 1])}
               status={item.status}
+              quote={item.quote}
+              origin={item.origin}
               onRetry={item.retry}
               onDiscard={item.discard}
               actions={
                 item.messageId
                   ? [
+                      ...(props.onReply
+                        ? [
+                            {
+                              id: "reply",
+                              label: t().reply,
+                              description: props.replyHint?.(item),
+                              icon: "ti ti-arrow-back-up",
+                              shortcut: "r",
+                              gesture: "swipe-right" as const,
+                              onSelect: () => props.onReply?.(item),
+                            },
+                          ]
+                        : []),
                       { id: "copy", label: t().copyText, icon: "ti ti-copy", immediate: true, onSelect: () => props.onCopy(item) },
                       // The reader's own messages never count as unread.
                       ...(item.own
@@ -229,7 +289,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
                             {
                               id: "unread",
                               label: t().markUnreadFromHere,
-                              description: t().markUnreadFromHereHint,
+                              description: props.unreadHint?.(item) ?? t().markUnreadFromHereHint,
                               icon: "ti ti-mail",
                               altClick: true,
                               onSelect: () => props.onMarkUnreadFrom(item),
@@ -252,16 +312,25 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
           )
         }
       </VirtualFeed>
+      <Show
+        when={!props.notice}
+        fallback={
+          <div class="chat-conversation__notice" role="status">
+            {props.notice}
+          </div>
+        }
+      >
       <div class="chat-conversation__composer">
         <Chat.Composer
           variant="conversation"
           value={props.draft}
           onValueChange={props.onDraftChange}
           onSubmit={({ text }) => props.onSend(text)}
-          draftKey={props.chatId}
+          draftKey={props.draftKey ?? props.chatId}
+          reply={props.reply}
           formatting
           emoji={{ onOpen: setEmojiTarget, onPick: remember }}
-          placeholder={t().composerPlaceholder({ title: props.title })}
+          placeholder={props.placeholder ?? t().composerPlaceholder({ title: props.title })}
           inputLabel={t().composerLabel({ title: props.title })}
           disabled={!props.canWrite}
           hint={props.hint}
@@ -276,6 +345,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
           onClose={() => setEmojiTarget(undefined)}
         />
       </div>
+      </Show>
     </section>
   );
 }

@@ -108,6 +108,7 @@ export type {
   MessageRowQuote,
   MessageRowReaction,
   MessageRowStatus,
+  MessageRowOrigin,
   MessageRowThread,
   MessageSystemRowProps,
 } from "./MessageRow";

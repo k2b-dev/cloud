@@ -9679,6 +9679,44 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface);
 }
 
+/* Where the message belongs, as a quiet chip of fixed height under it. */
+.k2b-ui .k2b-message-row__origin {
+  display: inline-flex;
+  max-width: 100%;
+  height: 1.25rem;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.4375rem;
+  border: 0;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-message-row__origin > i {
+  flex: none;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui button.k2b-message-row__origin {
+  cursor: pointer;
+}
+
+.k2b-ui button.k2b-message-row__origin:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui button.k2b-message-row__origin:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
 /* "edited" ends the last paragraph of the text. */
 .k2b-ui .k2b-message-row__edited {
   color: var(--k2b-text-secondary);

@@ -135,6 +135,17 @@ export type MessageRowFile = MessageRowAttachmentTarget & {
 
 export type MessageRowAttachment = MessageRowMedia | MessageRowFile;
 
+/** Where a message belongs, shown as a small chip under it, for example its thread in a timeline of several. */
+export type MessageRowOrigin = {
+  label: string;
+  /** Icon class, for example `ti ti-hash`. */
+  icon?: string;
+  /** Opens where the message belongs. Without it, the chip is not a control. */
+  onSelect?: () => void;
+  /** Accessible name of the control when it must say more than the label, such as "Open thread Updates". */
+  selectLabel?: string;
+};
+
 export type MessageRowProgress = {
   /** What is happening, for example "Writing" or "Searching the files". */
   status: string;
@@ -198,6 +209,8 @@ export type MessageRowProps = {
   onAddReaction?: (anchor: HTMLElement) => void;
   /** A bar of fixed height that opens the replies to this message. */
   thread?: MessageRowThread;
+  /** A chip of fixed height under the message that names where it belongs. */
+  origin?: MessageRowOrigin;
   /** The message is still being written, by a person or an automated author alike: a status line with "Stop". */
   progress?: MessageRowProgress;
   class?: string;
@@ -786,6 +799,31 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                 )}
               </Show>
             </button>
+          )}
+        </Show>
+        <Show when={props.origin}>
+          {(origin) => (
+            <Show
+              when={origin().onSelect}
+              fallback={
+                <span class="k2b-message-row__origin">
+                  <Show when={origin().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                  {origin().label}
+                </span>
+              }
+            >
+              {(select) => (
+                <button
+                  type="button"
+                  class="k2b-message-row__origin"
+                  aria-label={origin().selectLabel}
+                  onClick={() => select()()}
+                >
+                  <Show when={origin().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                  {origin().label}
+                </button>
+              )}
+            </Show>
           )}
         </Show>
         <Show when={hasFooter()}>

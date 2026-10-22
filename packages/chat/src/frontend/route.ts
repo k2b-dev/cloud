@@ -1,11 +1,26 @@
-export type Route = { chatId: string | null; messageId: string | null; panel: "info" | null };
+import { type ThreadView, threadHref } from "./threads";
 
-export const panelHref = (chatId: string, panel: "info" | null, messageId?: string | null): string =>
-  `/app/chat/c/${encodeURIComponent(chatId)}${messageId ? `/m/${encodeURIComponent(messageId)}` : ""}${panel === "info" ? "?panel=info" : ""}`;
+/**
+ * The address of the full view. `view` is the open part of a chat with threads ("all" without one in the address);
+ * `threads` is the phone's page with the chat's threads, which a wider window shows as "All threads".
+ */
+export type Route = { chatId: string | null; view: ThreadView; threads: boolean; messageId: string | null; panel: "info" | null };
+
+export const panelHref = (chatId: string, panel: "info" | null, messageId?: string | null, view: ThreadView = "all"): string =>
+  `${threadHref(chatId, view, messageId)}${panel === "info" ? "?panel=info" : ""}`;
+
+/** The phone's page with the chat's threads. */
+export const threadsPageHref = (chatId: string) => `/app/chat/c/${encodeURIComponent(chatId)}/threads`;
 
 export const parseRoute = (url: URL): Route | null => {
-  const match = /^\/app\/chat(?:\/c\/([^/]+)(?:\/m\/([^/]+))?)?\/?$/.exec(url.pathname);
-  return match
-    ? { chatId: match[1] ?? null, messageId: match[2] ?? null, panel: match[1] && url.searchParams.get("panel") === "info" ? "info" : null }
-    : null;
+  const match = /^\/app\/chat(?:\/c\/([^/]+)(?:(\/threads)|\/t\/([^/]+))?(?:\/m\/([^/]+))?)?\/?$/.exec(url.pathname);
+  if (!match || (match[2] && match[4])) return null;
+  const chatId = match[1] ? decodeURIComponent(match[1]) : null;
+  return {
+    chatId,
+    view: match[3] ? decodeURIComponent(match[3]) : "all",
+    threads: Boolean(match[2]),
+    messageId: match[4] ? decodeURIComponent(match[4]) : null,
+    panel: chatId && url.searchParams.get("panel") === "info" ? "info" : null,
+  };
 };
