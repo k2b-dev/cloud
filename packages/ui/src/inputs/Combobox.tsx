@@ -55,7 +55,8 @@ export function Combobox(props: ComboboxProps): JSX.Element {
     () => props.debounceMs ?? 150,
   );
   const popover = createChoicePopover(() => Boolean(props.disabled || props.readOnly));
-  const options = loader.options;
+  // A host notice or an error replaces the results; hidden results are never selectable.
+  const options = () => (props.status || loader.error() ? [] : loader.options());
   const focusedOption = () => options()[focusedIndex()];
   const searchable = (value: string) => value.trim().length >= (props.minQueryLength ?? 0);
   const focus = (index: number) => {
@@ -193,7 +194,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
               )}
             </Show>
             <For
-              each={props.status || loader.error() ? [] : options()}
+              each={options()}
               fallback={
                 <Show when={!props.status && !loader.error()}>
                   <Show

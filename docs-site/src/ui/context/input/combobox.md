@@ -1,8 +1,8 @@
 # Combobox
 
 `Combobox` searches asynchronous options and immediately hands the selected
-item to the parent. It clears after each selection and does not own a selected
-value.
+item to the parent. By default it clears after each selection and does not own
+a selected value. With `freeText`, the query is the field's own value instead.
 
 ## Use Combobox
 
@@ -46,7 +46,29 @@ Use `query` with a direct string or Solid accessor when the application needs
 to own the current search text. `onQueryChange` receives each edit and the
 automatic clear after selection.
 
-Loading keeps the previous results visible. A failed lookup replaces the list with its error and a retry action.
+Loading keeps the previous results visible. The first search of an open list
+shows rows of the result size instead of “No results”. A failed lookup
+replaces the list with its error and a retry action.
+
+## Free text
+
+Set `freeText` when the typed text is the value, for example a street with
+address suggestions. Picking, Escape, and Tab keep the text; the host decides
+what `onSelect` writes. Enter takes the active result, or only closes the list
+when none is active. Combine it with:
+
+- `minQueryLength`: below this many characters the list stays closed and
+  nothing loads;
+- `autoHighlight`: the result at this position becomes active when results
+  arrive, so Enter takes it;
+- `status`: a host notice, such as a used-up quota, replaces the results;
+  hidden results cannot be chosen and nothing loads while it is set;
+- `empty`: the text shown when a search finds nothing;
+- `footer`: one line under the results, such as their source, with its own
+  room in the list.
+
+The input sets `autocomplete="off"`, so browser autofill does not cover the
+results.
 
 Unlike `disabled`, `readOnly` keeps focus while blocking new picks, for example while the control’s own pick is being saved.
 
@@ -62,6 +84,8 @@ type ComboboxProps = FieldProps & {
   query?: MaybeAccessor<string>; onQueryChange?: (query: string) => void; placeholder?: string;
   fetchData: (query: string, signal: AbortSignal) => Promise<ComboboxOption[]>;
   onSelect: (option: ComboboxOption) => void; debounceMs?: number;
+  freeText?: boolean; minQueryLength?: number; autoHighlight?: number;
+  status?: JSX.Element; empty?: JSX.Element; footer?: JSX.Element;
 };
 ```
 
