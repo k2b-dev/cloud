@@ -531,7 +531,10 @@ an HTTP deadline within its 40-second lease. After an interrupted answer,
 Pulse observes cancellation before releasing the slot; if cancellation cannot
 be confirmed, the slot remains held until its lease expires. The next owner
 first cancels remaining queries from that maintenance lane and observes their
-termination before submitting SQL. Admission waits at most five seconds; busy
+termination before submitting SQL. ClickHouse also limits each maintenance
+submission to one concurrent query for the service user, fencing delayed
+requests from a stopped replica. Active ingest can defer maintenance; ingest
+retains its own settings. Admission waits at most five seconds; busy
 lifecycle and rollup work is rescheduled without spending its failure budget. Bounded ingest batches retain their separate admission path.
 The memory budget remains one 1 GB maintenance query, three reader profiles,
 and the documented reserve for ingestion and ClickHouse background work.

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { createSync, type Lock, type Sync } from "@k2b/sync";
 import { suiteFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
 import { connectTestNats } from "../../../../scripts/fixtures/test-nats";
-import type { clickhouseQuery, QueryOptions } from "./client";
+import { type clickhouseQuery, type QueryOptions, StoreQueryError } from "./client";
 import { createMaintenanceQuery, MAINTENANCE_LEASE_MS } from "./maintenance-query";
 
 suiteFor("nats")("one fleet-wide maintenance query", () => {
@@ -48,6 +48,7 @@ suiteFor("nats")("one fleet-wide maintenance query", () => {
       maximum = Math.max(maximum, active);
       expect(request.queryId).toMatch(/^pulse_maintenance_/);
       expect(Number(request.settings?.max_execution_time)).toBeLessThanOrEqual(30);
+      expect(request.settings?.max_concurrent_queries_for_user).toBe(1);
       expect(request.timeoutMs).toBeLessThanOrEqual(32_000);
       entered.resolve();
       await release.promise;
@@ -113,6 +114,41 @@ suiteFor("nats")("one fleet-wide maintenance query", () => {
     const lock = await mutex.acquire({ resource: "clickhouse" });
     expect(lock).not.toBeNull();
     if (lock) await mutex.release(lock);
+  });
+  test("server admission refusal reschedules maintenance and never changes ingest settings", async () => {
+    const mutex = a.mutex({ id: "server-admission", ttlMs: MAINTENANCE_LEASE_MS, retry: { maxAttempts: 1 } });
+    await a.ready();
+    const run = createMaintenanceQuery({
+      mutex: () => mutex,
+      query: async (request) => {
+        if (request.query.startsWith("KILL QUERY")) return [];
+        if (request.query === "INGEST") {
+          expect(request.settings?.max_concurrent_queries_for_user).toBeUndefined();
+          return [];
+        }
+        expect(request.settings?.max_concurrent_queries_for_user).toBe(1);
+        throw new StoreQueryError("clickhouse", 202);
+      },
+    });
+    await expect(run(options)).rejects.toThrow("MAINTENANCE_BUSY");
+    await run({ ...options, query: "INGEST" }, "ingest");
+  });
+  test("an admission cancelled during preflight never submits SQL", async () => {
+    const mutex = a.mutex({ id: "preflight-deadline", ttlMs: MAINTENANCE_LEASE_MS, retry: { maxAttempts: 1 } });
+    await a.ready();
+    const controller = new AbortController();
+    let calls = 0;
+    const run = createMaintenanceQuery({
+      mutex: () => mutex,
+      query: async (request) => {
+        calls++;
+        expect(request.query).toContain("KILL QUERY");
+        controller.abort();
+        return [];
+      },
+    });
+    await expect(run({ ...options, signal: controller.signal })).rejects.toThrow("MAINTENANCE_BUSY");
+    expect(calls).toBe(1);
   });
   test("a failed HTTP answer holds the slot through observed cancellation", async () => {
     const config = { id: "cancel", ttlMs: MAINTENANCE_LEASE_MS, retry: { maxAttempts: 1, delayMs: 200 } };

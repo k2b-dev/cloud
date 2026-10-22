@@ -107,7 +107,7 @@ export const createHourlyRollup =
       });
     } catch (error) {
       if (failedHour && error instanceof Error && error.message === "MAINTENANCE_BUSY") {
-        await database`UPDATE pulse.metric_hours SET lease_until=${new Date(failedHour.now.getTime() + 5_000)}
+        await database`UPDATE pulse.metric_hours SET lease_until=greatest(lease_until,${new Date(clock().getTime() + 5_000)})
           WHERE base_id=${failedHour.baseId}::uuid AND hour=${failedHour.hour} AND state='dirty'`;
         return { buckets: 0, done: false, retryAfterMs: 5_000 };
       }

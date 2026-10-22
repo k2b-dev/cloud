@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lazySync } from "@k2b/cloud";
 import type { Mutex } from "@k2b/sync";
-import { clickhouseQuery, type QueryOptions } from "./client";
+import { clickhouseQuery, type QueryOptions, StoreQueryError } from "./client";
 
 const cancellationFinished = (rows: Record<string, unknown>[]) => rows.every((row) => row.kill_status === "finished");
 
@@ -31,6 +31,7 @@ export const createMaintenanceQuery =
     // Ingest is bounded before T1 (500/collection, 1,500 total and 5 MiB).
     // It must not queue behind scans or share their query execution slot.
     if (workload === "ingest") return query(options);
+    const admissionDeadline = Date.now() + 5_000;
     const admission = AbortSignal.any([AbortSignal.timeout(5_000), ...(options.signal ? [options.signal] : [])]);
     const lane = mutex();
     let lock: Awaited<ReturnType<Mutex["acquire"]>> = null;
@@ -88,9 +89,9 @@ export const createMaintenanceQuery =
     try {
       const cancelled = await query({
         ...options,
-        signal: undefined,
+        signal: admission,
         queryId: undefined,
-        timeoutMs: KILL_MS,
+        timeoutMs: Math.max(1, Math.min(KILL_MS, admissionDeadline - Date.now())),
         settings: undefined,
         params: { user: options.user },
         query: "KILL QUERY WHERE startsWith(query_id, 'pulse_maintenance_') AND user={user:String} SYNC",
@@ -99,12 +100,12 @@ export const createMaintenanceQuery =
       if (!cancellationFinished(cancelled)) throw new MaintenanceBusy();
     } catch (error) {
       await lane.release(lock).catch(() => false);
-      throw error;
+      throw admission.aborted ? new MaintenanceBusy() : error;
     }
     // Derive an absolute deadline from the broker lease, so delayed acquisition
     // never receives a fresh full query window. Refuse before submitting SQL.
     const remaining = lock.expiresAt.getTime() - Date.now() - KILL_MS - 1_000;
-    if (remaining <= 2_000 || options.signal?.aborted) {
+    if (remaining <= 2_000 || admission.aborted || options.signal?.aborted) {
       await lane.release(lock);
       throw new MaintenanceBusy();
     }
@@ -118,6 +119,9 @@ export const createMaintenanceQuery =
         timeoutMs,
         settings: {
           ...options.settings,
+          // Server admission also fences a delayed request from a dead replica.
+          // Same-user ingest can defer maintenance, but keeps its own settings.
+          max_concurrent_queries_for_user: 1,
           max_execution_time: Math.max(1, Math.floor((timeoutMs - 2_000) / 1_000)),
           timeout_before_checking_execution_speed: 0,
         },
@@ -142,7 +146,7 @@ export const createMaintenanceQuery =
       } catch {
         /* Keep the lease until expiry when cancellation cannot be observed. */
       }
-      throw error;
+      throw error instanceof StoreQueryError && error.code === 202 ? new MaintenanceBusy() : error;
     } finally {
       if (release) await lane.release(lock).catch(() => false);
     }
