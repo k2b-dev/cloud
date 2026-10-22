@@ -150,7 +150,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         }
       }
       const id = route().chatId;
-      if (id && !drafts.has(id)) readDraft(id);
+      if (id && !drafts.has(id)) {
+        const text = savedDrafts.read(id);
+        drafts.set(id, text);
+        savedTexts.set(id, text);
+      }
       if (id) setDraft(drafts.get(id) ?? "");
       if (props.embedded) savedDrafts.select(id);
       setDraftStorageFailed(false);

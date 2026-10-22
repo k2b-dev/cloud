@@ -783,6 +783,10 @@ export default function AssistantWorkspace(props: Props) {
     creations: new Map([...creationRequests].map(([key, request]) => [key, request.requestId])),
   });
   const sessionConversation = (key: string) => (key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key);
+  const submissionUnknown = (key: string) => {
+    const id = sessionConversation(key);
+    return id !== undefined && chat.uncertainSubmissions()[id] !== undefined;
+  };
   const emptyCreationCovered = (key: string, exit?: UnknownExit) => {
     const request = creationRequests.get(key);
     return Boolean(
@@ -1793,10 +1797,6 @@ export default function AssistantWorkspace(props: Props) {
 
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
-    const currentSubmissionUnknown = () => {
-      const id = sessionConversation(sessionKey());
-      return id !== undefined && chat.uncertainSubmissions()[id] !== undefined;
-    };
     const projectComposer = () => Boolean(composerProps.projectId);
     // A Project composer starts new chats; a response still running in the previous chat does not block it.
     const composerRunning = () => !projectComposer() && chat.running();
@@ -1987,7 +1987,13 @@ export default function AssistantWorkspace(props: Props) {
               <p>{t().panelUnknownHint}</p>
               <For each={Object.keys(chat.uncertainSubmissions())}>
                 {(id) => (
-                  <Button size="sm" variant="ghost" onClick={() => void openAndFocusConversation(id)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      if (await openAndFocusConversation(id)) commitConversationUrl(id);
+                    }}
+                  >
                     {conversations().find((conversation) => conversation.id === id)?.title ?? t().newChat}
                   </Button>
                 )}
@@ -2013,7 +2019,7 @@ export default function AssistantWorkspace(props: Props) {
           </NoticeCard>
         </Show>
         <dictation.Status />
-        <Show when={(sessionVersion(), session(sessionKey()).conflict) && !currentSubmissionUnknown()}>
+        <Show when={(sessionVersion(), session(sessionKey()).conflict) && !submissionUnknown(sessionKey())}>
           <div role="status" class="space-y-2 rounded-lg border border-border p-3 text-sm">
             <p>{audioCopy().conflict}</p>
             <Show when={serverDrafts()[sessionKey()]}>
@@ -2248,7 +2254,7 @@ export default function AssistantWorkspace(props: Props) {
             composerPicking() > 0 ||
             !canUseComposer() ||
             panelStorageFailed() ||
-            currentSubmissionUnknown() ||
+            submissionUnknown(sessionKey()) ||
             (newConversation.loading() && !commandCreating()) ||
             chat.loadingConversation()
           }
@@ -2517,7 +2523,7 @@ export default function AssistantWorkspace(props: Props) {
                     (props.embedded && !workspaceMounted()) ||
                     !canUseComposer() ||
                     panelStorageFailed() ||
-                    currentSubmissionUnknown() ||
+                    submissionUnknown(activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey()) ||
                     composerSubmitting() ||
                     newConversation.loading() ||
                     chat.loadingConversation() ||

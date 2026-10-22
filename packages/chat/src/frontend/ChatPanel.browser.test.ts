@@ -1671,6 +1671,8 @@ for (const embedded of [false, true]) {
       await composer.fill("Independent draft");
       expect(await composer.isEnabled()).toBe(true);
       await view.getByRole("button", { name: "Unclear conversation", exact: true }).click();
+      if (embedded) await view.locator('a[href="/app/assistant?conversation=Chat2A"]').waitFor();
+      else await page.waitForURL("**/app/assistant?conversation=Chat2A");
       expect(await composer.isDisabled()).toBe(true);
       await view.getByRole("button", { name: "Retry the same message", exact: true }).click();
       await view.getByText("Message status is unclear", { exact: true }).waitFor({ state: "hidden" });
@@ -1782,6 +1784,50 @@ test("Chat can close during a read-only conversation load and restores the saved
     );
   } finally {
     release();
+    await context.close();
+  }
+}, 30_000);
+
+test("Chat keeps storage recovery visible when retry still cannot read the draft", async () => {
+  fixture.backend.reset();
+  const id = fixture.backend.addChat({ members: [viewer, nora], name: "Unreadable draft", count: 1, end: fixture.backend.now() });
+  const context = await browser.newContext({ viewport: { width: 390, height: 900 }, locale: "en" });
+  await context.addInitScript(() => {
+    const get = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (key) {
+      if (
+        location.pathname.includes("/panel") &&
+        key.startsWith("cloud.chat.draft:") &&
+        !document.documentElement.hasAttribute("data-allow-draft-read")
+      )
+        throw new Error("Synthetic draft read failure");
+      return get.call(this, key);
+    };
+  });
+  const page = await context.newPage();
+  page.setDefaultTimeout(8_000);
+  try {
+    await page.goto(fixture.url + "app/fixture");
+    await page.locator('html[data-fixture-ready="true"]').waitFor();
+    await page.evaluate(({ id, viewerId }) => sessionStorage.setItem(`cloud.chat.draft:${viewerId}:${id}`, "Previously saved text"), {
+      id,
+      viewerId: viewer.id,
+    });
+    await page.locator("#open-chat").click();
+    const panel = page.frameLocator("[data-cloud-panel-frame]");
+    await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
+    const notice = panel.getByText("Draft could not be kept in this tab", { exact: true });
+    const composer = panel.locator('textarea:not([aria-hidden="true"])');
+    await notice.waitFor();
+    await panel.getByRole("button", { name: "Try again", exact: true }).click();
+    expect(await notice.isVisible()).toBe(true);
+    expect(await composer.isDisabled()).toBe(true);
+    await panel.locator("html").evaluate((element) => element.setAttribute("data-allow-draft-read", ""));
+    await panel.getByRole("button", { name: "Try again", exact: true }).click();
+    await notice.waitFor({ state: "hidden" });
+    expect(await composer.isEnabled()).toBe(true);
+    expect(await composer.inputValue()).toBe("Previously saved text");
+  } finally {
     await context.close();
   }
 }, 30_000);
