@@ -77,6 +77,7 @@ export const geoCapabilityPresentation = {
       "route.stops[].address.point.lon": "Längengrad in Grad, −180 bis 180.",
       "route.stops[].address.formatted": "Formatierte Adresse des Anbieters.",
       "route.stops[].address.confidence": "Treffersicherheit des Anbieters zwischen 0 und 1 oder null.",
+      "route.stops[].address.buildingConfidence": "Sicherheit des Gebäudetreffers zwischen 0 und 1 oder null ohne Hausnummerntreffer.",
       "route.stops[].address.provenance": "Herkunft und erforderliche Quellenangabe beibehalten.",
       "route.stops[].address.provenance.provider": "Anbieter der Daten.",
       "route.stops[].address.provenance.attribution": "Erforderliche Quellenangabe.",
