@@ -13,7 +13,7 @@ updated: 2026-10-19
 Use `@k2b/cloud/shared-text` for text that people and agents write at the same
 time. One retained log carries updates; a snapshot in the application's own
 Postgres table holds durable state. This is a server-only API. Callers must
-authorize access before calling `read` or `edit`.
+authorize access before calling `read`, `edit`, or `change`.
 
 ## Declare one log per kind of document
 
@@ -134,6 +134,44 @@ if (result.status === "edited" && result.saved.status === "saved") {
 Errors from `load`, the initial latest-cursor lookup, or publication propagate.
 A `persistFailed` result means the update is already in the log: recover by
 replaying and saving, rather than blindly publishing the edit again.
+
+## Apply disjoint changes against a fixed head
+
+Use `documents.change(docId, { actor, maxLength, context?, signal? }, update)`
+for structural actions that must preserve identities between edited ranges.
+Its callback receives the same replayed `{ text, contributors, state() }` as
+`edit` and returns `SharedTextChange[]`, synchronously or asynchronously.
+Each change is `{ from, to, insert }` in the original text's UTF-16 offsets.
+Ranges must be non-overlapping with distinct starts; order does not matter.
+The service applies them from right to left in one Yjs transaction. Unchanged
+ranges keep their character identities, which a single broad replacement
+would destroy.
+
+`maxLength` is required and limits the resulting text in UTF-16 code units.
+Invalid ranges, split surrogate pairs, unpaired inserted surrogates, and an
+oversized result throw `RangeError` before publication. Empty or identical
+changes publish and save nothing. A reconstructed document with unresolved
+Yjs dependencies returns `syncFailed` without calling the planner.
+
+Publication uses the captured **tenant head** as `expectedAfter`, including
+`null` for a document with no log event. A concurrent write to the same
+document causes Sync's `ConflictError`; the speculative action is neither
+published nor saved. Another tenant advancing the shared stream does not
+conflict. A stored snapshot watermark may be ahead of the tenant's last event;
+it is not the publication expectation.
+
+The application authorizes the action and resolves durable target anchors
+inside the callback. Never accept stale numeric offsets from a browser as a
+current structural target. The service does not retry planners automatically:
+on a conflict, re-read and validate the action before trying again. Other
+publication errors can have an unknown outcome and must not trigger a blind
+retry. `change` otherwise uses the same result, attribution, cancellation,
+second replay, and store fences as `edit`; `persistFailed` still means an
+accepted log write needs persistence, not another publication.
+
+`edit` retains its existing character-merge behavior and does not require an
+unchanged head. Choose `change` when the action or repair depends on the whole
+captured structure remaining current through publication.
 
 ## Snapshots
 

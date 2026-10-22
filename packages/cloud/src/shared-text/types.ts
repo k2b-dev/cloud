@@ -28,6 +28,9 @@ export type SharedTextSaveInput = {
   contributors: SharedTextContributor[];
 };
 export type SharedTextSnapshot = { state: Uint8Array | null; text: string | null; cursor: string | null };
+/** A disjoint edit in the original document's UTF-16 coordinates. */
+export type SharedTextChange = { from: number; to: number; insert: string };
+
 export type SharedTextEditResult<Saved> =
   | { status: "notFound" }
   | { status: "unchanged"; text: string }

@@ -1,12 +1,13 @@
 import { expect, spyOn, test } from "bun:test";
-import type { TopicPublish } from "@k2b/sync";
+import { ConflictError, type TopicPublish } from "@k2b/sync";
 import * as Y from "yjs";
-import { bindDocuments } from "./documents";
+import { bindDocuments, createDoc } from "./documents";
 import { applySharedTextEvent, SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
 import type { SharedTextSaveInput, SharedTextStoredState, SharedTextSyncEvent } from "./types";
 
 const fixture = () => {
   let stored: SharedTextStoredState | null = { state: null, cursor: null, restoreRevision: "revision", text: null };
+  const publications: TopicPublish<SharedTextSyncEvent>[] = [];
   const events: { cursor: string; data: SharedTextSyncEvent }[] = [];
   const saves: { docId: string; input: SharedTextSaveInput; context: string | undefined }[] = [];
   const docs: Y.Doc[] = [];
@@ -17,7 +18,11 @@ const fixture = () => {
       if (failures.latest) throw failures.latest;
       return events.at(-1)?.cursor ?? null;
     },
-    publish: async ({ data }: TopicPublish<SharedTextSyncEvent>) => {
+    publish: async (input: TopicPublish<SharedTextSyncEvent>) => {
+      publications.push(input);
+      const { data } = input;
+      if (Object.hasOwn(input, "expectedAfter") && input.expectedAfter !== (events.at(-1)?.cursor ?? null))
+        throw new ConflictError("head changed");
       if (failures.publish) throw failures.publish;
       const cursor = `s6t.fixture.${events.length + 1}`;
       events.push({ cursor, data });
@@ -61,6 +66,7 @@ const fixture = () => {
   };
   return {
     documents,
+    publications,
     events,
     saves,
     failures,
@@ -240,4 +246,129 @@ test("an edit of fallback text without a snapshot keeps the edit in the saved st
   }
   // A later read from the same fallback replays the published edit, too.
   expect((await f.documents.read("doc"))?.text).toBe("hello!");
+});
+
+test("change preserves the identities between disjoint edits and conditions an empty tenant head", async () => {
+  const f = fixture();
+  const stored = { state: null, cursor: null, restoreRevision: "r", text: "first middle last" };
+  f.setStored(stored);
+  const before = createDoc(stored);
+  const after = new Y.Doc();
+  try {
+    const anchor = Y.createRelativePositionFromTypeIndex(before.getText(SHARED_TEXT_NAME), 8);
+    const result = await f.documents.change("doc", { actor: null, maxLength: 100 }, ({ text }) => [
+      { from: text.length, to: text.length, insert: "]" },
+      { from: 0, to: 0, insert: "[" },
+    ]);
+    expect(result).toMatchObject({ status: "edited", text: "[first middle last]" });
+    expect(f.publications[0]?.expectedAfter).toBeNull();
+    Y.applyUpdate(after, f.saves[0]!.input.state);
+    const resolved = Y.createAbsolutePositionFromRelativePosition(anchor, after, false)!;
+    expect(resolved.index).toBe(9);
+    expect(Y.encodeRelativePosition(Y.createRelativePositionFromTypeIndex(after.getText(SHARED_TEXT_NAME), resolved.index))).toEqual(
+      Y.encodeRelativePosition(anchor),
+    );
+    expect(after.store.pendingStructs).toBeNull();
+  } finally {
+    before.destroy();
+    after.destroy();
+  }
+});
+
+test("change rejects a moved tenant head without publishing or saving its speculative edits", async () => {
+  const f = fixture();
+  await f.append("base");
+  await expect(
+    f.documents.change("doc", { actor: null, maxLength: 100 }, async ({ text }) => {
+      await f.append("peer");
+      return [{ from: text.length, to: text.length, insert: "mine" }];
+    }),
+  ).rejects.toBeInstanceOf(ConflictError);
+  expect(f.events).toHaveLength(2);
+  expect(f.saves).toHaveLength(0);
+  expect(f.publications.at(-1)?.expectedAfter).toBe("s6t.fixture.1");
+  expect(f.docs.every((doc) => doc.isDestroyed)).toBe(true);
+  expect((await f.documents.read("doc"))?.text).not.toContain("mine");
+});
+
+test("change skips identical edits and rejects invalid ranges, Unicode splits and size before publication", async () => {
+  const f = fixture();
+  f.setStored({ state: null, cursor: null, restoreRevision: "r", text: "a😀b" });
+  expect(await f.documents.change("doc", { actor: null, maxLength: 4 }, () => [{ from: 0, to: 1, insert: "a" }])).toEqual({
+    status: "unchanged",
+    text: "a😀b",
+  });
+  const invalid = [
+    [{ from: -1, to: 0, insert: "" }],
+    [{ from: 1, to: 0, insert: "" }],
+    [{ from: 0, to: 5, insert: "" }],
+    [{ from: 0.5, to: 1, insert: "" }],
+    [
+      { from: 0, to: 3, insert: "" },
+      { from: 1, to: 4, insert: "" },
+    ],
+    [
+      { from: 0, to: 0, insert: "x" },
+      { from: 0, to: 0, insert: "y" },
+    ],
+    [{ from: 1, to: 2, insert: "" }],
+    [{ from: 0, to: 0, insert: "\ud800" }],
+    [{ from: 0, to: 0, insert: "too long" }],
+  ];
+  for (const changes of invalid)
+    await expect(f.documents.change("doc", { actor: null, maxLength: 4 }, () => changes)).rejects.toBeInstanceOf(RangeError);
+  expect(f.publications).toHaveLength(0);
+  expect(f.saves).toHaveLength(0);
+});
+
+test("change refuses unresolved causal dependencies before invoking the planner", async () => {
+  const f = fixture();
+  const source = new Y.Doc();
+  source.clientID = 77;
+  const partial = new Y.Doc();
+  try {
+    const text = source.getText(SHARED_TEXT_NAME);
+    text.insert(0, "a");
+    const vector = Y.encodeStateVector(source);
+    text.insert(1, "b");
+    Y.applyUpdate(partial, Y.encodeStateAsUpdate(source, vector));
+    expect(partial.store.pendingStructs).not.toBeNull();
+    f.setStored({ state: Y.encodeStateAsUpdate(partial), text: "", cursor: null, restoreRevision: "r" });
+    let planned = false;
+    const result = await f.documents.change("doc", { actor: null, maxLength: 100 }, () => {
+      planned = true;
+      return [{ from: 0, to: 0, insert: "new" }];
+    });
+    expect(result).toMatchObject({ status: "syncFailed", error: expect.any(Error) });
+    expect(planned).toBe(false);
+    expect(f.publications).toHaveLength(0);
+  } finally {
+    partial.destroy();
+    source.destroy();
+  }
+});
+
+test("change preserves cancellation, unknown publication errors and accepted-write persistence failure", async () => {
+  const f = fixture();
+  const signal = new AbortController();
+  await expect(
+    f.documents.change("doc", { actor: null, maxLength: 20, signal: signal.signal }, () => {
+      signal.abort(new Error("cancelled"));
+      return [{ from: 0, to: 0, insert: "hello" }];
+    }),
+  ).rejects.toThrow("cancelled");
+  expect(f.publications).toHaveLength(0);
+  const unknown = new Error("publication outcome unknown");
+  f.failures.publish = unknown;
+  await expect(f.documents.change("doc", { actor: null, maxLength: 20 }, () => [{ from: 0, to: 0, insert: "hello" }])).rejects.toBe(
+    unknown,
+  );
+  expect(f.saves).toHaveLength(0);
+  f.failures.publish = undefined;
+  f.failures.save = new Error("save failed");
+  expect(await f.documents.change("doc", { actor: null, maxLength: 20 }, () => [{ from: 0, to: 0, insert: "hello" }])).toMatchObject({
+    status: "persistFailed",
+    cursor: "s6t.fixture.1",
+  });
+  expect(f.events).toHaveLength(1);
 });
