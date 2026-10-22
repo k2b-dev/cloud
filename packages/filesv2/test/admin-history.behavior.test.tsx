@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { JSX } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
@@ -6,6 +6,10 @@ import type { ActivityBasesPage, ActivityEntry, ActivityPage, ActivitySide } fro
 import type { ActivityRequest } from "../src/frontend/ActivityView";
 import type { AdminActivityBase, AdminActivityFilters, AdminBasesLoader } from "../src/frontend/admin-history";
 import type { HistoryEnvironment } from "../src/frontend/history-actions";
+
+// Native JSX handlers install delegated listeners while this module is evaluated.
+const moduleDom = isServer ? undefined : createDomTestHarness();
+afterAll(() => moduleDom?.cleanup());
 
 /* Fictional people and places of the approved mockup; Tuesday 20.10.2026 in Berlin, frozen. */
 const env: HistoryEnvironment = { now: "2026-10-20T12:30:00.000Z", timeZone: "Europe/Berlin" };
