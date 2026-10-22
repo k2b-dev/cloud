@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |
 | Positional input-union compatibility | A manifest check rejects preserved input variants after additions or reordering, or accepts a `oneOf` change that makes old inputs match multiple variants. | Tests: Cloud `_internal/capabilities.test.ts` covers nested additive unions, required disjoint tags, removed or narrowed branches, overlaps, optional tags, and unchanged result-union restrictions. |
@@ -880,6 +881,13 @@ convention still needs a check or a test.
 - **Root cause:** The renderer kept Cloud URLs relative, and Gotenberg resolved them against its local HTML file.
 - **Error class:** Relative navigation URLs crossing from a web page into an offline document.
 - **Guard:** Notebooks `note-pdf.integration.test.ts` inspects actual PDF URI annotations for the configured public origin and rejects `file://`; renderer tests preserve browser URLs, escaping, and internal anchors, and the API test checks the configured origin passed to export.
+
+### Nightly checks loaded UI before its build
+
+- **What happened:** The Nightly dependencies job stopped before checking dependency policy because Bun could not resolve `@k2b/ui`.
+- **Root cause:** The check runner imports all rule modules, including a Markdown consumer of UI; the fresh job installed packages but never built the exported UI files.
+- **Error class:** A CI check imports an unbuilt workspace package.
+- **Guard:** `scripts/nightly-ui-build.test.ts` requires a UI build before repository checks in each Nightly job.
 
 ### Oversized Chat messages lost their editable text
 
