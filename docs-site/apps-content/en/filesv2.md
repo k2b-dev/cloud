@@ -125,7 +125,7 @@ Renaming, duplicating and moving reuse Filegate transfers.
 The details panel shows a compact preview, actions, facts, versions, and history.
 On phones, the preview is hidden and the version count opens the versions list.
 Folder details show the number of loaded items; “at least” means more items
-remain. If the count cannot load, **Try again** retries it.
+may remain. If the count cannot load, **Try again** retries it.
 
 Where storage keeps versions, the count includes the current file and retained
 versions. Each saved version offers a comment, download, restore in place, and
