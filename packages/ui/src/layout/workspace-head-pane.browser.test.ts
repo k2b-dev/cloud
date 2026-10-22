@@ -133,7 +133,9 @@ beforeAll(async () => {
         return new Response(script, { headers: { "Content-Type": "application/javascript" } });
       }
       const params = new URL(request.url).searchParams;
-      const options = Object.fromEntries(["reader", "unbound", "unsplit", "nested", "island", "title", "unavailable"].map((key) => [key, params.has(key)]));
+      const options = Object.fromEntries(
+        ["reader", "unbound", "unsplit", "nested", "island", "title", "unavailable"].map((key) => [key, params.has(key)]),
+      );
       return new Response(
         `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head>
 <body class="k2b-ui" style="margin:0" data-options='${JSON.stringify(options)}'><div id="app" style="container:k2b-app-area / inline-size;height:900px">${render(options)}</div>${hydrationScript}</body></html>`,
