@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:tes
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { sql } from "bun";
 import { Hono } from "hono";
-import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, testInfra, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { sendWebsiteDelivery, WebsiteDeliverySchema } from "../../examples/website-tracking";
 
 let pulseCapabilities: typeof import("../capabilities")["pulseCapabilities"];
@@ -27,16 +27,25 @@ let q: typeof import("../store/validation")["quoteIdentifier"];
 
 let pulseApi: typeof import(".")["default"];
 
+// Bind the disposable database before domain imports. Modules that register cleanup
+// hooks must load at file scope: Bun runs hooks registered inside beforeAll as that
+// hook finishes, which would stop the authority and drop the ClickHouse fixture.
+const database =
+  testInfra.database && testInfra.clickhouse && testInfra.valkey && testInfra.nats ? await useFreshDatabase("pulse_website") : undefined;
+if (database) {
+  await import("../../../../scripts/fixtures/test-clickhouse");
+  await (await import("../../../core/src/runtime-helpers")).runCoreSetup();
+  await import("../../../../scripts/fixtures/authorization-preload");
+}
+
 suiteFor(
   "database",
   "clickhouse",
   "valkey",
   "nats",
 )("website backend to stored telemetry and Assistant SQL", () => {
-  let database: Awaited<ReturnType<typeof useFreshDatabase>>;
   let settings: ReturnType<typeof settingsFixture>;
   beforeAll(async () => {
-    database = await useFreshDatabase("pulse_website");
     ({ default: pulseApi } = await import("."));
     // Domain singletons may capture Bun.sql during import; bind the disposable database first.
     ({ pulseCapabilities } = await import("../capabilities"));
@@ -56,9 +65,6 @@ suiteFor(
     ({ settingsFixture } = await import("../store/settings.test-fixture"));
     ({ createSqlRunner } = await import("../store/sql-run"));
     ({ quoteIdentifier: q } = await import("../store/validation"));
-    await (await import("../../../core/src/runtime-helpers")).runCoreSetup();
-    // The authority reads signing keys: bind SQL to this private test database first.
-    await import("../../../../scripts/fixtures/authorization-preload");
     settings = settingsFixture();
     settings.values["pulse.clickhouse_connection"] = JSON.stringify(fixtureConnection());
     await installFixtureStore();
