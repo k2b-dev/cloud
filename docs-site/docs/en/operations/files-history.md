@@ -34,6 +34,34 @@ recovery records `unclear`. Finding the expected folder cannot prove who
 created it. `not_done` is reserved for checks that can prove no change; folder
 recovery never uses it.
 
+## Read an execution record
+
+The history action **View run** opens `/app/filesv2/execution/:activityId`,
+where `activityId` is the Files activity UUID. The page requires the `user`
+role and reads the entry again through `filesService.activityEntry` with the
+current access subject. Execution context must still be present on that
+authorized projection; a projection without it returns `404`. Service `403`
+and `404` responses reveal no record details. Server failures offer a link to
+retry the same read. Historical writer-controlled text is served with
+`Cache-Control: private, no-store, no-transform`.
+
+The page presents exactly one recorded Files action and its recorded result,
+with authorized before and after paths. Optional source context and correlation
+references appear in a closed disclosure. Request and invocation references
+are not run URLs or access grants. The page neither queries the administrator
+execution console nor reads a private source conversation, and it does not
+claim the outcome of the complete originating run. It starts no writes,
+automatic rechecks, or related-record discovery. The existing reader privacy
+boundary remains in force. See [Files](/en/apps/filesv2#read-an-execution-record)
+for the user-facing description.
+
+## Open Chat from history
+
+History's **Message …** action requires the Chat application to be running
+and advertising `chat.conversation.compose`. Files shows a retryable error if
+the command is missing or Chat is unavailable. The handoff opens Chat's normal
+form; it does not create a conversation, send a message, or widen guest access.
+
 ## Retain history
 
 Administrators set `activityRetentionDays` in the Files configuration. The
@@ -96,3 +124,10 @@ metadata and need no user-data history entry.
 The `filegate-facade` repository check prevents SDK access outside the facade.
 The activity classification test detects new service methods and migration
 keys that have not been reviewed.
+
+The file inspector sends the revision it displayed when restoring a version in
+place. Files compares it again under its publication lock and returns
+`version_restore_changed` (409) if it changed; reload before retrying. This check
+coordinates Cloud writes. Filegate does not provide a conditional restore, so
+it cannot prevent a filesystem writer from changing the file between the check
+and the restore.

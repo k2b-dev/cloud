@@ -1868,6 +1868,11 @@ suite("Files service and durable bindings", () => {
     ).rejects.toMatchObject({
       code: "invalid_path",
     });
+    await expect(
+      service.restoreVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id, expectedRevision: "stale-view" }),
+    ).rejects.toMatchObject({ code: "version_restore_changed", status: 409 });
+    expect(nodes.get("cloud:users/admin/report.txt")).toEqual(originalNode);
+    expect(contents.get("cloud:users/admin/report.txt")).toBe(originalContent);
     const restored = await service.restoreVersion(testCall(admin), { baseId, path: "report.txt", id: v1.id });
     expect(restored.entry.modified).toBe(`restored:${v1.id}`);
     expect((await service.versionDownload(testCall(admin), { baseId, path: "report.txt", id: v1.id })).url).toContain(v1.id);

@@ -41,6 +41,7 @@ import type {
   UploadSession,
 } from "../contracts";
 import { BATCH_LIMIT } from "../contracts";
+import { activityRecoveryRecord } from "../data/activity-recovery";
 import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { favorites, recent } from "../data/marks";
 import { operations, rootLockWait, withRootLock, withUploadLock } from "../data/operations";
@@ -52,6 +53,7 @@ import { type DocumentKind, documentExtension, editableExtension } from "../docu
 import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
 import { fileAction, pendingMigration, purgeActivity, recoverActivity, type UserFilesCall } from "./activity";
+import { createActivityActions } from "./activity-actions";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
@@ -943,10 +945,68 @@ export function createFilesService(
       forget: (relative) => forgetMarks(current, relative),
     };
   });
+  const activityActions = createActivityActions({
+    entry: (call, input) => activityReader.activityEntry(call, input),
+    chain: (call, input) => activityReader.movementChain(call, input),
+    record: activityRecoveryRecord,
+    binding: (id) => deps.bindings.byId(id),
+    oldLocation: async (call, record, binding, path) => {
+      const baseId = `${binding.area}:${binding.kind}:${binding.identity_id}`;
+      const base = await authorizedBase(call.actor, baseId, undefined, true);
+      if (base.inspection.binding?.id !== binding.id || base.state.config.url !== record.server_url || base.root.name !== record.root)
+        throw new FilesError("binding_changed", 409);
+      await authorizedPath(base, path, true);
+    },
+    writable: async (call, baseId, path) => {
+      const base = await authorizedBase(call.actor, baseId, undefined, true);
+      await writableParent(call.actor, baseId, path, base);
+    },
+    trashEntry: (call, input) => trashLifecycle.trashEntry(call, input),
+    restoreTrash: (call, input) => trashLifecycle.restoreTrash(call, input),
+    moveBack: async (call, record, endpoint, path) => {
+      const initial = await authorizedBase(call.actor, endpoint.baseId, undefined, true);
+      return publish(
+        initial.root.name,
+        async () => {
+          call.requestAbort?.throwIfAborted();
+          const base = await authorizedBase(call.actor, endpoint.baseId, undefined, true);
+          if (
+            base.inspection.binding?.id !== record.base_id ||
+            base.state.config.url !== record.server_url ||
+            base.root.name !== record.root
+          )
+            throw new FilesError("binding_changed", 409);
+          const source = await authorizedPath(base, endpoint.path);
+          if (!source.info.stableIds || !endpoint.itemId || source.node.id !== endpoint.itemId) throw new FilesError("source_changed", 409);
+          await writableParent(call.actor, endpoint.baseId, endpoint.path, base);
+          const destination = await writableParent(call.actor, endpoint.baseId, path, base);
+          const target = joinPath(base.inspection.candidate.path, path);
+          if (target === source.target) return entryResult(source);
+          if (target.startsWith(`${source.target}/`)) throw new FilesError("move_into_self", 409);
+          call.requestAbort?.throwIfAborted();
+          const action =
+            source.target.split("/").slice(0, -1).join("/") === target.split("/").slice(0, -1).join("/") ? "item.rename" : "item.move";
+          const node = await transferItem(call, source, destination, target, action, { move: true, onConflict: "error" });
+          await forgetMarks(source, source.relative);
+          return { base: source.inspection.summary, entry: fileEntry(source.inspection.summary, path, node) };
+        },
+        call.requestAbort ? AbortSignal.any([rootLockWait(), call.requestAbort]) : rootLockWait(),
+      );
+    },
+    recheck: async (call, activityId) => {
+      const config = await deps.readConfiguration();
+      if (config.unreadable) throw new FilesError("configuration_unreadable", 503);
+      await recoverActivity({ activityId, config, connect: deps.connect, signal: call.requestAbort });
+    },
+  });
   return {
     ...lifecycle,
     ...sharing,
     ...trashLifecycle,
+    activityRecovery: activityActions.recovery,
+    restoreActivity: activityActions.restore,
+    moveActivityBack: activityActions.moveBack,
+    recheckActivity: activityActions.recheck,
     async maintain(input: Parameters<typeof lifecycle.maintain>[0] & { now?: Date } = {}): Promise<MaintenanceResult> {
       // The history goes first and alone: its failure never stops directory work, and theirs never stops it.
       const activity = await maintainActivity(input);
@@ -1448,11 +1508,16 @@ export function createFilesService(
         ),
       );
     },
-    async restoreVersion(call: UserFilesCall, input: { baseId: string; path: string; id: string }): Promise<EntryResult> {
+    async restoreVersion(
+      call: UserFilesCall,
+      input: { baseId: string; path: string; id: string; expectedRevision?: string },
+    ): Promise<EntryResult> {
       const actor = call.actor;
       const current = await versionFile(actor, input.baseId, input.path, true);
       return publish(current.root.name, async () => {
         const fresh = await versionFile(actor, input.baseId, input.path, true);
+        if (input.expectedRevision !== undefined && fresh.node.revision !== input.expectedRevision)
+          throw new FilesError("version_restore_changed", 409);
         const node = await pendingMigration("files.version_restore", () => fresh.root.restore(fresh.target, input.id));
         return { base: fresh.inspection.summary, entry: fileEntry(fresh.inspection.summary, fresh.relative, node) };
       });

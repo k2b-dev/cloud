@@ -1,6 +1,11 @@
 import { query } from "@k2b/stdlib/solid";
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
+import type { ActivityChain, ActivityEntry, ActivityPage } from "../activity-contracts";
 import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, MarkedEntry, SharePage } from "../contracts";
+import type { ActivityFilters } from "./ActivityView";
+
+/** An old folder address whose item the reader saw move away; shown instead of "not found". */
+export type MovedSnapshot = { baseId: string; path: string; entry: ActivityEntry; chain: ActivityChain };
 
 export type WorkspaceSnapshot = {
   source: string;
@@ -12,6 +17,13 @@ export type WorkspaceSnapshot = {
   shares?: SharePage;
   editor?: EditorLaunch | null;
   marks?: MarkedEntry[];
+  /** Instant this snapshot was built; history dates count "today" and ranges from it on server and client alike. */
+  now?: string;
+  /** Authorized first Activity page for these filters; without it the view loads its own. */
+  activity?: { filters: ActivityFilters; page: ActivityPage } | null;
+  /** Authorized first history page of the selected entry in `detail`. */
+  history?: { source: string; page: ActivityPage } | null;
+  moved?: MovedSnapshot | null;
 };
 
 type Transition = {

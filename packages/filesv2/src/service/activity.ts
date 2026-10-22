@@ -234,6 +234,7 @@ type RecoveryRow = {
   final: boolean;
 };
 export async function recoverActivity(input: {
+  activityId?: string;
   now?: Date;
   connect: (config: Config) => FilesFilegate;
   config: Config | null;
@@ -241,10 +242,11 @@ export async function recoverActivity(input: {
   heartbeat?: () => Promise<void>;
 }): Promise<{ checked: number }> {
   input.signal?.throwIfAborted();
+  // Claim the existing heartbeat too: an explicit recheck may bypass backoff, but never a concurrent check.
   const rows = await sql<
     RecoveryRow[]
-  >`UPDATE filesv2.activity SET next_check_at=coalesce(${input.now ?? null}::timestamptz, now()) + CASE checks WHEN 0 THEN interval '1 minute' WHEN 1 THEN interval '5 minutes' WHEN 2 THEN interval '30 minutes' ELSE interval '6 hours' END,checks=checks+1
-    WHERE id IN (SELECT id FROM filesv2.activity WHERE state IN ('pending','unclear') AND next_check_at<=coalesce(${input.now ?? null}::timestamptz, now()) AND heartbeat_at<coalesce(${input.now ?? null}::timestamptz, now())-interval '60 seconds' ORDER BY next_check_at LIMIT 50 FOR UPDATE SKIP LOCKED)
+  >`UPDATE filesv2.activity SET next_check_at=coalesce(${input.now ?? null}::timestamptz, now()) + CASE checks WHEN 0 THEN interval '1 minute' WHEN 1 THEN interval '5 minutes' WHEN 2 THEN interval '30 minutes' ELSE interval '6 hours' END,checks=checks+1,heartbeat_at=coalesce(${input.now ?? null}::timestamptz, now())
+    WHERE id IN (SELECT id FROM filesv2.activity WHERE state IN ('pending','unclear') AND (${input.activityId ?? null}::uuid IS NULL OR id=${input.activityId ?? null}::uuid) AND (${input.activityId ?? null}::uuid IS NOT NULL OR next_check_at<=coalesce(${input.now ?? null}::timestamptz, now())) AND heartbeat_at<coalesce(${input.now ?? null}::timestamptz, now())-interval '60 seconds' ORDER BY next_check_at LIMIT 50 FOR UPDATE SKIP LOCKED)
     RETURNING *, started_at <= coalesce(${input.now ?? null}::timestamptz, now()) - interval '7 days' AS final`;
   let checked = 0;
   for (const row of rows) {

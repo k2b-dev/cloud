@@ -63,6 +63,8 @@ import FileThumbnail from "./FileThumbnail";
 import { IssueMessage } from "./feedback";
 import { apiFailure, contentLease } from "./file-preview";
 import { askReplace, type FilesUploads, type ReplacePolicy } from "./files-uploads";
+import type { HistoryActions, HistoryEnvironment } from "./history-actions";
+import { useHistoryMessages } from "./history-messages";
 import { openDestinationDialog } from "./MoveDialog";
 import { useFilesMessages } from "./messages";
 import { openNewFolderDialog } from "./NewFolderDialog";
@@ -70,8 +72,15 @@ import { systemEntry, systemEntryLabel } from "./system-files";
 import { openTemplatePicker } from "./Templates";
 import { UploadConflict, uploadFile } from "./uploads";
 import { filesUrl } from "./urls";
+import type { WorkspaceSnapshot } from "./workspace-state";
 
 type Directory = DirectoryResult & { query?: string; scope?: "folder" | "tree" };
+export type InspectorHistory = {
+  env: HistoryEnvironment;
+  initial?: WorkspaceSnapshot["history"];
+  actions: HistoryActions;
+  activityHref: (baseId: string, path: string) => string;
+};
 type Branch = { items: FileEntry[]; next: string | null; loading: boolean; error: boolean; pages?: number };
 const nameValid = (value: string | undefined) =>
   !!value && !value.includes("/") && value.trim() === value && value !== "." && value !== "..";
@@ -103,6 +112,10 @@ export default function Browser(props: {
   onOpenTrash?: () => void;
   onOpenOverview?: () => void;
   onSearch?: (query: string | null) => void;
+  /** Offered when an ordinary search finds nothing: the same words in the history, which knows old names and places. */
+  onSearchHistory?: (query: string) => void;
+  /** History in the detail: request context, SSR first page and existing actions; absent hides it. */
+  history?: InspectorHistory;
   onBrowseChange?: (options: BrowseOptions) => void;
   onChanged?: (selectPath?: string | null) => void | Promise<void>;
   onShare?: (paths: readonly string[]) => void;
@@ -116,6 +129,7 @@ export default function Browser(props: {
 }) {
   const t = useFilesMessages();
   const b = useBrowserMessages();
+  const h = useHistoryMessages();
   const locale = useLocale();
   const assets = useAssetMessages();
   const baseId = () => props.directory.base.id;
@@ -1450,13 +1464,41 @@ export default function Browser(props: {
           <Show
             when={props.directory.items.length || (!searching() && (folder() || props.onOpenTrash || props.onOpenOverview))}
             fallback={
-              <Placeholder
-                class="flex-1"
-                variant="panel"
-                icon={searching() ? "ti ti-search-off" : "ti ti-folder"}
-                title={searching() ? b().noResultsTitle : b().emptyTitle}
-                description={searching() ? b().noResultsDescription : b().emptyDescription}
-              />
+              <Show
+                when={searching() && props.onSearchHistory}
+                fallback={
+                  <Placeholder
+                    class="flex-1"
+                    variant="panel"
+                    icon={searching() ? "ti ti-search-off" : "ti ti-folder"}
+                    title={searching() ? b().noResultsTitle : b().emptyTitle}
+                    description={searching() ? b().noResultsDescription : b().emptyDescription}
+                  />
+                }
+              >
+                {(searchHistory) => (
+                  <Placeholder
+                    class="flex-1"
+                    variant="panel"
+                    state="no-results"
+                    icon="ti ti-search"
+                    title={h().emptySearchTitle.replace("{query}", props.directory.query ?? "")}
+                    description={h().emptySearchText}
+                    action={
+                      <div class="flex flex-wrap justify-center gap-2">
+                        <Button variant="primary" onClick={() => searchHistory()(props.directory.query ?? "")}>
+                          <i class="ti ti-history" aria-hidden="true" />
+                          {h().searchInHistory}
+                        </Button>
+                        <Button variant="secondary" onClick={() => props.onSearch?.(null)}>
+                          <i class="ti ti-x" aria-hidden="true" />
+                          {h().clearSearch}
+                        </Button>
+                      </div>
+                    }
+                  />
+                )}
+              </Show>
             }
           >
             <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={contextItems()} label={t().actions} disabled={busy()}>
@@ -1594,7 +1636,7 @@ export default function Browser(props: {
           </nav>
         </div>
       </AppWorkspace.Main>
-      <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md">
+      <AppWorkspace.Detail id="filesv2-inspector" open={detailOpen()} onClose={closeInspector} width="md" phone="page">
         <Show when={detailOpen()}>
           <FileInspector
             base={props.directory.base}
@@ -1618,6 +1660,7 @@ export default function Browser(props: {
             onShareInbox={props.onShareInbox ? (item) => props.onShareInbox?.(item.path) : undefined}
             onChanged={refresh}
             onMarksChanged={props.onMarksChanged}
+            history={props.history}
           />
         </Show>
       </AppWorkspace.Detail>

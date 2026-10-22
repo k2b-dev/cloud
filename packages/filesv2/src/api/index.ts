@@ -55,10 +55,12 @@ import {
   VersionCommentSchema,
   VersionRefSchema,
   VersionRestoreAsSchema,
+  VersionRestoreSchema,
 } from "../contracts";
 import { isMarkdown } from "../document-assets";
 import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
+import { createActivityActionsApi } from "./activity-actions";
 import { apiError, describeError } from "./api-error";
 import { inlinePdfApi } from "./inline-pdf";
 import { errorMessage } from "./messages";
@@ -85,6 +87,15 @@ const api = new Hono<AuthContext>()
   })
   .route("/templates", templateApi)
   .route("/", inlinePdfApi)
+  .route(
+    "/",
+    createActivityActionsApi({
+      recovery: filesService.activityRecovery,
+      restore: filesService.restoreActivity,
+      moveBack: filesService.moveActivityBack,
+      recheck: filesService.recheckActivity,
+    }),
+  )
   .post(
     "/bases/:baseId/markdown",
     middleware.openapi({ summary: "Create an empty Markdown document", ...requiresAuth }),
@@ -283,7 +294,7 @@ const api = new Hono<AuthContext>()
   .post(
     "/bases/:baseId/versions/restore",
     middleware.openapi({ summary: "Restore a version in place", ...requiresAuth }),
-    v("json", VersionRefSchema),
+    v("json", VersionRestoreSchema),
     async (c) =>
       respond(c, ok(await filesService.restoreVersion(requestCall(c), { baseId: c.req.param("baseId") ?? "", ...c.req.valid("json") }))),
   )

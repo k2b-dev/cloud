@@ -511,11 +511,21 @@ describe("Filesv2 progressive navigation", () => {
     ).toBe("Alice");
     expect(home.closest("[title]")?.getAttribute("title")).toBe("Personal · Alice (Cloud)");
     expect(link("Alice")).toBe(home);
-    // Search is an ordinary footer item with a visible label, directly above Recent; the icon grid is gone.
+    // Search is an ordinary footer item with a visible label; the icon grid is gone. Places across all storage, Activity
+    // among them, sit above the storage section, as approved for the history.
     expect(dom.root.querySelector(".k2b-app-workspace__sidebar-icon-grid")).toBeNull();
     const footer = dom.root.querySelector(".k2b-app-workspace__sidebar-footer")!;
     const footerLabels = [...footer.querySelectorAll<HTMLElement>("button, a")].map((item) => item.textContent?.trim());
-    expect(footerLabels.slice(0, 2)).toEqual(["Search", "Recent"]);
+    expect(footerLabels).toEqual(["Search"]);
+    const places = dom.root.querySelector(".k2b-app-workspace__sidebar-section")!;
+    expect([...places.querySelectorAll<HTMLElement>("button, a")].map((item) => item.textContent?.trim())).toEqual([
+      "All storage",
+      "Recent",
+      "Favorites",
+      "Shares",
+      "Activity",
+    ]);
+    expect(link("Activity").getAttribute("href")).toBe("/app/filesv2?view=activity&base=home");
     const search = footer.querySelector<HTMLButtonElement>("button")!;
     expect(search.getAttribute("title")).toBe("Search files");
     search.click();

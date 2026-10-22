@@ -32,6 +32,10 @@ const messages: Record<string, [string, string]> = {
     "Filegate has not confirmed this transfer. Review the operation before retrying.",
     "Filegate hat diese Übertragung nicht bestätigt. Prüfe den Vorgang vor einem neuen Versuch.",
   ],
+  version_restore_changed: [
+    "The file changed since this view opened. Reload its current version before restoring.",
+    "Die Datei wurde seit dem Öffnen dieser Ansicht geändert. Lade den aktuellen Stand vor dem Wiederherstellen neu.",
+  ],
   write_conflict: [
     "The file changed while it was being saved. Reload its current version before saving again.",
     "Die Datei wurde während des Speicherns geändert. Lade den aktuellen Stand vor einem neuen Speicherversuch.",

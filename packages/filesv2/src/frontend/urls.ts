@@ -1,5 +1,7 @@
+import { HistoryAction } from "../activity-contracts";
 import type { BrowseOptions } from "../contracts";
 import { parseStableEntryRefId } from "../resource-ref";
+import type { ActivityFilters, ActivityWhen } from "./ActivityView";
 export function filesUrl(
   baseId?: string,
   path = "",
@@ -46,4 +48,53 @@ export const showsOverview = (params: URLSearchParams, storageCount: number) =>
   storageCount > 1 &&
   !["base", "path", "file"].some((key) => params.get(key)) &&
   !params.get("q")?.trim() &&
-  !["trash", "shares", "recent", "favorites"].includes(params.get("view") ?? "");
+  !["trash", "shares", "recent", "favorites", "activity"].includes(params.get("view") ?? "");
+
+const WHEN: readonly ActivityWhen[] = ["today", "7", "30", "365"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The Activity address: `base`, `path`, `who`, `what`, `when` and `q` keep the filters across reload, back and links. */
+export function activityUrl(filters: ActivityFilters = {}) {
+  const query = new URLSearchParams({ view: "activity" });
+  if (filters.baseId) query.set("base", filters.baseId);
+  if (filters.baseId && filters.path) query.set("path", filters.path);
+  if (filters.actor) query.set("who", filters.actor);
+  if (filters.action) query.set("what", filters.action);
+  if (filters.when) query.set("when", filters.when);
+  if (filters.q) query.set("q", filters.q);
+  return `/app/filesv2?${query}`;
+}
+
+/**
+ * Reads the Activity filters of an address with the reader's own bounds. `null` means a value the reader would
+ * reject, so the page answers 400 instead of silently showing a different filter.
+ */
+export function parseActivityFilters(params: URLSearchParams): ActivityFilters | null {
+  const filters: ActivityFilters = {};
+  const base = params.get("base") ?? "";
+  const path = params.get("path") ?? "";
+  const who = params.get("who") ?? "";
+  const what = params.get("what") ?? "";
+  const when = params.get("when") ?? "";
+  const q = params.get("q")?.trim() ?? "";
+  if (base.length > 256 || path.length > 4096 || q.length > 4096) return null;
+  if (path && (!base || path.startsWith("/") || path.split("/").some((part) => !part || part === "." || part === ".."))) return null;
+  if (base) filters.baseId = base;
+  if (path) filters.path = path;
+  if (who) {
+    if (!UUID.test(who)) return null;
+    filters.actor = who;
+  }
+  if (what) {
+    const action = HistoryAction.safeParse(what);
+    if (!action.success) return null;
+    filters.action = action.data;
+  }
+  if (when) {
+    const range = WHEN.find((value) => value === when);
+    if (!range) return null;
+    filters.when = range;
+  }
+  if (q) filters.q = q;
+  return filters;
+}

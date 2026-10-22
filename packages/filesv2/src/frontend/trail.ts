@@ -38,7 +38,7 @@ export const filesTitle = (
 export const snapshotTitle = (
   snapshot: Pick<WorkspaceSnapshot, "source" | "directory" | "editor" | "bases">,
   appName: string,
-  messages: { personal: string; allStorage: string },
+  messages: { personal: string; allStorage: string; activity?: string },
   locale: string,
 ): LayoutBreadcrumb[] => {
   const params = new URL(snapshot.source, "https://files.invalid").searchParams;
@@ -53,6 +53,7 @@ export const snapshotTitle = (
       { folder: path.split("/").slice(0, -1).join("/"), document: { name: editor.entry.name, path } },
     );
   }
+  if (view === "activity" && messages.activity) return [{ title: appName, href: filesUrl() }, { title: messages.activity }];
   const directory = snapshot.directory;
   if (view || !directory) return [{ title: appName }];
   return filesTitle(appName, { id: directory.base.id, label: baseLabel(directory.base, messages, locale) }, { folder: directory.path });

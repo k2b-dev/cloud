@@ -278,6 +278,68 @@ API use the `activityRetentionDays` configuration key. Pending entries are
 kept until their outcome is known. See
 [Files history](/en/docs/operations/files-history) for operators.
 
+### Find changes in Activity
+
+**Activity** in the sidebar lists visible history across storage, newest
+first by day. Its filters live in the address
+(`/app/filesv2?view=activity&base=…&who=…&what=…&when=…&q=…`), so reload,
+back, and links keep them; an invalid value answers `400` instead of showing
+another filter. From a storage location, Activity opens filtered to it. The
+server renders the first page with the same request the browser uses for
+later pages. An empty page with a next cursor offers older entries and claims
+no absence. A failed load keeps the filters beside **Try again**.
+
+A search in Activity matches names and old paths. Its top result shows where
+the item is now, from the movement chain: confirmed by stable identity, or
+marked probable with path evidence only. **Go there** resolves the item again
+through `/api/filesv2/entries/:id` or the entry endpoint, so a stale entry
+never opens a place the person can no longer read. An empty ordinary search
+offers **Search in history** with the same words. An old folder address whose
+folder the history saw move shows **This folder has moved** instead of
+"Not found"; a move of an ancestor folder alone does not qualify.
+
+Recovery actions of a vanished item come from
+`GET /api/filesv2/activity/:activityId/recovery`, loaded beside the chain:
+**Restore** (`POST …/restore`, with an optional new name after a
+`path_conflict`), **Move back** (`POST …/move-back`, only for a verified stable
+endpoint in the same storage), **Show in trash**, **Open old place**, and
+**Check now** (`POST …/recheck`) for unclear entries. A recorded snapshot never
+grants an action; every request checks rights, identity, and journals again,
+and a `403` or `409` stays visible beside the action.
+
+**Message …** opens Chat's **New chat** form with the recorded person selected,
+after Chat checks their current availability and your guest restrictions. You
+decide whether to start a chat or choose an existing one; opening the form
+creates no chat and sends no message. If Chat cannot open, Files shows an error;
+try the action again when Chat is available. Cancel stays in Chat; browser Back
+returns to the Files view and its history filters.
+
+The details panel lists the four newest entries of the selected item below
+its versions, then older entries and **All in Activity**, filtered to that
+item. Rows name version numbers for entries that carry a version ID, counted
+over the versions the list holds; the current content is the next number. An
+overwrite or editor save whose new revision is the file's current revision
+offers **Restore version N** for the newest retained version, through the
+existing version restore. A revision is never treated as a version ID. For public links the person created, the
+panel shows page views, released downloads, the period's page networks when
+exact, networks by use, and access over time with older periods on request,
+for the last 30 days, next to **Revoke link**.
+
+### Read an execution record
+
+**View run** opens **Execution in Files** for that history entry. It shows
+the recorded action, its Files result, who acted and on whose behalf, the
+channel, time, and the before and after paths you may read. **Source context
+and references** holds the available request and invocation references.
+
+This page covers one recorded Files effect. It does not establish the outcome
+of the whole originating run, and the source conversation is not available
+through this record, including when someone else performed the action.
+Files checks your current history access whenever the page loads. Missing or
+inaccessible records disclose no details; a loading failure offers **Try again**.
+Reload opens the same record, and browser Back returns to the preceding Files
+view with its URL filters. Opening the record starts no writes or rechecks.
+
 ## Public shares
 
 Both download links and upload inboxes support an optional password of 8–256
