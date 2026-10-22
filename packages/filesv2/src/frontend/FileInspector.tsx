@@ -268,10 +268,12 @@ export default function FileInspector(props: {
                   const page = await response.json();
                   const paths = new Set(page.items.map((entry) => entry.path));
                   if (page.readme) paths.add(page.readme.path);
-                  // One bounded page only. A cursor means this is a lower bound, never a total.
+                  // Reuse one listing response, including its README lookup; do not follow child-page cursors.
+                  // A cursor means this is a lower bound, never a total.
                   return { key, count: paths.size, complete: !page.next };
                 },
               });
+              let contentsStatus: HTMLSpanElement | undefined;
               const contentsLabel = () => {
                 if (contents.error()) return h().folderContentsFailed;
                 const value = contents.data();
@@ -301,11 +303,18 @@ export default function FileInspector(props: {
                         {kindLabel(item())}
                         <Show when={item().directory}>
                           {" · "}
-                          <span class="filesv2-inspector-count" role={contents.error() ? "alert" : "status"}>
+                          <span ref={contentsStatus} class="filesv2-inspector-count" role="status" aria-atomic="true" tabIndex={-1}>
                             {contentsLabel()}
                           </span>
                           <Show when={contents.error()}>
-                            <Button size="xs" variant="text" onClick={() => void contents.refresh()}>
+                            <Button
+                              size="xs"
+                              variant="text"
+                              onClick={() => {
+                                contentsStatus?.focus();
+                                void contents.refresh();
+                              }}
+                            >
                               {t().retry}
                             </Button>
                           </Show>
@@ -836,7 +845,7 @@ function VersionsSection(props: {
     <DetailPanel.Group label={t().versions}>
       <DetailPanel.Section
         title={t().versions}
-        icon="ti ti-versions"
+        icon={props.versions.state() === "ready" && props.versions.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-versions"}
         tone="neutral"
         count={props.versions.state() === "ready" ? items().length + 1 : undefined}
       >
@@ -853,11 +862,9 @@ function VersionsSection(props: {
             }
           />
         </Show>
-        <Show when={props.versions.refreshing()}>
-          <p class="text-xs text-dimmed" role="status">
-            {t().loadingDetails}
-          </p>
-        </Show>
+        <span class="sr-only" role="status">
+          {props.versions.state() === "ready" && props.versions.refreshing() ? t().loadingDetails : ""}
+        </span>
         <Switch>
           <Match when={props.versions.state() === "off"}>
             <p class="text-xs text-dimmed">{t().versionsUnavailable}</p>

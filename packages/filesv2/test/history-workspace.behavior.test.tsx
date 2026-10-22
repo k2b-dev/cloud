@@ -449,13 +449,15 @@ describe("Files history in the workspace", () => {
       pending("entries").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
       await flush();
       expect(count().textContent).toBe("Contents not loaded.");
-      expect(count().getAttribute("role")).toBe("alert");
+      expect(count().getAttribute("role")).toBe("status");
       button(inspector, "Try again")!.click();
       await flush();
+      expect(dom.document.activeElement).toBe(count());
+      expect(count().getAttribute("role")).toBe("status");
       pending("entries").resolve(Response.json({ base: home, path: folder.path, items: [first, readme], readme, next }));
       await flush();
       expect(count().textContent).toBe(next ? "at least 2 items" : "2 items");
-      // The README is already listed; it is not counted twice. A next cursor never starts an unbounded count scan.
+      // The response includes the listing endpoint's README lookup; it is not counted twice. No child-page cursor is followed.
       expect(apiRequests.filter((request) => request.kind === "entries")).toHaveLength(2);
       expect(apiRequests.some((request) => request.kind === "versions")).toBe(false);
     });
