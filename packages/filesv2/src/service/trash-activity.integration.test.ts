@@ -941,7 +941,7 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
           () => guarded.mkdir(`${home}/unrelated`),
           () => guarded.put(`${home}/unrelated.txt`, new Blob([content])),
           () => effect(facade.root("freeipa")),
-          () => effect(connectFilegate({ ...config, url: `${config.url}/other-server` }, tracked.transport).root("cloud")),
+          () => effect(connectFilegate({ ...config, url: "http://other-filegate.example.test" }, tracked.transport).root("cloud")),
         ];
         if (phase !== "purge")
           wrong.push(

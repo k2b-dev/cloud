@@ -393,7 +393,7 @@ suite("version activity with real Filegate", () => {
           () => mutate(guarded, file.target, `${file.version.id}-other`),
           () => mutate(guarded, `${file.target}-other`),
           () => mutate(facade.root("freeipa")),
-          () => mutate(connectFilegate({ ...config, url: `${config.url}/other-server` }, tracked.transport).root("cloud")),
+          () => mutate(connectFilegate({ ...config, url: "http://other-filegate.example.test" }, tracked.transport).root("cloud")),
           () => guarded.updateVersion(file.target, file.version.id, { pinned: false }),
           () =>
             operation === "restore" ? guarded.deleteVersion(file.target, file.version.id) : guarded.restore(file.target, file.version.id),
