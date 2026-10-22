@@ -6,7 +6,7 @@ import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { createConfig } from "@k2b/ssr";
 import { ok } from "@k2b/stdlib";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import { z } from "zod";
 import { launchBrowser } from "../../../ui/test/browser";
 import type { startConversationPanelFixture } from "./ChatPanel.browser-fixture";
@@ -14,6 +14,14 @@ import { nora, viewer } from "./ChatWorkspace.browser-fixture";
 
 let fixture: Awaited<ReturnType<typeof startConversationPanelFixture>>;
 let browser: Browser;
+const verifyPanelGeometry = async (page: Page, width: number) => {
+  const box = await page.locator("#cloud-panel").boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBe(width >= 1280 ? 416 : width >= 768 ? 344 : width);
+  if (width < 768) expect(box!.height).toBe(522);
+  expect(box!.x >= 0 && box!.x + box!.width <= width).toBe(true);
+  console.info("panel geometry", JSON.stringify({ viewport: width, ...box }));
+};
 const root = mkdtempSync(resolve(tmpdir(), "conversation-panel-ssr-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
@@ -31,7 +39,12 @@ for (const width of [1440, 390]) {
   test(`Chat reads and sends in the real panel, restores its draft and opens full view at ${width}px`, async () => {
     fixture.backend.reset();
     const chat = fixture.backend.addChat({ members: [viewer, nora], name: "Project planning", count: 3, end: fixture.backend.now() });
-    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
+    const context = await browser.newContext({
+      viewport: { width, height: 900 },
+      reducedMotion: "reduce",
+      locale: "en",
+      timezoneId: "UTC",
+    });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     try {
@@ -57,6 +70,23 @@ for (const width of [1440, 390]) {
         mkdirSync(process.env.PANEL_SCREENSHOTS, { recursive: true });
         await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `chat-result-light-${width}.png`) });
       }
+      await verifyPanelGeometry(page, width);
+      if (width === 1440) {
+        await page.setViewportSize({ width: 900, height: 900 });
+        await verifyPanelGeometry(page, 900);
+        expect(await composer.inputValue()).toBe("Unsent draft for this conversation");
+        if (process.env.PANEL_SCREENSHOTS)
+          await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, "chat-result-light-900.png"), animations: "disabled" });
+        await page.setViewportSize({ width, height: 900 });
+      }
+      await page.evaluate(() => {
+        document.documentElement.classList.remove("light");
+        document.documentElement.classList.add("dark");
+        window.dispatchEvent(new Event("cloud:theme-preference"));
+      });
+      await panel.locator("html.dark").waitFor();
+      if (process.env.PANEL_SCREENSHOTS)
+        await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `chat-result-dark-${width}.png`), animations: "disabled" });
       await panel.getByRole("link", { name: "Open full view", exact: true }).click();
       await page.waitForURL(`**/app/chat/c/${chat}`);
       await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
@@ -72,7 +102,12 @@ for (const width of [1440, 390]) {
   test(`Assistant saves a new panel draft, resumes it and resolves a lost send at ${width}px`, async () => {
     fixture.assistant.reset();
     fixture.allowContext(width === 1440);
-    const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
+    const context = await browser.newContext({
+      viewport: { width, height: 900 },
+      reducedMotion: "reduce",
+      locale: "en",
+      timezoneId: "UTC",
+    });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
     try {
@@ -156,6 +191,15 @@ for (const width of [1440, 390]) {
       if (process.env.PANEL_SCREENSHOTS) {
         mkdirSync(process.env.PANEL_SCREENSHOTS, { recursive: true });
         await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `assistant-result-light-${width}.png`) });
+      }
+      await verifyPanelGeometry(page, width);
+      if (width === 1440) {
+        await page.setViewportSize({ width: 900, height: 900 });
+        await verifyPanelGeometry(page, 900);
+        expect(await composer.inputValue()).toBe("Next unsent draft");
+        if (process.env.PANEL_SCREENSHOTS)
+          await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, "assistant-result-light-900.png"), animations: "disabled" });
+        await page.setViewportSize({ width, height: 900 });
       }
       await page.evaluate(() => {
         document.documentElement.classList.remove("light");
