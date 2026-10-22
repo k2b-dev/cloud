@@ -98,33 +98,29 @@ export const createGeoMapService = (
           void reader.cancel().catch(() => {});
         };
         signal.addEventListener("abort", abort, { once: true });
-        const chunks: Uint8Array[] = [];
+        const buffer = new Uint8Array(GEO_MAX_TILE_BYTES);
         let size = 0;
         try {
           if (signal.aborted) abort();
           while (true) {
             const next = await reader.read();
             if (next.done) break;
-            size += next.value.byteLength;
-            if (size > GEO_MAX_TILE_BYTES) {
+            if (size + next.value.byteLength > GEO_MAX_TILE_BYTES) {
               abort();
               throw new GeoProviderError("GEO_PROVIDER_FAILED", charge);
             }
-            chunks.push(next.value);
+            buffer.set(next.value, size);
+            size += next.value.byteLength;
           }
           signal.throwIfAborted();
         } finally {
           signal.removeEventListener("abort", abort);
           reader.releaseLock();
         }
-        const bytes = new Uint8Array(size);
-        let offset = 0;
-        for (const chunk of chunks) {
-          bytes.set(chunk, offset);
-          offset += chunk.byteLength;
-        }
+        const bytes = buffer.subarray(0, size);
         // Never forward an echoed credential, including one spanning streamed chunks.
-        if (Buffer.from(bytes).includes(Buffer.from(settings.apiKey))) throw new GeoProviderError("GEO_PROVIDER_FAILED", charge);
+        if (Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).includes(Buffer.from(settings.apiKey)))
+          throw new GeoProviderError("GEO_PROVIDER_FAILED", charge);
         return bytes;
       } catch (cause) {
         if (reservation && charge === "none") {

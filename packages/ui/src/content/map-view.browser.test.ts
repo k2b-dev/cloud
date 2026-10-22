@@ -812,15 +812,15 @@ test("map code that no longer loads offers a page reload, which recovers", async
   }
 });
 
-test("a failing tile while the map loads keeps the map", async () => {
+test("a failing tile retains pins with a visible retry instead of reporting ready", async () => {
   failedTileRequests = 0;
   const page = await browser.newPage({ reducedMotion: "reduce" });
   try {
     await page.goto(`${origin}/?tilefail`);
-    await ready(page);
+    await page.waitForSelector('.k2b-map-view[data-state="error"]');
     expect(failedTileRequests).toBeGreaterThan(0);
-    expect(await page.locator(".k2b-map-view").getAttribute("data-state")).toBe("ready");
-    expect(await page.getByRole("button", { name: "Zoom in" }).isEnabled()).toBe(true);
+    expect(await page.getByRole("button", { name: "Try again" }).isVisible()).toBe(true);
+    expect(await page.locator(".k2b-map-view__pin").count()).toBeGreaterThan(0);
   } finally {
     await page.close();
   }

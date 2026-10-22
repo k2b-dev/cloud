@@ -79,3 +79,10 @@ test("invalid tile paths do not reach the paid service", async () => {
     expect((await app.request(path)).status).toBe(400);
   expect(tile).not.toHaveBeenCalled();
 });
+
+test("canonical locales returned by map.style are accepted by the style route", async () => {
+  const response = await createGeoRoutes(authenticate, service).request("/style?theme=light&locale=fr-FR");
+  expect(response.status).toBe(200);
+  expect(JSON.stringify(await response.json())).toContain("name:fr");
+  expect((await createGeoRoutes(authenticate, service).request("/style?locale=%2F..%2F")).status).toBe(400);
+});

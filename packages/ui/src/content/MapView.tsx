@@ -43,6 +43,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   const notice = children(() => props.notice);
   const empty = children(() => props.empty);
   const [state, setState] = createSignal<MapState>("static");
+  createEffect(() => props.onStateChange?.(state()));
   const [dark, setDark] = createSignal(false);
   const [boxStyle, setBoxStyle] = createSignal<JSX.CSSProperties>();
   const [liveScale, setLiveScale] = createSignal<MapScale>();
@@ -193,9 +194,8 @@ export function MapView(props: MapViewProps): JSX.Element {
       });
       map = instance;
       instance.on("error", (event) => {
-        // Tile and source errors name their source and leave the map usable; a style that does not load does not.
-        const styleFailed = !("sourceId" in event) && !("tile" in event);
-        if (styleFailed && (state() === "loading" || replacingStyle)) fail();
+        // A missing paid resource must remain visible and recoverable, including failures after initial load.
+        if ("sourceId" in event || "tile" in event || state() === "loading" || replacingStyle) fail();
       });
       instance.on("style.load", () => {
         replacingStyle = false;

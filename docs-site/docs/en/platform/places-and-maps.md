@@ -245,3 +245,8 @@ tile bodies. The map uses vector zooms 0–14 and scales the last level above
 that. Authentication and read scope apply to every asset route. Failed
 requests are not cached, and ambiguous transport failures retain the
 reserved credit.
+
+Tile and glyph failures retain pins with **Try again**. `CloudMap` refreshes
+free availability after a failure and shows the person/day or Cloud/month
+reset time when a budget is exhausted. Core bundles its glyph files as server
+assets; production images need no runtime UI package or external font host.
