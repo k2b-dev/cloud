@@ -147,6 +147,12 @@ suiteFor("database", "valkey")("Core geo administration", () => {
     // A later write outside this page has no audited person: the date stays, the name goes.
     await sql`UPDATE settings.entries SET updated_at = now() + interval '1 minute' WHERE key = 'geo.plan'`;
     expect((await geo.status(admin)).budget.changedBy).toBeNull();
+    // A write that committed later but started earlier carries an older stamp; the saved rows no longer agree, so
+    // the page names nobody instead of the person whose values were partly overwritten.
+    await geo.saveBudget(admin, { plan: "api10", customRps: 5, customDailyCredits: 3000, monthlyCredits: 300000, personDailyCredits: 500 });
+    expect((await geo.status(admin)).budget.changedBy?.name).toBe("Lea Schulz");
+    await sql`UPDATE settings.entries SET updated_at = updated_at - interval '1 second' WHERE key = 'geo.plan'`;
+    expect((await geo.status(admin)).budget.changedBy).toBeNull();
   });
 
   test("saving the budget replaces an unreadable stored value", async () => {
@@ -181,6 +187,30 @@ suiteFor("database", "valkey")("Core geo administration", () => {
     const [event] = await sql<{ metadata: { resets?: string[] } }[]>`
       SELECT metadata FROM audit.events WHERE action = 'core.geo.budget_changed' ORDER BY id DESC LIMIT 1`;
     expect(event?.metadata.resets).toEqual(["custom_rps"]);
+    // A readable hidden value stays as it is.
+    await geo.saveBudget(admin, { plan: "custom", customRps: 7, customDailyCredits: 4000, monthlyCredits: 90000, personDailyCredits: 300 });
+    const kept = await geo.saveBudget(admin, {
+      plan: "free",
+      customRps: null,
+      customDailyCredits: null,
+      monthlyCredits: 90000,
+      personDailyCredits: 300,
+    });
+    expect(kept.budget).toMatchObject({ plan: "free", customRps: 7, customDailyCredits: 4000, unreadable: [] });
+  });
+
+  test("an unreadable plan is reported and replaced by the next save", async () => {
+    await sql`INSERT INTO settings.entries (key, value) VALUES ('geo.plan', 'broken-ciphertext')`;
+    const geo = service();
+    expect((await geo.status(admin)).budget.unreadable).toEqual(["plan"]);
+    const saved = await geo.saveBudget(admin, {
+      plan: "api25",
+      customRps: 5,
+      customDailyCredits: 3000,
+      monthlyCredits: 90000,
+      personDailyCredits: 300,
+    });
+    expect(saved.budget).toMatchObject({ plan: "api25", unreadable: [] });
   });
 
   test("usage reports this month, today against the plan allowance, shares and people at their limit", async () => {

@@ -197,6 +197,8 @@ export default function PlacesAndMaps(props: { initial: PlacesAndMapsInitial; do
     const stored = after?.budget;
     if (
       stored &&
+      // A value this installation cannot read shows its default; it would only look like the submitted one.
+      stored.unreadable.length === 0 &&
       stored.plan === input.plan &&
       stored.monthlyCredits === input.monthlyCredits &&
       stored.personDailyCredits === input.personDailyCredits &&

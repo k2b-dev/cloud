@@ -15,6 +15,8 @@ import {
 import { audit } from "../audit";
 import { toPgTextArray } from "../postgres";
 import * as settings from "../settings";
+import { decryptValue } from "../settings/crypto";
+import { SETTINGS_MAP, validateSettingValue } from "../settings/defaults";
 import { assertGeoBudgetPair } from "../settings/geo-budget";
 import { GeoapifyAdapter, GeoProviderError } from "./geoapify";
 import { geoPeriods } from "./ledger";
@@ -49,6 +51,14 @@ export class GeoAdminError extends Error {
 const requireAdmin = (actor: Actor) => {
   if (!actor.roles.includes("admin")) throw new HTTPException(403, { message: "Administrator access required." });
 };
+const readableSetting = async (key: string, ciphertext: string): Promise<boolean> => {
+  const def = SETTINGS_MAP.get(key);
+  try {
+    return !!def && validateSettingValue(def, await decryptValue(ciphertext)).ok;
+  } catch {
+    return false;
+  }
+};
 const invalidate = async (keys: readonly string[]) => {
   try {
     await settings.invalidateSettingsCache(keys);
@@ -78,7 +88,7 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
 
   /**
    * The person behind the stored value: the audit event written in the same transaction as the newest of these rows
-   * carries that transaction's exact timestamp. A later write without an audited person names nobody.
+   * carries that transaction's exact timestamp, and so does every row that event wrote.
    */
   const changedBy = async (action: string, keys: readonly string[]): Promise<GeoAdminPerson | null> => {
     const [row] = await db<{ actor_user_id: string; name: string | null }[]>`
@@ -86,6 +96,11 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
       FROM audit.events e LEFT JOIN auth.users u ON u.id = e.actor_user_id
       WHERE e.action = ${action} AND e.actor_user_id IS NOT NULL
         AND e.created_at = (SELECT max(updated_at) FROM settings.entries WHERE key = ANY(${toPgTextArray([...keys])}::text[]))
+        -- Every row this event wrote must still carry its stamp; a later write by another transaction names nobody.
+        AND NOT EXISTS (
+          SELECT 1 FROM settings.entries s WHERE s.key = ANY(${toPgTextArray([...keys])}::text[])
+            AND (e.metadata -> substr(s.key, 5)) IS NOT NULL AND s.updated_at <> e.created_at
+        )
       ORDER BY e.id DESC LIMIT 1`;
     return row ? { id: row.actor_user_id, name: row.name ?? row.actor_user_id } : null;
   };
@@ -114,7 +129,9 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
         customDailyCredits: config.customDailyCredits,
         monthlyCredits: config.monthlyCredits,
         personDailyCredits: config.personDailyCredits,
-        unreadable: BUDGET_FIELDS.flatMap(([field, name]) => (states.get(name)?.stored === "unreadable" ? [field] : [])),
+        unreadable: [["plan", PLAN_KEY] as const, ...BUDGET_FIELDS].flatMap(([field, name]) =>
+          states.get(name)?.stored === "unreadable" ? [field] : [],
+        ),
         changedAt: budgetAt?.toISOString() ?? null,
         changedBy: budgetAt ? budgetBy : null,
       },
@@ -207,14 +224,21 @@ export const createGeoAdmin = (options: { db?: SQL; verify?: Verify; now?: () =>
       };
       // Geo stays off while any geo setting is unreadable. A standard plan hides the custom fields, so saving it
       // resets their unreadable values to the defaults instead of leaving geo off behind a field nobody sees.
-      const states = await settings.readStates(BUDGET_FIELDS.map(([, name]) => name));
-      const resets = BUDGET_FIELDS.flatMap(([, name]) => (!(name in updates) && states.get(name)?.stored === "unreadable" ? [name] : []));
+      const inactive = BUDGET_FIELDS.flatMap(([, name]) => (name in updates ? [] : [name]));
+      const resets: string[] = [];
       await db.begin(async (tx) => {
         // Same lock and final-pair rule as every other writer of these settings.
-        await assertGeoBudgetPair(tx, updates, resets);
+        await assertGeoBudgetPair(tx, updates, []);
         // Saving the form is the explicit replacement of a value this installation cannot read.
         for (const [name, value] of Object.entries(updates)) await settings.set(name, value, tx, { replaceUnreadable: true });
-        for (const name of resets) await settings.remove(name, tx);
+        // Decided under the row lock: a value another writer repaired meanwhile stays.
+        const rows = await tx<{ key: string; value: string }[]>`
+          SELECT key, value FROM settings.entries WHERE key = ANY(${toPgTextArray(inactive)}::text[]) FOR UPDATE`;
+        for (const row of rows) {
+          if (await readableSetting(row.key, row.value)) continue;
+          await tx`DELETE FROM settings.entries WHERE key = ${row.key}`;
+          resets.push(row.key);
+        }
         await audit.record(
           {
             action: BUDGET_ACTION,

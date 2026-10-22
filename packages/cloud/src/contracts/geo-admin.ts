@@ -33,8 +33,8 @@ export type GeoAdminBudget = {
   customDailyCredits: number;
   monthlyCredits: number;
   personDailyCredits: number;
-  /** Budget fields whose stored value cannot be read; saving the form replaces them. */
-  unreadable: GeoBudgetField[];
+  /** Budget settings whose stored value cannot be read; saving the form replaces them. */
+  unreadable: Array<GeoBudgetField | "plan">;
   changedAt: string | null;
   changedBy: GeoAdminPerson | null;
 };
