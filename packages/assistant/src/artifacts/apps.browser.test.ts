@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { chromium, type Page } from "playwright";
+import type { Page } from "playwright";
+import { launchBrowser } from "../../../ui/test/browser";
 import { appRuntimeRoute, htmlApp } from "./html/test-assets";
 
 const frame = (page: Page) => page.frameLocator("iframe.studio-app-frame").frameLocator("iframe");
@@ -114,7 +115,7 @@ test("Studio lists open details with all management actions; publication and ver
       );
     },
   });
-  const browser = await chromium.launch({ channel: "chrome", headless: true });
+  const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1300, height: 850 } });
     page.setDefaultTimeout(15000);
