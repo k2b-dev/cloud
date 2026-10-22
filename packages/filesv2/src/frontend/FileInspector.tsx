@@ -445,7 +445,7 @@ export default function FileInspector(props: {
                             term: f().modified,
                             description: (
                               <>
-                                <Format.DateTime value={item().modified} />
+                                <Format.DateTime value={item().modified} timeZone={props.history?.env.timeZone} />
                                 <Show when={currentAuthor()}>{(name) => <span>, {name()}</span>}</Show>
                               </>
                             ),
