@@ -12,7 +12,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, For, type JSX, Match, Show, Switch } from "solid-js";
-import type { ActivityChain, ActivityEntry } from "../activity-contracts";
+import type { ActivityBatchContext, ActivityChain, ActivityEntry } from "../activity-contracts";
 import { HistoryAvatar, HistoryRow, MetaLine, MoreFooter, restoreFromTrash, Sentence, SkeletonRows, useRowAction } from "./ActivityView";
 import {
   actorOf,
@@ -30,6 +30,7 @@ import {
   hopSentence,
   isDirectory,
   type MissingCase,
+  metaParts,
   missingCase,
   type Part,
   placeOf,
@@ -58,6 +59,7 @@ export type MissingItemViewProps = {
   actions?: HistoryActions;
   /** Where the item went after an entry, re-resolved against current access. */
   loadChain: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityChain>;
+  loadBatch?: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityBatchContext>;
   retentionDays: number;
   onClearSearch: () => void;
   onChanged?: () => void;
@@ -172,6 +174,7 @@ export default function MissingItemView(props: MissingItemViewProps) {
                 env={props.env}
                 actions={props.actions}
                 batchOthers={batchOthers}
+                loadBatch={props.loadBatch}
                 loadChain={props.loadChain}
                 onChanged={props.onChanged}
               />
@@ -264,6 +267,7 @@ function MissingHit(props: {
   /** Other visible members of a row's batch among the loaded entries. */
   batchOthers: (row: HistoryRowModel) => number;
   loadChain: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityChain>;
+  loadBatch?: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityBatchContext>;
   onChanged?: () => void;
 }) {
   const h = useHistoryMessages();
@@ -595,22 +599,73 @@ function MissingHit(props: {
             {(row) => (
               <li>
                 {/* The hit above owns the one main action; chain rows keep only their facts and links. */}
-                <HistoryRow
+                <MissingChainRow
                   row={row}
                   env={props.env}
                   actions={props.actions}
-                  context="chain"
                   directory={directory() ?? undefined}
-                  dated={false}
-                  variant="list"
-                  action={null}
-                  others={props.batchOthers(row)}
+                  loadedOthers={props.batchOthers(row)}
+                  loadBatch={props.loadBatch}
                 />
               </li>
             )}
           </For>
         </ul>
       </section>
+    </>
+  );
+}
+
+/** A search page is not a batch count. Query peers only for a rendered batched event. */
+function MissingChainRow(props: {
+  row: HistoryRowModel;
+  env: HistoryEnvironment;
+  actions?: HistoryActions;
+  directory?: boolean;
+  loadedOthers: number;
+  loadBatch?: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityBatchContext>;
+}) {
+  const h = useHistoryMessages();
+  const locale = useLocale();
+  const batch = query.create({
+    source: () => props.row.lead.id,
+    enabled: () => !!props.row.lead.batchId && !!props.loadBatch,
+    load: (_id, { abortSignal }) => props.loadBatch!(props.row.lead, abortSignal),
+  });
+  const meta = createMemo(() => {
+    const parts = metaParts(props.row, h(), locale(), props.env, { context: "chain", dated: false, actions: props.actions });
+    const result = batch.data();
+    const others = result ? Math.max(0, result.visibleCount - 1) : props.loadBatch ? 0 : props.loadedOthers;
+    if (others)
+      parts.push({ kind: "text", text: (result?.complete ? h().withOthers : h().withAtLeastOthers).replace("{count}", String(others)) });
+    return parts;
+  });
+  return (
+    <>
+      <HistoryRow
+        row={props.row}
+        env={props.env}
+        actions={props.actions}
+        context="chain"
+        directory={props.directory}
+        dated={false}
+        variant="list"
+        action={null}
+        meta={meta()}
+      />
+      <Show when={batch.loading()}>
+        <p class="text-xs text-muted" role="status">
+          {h().batchLoading}
+        </p>
+      </Show>
+      <Show when={batch.error()}>
+        <p class="filesv2-history-row__error" role="alert">
+          {h().batchFailed}{" "}
+          <Button size="xs" variant="text" onClick={() => void batch.refresh()}>
+            {h().retry}
+          </Button>
+        </p>
+      </Show>
     </>
   );
 }

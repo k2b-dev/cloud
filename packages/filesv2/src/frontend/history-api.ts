@@ -33,6 +33,13 @@ export async function loadChain(entry: ActivityEntry, signal: AbortSignal, fallb
   return response.json();
 }
 
+/** Counts freshly authorized peers of a visible event, independent of the current search page. */
+export async function loadBatchContext(entry: ActivityEntry, signal: AbortSignal, fallback: string) {
+  const response = await apiClient.activity[":activityId"].batch.$get({ param: { activityId: entry.id } }, { init: { signal } });
+  if (!response.ok) return apiFailure(response, fallback);
+  return response.json();
+}
+
 export async function loadShareAccess(
   request: ShareAccessRequest,
   period: { from: string; to: string },
