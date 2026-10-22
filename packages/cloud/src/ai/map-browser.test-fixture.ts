@@ -10,7 +10,7 @@ import { mapAddress, mapFixture, mapGeoFixture, mapSuccess, mapTime } from "./ma
 import { AiMapActionSchema, AiMapCommandSchema, type AiMapToolResult, aiMapToolResult } from "./map-contracts";
 import { type AiMapContext, applyAiMap } from "./map-service";
 import type { AiMapStored } from "./map-store";
-export async function startMapBrowserFixture() {
+export async function startMapBrowserFixture(options: { view?: "map" | "save" } = {}) {
   const notes = new Map<string, string>();
   const hash = (text: string) => `sha256:${new Bun.CryptoHasher("sha256").update(text).digest("hex")}`;
   const fixtureDir = await mkdtemp(join(tmpdir(), "assistant-map-"));
@@ -19,7 +19,9 @@ export async function startMapBrowserFixture() {
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
-    entrypoints: [resolve(import.meta.dir, "chat/map-widget.browser-harness.tsx")],
+    entrypoints: [
+      resolve(import.meta.dir, options.view === "save" ? "chat/map-notebook.browser-harness.tsx" : "chat/map-widget.browser-harness.tsx"),
+    ],
     target: "browser",
     conditions: ["browser"],
     format: "esm",
@@ -291,7 +293,7 @@ export async function startMapBrowserFixture() {
       const theme = url.searchParams.get("theme") ?? "light";
       const lang = url.searchParams.get("lang") ?? "de";
       return new Response(
-        `<!doctype html><html lang="${lang}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><link rel="stylesheet" href="/styles.css"><style>body{margin:0;background:var(--ui-bg);color:var(--ui-text)}.map-fixture{width:796px;max-width:calc(100% - 32px);margin:0 auto}.fixture-question{height:36px;margin:0 0 14px;padding-top:12px}.ai-turn{margin-bottom:24px}.map-fixture[data-panel=true]{width:352px;margin-left:auto;margin-right:16px}@media(max-width:599px){.map-fixture{width:358px}.fixture-question{font-size:14px}}</style></head><body class="k2b-ui"><main class="map-fixture" data-panel="${url.searchParams.get("panel") ?? "false"}"><p class="fixture-question">Zeig mir ${map.kind === "places" ? "Museen in Ulm." : "eine Tour auf der Schwäbischen Alb."}</p><div id="fixture-mount">${renderMapFixture(map, followups.get(name) ?? [], lang)}</div></main><script id="snapshot" type="application/json">${JSON.stringify({ map, followups: followups.get(name) ?? [] }).replaceAll("<", "\\u003c")}</script>${url.searchParams.has("ssr") ? "" : '<script type="module" src="/harness.js"></script>'}</body></html>`,
+        `<!doctype html><html lang="${lang}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><link rel="stylesheet" href="/styles.css"><style>body{margin:0;background:var(--ui-bg);color:var(--ui-text)}.map-fixture{width:796px;max-width:calc(100% - 32px);margin:0 auto}.fixture-question{height:36px;margin:0 0 14px;padding-top:12px}.ai-turn{margin-bottom:24px}.map-fixture[data-panel=true]{width:352px;margin-left:auto;margin-right:16px}@media(max-width:599px){.map-fixture{width:358px}.fixture-question{font-size:14px}}</style></head><body class="k2b-ui"><main class="map-fixture" data-panel="${url.searchParams.get("panel") ?? "false"}"><p class="fixture-question">Zeig mir ${map.kind === "places" ? "Museen in Ulm." : "eine Tour auf der Schwäbischen Alb."}</p><div id="fixture-mount">${options.view === "save" ? "" : renderMapFixture(map, followups.get(name) ?? [], lang)}</div></main><script id="snapshot" type="application/json">${JSON.stringify({ map, followups: followups.get(name) ?? [] }).replaceAll("<", "\\u003c")}</script>${url.searchParams.has("ssr") ? "" : '<script type="module" src="/harness.js"></script>'}</body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
