@@ -442,3 +442,11 @@ There is no server-side map renderer in this contract. Headless API or CLI PDF
 exports without browser image uploads must report unavailable map images and
 retain saved-source lists, or fail explicitly when map images are required.
 `MapViewFrame` remains a geometry fallback and does not supply a basemap PNG.
+## Use maps in Assistant
+
+Assistant's native places and route widgets use these same permission-aware
+Queries and `CloudMap`. The conversation owns saved map state and proposals;
+Core remains stateless for routes. Follow-ups update the first widget, and saving
+to a notebook uses the shared map document format through Notebook capabilities.
+See [Explore places and routes](/en/docs/ai/chat-interface#explore-places-and-routes)
+for selection, editing, recovery, and persistence behavior.

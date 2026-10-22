@@ -258,6 +258,7 @@ export const buildBlocksFromMessages = (
       toolPresentations?: Record<string, AiToolPresentation>;
       toolReviews?: Record<string, AiStoredActionReview>;
       toolChecks?: Record<string, AiActionCheck>;
+      toolInterimResults?: Record<string, unknown>;
       toolOutcomes?: Record<string, "rejected" | "approved" | "expired">;
       websiteReceipts?: Record<string, Record<string, { method: string; url: string }>>;
     } | null;
@@ -287,6 +288,7 @@ export const buildBlocksFromMessages = (
             presentation: meta?.toolPresentations?.[block.id],
             review: meta?.toolReviews?.[block.id],
             check: meta?.toolChecks?.[block.id],
+            result: meta?.toolInterimResults?.[block.id],
             // A turn that ended before an approved call returned records the approval on the call's message, and an
             // approval it left waiting as expired.
             ...(outcome === "approved" || outcome === "expired" ? { approved: outcome === "approved" } : {}),
@@ -311,7 +313,7 @@ export const buildBlocksFromMessages = (
         blocks[at!] = {
           ...existing,
           status: outcome === "rejected" ? "rejected" : message.isError ? "failed" : "completed",
-          result: message.result,
+          result: message.isError && existing.result !== undefined ? existing.result : message.result,
           isError: message.isError,
           ...(createdAt ? { at: createdAt } : {}),
           ...(outcome === "approved" ? { approved: true } : {}),

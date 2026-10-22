@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { createCloudAiMapTool } from "./map-tool";
 import type { AccessSubject } from "../server";
 import { resolveAssistantAudioModel } from "./assistant-models";
 import { createCloudAiTranscribeAudioTool } from "./audio-tool";
@@ -303,6 +304,7 @@ export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set<string>([
   "markdown_to_pdf",
   "html_to_pdf",
   "present",
+  "map",
   "read_cloud_resource",
 ]);
 
@@ -314,6 +316,7 @@ export const createConfiguredDefaultCloudAiTools = async (config?: {
 }) => {
   const tools: AiRuntimeTool[] = [
     ...createDefaultCloudAiTools(),
+    createCloudAiMapTool(),
     ...createCodeSourceTools(),
     createCloudAiListFilesTool(),
     createCloudAiReadFileTool(),

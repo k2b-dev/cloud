@@ -336,6 +336,7 @@ export type AiStoredMessage = {
     toolPresentations?: Record<string, AiToolPresentation>;
     toolReviews?: Record<string, AiStoredActionReview>;
     toolChecks?: Record<string, AiActionCheck>;
+    toolInterimResults?: Record<string, unknown>;
     /** How the person decided an approval; `expired` when the turn ended while it still waited. */
     toolOutcomes?: Record<string, "rejected" | "approved" | "expired">;
     /** Requests a website approval let through, by tool call and then by `AiWebsiteReceipt.index`. */
@@ -1164,6 +1165,8 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           timeZone?: string;
           /** Localized short status; never include payloads or secrets. */
           reportProgress?: (message: string) => Promise<void>;
+          /** A validated result snapshot while a server tool is still running. */
+          reportResult?: (result: z.infer<TOutput>) => Promise<void>;
           /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
           requestApprovalFor?: (message: string, target: AiApprovalTarget, review?: CapabilityActionCallReview) => Promise<boolean>;
           /** Relays a decision for an effect another platform component consumes and executes. */

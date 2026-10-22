@@ -868,3 +868,5 @@ solid-island {
 }
 .cloud-mobile-profile { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; border-top: 1px solid var(--ui-border); padding-top: 1rem; }
 .cloud-mobile-profile > :is(a, button) { min-height: 2.75rem; white-space: normal; text-align: start; justify-content: flex-start; }
+
+@import "../ai/chat/map-widget.css";

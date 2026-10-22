@@ -1780,3 +1780,13 @@ request before parsing, authorize the saved document and bind uploaded images to
 its current revision. Headless exports without a browser capture retain an
 explicit map-image omission or fail when images are required. See
 [Upload browser map snapshots](/en/docs/platform/pdf-and-templates#upload-browser-map-snapshots).
+### Assistant saved maps
+
+AI Core's existing migration creates `ai.maps` in its PostgreSQL database.
+Conversation deletion removes its maps. Map changes require the current owner
+and an unchanged revision; concurrent edits are rejected before provider work.
+No new service, environment variable, or browser credential is required. Configure
+Geo in Core to enable provider queries; without configuration, Assistant keeps
+the conversation and shows the unavailable state without requesting map assets.
+The reference-distance allowance is an accounting reservation, not an invoice
+cap; actual overruns are recorded and require a new allowance before retry.

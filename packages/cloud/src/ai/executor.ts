@@ -539,7 +539,7 @@ const createEventMapper = (
       args: "args" in patch ? patch.args : existing?.args,
       status: patch.status ?? existing?.status ?? "running",
       at: patch.at ?? existing?.at,
-      result: "result" in patch ? patch.result : existing?.result,
+      result: patch.isError && existing?.result !== undefined ? existing.result : "result" in patch ? patch.result : existing?.result,
       isError: "isError" in patch ? patch.isError : existing?.isError,
       approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false, allowChat: false } : approval,
       review: patch.review ?? existing?.review,
@@ -1067,6 +1067,11 @@ export class AiTurnExecutor {
     const dynamicToolRuntimeContext = {
       turnId,
       reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
+      reportToolResult: (callId: string, result: unknown) => pipeline.reportToolResult(callId, result),
+      maxToolResultChars: resolveAiToolResultMaxChars({
+        contextWindow: resolved.provider.contextWindow,
+        configuredMaxChars: settings.maxToolResultChars,
+      }),
       reportWebsiteReceipts: (callId: string, receipts: AiWebsiteReceipt[]) => pipeline.reportWebsiteReceipts(callId, receipts),
       localToolsEnabled: activeTools.some((tool) => tool.def.name === "local_upload"),
       attachedFilePaths: new Set(config.files?.attached.map((file) => file.path) ?? []),
@@ -2474,6 +2479,13 @@ class StreamPipeline {
 
   async setToolCheck(callId: string, check: AiActionCheck): Promise<void> {
     await this.emitOp(this.mapper.setTool(callId, { check, status: "running" }));
+    await this.maybeSnapshot();
+  }
+
+  async reportToolResult(callId: string, result: unknown): Promise<void> {
+    const block = this.blocks.find((block) => block.kind === "tool" && block.callId === callId);
+    if (!block || block.kind !== "tool" || block.status !== "running") return;
+    await this.emitOp(this.mapper.setTool(callId, { result }));
     await this.maybeSnapshot();
   }
 

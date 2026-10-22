@@ -39,6 +39,7 @@ import { assistantAiSettingsState, listAssistantAiModels, resolveAssistantAudioM
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { checkAiCapability, resolveAiCapabilityActor } from "./capability-execution";
+import { aiMapRoutes } from "./map-routes";
 import { aiChatMessages } from "./chat/messages";
 import { getAiChatQuotas } from "./chat-quotas";
 import { aiChatTasks } from "./chat-tasks";
@@ -323,6 +324,7 @@ export const aiRoutes = (() => {
       .use("*", noTransform())
       .use(rateLimit())
       .use("*", auth.requireRole("authenticated"))
+      .route("/conversations", aiMapRoutes)
       .get("/status", async (c) => {
         const [status, enabled] = await Promise.all([
           assistantAiSettingsState(c.get("accessSubject")),

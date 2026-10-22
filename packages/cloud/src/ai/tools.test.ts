@@ -80,6 +80,41 @@ describe("AI tools", () => {
     expect(prepared.approvalPolicies.get("create_record")).toBe("once");
   });
 
+  test("intermediate results use the declared schema and normal result budget", async () => {
+    const reports: unknown[] = [];
+    const tool = defineAiTool({
+      name: "show_partial",
+      description: "Show progress",
+      inputSchema: z.object({ text: z.string() }),
+      outputSchema: z.object({ text: z.string() }),
+      approval: "never",
+    }).server(async (input, ctx) => {
+      await ctx.reportResult?.(input);
+      return input;
+    });
+    const prepared = prepareAiTools({
+      tools: [tool],
+      actor,
+      maxToolResultChars: 40,
+      reportToolResult: async (_, value) => {
+        reports.push(value);
+      },
+    });
+    const runtime = prepared.tools[0]!;
+    if (runtime.kind !== "server") throw new Error("Expected server tool");
+    const context = {
+      callId: "partial",
+      signal: new AbortController().signal,
+      requestApproval: async () => true,
+      requestClientTool: async () => {
+        throw new Error("unused");
+      },
+    };
+    await runtime.execute({ text: "ready" }, context);
+    expect(reports).toEqual([{ text: "ready" }]);
+    await expect(runtime.execute({ text: "x".repeat(100) }, context)).rejects.toThrow("AI_TOOL_INTERIM_RESULT_TOO_LARGE");
+    expect(reports).toHaveLength(1);
+  });
   test("forwards optional historical result projectors to Nessi", async () => {
     const tool = defineAiTool({
       name: "read_report",
@@ -338,6 +373,7 @@ describe("AI tools", () => {
       "survey",
       "text_editor",
       "chart",
+      "map",
       "code_create",
       "list_files",
       "read_file",
