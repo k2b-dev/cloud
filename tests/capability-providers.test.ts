@@ -61,7 +61,7 @@ const providers: ReadonlyArray<{
   {
     appId: "pulse",
     definitions: pulseCapabilities,
-    types: ["base", "source"],
+    types: ["base", "dashboard", "source"],
     searches: ["base.search"],
   },
   {
@@ -157,6 +157,10 @@ describe("Capability v2 provider conformance", () => {
       "notebooks.note.create",
       "pulse.alert.delete",
       "pulse.alert.save",
+      "pulse.dashboard.delete",
+      "pulse.dashboard.publish",
+      "pulse.dashboard.save",
+      "pulse.dashboard.unpublish",
       "pulse.saved_query.delete",
       "pulse.saved_query.save",
       "pulse.source.create",
