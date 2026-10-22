@@ -634,7 +634,8 @@ const runSmoke = async (fixture: Fixture) => {
     await settings.getByRole("button", { name: "Close settings", exact: true }).click();
     ok("mailbox health explains the runtime problem in the workspace, diagnostics, and settings");
 
-    const conversation = page.getByRole("link").filter({ hasText: fixture.subject });
+    // The mailbox and conversation deliberately share a name; select the seeded conversation by identity.
+    const conversation = page.locator(`[data-mail-conversation-list] [data-conversation-id="${fixture.conversationId}"]`).getByRole("link");
     await conversation.waitFor({ state: "visible" });
     await conversation.click();
     await expectUrl(
