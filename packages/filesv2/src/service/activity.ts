@@ -1,9 +1,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { isDeepStrictEqual } from "node:util";
 import type { AccessSubject, RequestActor } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { FilegateError } from "@k2b/filegate";
+import { type DirectoryOptions, FilegateError, type TransferOptions } from "@k2b/filegate";
 import { sql, type TransactionSQL } from "bun";
 import { filegateErrorCode } from "../api/filegate-error";
+import { finishActivity, insertActivity } from "../data/activity";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import type { FilesFilegate } from "./filegate-facade";
@@ -21,9 +23,22 @@ export type FilesCall =
       origin: string | null;
     }
   | { kind: "visitor"; shareId: string; requestId: string | null }
-  | { kind: "system"; job: string };
+  | { kind: "system"; job: string; actor?: { userId: string; uid: string | null } };
 export type UserFilesCall = Extract<FilesCall, { kind: "user" }>;
-export type ActivityAction = "folder.create" | "item.rename" | "item.move" | "item.copy";
+export type ActivityAction =
+  | "folder.create"
+  | "item.rename"
+  | "item.move"
+  | "item.copy"
+  | "share.create"
+  | "share.revoke"
+  | "admin.read"
+  | "place.retire"
+  | "place.provision"
+  | "place.archive"
+  | "place.restore"
+  | "item.purge";
+export type LifecycleMkdir = { path: string; options: DirectoryOptions };
 export type Intent = {
   action: ActivityAction;
   serverUrl: string;
@@ -41,6 +56,9 @@ export type Intent = {
   revisionBefore?: string | null;
   versionId?: string | null;
   batchId?: string | null;
+  shareId?: string | null;
+  operationId?: string | null;
+  lifecycleMkdirs?: LifecycleMkdir[];
   onConflict?: "error" | "rename";
   detail?: Record<string, unknown>;
 };
@@ -63,7 +81,6 @@ export const PENDING_MIGRATION = Object.freeze([
   "files.version_delete",
   "trash.transfer",
   "sharing.inbox_session",
-  "lifecycle.operation",
   "lifecycle.admin_delete_version",
 ] as const);
 export type PendingMigrationKey = (typeof PENDING_MIGRATION)[number];
@@ -89,12 +106,11 @@ export const PENDING_MIGRATION_METHODS: Readonly<Record<PendingMigrationKey, rea
   "files.version_delete": ["deleteVersion"],
   "trash.transfer": ["transfer"],
   "sharing.inbox_session": ["createSession", "commitSession", "abortSession"],
-  "lifecycle.operation": ["mkdir", "transfer", "remove"],
   "lifecycle.admin_delete_version": ["deleteVersion"],
 });
 for (const methods of Object.values(PENDING_MIGRATION_METHODS)) Object.freeze(methods);
 type GuardScope =
-  | { kind: "activity"; id: string; intent: Intent; closed: boolean; sent: number; refused: unknown }
+  | { kind: "activity"; id: string; intent: Intent; closed: boolean; sent: number; refused: unknown; used: Set<string> }
   | { kind: "pending"; key: PendingMigrationKey }
   | { kind: "exception"; name: "lifecycle.probe" };
 const scopes = new AsyncLocalStorage<GuardScope>();
@@ -110,7 +126,8 @@ export async function filegateMutation<T>(
   method: Mutation,
   path: string,
   run: () => Promise<T>,
-  transfer?: { root: string; path: string; move: boolean; onConflict: string },
+  transfer?: { root: string; path: string; move: boolean; onConflict: string; options?: TransferOptions },
+  options?: { mkdir?: DirectoryOptions; recursive?: boolean },
 ): Promise<T> {
   const scope = scopes.getStore();
   if (!scope || (scope.kind === "activity" && scope.closed)) throw new FilesError("activity_scope_missing", 500);
@@ -120,8 +137,27 @@ export async function filegateMutation<T>(
     throw new FilesError("activity_scope_mismatch", 500);
   if (scope.kind === "activity") {
     const intent = scope.intent;
-    const matches =
-      intent.action === "folder.create"
+    const lifecycle = intent.operationId !== undefined && intent.operationId !== null;
+    const key = `${method}:${path}`;
+    const matches = lifecycle
+      ? !scope.used.has(key) &&
+        (method === "mkdir"
+          ? ["place.provision", "place.archive", "place.restore"].includes(intent.action) &&
+            !!intent.pathAfter &&
+            (intent.pathAfter.startsWith(`${path}/`) || (intent.action === "place.provision" && path === intent.pathAfter)) &&
+            (intent.lifecycleMkdirs ?? []).some((entry) => entry.path === path && isDeepStrictEqual(entry.options, options?.mkdir ?? {}))
+          : intent.action === "item.purge"
+            ? method === "remove" && path === intent.pathBefore && options?.recursive === true
+            : (intent.action === "place.archive" || intent.action === "place.restore") &&
+              method === "transfer" &&
+              path === intent.pathBefore &&
+              !!transfer &&
+              transfer.root === intent.root &&
+              transfer.path === intent.pathAfter &&
+              transfer.move === true &&
+              transfer.onConflict === "error" &&
+              isDeepStrictEqual(transfer.options, { move: true, onConflict: "error" }))
+      : intent.action === "folder.create"
         ? method === "mkdir" && !!intent.pathAfter && (path === intent.pathAfter || intent.pathAfter.startsWith(`${path}/`))
         : (intent.action === "item.rename" || intent.action === "item.move" || intent.action === "item.copy") &&
           scope.sent === 0 &&
@@ -133,6 +169,7 @@ export async function filegateMutation<T>(
           transfer.move === (intent.action !== "item.copy") &&
           transfer.onConflict === (intent.onConflict ?? "error");
     if (intent.serverUrl !== serverUrl || intent.root !== root || !matches) throw new FilesError("activity_scope_mismatch", 500);
+    scope.used.add(key);
     scope.sent++;
   }
   try {
@@ -148,7 +185,11 @@ export function pendingMigration<T>(key: PendingMigrationKey, run: () => Promise
 export function filegateException<T>(name: "lifecycle.probe", run: () => Promise<T>): Promise<T> {
   return scopes.run({ kind: "exception", name }, run);
 }
-export const systemCall = (job: string): FilesCall => ({ kind: "system", job });
+export const systemCall = (job: string, actor?: { userId: string; uid: string | null }): FilesCall => ({
+  kind: "system",
+  job,
+  ...(actor ? { actor } : {}),
+});
 export const visitorCall = (shareId: string, requestId: string | null): FilesCall => ({ kind: "visitor", shareId, requestId });
 const log = logger("filesv2:activity");
 
@@ -173,17 +214,16 @@ export async function fileAction<T>(
 ): Promise<T> {
   // The guard must authorize the values committed below, even if the caller later changes its object.
   const intent = { ...input };
-  const id = Bun.randomUUIDv7();
-  const userId = call.kind === "user" ? (call.actor.kind === "user" ? call.actor.user.id : (call.actor.delegatedUser?.id ?? null)) : null;
-  const detail = {
-    ...intent.detail,
-    ...(intent.onConflict ? { on_conflict: intent.onConflict } : {}),
-    ...(call.kind === "system" ? { job: call.job } : {}),
+  const id = await insertActivity(call, intent);
+  const scope: Extract<GuardScope, { kind: "activity" }> = {
+    kind: "activity",
+    id,
+    intent,
+    closed: false,
+    sent: 0,
+    refused: undefined,
+    used: new Set(),
   };
-  // An independently committed intent is the prerequisite for every external effect.
-  await sql`INSERT INTO filesv2.activity(id,state,action,server_url,root,root_after,base_id,base_after_id,item_id,item_after_id,directory,name,path_before,path_after,size,revision_before,version_id,actor_kind,actor_user_id,via,calling_app,origin,invocation_id,request_id,batch_id,share_id,detail)
-    VALUES(${id}::uuid,'pending',${intent.action},${intent.serverUrl},${intent.root},${intent.rootAfter ?? null},${intent.baseId}::uuid,${intent.baseAfterId ?? null}::uuid,${intent.itemId ?? null},${intent.itemAfterId ?? null},${intent.directory},${intent.name},${intent.pathBefore ?? null},${intent.pathAfter ?? null},${intent.size ?? null},${intent.revisionBefore ?? null},${intent.versionId ?? null},${call.kind},${userId}::uuid,${call.kind === "user" ? call.via : call.kind === "visitor" ? "link" : "system"},${call.kind === "user" ? call.callingApp : null},${call.kind === "user" ? call.origin : null},${call.kind === "user" ? call.invocationId : null},${call.kind !== "system" ? call.requestId : null},${intent.batchId ?? null}::uuid,${call.kind === "visitor" ? call.shareId : null}::uuid,${detail}::jsonb)`;
-  const scope: Extract<GuardScope, { kind: "activity" }> = { kind: "activity", id, intent, closed: false, sent: 0, refused: undefined };
   const timer = setInterval(() => {
     void sql`UPDATE filesv2.activity SET heartbeat_at=now() WHERE id=${id}::uuid AND state IN ('pending','unclear')`.catch(
       (error: unknown) => log.error("Activity heartbeat failed", { id, error }),
@@ -208,17 +248,67 @@ export async function fileAction<T>(
     }
     throw error;
   }
-  await sql.begin(async (tx) => {
-    const [row] = await tx<{ state: string }[]>`SELECT state FROM filesv2.activity WHERE id=${id}::uuid FOR UPDATE`;
-    if (!row) throw new FilesError("activity_scope_missing", 500);
-    if (["done", "failed", "not_done"].includes(row.state)) return;
-    const finished = await finish(tx, result);
-    await tx`UPDATE filesv2.activity SET state='done',finished_at=now(),error_code=NULL,
-      item_after_id=coalesce(${finished?.itemAfterId ?? null},item_after_id),size=coalesce(${finished?.size ?? null},size),
-      revision_after=${finished?.revisionAfter ?? null},path_after=coalesce(${finished?.pathAfter ?? null},path_after),
-      detail=detail || ${finished?.detail ?? {}}::jsonb WHERE id=${id}::uuid`;
-  });
+  await sql.begin((tx) => finishActivity(tx, id, "done", () => finish(tx, result)));
   return result;
+}
+
+/** Resume only the server, paths and options committed with the journal's original caller. */
+export async function journalAction<T>(id: string, effect: () => Promise<T>, options?: { heartbeat?: boolean }): Promise<T> {
+  const [row] = await sql<
+    {
+      action: ActivityAction;
+      server_url: string;
+      root: string;
+      root_after: string | null;
+      base_id: string | null;
+      base_after_id: string | null;
+      name: string;
+      directory: boolean;
+      path_before: string | null;
+      path_after: string | null;
+      operation_id: string | null;
+      detail: { lifecycle_mkdirs?: LifecycleMkdir[] };
+    }[]
+  >`SELECT * FROM filesv2.activity WHERE id=${id}::uuid AND state IN ('pending','unclear')`;
+  if (!row) throw new FilesError("activity_scope_missing", 500);
+  const intent: Intent = {
+    action: row.action,
+    serverUrl: row.server_url,
+    root: row.root,
+    rootAfter: row.root_after,
+    baseId: row.base_id,
+    baseAfterId: row.base_after_id,
+    name: row.name,
+    directory: row.directory,
+    pathBefore: row.path_before,
+    pathAfter: row.path_after,
+    operationId: row.operation_id,
+    lifecycleMkdirs: row.detail.lifecycle_mkdirs,
+  };
+  const scope: Extract<GuardScope, { kind: "activity" }> = {
+    kind: "activity",
+    id,
+    intent,
+    closed: false,
+    sent: 0,
+    refused: undefined,
+    used: new Set(),
+  };
+  const heartbeat = () => sql`UPDATE filesv2.activity SET heartbeat_at=now() WHERE id=${id}::uuid AND state IN ('pending','unclear')`;
+  const active = options?.heartbeat !== false;
+  if (active) await heartbeat();
+  const timer = active
+    ? setInterval(() => {
+        void heartbeat().catch((error: unknown) => log.error("Activity heartbeat failed", { id, error }));
+      }, 10_000)
+    : undefined;
+  timer?.unref();
+  try {
+    return await scopes.run(scope, effect);
+  } finally {
+    scope.closed = true;
+    if (timer) clearInterval(timer);
+  }
 }
 
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
@@ -278,8 +368,8 @@ export async function recoverActivity(input: {
 }
 
 export async function purgeActivity(input: { now?: Date; retentionDays: number }): Promise<{ purged: number }> {
-  // Pending entries never expire here; each later PR adds its own journal predicate.
+  // Executable lifecycle journals retain their history, including unclear entries.
   const rows = await sql<{ id: string }[]>`DELETE FROM filesv2.activity WHERE id IN
-    (SELECT id FROM filesv2.activity WHERE started_at<coalesce(${input.now ?? null}::timestamptz, now())-${input.retentionDays}*interval '1 day' AND state<>'pending' ORDER BY started_at LIMIT 10000) RETURNING id`;
+    (SELECT id FROM filesv2.activity WHERE started_at<coalesce(${input.now ?? null}::timestamptz, now())-${input.retentionDays}*interval '1 day' AND state<>'pending' AND NOT EXISTS (SELECT 1 FROM filesv2.operations o WHERE o.id=activity.operation_id AND o.state='pending') ORDER BY started_at LIMIT 10000) RETURNING id`;
   return { purged: rows.length };
 }

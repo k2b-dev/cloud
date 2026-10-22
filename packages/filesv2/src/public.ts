@@ -19,6 +19,7 @@ import { publicErrorMessage } from "./api/messages";
 import { EntryQuerySchema, PublicBrowseQuerySchema, PublicUploadInputSchema, UploadIdSchema } from "./contracts";
 import { publicUploadPath, publicUploadRateLimit } from "./public-upload-rate-limit";
 import { FilesError, filesService } from "./service";
+import { shareAccessContext } from "./service/share-access-context";
 import { setShareAccessCookie, shareAccessCookie } from "./share-access-cookie";
 
 /** Public routes re-resolve the share and enforce its optional password on every call. */
@@ -66,22 +67,54 @@ export const publicApi = new Hono<AuthContext>()
       const kind = c.req.param("kind") === "s" ? "download" : c.req.param("kind") === "inbox" ? "inbox" : null;
       if (!kind) throw new FilesError("not_found", 404);
       const token = c.req.param("token") ?? "";
-      const access = await filesService.unlockShare(token, kind, c.req.valid("json").password);
+      const access = await filesService.unlockShare(token, kind, c.req.valid("json").password, shareAccessContext(c));
       setShareAccessCookie(c, kind, token, access);
       return respond(c, ok({ unlocked: true }));
     },
   )
   .get("/s/:token/api", v("query", PublicBrowseQuerySchema), async (c) =>
-    respond(c, ok(await filesService.publicShare(c.req.param("token") ?? "", "download", c.req.valid("query"), shareAccessCookie(c)))),
+    respond(
+      c,
+      ok(
+        await filesService.publicShare(
+          c.req.param("token") ?? "",
+          "download",
+          c.req.valid("query"),
+          shareAccessCookie(c),
+          shareAccessContext(c),
+        ),
+      ),
+    ),
   )
   .post("/s/:token/api/download", v("json", EntryQuerySchema), async (c) =>
-    respond(c, ok(await filesService.publicShareDownload(c.req.param("token") ?? "", c.req.valid("json").path, shareAccessCookie(c)))),
+    respond(
+      c,
+      ok(
+        await filesService.publicShareDownload(
+          c.req.param("token") ?? "",
+          c.req.valid("json").path,
+          shareAccessCookie(c),
+          shareAccessContext(c),
+        ),
+      ),
+    ),
   )
   .post("/s/:token/api/archive", async (c) =>
-    respond(c, ok(await filesService.publicShareArchive(c.req.param("token") ?? "", shareAccessCookie(c)))),
+    respond(c, ok(await filesService.publicShareArchive(c.req.param("token") ?? "", shareAccessCookie(c), shareAccessContext(c)))),
   )
   .get("/inbox/:token/api", v("query", PublicBrowseQuerySchema), async (c) =>
-    respond(c, ok(await filesService.publicShare(c.req.param("token") ?? "", "inbox", c.req.valid("query"), shareAccessCookie(c)))),
+    respond(
+      c,
+      ok(
+        await filesService.publicShare(
+          c.req.param("token") ?? "",
+          "inbox",
+          c.req.valid("query"),
+          shareAccessCookie(c),
+          shareAccessContext(c),
+        ),
+      ),
+    ),
   )
   .post("/inbox/:token/api/uploads", v("json", PublicUploadInputSchema), async (c) =>
     respond(c, ok(await filesService.publicInboxUpload(c.req.param("token") ?? "", c.req.valid("json"), shareAccessCookie(c)))),

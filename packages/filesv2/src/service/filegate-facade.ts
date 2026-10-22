@@ -119,7 +119,7 @@ export class FilesRoot {
     return this.#client.versions(...args);
   }
   mkdir(...args: Parameters<RootClient["mkdir"]>) {
-    return this.#mutate("mkdir", args[0], () => this.#client.mkdir(...args));
+    return filegateMutation(this.serverUrl, this.name, "mkdir", args[0], () => this.#client.mkdir(...args), undefined, { mkdir: args[1] });
   }
   put(...args: Parameters<RootClient["put"]>) {
     return this.#mutate("put", args[0], () => this.#client.put(...args));
@@ -139,6 +139,7 @@ export class FilesRoot {
       path: args[2],
       move: args[3]?.move ?? false,
       onConflict: args[3]?.onConflict ?? "error",
+      options: args[3],
     });
   }
   restore(...args: Parameters<RootClient["restore"]>) {
@@ -154,7 +155,9 @@ export class FilesRoot {
     return this.#mutate("deleteVersion", args[0], () => this.#client.deleteVersion(...args));
   }
   remove(...args: Parameters<RootClient["remove"]>) {
-    return this.#mutate("remove", args[0], () => this.#client.remove(...args));
+    return filegateMutation(this.serverUrl, this.name, "remove", args[0], () => this.#client.remove(...args), undefined, {
+      recursive: args[1] ?? false,
+    });
   }
   // Maintenance only: these rebuild derived metadata, without changing user data.
   refreshStats(...args: Parameters<RootClient["refreshStats"]>) {

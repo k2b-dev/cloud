@@ -1,5 +1,6 @@
 import { sql } from "bun";
 import { migrateActivity } from "./data/activity-migration";
+import { migrateShareAccess } from "./data/share-access-migration";
 import { migrateSharing } from "./data/sharing-migration";
 import { migrateTemplates } from "./data/templates";
 import { migrateTrash } from "./migrate-trash";
@@ -43,6 +44,9 @@ export async function migrate(): Promise<void> {
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`.simple();
   await sql`ALTER TABLE filesv2.operations ADD COLUMN IF NOT EXISTS server_url TEXT NOT NULL DEFAULT ''`.simple();
+  await sql`ALTER TABLE filesv2.operations ADD COLUMN IF NOT EXISTS activity_recorded boolean NOT NULL DEFAULT false`.simple();
+  await sql`ALTER TABLE filesv2.operations ADD COLUMN IF NOT EXISTS effect_started boolean NOT NULL DEFAULT false`.simple();
+  await sql`ALTER TABLE filesv2.operations ADD COLUMN IF NOT EXISTS receipt jsonb`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS filesv2_pending_operation ON filesv2.operations(root,source) WHERE state='pending'`.simple();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.maintenance (
     singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK(singleton),
@@ -119,5 +123,6 @@ export async function migrate(): Promise<void> {
   await migrateTrash();
   await migrateSharing();
   await migrateActivity();
+  await migrateShareAccess();
   await sql`CREATE TABLE IF NOT EXISTS filesv2.entry_references(id TEXT PRIMARY KEY, base_id TEXT NOT NULL, path TEXT NOT NULL)`.simple();
 }

@@ -133,7 +133,8 @@ row also refuses the write. `coreSettings.read<T>(key)` and
 `coreSettings.set(key, value, options?)` offer the same behavior for platform
 services. The lower-level `settings.set(key, value, db?, options?)` accepts the
 replacement option after an optional transaction; transaction callers invalidate
-the settings cache after commit.
+the settings cache after commit with `invalidateSettingsCache([key])` from
+`@k2b/cloud/services/settings`.
 
 `remove()` deletes the stored override. The next read uses the fallback or
 default.

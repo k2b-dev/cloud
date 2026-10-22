@@ -96,3 +96,54 @@ metadata and need no user-data history entry.
 The `filegate-facade` repository check prevents SDK access outside the facade.
 The activity classification test detects new service methods and migration
 keys that have not been reviewed.
+
+## Storage and administration
+
+Provisioning, archiving, restoring, and retiring storage produce history.
+Automatic provisioning names the person whose request required the storage,
+with the system channel; automatic archiving names the system. Retries keep
+the original actor and request context. The operation journal, history intent,
+and exact allowed parent-folder creation options commit before storage changes.
+Completion updates the journal, history, and security audit in one transaction.
+A returned storage receipt can finish a retried operation. A folder appearing
+at an ordinary create or restore destination cannot establish completion.
+
+Adopting an existing storage binding writes its security audit in the same
+transaction as the binding. Template creation, import, content or metadata
+changes, removal, and access grants and revocations also commit their security
+audit with the change. Configuration updates and resets do the same, without
+putting credentials or configuration values in the audit event.
+
+Creating or revoking a public link records one history entry per selected
+top-level item and a security event in the transaction that changes the link.
+Revoking a link still works when its creator has lost access to its original
+folder. The recorded paths describe the original selection; they do not grant
+access to the history reader. Repeating a revocation produces no second event.
+
+## Public-link and administrative reads
+
+Files records administrative folder listings, downloads released to the
+administrator, and version listings in history and the security audit before
+returning the result. Ordinary signed-in listings, searches, previews, and
+downloads do not create read-history events.
+
+For public links, Files counts page views, released downloads, and failed
+password attempts. A download count means that Files released a download or
+archive lease; Filegate does not report whether the visitor completed it.
+Internal share-management listing does not increment the public counters.
+
+Only shortened networks are stored: IPv4 /24 and IPv6 /48. Browser names come
+from a fixed family list, with no stored user-agent string. Each link and hour
+keeps at most 100 distinct networks, then uses an overflow bucket. A network
+is not a person. After 30 days, maintenance replaces those buckets with daily
+counts without networks or browser families. Daily counts expire under the
+configured history retention. One maintenance call handles at most 10,000
+source rows across aggregation and deletion.
+
+A definitive refusal of directory publication or a same-root move leaves the
+original operation retryable. A missing response keeps it unresolved. Recursive
+permanent deletion can remove part of a tree before failing, so its refusal is
+not treated as proof that nothing changed. Existing unfinished operations from
+before this rollout receive an adopted history entry with their original
+actor and dates. An ordinary create or restore target, or a missing delete
+source, cannot prove their completion; such operations remain unresolved.

@@ -6,26 +6,32 @@ import { createTemplateService } from "./templates";
 
 type Classification = { kind: "read" } | { kind: "mutation" | "mixed"; coverage: "converted" | readonly PendingMigrationKey[] };
 const read: Classification = { kind: "read" };
-const mixed = (...coverage: PendingMigrationKey[]): Classification => ({ kind: "mixed", coverage });
-const mutation = (...coverage: PendingMigrationKey[]): Classification => ({ kind: "mutation", coverage });
-const base = () => mixed("lifecycle.operation");
+const mixed = (...coverage: PendingMigrationKey[]): Classification => ({
+  kind: "mixed",
+  coverage: coverage.length ? coverage : "converted",
+});
+const mutation = (...coverage: PendingMigrationKey[]): Classification => ({
+  kind: "mutation",
+  coverage: coverage.length ? coverage : "converted",
+});
+const base = () => mixed();
 // This is the classification of Filegate user-data effects. Catalog/grant/configuration
 // writes stay in Postgres; "read" here means they do not change data in Filegate.
 const files: Record<string, Classification> = {
-  maintain: mutation("lifecycle.operation", "sharing.inbox_session"),
-  provision: mutation("lifecycle.operation"),
-  archive: mutation("lifecycle.operation"),
+  maintain: mutation("sharing.inbox_session"),
+  provision: mutation(),
+  archive: mutation(),
   retire: read,
   archives: read,
-  restore: mutation("lifecycle.operation"),
+  restore: mutation(),
   adminList: read,
   adminDownload: read,
   adminVersions: read,
   adminDeleteVersion: mutation("lifecycle.admin_delete_version"),
-  adminDelete: mutation("lifecycle.operation"),
-  deleteDirectory: mutation("lifecycle.operation"),
-  deleteArchive: mutation("lifecycle.operation"),
-  retry: mutation("lifecycle.operation"),
+  adminDelete: mutation(),
+  deleteDirectory: mutation(),
+  deleteArchive: mutation(),
+  retry: mutation(),
   refreshRoot: read,
   rebuildRoot: read,
   unlockShare: base(),
@@ -35,16 +41,16 @@ const files: Record<string, Classification> = {
   publicShare: base(),
   publicShareDownload: base(),
   publicShareArchive: base(),
-  publicInboxUpload: mixed("lifecycle.operation", "sharing.inbox_session"),
-  publicInboxLease: mixed("lifecycle.operation", "sharing.inbox_session"),
-  publicInboxCommit: mixed("lifecycle.operation", "sharing.inbox_session"),
-  publicInboxAbort: mutation("lifecycle.operation", "sharing.inbox_session"),
-  reconcileInboxUploads: mutation("lifecycle.operation", "sharing.inbox_session"),
+  publicInboxUpload: mixed("sharing.inbox_session"),
+  publicInboxLease: mixed("sharing.inbox_session"),
+  publicInboxCommit: mixed("sharing.inbox_session"),
+  publicInboxAbort: mutation("sharing.inbox_session"),
+  reconcileInboxUploads: mutation("sharing.inbox_session"),
   adminUploadReservations: read,
-  remove: mutation("lifecycle.operation", "files.ensure_trash", "trash.transfer"),
+  remove: mutation("files.ensure_trash", "trash.transfer"),
   trash: base(),
   trashEntry: base(),
-  restoreTrash: mutation("lifecycle.operation", "trash.transfer"),
+  restoreTrash: mutation("trash.transfer"),
   bases: base(),
   baseNames: read,
   list: base(),
@@ -54,27 +60,27 @@ const files: Record<string, Classification> = {
   folderLocation: base(),
   mkdir: { kind: "mutation", coverage: "converted" },
   mkdirs: { kind: "mutation", coverage: "converted" },
-  upload: mutation("lifecycle.operation", "files.upload_session"),
-  uploadLease: mixed("lifecycle.operation", "files.upload_session"),
-  commitUpload: mutation("lifecycle.operation", "files.upload_session"),
-  abortUpload: mutation("lifecycle.operation", "files.upload_session"),
+  upload: mutation("files.upload_session"),
+  uploadLease: mixed("files.upload_session"),
+  commitUpload: mutation("files.upload_session"),
+  abortUpload: mutation("files.upload_session"),
   rename: { kind: "mutation", coverage: "converted" },
   move: { kind: "mutation", coverage: "converted" },
   copy: { kind: "mutation", coverage: "converted" },
   bundle: base(),
   versions: base(),
-  commentVersion: mutation("lifecycle.operation", "files.version_comment"),
-  restoreVersion: mutation("lifecycle.operation", "files.version_restore"),
-  restoreVersionAs: mutation("lifecycle.operation", "files.version_restore_copy"),
-  deleteVersion: mutation("lifecycle.operation", "files.version_delete"),
+  commentVersion: mutation("files.version_comment"),
+  restoreVersion: mutation("files.version_restore"),
+  restoreVersionAs: mutation("files.version_restore_copy"),
+  deleteVersion: mutation("files.version_delete"),
   versionDownload: base(),
   editor: base(),
   templateSource: base(),
-  createFromBytes: mutation("lifecycle.operation", "files.write_bytes"),
-  createDocument: mutation("lifecycle.operation", "files.write_bytes"),
+  createFromBytes: mutation("files.write_bytes"),
+  createDocument: mutation("files.write_bytes"),
   editorFileInfo: base(),
   editorContent: base(),
-  editorSave: mutation("lifecycle.operation", "files.write_bytes"),
+  editorSave: mutation("files.write_bytes"),
   entry: base(),
   entryById: base(),
   recent: base(),
@@ -82,8 +88,8 @@ const files: Record<string, Classification> = {
   setFavorite: base(),
   thumbnail: base(),
   capabilityDownload: base(),
-  capabilityUploadStatus: mixed("lifecycle.operation", "files.upload_session"),
-  capabilityUpload: mutation("lifecycle.operation", "files.upload_session"),
+  capabilityUploadStatus: mixed("files.upload_session"),
+  capabilityUpload: mutation("files.upload_session"),
   download: base(),
   downloadById: base(),
   inlinePdf: base(),
@@ -103,7 +109,7 @@ const templates: Record<string, Classification> = {
   grants: read,
   grant: read,
   revoke: read,
-  use: mutation("lifecycle.operation", "files.write_bytes"),
+  use: mutation("files.write_bytes"),
 };
 function unclassified(methods: readonly string[], table: Record<string, Classification>): string[] {
   return methods.filter((name) => !Object.hasOwn(table, name));
@@ -118,7 +124,6 @@ const frozen = [
   "files.version_delete",
   "trash.transfer",
   "sharing.inbox_session",
-  "lifecycle.operation",
   "lifecycle.admin_delete_version",
 ] as const;
 function addedKeys(keys: readonly string[]): string[] {
@@ -134,7 +139,6 @@ const frozenCallSites: Readonly<Record<string, number>> = {
   "files.version_delete": 1,
   "trash.transfer": 1,
   "sharing.inbox_session": 3,
-  "lifecycle.operation": 1,
   "lifecycle.admin_delete_version": 1,
 } satisfies Record<(typeof frozen)[number], number>;
 function grownCallSites(counts: Readonly<Record<string, number>>): string[] {

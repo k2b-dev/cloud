@@ -45,6 +45,7 @@ import { type Binding, bindings, type NewBinding } from "../data/bases";
 import { favorites, recent } from "../data/marks";
 import { operations, rootLockWait, withRootLock, withUploadLock } from "../data/operations";
 import { entryRef, persistedEntryRefId, resolveEntryRefId } from "../data/references";
+import { maintainShareAccess } from "../data/share-access";
 import { shares } from "../data/shares";
 import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
 import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "../document-assets";
@@ -170,7 +171,15 @@ export function createFilesService(
       gid_number: identity.gid,
     };
   }
-  async function inspect(root: FilesRoot, item: Candidate, info: RootInfo, serverUrl: string, adopt = false): Promise<Inspection> {
+  async function inspect(
+    root: FilesRoot,
+    item: Candidate,
+    info: RootInfo,
+    serverUrl: string,
+    actor: RequestActor,
+    adopt = false,
+    call?: UserFilesCall,
+  ): Promise<Inspection> {
     const summary: BaseSummary = {
       id: `${item.area}:${item.kind}:${item.identity_id}`,
       area: item.area,
@@ -217,7 +226,8 @@ export function createFilesService(
       if (node.gid !== item.gid_number || (item.kind === "users" && node.uid !== item.uid_number))
         return result("conflict", "ownership_mismatch");
     }
-    if (!existing.length && (item.area === "freeipa" || adopt)) existing = await deps.bindings.claim(item);
+    if (!existing.length && (item.area === "freeipa" || adopt))
+      existing = await deps.bindings.claim(item, { actor, requestId: call?.requestId, via: call?.via });
     if (!existing.length) return result("unassigned", "unassigned");
     if (existing.length !== 1 || !sameBinding(existing[0]!, item)) return result("conflict", "binding_conflict");
     return result("existing", null, existing[0]!);
@@ -284,10 +294,10 @@ export function createFilesService(
     if (issue) throw new FilesError(issue, 403);
     const service = deps.connect(state.config).root(item.root);
     const info = await service.info();
-    let inspection = await inspect(service, item, info, state.config.url);
+    let inspection = await inspect(service, item, info, state.config.url, actor);
     if (inspection.summary.status === "missing" && item.area === "cloud" && state.config.cloud.autoCreate) {
       await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
-      inspection = await inspect(service, item, info, state.config.url);
+      inspection = await inspect(service, item, info, state.config.url, actor);
     }
     if (inspection.summary.status !== "existing") throw new FilesError(inspection.summary.reason ?? "forbidden", 403);
     const execution = executionFor({ inspection, state });
@@ -884,7 +894,13 @@ export function createFilesService(
           },
         )
       : 0;
-    return { activityChecked, activityPurged };
+    const shareAccess = config
+      ? await maintainShareAccess({ now: input.now, retentionDays: config.activityRetentionDays }).catch((error: unknown) => {
+          maintenanceLog.error("Public link access retention failed", { error });
+          return { rolledUp: 0, purged: 0 };
+        })
+      : { rolledUp: 0, purged: 0 };
+    return { activityChecked, activityPurged, shareAccessRolledUp: shareAccess.rolledUp, shareAccessPurged: shareAccess.purged };
   }
   const sharing = createSharingService<Awaited<ReturnType<typeof authorized>>>({
     authorized,
@@ -979,10 +995,10 @@ export function createFilesService(
           const root = deps.connect(state.config).root(state.config[area].root);
           const info = await root.info();
           for (const item of items) {
-            let entry = await inspect(root, item, info, state.config.url);
+            let entry = await inspect(root, item, info, state.config.url, actor, false, call);
             if (entry.summary.status === "missing" && area === "cloud" && state.config.cloud.autoCreate) {
               await provisionCandidate(state.config, item, state.self.user.id, state.self.user.username);
-              entry = await inspect(root, item, info, state.config.url);
+              entry = await inspect(root, item, info, state.config.url, actor, false, call);
             }
             if (entry.summary.status === "existing" && area === "freeipa") {
               try {
@@ -1840,12 +1856,12 @@ export function createFilesService(
             if (!node.directory) throw new FilesError("not_directory");
           }
       }
-      await deps.writeConfiguration(input);
+      await deps.writeConfiguration(input, call);
     },
     async resetConfiguration(call: UserFilesCall): Promise<void> {
       const actor = call.actor;
       await requireAdmin(actor);
-      await deps.resetConfiguration();
+      await deps.resetConfiguration(call);
     },
     async admin(
       call: UserFilesCall,
@@ -1935,7 +1951,7 @@ export function createFilesService(
           status = "conflict";
           reason = "ownership_mismatch";
         } else if (knownCandidate) {
-          const checked = await inspect(root, knownCandidate, info, config.url);
+          const checked = await inspect(root, knownCandidate, info, config.url, actor, false, call);
           status = checked.summary.status;
           reason = checked.summary.reason;
         } else if (node && proof.state === "present") {
@@ -2113,7 +2129,7 @@ export function createFilesService(
           : { id: identity.id, name: identity.name, uid: null, gid: identity.gidNumber },
       );
       const root = deps.connect(config).root(item.root);
-      const result = await inspect(root, item, await root.info(), config.url, true);
+      const result = await inspect(root, item, await root.info(), config.url, actor, true, call);
       if (result.summary.status !== "existing") throw new FilesError(result.summary.reason ?? "binding_conflict", 409);
       return result.summary;
     },
