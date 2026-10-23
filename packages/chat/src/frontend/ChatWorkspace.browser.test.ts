@@ -661,8 +661,7 @@ describe("ChatWorkspace browser read state", () => {
         // Confirm delivery while unfocused before forcing the expired-replay snapshot below.
         for (let index = 1; index <= 60; index++) {
           harness.receive(chat, nora, `Resync arrival ${index}`);
-          if (index % 10 === 0)
-            await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+          if (index % 10 === 0) await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
         }
         await page.evaluate(() => {
           Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
