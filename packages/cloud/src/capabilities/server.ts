@@ -12,6 +12,7 @@ import {
   capabilityResultSchema,
 } from "../contracts/capabilities";
 import type { RequestAuthority } from "../server";
+import { canUseApp } from "../services/app-access";
 import { get } from "../services/settings";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import { publicCloudOrigin } from "../shared/app-url";
@@ -185,7 +186,7 @@ export const invokeCapabilityWithDataSchema = <TDataSchema extends z.ZodType, TI
 ): Promise<CapabilityClientResult<z.output<TDataSchema>>> => invokeCapabilityWithResultSchema(invocation, dataSchema, caller);
 
 export const listCapabilityCatalog = async (
-  options: { cursor?: string; limit?: number; locale?: string } = {},
+  options: { cursor?: string; limit?: number; locale?: string; authority?: RequestAuthority | null } = {},
 ): Promise<CapabilityCatalogClientResult> => {
   const limit = options.limit ?? 25;
   const messages = capabilityMessages(options.locale);
@@ -198,30 +199,35 @@ export const listCapabilityCatalog = async (
   try {
     return {
       ok: true,
-      data: await loadCapabilityCatalogPage({ cursor: options.cursor, limit }, {}, options.locale),
+      data: await loadCapabilityCatalogPage({ cursor: options.cursor, limit }, {}, options.locale, options.authority ?? null),
     };
   } catch {
     return { ok: false, error: { code: "APP_UNAVAILABLE", message: messages.cloudUnavailable, status: 503 } };
   }
 };
 
-export const getCapabilityCatalogApp = async (appId: string, locale?: string): Promise<CapabilityCatalogAppClientResult> => {
+export const getCapabilityCatalogApp = async (
+  appId: string,
+  locale?: string,
+  authority: RequestAuthority | null = null,
+): Promise<CapabilityCatalogAppClientResult> => {
   try {
     const [capability, registeredApp] = await Promise.all([getCapability(appId), getApp(appId)]);
     const presentedApp = registeredApp && locale ? resolveAppPresentation(registeredApp, locale) : registeredApp;
     return {
       ok: true,
-      data: capability
-        ? {
-            appId: capability.appId,
-            appName: presentedApp?.name ?? capability.appName,
-            appIcon: capability.appIcon,
-            appDescription: presentedApp?.description ?? capability.appDescription,
-            manifest: locale
-              ? resolveCapabilityManifestPresentation(capability.manifest, capability.presentation, locale)
-              : capability.manifest,
-          }
-        : null,
+      data:
+        capability && registeredApp && (await canUseApp(authority, registeredApp))
+          ? {
+              appId: capability.appId,
+              appName: presentedApp?.name ?? capability.appName,
+              appIcon: capability.appIcon,
+              appDescription: presentedApp?.description ?? capability.appDescription,
+              manifest: locale
+                ? resolveCapabilityManifestPresentation(capability.manifest, capability.presentation, locale)
+                : capability.manifest,
+            }
+          : null,
     };
   } catch {
     return { ok: false, error: { code: "APP_UNAVAILABLE", message: capabilityMessages(locale).cloudUnavailable, status: 503 } };
@@ -238,7 +244,10 @@ export const getCapabilityActionWording = async (
   appId: string,
   localId: string,
   locale?: string,
+  authority: RequestAuthority | null = null,
 ): Promise<CapabilityActionWording | null> => {
+  const registeredApp = await getApp(appId);
+  if (!registeredApp || !(await canUseApp(authority, registeredApp))) return null;
   const capability = await getCapability(appId);
   const action = capability?.manifest.actions.find((candidate) => candidate.localId === localId);
   return capability && action ? resolveCapabilityActionWording(action, capability.presentation, locale ?? DEFAULT_LOCALE) : null;
