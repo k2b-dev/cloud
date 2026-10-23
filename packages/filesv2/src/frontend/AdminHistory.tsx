@@ -351,7 +351,7 @@ export default function AdminHistory(props: AdminHistoryProps) {
             ]}
           />
           <Show when={filtered()}>
-            <Button size="sm" variant="text" onClick={resetFilters}>
+            <Button size="sm" variant="text" class="filesv2-history-link" onClick={resetFilters}>
               {h().reset}
             </Button>
           </Show>
@@ -422,6 +422,7 @@ export default function AdminHistory(props: AdminHistoryProps) {
           <Match when={rows().length > 0}>
             <div class="filesv2-admin-history-table">
               <DataTable
+                tableClass="filesv2-admin-history-data"
                 rows={rows()}
                 columns={columns}
                 getRowId={(row) => row.key}

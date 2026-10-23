@@ -666,3 +666,7 @@
   .filesv2-admin-history-table { display: block; }
   .filesv2-admin-history-list { display: none; }
 }
+
+/* The approved audit table reads at the same scale as the activity sentences. */
+.k2b-ui .k2b-data-table.filesv2-admin-history-data { font-size: 0.84375rem; }
+.k2b-ui .filesv2-admin-history-data .k2b-data-table__head-row > th { font-size: 0.78125rem; }
