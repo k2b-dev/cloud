@@ -511,22 +511,24 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         const dialog = page.locator(".spaces-time-block-dialog");
         await dialog.waitFor();
         await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())));
-        expect(await dialog.getByLabel("Beginn", { exact: true }).inputValue()).toBe("");
+        expect(await dialog.getByRole("combobox", { name: "Beginn", exact: true }).inputValue()).toBe("");
         expect(await dialog.getByLabel("Dauer", { exact: true }).inputValue()).toBe("45");
         await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
         expect(await dialog.textContent()).toContain("Wähle einen Beginn");
-        expect(await dialog.getByLabel("Beginn", { exact: true }).evaluate((el) => el === document.activeElement)).toBe(true);
+        expect(await dialog.getByRole("combobox", { name: "Beginn", exact: true }).evaluate((el) => el === document.activeElement)).toBe(
+          true,
+        );
         expect(f.posts).toEqual([]);
         await shot(page, "11-dialog-validation");
-        await dialog.getByLabel("Beginn", { exact: true }).fill("10:");
+        await dialog.getByRole("combobox", { name: "Beginn", exact: true }).fill("10:");
         await page.getByRole("option", { name: "10:15", exact: true }).click();
-        await dialog.getByLabel("Beginn", { exact: true }).press("Tab");
-        expect(await dialog.getByLabel("Beginn", { exact: true }).inputValue()).toBe("10:15");
+        await dialog.getByRole("combobox", { name: "Beginn", exact: true }).press("Tab");
+        expect(await dialog.getByRole("combobox", { name: "Beginn", exact: true }).inputValue()).toBe("10:15");
         expect(await dialog.textContent()).toContain("bis 11:00");
         expect(f.posts).toEqual([]);
-        await dialog.getByLabel("Beginn", { exact: true }).fill("10:07");
-        await dialog.getByLabel("Beginn", { exact: true }).press("Tab");
-        expect(await dialog.getByLabel("Beginn", { exact: true }).inputValue()).toBe("10:07");
+        await dialog.getByRole("combobox", { name: "Beginn", exact: true }).fill("10:07");
+        await dialog.getByRole("combobox", { name: "Beginn", exact: true }).press("Tab");
+        expect(await dialog.getByRole("combobox", { name: "Beginn", exact: true }).inputValue()).toBe("10:07");
         await dialog.getByLabel("Dauer", { exact: true }).fill("0");
         await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
         expect(await dialog.textContent()).toContain("Gib eine Dauer größer als 0 Minuten ein");
@@ -539,14 +541,14 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
         await dialog.waitFor();
         await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())));
-        await dialog.getByLabel("Beginn", { exact: true }).fill("10:00");
-        await dialog.getByLabel("Beginn", { exact: true }).press("Tab");
+        await dialog.getByRole("combobox", { name: "Beginn", exact: true }).fill("10:00");
+        await dialog.getByRole("combobox", { name: "Beginn", exact: true }).press("Tab");
         await settled(page);
         const beforeHeight = (await dialog.boundingBox())!.height;
         f.fault = "delay";
         await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
         await waitFor(async () => f.posts.length === 1);
-        expect(await dialog.getByLabel("Beginn", { exact: true }).isDisabled()).toBe(true);
+        expect(await dialog.getByRole("combobox", { name: "Beginn", exact: true }).isDisabled()).toBe(true);
         expect(await dialog.getByLabel("Dauer", { exact: true }).isDisabled()).toBe(true);
         expect(await dialog.getByRole("button", { name: "Abbrechen", exact: true }).isDisabled()).toBe(true);
         await page.keyboard.press("Escape");
@@ -557,7 +559,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         f.fault = "lost-response";
         f.release?.();
         await dialog.getByRole("button", { name: "Erneut versuchen", exact: true }).waitFor();
-        expect(await dialog.getByLabel("Beginn", { exact: true }).inputValue()).toBe("10:00");
+        expect(await dialog.getByRole("combobox", { name: "Beginn", exact: true }).inputValue()).toBe("10:00");
         expect(await dialog.getByLabel("Dauer", { exact: true }).inputValue()).toBe("45");
         await shot(page, "04-dialog-recovery");
         await dialog.getByRole("button", { name: "Erneut versuchen", exact: true }).click();
@@ -768,8 +770,8 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         else expect(dialogBounds.width).toBeLessThanOrEqual(390);
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
         await shot(page, "02-dialog-open");
-        await dialog.getByLabel("Beginn", { exact: true }).fill("10:00");
-        await dialog.getByLabel("Beginn", { exact: true }).press("Tab");
+        await dialog.getByRole("combobox", { name: "Beginn", exact: true }).fill("10:00");
+        await dialog.getByRole("combobox", { name: "Beginn", exact: true }).press("Tab");
         await shot(page, "02-dialog-after-deadline");
         await dialog.getByRole("button", { name: "Zeit blocken", exact: true }).click();
         await dialog.waitFor({ state: "detached" });
@@ -777,7 +779,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         await page.context().close();
         page = await open(f, true, width);
         await page.getByRole("button", { name: "Zeit blocken", exact: true }).click();
-        await page.locator(".spaces-time-block-dialog").getByLabel("Beginn", { exact: true }).fill("13:00");
+        await page.locator(".spaces-time-block-dialog").getByRole("combobox", { name: "Beginn", exact: true }).fill("13:00");
         await page.locator(".spaces-time-block-dialog").getByRole("button", { name: "Zeit blocken", exact: true }).click();
         await page.locator(".spaces-time-block-dialog").waitFor({ state: "detached" });
         expect(await blocks(f)).toHaveLength(2);
@@ -856,7 +858,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
       expect(await page.locator("body").evaluate((el) => getComputedStyle(el).getPropertyValue("--k2b-surface"))).not.toBe(lightSurface);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
       expect((await dialog.boundingBox())!.width).toBeLessThanOrEqual(820);
-      const start = dialog.getByLabel("Beginn", { exact: true });
+      const start = dialog.getByRole("combobox", { name: "Beginn", exact: true });
       expect(await start.inputValue()).toBe("10:00");
       await start.focus();
       await page.keyboard.press("ControlOrMeta+A");
