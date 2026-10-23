@@ -4,12 +4,15 @@ import { batch, createSignal, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
 import type { Mailbox, MailConversationPreview } from "../../contracts";
+import { resolveMailSearchRoute } from "../../search-state";
 import type { MailFolderView, MessageDetail } from "../../service/messages";
 import MailConversationList from "./MailConversationList";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationReader from "./MailConversationReader";
+import { MailSearchInput, MailSearchOptions, MailSearchTrigger } from "./MailWorkspaceSearch";
 import type { MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import type { MailListItem } from "./mail-navigation";
+import { createMailboxSearch } from "./mailbox-search";
 
 export type MailListHarnessOptions = {
   locale: "en" | "de";
@@ -17,6 +20,8 @@ export type MailListHarnessOptions = {
   selectedConversationId: string | null;
   selectionMode?: boolean;
   sidebarCollapsed?: boolean;
+  /** Initial resizable list width for room-boundary fixtures. */
+  listSize?: number;
   /** Folders whose mail stays inside them, which All mail and the work views name one after another. */
   folderOnlyHints?: MailFolderView[];
   /**
@@ -48,6 +53,34 @@ declare global {
     mailNavigations: string[];
     folderHintDismissed: boolean;
   }
+}
+
+function HarnessHead(props: { requestUrl: string; onOpenHref: (href: string, replace?: boolean) => void }) {
+  const search = createMailboxSearch({
+    mailboxId: "Box001",
+    get requestUrl() {
+      return props.requestUrl;
+    },
+    get query() {
+      return new URL(props.requestUrl, location.origin).searchParams.get("q") ?? "";
+    },
+    get search() {
+      return resolveMailSearchRoute(new URL(props.requestUrl, location.origin));
+    },
+    savedViews: [],
+    activeSavedViewId: null,
+    folders: [],
+    localTags: [],
+    canWrite: true,
+    onOpenHref: (href, replace) => props.onOpenHref(href, replace),
+  });
+  return (
+    <AppWorkspace.Head
+      views={search.opened() ? <MailSearchInput search={search} mailboxName="Example Club" /> : "Inbox"}
+      filters={search.opened() ? <MailSearchOptions search={search} count={0} /> : undefined}
+      actions={!search.opened() ? <MailSearchTrigger search={search} /> : undefined}
+    />
+  );
 }
 
 window.mailNavigations = [];
@@ -193,6 +226,7 @@ window.mountMailList = (options) => {
               </AppWorkspace.SidebarBody>
             </AppWorkspace.SidebarDesktop>
           </AppWorkspace.Sidebar>
+          <HarnessHead requestUrl={requestUrl()} onOpenHref={openHref} />
           <AppWorkspace.Content>
             <AppWorkspace.Main class="p-0" mobilePane={options.selectedConversationId ? "main" : "conversations"} scroll={false}>
               <AppWorkspace.MainPane
@@ -200,7 +234,7 @@ window.mountMailList = (options) => {
                 label="Conversations"
                 scroll={false}
                 open
-                defaultSize={430}
+                defaultSize={options.listSize ?? 430}
                 minSize={300}
                 maxSize={620}
               >
@@ -209,7 +243,7 @@ window.mountMailList = (options) => {
                   mailboxId="Box001"
                   requestUrl={requestUrl()}
                   query={options.requestUrl ? (new URL(requestUrl(), location.origin).searchParams.get("q") ?? "") : ""}
-                  search={{ query: "", expression: null, sort: "relevance", error: null }}
+                  search={resolveMailSearchRoute(new URL(requestUrl(), location.origin))}
                   title="Inbox"
                   namedBy="tabs"
                   items={list.items}
@@ -304,7 +338,7 @@ window.mountMailList = (options) => {
                     listCollapsed={false}
                     detailsOpen={false}
                     toolbarActions={options.toolbarActions ?? ["reply"]}
-                    onRestoreList={noop}
+                    onToggleList={noop}
                     onToggleDetails={noop}
                     onToolbarActionsChange={noop}
                     actionPending={false}

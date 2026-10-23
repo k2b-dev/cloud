@@ -1,5 +1,6 @@
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import { type CapabilityResult, ContactDirectoryResolveDataSchema } from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
 import type { z } from "zod";
 import {
   type CalendarAddress,
@@ -54,14 +55,16 @@ export type AppIntegrationFailure = { ok: false; code: string; message: string; 
 type AppIntegrationResult<T> = { ok: true; data: T } | AppIntegrationFailure;
 type CapabilityFailure = { code: string; message: string; status: number };
 
-export const getSpacesMailIntegrationAvailability = async (): Promise<{
+export const getSpacesMailIntegrationAvailability = async (
+  authority: RequestAuthority | null,
+): Promise<{
   invitations: boolean;
   settings: boolean;
   composer: boolean;
   context: boolean;
 }> => {
   try {
-    const catalog = await getCapabilityCatalogApp("spaces");
+    const catalog = await getCapabilityCatalogApp("spaces", undefined, authority);
     if (!catalog.ok || !catalog.data) return { invitations: false, settings: false, composer: false, context: false };
     const queries = new Set(catalog.data.manifest.queries.map((operation) => operation.localId));
     const actions = new Set(catalog.data.manifest.actions.map((operation) => operation.localId));

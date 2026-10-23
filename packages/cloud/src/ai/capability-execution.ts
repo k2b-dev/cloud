@@ -10,8 +10,7 @@ import {
   type CapabilityActionReviewData,
   CapabilityActionReviewDataSchema,
 } from "../contracts/capabilities";
-import type { RequestActor } from "../server";
-import type { AccessSubject } from "../server/services/access";
+import type { RequestActor, RequestAuthority } from "../server";
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import { isAccountExpired } from "../services/account-model";
 import { accounts } from "../services/accounts";
@@ -26,13 +25,14 @@ import type { AiConversationService } from "./types";
 export { AiCapabilityExecutionError, aiCapabilityCheckResult } from "./capability-result";
 
 type CapabilityActor = Extract<RequestActor, { kind: "user" }>;
+type AiCapabilityAuthority = RequestAuthority & { actor: CapabilityActor };
 
 export const resolveAiCapabilityActor = async (input: {
   conversationId: string;
   persistedActor?: RequestActor;
   store: Pick<AiConversationService, "getConversation">;
   getUser?: typeof accounts.users.get;
-}): Promise<{ actor: CapabilityActor; accessSubject: AccessSubject }> => {
+}): Promise<AiCapabilityAuthority> => {
   if (input.persistedActor?.kind !== "user") throw new Error("Cloud capabilities require a current user-backed actor.");
   const conversation = await input.store.getConversation({ conversationId: input.conversationId });
   if (!conversation?.createdByUserId || conversation.createdByUserId !== input.persistedActor.user.id) {
@@ -44,9 +44,16 @@ export const resolveAiCapabilityActor = async (input: {
   if (!(await isAccountCategoryAllowed(user))) throw new Error("Cloud capability actor category is disabled.");
   // A turn started in the mobile app keeps its limits: no administrator role, and invocations say so.
   if (input.persistedActor.sessionKind === "app") {
-    return { actor: { kind: "user", user: withoutAdminRole(user), sessionKind: "app" }, accessSubject: { type: "user", userId: user.id } };
+    return {
+      actor: { kind: "user", user: withoutAdminRole(user), sessionKind: "app" },
+      accessSubject: { type: "user", userId: user.id },
+      credentialKind: "session",
+      scopes: [],
+    };
   }
-  return { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } };
+  // Assistant persists a user actor, not a reusable transport credential. Its supported
+  // delegation is the current conversation owner's session authority.
+  return { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id }, credentialKind: "session", scopes: [] };
 };
 
 const idempotencyKey = (conversationId: string, callId: string): string =>
@@ -83,7 +90,7 @@ const parseCapabilityResponse = async (response: Response, dispatched: boolean):
 type AiCapabilityCall = {
   conversationId: string;
   turnId?: string;
-  authority: { actor: CapabilityActor; accessSubject: AccessSubject };
+  authority: AiCapabilityAuthority;
   locale?: string;
   entry: AiCapabilityCatalogEntry;
   args: unknown;
@@ -140,12 +147,7 @@ const dispatchAiCapability = async (
     appId: input.entry.appId,
     capabilityId: input.entry.operation.localId,
     input: input.args,
-    authority: {
-      actor: input.authority.actor,
-      accessSubject: input.authority.accessSubject,
-      credentialKind: "session",
-      scopes: [],
-    },
+    authority: input.authority,
     mandate: input.mandate
       ? {
           mandateId: input.mandate.id,
