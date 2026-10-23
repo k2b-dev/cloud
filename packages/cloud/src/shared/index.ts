@@ -35,6 +35,7 @@ export {
 } from "./ai-usage";
 export * from "./app-presentation";
 export * from "./app-url";
+export * from "./avatar-art";
 export * from "./branding";
 export * from "./email-html";
 export * from "./format";
