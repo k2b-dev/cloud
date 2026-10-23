@@ -834,7 +834,17 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         expect(await blocks(f)).toHaveLength(2);
         await page.context().close();
         page = await open(f, true, width);
-        expect(await page.locator(".spaces-time-block-row").count()).toBe(2);
+        const rows = page.locator(".spaces-time-block-row");
+        expect(await rows.count()).toBe(2);
+        if (width === 390) {
+          await rows.last().scrollIntoViewIfNeeded();
+          await settled(page);
+          for (const row of [rows.first(), rows.last()]) {
+            const bounds = (await row.boundingBox())!;
+            expect(bounds.y).toBeGreaterThanOrEqual(0);
+            expect(bounds.y + bounds.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+          }
+        }
         await shot(page, "05-task-multiple-blocks");
         await page.context().close();
         page = await open(f, false, width, "week");
@@ -862,10 +872,19 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
       }
       const page = await open(f, false, width, "day", "/app/spaces?view=today");
       const row = (id: string) => page.locator(`.spaces-overview-work-row[href$="block=${id}"]`);
+      const visibleBlockTime = async (id: string, start: string, end: string) => {
+        const time = row(id).locator("time");
+        await time.waitFor({ state: "visible" });
+        const text = await time.innerText();
+        expect(text).toContain(start);
+        expect(text).toContain(end);
+        expect(await time.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      };
       try {
         await row(today.id).waitFor();
         expect(await row(upcoming.id).count()).toBe(0);
         expect(await row(today.id).textContent()).toContain("Zeitblöcke");
+        await visibleBlockTime(today.id, "10:00", "10:45");
         await shot(page, "12-my-work-today");
         const upcomingTab = page.locator('[data-view-tab="upcoming"] a');
         if (await upcomingTab.isVisible()) await upcomingTab.click();
@@ -880,6 +899,7 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         await row(upcoming.id).waitFor();
         expect(new URL(page.url()).searchParams.get("view")).toBe("upcoming");
         await page.waitForFunction(() => document.documentElement.dataset.timeBlocksFixtureReady === "true");
+        await visibleBlockTime(upcoming.id, "13:00", "13:45");
         await shot(page, "13-my-work-upcoming");
         await page.goBack();
         await row(today.id).waitFor();
