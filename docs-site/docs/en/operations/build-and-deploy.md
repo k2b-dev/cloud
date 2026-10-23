@@ -504,3 +504,43 @@ shows a neutral document; API calls and writes still need a network. Updated
 workers wait until all windows of that installation close, so a deployment does
 not replace a running customer page. Installation, Safari storage separation,
 and Home Screen behavior still need verification on the target devices.
+
+### Paired App-PWA devices and visits
+
+Applications that opt into [App-PWA sessions](/en/docs/identity/app-pwa-sessions)
+run their service's `setup()` in the normal application startup lifecycle. The
+reserved `_cloud_pwa_*` tables live in that application's Postgres schema and
+need the same backup coverage as its domain data. Pairing secrets are stored
+as hashes. This contract supports the platform's PostgreSQL 15–17 range.
+
+Configure the existing canonical public Cloud URL as HTTPS. The service uses
+that origin for QR validation and same-origin requests, even when the upstream
+request arrives over internal HTTP. Forward the `Origin`, `Cookie`, and
+`X-App-Pwa-CSRF` headers unchanged through the trusted gateway. The application
+must expose its explicit guest routes while keeping staff operations subject
+to current web-session and application authorization.
+
+The device can live at most 12 hours. Its initiating web session and owner
+validity can shorten that lifetime. Customer visits last at most 60 minutes,
+with a 15-minute idle deadline; status traffic does not renew them. Logout,
+authority invalidation and device revocation close access to its visits.
+Revocation and domain completion serialize in Postgres. Audit records include
+app, owner, device and visit identifiers, without QR or signature content.
+
+Guest operations hold authority locks only for their bounded request
+transaction. Category-policy reads also hold a shared settings-table lock, and
+local device resource operations hold shared permission-table locks, so policy
+or grant writes can briefly wait for the command. Handlers must finish within
+the existing request budget and keep external work outside this transaction.
+A timeout or database failure returns a recoverable error rather than a
+successful completion.
+
+Cancelling an active transaction can open one short-lived control connection
+with the same configured database identity. Include these connections in the
+Postgres connection budget. The database role must retain permission to cancel
+its own backends; no superuser permission is required.
+
+Use a separate browser profile without an employee sign-in on shared devices.
+Installing under another path does not create a separate origin. The example
+and this release do not migrate existing application share links or change
+Cloud mobile-app pairing.

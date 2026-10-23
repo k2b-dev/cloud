@@ -30,7 +30,9 @@
       "@k2b/cloud/contracts": ["./src/contracts/index.ts"],
       "@k2b/cloud/contracts/*": ["./src/contracts/*"],
       "@k2b/cloud/api": ["./src/api/index.ts"],
-      "@k2b/cloud/clients/core": ["./src/clients/core.ts"]
+      "@k2b/cloud/clients/core": ["./src/clients/core.ts"],
+      "@k2b/cloud/app-pwa": ["./src/app-pwa/index.ts"],
+      "@k2b/cloud/app-pwa/browser": ["./src/app-pwa/protocol.ts"]
     }
   }
 }
