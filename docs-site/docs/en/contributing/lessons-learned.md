@@ -172,6 +172,7 @@ convention still needs a check or a test.
 | Inert server-rendered interaction | Interactive markup is rendered without an island, or browser inspection receives drawing labels instead of display labels. | Tests: Grids `page.render.test.tsx` checks display-only chart islands and SVG parity; `chart-tooltip.test.ts` checks named, formatted tooltips; `chart-tooltips.browser.test.ts` checks inspection and layout across mounting. Check: `chart-rendering` fails on raw stdlib chart renderers outside the allow-list and on charts outside islands. |
 | User navigation mistaken for an async action's own navigation | Every draft-key change keeps an app opening active, leaving another chat's composer read-only. | Tests: `chat-slash.behavior.test.ts` requires `follow()` for one draft move and cancels unannounced changes; Assistant's `composer-app-commands.behavior.test.tsx` checks that editing returns before the previous save finishes. |
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
+| Workspace layout changes shape after the first render | A workspace region such as a `MainPane` mounts only after hydration, and the layout drops or moves content that was already shown. | Test: Chat `ChatThreads.browser.test.ts` switches from a chat without threads to one with threads at 1440 and 2000 px. Library fix pending in [#1752](https://github.com/k2b-dev/cloud/issues/1752). |
 
 ## Lessons
 
@@ -926,6 +927,13 @@ convention still needs a check or a test.
 - **Root cause:** Fibel pinned an older SDK, Solid restricted its nested Seroval to the 1.5 series, Sharp was pinned to 0.35.4, and older range-compatible Proxy-Addr and Source-Map-JS versions remained locked.
 - **Error class:** Checking direct dependency versions instead of every resolved copy and its upstream range.
 - **Guard:** The existing nightly `bun audit --audit-level=high` checks the resolved graph. Verify upstream advisories and consumer paths before updating: Fibel still needs a supported SDK release, and the disputed cache advisory has no confirmed behavior fix in 4.3.0. Keep those findings visible rather than adding overrides or weakening the audit.
+
+### A thread column that appeared later emptied the chat
+
+- **What happened:** In Chat, creating the first thread of a chat, or switching from a chat without threads to one with threads, left the message area blank until a reload.
+- **Root cause:** `AppWorkspace.Main` renders its children without panes first; when a `MainPane` mounts later, the primary region reuses nodes from the discarded branch and stays empty ([#1752](https://github.com/k2b-dev/cloud/issues/1752)).
+- **Error class:** Workspace layout changes shape after the first render.
+- **Guard:** Chat keeps its thread pane mounted for every chat and shows it with CSS; a Chat browser test switches from a chat without threads to one with threads at 1440 and 2000 px. The library fix is pending in #1752.
 
 ## Add a lesson
 

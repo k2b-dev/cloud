@@ -32,7 +32,7 @@ import {
   ThreadSchema,
   UNREAD_CAP,
 } from "../service/contracts";
-import { inView, type ThreadList, type ThreadView, threadReadStart } from "./threads";
+import { chatHasThreads, inView, type ThreadList, type ThreadView } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageSchema>;
@@ -262,6 +262,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     older: Promise<boolean> | null;
     newer: Promise<boolean> | null;
     latest: Promise<void> | null;
+    threadsWork: Promise<void> | null;
+    threadsAgain: boolean;
   };
   let current: Current | null = null;
   const notify = () => {
@@ -418,32 +420,37 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
       notify();
     }
+    // Thread changes and reads missed while away are in no message delta.
+    await refreshThreads(chat);
   };
-  // A new message from someone else counts in its thread until a read event from the server says otherwise.
-  const countThreadUnread = (chat: Current, message: Message) => {
-    const list = chat.view.threads;
-    if (!list || message.kind !== "text" || message.author.id === snapshot.viewerId) return;
-    const start = threadReadStart(chat.view.conversation?.read ?? null, list, message.thread);
-    if (start === null || message.seq <= start) return;
-    const bump = (unread: number) => Math.min(UNREAD_CAP, unread + 1);
-    chat.view = {
-      ...chat.view,
-      threads:
-        message.thread === null
-          ? { ...list, general: { ...list.general, unread: bump(list.general.unread) } }
-          : {
-              ...list,
-              items: list.items.map((thread) => (thread.id === message.thread ? { ...thread, unread: bump(thread.unread) } : thread)),
-            },
-    };
-  };
-  const refreshThreads = async (chat: Current) => {
-    if (!active(chat)) return;
-    const list = await api.threads(chat.view.id).catch(() => undefined);
-    if (!active(chat)) return;
-    if (list === null) return noAccess(chat);
-    chat.view = list === undefined ? { ...chat.view, threadsStatus: "failed" } : { ...chat.view, threads: list, threadsStatus: "ready" };
-    notify();
+  // The threads' counts, last messages, and order come from the server, after every change that may touch them. A
+  // refresh asked for while one runs runs once more after it, so a burst of messages costs two requests.
+  const refreshThreads = (chat: Current): Promise<void> => {
+    if (chat.threadsWork) {
+      chat.threadsAgain = true;
+      return chat.threadsWork;
+    }
+    const work = (async () => {
+      do {
+        chat.threadsAgain = false;
+        if (!active(chat)) return;
+        const list = await api.threads(chat.view.id).catch(() => undefined);
+        if (!active(chat)) return;
+        if (list === null) return noAccess(chat);
+        // The chat's thread count follows its list, so the first thread shows the thread controls at once.
+        const conversation =
+          list && chat.view.conversation ? { ...chat.view.conversation, threads: list.items.length } : chat.view.conversation;
+        chat.view =
+          list === undefined
+            ? { ...chat.view, threadsStatus: "failed" }
+            : { ...chat.view, conversation, threads: list, threadsStatus: "ready" };
+        notify();
+      } while (chat.threadsAgain);
+    })().finally(() => {
+      chat.threadsWork = null;
+    });
+    chat.threadsWork = work;
+    return work;
   };
   const open = (next: OpenChatSnapshot & { view: ThreadView }) => {
     opening++;
@@ -471,6 +478,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       older: null,
       newer: null,
       latest: null,
+      threadsWork: null,
+      threadsAgain: false,
       metadataRev: next.conversation.rev,
       messages: new Map(next.page.items.map((message) => [message.id, MessageSchema.parse(message)])),
       subscription: null,
@@ -491,7 +500,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
             if (!active(chat)) return;
             if (data.type === "threads" && data.conversationId === chat.view.id) threadsChanged = true;
             if (data.type !== "message" || data.message.conversationId !== chat.view.id) continue;
-            if (!chat.messages.has(data.message.id)) countThreadUnread(chat, data.message);
+            if (data.message.kind === "text" && chatHasThreads(chat.view.conversation)) threadsChanged = true;
             applyMessage(chat, data.message);
             if (data.message.kind === "system") {
               system = true;
@@ -500,7 +509,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
             highestRev = Math.max(highestRev, data.message.rev);
           }
           if (membership) chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
-          if (threadsChanged) await refreshThreads(chat);
+          // The messages show at once; the threads follow.
+          if (threadsChanged) void refreshThreads(chat);
           if (system) await refreshMetadata(chat);
           if (active(chat)) chat.metadataRev = Math.max(chat.metadataRev, highestRev);
           publishMessages(chat);
@@ -802,6 +812,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         older: null,
         newer: null,
         latest: null,
+        threadsWork: null,
+        threadsAgain: false,
       };
       current = chat;
       noAccess(chat);

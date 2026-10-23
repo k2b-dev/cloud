@@ -42,7 +42,7 @@ Die Antwort zeigt die ursprüngliche Nachricht als Zitat. Wähle das Zitat, um z
 Nur Admins des Chats legen Threads an, benennen sie um und archivieren sie.
 
 :::steps
-1. Wähle **Neuer Thread** unter den Threads des Chats oder in der Thread-Auswahl neben dem Namen des Chats.
+1. Wähle **Neuer Thread** unter den Threads des Chats oder in der Thread-Auswahl neben dem Namen des Chats. In einem Chat ohne Threads öffnest du die Infos zum Chat, wählst **…** und dann **Neuer Thread**.
 2. Gib einen Namen ein und, wenn du willst, eine Beschreibung in einer Zeile.
 3. Wähle **Anlegen**.
 :::

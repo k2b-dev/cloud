@@ -27,7 +27,6 @@ import {
   type MessagePageSchema,
   type MessageSchema,
   type ReadUpdateSchema,
-  readStart,
   type ThreadListSchema,
 } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
@@ -203,9 +202,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     };
   };
   // In "All threads", a chip under each message names its thread and opens it.
-  const originOf = (chatId: string, message: Message) => {
-    if (message.kind !== "text") return undefined;
-    const view = messageThread(message);
+  const originOf = (chatId: string, view: ThreadView) => {
     const name = viewName(view, openChat()?.threads ?? null, t());
     if (!name) return undefined;
     return {
@@ -235,12 +232,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         : item;
     };
     const view = current.view;
+    // In "All threads", every message names its thread from its first frame, also a send that is still on its way.
+    const mixed = view === "all" && current.threads !== null && chatHasThreads(current.conversation);
     const result = current.messages.map((message) => {
       const own = message.kind === "text" && message.author.id === props.viewerId;
       return reuse({
         thread: message.thread,
         quote: quoteOf(current.id, message),
-        origin: view === "all" && current.threads && chatHasThreads(current.conversation) ? originOf(current.id, message) : undefined,
+        origin: mixed && message.kind === "text" ? originOf(current.id, messageThread(message)) : undefined,
         key: sendKeys.get(message.id) ?? message.id,
         kind: message.kind,
         authorId: message.author.id,
@@ -266,6 +265,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             key: send.clientId,
             kind: "text",
             thread: send.thread === "general" ? null : send.thread,
+            origin: mixed ? originOf(current.id, send.thread) : undefined,
             quote: send.replyTo ? { author: send.replyTo.author, text: send.replyTo.text } : undefined,
             authorId: props.viewerId,
             authorName: t().you,
@@ -346,6 +346,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       list,
       list.findIndex((item) => item.key === visible.first.key),
       list.findIndex((item) => item.key === visible.last.key),
+      openChat()?.hasOlder ?? true,
     );
     if (range) reporter?.reporter.seen(range.first, range.last);
   };
@@ -394,19 +395,30 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         setMarker(before.marker);
         paused = before.paused;
       }
-      toast.error(t().readStateFailed, { action: { label: t().retry, onClick: () => void markUnread(id, from) } });
+      // An action answers once: its message closes, so a second press cannot repeat it.
+      const failed = toast.error(t().readStateFailed, {
+        action: {
+          label: t().retry,
+          onClick: () => {
+            failed.dismiss();
+            void markUnread(id, from);
+          },
+        },
+      });
       return;
     }
-    toast(t().markedUnreadFrom({ name: from.authorName.split(" ")[0] ?? from.authorName }), {
+    const done = toast(t().markedUnreadFrom({ name: from.authorName.split(" ")[0] ?? from.authorName }), {
       iconClass: "ti ti-mail",
       action: {
         label: t().undo,
-        onClick: () =>
+        onClick: () => {
+          done.dismiss();
           void undoUnread(id, {
             ...before,
             lastReadSeq:
               thread === null ? (result?.lastReadSeq ?? null) : (result?.threads.find((entry) => entry.id === thread)?.lastReadSeq ?? null),
-          }),
+          });
+        },
       },
     });
   };
@@ -542,11 +554,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   /** Opens another part of the open chat, from the list, the picker, a thread chip, or a new thread. */
   const openView = async (id: string, view: ThreadView, navigation?: LinkNavigateEvent, message?: string) => {
+    // From the phone's page of threads, "Back" in the thread returns to that page in the history.
+    const options = { scroll: "preserve" as const, state: { threadFromPage: route().threads } };
     const next = chatRoute(id, view, { messageId: message ?? null });
     if ((await open(next)) !== "applied") return;
     const href = threadHref(id, view, message);
-    if (navigation) navigation.push(href, { scroll: "preserve" });
-    else navigate(href, { scroll: "preserve" });
+    if (navigation) navigation.push(href, options);
+    else navigate(href, options);
   };
   /** A quote's original: in the loaded history it is highlighted in place, otherwise the chat opens around it. */
   const jumpTo = async (id: string, message: string) => {
@@ -566,6 +580,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const depth = listDepth();
     if (depth > 0) history.go(-depth);
     else if ((await open(chatRoute(null))) === "applied") navigation.push(undefined, { scroll: "preserve" });
+  };
+  const backToThreads = async (navigation: LinkNavigateEvent) => {
+    const state: unknown = history.state;
+    const id = route().chatId;
+    if (state && typeof state === "object" && "threadFromPage" in state && state.threadFromPage === true) history.back();
+    else if (id && (await open(chatRoute(id, route().view, { threads: true }))) === "applied")
+      navigation.push(undefined, { scroll: "preserve" });
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
@@ -698,14 +719,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (!confirmed || !(await setArchived(current.id, thread.id, true))) return;
     // The archived thread stays readable under "Archived"; the reader continues in General.
     await openView(current.id, "general");
-    toast(t().threadArchivedToast({ name: thread.name }), {
+    const done = toast(t().threadArchivedToast({ name: thread.name }), {
       iconClass: "ti ti-archive",
       action: {
         label: t().undo,
-        onClick: () =>
+        onClick: () => {
+          done.dismiss();
           void setArchived(current.id, thread.id, false).then(async (restored) => {
             if (restored) await openView(current.id, thread.id);
-          }),
+          });
+        },
       },
     });
   };
@@ -936,20 +959,25 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
-        <AppWorkspace.Main scroll={false} aria-busy={busy()}>
+        <AppWorkspace.Main
+          scroll={false}
+          aria-busy={busy()}
+          class={threaded() && !route().threads ? "chat-main chat-main--threads" : "chat-main"}
+        >
           {/* From a 1800 px window, a chat with threads shows them in a column of their own; CSS decides, so the server
-              render and the first frame agree, and crossing the width moves nothing in the reading column. */}
-          <Show when={threaded() && !route().threads ? conversation() : null}>
-            {(current) => (
-              <AppWorkspace.MainPane
-                id="chat-threads"
-                label={t().threadsIn({ title: current().title })}
-                class="chat-thread-pane"
-                defaultSize={336}
-                minSize={288}
-                maxSize={480}
-                scroll={false}
-              >
+              render and the first frame agree, and crossing the width moves nothing in the reading column. The pane
+              stays in place for every chat, because a pane that appears later would take the conversation with it. */}
+          <AppWorkspace.MainPane
+            id="chat-threads"
+            label={t().threadsIn({ title: conversation()?.title ?? "" })}
+            class="chat-thread-pane"
+            defaultSize={336}
+            minSize={288}
+            maxSize={480}
+            scroll={false}
+          >
+            <Show when={threaded() && !route().threads ? conversation() : null}>
+              {(current) => (
                 <ChatThreadColumn
                   conversation={current()}
                   threads={openChat()?.threads ?? null}
@@ -962,9 +990,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   onCreate={() => void createThread()}
                   onRetry={() => void store?.refreshThreads()}
                 />
-              </AppWorkspace.MainPane>
-            )}
-          </Show>
+              )}
+            </Show>
+          </AppWorkspace.MainPane>
           <Switch>
             <Match when={route().threads && openChat()?.id && threaded() ? conversation() : null}>
               {(current) => (
@@ -1071,7 +1099,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       draft={draft()}
                       onDraftChange={setDraft}
                       onSend={send}
-                      onBack={backToList}
+                      onBack={threaded() ? backToThreads : backToList}
                       busy={busy()}
                       dateConfig={props.dateConfig}
                       now={now}
@@ -1149,6 +1177,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   onClose={() => closeInfo()}
                   onAddPeople={() => void addPeople()}
                   onEditDetails={editDetails}
+                  onCreateThread={current().permission === "admin" ? () => void createThread() : undefined}
                   onLeave={() => void leaveChat()}
                 />
               )}

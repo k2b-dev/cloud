@@ -661,9 +661,13 @@ describe("MessageRow styles", () => {
     const list = declarations(".k2b-ui .k2b-reaction-bar__scroll", coarse);
     expect(list.get("padding-block")).toEqual(["0.5625rem"]);
     expect(list.get("margin-block")).toEqual(["-0.5625rem"]);
-    // Every rule that adds room for those areas applies to touch screens only. The quote's own inset in the bubble is
-    // its layout on every device.
-    const quoteLayout = [".k2b-ui .k2b-message-row__quote", ".k2b-ui .k2b-message-row__body > .k2b-message-row__quote"];
+    // Every rule that adds room for those areas applies to touch screens only. The quote's own inset in the bubble and
+    // above the composer is its layout on every device.
+    const quoteLayout = [
+      ".k2b-ui .k2b-message-row__quote",
+      ".k2b-ui .k2b-message-row__body > .k2b-message-row__quote",
+      ".k2b-ui .k2b-chat-composer__reply > .k2b-message-row__quote",
+    ];
     for (const rule of rules.filter(
       (candidate) =>
         /margin|padding-bottom/.test(candidate.body) &&

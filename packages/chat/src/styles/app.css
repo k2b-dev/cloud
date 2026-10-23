@@ -373,16 +373,20 @@
 
 /* From a 1800 px window, the threads of the open chat stand in a column of their own. Below, the list and the picker
    show them; the reading column keeps its width on both sides, so nothing rewraps at the limit. */
-.k2b-ui .k2b-app-workspace__main > .k2b-app-workspace__main-pane.chat-thread-pane {
+.k2b-ui .k2b-app-workspace__main.chat-main:not(.chat-main--threads) > .k2b-app-workspace__main-pane.chat-thread-pane,
+.k2b-ui .k2b-app-workspace__main.chat-main:not(.chat-main--threads) > .k2b-app-workspace__resize[data-workspace-panel-id="chat-threads"] {
   display: none;
+}
+@media (max-width: 1799.98px) {
+  .k2b-ui .k2b-app-workspace__main.chat-main > .k2b-app-workspace__main-pane.chat-thread-pane,
+  .k2b-ui .k2b-app-workspace__main.chat-main > .k2b-app-workspace__resize[data-workspace-panel-id="chat-threads"] {
+    display: none;
+  }
 }
 .chat-list__preview[data-collapsed-only] {
   display: none;
 }
 @media (min-width: 1800px) {
-  .k2b-ui .k2b-app-workspace__main > .k2b-app-workspace__main-pane.chat-thread-pane {
-    display: flex;
-  }
   .chat-conversation__picker,
   .chat-list__threads,
   .chat-list__members {

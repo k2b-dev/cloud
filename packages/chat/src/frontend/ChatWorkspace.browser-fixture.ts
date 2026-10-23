@@ -68,7 +68,6 @@ export const viewer: Person = { id: "11111111-1111-4111-8111-111111111111", name
 export const nora: Person = { id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" };
 export const tobias: Person = { id: "33333333-3333-4333-8333-333333333333", name: "Tobias Brandt" };
 
-const noThreads: z.infer<typeof ThreadListSchema> = { general: { unread: 0, lastMessage: null }, items: [] };
 const threadId = (chat: string, index: number) => `T${chat.slice(-3)}${index.toString(36).padStart(2, "0")}`;
 
 const ui = new URL("../../../ui/", import.meta.url).pathname;

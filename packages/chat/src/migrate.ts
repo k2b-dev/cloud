@@ -82,14 +82,6 @@ export const migrate = async (): Promise<void> => {
     ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS thread_id uuid REFERENCES chat.threads(id) ON DELETE CASCADE;
     ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS reply_to_seq bigint;
     CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat.messages(conversation_id, thread_id, seq);
-    CREATE TABLE IF NOT EXISTS chat.thread_reads (
-      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
-      principal_id uuid NOT NULL,
-      thread_id uuid NOT NULL REFERENCES chat.threads(id) ON DELETE CASCADE,
-      last_read_seq bigint,
-      unread_from_seq bigint,
-      PRIMARY KEY (principal_type, principal_id, thread_id)
-    );
     CREATE TABLE IF NOT EXISTS chat.conversation_access (
       conversation_id uuid NOT NULL REFERENCES chat.conversations(id) ON DELETE CASCADE,
       access_id uuid NOT NULL REFERENCES auth.access(id) ON DELETE CASCADE,
@@ -118,6 +110,19 @@ export const migrate = async (): Promise<void> => {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_participants_conversation ON chat.participants(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_chat_participants_notify_all ON chat.participants(conversation_id) WHERE notify = 'all';
+    -- A thread's read state belongs to the participant: whoever leaves and joins again starts like in General.
+    CREATE TABLE IF NOT EXISTS chat.thread_reads (
+      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
+      principal_id uuid NOT NULL,
+      conversation_id uuid NOT NULL,
+      thread_id uuid NOT NULL REFERENCES chat.threads(id) ON DELETE CASCADE,
+      last_read_seq bigint,
+      unread_from_seq bigint,
+      PRIMARY KEY (principal_type, principal_id, thread_id),
+      FOREIGN KEY (principal_type, principal_id, conversation_id)
+        REFERENCES chat.participants(principal_type, principal_id, conversation_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_thread_reads_participant ON chat.thread_reads(principal_type, principal_id, conversation_id);
     CREATE TABLE IF NOT EXISTS chat.account_prefs (
       principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
       principal_id uuid NOT NULL,
