@@ -1,3 +1,4 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
@@ -96,17 +97,6 @@ const activityDescription = (item: ActivityItem, locale: string): string =>
 
 const activityHref = (item: ActivityItem): string =>
   item.note ? `/app/notebooks/${item.notebook.id}/notes/${item.note.id}` : `/app/notebooks/${item.notebook.id}`;
-
-const activityAvatarSource = (item: ActivityItem): string | undefined =>
-  item.actor.kind === "user" && item.actor.id && item.actor.avatarHash
-    ? `/api/accounts/users/${encodeURIComponent(item.actor.id)}/avatar?rev=${encodeURIComponent(item.actor.avatarHash)}`
-    : undefined;
-
-const activityAvatarIcon = (item: ActivityItem): string | undefined => {
-  if (item.actor.kind === "service_account") return "ti ti-api";
-  if (item.actor.kind === "system") return "ti ti-settings-automation";
-  return undefined;
-};
 
 const activityIcons = {
   "notebook.created": "ti ti-notebook",
@@ -260,7 +250,13 @@ export default function NotebooksOverview(props: Props) {
           <For each={activityItems()}>
             {(item) => (
               <li class="notebooks-overview-activity-item">
-                <Avatar name={item.actor.displayName} src={activityAvatarSource(item)} icon={activityAvatarIcon(item)} size="sm" />
+                <CloudAvatar
+                  username={item.actor.displayName}
+                  userId={item.actor.id}
+                  avatarHash={item.actor.avatarHash}
+                  kind={item.actor.kind}
+                  size="sm"
+                />
                 <Paper as="a" href={activityHref(item)} interactive class="notebooks-overview-activity-paper">
                   <i class={`${activityEventIcon(item.action)} notebooks-overview-activity-icon app-accent-text`} aria-hidden="true" />
                   <span class="notebooks-overview-activity-meta">

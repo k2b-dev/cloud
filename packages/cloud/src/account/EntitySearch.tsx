@@ -296,6 +296,7 @@ const EntitySearch = (props: EntitySearchProps) => {
               {(serviceAccount) => (
                 <ResultRow
                   icon={serviceAccountKind(serviceAccount).icon}
+                  avatar={<CloudAvatar username={serviceAccount.name} userId={serviceAccount.id} kind="service_account" size="sm" />}
                   title={serviceAccount.name}
                   subtitle={
                     // Resource-bound accounts often share a name; their binding tells them apart.

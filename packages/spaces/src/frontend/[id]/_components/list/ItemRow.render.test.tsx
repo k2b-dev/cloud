@@ -142,7 +142,8 @@ test("shows a claim holder even when the task has no assignees", () => {
     }),
   );
   expect(html.match(/data-ring="success"/g)).toHaveLength(1);
-  expect(html).toContain('aria-label="Task worker is on it"');
+  // A service account holder shows its robot picture, named for screen readers by its alt text.
+  expect(html).toContain('alt="Task worker is on it"');
 });
 
 test("SSR renders a German all-day deadline as the same calendar day", () => {

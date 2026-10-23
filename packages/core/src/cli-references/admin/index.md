@@ -311,7 +311,7 @@ verify its calls, then revoke the old credential. The equivalent UI is
 ## Agents
 
 An agent is a standalone service account of kind `agent` with its own OAuth
-client. It appears with a robot icon in pickers, activity, and audit, starts
+client. It appears with its robot picture in pickers, activity, and audit, starts
 with no access, and is granted access like a person (Space membership, Notebook
 access, and so on).
 

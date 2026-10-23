@@ -116,12 +116,14 @@ describe("PermissionEditor service accounts", () => {
       try {
         for (const kind of kinds) {
           const row = rowOf(`Granted ${kind}`)!;
-          expect(row.querySelector(`i.${icons[kind]}`)).not.toBeNull();
+          // Every service account row shows the account's robot or photo in a square, never a bare icon.
+          const picture = row.querySelector(`img[src="/api/accounts/users/granted-${kind}/avatar"]`);
+          expect(picture?.getAttribute("data-shape")).toBe("square");
           expect(row.textContent).toContain(`(${labels[locale][kind]})`);
         }
         // An entry whose consumer did not resolve the kind makes no claim about it.
         const unknown = rowOf("Granted unknown")!;
-        expect(unknown.querySelector("i.ti-key")).not.toBeNull();
+        expect(unknown.querySelector('img[src="/api/accounts/users/granted-unknown/avatar"]')).not.toBeNull();
         expect(unknown.textContent).not.toContain("(");
 
         const input = dom.root.querySelector<HTMLInputElement>("input[role=combobox]")!;
@@ -142,7 +144,7 @@ describe("PermissionEditor service accounts", () => {
         await waitFor(() => rowOf("Found agent")?.hasAttribute("aria-busy") === false, "the granted agent row");
         expect(granted).toEqual([{ principal: { type: "service_account", serviceAccountId: "found-agent" }, kind: "agent" }]);
         const added = rowOf("Found agent")!;
-        expect(added.querySelector("i.ti-robot")).not.toBeNull();
+        expect(added.querySelector('img[src="/api/accounts/users/found-agent/avatar"]')).not.toBeNull();
         expect(added.textContent).toContain(`(${labels[locale].agent})`);
 
         // The editor changes its own copy; the entry the caller returned stays as the caller made it.
@@ -218,7 +220,8 @@ describe("PermissionEditor service accounts", () => {
       const rowOf = () =>
         Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row")).find((row) => row.textContent?.includes("Found later"));
       await waitFor(() => rowOf() !== undefined, "the new row");
-      expect(rowOf()!.querySelector("i.ti-key")).not.toBeNull();
+      // The row shows the account's robot whatever its kind; only the label stays away.
+      expect(rowOf()!.querySelector('img[src="/api/accounts/users/found-later/avatar"]')).not.toBeNull();
       expect(rowOf()!.textContent).not.toContain("(");
     } finally {
       dispose();

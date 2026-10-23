@@ -704,7 +704,7 @@ describe("Spaces item detail groups", () => {
         expect(list[0]).toContain(">Release agent</span>");
         workingRow(list[0]!, locale);
         expect(list[0]).not.toContain("<button");
-        if (kind === "service_account") expect(list[0]).toContain('class="ti ti-api"');
+        if (kind === "service_account") expect(list[0]).toContain(`src="/api/accounts/users/${holderId}/avatar"`);
         expect(list[1]).toContain(">Valentin Kolb</span>");
         expect(people).not.toContain("not assigned");
         expect(people).not.toContain("nicht zugewiesen");

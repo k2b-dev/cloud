@@ -1,3 +1,4 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { Avatar, type AvatarSize } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { For, Show } from "solid-js";
@@ -31,18 +32,14 @@ const SIZE_CLASS: Record<AvatarSize, string> = {
   xl: "h-20 w-20 text-xl",
 };
 
-/** One assignee: a person with their picture or initials, a service account with the same API icon its claim shows. */
+/** One assignee: a person with their picture or initials, a service account with its robot in a square, like its claim. */
 export function AssigneeAvatar(props: { assignee: SpaceItemAssignee; size?: AvatarSize; class?: string }) {
-  const person = () => props.assignee.kind === "user";
   return (
-    <Avatar
-      name={props.assignee.displayName}
-      src={
-        person() && props.assignee.avatarHash
-          ? `/api/accounts/users/${encodeURIComponent(props.assignee.id)}/avatar?rev=${encodeURIComponent(props.assignee.avatarHash)}`
-          : undefined
-      }
-      icon={person() ? undefined : "ti ti-api"}
+    <CloudAvatar
+      username={props.assignee.displayName}
+      userId={props.assignee.id}
+      avatarHash={props.assignee.avatarHash}
+      kind={props.assignee.kind === "user" ? "user" : "service_account"}
       size={props.size ?? "xs"}
       class={props.class}
     />

@@ -1,3 +1,4 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { groupDisplayName } from "@k2b/cloud/shared";
 import { Avatar, DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag, useLocale } from "@k2b/ui";
 import type { EntityListItem, PaginationResponse } from "@/contracts";
@@ -177,7 +178,7 @@ export default function MembersTab(props: MembersTabProps) {
                 if (col.id === "name") {
                   const content = (
                     <>
-                      <Avatar name={serviceAccount.name} icon="ti ti-user-key" size="xs" />
+                      <CloudAvatar username={serviceAccount.name} userId={serviceAccount.id} kind="service_account" size="xs" />
                       <span class="truncate font-medium">{serviceAccount.name}</span>
                     </>
                   );
