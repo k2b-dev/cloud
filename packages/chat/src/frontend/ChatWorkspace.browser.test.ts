@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
-import { CreateConversationSchema, CreateOutcomeSchema } from "../service/contracts";
+import { CreateConversationSchema, CreateOutcomeSchema, ReadAllOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 declare global {
@@ -667,7 +667,14 @@ describe("ChatWorkspace browser read state", () => {
           // The first page has 50 rows; mark-all must also clear the unloaded 51st chat.
           expect(await rows(second.page, name).locator("[data-unread]").count()).toBe(50);
           await readAllAction(second.page, name);
+          // Clearing the 50 rendered rows does not finish the unloaded 51st chat's batch.
+          const completed = second.page.waitForResponse(async (response) => {
+            if (!response.url().endsWith("/api/chat/conversations/read-all") || !response.ok()) return false;
+            const result = ReadAllOutcomeSchema.parse(await response.json());
+            return result.outcome === "done" && !result.more;
+          });
           await dialog.getByRole("button", { name: "Mark all read", exact: true }).click();
+          await completed;
           await second.page.waitForFunction(() => document.querySelectorAll("[data-unread]").length === 0);
           expect(many.every((chat) => harness.props({ chat }).open!.conversation.unread === 0)).toBe(true);
           expect(second.errors).toEqual([]);
