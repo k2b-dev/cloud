@@ -5,6 +5,7 @@ import {
   buildWorkspaceHarness,
   origin,
   overviewWorkspaceFixture,
+  pauseWorkspaceClock,
   renderWorkspaceSnapshot,
   workspaceFixture,
 } from "./PulseWorkspace.browser-fixture";
@@ -44,8 +45,7 @@ const open = async (
   const tab = await browser.newPage({ viewport: { width: view.width, height: view.height }, isMobile: view.touch, hasTouch: view.touch });
   // Timers are frozen at the fixture's time: the first frame comes from the server snapshot, and a refresh runs
   // only when a test advances the clock.
-  await tab.clock.install({ time: new Date("2026-10-19T12:40:00.000Z") });
-  await tab.clock.pauseAt(new Date("2026-10-19T12:40:00.000Z"));
+  await pauseWorkspaceClock(tab.clock, new Date("2026-10-19T12:40:00.000Z"));
   const calls: string[] = [];
   await tab.route(`${origin}/api/**`, async (route) => {
     calls.push(new URL(route.request().url()).pathname);
@@ -91,7 +91,20 @@ describe("Pulse base overview", () => {
       const tab = await browser.newPage({ viewport: view });
       tab.setDefaultTimeout(5_000);
       const errors: string[] = [];
+      const unexpectedRequests: string[] = [];
       tab.on("pageerror", (error) => errors.push(error.message));
+      // The isolated SSR document must not depend on DNS or an external fixture host.
+      await tab.route("**/*", (route) => {
+        unexpectedRequests.push(route.request().url());
+        return route.abort("blockedbyclient");
+      });
+      // The real SSR shell requests branding even though this fixture mounts only the Pulse island.
+      await tab.route(`${origin}/branding/logo`, (route) =>
+        route.fulfill({
+          contentType: "image/svg+xml",
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="#123456"/></svg>',
+        }),
+      );
       await tab.route(`${origin}/api/**`, (route) => route.fulfill({ status: 503, json: { code: "UNEXPECTED" } }));
       await tab.route(`${origin}/app/pulse/**`, (route) =>
         route.fulfill({
@@ -120,9 +133,17 @@ describe("Pulse base overview", () => {
           };
         });
       try {
-        await tab.clock.install({ time: new Date(props.initialNow!) });
-        await tab.clock.pauseAt(new Date(props.initialNow!));
+        await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
         await tab.goto(`${origin}/app/pulse/Lad001`);
+        expect(unexpectedRequests).toEqual([]);
+        expect(
+          await tab
+            .locator('img[src="/branding/logo"]')
+            .evaluateAll(
+              (images) =>
+                images.length > 0 && images.every((image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0),
+            ),
+        ).toBe(true);
         await tab.evaluate(() => document.fonts.ready);
         await tab.locator(".pulse-overview__headline").waitFor();
         const before = await geometry();
@@ -154,6 +175,7 @@ describe("Pulse base overview", () => {
           expect(activity!.y + activity!.height).toBeLessThanOrEqual(visibleMain!.y + visibleMain!.height);
           expect(await tab.evaluate(() => window.scrollY)).toBe(0);
         }
+        expect(unexpectedRequests).toEqual([]);
         expect(errors).toEqual([]);
       } finally {
         await tab.close();
@@ -224,8 +246,7 @@ describe("Pulse base overview", () => {
         route.fulfill({ contentType: "text/html", body: page(props, locale, false, undefined, { serverHtml, deferMount: true }) }),
       );
       try {
-        await tab.clock.install({ time: new Date(props.initialNow!) });
-        await tab.clock.pauseAt(new Date(props.initialNow!));
+        await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
         await tab.goto(`${origin}/app/pulse/Lad001`);
         await tab.evaluate(() => document.fonts.ready);
         await tab.locator(".pulse-overview__headline").waitFor();
@@ -785,8 +806,7 @@ describe("Pulse base page after the cut", () => {
     const failed = { ...deleting, store: { ...deleting.store, state: "failed" as const, errorCode: "STORE_UNAVAILABLE" } };
     let answer: { status: number; json: unknown } = { status: 200, json: failed };
     const tab = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-    await tab.clock.install({ time: new Date("2026-10-19T12:40:00.000Z") });
-    await tab.clock.pauseAt(new Date("2026-10-19T12:40:00.000Z"));
+    await pauseWorkspaceClock(tab.clock, new Date("2026-10-19T12:40:00.000Z"));
     const calls: string[] = [];
     await tab.route(`${origin}/api/**`, async (route) => {
       const path = new URL(route.request().url()).pathname;
@@ -843,24 +863,29 @@ describe("Pulse base page after the cut", () => {
 
 test("Browser Back asks before discarding base settings and Cancel preserves the draft", async () => {
   const { tab } = await open(views[1]!, workspaceFixture);
+  const confirmation = tab.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
+  const confirmDiscard = confirmation.getByRole("button", { name: "Verwerfen", exact: true });
   try {
     await tab.getByRole("button", { name: "Einstellungen", exact: true }).click();
     const name = tab.getByRole("textbox", { name: "Name", exact: true });
     await name.fill("Laden Entwurf");
     await tab.evaluate(() => window.history.back());
-    await tab.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
-    await tab.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
+    await confirmation.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
+    await confirmation.getByRole("button", { name: "Abbrechen", exact: true }).click();
+    await confirmation.waitFor({ state: "hidden" });
     expect(await name.inputValue()).toBe("Laden Entwurf");
     expect(new URL(tab.url()).searchParams.get("settings")).toBe("general");
     await name.press("Escape");
-    await tab.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
-    await tab.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
-    expect(await name.inputValue()).toBe("Laden Entwurf");
-    await tab.evaluate(() => window.history.back());
-    // Back dispatches asynchronously; the settings form also has a Discard button.
-    const confirmation = tab.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
     await confirmation.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
-    await confirmation.getByRole("button", { name: "Verwerfen", exact: true }).click();
+    await confirmation.getByRole("button", { name: "Abbrechen", exact: true }).click();
+    await confirmation.waitFor({ state: "hidden" });
+    expect(await name.inputValue()).toBe("Laden Entwurf");
+    // The form also has a visible "Verwerfen" button. Back opens its confirmation asynchronously;
+    // selecting by button name alone can retain the form button just as the prompt hides it.
+    expect(await tab.getByRole("button", { name: "Verwerfen", exact: true }).isVisible()).toBe(true);
+    expect(await confirmDiscard.count()).toBe(0);
+    await tab.evaluate(() => window.history.back());
+    await confirmDiscard.click();
     await tab.waitForFunction(() => !new URL(window.location.href).searchParams.has("settings"));
     expect(await name.count()).toBe(0);
   } finally {
