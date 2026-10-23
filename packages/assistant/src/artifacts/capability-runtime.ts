@@ -10,6 +10,7 @@ import {
   transferCapabilityStream,
 } from "@k2b/cloud/capabilities/server";
 import { CapabilityActionReviewDataSchema, CapabilityStreamSchema, capabilityActionPolicy } from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
 import {
   APPROVAL_MAX_WAIT_MS,
   approvalAssurance,
@@ -54,6 +55,7 @@ const Prepared = z.object({
   locale: z.string().optional(),
 });
 type Request = z.infer<typeof RuntimeCapabilityRequest>;
+type RuntimeCapabilityIdentity = ArtifactIdentity & { authority?: RequestAuthority | null };
 type Row = {
   approval_id: string | null;
   id: string;
@@ -81,11 +83,11 @@ async function authorizeWithChat(request: Request, identity: ArtifactIdentity, t
   }
   return { resource, conversationId };
 }
-async function operation(name: string, locale?: string | null) {
+async function operation(name: string, locale: string | null | undefined, authority: RequestAuthority | null) {
   const split = name.indexOf("."),
     appId = name.slice(0, split),
     localId = name.slice(split + 1);
-  const catalog = await getCapabilityCatalogApp(appId, locale ?? undefined);
+  const catalog = await getCapabilityCatalogApp(appId, locale ?? undefined, authority);
   if (!catalog.ok) throw new Error(catalog.error.message);
   if (!catalog.data) throw new ArtifactError("NOT_FOUND");
   const query = catalog.data.manifest.queries.find((item) => item.localId === localId);
@@ -106,14 +108,14 @@ async function operation(name: string, locale?: string | null) {
 export const runtimeCapabilities = {
   async check(
     input: { name: string; input: z.infer<ReturnType<typeof z.json>>; conversationId: string; artifactId?: string },
-    identity: ArtifactIdentity,
+    identity: RuntimeCapabilityIdentity,
     caller: CapabilityCaller,
   ) {
     const request = RuntimeCapabilityRequest.parse({ ...input, id: crypto.randomUUID() });
     const { resource } = await authorizeWithChat(request, identity, "code_check");
     if (resource && resource.permission !== "admin") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
     // Discover first. Never prepare an action: even a review may have effects.
-    const target = await operation(input.name, caller.locale);
+    const target = await operation(input.name, caller.locale, identity.authority ?? null);
     if (target.kind !== "query") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
     const response = await this.prepare(request, identity, caller);
     if (response.status !== "completed") throw new CloudError("unavailable", CHECK_UNAVAILABLE);
@@ -150,7 +152,7 @@ export const runtimeCapabilities = {
   },
   async prepare(
     input: unknown,
-    identity: ArtifactIdentity,
+    identity: RuntimeCapabilityIdentity,
     caller: CapabilityCaller,
     task?: { turnId: string; mandate: { id: string; revision: number } },
   ) {
@@ -158,7 +160,7 @@ export const runtimeCapabilities = {
       actor = user(identity);
     const { resource, conversationId } = await authorizeWithChat(request, identity, request.name);
     const untrusted = resource && resource.permission !== "admin";
-    const target = await operation(request.name, caller.locale);
+    const target = await operation(request.name, caller.locale, identity.authority ?? null);
     const getReview = async () => {
       const response = await reviewCapabilityAction(
         { appId: target.appId, capabilityId: target.localId, input: request.input, signal: caller.signal },
@@ -207,7 +209,9 @@ export const runtimeCapabilities = {
     // Only the managed host supplies task context; Core also checks the mandate on every dispatch.
     const automatic = Boolean(task) || (!untrusted && (!target.action || target.action.approval === "none" || remembered));
     const wording =
-      !automatic && target.action ? await getCapabilityActionWording(target.appId, target.localId, caller.locale ?? undefined) : null;
+      !automatic && target.action
+        ? await getCapabilityActionWording(target.appId, target.localId, caller.locale ?? undefined, identity.authority ?? null)
+        : null;
     const response = {
       status: "approval" as const,
       id: request.id,
@@ -257,7 +261,12 @@ export const runtimeCapabilities = {
     if (automatic) return resolveCapability(request.id, { approved: true }, identity, caller, true, Boolean(task));
     return response;
   },
-  async resolve(id: string, decision: { approved: boolean; remember?: "always" }, identity: ArtifactIdentity, caller: CapabilityCaller) {
+  async resolve(
+    id: string,
+    decision: { approved: boolean; remember?: "always" },
+    identity: RuntimeCapabilityIdentity,
+    caller: CapabilityCaller,
+  ) {
     return resolveCapability(id, decision, identity, caller);
   },
 };
@@ -265,7 +274,7 @@ export const runtimeCapabilities = {
 async function resolveCapability(
   id: string,
   decision: { approved: boolean; remember?: "always" },
-  identity: ArtifactIdentity,
+  identity: RuntimeCapabilityIdentity,
   caller: CapabilityCaller,
   automatic = false,
   background = false,
@@ -287,7 +296,7 @@ async function resolveCapability(
   if (resource && resource.permission !== "admin" && !prepared.resource) throw new ArtifactError("CONFLICT");
   if (row.status === "completed") return { status: "completed" as const, result: decoded(row.result) };
   if (row.status !== "pending") throw new ArtifactError("CONFLICT");
-  const target = await operation(request.name, caller.locale);
+  const target = await operation(request.name, caller.locale, identity.authority ?? null);
   if (
     target.operation.schemaHash !== prepared.schemaHash ||
     target.kind !== prepared.kind ||

@@ -58,6 +58,7 @@ export type AdmissionInput = {
   runId: string;
   quota: number;
   countQuota?: boolean;
+  quotaKind?: "alerts";
   freeOnly?: boolean;
   signal?: AbortSignal;
 };
@@ -115,7 +116,11 @@ export const createSqlAdmission = (
     const executionDeadline = performance.now() + LEASE_MS - 5_000;
     const reply = await evalScript(
       ADMIT,
-      [...keys(input.baseId), `${prefix}:quota:${input.baseId}`, runKey(input.baseId, input.runId)],
+      [
+        ...keys(input.baseId),
+        `${prefix}:quota:${input.quotaKind ? `${input.quotaKind}:` : ""}${input.baseId}`,
+        runKey(input.baseId, input.runId),
+      ],
       [
         clock(),
         `${input.baseId}:${input.runId}`,
@@ -175,10 +180,14 @@ export const createSqlAdmission = (
             continue;
           }
           if (result.state === "QUOTA")
-            throw new SqlError("QUOTA", "The hourly question quota is reached", {
-              resetAt: result.resetAt,
-              retryAfter: Math.max(1, Math.ceil((Date.parse(result.resetAt) - result.nowMs) / 1000)),
-            });
+            throw new SqlError(
+              "QUOTA",
+              input.quotaKind === "alerts" ? "The hourly alert check budget is reached" : "The hourly question quota is reached",
+              {
+                resetAt: result.resetAt,
+                retryAfter: Math.max(1, Math.ceil((Date.parse(result.resetAt) - result.nowMs) / 1000)),
+              },
+            );
           if (result.state === "CANCELLED") throw new SqlError("CANCELLED", "Query cancelled");
           if (result.state === "BUSY" || result.state === "QUEUE_FULL")
             throw new SqlError(result.state, "Pulse is busy. Retry later.", { retryAfter: 5 });

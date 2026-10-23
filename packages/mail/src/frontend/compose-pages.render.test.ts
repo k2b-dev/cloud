@@ -130,6 +130,8 @@ const request = (path: string) => {
     c.set("actor", { kind: "user", user });
     c.set("user", user);
     c.set("accessSubject", { type: "user", userId: user.id });
+    c.set("credentialKind", "oauth");
+    c.set("credentialScopes", ["mail:read"]);
     c.set("runtime", { apps: [] });
     await next();
   });
@@ -222,5 +224,18 @@ for (const page of pages) {
 
     expect(response.status).toBe(403);
     expect(await response.text()).not.toContain(page.island);
+  });
+}
+
+for (const path of ["Drf001", "local/seed-1"]) {
+  test(`compose ${path} keeps resolved credential limits for calendar discovery`, async () => {
+    spies.push(spyOn(access, "requireMailboxAccess").mockResolvedValue(ok({ permission: "write", scope: "assigned", userId: user.id })));
+    expect((await request(path)).status).toBe(200);
+    expect(integrations.getSpacesMailIntegrationAvailability).toHaveBeenCalledWith({
+      actor: { kind: "user", user },
+      accessSubject: { type: "user", userId: user.id },
+      credentialKind: "oauth",
+      scopes: ["mail:read"],
+    });
   });
 }
