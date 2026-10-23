@@ -76,11 +76,12 @@ for (const embedded of [false, true]) {
   }
 }
 
-test("the public browser module exposes only the five panel operations", async () => {
+test("the public browser module exposes the documented panel operations", async () => {
   expect(Object.keys(await import("./panel")).sort()).toEqual([
     "closePanel",
     "getContext",
     "onContextChange",
+    "onPanelBeforeLeave",
     "openPanel",
     "publishPageContext",
   ]);

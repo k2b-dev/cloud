@@ -1,5 +1,17 @@
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
+export function isPanelNavigateMessage(value: unknown): value is { type: "cloud.panel.navigate"; v: 1; href: string } {
+  return (
+    isRecord(value) &&
+    Reflect.ownKeys(value).length === 3 &&
+    value.type === "cloud.panel.navigate" &&
+    value.v === 1 &&
+    typeof value.href === "string" &&
+    value.href.length <= 8192 &&
+    /^https?:\/\//.test(value.href)
+  );
+}
+
 export function isPanelReadyMessage(value: unknown, provider: string): value is { type: "cloud.panel.ready"; v: 1; provider: string } {
   return (
     isRecord(value) &&
