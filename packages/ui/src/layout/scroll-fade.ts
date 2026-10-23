@@ -26,16 +26,24 @@ function observeScrollFade(body: HTMLElement) {
         if (body.getAttribute("data-scroll-fade") !== edges) body.setAttribute("data-scroll-fade", edges);
       } else if (body.hasAttribute("data-scroll-fade")) body.removeAttribute("data-scroll-fade");
     };
+    let frame: number | undefined;
+    const schedule = () => {
+      if (frame !== undefined) return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        update();
+      });
+    };
     const resize = new ResizeObserver(update);
     const observe = () => {
       resize.disconnect();
       resize.observe(body);
       for (const child of Array.from(body.children)) resize.observe(child);
-      update();
     };
     const mutations = new MutationObserver((records) => {
       if (records.some((record) => record.type === "childList" && record.target === body)) observe();
-      else update();
+      // A live batch can mutate many rows in separate microtasks. Measure their final layout once per frame.
+      schedule();
     });
     mutations.observe(body, {
       childList: true,
@@ -46,9 +54,11 @@ function observeScrollFade(body: HTMLElement) {
     });
     body.addEventListener("scroll", update, { passive: true });
     observe();
+    update();
     entry = {
       users: 0,
       stop: () => {
+        if (frame !== undefined) cancelAnimationFrame(frame);
         resize.disconnect();
         mutations.disconnect();
         body.removeEventListener("scroll", update);

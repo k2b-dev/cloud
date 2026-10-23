@@ -8,17 +8,20 @@ import {
   Button,
   Dropdown,
   dialogCore,
+  FilterToggle,
   IconButton,
   IconButtonLink,
+  InlineGuidance,
   type MessageRowStatus,
   NoticeCard,
   Placeholder,
   prompts,
+  ScrollArea,
   toast,
   useLocale,
   type VirtualFeedController,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import {
@@ -27,7 +30,9 @@ import {
   MESSAGE_MAX_CODE_POINTS,
   MessageBodySchema,
   type MessagePageSchema,
+  type PersonalConversationSchema,
   readStart,
+  type SidebarPreferencesSchema,
 } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
 import { openAddPeopleDialog } from "./AddPeopleDialog";
@@ -37,7 +42,7 @@ import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
-import { createChatStore, type OpenChat } from "./chat-store";
+import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
@@ -50,6 +55,9 @@ type Sends = ReturnType<typeof createChatSends>;
 export type ChatWorkspaceProps = {
   /** The same workspace served without the Cloud shell in its provider route. */
   embedded?: boolean;
+  archived?: boolean;
+  filter?: "all" | "unread";
+  collapsed?: z.infer<typeof SidebarPreferencesSchema>["collapsed"];
   /** The live cursor the server read before every part of this snapshot. */
   cursor: string;
   sidebar: z.infer<typeof ConversationPageSchema>;
@@ -69,6 +77,7 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>): OpenChat =>
   return {
     id: open.conversation.id,
     status: "live",
+    caughtUp: false,
     conversation: open.conversation,
     messages: items,
     membershipRev: 0,
@@ -90,6 +99,32 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const [route, setRoute] = createSignal<Route>({ chatId: props.chatId, messageId: props.open?.focus ?? null, panel: props.panel });
+  const [archived, setArchived] = createSignal(props.archived ?? false);
+  const [filter, setFilter] = createSignal(props.filter ?? "all");
+  const [collapsed, setCollapsed] = createSignal(props.collapsed ?? []);
+  const [listRetry, setListRetry] = createSignal<(() => void) | null>(null);
+  const [listError, setListError] = createSignal<string | null>(null);
+  const [listPending, setListPending] = createSignal(false);
+  let collapsePending = false;
+  const [listLoading, setListLoading] = createSignal(false);
+  let activeListLoads = 0;
+  const loadList = async <T,>(work: () => Promise<T>): Promise<T> => {
+    setListLoading(++activeListLoads > 0);
+    try {
+      return await work();
+    } finally {
+      setListLoading(--activeListLoads > 0);
+    }
+  };
+  const retainedUnread = new Set<string>();
+  let listIntent = 0;
+  let pendingListIntent: number | null = null;
+  const listHref = (path = archived() ? `${basePath}/archive` : basePath) => {
+    const url = new URL(path, "https://chat.invalid");
+    if (filter() === "unread") url.searchParams.set("filter", "unread");
+    if (archived() && url.pathname.includes("/c/")) url.searchParams.set("list", "archive");
+    return url.pathname + url.search;
+  };
   const [panel, setPanel] = createSignal<"info" | null>(props.panel);
   const [rows, setRows] = createSignal<readonly Conversation[]>(props.sidebar.items);
   const [hasMore, setHasMore] = createSignal(props.sidebar.nextCursor !== null);
@@ -245,7 +280,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const known = rows()
       .filter((row) => rank.has(row.id))
       .sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
-    return [...rows().filter((row) => !rank.has(row.id)), ...known];
+    const ordered = [...rows().filter((row) => !rank.has(row.id)), ...known];
+    if (filter() !== "unread") return ordered;
+    return ordered.filter((row) => {
+      if (row.unread > 0 || row.read?.unreadFromSeq != null) retainedUnread.add(row.id);
+      return retainedUnread.has(row.id);
+    });
   });
   // The store may hold the next chat a moment before the address names it; the chat it holds is what shows.
   const openChat = () => {
@@ -256,7 +296,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const noAccess = () => route().chatId !== null && openChat() === null;
   const breadcrumbs = (title?: string) => [
     { title: t().start, href: "/" },
-    title ? { title: t().appName, href: basePath } : { title: t().appName },
+    title ? { title: t().appName, href: listHref(archived() ? `${basePath}/archive` : basePath) } : { title: t().appName },
     ...(title ? [{ title }] : []),
   ];
   // The trail names the chat in the address. It follows live renames and lost access, and keeps its last title while
@@ -267,7 +307,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (chat()?.id !== id) return previous;
     return conversation()?.title ?? t().noAccessTitle;
   });
-  createEffect(on(trailTitle, (title) => layout.update({ breadcrumbs: breadcrumbs(title) }), { defer: true }));
+  createEffect(
+    on(
+      () => [trailTitle(), archived(), filter()] as const,
+      ([title]) => layout.update({ breadcrumbs: breadcrumbs(title) }),
+      { defer: true },
+    ),
+  );
 
   // A sent message the loaded history covers leaves the outbox; its stored row keeps the send's key.
   const prune = () => {
@@ -347,13 +393,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // "New messages" stands above the first message from others after the read position as the chat opened, and stays
   // there until the reader leaves the chat, also while the read position moves on.
   const [marker, setMarker] = createSignal<string | null>(null);
+  const [unreadGap, setUnreadGap] = createSignal<{ from: number; key: string | null } | null>(null);
   // Reports what the reader sees in the open chat. After the reader marks it unread, nothing is reported until they
   // leave it, so the mark is not read away at once.
   let reporter: { chatId: string; reporter: ReturnType<typeof createReadReporter> } | undefined;
   let paused = false;
   let phone: MediaQueryList | undefined;
+  // Replay can paint many intermediate windows. Only the caught-up window starts new reading.
+  const catchingUp = createMemo(() => openChat()?.status === "live" && !openChat()?.caughtUp);
   const reading = () =>
-    Boolean(phone) && document.visibilityState === "visible" && document.hasFocus() && !(panel() === "info" && phone?.matches);
+    !catchingUp() &&
+    Boolean(phone) &&
+    document.visibilityState === "visible" &&
+    document.hasFocus() &&
+    !(panel() === "info" && phone?.matches);
   // Per chat, not per change of the open chat.
   const openId = createMemo(() => openChat()?.id ?? null);
   createEffect(
@@ -365,6 +418,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           ? undefined
           : current?.messages.find((message) => message.seq > start && message.kind === "text" && message.author.id !== props.viewerId);
       setMarker(first?.id ?? null);
+      setUnreadGap(null);
       reporter?.reporter.dispose();
       reporter = undefined;
       paused = false;
@@ -373,8 +427,23 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         chatId: id,
         reporter: createReadReporter({
           start,
-          active: reading,
-          post: (seq) => (paused ? Promise.resolve() : store ? store.markRead(id, seq) : Promise.reject(new Error("Chat is not live yet"))),
+          active: () => reading() && !paused,
+          onGap: (from) => {
+            if (from === null) {
+              setUnreadGap(null);
+              return;
+            }
+            const current = openChat();
+            // A deep link keeps its initial destination; once reading has advanced, a later gap is new.
+            if (current?.id !== id || (route().messageId && from <= start + 1)) return;
+            const first = current.messages.find(
+              (message) => message.seq >= from && message.kind === "text" && message.author.id !== props.viewerId,
+            );
+            const key = first && (current.messages[0]?.seq ?? Infinity) <= from ? first.id : null;
+            if (!marker() && key) setMarker(key);
+            setUnreadGap((previous) => (previous?.from === from && previous.key === key ? previous : { from, key }));
+          },
+          post: (seq) => (store ? store.markRead(id, seq) : Promise.reject(new Error("Chat is not live yet"))),
         }),
       };
     }),
@@ -382,18 +451,35 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   createEffect(() => {
     const current = openChat();
     const start = readStart(current?.conversation?.read ?? null);
-    if (current && start !== null && reporter?.chatId === current.id) reporter.reporter.setStart(start);
+    if (current && start !== null && reporter?.chatId === current.id) untrack(() => reporter?.reporter.setStart(start));
   });
+  let visibleRange: { first: ChatFeedItem; last: ChatFeedItem } | null = null;
+  let readFrame: number | undefined;
   const reportVisible = (visible: { first: ChatFeedItem; last: ChatFeedItem } | null) => {
-    if (!visible) return;
-    const list = items();
-    const range = seenRange(
-      list,
-      list.findIndex((item) => item.key === visible.first.key),
-      list.findIndex((item) => item.key === visible.last.key),
-    );
-    if (range) reporter?.reporter.seen(range.first, range.last);
+    visibleRange = visible;
+    if (readFrame !== undefined) return;
+    // A replay can render several intermediate windows in one task. Read only the window that reaches a frame.
+    readFrame = requestAnimationFrame(() => {
+      readFrame = undefined;
+      const visible = visibleRange;
+      if (!visible || catchingUp()) return;
+      const list = items();
+      const range = seenRange(
+        list,
+        list.findIndex((item) => item.key === visible.first.key),
+        list.findIndex((item) => item.key === visible.last.key),
+      );
+      if (range) reporter?.reporter.seen(range.first, range.last);
+    });
   };
+  createEffect(
+    on(catchingUp, (pending) => {
+      if (!pending) reportVisible(visibleRange);
+    }),
+  );
+  onCleanup(() => {
+    if (readFrame !== undefined) cancelAnimationFrame(readFrame);
+  });
   const changeRead = async (work: () => Promise<unknown> | undefined) => {
     try {
       await work();
@@ -405,21 +491,41 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   // The server stops at the newest message, so the largest position marks the whole chat read.
   const markRead = (id: string) => void changeRead(() => store?.markRead(id, Number.MAX_SAFE_INTEGER));
+  let unreadAction = 0;
   const markUnread = async (id: string, from?: ChatFeedItem) => {
-    const open = openChat()?.id === id;
-    if (open) paused = true;
-    // Let earlier reads finish before the server applies the unread mark.
-    if (open && reporter?.chatId === id) await reporter.reporter.settled();
-    if (from) setMarker(from.key);
-    if (!(await changeRead(() => store?.markUnread(id, from?.messageId))) && open) paused = false;
+    if (openChat()?.id === id) unreadAction++;
+    const target = openChat()?.id === id ? reporter : undefined;
+    const previousMarker = marker();
+    const previousGap = unreadGap();
+    if (target) paused = true;
+    // Flush already-seen reads before the unread write; pending visibility cannot advance while paused.
+    await target?.reporter.settled();
+    if (target && reporter === target) {
+      setUnreadGap(null);
+      if (from) setMarker(from.key);
+    }
+    if (!(await changeRead(() => store?.markUnread(id, from?.messageId))) && target && reporter === target) {
+      paused = false;
+      setMarker(previousMarker);
+      setUnreadGap(previousGap);
+      target.reporter.activate();
+    }
   };
-  const markOpenRead = () => {
+  const markOpenRead = async () => {
     const current = openChat();
-    if (!current) return;
+    const live = store;
+    if (!current || !live) return;
+    const target = reporter;
+    const intent = unreadAction;
+    if (!(await changeRead(() => live.markRead(current.id, current.seqHead)))) return;
+    if (intent !== unreadAction || target !== reporter || openChat()?.id !== current.id) return;
     paused = false;
+    // Keep the mark on failure. On success, advance the reporter before focus can revive the old gap.
+    target?.reporter.advance(current.seqHead);
     setMarker(null);
+    setUnreadGap(null);
+    target?.reporter.activate();
     announce(t().markedRead);
-    void changeRead(() => store?.markRead(current.id, current.seqHead));
   };
   const readAll = async () => {
     const live = store;
@@ -440,6 +546,143 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     });
   };
 
+  const applyListUrl = (url: URL, refresh = false) =>
+    loadList(async () => {
+      const token = ++listIntent;
+      const nextArchived = url.pathname === `${basePath}/archive` || url.searchParams.get("list") === "archive";
+      const nextFilter = url.searchParams.get("filter") === "unread" ? "unread" : "all";
+      // A newer intent must also undo a pending request whose target has not reached the signals yet.
+      const changed = nextArchived !== archived() || nextFilter !== filter();
+      const reload = refresh || pendingListIntent !== null || changed;
+      pendingListIntent = token;
+      try {
+        if (reload) await store?.showArchive(nextArchived, nextFilter === "unread", !changed ? [...retainedUnread] : []);
+        if (token !== listIntent) return null;
+        if (reload) {
+          if (changed) retainedUnread.clear();
+          setArchived(nextArchived);
+          sortRows();
+        }
+        setFilter(nextFilter);
+        return token;
+      } catch (error) {
+        if (token !== listIntent) return null;
+        throw error;
+      } finally {
+        if (pendingListIntent === token) pendingListIntent = null;
+      }
+    });
+  const changeList = async (next: "all" | "unread" | "archive") => {
+    if (!store || listLoading() || listPending()) return;
+    if (next === "archive" && pendingSends > 0) {
+      toast(t().sendPreparing);
+      return;
+    }
+    if ((!archived() && filter() === next) || (next === "archive" && archived() && filter() === "all" && !route().chatId)) return;
+    setListError(null);
+    const path =
+      next === "archive"
+        ? `${basePath}/archive`
+        : next === "unread" && archived()
+          ? `${basePath}/archive${filter() === "unread" ? "" : "?filter=unread"}`
+          : `${basePath}${next === "unread" ? "?filter=unread" : ""}`;
+    const url = new URL(path, location.href);
+    try {
+      const token = await applyListUrl(url);
+      if (token === null) return;
+      const current = route();
+      const target =
+        next !== "archive" && current.chatId
+          ? listHref(panelHref(current.chatId, current.panel, current.messageId))
+          : url.pathname + url.search;
+      if (next === "archive" && (await open({ chatId: null, messageId: null, panel: null })) !== "applied") return;
+      if (token === listIntent) navigate(target, { scroll: "preserve" });
+    } catch {
+      setListError(t().listFailed);
+      setListRetry(() => () => void changeList(next));
+    }
+  };
+  const refreshList = async (path = location.pathname + location.search) => {
+    if (!store) return;
+    try {
+      if ((await applyListUrl(new URL(path, location.href), true)) === null) return;
+      sortRows();
+      setListError(null);
+      setListRetry(null);
+    } catch {
+      setListError(t().listFailed);
+      setListRetry(() => () => void refreshList());
+    }
+  };
+  const personal = async (id: string, patch: z.infer<typeof PersonalConversationSchema>) => {
+    if (!store) return;
+    if (listPending()) {
+      toast(t().savingList);
+      return;
+    }
+    setListPending(true);
+    setListError(null);
+    setListRetry(null);
+    try {
+      await store.personal(id, patch);
+      sortRows();
+    } catch (error) {
+      if (error instanceof ChatRequestError && error.status === 400) {
+        setListError(t().pinPositionChanged);
+        setListRetry(() => () => void refreshList());
+      } else {
+        setListError(t().personalFailed);
+        setListRetry(() => () => void personal(id, patch));
+      }
+    } finally {
+      setListPending(false);
+    }
+  };
+  const collapse = async (section: z.infer<typeof SidebarPreferencesSchema>["collapsed"][number], isOpen: boolean) => {
+    if (!store) return;
+    if (listPending()) {
+      toast(t().savingList);
+      return;
+    }
+    setListPending(true);
+    setListError(null);
+    collapsePending = true;
+    const previous = collapsed();
+    const next = isOpen ? collapsed().filter((value) => value !== section) : [...new Set([...collapsed(), section])];
+    setCollapsed(next);
+    try {
+      const saved = await store.savePreferences(next);
+      setCollapsed(saved.collapsed);
+    } catch {
+      setCollapsed(previous);
+      setListError(t().personalFailed);
+      setListRetry(() => () => void collapse(section, isOpen));
+    } finally {
+      collapsePending = false;
+      setCollapsed(store.collapsed);
+      setListPending(false);
+    }
+  };
+  const more = async () => {
+    const live = store;
+    if (!live || listLoading()) return;
+    setListError(null);
+    try {
+      await loadList(async () => {
+        const previous = listRows().map((row) => row.id);
+        await live.loadMoreSidebar();
+        setOrder([
+          ...previous,
+          ...rows()
+            .map((row) => row.id)
+            .filter((id) => !previous.includes(id)),
+        ]);
+      });
+    } catch {
+      setListError(t().listFailed);
+      setListRetry(() => () => void more());
+    }
+  };
   const applyRoute = (next: Route) => {
     setRoute(next);
     setPanel(next.panel);
@@ -500,10 +743,39 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       }
     }
   };
+  const jumpUnreadGap = async () => {
+    const gap = unreadGap();
+    const id = route().chatId;
+    if (!gap || busy() || !id) return;
+    if (gap.key && feed?.scrollToKey(gap.key, { align: "start" })) return;
+    // A live resync can have discarded the gap. Reuse the permission-aware snapshot around first unread.
+    const previous = route();
+    const token = openToken;
+    await reporter?.reporter.settled();
+    // A pending read must not pull the reader back after they opened another chat or panel.
+    if (route() !== previous || openToken !== token) return;
+    const next = { ...previous, chatId: id, messageId: null };
+    if ((await open(next)) !== "applied") return;
+    navigate(listHref(panelHref(id, next.panel)), { replace: true, scroll: "preserve" });
+    const current = openChat();
+    const start = readStart(current?.conversation?.read ?? null);
+    const first =
+      start === null
+        ? undefined
+        : current?.messages.find((message) => message.seq > start && message.kind === "text" && message.author.id !== props.viewerId);
+    if (first) {
+      if (!marker()) setMarker(first.id);
+      feed?.scrollToKey(first.id, { align: "start" });
+    }
+    setUnreadGap(null);
+  };
   const openFromList = async (id: string, navigation: LinkNavigateEvent) => {
     const fromList = route().chatId === null;
-    if ((await open({ chatId: id, messageId: null, panel: null })) === "applied")
-      navigation.push(undefined, { scroll: "preserve", state: { chatFromList: fromList } });
+    if ((await open({ chatId: id, messageId: null, panel: null })) !== "applied") return;
+    const target = listHref(panelHref(id, null));
+    if (location.pathname + location.search !== target) navigation.push(target, { scroll: "preserve", state: { chatFromList: fromList } });
+    // A row navigation keeps its visible list context even if an older mode request is still pending.
+    if (pendingListIntent !== null) await refreshList(target);
   };
 
   // Info adds one entry above a chat opened from the list.
@@ -515,7 +787,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const backToList = async (navigation: LinkNavigateEvent) => {
     const depth = listDepth();
     if (depth > 0) history.go(-depth);
-    else if ((await open({ chatId: null, messageId: null, panel: null })) === "applied") navigation.push(undefined, { scroll: "preserve" });
+    else if ((await open({ chatId: null, messageId: null, panel: null })) === "applied")
+      navigation.push(listHref(archived() ? `${basePath}/archive` : basePath), { scroll: "preserve" });
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
@@ -526,8 +799,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setPanel("info");
     setRoute({ chatId: id, messageId, panel: "info" });
     const options = { scroll: "preserve" as const, state: { chatFromList: listDepth() === 1, chatInfoFromChat: true } };
-    if (navigation) navigation.push(panelHref(id, "info", messageId), options);
-    else navigate(panelHref(id, "info", messageId), options);
+    if (navigation) navigation.push(listHref(panelHref(id, "info", messageId)), options);
+    else navigate(listHref(panelHref(id, "info", messageId)), options);
   };
   const infoFromChat = () => {
     const state: unknown = history.state;
@@ -544,16 +817,22 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const messageId = route().messageId;
     setPanel(null);
     setRoute({ chatId: id, messageId, panel: null });
-    if (navigation) navigation.push(panelHref(id, null, messageId), { scroll: "preserve" });
-    else navigate(panelHref(id, null, messageId), { scroll: "preserve" });
+    if (navigation) navigation.push(listHref(panelHref(id, null, messageId)), { scroll: "preserve" });
+    else navigate(listHref(panelHref(id, null, messageId)), { scroll: "preserve" });
   };
 
   /** A chat the person just started, or chose among existing ones, opens in place like a chat from the list. */
   const openChosen = async (id: string | undefined) => {
     if (!id) return;
     const fromList = route().chatId === null;
-    if ((await open({ chatId: id, messageId: null, panel: null })) === "applied")
-      navigate(panelHref(id, null), { scroll: "preserve", state: { chatFromList: fromList } });
+    if ((await open({ chatId: id, messageId: null, panel: null })) !== "applied") return;
+    const chosen = store?.openConversation?.conversation;
+    const listPath = chosen?.archived ? `${basePath}/archive` : basePath;
+    const target = new URL(panelHref(id, null), location.href);
+    if (chosen?.archived) target.searchParams.set("list", "archive");
+    // The chat has opened successfully. A failed list refresh must not leave the address naming the previous chat.
+    navigate(target.pathname + target.search, { scroll: "preserve", state: { chatFromList: fromList } });
+    await refreshList(listPath);
   };
   const newChat = async () => {
     if (!store) return;
@@ -593,7 +872,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setPanel(null);
     if (route().chatId === current.id) {
       setRoute({ chatId: current.id, messageId: null, panel: null });
-      navigate(panelHref(current.id, null), { replace: true, scroll: "preserve" });
+      navigate(listHref(panelHref(current.id, null)), { replace: true, scroll: "preserve" });
     }
   };
 
@@ -653,21 +932,38 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       viewerId: props.viewerId,
       cursor: props.cursor,
       sidebar: props.sidebar,
+      archived: props.archived,
+      unread: props.filter === "unread",
+      collapsed: props.collapsed,
       ...(props.open ? { open: { conversation: props.open.conversation, page: props.open.page } } : {}),
     });
     store = live;
     setLiveStore(live);
     const sync = () => {
+      const focused = document.activeElement;
       prune();
       // The reader's own message moves its chat to the top: that is the reader's action, not a move under the pointer.
-      const top = live.sidebar[0];
-      const ownTop = top?.lastMessage?.author.id === props.viewerId && top.id === live.openConversation?.id && order()[0] !== top.id;
+      const top = live.sidebar.find((row) => row.pinnedRank === null);
+      const firstUnpinned = order().find((id) => live.sidebar.some((row) => row.id === id && row.pinnedRank === null));
+      const ownTop = top?.lastMessage?.author.id === props.viewerId && top.id === live.openConversation?.id && firstUnpinned !== top.id;
+      if (!collapsePending) setCollapsed(live.collapsed);
       setRows(live.sidebar);
       if (ownTop) sortRows();
       setHasMore(live.hasMoreSidebar);
       setChat(live.openConversation);
       if (live.openConversation?.status === "no-access") setPanel(null);
       setLiveStopped(live.liveStatus === "stopped");
+      // Moving a keyed pin with insertBefore can blur its handle or menu trigger in the browser.
+      if (
+        focused instanceof HTMLElement &&
+        focused.isConnected &&
+        focused.closest(".chat-list-pins") &&
+        document.activeElement === document.body
+      ) {
+        // The blur hides hover actions, so reveal them through the row's visible link before restoring its control.
+        focused.closest(".k2b-app-workspace__sidebar-item")?.querySelector<HTMLAnchorElement>("a[href]")?.focus({ preventScroll: true });
+        focused.focus({ preventScroll: true });
+      }
     };
     onCleanup(live.subscribe(sync));
     sync();
@@ -703,25 +999,31 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         const next = parseRoute(url);
         if (!next) return;
         // The browser already shows the new address; when its chat cannot load in place, the server renders it.
-        void open(next).then((result) => {
-          if (result === "failed") refreshCurrentPath();
-          if (result === "blocked") {
-            const current = route();
-            navigate(current.chatId ? panelHref(current.chatId, current.panel, current.messageId) : basePath, {
-              replace: true,
-              scroll: "preserve",
-            });
-          }
-        });
+        void applyListUrl(url)
+          .then((token) => (token === null ? "superseded" : open(next)))
+          .then((result) => {
+            if (result === "failed") refreshCurrentPath();
+            if (result === "blocked") {
+              const current = route();
+              navigate(listHref(current.chatId ? panelHref(current.chatId, current.panel, current.messageId) : undefined), {
+                replace: true,
+                scroll: "preserve",
+              });
+            }
+          })
+          .catch(() => refreshCurrentPath());
       }),
     );
     // The way up from a chat goes back to the list in place; a list opened before the chat is the previous entry.
     onCleanup(
       layout.handleUp((href) => {
-        if (new URL(href, location.href).pathname !== basePath || !route().chatId) return false;
+        if (![basePath, `${basePath}/archive`].includes(new URL(href, location.href).pathname) || !route().chatId) return false;
         const depth = listDepth();
         if (depth > 0) history.go(-depth);
-        else void open({ chatId: null, messageId: null, panel: null }).then((result) => result === "applied" && navigate(basePath));
+        else
+          void open({ chatId: null, messageId: null, panel: null }).then(
+            (result) => result === "applied" && navigate(listHref(archived() ? `${basePath}/archive` : basePath)),
+          );
         return true;
       }),
     );
@@ -753,17 +1055,29 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
   });
 
-  const list = (): JSX.Element => (
+  const pinnedRows = () =>
+    listRows()
+      .filter((row) => row.pinnedRank !== null)
+      .sort((a, b) => a.pinnedRank! - b.pinnedRank!);
+  const reorder = (id: string, direction: "up" | "down") => {
+    const pins = pinnedRows();
+    const neighbor = pins[pins.findIndex((row) => row.id === id) + (direction === "up" ? -1 : 1)];
+    if (neighbor) void personal(id, { pinned: true, ...(direction === "up" ? { before: neighbor.id } : { after: neighbor.id }) });
+  };
+  const list = (entries: () => readonly Conversation[], pinned = false): JSX.Element => (
     <ChatList
-      basePath={basePath}
-      rows={listRows()}
+      rows={entries()}
+      href={(id) => listHref(panelHref(id, null))}
       activeId={openChat()?.id ?? null}
       viewerId={props.viewerId}
       dateConfig={props.dateConfig}
       now={now}
-      hasMore={hasMore()}
+      hasMore={false}
       onOpen={openFromList}
-      onMore={() => void store?.loadMoreSidebar()}
+      onMore={() => void more()}
+      pending={listPending() || listLoading()}
+      onPersonal={(id, patch) => void personal(id, patch)}
+      onReorder={pinned ? reorder : undefined}
       onMarkRead={markRead}
       onMarkUnread={(id) => void markUnread(id)}
     />
@@ -776,13 +1090,115 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     </Dropdown.Root>
   );
 
+  const archiveLink = () => (
+    <AppWorkspace.SidebarItem
+      href={`${basePath}/archive`}
+      navigation="enhanced"
+      active={archived()}
+      icon="ti ti-archive"
+      onNavigate={() => void changeList("archive")}
+    >
+      {t().archive}
+    </AppWorkspace.SidebarItem>
+  );
+  const listContent = (includeArchive = true) => (
+    <>
+      <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
+        {t().newChat}
+      </AppWorkspace.SidebarItem>
+      <div class="chat-list-filters" role="group" aria-label={t().chats}>
+        <FilterToggle
+          label={t().allChats}
+          icon="ti ti-messages"
+          active={!archived() && filter() === "all"}
+          disabled={listLoading() || listPending()}
+          onClick={() => void changeList("all")}
+        />
+        <FilterToggle
+          label={t().unreadChats}
+          icon="ti ti-mail"
+          active={filter() === "unread"}
+          disabled={listLoading() || listPending()}
+          onClick={() => void changeList("unread")}
+        />
+      </div>
+      <div class="chat-list-feedback">
+        <p role="status" aria-live="polite" class="chat-list-status">
+          {!listError() && (listLoading() ? t().loadingChats : listPending() ? t().savingList : "")}
+        </p>
+        <Show when={listError()}>
+          {(error) => (
+            <InlineGuidance role="alert" tone="danger" class="chat-list-error">
+              {error()}
+              <Show when={listRetry()}>
+                <Button size="sm" variant="ghost" disabled={listPending() || listLoading()} onClick={() => listRetry()?.()}>
+                  {t().retry}
+                </Button>
+              </Show>
+            </InlineGuidance>
+          )}
+        </Show>
+      </div>
+      <Show
+        when={archived()}
+        fallback={
+          <>
+            <Show when={pinnedRows().length > 0}>
+              <AppWorkspace.SidebarSection
+                title={t().pinnedChats}
+                collapsible
+                open={!collapsed().includes("pinned")}
+                onOpenChange={(open) => void collapse("pinned", open)}
+              >
+                <ScrollArea class="chat-list-pins" scrollPreserveKey="chat-pins">
+                  {list(pinnedRows, true)}
+                </ScrollArea>
+              </AppWorkspace.SidebarSection>
+            </Show>
+            <AppWorkspace.SidebarSection
+              title={t().chats}
+              actions={chatsActions()}
+              collapsible
+              open={!collapsed().includes("chats")}
+              onOpenChange={(open) => void collapse("chats", open)}
+            >
+              <Show
+                when={listRows().some((row) => row.pinnedRank === null)}
+                fallback={
+                  <Show when={!hasMore() && !listLoading() && listRows().length === 0}>
+                    <Placeholder variant="inline" align="left" description={filter() === "unread" ? t().noUnreadChats : t().noneYet} />
+                  </Show>
+                }
+              >
+                {list(() => listRows().filter((row) => row.pinnedRank === null))}
+              </Show>
+            </AppWorkspace.SidebarSection>
+          </>
+        }
+      >
+        <AppWorkspace.SidebarSection title={t().archive}>
+          <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().archiveEmpty} />}>
+            {list(listRows)}
+          </Show>
+        </AppWorkspace.SidebarSection>
+      </Show>
+      <Show when={hasMore()}>
+        <AppWorkspace.SidebarItem disabled={listLoading() || listPending()} icon="ti ti-dots" onClick={() => void more()}>
+          {t().showMoreChats}
+        </AppWorkspace.SidebarItem>
+      </Show>
+      <Show when={includeArchive}>{archiveLink()}</Show>
+    </>
+  );
   return (
     <>
       <Show when={!openChat()}>{draftNotice()}</Show>
       <Show when={props.embedded && !openChat()}>
         <div class="flex shrink-0 justify-end p-1">
           <IconButtonLink
-            href={route().chatId ? conversationHref(route().chatId!, null, route().messageId) : "/app/chat"}
+            href={listHref(
+              route().chatId ? conversationHref(route().chatId!, null, route().messageId) : archived() ? "/app/chat/archive" : "/app/chat",
+            )}
             target={composerReady() ? undefined : "_top"}
             label={t().openFullView}
           >
@@ -793,16 +1209,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       <AppWorkspace mobileSurface="flush" class={`chat-workspace ${props.embedded ? "flex-1 min-h-0" : "h-full"}`}>
         <AppWorkspace.Sidebar label={t().chats}>
           <AppWorkspace.SidebarDesktop>
-            <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">
-              <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
-                {t().newChat}
-              </AppWorkspace.SidebarItem>
-              <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
-                <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}>
-                  {list()}
-                </Show>
-              </AppWorkspace.SidebarSection>
-            </AppWorkspace.SidebarBody>
+            <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">{listContent(false)}</AppWorkspace.SidebarBody>
+            <AppWorkspace.SidebarFooter>{archiveLink()}</AppWorkspace.SidebarFooter>
           </AppWorkspace.SidebarDesktop>
         </AppWorkspace.Sidebar>
         <AppWorkspace.Content>
@@ -814,12 +1222,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   <Show when={conversation()}>
                     {(current) => (
                       <ChatConversation
-                        listHref={basePath}
                         actions={
                           <>
                             <Show when={props.embedded}>
                               <IconButtonLink
-                                href={conversationHref(current().id, null, route().messageId)}
+                                href={listHref(conversationHref(current().id, null, route().messageId))}
                                 target={composerReady() ? undefined : "_top"}
                                 label={t().openFullView}
                               >
@@ -833,7 +1240,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                             </Show>
                             <IconButtonLink
                               label={t().chatInfo}
-                              href={panelHref(current().id, panel() === "info" ? null : "info", route().messageId)}
+                              href={listHref(panelHref(current().id, panel() === "info" ? null : "info", route().messageId))}
                               navigation="enhanced"
                               onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
                               aria-expanded={panel() === "info"}
@@ -845,6 +1252,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         }
                         chatId={current().id}
                         title={current().title}
+                        listHref={listHref(archived() ? `${basePath}/archive` : basePath)}
                         memberCount={current().memberCount}
                         items={items()}
                         hasOlder={openChat()?.hasOlder ?? false}
@@ -883,6 +1291,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                           feed = controller;
                         }}
                         markerKey={marker()}
+                        unreadGap={unreadGap() ? { key: unreadGap()?.key ?? null, jump: () => void jumpUnreadGap() } : undefined}
                         onVisibleChange={reportVisible}
                         onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
                         // With the info open, Esc closes it first; the workspace owns that.
@@ -901,24 +1310,24 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   description={t().noAccessDescription}
                 />
               </Match>
-              <Match when={rows().length === 0}>
-                <Placeholder
-                  variant="panel"
-                  class="flex-1"
-                  icon="ti ti-messages"
-                  title={t().noChatsTitle}
-                  description={t().noChatsDescription}
-                  action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
-                />
+              <Match when={rows().length === 0 && !archived() && filter() === "all"}>
+                <nav class="chat-list-page" aria-label={t().chats}>
+                  {listContent()}
+                </nav>
+                <div class="chat-select">
+                  <Placeholder
+                    variant="panel"
+                    class="flex-1"
+                    icon="ti ti-messages"
+                    title={t().noChatsTitle}
+                    description={t().noChatsDescription}
+                    action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
+                  />
+                </div>
               </Match>
               <Match when={true}>
                 <nav class="chat-list-page" aria-label={t().chats}>
-                  <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
-                    {t().newChat}
-                  </AppWorkspace.SidebarItem>
-                  <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
-                    {list()}
-                  </AppWorkspace.SidebarSection>
+                  {listContent()}
                 </nav>
                 <div class="chat-select">
                   <Placeholder

@@ -1398,7 +1398,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 1.75rem;
   height: 1rem;
   align-items: center;
-  justify-content: flex-end;
+  /* Counts grow into their reserved slot without moving the existing mark or its text. */
+  justify-content: flex-start;
 }
 
 .k2b-ui .k2b-app-workspace__sidebar-status-count {

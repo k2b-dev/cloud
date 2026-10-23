@@ -43,6 +43,9 @@ const conversation = ConversationSchema.parse({
   memberCount: 1,
   unread: 0,
   read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+  archived: false,
+  pinnedRank: null,
+  member: true,
   withGuests: false,
   peerDeactivated: false,
   rev: 0,
@@ -115,4 +118,11 @@ test("SSR propagates failed sidebar and snapshot reads to the page's error state
   list.mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
   spyOn(messages, "snapshot").mockResolvedValue({ ok: false, error: { code: "INTERNAL_ERROR", status: 500, message: "Snapshot failed" } });
   await expect(loadChatView(context, { conversationId: "abcdef" })).rejects.toThrow("Snapshot failed");
+});
+
+test("SSR applies archive and Unread filters before fetching the sidebar", async () => {
+  spyOn(chatLive, "cursor").mockResolvedValue("before-reads");
+  const list = spyOn(conversations, "list").mockResolvedValue({ ok: true, data: { items: [], nextCursor: null } });
+  await loadChatView(context, { archived: true, unread: true });
+  expect(list).toHaveBeenCalledWith({ ...context, query: { archived: "true", unread: "true" } });
 });

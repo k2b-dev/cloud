@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { afterEach, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { type AuthContext, createAccess, type PermissionLevel } from "@k2b/cloud/server";
 import { serviceAccountCredentials, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
@@ -123,29 +123,34 @@ suite("chat conversations, people, and directory groups", () => {
   beforeAll(async () => {
     await migrate();
   });
-  afterAll(async () => {
+  afterEach(async () => {
     // Junctions cascade from the conversation, but platform access entries have their own owner.
     const rows = conversations.length
       ? await sql<{ access_id: string }[]>`SELECT ca.access_id FROM chat.conversation_access ca
       JOIN chat.conversations c ON c.id = ca.conversation_id WHERE c.short_id = ANY(${toPgTextArray(conversations)}::text[])`
       : [];
-    for (const shortId of conversations) {
-      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key IN (${"c:" + shortId}, ${"l:" + shortId})`;
-      await sql`DELETE FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ${shortId}`;
-      await sql`DELETE FROM chat.conversations WHERE short_id = ${shortId}`;
+    if (conversations.length) {
+      const keys = conversations.flatMap((shortId) => ["c:" + shortId, "l:" + shortId]);
+      await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ANY(${toPgTextArray(keys)}::text[])`;
+      await sql`DELETE FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ANY(${toPgTextArray(conversations)}::text[])`;
+      await sql`DELETE FROM chat.conversations WHERE short_id = ANY(${toPgTextArray(conversations)}::text[])`;
     }
     const allAccess = [...new Set([...accessIds, ...rows.map((row) => row.access_id)])];
     if (allAccess.length) await sql`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(allAccess)}::uuid[])`;
     if (groups.length) await sql`DELETE FROM auth.groups WHERE id = ANY(${toPgUuidArray(groups)}::uuid[])`;
+    if (accounts.length)
+      await sql`DELETE FROM chat.account_prefs WHERE principal_type = 'service_account' AND principal_id = ANY(${toPgUuidArray(accounts)}::uuid[])`;
     for (const id of accounts) {
       await sql`DELETE FROM audit.events WHERE target_id = ${id} OR actor_uid = ${id} OR metadata->>'serviceAccountId' = ${id}`;
       await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
     }
     if (users.length) {
+      await sql`DELETE FROM chat.account_prefs WHERE principal_type = 'user' AND principal_id = ANY(${toPgUuidArray(users)}::uuid[])`;
       await sql`DELETE FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ANY(${toPgTextArray(users.map((id) => "p:" + id))}::text[])`;
       await sql`DELETE FROM audit.events WHERE actor_user_id = ANY(${toPgUuidArray(users)}::uuid[]) OR target_id = ANY(${toPgTextArray(users)}::text[])`;
       await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(users)}::uuid[])`;
     }
+    users.length = accounts.length = groups.length = conversations.length = accessIds.length = 0;
   });
 
   const operations = ["create", "list", "detail", "update", "members", "add", "permission", "remove", "leave"] as const;
@@ -1407,5 +1412,177 @@ suite("chat conversations, people, and directory groups", () => {
       expect(preview.status).toBe(400);
       expect(await preview.json()).toEqual(await add.json());
     }
+  });
+  test("personal archive survives incoming messages and restores its saved pin position without changing membership", async () => {
+    const owner = await user(),
+      other = await user();
+    const headers = await cookie(owner),
+      otherHeaders = await cookie(other);
+    const first = await fixture(owner, [{ id: other, permission: "write" }]);
+    const second = await fixture(owner);
+    const personal = (id: string, patch: unknown, caller = headers) => request(caller, `/${id}/personal`, "PUT", patch);
+    expect((await personal(first.shortId, { pinned: true })).status).toBe(200);
+    expect((await personal(second.shortId, { pinned: true })).status).toBe(200);
+    const archived = ConversationSchema.parse(await (await personal(first.shortId, { archived: true })).json());
+    expect(archived).toMatchObject({ archived: true, pinnedRank: 0, member: true });
+    const sent = await request(otherHeaders, `/${first.shortId}/messages`, "POST", { clientId: "archive-message", body: "Still archived" });
+    expect(sent.status).toBe(201);
+    expect(ConversationSchema.parse(await (await request(headers, `/${first.shortId}`)).json()).archived).toBe(true);
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items.map((row) => row.id)).toEqual([second.shortId]);
+    expect(ConversationPageSchema.parse(await (await request(headers, "?archived=true")).json()).items.map((row) => row.id)).toEqual([
+      first.shortId,
+    ]);
+    expect(ConversationPageSchema.parse(await (await request(otherHeaders)).json()).items.map((row) => row.id)).toContain(first.shortId);
+    expect((await personal(first.shortId, { archived: false })).status).toBe(200);
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items.map((row) => row.id)).toEqual([
+      first.shortId,
+      second.shortId,
+    ]);
+    const [count] = await sql<
+      { count: number }[]
+    >`SELECT count(*)::int AS count FROM chat.conversation_access WHERE conversation_id = ${first.id}::uuid AND role = 'member'`;
+    expect(count!.count).toBe(2);
+  });
+
+  test("personal pin order is saved, retry-safe, unbounded at fifteen, and validates neighbors before writes", async () => {
+    const owner = await user(),
+      outsider = await user();
+    const headers = await cookie(owner);
+    const chats = [];
+    for (let i = 0; i < 18; i++) chats.push(await fixture(owner));
+    const pin = (id: string, patch: unknown, caller = headers) => request(caller, `/${id}/personal`, "PUT", patch);
+    const results = await Promise.all(chats.map((chat) => pin(chat.shortId, { pinned: true })));
+    expect(results.every((response) => response.status === 200)).toBe(true);
+    const page = async () => ConversationPageSchema.parse(await (await request(headers)).json());
+    const original = (await page()).items.map((row) => row.id);
+    expect(original).toHaveLength(18);
+    expect(new Set((await page()).items.map((row) => row.pinnedRank)).size).toBe(18);
+    const last = original.at(-1)!;
+    expect((await pin(last, { pinned: true, before: original[0] })).status).toBe(200);
+    expect((await pin(last, { pinned: true, before: original[0] })).status).toBe(200);
+    expect((await pin(last, { pinned: true })).status).toBe(200);
+    expect((await page()).items.map((row) => row.id)).toEqual([last, ...original.slice(0, -1)]);
+    expect((await pin(last, { archived: true, pinned: true, before: last })).status).toBe(400);
+    expect((await page()).items[0]!.archived).toBe(false);
+    expect((await pin(last, { pinned: true, before: "ZZZZZZ" })).status).toBe(400);
+    expect((await pin(last, { pinned: true, after: original[0] })).status).toBe(200);
+    expect((await pin(last, { pinned: true, after: original[0] })).status).toBe(200);
+    expect((await page()).items.slice(0, 3).map((row) => row.id)).toEqual([original[0]!, last, original[1]!]);
+    expect((await pin(last, { pinned: true, after: last })).status).toBe(400);
+    expect((await pin(last, { pinned: true, before: original[0], after: original[1] })).status).toBe(400);
+    expect((await pin(last, { pinned: false })).status).toBe(200);
+    expect((await page()).items.find((row) => row.id === last)!.pinnedRank).toBeNull();
+    expect((await pin(last, { archived: true }, await cookie(outsider))).status).toBe(404);
+  });
+
+  test("sidebar pages preserve pins ahead of activity and archive pagination is separate", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    const chats = [];
+    for (let i = 0; i < 53; i++) chats.push(await fixture(owner));
+    const oldest = chats[0]!;
+    await sql`UPDATE chat.conversations SET last_activity_at = '2020-01-01T00:00:00Z'::timestamptz WHERE id = ${oldest.id}::uuid`;
+    expect((await request(headers, `/${oldest.shortId}/personal`, "PUT", { pinned: true })).status).toBe(200);
+    const first = ConversationPageSchema.parse(await (await request(headers)).json());
+    expect(first.items[0]!.id).toBe(oldest.shortId);
+    expect(first.items).toHaveLength(50);
+    expect(first.nextCursor).not.toBeNull();
+    const second = ConversationPageSchema.parse(await (await request(headers, `?cursor=${encodeURIComponent(first.nextCursor!)}`)).json());
+    expect(second.items).toHaveLength(3);
+    expect(new Set([...first.items, ...second.items].map((row) => row.id)).size).toBe(53);
+    expect(ConversationPageSchema.parse(await (await request(headers, "?unread=true")).json()).items).toEqual([]);
+    expect((await request(headers, `/${oldest.shortId}/personal`, "PUT", { pinned: false })).status).toBe(200);
+    expect((await request(headers, `/${oldest.shortId}/messages`, "POST", { clientId: "explicit-mark", body: "Own message" })).status).toBe(
+      201,
+    );
+    expect((await request(headers, `/${oldest.shortId}/read`, "POST", { seq: 1 })).status).toBe(200);
+    expect((await request(headers, `/${oldest.shortId}/unread`, "POST", {})).status).toBe(200);
+    await sql`UPDATE chat.conversations SET last_activity_at = '2020-01-01T00:00:00Z'::timestamptz WHERE id = ${oldest.id}::uuid`;
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items.map((row) => row.id)).not.toContain(oldest.shortId);
+    expect(ConversationPageSchema.parse(await (await request(headers, "?unread=true")).json()).items.map((row) => row.id)).toEqual([
+      oldest.shortId,
+    ]);
+    expect(
+      ConversationPageSchema.parse(await (await request(headers, `?ids=${oldest.shortId}`)).json()).items.map((row) => row.id),
+    ).toEqual([oldest.shortId]);
+    const outsider = await cookie(await user());
+    expect(ConversationPageSchema.parse(await (await request(outsider, `?ids=${oldest.shortId}`)).json()).items).toEqual([]);
+    // Seed pagination data without making an artificial burst of personal writes against the real user rate limit.
+    await sql`UPDATE chat.participants SET archived_at = now()
+      WHERE principal_type = 'user' AND principal_id = ${owner}::uuid
+        AND conversation_id = ANY(${toPgUuidArray(chats.map((chat) => chat.id))}::uuid[])`;
+    expect(ConversationPageSchema.parse(await (await request(headers)).json()).items).toEqual([]);
+    const archived = ConversationPageSchema.parse(await (await request(headers, "?archived=true")).json());
+    const remainder = ConversationPageSchema.parse(
+      await (await request(headers, `?archived=true&cursor=${encodeURIComponent(archived.nextCursor!)}`)).json(),
+    );
+    expect(new Set([...archived.items, ...remainder.items].map((row) => row.id)).size).toBe(53);
+  });
+
+  test("collapsed sections are persisted per account and anonymous requests cannot read or write them", async () => {
+    const owner = await user(),
+      other = await user();
+    const pref = (headers: Headers, method = "GET", body?: unknown) =>
+      server.request("https://cloud.example.test/api/chat/preferences", {
+        method,
+        headers: { "x-forwarded-for": uniqueCallerAddress(), ...headers, "content-type": "application/json" },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+    const ownerHeaders = await cookie(owner);
+    const saved = await pref(ownerHeaders, "PUT", { collapsed: ["pinned", "chats"] });
+    expect(saved.status).toBe(200);
+    expect(await (await pref(ownerHeaders)).json()).toEqual({ collapsed: ["pinned", "chats"] });
+    expect(await (await pref(await cookie(other))).json()).toEqual({ collapsed: [] });
+    expect((await pref(ownerHeaders, "PUT", { collapsed: ["invented"] })).status).toBe(400);
+    expect((await pref({})).status).toBe(401);
+    expect((await pref({}, "PUT", { collapsed: [] })).status).toBe(401);
+    await sql`DELETE FROM chat.account_prefs WHERE principal_id = ${owner}::uuid`;
+  });
+
+  test("a 300-chat sidebar pages every chat with bounded responses", async () => {
+    const owner = await user();
+    const headers = await cookie(owner);
+    for (let offset = 0; offset < 300; offset += 10) await Promise.all(Array.from({ length: 10 }, () => fixture(owner)));
+    const ids = new Set<string>();
+    let cursor: string | null = null;
+    do {
+      const response = await request(headers, cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
+      expect(response.status).toBe(200);
+      const page = ConversationPageSchema.parse(await response.json());
+      expect(page.items.length).toBeLessThanOrEqual(50);
+      for (const row of page.items) {
+        expect(ids.has(row.id)).toBe(false);
+        ids.add(row.id);
+      }
+      cursor = page.nextCursor;
+    } while (cursor);
+    expect(ids.size).toBe(300);
+    const elapsed: number[] = [];
+    for (let sample = 0; sample < 20; sample++) {
+      const start = performance.now();
+      const response = await request(headers);
+      expect(response.status).toBe(200);
+      expect(ConversationPageSchema.parse(await response.json()).items).toHaveLength(50);
+      elapsed.push(performance.now() - start);
+    }
+    elapsed.sort((a, b) => a - b);
+    console.info(
+      `300-chat sidebar endpoint p95: ${elapsed[Math.ceil(elapsed.length * 0.95) - 1]!.toFixed(2)} ms (20 warm reads, local integration fixture)`,
+    );
+  });
+
+  test("Unread excludes inherited chats until their participant read position exists", async () => {
+    const owner = await user(),
+      reader = await user();
+    const chat = await fixture(owner);
+    const groupId = await group([reader]);
+    await groupGrant(chat, groupId, owner, "read");
+    expect(
+      (await request(await cookie(owner), `/${chat.shortId}/messages`, "POST", { clientId: "inherited-unread", body: "Earlier message" }))
+        .status,
+    ).toBe(201);
+    const response = await request(await cookie(reader), "?unread=true");
+    expect(response.status).toBe(200);
+    expect(ConversationPageSchema.parse(await response.json()).items).toEqual([]);
   });
 });

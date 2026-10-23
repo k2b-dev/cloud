@@ -225,6 +225,9 @@ class World {
             return read;
           })()
         : null,
+      archived: false,
+      pinnedRank: null,
+      member: true,
       withGuests: false,
       peerDeactivated: false,
       lastMessage: (() => {
@@ -263,6 +266,11 @@ class World {
   api(person: string): ChatStoreApi {
     return {
       ...memberApi,
+      personal: async () => {
+        throw new Error("Unused personal write");
+      },
+      preferences: async () => ({ collapsed: [] }),
+      savePreferences: async (collapsed) => ({ collapsed }),
       read: async () => {
         throw new Error("Unused write");
       },
@@ -458,6 +466,9 @@ const check = (store: ReturnType<typeof createChatStore>, person: string) => {
       purpose: row.purpose,
       title: row.title,
       memberCount: row.memberCount,
+      archived: false,
+      pinnedRank: null,
+      member: true,
       withGuests: false,
       peerDeactivated: false,
       permission: row.permission,
@@ -519,10 +530,31 @@ test("100 clients reconnect together and replay without extra resync", async () 
   await settle(40);
   expect(BridgeSocket.all.filter((s) => !s.dead)).toHaveLength(100);
   const resyncs = world.resyncs;
+  expect(tabs.every((tab) => tab.openConversation?.caughtUp)).toBe(true);
+  const beforeReplay = tabs[0]!.openConversation!.messages.map((message) => message.seq);
+  const replayStates: { caughtUp: boolean; watermark: number; messages: number[] }[] = [];
+  const stopObserving = tabs[0]!.subscribe(() => {
+    const current = tabs[0]!.openConversation;
+    if (current)
+      replayStates.push({
+        caughtUp: current.caughtUp,
+        watermark: current.watermark,
+        messages: current.messages.map((message) => message.seq),
+      });
+  });
   for (const socket of BridgeSocket.all) socket.end(1006);
-  send(X);
+  // BridgeSocket delivers close in a microtask; inspect it before settle() sends online and reconnects.
+  await Promise.resolve();
+  expect(tabs.every((tab) => !tab.openConversation?.caughtUp)).toBe(true);
+  const arrival = send(X)!;
   world.dispatch();
-  await until(() => tabs.every((tab) => tab.openConversation?.watermark === world.models.get(X)!.rev));
+  const rev = world.models.get(X)!.rev;
+  await until(() => tabs.every((tab) => tab.openConversation?.watermark === rev && tab.openConversation.caughtUp));
+  const catchingUp = replayStates.filter((state) => !state.caughtUp);
+  expect(catchingUp.length).toBeGreaterThan(0);
+  for (const state of catchingUp) expect(state.messages).toEqual(beforeReplay);
+  expect(replayStates.at(-1)).toEqual({ watermark: rev, caughtUp: true, messages: [...beforeReplay, arrival.seq] });
+  stopObserving();
   expect(world.resyncs).toBe(resyncs);
   for (const [i, tab] of tabs.entries()) check(tab, world.people[i]!);
 });

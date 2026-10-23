@@ -23,6 +23,8 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A visible message advances past an unseen gap | A virtualized live feed reports its newest visible sequence as read after a hidden or unfocused burst, skipping unseen messages ([#1130](https://github.com/k2b-dev/cloud/issues/1130)). | Tests: Chat `read-reporter.test.ts` preserves a contiguous frontier; workspace behavior and browser tests cover hidden and unfocused bursts, reconnect replay, visible gap recovery and the separate fixed opening marker. Reading waits for catch-up and a painted visible range. |
+| A browser assertion races native link navigation | Completing a keyboard event does not mean the browser has applied the link’s destination. | Test: UI `data-table-focus.browser.test.ts` waits for the expected URL fragment before checking navigation and row-action counts ([#1743](https://github.com/k2b-dev/cloud/issues/1743)). |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
@@ -192,6 +194,20 @@ convention still needs a check or a test.
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 
 ## Lessons
+
+### A live Chat burst skipped unseen messages
+
+- **What happened:** Returning to a chat after a hidden or unfocused burst could advance the read position over messages the person had not seen ([#1130](https://github.com/k2b-dev/cloud/issues/1130)).
+- **Root cause:** A skipped range had no recovery control, while intermediate reconnect windows could incorrectly look like contiguous reading before catch-up completed.
+- **Error class:** A visible message advances past an unseen gap.
+- **Guard:** The read reporter retains the contiguous frontier and exposes a recoverable unread gap. Workspace behavior and browser tests require a jump back through the gap after hidden and unfocused bursts and reconnect replay, while keeping the fixed opening marker distinct. Only the caught-up, painted range begins new reading. Explicit reads clear the marker only after success and advance local progress without changing the live baseline; delayed live responses cannot recreate a cleared gap. Reporter and browser guards cover delayed replies, a rejected read and retry.
+
+### Rendered rows did not prove a bulk action had finished
+
+- **What happened:** The Chat browser test saw all 50 visible unread badges disappear, then checked the unread state of 51 chats before the final batch finished.
+- **Root cause:** The visible page was used as the completion signal for a paginated operation.
+- **Error class:** A partial projection is mistaken for completed work.
+- **Guard:** The desktop and phone browser tests wait for the terminal `read-all` result (`outcome: "done", more: false`) before asserting both visible badges and every chat's stored unread state.
 
 ### Spread props never reached Pulse, Grids scanner and Weather settings islands
 
@@ -1002,3 +1018,8 @@ updates that class's row in the table.
 
 - **Error class:** asynchronous UI locator race. The Pulse Back test could resolve the settings form's Discard button before the confirmation appeared, then wait on that hidden button.
 - **Guard:** the test waits for the named confirmation dialog and its question before clicking its Discard button. It still checks Back, Escape, Cancel, draft preservation and the resulting URL.
+
+## Avoid measuring scroll overflow after every live row mutation
+
+- **Error class:** repeated forced layout. Updating many unread badges made the shared scroll-fade observer measure each intermediate layout, delaying Chat's batch-read response and interaction completion.
+- **Guard:** `scroll-fade.behavior.test.tsx` checks that separate row mutations share one frame measurement, scrolling still updates immediately, and disposal cancels pending work. Resize observations remain synchronous before paint. Chat's 51-conversation browser case checks both read batches with the original deadlines. The DOM test prepares the component imports before individual test deadlines, so a cold transform cannot time out and leave asynchronous cleanup running inside the next test.

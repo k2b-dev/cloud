@@ -26,6 +26,9 @@ const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   memberCount: 3,
   unread: 0,
   read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+  archived: false,
+  pinnedRank: null,
+  member: true,
   withGuests: false,
   peerDeactivated: false,
   permission: "write",
@@ -82,6 +85,9 @@ describe("ChatWorkspace server render", () => {
           id: "Chat02",
           title: "Two people",
           memberCount: 2,
+          archived: false,
+          pinnedRank: null,
+          member: true,
           withGuests: false,
           peerDeactivated: false,
           lastMessage: {
@@ -143,6 +149,28 @@ describe("ChatWorkspace server render", () => {
   }
 });
 
+test("SSR retains personal archive and Unread navigation and saved collapsed state", () => {
+  const html = render("en", {
+    ...props(),
+    archived: true,
+    filter: "unread",
+    collapsed: ["pinned", "chats"],
+    chatId: conversation.id,
+    open: { conversation: { ...conversation, archived: true }, page: { items: [], rev: 1, seqHead: 0 }, focus: null },
+    sidebar: { items: [{ ...conversation, archived: true }], nextCursor: null },
+  });
+  expect(html).toContain(`/app/chat/archive?filter=unread`);
+  expect(html).toContain('aria-pressed="true"');
+  const collapsed = render("en", {
+    ...props(),
+    collapsed: ["pinned"],
+    sidebar: { items: [{ ...conversation, pinnedRank: 0 }], nextCursor: null },
+  });
+  expect(collapsed.replaceAll(/<!--.*?-->/g, "")).toMatch(
+    /<button[^>]*class="k2b-app-workspace__sidebar-section-toggle"[^>]*aria-expanded="false"[^>]*>Pinned/,
+  );
+});
+
 test("the panel renders the same authorized chat with internal links and an explicit full-view link", () => {
   const html = render("en", {
     ...props(),
@@ -157,4 +185,20 @@ test("the panel renders the same authorized chat with internal links and an expl
   expect(html).toContain("Open full view");
   expect(html).toMatch(/<textarea[^>]*disabled/);
   expect(html).toContain(conversation.title);
+});
+
+test("panel personal navigation retains archive and unread context when opening the full view", () => {
+  const html = render("en", {
+    ...props(),
+    embedded: true,
+    archived: true,
+    filter: "unread",
+    chatId: conversation.id,
+    open: { conversation: { ...conversation, archived: true, unread: 2 }, page: { items: [], rev: 1, seqHead: 0 }, focus: null },
+    sidebar: { items: [{ ...conversation, archived: true, unread: 2 }], nextCursor: null },
+  });
+  expect(html).toContain('href="/app/chat/panel/archive?filter=unread"');
+  expect(html).toContain('href="/app/chat/panel/c/Chat01?filter=unread&amp;list=archive"');
+  expect(html).toContain('href="/app/chat/c/Chat01?filter=unread&amp;list=archive"');
+  expect(html).toContain("Open full view");
 });

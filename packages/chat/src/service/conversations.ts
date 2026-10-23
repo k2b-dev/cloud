@@ -11,7 +11,7 @@ import {
   type ServiceError,
   updateAccess,
 } from "@k2b/cloud/server";
-import { audit, toPgUuidArray } from "@k2b/cloud/services";
+import { audit, toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
@@ -56,7 +56,7 @@ import {
 } from "./contracts";
 import { chatLive } from "./live";
 import { appendMessage, deletedPeople, personSnapshots } from "./message-store";
-import { projectRead, type ReadProjection, unreadQuery } from "./read-state";
+import { projectRead, type ReadProjection, readStartSql, unreadQuery } from "./read-state";
 import { deriveTitle, TITLE_NAME_LIMIT } from "./titles";
 
 const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_LIMIT, windowSecs: CREATE_WINDOW_SECONDS });
@@ -327,7 +327,7 @@ const project = (
   title: string,
   lastMessage: z.infer<typeof ConversationSchema>["lastMessage"],
   flags: { withGuests: boolean; peerDeactivated: boolean },
-  state: Pick<z.infer<typeof ConversationSchema>, "read" | "unread">,
+  state: Pick<z.infer<typeof ConversationSchema>, "read" | "unread" | "archived" | "pinnedRank" | "member">,
 ): z.infer<typeof ConversationSchema> => ({
   id: row.short_id,
   name: row.name,
@@ -516,13 +516,25 @@ const list = (input: ChatContext & { query?: unknown }) =>
     if (!bound.ok) return fail(err.forbidden(messages(input).forbidden));
     if (capPermission("read", input.actor) === "none") return ok({ items: [], nextCursor: null });
     const cursor = parsed.data.cursor;
+    const ids = parsed.data.ids;
+    const self = subjectPrincipal(input.accessSubject);
+    const archived = parsed.data.archived === "true";
     const rows = await db<(ConversationRow & { permission_rank: number; cursor_at: string })[]>`
     SELECT c.*, MAX(CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END)::int AS permission_rank,
       to_char(c.last_activity_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM chat.conversations c JOIN chat.conversation_access ca ON ca.conversation_id = c.id JOIN auth.access a ON a.id = ca.access_id
+    LEFT JOIN chat.participants p ON p.conversation_id = c.id AND p.principal_type = ${self.type} AND p.principal_id = ${self.id}::uuid
     WHERE ${readableMemberCondition(input.accessSubject, bound.data, db)}
-      AND ${cursor ? db`(c.last_activity_at, c.short_id) < (${cursor.at}::timestamptz, ${cursor.id})` : db`true`}
-    GROUP BY c.id ORDER BY c.last_activity_at DESC, c.short_id DESC LIMIT ${CONVERSATION_PAGE_SIZE + 1}
+      AND ${ids ? db`c.short_id = ANY(${toPgTextArray(ids)}::text[])` : db`true`}
+      AND (p.archived_at IS NOT NULL) = ${archived}
+      AND ${parsed.data.unread === "true" ? db`(p.conversation_id IS NOT NULL AND (p.unread_from_seq IS NOT NULL OR EXISTS(SELECT 1 FROM chat.messages m WHERE m.conversation_id = c.id AND m.kind = 'text' AND m.seq > ${readStartSql(db)} AND NOT (m.author_type = ${self.type} AND m.author_id = ${self.id}::uuid))))` : db`true`}
+      AND ${
+        cursor
+          ? db`(COALESCE(p.pinned_rank, 2147483647) > ${cursor.rank} OR
+        (COALESCE(p.pinned_rank, 2147483647) = ${cursor.rank} AND (c.last_activity_at, c.short_id) < (${cursor.at}::timestamptz, ${cursor.id})))`
+          : db`true`
+      }
+    GROUP BY c.id, p.pinned_rank ORDER BY COALESCE(p.pinned_rank, 2147483647), c.last_activity_at DESC, c.short_id DESC LIMIT ${CONVERSATION_PAGE_SIZE + 1}
   `;
     const page = rows.slice(0, CONVERSATION_PAGE_SIZE);
     const names = await titles(page, input, db);
@@ -550,7 +562,10 @@ const list = (input: ChatContext & { query?: unknown }) =>
     const last = page.at(-1);
     return ok({
       items,
-      nextCursor: rows.length > CONVERSATION_PAGE_SIZE && last ? JSON.stringify({ at: last.cursor_at, id: last.short_id }) : null,
+      nextCursor:
+        rows.length > CONVERSATION_PAGE_SIZE && last
+          ? JSON.stringify({ at: last.cursor_at, id: last.short_id, rank: states.get(last.id)!.pinnedRank ?? 2147483647 })
+          : null,
     });
   });
 const update = async (input: ChatContext & { conversationId: string; input: unknown }) => {

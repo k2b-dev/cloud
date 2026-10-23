@@ -12,7 +12,7 @@ import {
   Tooltip,
   toast,
 } from "@k2b/ui";
-import { createEffect, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import type { z } from "zod";
 import type { MemberSchema, PermissionSchema } from "../service/contracts";
@@ -53,6 +53,8 @@ export default function ChatInfoPanel(props: {
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [moreFailed, setMoreFailed] = createSignal(false);
   const [changing, setChanging] = createSignal(false);
+  const conversationId = createMemo(() => props.conversation.id);
+  const membershipRevision = createMemo(() => props.revision);
   const manager = () => props.conversation.permission === "admin";
   let list: HTMLUListElement | undefined;
   let retryMore: HTMLButtonElement | undefined;
@@ -117,10 +119,10 @@ export default function ChatInfoPanel(props: {
     }),
   );
   createEffect(
-    on([() => props.active, () => props.store, query, () => props.revision], ([active, store, q], previous) => {
+    on([() => props.active, () => props.store, query, membershipRevision, conversationId], ([active, store, q, , id], previous) => {
       // Only a new search starts again from the first page; a membership change or a return to the panel keeps the
       // rows the reader loaded.
-      if (active && store) void load(!!previous && previous[1] === store && previous[2] === q && rows.length > 0);
+      if (active && store) void load(!!previous && previous[1] === store && previous[2] === q && previous[4] === id && rows.length > 0);
     }),
   );
 
