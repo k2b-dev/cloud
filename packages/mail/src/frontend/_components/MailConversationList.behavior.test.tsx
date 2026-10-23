@@ -4,6 +4,7 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { Mailbox } from "../../contracts";
 import { resolveMailSearchRoute } from "../../search-state";
+import { mailTestFolder } from "./mail-list-test-fixtures";
 
 /** The builder's dialog itself has its own tests; here only how often the list opens it matters. */
 const searchBuilderOpens: unknown[] = [];
@@ -99,11 +100,13 @@ test.skipIf(isServer)("overscrolling the conversation list at its top runs the w
 
 test.skipIf(isServer)("search filters open one builder however often they are pressed while its code loads", async () => {
   const dom = createDomTestHarness();
-  const { default: MailConversationList } = await import("./MailConversationList");
-  const dispose = render(
-    () => createComponent(MailConversationList, { ...listProps("/app/mail/Box001?q=sdsd"), query: "sdsd", onRefresh: async () => {} }),
-    dom.root,
-  );
+  const { createMailboxSearch } = await import("./mailbox-search");
+  const { MailSearchInput, MailSearchOptions } = await import("./MailWorkspaceSearch");
+  const MailSearchHarness = (props: Parameters<typeof createMailboxSearch>[0]) => {
+    const search = createMailboxSearch(props);
+    return [createComponent(MailSearchInput, { search, mailboxName: "Support" }), createComponent(MailSearchOptions, { search, count: 0 })];
+  };
+  const dispose = render(() => createComponent(MailSearchHarness, { ...listProps("/app/mail/Box001?q=sdsd"), query: "sdsd" }), dom.root);
   try {
     const filters = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!;
     filters.click();
@@ -134,10 +137,18 @@ for (const [query, expected] of [
 ]) {
   test.skipIf(isServer)(`the list builder retains structured, saved-view, quick-search precedence: ${query}`, async () => {
     const dom = createDomTestHarness();
-    const { default: MailConversationList } = await import("./MailConversationList");
+    const { createMailboxSearch } = await import("./mailbox-search");
+    const { MailSearchInput, MailSearchOptions } = await import("./MailWorkspaceSearch");
+    const MailSearchHarness = (props: Parameters<typeof createMailboxSearch>[0]) => {
+      const search = createMailboxSearch(props);
+      return [
+        createComponent(MailSearchInput, { search, mailboxName: "Support" }),
+        createComponent(MailSearchOptions, { search, count: 0 }),
+      ];
+    };
     const dispose = render(
       () =>
-        createComponent(MailConversationList, {
+        createComponent(MailSearchHarness, {
           ...listProps(`/app/mail/Box001${query}`),
           activeSavedViewId: "View01",
           savedViews: [
@@ -153,7 +164,6 @@ for (const [query, expected] of [
               updatedAt: "2026-10-14T10:00:00Z",
             },
           ],
-          onRefresh: async () => {},
         }),
       dom.root,
     );
@@ -169,3 +179,90 @@ for (const [query, expected] of [
     }
   });
 }
+
+test.skipIf(isServer)("a long folder search stays editable and does not navigate beyond URL limits", async () => {
+  const dom = createDomTestHarness();
+  const { createMailboxSearch } = await import("./mailbox-search");
+  const { MailSearchInput } = await import("./MailWorkspaceSearch");
+  const query = "x".repeat(500);
+  const route = `/app/mail/Box001?${new URLSearchParams({ q: query, qFields: "from,recipients,subject,body,attachment_name", searchFrom: "folder=Inbox1" })}`;
+  const navigations: string[] = [];
+  let search!: ReturnType<typeof createMailboxSearch>;
+  const dispose = render(() => {
+    search = createMailboxSearch({
+      ...listProps(route),
+      query,
+      folders: [mailTestFolder("Inbox1", { name: "Inbox" })],
+      onOpenHref: (href) => {
+        navigations.push(href);
+      },
+    });
+    return createComponent(MailSearchInput, { search, mailboxName: "Support" });
+  }, dom.root);
+  try {
+    search.updateScope("Inbox1");
+    expect(navigations).toEqual([]);
+    expect(search.validationError()).toBe(true);
+    expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain("Shorten the text");
+    expect(dom.root.querySelector<HTMLInputElement>('input[name="q"]')?.value).toBe(query);
+    search.updateSearchValue("invoice");
+    search.submitSearch(new Event("submit", { cancelable: true }) as SubmitEvent);
+    expect(navigations).toHaveLength(1);
+    const next = new URL(navigations[0]!, "https://cloud.test");
+    expect(next.searchParams.get("q")).toBe("invoice");
+    expect(resolveMailSearchRoute(next).expression).toMatchObject({
+      type: "and",
+      expressions: [{ type: "folder_id", folderId: "Inbox1" }, { type: "or" }],
+    });
+    expect(search.validationError()).toBe(false);
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+test.skipIf(isServer)("a direct folder search names its actual scope and can return to the whole mailbox", async () => {
+  const dom = createDomTestHarness();
+  const { createMailboxSearch } = await import("./mailbox-search");
+  const { MailSearchOptions } = await import("./MailWorkspaceSearch");
+  const { simpleMailSearchExpression } = await import("../../search-url");
+  const route = `/app/mail/Box001?${new URLSearchParams({
+    q: "invoice",
+    searchFrom: "folder=Inbox1",
+    search: JSON.stringify({
+      expression: { type: "and", expressions: [{ type: "folder_id", folderId: "Trash1" }, simpleMailSearchExpression("invoice", ["any"])] },
+      sort: "newest",
+    }),
+  })}`;
+  const navigations: string[] = [];
+  const dispose = render(() => {
+    const search = createMailboxSearch({
+      ...listProps(route),
+      query: "invoice",
+      folders: [mailTestFolder("Inbox1", { name: "Inbox" }), mailTestFolder("Trash1", { name: "Trash" })],
+      onOpenHref: (href) => {
+        navigations.push(href);
+      },
+    });
+    return createComponent(MailSearchOptions, { search, count: 0 });
+  }, dom.root);
+  try {
+    const scope = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Place: Only Trash"]');
+    expect(scope).not.toBeNull();
+    scope!.click();
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+    const options = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')];
+    expect(options.map((option) => option.textContent)).toContain("Only Inbox");
+    const whole = options.find((option) => option.textContent?.trim() === "Whole mailbox");
+    expect(whole).toBeDefined();
+    whole!.click();
+    for (let turn = 0; turn < 10; turn++) await Promise.resolve();
+    expect(navigations).toHaveLength(1);
+    const next = new URL(navigations[0]!, "https://cloud.test");
+    expect(next.searchParams.has("search")).toBe(false);
+    expect(next.searchParams.get("q")).toBe("invoice");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});

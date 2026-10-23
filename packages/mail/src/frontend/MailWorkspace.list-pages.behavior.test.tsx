@@ -369,6 +369,7 @@ describe("Mail workspace list pages", () => {
     await loadPage("c2");
     await loadPage("c3");
     scroller().scrollTop = 480;
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")?.click();
     const input = dom.root.querySelector<HTMLInputElement>('input[name="q"]')!;
     input.value = "invoice";
     input.dispatchEvent(new Event("input", { bubbles: true }));
