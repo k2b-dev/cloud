@@ -1,7 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
 import { SQL, sql } from "bun";
 import { requireInfra, requireInfraUrl, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { app } from "../config";
 import { CLICKHOUSE_UUID_CHUNK_SIZE } from "../store/client";
+import { fanoutBaseNotices } from "./base-notifications";
 import { installIngestControlsFixture } from "./ingest-controls.test-fixture";
 
 if (testInfra.database && testInfra.valkey && testInfra.clickhouse) {
@@ -178,6 +180,7 @@ suiteFor(
         error: { code: "PULSE_BASE_STORAGE_FULL", status: 409 },
       });
       expect(await f.read("samples", "value")).toEqual([{ value: 1 }]);
+      await fanoutBaseNotices();
       const rows = await sql<
         { user_id: string; data: { baseName: string; threshold: number }; locale: string }[]
       >`SELECT user_id,data,locale FROM pulse.notification_outbox WHERE kind='storageThresholdReached' ORDER BY user_id`;
@@ -185,6 +188,7 @@ suiteFor(
       expect(rows[0]?.data).toMatchObject({ baseName: "Store fixture", threshold: 1 });
       await sql.begin(async (tx) => recordStorageThreshold(f.base.id, 0, f.clock(), tx, "de"));
       await measureBaseUsage(f.base.id, f.store);
+      await fanoutBaseNotices();
       expect(await sql`SELECT seq FROM pulse.notification_outbox WHERE kind='storageThresholdReached'`).toHaveLength(4);
     } finally {
       await f.cleanup();
@@ -347,6 +351,56 @@ suiteFor(
       await f.cleanup();
     }
   }, 60000);
+  test("health fanout reaches group admins once and rechecks grants before delivery", async () => {
+    const f = await writeFixture("health-group");
+    const other = await writeFixture("health-other");
+    const userId = "10000000-0000-4000-8000-000000000007";
+    const { notifications } = await import("@k2b/cloud/services");
+    const send = spyOn(notifications, "send").mockResolvedValue({ id: "10000000-0000-4000-8000-000000000008", status: "pending" });
+    let groupId: string | undefined;
+    try {
+      await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${userId}::uuid,${userId},'local','user')`;
+      const [group] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.groups(cn,provider,name) VALUES('pulse-health-group','local','Health group') RETURNING id`;
+      groupId = group!.id;
+      await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${userId}::uuid,${groupId}::uuid)`;
+      const [grant] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.access(group_id,permission) VALUES(${groupId}::uuid,'admin') RETURNING id`;
+      await sql`INSERT INTO pulse.base_access VALUES(${f.base.id}::uuid,${grant!.id}::uuid)`;
+      await recordInstanceDisk(50, 100, f.clock());
+      await Promise.all([recordStoreOutage(f.clock(), sql, "de"), recordStoreOutage(f.clock(), sql, "de")]);
+      await sql.begin(async (tx) => recordStorageThreshold(f.base.id, 6_000_000_000, f.clock(), tx, "de"));
+      // Drain all pages and preceding fixture events without treating an empty
+      // recipient page as the end of the cursor.
+      for (let i = 0; i < 20; i++) {
+        await fanoutBaseNotices();
+        if (!(await sql`SELECT id FROM pulse.notification_outbox WHERE dispatch_kind='fanout'`).length) break;
+      }
+      const pending = await sql<{ kind: string }[]>`SELECT kind FROM pulse.notification_outbox WHERE user_id=${userId}::uuid ORDER BY kind`;
+      expect(pending).toEqual([{ kind: "storageThresholdReached" }, { kind: "storeUnavailable" }]);
+      // The deduplicated outage row points at the first base; a second current
+      // grant must still qualify after that first grant is revoked.
+      const [otherGrant] = await sql<
+        { id: string }[]
+      >`INSERT INTO auth.access(user_id,permission) VALUES(${userId}::uuid,'admin') RETURNING id`;
+      await sql`INSERT INTO pulse.base_access VALUES(${other.base.id}::uuid,${otherGrant!.id}::uuid)`;
+      await sql`DELETE FROM auth.user_groups_v2 WHERE user_id=${userId}::uuid`;
+      await notificationOutbox.reconcile();
+      expect(send).toHaveBeenCalledWith(app.notifications.storeUnavailable, expect.objectContaining({ recipient: { userId } }));
+      expect(send).not.toHaveBeenCalledWith(app.notifications.storageThresholdReached, expect.objectContaining({ recipient: { userId } }));
+      expect(await sql`SELECT id FROM pulse.notification_outbox WHERE user_id=${userId}::uuid`).toHaveLength(0);
+    } finally {
+      send.mockRestore();
+      await recordInstanceDisk(50, 100, f.clock());
+      await f.cleanup();
+      await other.cleanup();
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      if (groupId) await sql`DELETE FROM auth.groups WHERE id=${groupId}::uuid`;
+    }
+  }, 60_000);
+
   test("B committed outbox rows send with their stable ID and persisted locale", async () => {
     const { notifications } = await import("@k2b/cloud/services");
     const userId = "10000000-0000-4000-8000-000000000005";
@@ -359,13 +413,15 @@ suiteFor(
       const now = new Date("2026-10-17T12:00:00Z");
       await recordStoreOutage(now, sql, "de-CH");
       expect(send).not.toHaveBeenCalled();
-      const [row] = await sql<{ id: string }[]>`SELECT id FROM pulse.notification_outbox WHERE user_id=${userId}::uuid`;
+      const [row] = await sql<
+        { id: string; event_id: string }[]
+      >`SELECT id,event_id FROM pulse.notification_outbox WHERE user_id=${userId}::uuid`;
       expect(row).toBeDefined();
       await notificationOutbox.notify();
       expect(send).toHaveBeenCalledWith(expect.objectContaining({ id: "pulse.storeUnavailable" }), {
         recipient: { userId },
         data: {},
-        idempotencyKey: row!.id,
+        idempotencyKey: `${row!.event_id}:${userId}`,
         locale: "de-CH",
       });
       expect(await sql`SELECT id FROM pulse.notification_outbox WHERE user_id=${userId}::uuid`).toHaveLength(0);
