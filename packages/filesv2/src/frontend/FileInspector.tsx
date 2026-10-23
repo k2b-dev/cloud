@@ -15,7 +15,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, createUniqueId, For, Match, onCleanup, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, Match, onCleanup, Show, Switch, untrack } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import type { BaseSummary, EntryResult, FileEntry, FileVersion, SharePage, ShareView } from "../contracts";
@@ -239,7 +239,7 @@ export default function FileInspector(props: {
           >
             {(item) => {
               // One versions request feeds the Info count on phones and the versions list.
-              const versions = createVersions(() => props.base, item);
+              const versions = createVersions(() => props.base, item, () => details.refresh());
               const currentAuthor = () => {
                 const history = props.history?.initial;
                 const request = itemHistoryRequest(props.base, {
@@ -549,25 +549,59 @@ export default function FileInspector(props: {
   );
 }
 
-/** The saved versions of a file, read once for the Info count and the versions list. */
-function createVersions(base: () => BaseSummary, entry: () => FileEntry) {
+/**
+ * The saved versions of a file, read once for the Info count and the versions list. A second read of the file after
+ * the list confirms that the list belongs to the shown file state; on a mismatch the details refresh first.
+ */
+function createVersions(base: () => BaseSummary, entry: () => FileEntry, onStale: () => Promise<void>) {
   const t = useBrowserMessages();
-  const key = () => JSON.stringify([base().id, base().locationKey, entry().path, entry().modified]);
+  const key = () => JSON.stringify([base().id, base().locationKey, entry().path, entry().modified, entry().revision ?? null]);
   const versions = query.create({
     source: key,
     enabled: () => base().versioningEnabled && !entry().directory,
     load: async (key, { abortSignal }) => {
-      const response = await apiClient.bases[":baseId"].versions.$get(
-        { param: { baseId: base().id }, query: { path: entry().path } },
-        { init: { signal: abortSignal } },
-      );
+      const param = { baseId: base().id };
+      const path = entry().path;
+      const response = await apiClient.bases[":baseId"].versions.$get({ param, query: { path } }, { init: { signal: abortSignal } });
       if (!response.ok) return apiFailure(response, t().detailsFailed);
-      return { key, items: (await response.json()) as FileVersion[] };
+      const items = await response.json();
+      const confirmed = await apiClient.bases[":baseId"].entry.$get({ param, query: { path } }, { init: { signal: abortSignal } });
+      if (!confirmed.ok) return apiFailure(confirmed, t().detailsFailed);
+      const file = (await confirmed.json()).entry;
+      return { key, items, revision: file.revision ?? null, modified: file.modified };
     },
   });
+  type Loaded = NonNullable<ReturnType<typeof versions.data>>;
+  /** The same revision before and after the list means the list belongs to it; without revisions, the same change time. */
+  const confirms = (value: Loaded) =>
+    value.key === key() && value.revision === (entry().revision ?? null) && (value.revision !== null || value.modified === entry().modified);
+  /** A list the refreshed details still did not confirm; it shows as a failed read with Retry instead of loading forever. */
+  const [unconfirmed, setUnconfirmed] = createSignal<Loaded | null>(null);
+  let alive = true;
+  onCleanup(() => {
+    alive = false;
+  });
+  createEffect(() => {
+    const value = versions.data();
+    if (!value || untrack(() => value.key !== key() || confirms(value))) return;
+    // Once per list response: the details catch up, which changes the key and reads the list again.
+    void onStale().then(() => {
+      if (alive && versions.data() === value && value.key === key() && !confirms(value)) setUnconfirmed(value);
+    });
+  });
   /** `null` until the list of this exact file state arrived; then never an empty stand-in for "unknown". */
-  const items = createMemo(() => (versions.data()?.key === key() ? (versions.data()?.items ?? null) : null));
-  const state = () => (!base().versioningEnabled ? "off" : versions.error() ? "error" : items() ? "ready" : "loading");
+  const items = createMemo(() => {
+    const value = versions.data();
+    return value && confirms(value) ? value.items : null;
+  });
+  const state = () =>
+    !base().versioningEnabled
+      ? "off"
+      : versions.error() || (!versions.refreshing() && !!unconfirmed() && unconfirmed() === versions.data())
+        ? "error"
+        : items()
+          ? "ready"
+          : "loading";
   return { items, state, refreshing: versions.refreshing, refresh: () => versions.refresh() };
 }
 type Versions = ReturnType<typeof createVersions>;
