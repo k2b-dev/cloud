@@ -21,6 +21,7 @@ import { entryRefId } from "../resource-ref";
 import { createActivityObservations } from "./activity-observations";
 import { signEditorToken } from "./collabora";
 import type { readConfiguration } from "./configuration";
+import { FilesError } from "./errors";
 import { connectFilegate } from "./filegate-facade";
 import { createFilesService } from "./index";
 
@@ -44,6 +45,7 @@ suite("contact observations with real Filegate and private history", () => {
   function files(
     connect = (configuration: Config, signal?: AbortSignal) => connectFilegate(configuration, undefined, signal),
     posix: { uidNumber: number; primaryGidNumber: number } | null = null,
+    administrator = false,
   ) {
     return createFilesService({
       identities: {
@@ -53,7 +55,10 @@ suite("contact observations with real Filegate and private history", () => {
           availability: { localLinuxEnabled: true, freeipaEnabled: true },
         }),
         groups: async () => ({ items: [], nextCursor: null }),
-        inventory: async () => ({ items: [], nextCursor: null }),
+        inventory: async () => {
+          if (!administrator) throw new FilesError("forbidden", 403);
+          return { items: [], nextCursor: null };
+        },
       },
       displayNames: resolveDisplayNames,
       bindings,
@@ -131,10 +136,10 @@ suite("contact observations with real Filegate and private history", () => {
       collabora: { url: "", internalUrl: "", wopiOrigin: "", documentFormat: "odf" },
     };
     await sql`CREATE SCHEMA IF NOT EXISTS auth`.simple();
-    await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY)`.simple();
+    await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY,uid text,display_name text,avatar_hash text)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY)`.simple();
     await migrate();
-    await sql`INSERT INTO auth.users(id) VALUES(${userId}::uuid)`;
+    await sql`INSERT INTO auth.users(id,uid,display_name) VALUES(${userId}::uuid,'alice','Alice')`;
     for (const root of ["cloud", "freeipa"]) {
       await client.root(root).mkdir(prefix, { ownership: { dirMode: "0755" } });
       await client.root(root).mkdir(`${prefix}/users`, { ownership: { dirMode: "0755" } });
@@ -768,7 +773,7 @@ suite("contact observations with real Filegate and private history", () => {
     await service().check(target());
     await sql`UPDATE filesv2.activity SET observation_next_at='2099-01-01' WHERE id=${id}::uuid`;
     await put("cloud", path, "outside before rebuild");
-    await files().rebuildRoot(call, "cloud");
+    await files(undefined, null, true).rebuildRoot(call, "cloud");
     expect(await observations()).toHaveLength(1);
     expect((await observations())[0]).toMatchObject({ action: "item.differs", detail: { known_activity_id: id } });
   });
