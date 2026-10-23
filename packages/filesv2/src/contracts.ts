@@ -347,4 +347,9 @@ export type ArchiveEntry = {
 };
 export type ArchivePage = { items: ArchiveEntry[]; next: string | null };
 export type DirectoryMaintenanceResult = { processed: number; archived: number; pending: number };
-export type MaintenanceResult = DirectoryMaintenanceResult & { activityChecked: number; activityPurged: number };
+export type MaintenanceResult = DirectoryMaintenanceResult & {
+  activityChecked: number;
+  activityPurged: number;
+  shareAccessRolledUp: number;
+  shareAccessPurged: number;
+};

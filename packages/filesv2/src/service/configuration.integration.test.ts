@@ -3,19 +3,23 @@ import { secrets, settings } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
 import { redis, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
+import { testActor, testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import { readConfiguration, resetConfiguration, writeConfiguration } from "./configuration";
 
 const suite = suiteFor("database", "valkey");
 const key = "filesv2.configuration";
+const call = testCall(testActor);
 suite("Files unreadable settings recovery", () => {
   beforeAll(async () => {
     await assertPrivateDatabase();
+    await migrateAudit();
     await sql`CREATE SCHEMA IF NOT EXISTS settings`.simple();
     await sql`CREATE TABLE IF NOT EXISTS settings.entries (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`.simple();
   });
   afterAll(async () => {
-    await resetConfiguration();
+    await resetConfiguration(call);
   });
   test("token retention never overwrites a foreign encrypted configuration; explicit token replacement and reset recover", async () => {
     // Choose a foreign key by verifying the fixture cannot decrypt under this process.
@@ -40,14 +44,14 @@ suite("Files unreadable settings recovery", () => {
     await redis.del(`settings:${key}`);
     const { token: _token, tokenConfigured: _configured, unreadable: _unreadable, ...input } = await readConfiguration();
     expect(_unreadable).toBe(true);
-    await expect(writeConfiguration(input)).rejects.toMatchObject({ code: "configuration_unreadable", status: 409 });
+    await expect(writeConfiguration(input, call)).rejects.toMatchObject({ code: "configuration_unreadable", status: 409 });
     const [row] = await sql<{ value: string; updated_at: Date }[]>`SELECT value,updated_at FROM settings.entries WHERE key=${key}`;
     expect(row?.value).toBe(ciphertext);
     expect(row?.updated_at.toISOString()).toBe(stamp);
-    await writeConfiguration({ ...input, token: "new-filegate-token" });
+    await writeConfiguration({ ...input, token: "new-filegate-token" }, call);
     expect(await readConfiguration()).toMatchObject({ unreadable: false, tokenConfigured: true, token: "new-filegate-token" });
     expect((await settings.read(key)).stored).toBe("readable");
-    await resetConfiguration();
+    await resetConfiguration(call);
     expect((await settings.read(key)).stored).toBe("none");
   });
 });

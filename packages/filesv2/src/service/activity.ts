@@ -1,14 +1,17 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { isDeepStrictEqual } from "node:util";
 import type { AccessSubject, RequestActor } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { FilegateError, type WriteOptions } from "@k2b/filegate";
-import { sql, type TransactionSQL } from "bun";
+import { type DirectoryOptions, FilegateError, type TransferOptions, type WriteOptions } from "@k2b/filegate";
+import { deepEquals, sql, type TransactionSQL } from "bun";
 import { filegateErrorCode } from "../api/filegate-error";
 import { finishActivity, insertActivity } from "../data/activity";
+import { trash } from "../data/trash";
 import { sameUploadExecution, sameUploadOptions, type Upload, uploadSessionId, uploads } from "../data/uploads";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
-import type { FilesFilegate } from "./filegate-facade";
+import type { FilesFilegate, FilesRoot } from "./filegate-facade";
+import { sameTrashNode } from "./trash-evidence";
 
 export type Via = "web" | "app" | "api" | "cli" | "office" | "agent" | "link" | "system" | "observed" | `app:${string}`;
 export type FilesCall =
@@ -23,17 +26,32 @@ export type FilesCall =
       origin: string | null;
     }
   | { kind: "visitor"; shareId: string; requestId: string | null }
-  | { kind: "system"; job: string };
+  | { kind: "system"; job: string; actor?: { userId: string; uid: string | null } };
 export type UserFilesCall = Extract<FilesCall, { kind: "user" }>;
 export type ActivityAction =
   | "folder.create"
   | "item.rename"
   | "item.move"
   | "item.copy"
+  | "share.create"
+  | "share.revoke"
+  | "admin.read"
+  | "place.retire"
+  | "place.provision"
+  | "place.archive"
+  | "place.restore"
+  | "version.comment"
+  | "version.restore"
+  | "version.restore_copy"
+  | "version.delete"
+  | "item.trash"
+  | "item.restore"
+  | "item.purge"
   | "file.upload"
   | "file.overwrite"
   | "file.create"
   | "file.edit";
+export type LifecycleMkdir = { path: string; options: DirectoryOptions };
 export type Intent = {
   action: ActivityAction;
   serverUrl: string;
@@ -51,9 +69,16 @@ export type Intent = {
   revisionBefore?: string | null;
   versionId?: string | null;
   batchId?: string | null;
+  shareId?: string | null;
+  operationId?: string | null;
+  lifecycleMkdirs?: LifecycleMkdir[];
+  trashId?: string | null;
+  trashDirectory?: string;
   onConflict?: "error" | "rename";
   detail?: Record<string, unknown>;
+  versionOptions?: Parameters<FilesRoot["updateVersion"]>[2];
   writeOptions?: WriteOptions;
+  copyOptions?: Parameters<FilesRoot["copyVersion"]>[4];
 };
 export type Finished = {
   itemAfterId?: string | null;
@@ -64,16 +89,7 @@ export type Finished = {
 } | void;
 
 // May only shrink; the freeze test fails if this list grows.
-export const PENDING_MIGRATION = Object.freeze([
-  "files.ensure_trash",
-  "files.version_comment",
-  "files.version_restore",
-  "files.version_restore_copy",
-  "files.version_delete",
-  "trash.transfer",
-  "lifecycle.operation",
-  "lifecycle.admin_delete_version",
-] as const);
+export const PENDING_MIGRATION = Object.freeze([] as const);
 export type PendingMigrationKey = (typeof PENDING_MIGRATION)[number];
 export type Mutation =
   | "mkdir"
@@ -87,19 +103,21 @@ export type Mutation =
   | "updateVersion"
   | "deleteVersion"
   | "remove";
-export const PENDING_MIGRATION_METHODS: Readonly<Record<PendingMigrationKey, readonly Mutation[]>> = Object.freeze({
-  "files.ensure_trash": ["mkdir"],
-  "files.version_comment": ["updateVersion"],
-  "files.version_restore": ["restore"],
-  "files.version_restore_copy": ["copyVersion"],
-  "files.version_delete": ["deleteVersion"],
-  "trash.transfer": ["transfer"],
-  "lifecycle.operation": ["mkdir", "transfer", "remove"],
-  "lifecycle.admin_delete_version": ["deleteVersion"],
-});
+export const PENDING_MIGRATION_METHODS: Readonly<Record<PendingMigrationKey, readonly Mutation[]>> = Object.freeze({});
 for (const methods of Object.values(PENDING_MIGRATION_METHODS)) Object.freeze(methods);
 type GuardScope =
-  | { kind: "activity"; id: string; intent: Intent; upload?: Upload; closed: boolean; sent: number; refused: unknown }
+  | {
+      kind: "activity";
+      id: string;
+      intent: Intent;
+      used: Set<string>;
+      upload?: Upload;
+      closed: boolean;
+      sent: number;
+      refused: unknown;
+      effectSent?: boolean;
+      trashPrepared?: boolean;
+    }
   | { kind: "pending"; key: PendingMigrationKey }
   | { kind: "exception"; name: "lifecycle.probe" };
 const scopes = new AsyncLocalStorage<GuardScope>();
@@ -115,52 +133,128 @@ export async function filegateMutation<T>(
   method: Mutation,
   path: string,
   run: () => Promise<T>,
-  transfer?: { root: string; path: string; move: boolean; onConflict: string },
-  write?: { size: number; options: WriteOptions; key?: string },
+  binding?:
+    | { kind: "transfer"; root: string; path: string; move: boolean; onConflict: string; options?: TransferOptions }
+    | { kind: "version"; id: string; target?: { root: string; path: string }; options?: unknown }
+    | { kind: "remove"; recursive: boolean },
+  options?: { mkdir?: DirectoryOptions; size?: number; options?: WriteOptions; key?: string },
 ): Promise<T> {
   const scope = scopes.getStore();
   if (!scope || (scope.kind === "activity" && scope.closed)) throw new FilesError("activity_scope_missing", 500);
-  if (scope.kind === "pending" && !PENDING_MIGRATION_METHODS[scope.key].includes(method))
-    throw new FilesError("activity_scope_mismatch", 500);
+  if (scope.kind === "pending") throw new FilesError("activity_scope_mismatch", 500);
   if (scope.kind === "exception" && !(["mkdir", "remove"].includes(method) && path.split("/").at(-1)?.startsWith(".filesv2-owner-")))
     throw new FilesError("activity_scope_mismatch", 500);
   if (scope.kind === "activity") {
     const intent = scope.intent;
+    const lifecycle = intent.operationId !== undefined && intent.operationId !== null;
+    const key = `${method}:${path}`;
+    const lifecycleMatches =
+      lifecycle &&
+      !scope.used.has(key) &&
+      (method === "mkdir"
+        ? ["place.provision", "place.archive", "place.restore"].includes(intent.action) &&
+          !!intent.pathAfter &&
+          (intent.pathAfter.startsWith(`${path}/`) || (intent.action === "place.provision" && path === intent.pathAfter)) &&
+          (intent.lifecycleMkdirs ?? []).some((entry) => entry.path === path && isDeepStrictEqual(entry.options, options?.mkdir ?? {}))
+        : intent.action === "item.purge"
+          ? method === "remove" && path === intent.pathBefore && binding?.kind === "remove" && binding.recursive === true
+          : (intent.action === "place.archive" || intent.action === "place.restore") &&
+            method === "transfer" &&
+            path === intent.pathBefore &&
+            binding?.kind === "transfer" &&
+            binding.root === intent.root &&
+            binding.path === intent.pathAfter &&
+            binding.move === true &&
+            binding.onConflict === "error" &&
+            isDeepStrictEqual(binding.options, { move: true, onConflict: "error" }));
+    const versionMatches =
+      scope.sent === 0 &&
+      binding?.kind === "version" &&
+      binding.id === intent.versionId &&
+      path === intent.pathBefore &&
+      ((intent.action === "version.comment" &&
+        method === "updateVersion" &&
+        !!intent.versionOptions &&
+        deepEquals(binding.options, {
+          ...intent.versionOptions,
+          metadata: { ...intent.versionOptions.metadata, comment_activity: scope.id },
+        })) ||
+        (intent.action === "version.restore" && method === "restore") ||
+        (intent.action === "version.delete" && method === "deleteVersion") ||
+        (intent.action === "version.restore_copy" &&
+          method === "copyVersion" &&
+          binding.target?.root === (intent.rootAfter ?? intent.root) &&
+          binding.target.path === intent.pathAfter &&
+          deepEquals(binding.options, intent.copyOptions)));
+    const journalMatches =
+      ((intent.action === "item.trash" || intent.action === "item.restore") &&
+        ((intent.action === "item.trash" &&
+          method === "mkdir" &&
+          !scope.trashPrepared &&
+          !scope.effectSent &&
+          path === intent.trashDirectory) ||
+          (method === "transfer" &&
+            !scope.effectSent &&
+            binding?.kind === "transfer" &&
+            path === intent.pathBefore &&
+            binding.root === intent.root &&
+            binding.path === intent.pathAfter &&
+            binding.move &&
+            binding.onConflict === "error"))) ||
+      (intent.action === "item.purge" &&
+        method === "remove" &&
+        !scope.effectSent &&
+        path === intent.pathBefore &&
+        binding?.kind === "remove" &&
+        binding.recursive);
     const upload = scope.upload;
-    const matches = upload
-      ? scope.sent === 0 &&
-        (intent.action === "file.upload" || intent.action === "file.overwrite") &&
-        (method === "createSession"
-          ? path === intent.pathAfter &&
-            write?.size === upload.size &&
-            write.key === upload.id &&
-            sameUploadOptions(write.options, upload.write_options)
-          : (method === "commitSession" || method === "abortSession") && !!uploadSessionId(upload) && path === uploadSessionId(upload))
-      : intent.action === "folder.create"
-        ? method === "mkdir" && !!intent.pathAfter && (path === intent.pathAfter || intent.pathAfter.startsWith(`${path}/`))
-        : intent.action === "file.create" || intent.action === "file.edit"
-          ? scope.sent === 0 &&
-            method === "put" &&
-            path === intent.pathAfter &&
-            !!write &&
-            !!intent.writeOptions &&
-            sameUploadOptions(write.options, {
-              ...intent.writeOptions,
-              metadata: { ...intent.writeOptions.metadata, activity: scope.id },
-            }) &&
-            write.size === intent.size &&
-            (write.options.onConflict ?? "error") === (intent.action === "file.edit" ? "overwrite" : "error")
+    const uploadMatches =
+      !!upload &&
+      scope.sent === 0 &&
+      (intent.action === "file.upload" || intent.action === "file.overwrite") &&
+      (method === "createSession"
+        ? path === intent.pathAfter &&
+          options?.size === upload.size &&
+          options.key === upload.id &&
+          !!options.options &&
+          sameUploadOptions(options.options, upload.write_options)
+        : (method === "commitSession" || method === "abortSession") && !!uploadSessionId(upload) && path === uploadSessionId(upload));
+    const writeMatches =
+      !upload &&
+      (intent.action === "file.create" || intent.action === "file.edit") &&
+      scope.sent === 0 &&
+      method === "put" &&
+      path === intent.pathAfter &&
+      !!options &&
+      !!options.options &&
+      !!intent.writeOptions &&
+      sameUploadOptions(options.options, { ...intent.writeOptions, metadata: { ...intent.writeOptions.metadata, activity: scope.id } }) &&
+      options.size === intent.size &&
+      (options.options.onConflict ?? "error") === (intent.action === "file.edit" ? "overwrite" : "error");
+    const matches = lifecycle
+      ? lifecycleMatches
+      : uploadMatches ||
+        writeMatches ||
+        versionMatches ||
+        journalMatches ||
+        (intent.action === "folder.create"
+          ? method === "mkdir" && !!intent.pathAfter && (path === intent.pathAfter || intent.pathAfter.startsWith(`${path}/`))
           : (intent.action === "item.rename" || intent.action === "item.move" || intent.action === "item.copy") &&
             scope.sent === 0 &&
             method === "transfer" &&
-            !!transfer &&
+            binding?.kind === "transfer" &&
             path === intent.pathBefore &&
-            transfer.root === (intent.rootAfter ?? intent.root) &&
-            transfer.path === intent.pathAfter &&
-            transfer.move === (intent.action !== "item.copy") &&
-            transfer.onConflict === (intent.onConflict ?? "error");
+            binding.root === (intent.rootAfter ?? intent.root) &&
+            binding.path === intent.pathAfter &&
+            binding.move === (intent.action !== "item.copy") &&
+            binding.onConflict === (intent.onConflict ?? "error"));
     if (intent.serverUrl !== serverUrl || intent.root !== root || !matches) throw new FilesError("activity_scope_mismatch", 500);
+    scope.used.add(key);
     scope.sent++;
+    if (journalMatches) {
+      if (method === "mkdir") scope.trashPrepared = true;
+      else scope.effectSent = true;
+    }
   }
   try {
     return await run();
@@ -175,7 +269,11 @@ export function pendingMigration<T>(key: PendingMigrationKey, run: () => Promise
 export function filegateException<T>(name: "lifecycle.probe", run: () => Promise<T>): Promise<T> {
   return scopes.run({ kind: "exception", name }, run);
 }
-export const systemCall = (job: string): FilesCall => ({ kind: "system", job });
+export const systemCall = (job: string, actor?: { userId: string; uid: string | null }): FilesCall => ({
+  kind: "system",
+  job,
+  ...(actor ? { actor } : {}),
+});
 export const visitorCall = (shareId: string, requestId: string | null): FilesCall => ({ kind: "visitor", shareId, requestId });
 const log = logger("filesv2:activity");
 
@@ -184,6 +282,7 @@ function certainNoChange(scope: Extract<GuardScope, { kind: "activity" }>, error
   return (
     // Tree copies may prepare ancestors before refusing publication; no receipt proves rollback.
     scope.intent.action !== "item.copy" &&
+    scope.intent.action !== "version.restore_copy" &&
     scope.sent === 1 &&
     error === scope.refused &&
     error instanceof FilegateError &&
@@ -225,7 +324,10 @@ export async function uploadAction<T>(id: string, effect: () => Promise<T>): Pro
   const rows =
     await sql`UPDATE filesv2.activity SET heartbeat_at=now() WHERE id=${activity.id}::uuid AND state IN ('pending','unclear') RETURNING id`;
   if (!rows.length) throw new FilesError("upload_closed", 409);
-  return runScope({ kind: "activity", id: activity.id, intent, upload, closed: false, sent: 0, refused: undefined }, effect);
+  return runScope(
+    { kind: "activity", id: activity.id, intent, upload, closed: false, sent: 0, refused: undefined, used: new Set() },
+    effect,
+  );
 }
 
 export async function fileAction<T>(
@@ -238,7 +340,15 @@ export async function fileAction<T>(
   // The guard must authorize the values committed below, even if the caller later changes its object.
   const intent = structuredClone(input);
   const id = await insertActivity(call, intent);
-  const scope: Extract<GuardScope, { kind: "activity" }> = { kind: "activity", id, intent, closed: false, sent: 0, refused: undefined };
+  const scope: Extract<GuardScope, { kind: "activity" }> = {
+    kind: "activity",
+    id,
+    intent,
+    closed: false,
+    sent: 0,
+    refused: undefined,
+    used: new Set(),
+  };
   let result: T;
   try {
     result = await runScope(scope, effect, options?.heartbeatMs);
@@ -256,6 +366,68 @@ export async function fileAction<T>(
   return result;
 }
 
+/** Resume only the server, paths and options committed with the journal's original caller. */
+export async function journalAction<T>(id: string, effect: () => Promise<T>, options?: { heartbeat?: boolean }): Promise<T> {
+  type JournalRow = {
+    action: ActivityAction;
+    server_url: string;
+    root: string;
+    root_after: string | null;
+    base_id: string | null;
+    base_after_id: string | null;
+    name: string;
+    directory: boolean;
+    path_before: string | null;
+    path_after: string | null;
+    operation_id: string | null;
+    detail: { lifecycle_mkdirs?: LifecycleMkdir[]; trash_directory?: string };
+  };
+  const active = options?.heartbeat !== false;
+  const [row] = active
+    ? await sql<
+        JournalRow[]
+      >`UPDATE filesv2.activity SET heartbeat_at=now() WHERE id=${id}::uuid AND state IN ('pending','unclear') RETURNING *`
+    : await sql<JournalRow[]>`SELECT * FROM filesv2.activity WHERE id=${id}::uuid AND state IN ('pending','unclear')`;
+  if (!row) throw new FilesError("activity_scope_missing", 500);
+  const intent: Intent = {
+    action: row.action,
+    serverUrl: row.server_url,
+    root: row.root,
+    rootAfter: row.root_after,
+    baseId: row.base_id,
+    baseAfterId: row.base_after_id,
+    name: row.name,
+    directory: row.directory,
+    pathBefore: row.path_before,
+    pathAfter: row.path_after,
+    operationId: row.operation_id,
+    lifecycleMkdirs: row.detail.lifecycle_mkdirs,
+    trashDirectory: row.detail.trash_directory,
+  };
+  const scope: Extract<GuardScope, { kind: "activity" }> = {
+    kind: "activity",
+    id,
+    intent,
+    closed: false,
+    sent: 0,
+    refused: undefined,
+    used: new Set(),
+  };
+  const heartbeat = () => sql`UPDATE filesv2.activity SET heartbeat_at=now() WHERE id=${id}::uuid AND state IN ('pending','unclear')`;
+  const timer = active
+    ? setInterval(() => {
+        void heartbeat().catch((error: unknown) => log.error("Activity heartbeat failed", { id, error }));
+      }, 10_000)
+    : undefined;
+  timer?.unref();
+  try {
+    return await scopes.run(scope, effect);
+  } finally {
+    scope.closed = true;
+    if (timer) clearInterval(timer);
+  }
+}
+
 type Config = Awaited<ReturnType<typeof readConfiguration>>;
 type RecoveryRow = {
   id: string;
@@ -268,6 +440,10 @@ type RecoveryRow = {
   path_after: string | null;
   final: boolean;
   upload_id: string | null;
+  version_id: string | null;
+  trash_id: string | null;
+  base_id: string | null;
+  item_id: string | null;
 };
 export async function recoverActivity(input: {
   now?: Date;
@@ -327,6 +503,67 @@ export async function recoverActivity(input: {
         log.warn("Upload history receipt unavailable", { id: row.id, error });
       }
     }
+    if (
+      row.action === "version.comment" &&
+      row.version_id &&
+      row.path_before &&
+      input.config &&
+      !input.config.unreadable &&
+      input.config.url === row.server_url
+    ) {
+      try {
+        const root = input.connect(input.config).root(row.root);
+        const node = await root.stat(row.path_before);
+        if (!row.item_id || node.id === row.item_id) {
+          const version = (await root.versions(row.path_before)).find((version) => version.id === row.version_id);
+          if (version?.metadata?.comment_activity === row.id) {
+            await sql`UPDATE filesv2.activity SET state='done',finished_at=now(),error_code=NULL WHERE id=${row.id}::uuid AND state IN ('pending','unclear')`;
+            checked++;
+            continue;
+          }
+        }
+      } catch (error) {
+        log.warn("Version history receipt unavailable", { id: row.id, error });
+      }
+    }
+    if (
+      row.action === "item.trash" &&
+      row.trash_id &&
+      row.base_id &&
+      row.path_before &&
+      row.path_after &&
+      input.config &&
+      !input.config.unreadable &&
+      input.config.url === row.server_url
+    ) {
+      try {
+        const journal = await trash.get(row.trash_id, row.base_id);
+        if (
+          journal?.state === "pending" &&
+          journal.server_url === row.server_url &&
+          journal.root === row.root &&
+          journal.trashed === `trash/${journal.id}` &&
+          row.path_after.endsWith(`/${journal.trashed}`)
+        ) {
+          const root = input.connect(input.config).root(row.root);
+          let sourceExists = true;
+          try {
+            await root.stat(row.path_before);
+          } catch (error) {
+            if (error instanceof FilegateError && error.status === 404) sourceExists = false;
+            else throw error;
+          }
+          const target = await root.stat(row.path_after);
+          if (!sourceExists && sameTrashNode(journal.snapshot, target)) {
+            await trash.finish(journal.id, "trashed", target);
+            checked++;
+            continue;
+          }
+        }
+      } catch (error) {
+        log.warn("Trash history receipt unavailable", { id: row.id, error });
+      }
+    }
     const observe = async (root: string, path: string): Promise<Record<string, unknown>> => {
       if (input.config && !input.config.unreadable && input.config.url === row.server_url) {
         try {
@@ -354,8 +591,8 @@ export async function recoverActivity(input: {
 }
 
 export async function purgeActivity(input: { now?: Date; retentionDays: number }): Promise<{ purged: number }> {
-  // An unresolved reservation still owns its history, including a final unclear entry.
+  // Open upload, trash, and lifecycle journals retain their history, including unclear entries.
   const rows = await sql<{ id: string }[]>`DELETE FROM filesv2.activity WHERE id IN
-    (SELECT id FROM filesv2.activity WHERE started_at<coalesce(${input.now ?? null}::timestamptz, now())-${input.retentionDays}*interval '1 day' AND state<>'pending' AND NOT EXISTS (SELECT 1 FROM filesv2.uploads u WHERE u.id=activity.upload_id AND u.state='open') ORDER BY started_at LIMIT 10000) RETURNING id`;
+    (SELECT id FROM filesv2.activity WHERE started_at<coalesce(${input.now ?? null}::timestamptz, now())-${input.retentionDays}*interval '1 day' AND state<>'pending' AND NOT EXISTS (SELECT 1 FROM filesv2.uploads u WHERE u.id=activity.upload_id AND u.state='open') AND NOT EXISTS (SELECT 1 FROM filesv2.operations o WHERE o.id=activity.operation_id AND o.state='pending') AND NOT EXISTS (SELECT 1 FROM filesv2.trash t WHERE t.id=activity.trash_id AND t.state IN ('pending','restoring')) ORDER BY started_at LIMIT 10000) RETURNING id`;
   return { purged: rows.length };
 }
