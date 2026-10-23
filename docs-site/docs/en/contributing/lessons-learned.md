@@ -173,6 +173,7 @@ convention still needs a check or a test.
 | User navigation mistaken for an async action's own navigation | Every draft-key change keeps an app opening active, leaving another chat's composer read-only. | Tests: `chat-slash.behavior.test.ts` requires `follow()` for one draft move and cancels unannounced changes; Assistant's `composer-app-commands.behavior.test.tsx` checks that editing returns before the previous save finishes. |
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 | Workspace layout changes shape after the first render | A workspace region such as a `MainPane` mounts only after hydration, and the layout drops or moves content that was already shown. | Test: Chat `ChatThreads.browser.test.ts` switches from a chat without threads to one with threads at 1440 and 2000 px. Library fix pending in [#1752](https://github.com/k2b-dev/cloud/issues/1752). |
+| A JSON value encoded twice on its way into `jsonb` | Serialized JSON reaches a `::jsonb` cast as a string parameter, and the column stores a JSON string instead of the object or array. | Test: Chat `api/shared.integration.test.ts` reads stored `refs` back as an array. Convention: serialized JSON goes to Postgres as `::text::jsonb`. |
 
 ## Lessons
 
@@ -934,6 +935,13 @@ convention still needs a check or a test.
 - **Root cause:** `AppWorkspace.Main` renders its children without panes first; when a `MainPane` mounts later, the primary region reuses nodes from the discarded branch and stays empty ([#1752](https://github.com/k2b-dev/cloud/issues/1752)).
 - **Error class:** Workspace layout changes shape after the first render.
 - **Guard:** Chat keeps its thread pane mounted for every chat and shows it with CSS; a Chat browser test switches from a chat without threads to one with threads at 1440 and 2000 px. The library fix is pending in #1752.
+
+### Shared elements were stored as a JSON string
+
+- **What happened:** On the branch adding shared Cloud elements to Chat, every new message failed with a server error, also system lines such as "created the chat", before it reached `main`.
+- **Root cause:** The insert passed `JSON.stringify(refs)` straight to `::jsonb`; the driver encoded the string once more, so the column held a JSON string instead of an array, and the response schema rejected it. The neighbouring `system_params` already used `::text::jsonb`.
+- **Error class:** A JSON value encoded twice on its way into `jsonb`.
+- **Guard:** Chat `api/shared.integration.test.ts` reads the stored `refs` back as an array; the integration run caught it. Convention: pass serialized JSON to Postgres as `::text::jsonb`.
 
 ## Add a lesson
 
