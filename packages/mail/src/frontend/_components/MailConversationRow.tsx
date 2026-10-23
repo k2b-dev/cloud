@@ -47,6 +47,8 @@ export default function MailConversationRow(props: {
   actions: MailConversationRowActions;
   quickLook?: MailConversationRowQuickLook;
 }) {
+  // JSX object props are getters: share their derived context across field reads.
+  const state = createMemo(() => props.state);
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const actionLabel = (actionId: MailActionId): string => {
@@ -62,13 +64,13 @@ export default function MailConversationRow(props: {
   };
   const correspondentLabels = (item: MailListItem): string[] =>
     item.participantLabels.length > 0 ? item.participantLabels : [item.participantSummary || t().unknownSender];
-  const selected = () => isMailListItemActive(props.item, props.state.selectedConversationId, props.state.selectedMessageId);
+  const selected = () => isMailListItemActive(props.item, state().selectedConversationId, state().selectedMessageId);
   const fourthLine = () => mailRowHasFourthLine(props.item);
   const correspondents = () => correspondentLabels(props.item);
   const primaryCorrespondent = () => correspondents()[0] ?? t().unknownSender;
   const additionalCorrespondents = () => Math.max(0, correspondents().length - 1);
   const tagLabel = () => props.item.localTags.map((tag) => tag.name).join(", ");
-  const bulkSelected = () => Boolean(props.item.conversationId && props.state.selectedConversationIds.has(props.item.conversationId));
+  const bulkSelected = () => Boolean(props.item.conversationId && state().selectedConversationIds.has(props.item.conversationId));
   const attachmentDownloadHref = () => buildMailAttachmentDownloadHref(props.requestUrl, props.item);
   let activation: "keyboard" | "pointer" = "keyboard";
   let selectRange = false;
@@ -98,7 +100,7 @@ export default function MailConversationRow(props: {
         "mail-list-entry-active": selected(),
         "mail-list-entry-unread": props.item.unread,
         "mail-list-entry-selected": bulkSelected(),
-        "mail-list-entry-selection-mode": props.state.selectionMode,
+        "mail-list-entry-selection-mode": state().selectionMode,
         "mail-list-entry-peek": peeking(),
       }}
       onPointerEnter={(event) => {
@@ -115,12 +117,12 @@ export default function MailConversationRow(props: {
       data-conversation-id={props.item.conversationId ?? undefined}
       data-message-id={props.item.selectionKind === "message" ? props.item.id : undefined}
     >
-      <Show when={props.state.canWrite && props.state.selectionMode && props.item.conversationId}>
+      <Show when={state().canWrite && state().selectionMode && props.item.conversationId}>
         <input
           type="checkbox"
           class="mail-list-checkbox h-4 w-4"
           checked={bulkSelected()}
-          disabled={!bulkSelected() && props.state.selectedConversationIds.size >= MAX_MAIL_CONVERSATION_SELECTION}
+          disabled={!bulkSelected() && state().selectedConversationIds.size >= MAX_MAIL_CONVERSATION_SELECTION}
           aria-label={(bulkSelected() ? t().deselectNamed : t().selectNamed)({ name: props.item.subject || t().conversation })}
           onClick={(event) => {
             event.stopPropagation();
@@ -142,7 +144,7 @@ export default function MailConversationRow(props: {
         class="mail-list-row focus-ui"
         // The open card already names sender and subject; a native tooltip would cover the row.
         title={peeking() ? undefined : `${correspondents().join(", ")}: ${props.item.subject || t().noSubject}`}
-        draggable={props.state.canWrite && Boolean(props.item.conversationId && props.item.activeFolderIds.length > 0)}
+        draggable={state().canWrite && Boolean(props.item.conversationId && props.item.activeFolderIds.length > 0)}
         on:keydown={(event) => {
           // Runs on the link before the shared row anchor handles Space. Reopening
           // explicitly may retry a syncing/error answer even while the mouse stays here.
@@ -161,11 +163,9 @@ export default function MailConversationRow(props: {
         onClick={(event) => {
           activation = event.detail === 0 ? "keyboard" : "pointer";
           if (event.defaultPrevented || event.button !== 0 || event.altKey) return;
-          if (!props.state.canWrite && (event.shiftKey || event.metaKey || event.ctrlKey)) return;
+          if (!state().canWrite && (event.shiftKey || event.metaKey || event.ctrlKey)) return;
           const select = Boolean(
-            props.item.conversationId &&
-              props.state.canWrite &&
-              (props.state.selectionMode || event.shiftKey || event.metaKey || event.ctrlKey),
+            props.item.conversationId && state().canWrite && (state().selectionMode || event.shiftKey || event.metaKey || event.ctrlKey),
           );
           event.preventDefault();
           if (select) props.actions.toggleSelection(props.item, event.shiftKey);
@@ -207,9 +207,9 @@ export default function MailConversationRow(props: {
             <time
               class="mail-list-time mail-row-time"
               dateTime={props.item.latestMessageAt}
-              title={dates.formatDateTime(props.item.latestMessageAt, props.state.dateConfig)}
+              title={dates.formatDateTime(props.item.latestMessageAt, state().dateConfig)}
             >
-              {dates.formatDateTimeRelative(props.item.latestMessageAt, props.state.dateConfig)}
+              {dates.formatDateTimeRelative(props.item.latestMessageAt, state().dateConfig)}
             </time>
           </span>
           <span class="mail-row-subject-line">
@@ -313,7 +313,7 @@ export default function MailConversationRow(props: {
           </a>
         )}
       </Show>
-      <Show when={props.state.canWrite && !props.state.selectionMode && props.item.conversationId}>
+      <Show when={state().canWrite && !state().selectionMode && props.item.conversationId}>
         <div class="k2b-progressive-action absolute right-3 top-2 z-10">
           <Dropdown.Root
             position="bottom-left"
@@ -334,7 +334,7 @@ export default function MailConversationRow(props: {
                 icon: "ti ti-tags",
                 action: () => props.actions.manageTags(props.item),
               },
-              ...(["archive", "move", props.state.spamAction, "trash"] as const).map((actionId) => {
+              ...(["archive", "move", state().spamAction, "trash"] as const).map((actionId) => {
                 // Cloud refuses to delete a kept conversation or move it to Junk; the menu says why.
                 const blocked = props.item.kept
                   ? actionId === "trash"
