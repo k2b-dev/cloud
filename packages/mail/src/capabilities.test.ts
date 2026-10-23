@@ -265,6 +265,8 @@ beforeEach(() => {
     added: [],
     removed: [],
     addedTotal: 0,
+    granted: [],
+    grantedTotal: 0,
     removedTotal: 0,
   }));
   spyOn(reviewReaders, "loadSendReviewContent").mockImplementation(async ({ draft }) => ({
@@ -1147,6 +1149,8 @@ describe("mail capabilities", () => {
       added: [],
       removed: [],
       addedTotal: 0,
+      granted: [],
+      grantedTotal: 0,
       removedTotal: 0,
     });
     const review = await mailCapabilities.actions["conversation.assign"].review(
@@ -1168,6 +1172,50 @@ describe("mail capabilities", () => {
       },
     });
   });
+
+  for (const serviceAccountKind of ["agent", "standalone"] as const) {
+    test(`reviews a named ${serviceAccountKind} assignment as access, without promising a user notification`, async () => {
+      const name = `Mail ${serviceAccountKind}`;
+      spyOn(messages, "listConversationMessages").mockResolvedValue({
+        ok: true,
+        data: { items: [{ subject: "Release follow-up" }], nextCursor: null },
+      } as never);
+      spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+      spyOn(collaboration, "listEligibleAssignees").mockResolvedValue([
+        {
+          id: userId,
+          uid: name,
+          displayName: name,
+          avatarHash: null,
+          type: "service_account",
+          serviceAccountKind,
+          permission: "write",
+          scope: "assigned",
+          source: { type: "direct" },
+        },
+      ]);
+      spyOn(reviewReaders, "loadAssignmentReviewChange").mockResolvedValue({
+        requested: [{ name }],
+        added: [],
+        removed: [],
+        addedTotal: 0,
+        removedTotal: 0,
+        granted: [{ name }],
+        grantedTotal: 1,
+      });
+      const review = await mailCapabilities.actions["conversation.assign"].review(
+        { mailboxId, conversationId, assigneeUserIds: [userId], mode: "add" },
+        context,
+      );
+      expect(review.ok).toBe(true);
+      if (!review.ok) return;
+      expect(review.data.ask).toBe("changes_access");
+      expect(review.data.slots.people).toMatchObject({ people: [{ name }] });
+      expect(review.data.consequences?.map((item) => item.text).join(" ")).toContain("gain access");
+      expect(JSON.stringify(review.data)).not.toContain("will be notified");
+      expect(JSON.stringify(review.data.slots.people)).not.toContain('"userId"');
+    });
+  }
 
   test("names the move destination by its full folder path", async () => {
     spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });

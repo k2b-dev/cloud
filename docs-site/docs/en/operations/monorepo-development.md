@@ -502,14 +502,16 @@ Files (`filesv2`), Grids PDF rendering, and Assistant Studio suites additionally
 [Testing](/en/docs/contributing/testing) lists every variable and what the pull
 request gate and the nightly run execute.
 
-Mail's schema is a single baseline in `packages/mail/src/schema.sql`; its runner
-knows exactly one version, `1` (`baseline`). A development database created by
-the previous 1..126 migration chain is refused with an explicit error. Reset
-such a machine once with:
+Mail's initial schema comes from `packages/mail/src/schema.sql` and records
+`1 (baseline)`. The account-assignment upgrade also records the compatibility
+marker `2 (principal_assignees)`. The previous baseline-only image refuses this
+marker at startup; stop every older Mail process before migrating. See the
+[Mail assignment cutover](/en/docs/operations/mail-assignee-cutover) for preflight,
+verification and recovery.
 
-```bash
-psql "$DATABASE_URL" -c 'DROP SCHEMA mail CASCADE;'
-```
+The removed 1..126 migration chain remains unsupported. Unknown legacy or
+newer histories are refused before additions run. A schema-history error on an
+upgraded installation is not a reason to drop the schema or remove its markers.
 
 ### Run Sync integration checks
 

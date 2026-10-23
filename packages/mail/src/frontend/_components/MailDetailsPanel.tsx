@@ -767,13 +767,15 @@ export default function MailDetailsPanel(props: {
                     id: user.id,
                     label: user.displayName,
                     description: user.description,
-                    icon: "ti ti-user",
+                    icon:
+                      user.serviceAccountKind === "agent" ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
                   }))}
                   selectedOptions={() =>
                     state().assignees.map((user) => ({
                       id: user.id,
                       label: user.displayName,
-                      icon: "ti ti-user",
+                      icon:
+                        user.serviceAccountKind === "agent" ? "ti ti-robot" : user.type === "service_account" ? "ti ti-key" : "ti ti-user",
                     }))
                   }
                   placeholder={t().unassigned}

@@ -183,6 +183,10 @@ An automation's **Done** or **Waiting for reply** covers only its triggering mes
 When several automations match, the oldest decides the folder. Another skips its read step if the message has left its folder or is being moved. Keep read and move in one automation, with read first; the local status step can share that path.
 For existing messages, use an enabled automation without AI steps; see [Mail automation](automation.md#manage-incoming-automations) for backfill commands and details, or `cld mail sender move` for moving only.
 
+### Assign people and accounts
+
+Conversation assignees include active agents and standalone service accounts with mailbox write access or assigned-only read/write access. `cld mail assign --to` resolves exact account names and user names; use a UUID when names are ambiguous. Account results carry `displayName`, `type: service_account`, and `serviceAccountKind`. Assignment input `assigneeUserIds`, assignee search `userId`, and automation action `assign_user.userId` retain their existing names and accept either principal's UUID. **Assigned to me** follows the current principal; a personal API key follows its person. Assignment notifications go only to people.
+
 ### Choose the right follow-up and mailbox pattern
 
 - **Show later** (`cld mail conversation update <id> --revision <r> --snooze-until <ISO>`) hides a conversation in **Later** until that time, then returns it with the same status; new incoming mail ends it earlier, and Done cannot be snoozed.
@@ -319,8 +323,8 @@ Mailbox access uses the same direct permission model as the Mail settings UI:
 - `admin` can configure the mailbox, providers, access, references, and workflows.
 
 A grant's scope is `mailbox` (the default) or `assigned`. Assigned grants are
-available to people and groups with `read` or `write`; `ls` and `access list`
-show the scope. With assigned `write`, a person can act on their currently
+available to people, groups, agents, and standalone service accounts with `read` or `write`; `ls` and `access list`
+show the scope. With assigned `write`, a principal can act on its currently
 assigned conversations, reply or forward, manage those drafts and attachments,
 and send or schedule them. Assigned `read` permits comments, personal reminders,
 and viewing presence on those conversations. Composing presence requires `write`.
@@ -329,7 +333,7 @@ Assigned access cannot change assignees, create new conversations or edit-as-new
 or resend drafts, manage mailbox resources, or browse recipient suggestions.
 Queued commands and scheduled sends recheck current access before acting.
 Removing an assignment or grant stops work that has not executed yet. Command
-reads and cancellation expose only the person's own commands with visible targets.
+reads and cancellation expose only the principal's own commands with visible targets.
 Hidden conversations, messages and drafts return `404`.
 
 Search users and groups before creating a grant:
@@ -475,7 +479,7 @@ cld --json mail focus --view unassigned --limit 25
 cld --json mail focus --view waiting --cursor <next-cursor>
 ```
 
-`focus` needs no mailbox selector. Every item includes its mailbox ID and name, and the JSON page includes exact unread and needs-action counts for each readable mailbox. `mine` and `waiting` are personal to the user behind the current credential; `unassigned` and `all` still include only readable mailboxes. For an agent using the generic capability surface, `mail conversation.focus` exposes the same bounded queue and cursor:
+`focus` needs no mailbox selector. Every item includes its mailbox ID and name, and the JSON page includes exact unread and needs-action counts for each readable mailbox. `mine` and `waiting` are personal to the principal behind the current credential; `unassigned` and `all` still include only readable mailboxes. For an agent using the generic capability surface, `mail conversation.focus` exposes the same bounded queue and cursor:
 
 ```bash
 cld capabilities query mail conversation.focus \
@@ -675,7 +679,7 @@ cld --json mail conversation update \
 cld --json mail conversation activity <conversation-id>
 ```
 
-`conversation users` lists active users with mailbox-wide write/admin access or assigned-only read/write access, including nested group grants. Each user has `scope: "mailbox" | "assigned"`; platform administrator status alone does not make a user eligible. Changing assignees requires mailbox-wide write/admin access, even for removing yourself.
+`conversation users` lists active people, standalone accounts, and agents with mailbox-wide write/admin access or assigned-only read/write access, including nested local group grants. Each account has `scope: "mailbox" | "assigned"`; platform administrator status alone does not make a user eligible. Changing assignees requires mailbox-wide write/admin access, even for removing yourself.
 
 `conversation update --assignee` replaces the whole set. Repeat the flag or separate usernames, IDs, or `me` with commas; `--unassign` clears the set. Collaboration returns `assignees` in assignment-time order, with user ID breaking ties. Lists, search, focus, and workflow conversation data return `assigneeUserIds` arrays. “Mine” means the current user is in that set.
 

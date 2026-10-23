@@ -3,7 +3,7 @@ import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MailFocusView } from "../contracts";
 import { conversationVisibleTo, isCurrentActorActive, readableMailboxGrants } from "./access";
-import { capByCredentialScopes, type MailRequestContext, userBackedActor } from "./auth";
+import { capByCredentialScopes, type MailRequestContext, personalPrincipal } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { isUnsentOutboundMessage } from "./conversation-timeline";
 import {
@@ -111,12 +111,12 @@ const conversationReadable = (context: MailRequestContext) =>
   sql`(readable.scope = 'mailbox' OR ${conversationVisibleTo(
     context.accessSubject.type === "user"
       ? { scope: "assigned", permission: "read", userId: context.accessSubject.userId }
-      : { scope: "mailbox", permission: "read" },
+      : { scope: "assigned", permission: "read", serviceAccountId: context.accessSubject.serviceAccountId },
     sql`c.id`,
   )})`;
 
 const assignedTo = (userId: string | null) =>
-  sql`EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${userId}::uuid)`;
+  sql`EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.principal_id = ${userId}::uuid)`;
 
 /**
  * The rule of one view for conversation `c`, besides "it needs follow-up". Mine and Waiting keep
@@ -217,7 +217,7 @@ const loadFocusReader = async (context: MailRequestContext, excludedMailboxIds?:
   ]);
   return {
     context,
-    userId: userBackedActor(context)?.id ?? null,
+    userId: personalPrincipal(context).id,
     scope,
     unassigned: isUnassignedConversation(lapsedAssignees),
     excludedMailboxIds,
@@ -264,7 +264,7 @@ const loadFocusPage = async (focus: FocusReader, view: MailFocusView, cursor: Fo
         c.latest_message_at,
         to_char(c.latest_message_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
         c.work_status,
-        COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = c.id), ARRAY[]::text[]) AS assignee_user_ids,
+        COALESCE((SELECT array_agg(a.principal_id::text ORDER BY a.assigned_at, a.principal_id) FROM mail.conversation_assignees a WHERE a.conversation_id = c.id), ARRAY[]::text[]) AS assignee_user_ids,
         c.revision,
         (SELECT CASE WHEN count(DISTINCT mp.folder_id) = 1 THEN min(mp.folder_id::text) ELSE NULL END
           FROM mail.conversation_messages cm
@@ -367,10 +367,7 @@ export const listFocusConversations = async (params: {
   if (!(await canReadFocus(params.context))) return fail(err.forbidden("Access denied"));
 
   const view = params.view ?? "mine";
-  const userId = userBackedActor(params.context)?.id ?? null;
-  if ((view === "mine" || view === "waiting") && !userId) {
-    return fail(err.badInput(`The ${view} view requires a user-backed actor`));
-  }
+  const userId = personalPrincipal(params.context).id;
   const cursor = decodeCursor(params.cursor, view, userId);
   if (!cursor.ok) return cursor;
   const focus = await loadFocusReader(params.context, params.excludedMailboxIds);
@@ -388,7 +385,6 @@ export const listFocusOverview = async (params: {
   excludedMailboxIds?: string[];
 }): Promise<Result<{ pages: Record<MailFocusView, FocusPage>; counts: MailFocusCounts; mailboxCounts: MailFocusMailboxCounts[] }>> => {
   if (!(await canReadFocus(params.context))) return fail(err.forbidden("Access denied"));
-  if (!userBackedActor(params.context)) return fail(err.badInput("The focus overview requires a user-backed actor"));
   const focus = await loadFocusReader(params.context, params.excludedMailboxIds);
   const limit = pageLimit(params.limit);
   const [stats, mine, unassigned, waiting, all] = await Promise.all([

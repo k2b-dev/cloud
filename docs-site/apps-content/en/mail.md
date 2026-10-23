@@ -345,19 +345,22 @@ for the backup boundary.
 
 ## Assign conversations and limit access to them
 
-A conversation can have up to 20 assignees. People with mailbox-wide Write or
-Admin access assign them; each newly added person gets one notification per
-request. **Assigned to me** lists the conversations a person is one of the
+A conversation can have up to 20 assignees: people, agents, or standalone
+service accounts. An account with mailbox-wide Write or Admin access can
+assign them by name. Eligible accounts have direct or local-group access;
+public and authenticated audiences do not enumerate assignees. Each newly added person gets one notification per request;
+machine accounts do not receive personal notifications. **Assigned to me** lists the conversations a person is one of the
 assignees of, and **Unassigned** the ones without an assignee who can still
-work on them. Only people being added must have access; someone whose access
+work on them. Only accounts being added must have access; someone whose access
 ended stays assigned until removed, also when others are added. The API takes
-`assigneeUserIds` with the modes `add`, `remove`, and `replace` on
+`assigneeUserIds` (user or service-account UUIDs) with the modes `add`, `remove`, and `replace` on
 `POST /api/mail/mailboxes/{mailboxId}/conversations/assign`,
 and replaces the whole set with `assigneeUserIds` on the collaboration
 `PATCH`. Lists, search, focus items, and the workflow data type
 `mailConversation` report `assigneeUserIds`; collaboration reports
 `assignees`. The workflow action `assignConversation` keeps its single `user`:
-it replaces the assignees with that person, and `null` removes them all.
+it accepts an eligible person or machine account by exact name or UUID,
+and `null` removes all assignees.
 Merging two conversations keeps the assignees of both, and splitting one gives
 the new conversation the same assignees.
 
@@ -368,8 +371,8 @@ It needs write access, including assigned-only write access, and no revision.
 Results follow request order; each reports `ok` with `workStatus` and
 `revision`, or `not_found` for missing or invisible conversations.
 
-Next to View, Edit, and Manage, a mailbox grant for a person or group can cover
-only the conversations assigned to the person: **View assigned only** (`read`)
+Next to View, Edit, and Manage, a mailbox grant for a person, group, agent,
+or standalone service account can cover only its assigned conversations: **View assigned only** (`read`)
 or **Edit assigned only** (`write`). The access API takes it as
 `"scope": "assigned"` on `POST` and `PATCH /api/mail/mailboxes/{mailboxId}/access`
 and returns it on each such entry; a `PATCH` without `scope` keeps the grant's
@@ -380,14 +383,14 @@ take `--scope assigned`, and `cld mail ls` shows each mailbox's scope:
 cld mail access set <mailbox-id> --group "Reply Team" --permission write --scope assigned
 ```
 
-Such people:
+Accounts with assigned-only access:
 
 - see no mail until a conversation is assigned to them, then that
   conversation with all its messages, including later replies;
 - see only the folders that hold one of their conversations, and counts,
   search, the overview, live updates, Assistant actions, and `cld` cover only
   their conversations;
-- with `read`, comment, set personal reminders, and show that they are viewing;
+- with `read`, comment; people can also set personal reminders and show that they are viewing;
 - with `write`, also reply and forward with drafts, attachments, and scheduled
   sends, change mail state, move, delete, choose existing tags, edit the summary,
   and mark done or snooze their conversations, but never compose new mail or
@@ -407,8 +410,8 @@ assignment ends, access ends at once: lists,
 open views, search, attachment downloads in progress, reminders, and queued or
 scheduled actions they started for the conversation stop. A person with
 mailbox-wide access keeps it; an additional assigned-only grant changes
-nothing. Older Mail images ignore assigned-only grants and treat these people
-as having no access.
+nothing. Machine accounts remain capped by credential scopes,
+and disabling an account ends its access.
 
 ## Manage automation access
 
@@ -880,6 +883,10 @@ See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and
 functional checks.
 
+Upgrading from people-only assignments requires stopping every older Mail
+replica and worker before migration. Follow the
+[Mail assignment cutover](/en/docs/operations/mail-assignee-cutover) for the
+preflight, schema compatibility marker, verification and rollback procedure.
 
 ## Commands in global search
 

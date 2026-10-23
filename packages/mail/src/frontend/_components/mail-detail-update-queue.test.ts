@@ -23,6 +23,25 @@ const deferred = <T>() => {
 };
 
 describe("Mail detail update queue", () => {
+  for (const serviceAccountKind of ["agent", "standalone"] as const) {
+    test(`optimistic assignment preserves the ${serviceAccountKind} name and kind`, () => {
+      const principal = {
+        id: "00000000-0000-4000-8000-000000000003",
+        uid: "Mail account",
+        displayName: "Mail account",
+        avatarHash: null,
+        type: "service_account" as const,
+        serviceAccountKind,
+      };
+      const updated = applyMailCollaborationPatch(
+        { conversationId, assignees: [], workStatus: "needs_action", snoozedUntil: null, revision: 1 },
+        { assigneeUserIds: [principal.id] },
+        [{ ...principal, permission: "write", scope: "assigned", description: principal.displayName }],
+      );
+      expect(updated.assignees).toEqual([principal]);
+    });
+  }
+
   test("overlays optimistic collaboration and tag choices without changing revisions", () => {
     const collaboration = {
       conversationId,

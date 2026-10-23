@@ -93,7 +93,11 @@ export const loadMailWorkflowCatalog = async (params: {
   });
   return buildMailWorkflowCatalog({
     folders,
-    assignableUsers: assignableUsers.map((user) => ({ id: user.id, name: user.displayName || user.uid })),
+    assignableUsers: assignableUsers.map((user) => ({
+      id: user.id,
+      name: user.displayName || user.uid,
+      ...(user.type ? { type: user.type, serviceAccountKind: user.serviceAccountKind } : {}),
+    })),
     senderIdentities,
     localTags,
     notificationUsers: notificationUsers.map((user) => ({ id: user.id, name: user.displayName || user.uid })),

@@ -212,8 +212,8 @@ export const getConversationPreview = async (params: {
     SELECT
       c.id,
       LEFT(c.summary, ${SOURCE_SUMMARY_MAX_LENGTH}) AS summary,
-      (SELECT string_agg(COALESCE(NULLIF(u.display_name, ''), u.uid), ', ' ORDER BY a.assigned_at, a.user_id)
-        FROM mail.conversation_assignees a JOIN auth.users u ON u.id = a.user_id WHERE a.conversation_id = c.id) AS assignee_name,
+      (SELECT string_agg(COALESCE(NULLIF(u.display_name, ''), u.uid, account.name), ', ' ORDER BY a.assigned_at, a.principal_id)
+        FROM mail.conversation_assignees a LEFT JOIN auth.users u ON u.id = a.user_id LEFT JOIN auth.service_accounts account ON account.id = a.service_account_id WHERE a.conversation_id = c.id) AS assignee_name,
       (SELECT COUNT(*)::int FROM mail.conversation_messages count_cm WHERE count_cm.conversation_id = c.id) AS message_count,
       latest.id AS latest_id,
       LEFT(latest_body.plain_text, ${SOURCE_TEXT_MAX_LENGTH}) AS latest_plain_text,

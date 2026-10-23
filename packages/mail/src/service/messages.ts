@@ -7,7 +7,7 @@ import { isAggregatedListing } from "../folder-display-rules";
 import type { MailSecurityAssessment } from "../security-contracts";
 import { conversationVisibleTo, draftVisibleTo, messageVisibleTo, requireVisibleConversation } from "./access";
 import { attachmentMimeOrder } from "./attachment-order";
-import { type MailRequestContext, userBackedActor } from "./auth";
+import { type MailRequestContext, personalPrincipal } from "./auth";
 import { isUnassignedConversation, listLapsedAssignees } from "./collaborators";
 import { type ConversationCursorScope, decodeConversationCursor, encodeConversationCursor } from "./conversation-cursor";
 import { isKeptConversation, isKeptMessage } from "./conversation-keep-rules";
@@ -295,7 +295,7 @@ export const listConversations = async (params: {
   const visibility = access.data.access;
   if (!visibility) return fail(err.forbidden("Access denied"));
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
-  const currentUserId = userBackedActor(params.context)?.id ?? null;
+  const currentUserId = personalPrincipal(params.context).id;
   const view = params.view ?? null;
   const folderId = params.folderId ?? null;
   const excludedFolderIds = view === "kept" ? [] : [...new Set(params.excludedFolderIds ?? [])].sort();
@@ -327,7 +327,7 @@ export const listConversations = async (params: {
       participant_state.labels AS participant_labels,
       c.latest_message_at,
       c.work_status,
-      COALESCE((SELECT array_agg(a.user_id::text ORDER BY a.assigned_at, a.user_id) FROM mail.conversation_assignees a WHERE a.conversation_id = c.id), ARRAY[]::text[]) AS assignee_user_ids,
+      COALESCE((SELECT array_agg(a.principal_id::text ORDER BY a.assigned_at, a.principal_id) FROM mail.conversation_assignees a WHERE a.conversation_id = c.id), ARRAY[]::text[]) AS assignee_user_ids,
       c.snoozed_until,
       c.revision,
       c.updated_at,
@@ -445,7 +445,7 @@ export const listConversations = async (params: {
         OR (${view} = 'needs_action' AND c.work_status = 'needs_action' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
         OR (
           ${view} = 'mine'
-          AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.user_id = ${currentUserId}::uuid)
+          AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = c.id AND a.principal_id = ${currentUserId}::uuid)
           AND c.work_status <> 'done'
           AND (c.snoozed_until IS NULL OR c.snoozed_until <= now())
         )
@@ -626,7 +626,7 @@ export const getConversationViewCounts = async (params: {
   if (!access.ok) return access;
   const visibility = access.data.access;
   if (!visibility) return fail(err.forbidden("Access denied"));
-  const currentUserId = userBackedActor(params.context)?.id ?? null;
+  const currentUserId = personalPrincipal(params.context).id;
   const [lapsedAssignees, aggregatedScope] = await Promise.all([
     listLapsedAssignees({ mailboxIds: [params.mailboxId] }),
     loadAggregatedViewScope([params.mailboxId]),
@@ -658,7 +658,7 @@ export const getConversationViewCounts = async (params: {
         )::int AS needs_action,
         COUNT(*) FILTER (
           WHERE scope.follow_up
-            AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = scope.id AND a.user_id = ${currentUserId}::uuid)
+            AND EXISTS (SELECT 1 FROM mail.conversation_assignees a WHERE a.conversation_id = scope.id AND a.principal_id = ${currentUserId}::uuid)
             AND scope.work_status <> 'done'
             AND (scope.snoozed_until IS NULL OR scope.snoozed_until <= now())
         )::int AS mine,

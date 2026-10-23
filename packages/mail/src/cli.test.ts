@@ -1334,8 +1334,9 @@ test("assign resolves me, usernames, and none and reports missing conversations"
   const bodies: unknown[] = [];
   const server = withMailbox(async (request) => {
     const url = new URL(request.url);
-    if (request.method === "GET" && url.pathname === "/api/me") return api({ id: USER_ID, uid: "ada" });
+
     if (request.method === "GET" && url.pathname === `/api/mail/mailboxes/${MAILBOX_ID}/assignable-users`) {
+      if (url.searchParams.get("self") === "true") return api([{ id: USER_ID, uid: "ada", displayName: "Ada" }]);
       expect(url.searchParams.get("search")).toBe("Grace");
       return api([
         { id: USER_ID, uid: "ada", displayName: "Ada", avatarHash: null, permission: "write", description: "ada" },
@@ -1384,8 +1385,12 @@ test("assign adds several users, replaces, removes, and rejects conflicting flag
   const bodies: unknown[] = [];
   const server = withMailbox(async (request) => {
     const url = new URL(request.url);
-    if (url.pathname === "/api/me") return api({ id: USER_ID });
-    if (url.pathname.endsWith("/assignable-users")) return api([{ id: COMMAND_ID, uid: "grace", displayName: "Grace", scope: "assigned" }]);
+    if (url.pathname.endsWith("/assignable-users"))
+      return api(
+        url.searchParams.get("self") === "true"
+          ? [{ id: USER_ID, uid: "ada", displayName: "Ada" }]
+          : [{ id: COMMAND_ID, uid: "grace", displayName: "Grace", scope: "assigned" }],
+      );
     if (request.method === "POST" && url.pathname.endsWith("/conversations/assign")) {
       const body = await request.json();
       bodies.push(body);
@@ -1415,6 +1420,61 @@ test("assign adds several users, replaces, removes, and rejects conflicting flag
   expect((await assign("--to", "me", "--remove", "me")).exitCode).not.toBe(0);
   expect((await assign("--remove", "me", "--replace")).exitCode).not.toBe(0);
   expect((await assign("--to", "none,me")).exitCode).not.toBe(0);
+  expect(bodies).toHaveLength(3);
+});
+
+test("assign resolves agent and standalone display names and refuses ambiguous principals", async () => {
+  const bodies: unknown[] = [];
+  let ambiguous = false;
+  const server = withMailbox(async (request) => {
+    const url = new URL(request.url);
+    const name = url.searchParams.get("search") ?? "";
+    if (url.pathname.endsWith("/assignable-users"))
+      return api([
+        {
+          id: COMMAND_ID,
+          uid: name,
+          displayName: name,
+          avatarHash: null,
+          type: "service_account",
+          serviceAccountKind: name.includes("Agent") ? "agent" : "standalone",
+          scope: "assigned",
+        },
+        ...(ambiguous ? [{ id: USER_ID, uid: name, displayName: name, avatarHash: null }] : []),
+      ]);
+    if (request.method === "POST" && url.pathname.endsWith("/conversations/assign")) {
+      bodies.push(await request.json());
+      return api({
+        assignees: [
+          {
+            id: COMMAND_ID,
+            uid: "Mail Agent",
+            displayName: "Mail Agent",
+            avatarHash: null,
+            type: "service_account",
+            serviceAccountKind: "agent",
+          },
+        ],
+        results: [{ conversationId: CONVERSATION_ID, status: "ok" }],
+      });
+    }
+    return api({}, { status: 500 });
+  });
+  servers.push(server);
+  const assign = (name: string) =>
+    runCli(`http://127.0.0.1:${server.port}`, ["mail", "assign", CONVERSATION_ID, "--mailbox", MAILBOX_ID, "--to", name]);
+  for (const name of ["Mail Agent", "Mail Service", "me"]) {
+    const result = await assign(name);
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Mail Agent");
+  }
+  expect(bodies).toEqual(
+    Array.from({ length: 3 }, () => ({ conversationIds: [CONVERSATION_ID], assigneeUserIds: [COMMAND_ID], mode: "add" })),
+  );
+  ambiguous = true;
+  const conflict = await assign("Mail Agent");
+  expect(conflict.exitCode).not.toBe(0);
+  expect(conflict.stderr).toContain("Ambiguous assignee");
   expect(bodies).toHaveLength(3);
 });
 

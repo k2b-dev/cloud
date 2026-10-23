@@ -33,6 +33,7 @@ convention still needs a check or a test.
 | An app links assets below a prefix it never declared | The platform links `/public/<id>/app.css` on every page, but the gateway routes only declared prefixes, so the stylesheet answers 404 and the pages render unstyled. | Check: `app-public-route` requires the app's own `/public/<id>` prefix in every app config that declares pages below `/app/` or `/admin/`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |
 | Positional input-union compatibility | A manifest check rejects preserved input variants after additions or reordering, or accepts a `oneOf` change that makes old inputs match multiple variants. | Tests: Cloud `_internal/capabilities.test.ts` covers nested additive unions, required disjoint tags, removed or narrowed branches, overlaps, optional tags, and unchanged result-union restrictions. |
+| A browser locator captures an underlying dialog action | Before asynchronous Back opens a confirmation, an unscoped button label matches the form action. The confirmation hides that retained button, so the click waits on the wrong element. | Test: Pulse `PulseWorkspace.browser.test.ts` scopes Cancel and Discard to the named confirmation, checks that the form action is visible while the confirmation action is absent, and verifies draft preservation and final dismissal. |
 | An app adds an unnecessary administration group | A single administration entry declares `adminNav`, separating it from the shared app administration list. | Test: Pulse `frontend/admin/navigation.render.test.ts` checks the German and English SSR sidebar and mobile snapshot, active link, default data-store tab, and unchanged admin-only route access. Convention: use `adminHref` for one app administration entry. |
 | A shadow follows the inset instead of the frame | Attaching separation paint to an inset scrollport cuts its top short; fading to zero removes the bottom cue. | Test: `detail-float.browser.test.ts` samples the actual column edge at the workspace top and bottom, checks a visible softer end, and preserves geometry through close, resize, drawer, and phone modes. |
 | Shared interaction behavior implemented for only some consumers | Resize handles differ in cue, keyboard behavior, or reset depending on the region. | Tests: UI `resize-cue.browser.test.ts` covers every workspace edge and standalone separator; separator, workspace controller, and Cloud panel behavior tests cover reset callbacks and saved-size removal. |
@@ -974,6 +975,23 @@ convention still needs a check or a test.
 - **Error class:** Checking direct dependency versions instead of every resolved copy and its upstream range.
 - **Guard:** The existing nightly `bun audit --audit-level=high` checks the resolved graph. Verify upstream advisories and consumer paths before updating: Fibel still needs a supported SDK release, and the disputed cache advisory has no confirmed behavior fix in 4.3.0. Keep those findings visible rather than adding overrides or weakening the audit.
 
+### Sharing pickers hid supported machine principals
+
+Resource APIs accepted standalone and agent grants, but sharing pickers omitted them
+unless each application opted in. Existing-row tests did not exercise discovery.
+
+**Guard:** the shared picker and access CLI include machine principals by default.
+Behavior tests search and select both kinds by name; token integration tests grant,
+use and revoke Pulse and Venue access. The `principal-picker-kinds` check requires an
+explicitly documented identity reason for an excluding shared picker.
+
+### Picker defaults got ahead of recipient contracts
+
+- **What happened:** The inclusive picker offered inactive accounts and Grids published-app recipients that grant creation rejects.
+- **Root cause:** Directory discovery defaults were reused without matching each resource's current recipient contract during PR slicing.
+- **Error class:** Selection eligibility differs from mutation validation.
+- **Guard:** PermissionEditor searches active accounts by default; API and DOM regressions cover filter forwarding, and SQL integration coverage checks eligibility before totals and pagination. Grids keeps its documented custom-app exclusion until its API accepts machine recipients.
+
 ### The notebook AI action stretched beside View
 
 - **What happened:** “Edit with AI” filled the remaining row and stood taller than “View”.
@@ -987,6 +1005,13 @@ convention still needs a check or a test.
 - **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
+### Local groups need the same recipient model as resource grants
+
+- **What happened:** Local groups could not contain standalone or agent accounts, although resource grants already accepted them.
+- **Root cause:** Membership storage, selection and resolution represented only people and groups.
+- **Error class:** Incomplete propagation of a shared identity contract.
+- **Guard:** The canonical membership migration and authoritative group resolver cover both machine kinds. Tests check grant use and revocation, recursive relations, named rows, and eligible choices before pagination.
 
 ## Add a lesson
 

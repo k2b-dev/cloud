@@ -357,7 +357,7 @@ The shared parser understands `forEach`, but the Mail binder rejects it because 
 | `junkMessage` | `message` | Move to the configured Junk role |
 | `addFlag` | `message`, `seen`, `answered`, `flagged`, or `draft` in `flag` | Add one standard provider flag |
 | `removeFlag` | `message`, `seen`, `answered`, `flagged`, or `draft` in `flag` | Remove one standard provider flag |
-| `assignConversation` | `conversation`, assignable user name, id, expression, or `null` in `user` | Replace assignees with this user, or clear the set with `null` |
+| `assignConversation` | `conversation`, eligible person or account name, UUID, expression, or `null` in `user` | Replace assignees with this person or account, or clear the set with `null` |
 | `setConversationStatus` | `conversation`, `needs_action`, `waiting`, or `done` in `status` | Change work state transactionally |
 | `setConversationSummary` | `conversation`, `summary` | Replace the editable conversation summary transactionally |
 | `ensureConversationReference` | `conversation`; optional identifier in `saveAs` | Allocate or return the immutable reference |

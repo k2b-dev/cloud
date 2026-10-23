@@ -282,6 +282,9 @@ describe("mailHelp", () => {
       const levels = mailboxAccessLevels(locale)({ type: "user", userId: "00000000-0000-4000-8000-000000000000" });
       const scoped = levels.flatMap((level) => (typeof level === "object" && level.scope === "assigned" ? [level.label!] : []));
       expect(scoped).toHaveLength(2);
+      expect(mailboxAccessLevels(locale)({ type: "service_account", serviceAccountId: "00000000-0000-4000-8000-000000000001" })).toEqual(
+        levels,
+      );
       for (const label of scoped) {
         expect(collaboration).toContain(`**${label}**`);
         expect(admin).toContain(`**${label}**`);

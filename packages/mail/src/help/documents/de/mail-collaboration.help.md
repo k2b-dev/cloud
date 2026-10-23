@@ -12,8 +12,8 @@ Der Lesebereich ordnet aussagekräftige Änderungen an Zusammenarbeit und Workfl
 
 ## Zuständigkeit und Nachverfolgung einheitlich nutzen {icon="route"}
 
-- **Zugewiesen an** zeigt die Personen, die für die Unterhaltung zuständig sind. Eine Unterhaltung kann bis zu 20 zugewiesene Personen haben. Füge sie in den **Unterhaltungsdetails** hinzu oder entferne sie dort. Weist dir jemand anderes eine Unterhaltung zu, bekommst du eine Cloud-Benachrichtigung, die sie öffnet.
-- Um eine Person mehreren Unterhaltungen zuzuweisen, wähle die Unterhaltungen in der Liste aus und wähle **Zuweisen**. Wähle dann die Person. Die anderen zugewiesenen Personen bleiben zugewiesen. Die Person bekommt eine einzige Benachrichtigung für die ganze Auswahl.
+- **Zugewiesen an** zeigt die Personen, Agenten oder eigenständigen Dienstkonten, die für die Unterhaltung zuständig sind. Eine Unterhaltung kann bis zu 20 Zuständige haben. Füge sie in den **Unterhaltungsdetails** hinzu oder entferne sie dort. Weist dir jemand anderes eine Unterhaltung zu, bekommst du eine Cloud-Benachrichtigung, die sie öffnet.
+- Um eine Person oder ein Konto mehreren Unterhaltungen zuzuweisen, wähle die Unterhaltungen in der Liste aus und wähle **Zuweisen**. Wähle dann die Person oder das Konto. Die anderen zugewiesenen Personen bleiben zugewiesen. Personen bekommen eine einzige Benachrichtigung für die ganze Auswahl; Agenten und Dienstkonten erhalten keine Benutzerbenachrichtigung.
 - Dasselbe Menü bietet **Mir zuweisen**, **Mich entfernen** und **Alle Zuweisungen entfernen**. Weist du dir selbst zu oder entfernst du jemanden, sendet Mail keine Benachrichtigung.
 - **Mir zugewiesen** zeigt jede Unterhaltung, der du zugewiesen bist. **Nicht zugewiesen** zeigt die Unterhaltungen, denen niemand zugewiesen ist, der sie noch bearbeiten kann.
 - Mail setzt den nächsten Schritt. **Handlungsbedarf** bedeutet, dass das Team prüfen oder handeln muss. **Wartet auf Antwort** bedeutet, dass eine bestätigte menschliche Antwort gesendet wurde und der nächste Schritt bei jemand anderem liegt.
@@ -52,7 +52,7 @@ Du gibst Zugriff mit dem normalen Zugriffseditor von Cloud an die unterstützten
 
 ## Zugriff nur auf zugewiesene Unterhaltungen geben {icon="user-check"}
 
-Wähle unter **… → Einstellungen → Zugriff** für eine Person oder Gruppe **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten**, wenn sie an ausgewählten Unterhaltungen arbeiten soll, ohne den Rest des Postfachs zu sehen. Beispiele sind eine freie Mitarbeiterin oder ein anderes Team. In einer Gruppe sieht jedes Mitglied die Unterhaltungen, die ihm zugewiesen sind.
+Wähle unter **… → Einstellungen → Zugriff** für eine Person, Gruppe, einen Agenten oder ein eigenständiges Dienstkonto **Nur zugewiesene ansehen** oder **Nur zugewiesene bearbeiten**, wenn sie an ausgewählten Unterhaltungen arbeiten soll, ohne den Rest des Postfachs zu sehen. Beispiele sind eine freie Mitarbeiterin oder ein anderes Team. In einer Gruppe sieht jedes Mitglied die Unterhaltungen, die ihm zugewiesen sind.
 
 - Die Person sieht keine E-Mails, bis jemand mit Zugriff **Bearbeiten** oder **Verwalten** ihr eine Unterhaltung zuweist. Dann sieht sie diese Unterhaltung mit allen Nachrichten, auch mit Antworten, die später eintreffen. Sie sieht auch die Anhänge, Kommentare und Aktivität der Unterhaltung.
 - Die Ordnerliste zeigt nur die Ordner, in denen eine ihrer Unterhaltungen liegt. Jeder Zähler zählt nur ihre Unterhaltungen. Suche, **Mir zugewiesen**, die Mail-Übersicht, die Cloud-Suche, Assistant und `cld` verhalten sich genauso.
@@ -60,6 +60,8 @@ Wähle unter **… → Einstellungen → Zugriff** für eine Person oder Gruppe 
 - Endet eine Zuweisung, verschwindet die Unterhaltung sofort für sie: aus Listen, geöffneten Ansichten, der Suche, Downloads und Benachrichtigungen. Mail führt die Antworten und Aktionen, die sie dafür eingereiht hat, nicht mehr aus, auch keine geplanten Sendungen.
 
 Wer zusätzlich Zugriff **Ansehen**, **Bearbeiten** oder **Verwalten** auf das ganze Postfach hat, behält ihn. Der Zugriff nur auf zugewiesene Unterhaltungen ändert dann für diese Person nichts.
+
+Nur aktive Konten mit geeignetem Zugriff auf das Postfach stehen zur Auswahl. Endet dieser Zugriff oder wird das Konto deaktiviert, verliert es den Zugriff; die gespeicherte Zuweisung bleibt erhalten. Zugangsdaten sind weiterhin durch ihre Scopes begrenzt. Ein persönlicher API-Schlüssel handelt weiterhin als seine Person.
 
 ## Kontext aus Contacts nutzen {icon="address-book"}
 

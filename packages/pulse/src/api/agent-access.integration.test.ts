@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
+import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { sql } from "bun";
-import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
+import { databaseSuite, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { resolvePulseMessages } from "../messages";
 import { seedActiveBaseStore } from "../service/base-store.test-fixture";
 import { settingsFixture } from "../store/settings.test-fixture";
@@ -183,4 +185,57 @@ suite("Pulse source target policy at the REST boundary", () => {
       await sql`DELETE FROM auth.service_accounts WHERE id=${account.id}::uuid`;
     }
   });
+});
+
+const sharingSuite = suiteFor("database", "nats", "valkey");
+sharingSuite("pulse named machine grants at the REST boundary", () => {
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`${kind}: grant, named entry, token read/write, and revoke`, async () => {
+      const suffix = crypto.randomUUID();
+      const [owner] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
+        VALUES (${`pulse-parity-${suffix}`}, 'local', 'user', 'Mara Lind') RETURNING id`;
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
+        VALUES (${`Research helper ${suffix}`}, ${kind}) RETURNING id`;
+      const resource = { id: crypto.randomUUID(), shortId: newShortId() };
+      try {
+        await sql`INSERT INTO pulse.bases (id, short_id, name) VALUES (${resource.id}::uuid, ${resource.shortId}, 'Research')`;
+        await seedActiveBaseStore(resource.id);
+        const [ownerGrant] = await sql<{ id: string }[]>`INSERT INTO auth.access (user_id, permission)
+          VALUES (${owner!.id}::uuid, 'admin') RETURNING id`;
+        await sql`INSERT INTO pulse.base_access (base_id, access_id) VALUES (${resource.id}::uuid, ${ownerGrant!.id}::uuid)`;
+        const cookie = `session_token=${await createTestSession(owner!.id)}`;
+        const human = (path: string, method: string, body?: unknown) =>
+          pulseApi.request(path, {
+            method,
+            headers: { cookie, "content-type": "application/json", "x-forwarded-for": uniqueCallerAddress() },
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          });
+        const resourcePath = `/bases/${resource.shortId}`;
+        const accessPath = `${resourcePath}/access`;
+        const machine = await apiAs(account!, ["admin"]);
+        expect((await machine(resourcePath)).status).toBe(403);
+        const response = await human(accessPath, "POST", {
+          principal: { type: "service_account", serviceAccountId: account!.id },
+          permission: "admin",
+        });
+        expect(response.status).toBe(201);
+        const entry = await response.json();
+        expect(entry).toMatchObject({ displayName: `Research helper ${suffix}`, serviceAccountKind: kind });
+        expect((await machine(resourcePath)).status).toBe(200);
+        const change = { method: "PATCH", body: { name: "Updated by helper" } };
+        expect((await machine(resourcePath, change)).status).toBe(200);
+        const readOnly = await apiAs(account!, ["read"]);
+        expect((await readOnly(resourcePath)).status).toBe(200);
+        expect((await readOnly(resourcePath, change)).status).toBe(403);
+        expect((await human(`${accessPath}/${entry.id}`, "DELETE")).status).toBe(200);
+        expect((await machine(resourcePath)).status).toBe(403);
+        expect((await machine(resourcePath, change)).status).toBe(403);
+      } finally {
+        await sql`DELETE FROM auth.access WHERE id IN (SELECT access_id FROM pulse.base_access WHERE base_id=${resource.id}::uuid)`;
+        await sql`DELETE FROM pulse.bases WHERE id=${resource.id}::uuid`;
+        await sql`DELETE FROM auth.service_accounts WHERE id=${account!.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${owner!.id}::uuid`;
+      }
+    });
+  }
 });
