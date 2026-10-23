@@ -31,6 +31,7 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 :::reference
 - **Shift+Enter** starts a new line.
 - On a phone, **Enter** starts a new line. **Send message** sends the message.
+- A message can have at most 20,000 characters. If it is too long, the text stays in the field with a hint. Shorten it, then send it again.
 :::
 
 ## Check whether the message was sent {icon="check"}

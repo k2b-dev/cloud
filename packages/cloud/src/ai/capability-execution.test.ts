@@ -9,6 +9,7 @@ import type { dispatchCapability } from "../api/capabilities";
 import * as executionStore from "../capabilities/executions";
 import { defineCapabilities } from "../contracts/capabilities";
 import * as categoryPolicy from "../services/account-category-policy";
+import { signInvocationToken } from "../services/identity/invocation-token";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import {
   AiCapabilityExecutionError,
@@ -108,7 +109,12 @@ describe("AI capability authority", () => {
       store,
       getUser: async () => current,
     });
-    expect(resolved).toEqual({ actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } });
+    expect(resolved).toEqual({
+      actor: { kind: "user", user: current },
+      accessSubject: { type: "user", userId: current.id },
+      credentialKind: "session",
+      scopes: [],
+    });
     expect(allowed).toHaveBeenCalledWith(current);
     allowed.mockResolvedValueOnce(false);
     await expect(
@@ -150,7 +156,12 @@ describe("AI capability authority", () => {
       store: { getConversation: async () => conversation(current.id) },
       getUser: async () => current,
     });
-    expect(resolved.actor).toEqual({ kind: "user", user: { ...current, roles: ["user"] }, sessionKind: "app" });
+    expect(resolved).toEqual({
+      actor: { kind: "user", user: { ...current, roles: ["user"] }, sessionKind: "app" },
+      accessSubject: { type: "user", userId: current.id },
+      credentialKind: "session",
+      scopes: [],
+    });
   });
 
   test("keeps two users isolated and lets the target return permission-specific results", async () => {
@@ -160,7 +171,12 @@ describe("AI capability authority", () => {
     const executeFor = (current: ReturnType<typeof user>) =>
       executeAiCapability({
         conversationId: `conversation-${current.id}`,
-        authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+        authority: {
+          actor: { kind: "user", user: current },
+          accessSubject: { type: "user", userId: current.id },
+          credentialKind: "session",
+          scopes: [],
+        },
         entry,
         args: { title: "Test" },
         context: {
@@ -187,7 +203,12 @@ describe("AI capability authority", () => {
     const seen: string[] = [];
     const result = await executeAiCapability({
       conversationId: "conversation-1",
-      authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+      authority: {
+        actor: { kind: "user", user: current },
+        accessSubject: { type: "user", userId: current.id },
+        credentialKind: "session",
+        scopes: [],
+      },
       locale: "de-CH",
       entry,
       args: { title: "Test" },
@@ -213,12 +234,47 @@ describe("AI capability authority", () => {
     expect(seen[2]).toBe("de-CH");
   });
 
+  test("dispatch preserves the supplied credential scopes and mobile session limits", async () => {
+    const current = user("11111111-1111-4111-8111-111111111111");
+    const authority = {
+      actor: { kind: "user" as const, user: current, sessionKind: "app" as const },
+      accessSubject: { type: "user" as const, userId: current.id },
+      credentialKind: "oauth" as const,
+      scopes: ["demo:read"],
+    };
+    const dispatch = mock<typeof dispatchCapability>(async (input) => {
+      expect(input.authority).toBe(authority);
+      expect(input.request.headers.has("authorization")).toBe(false);
+      return Response.json({ code: "app_access_denied", message: "Application access denied" }, { status: 403 });
+    });
+    await expect(
+      executeAiCapability({
+        conversationId: "conversation-1",
+        authority,
+        entry: buildAiCapabilityCatalog([app()])[0]!,
+        args: { title: "Test" },
+        context: {
+          signal: AbortSignal.timeout(1_000),
+          requestApproval: async () => true,
+          requestClientTool: async <T>() => undefined as T,
+        },
+        dependencies: { dispatch },
+      }),
+    ).rejects.toMatchObject({ code: "app_access_denied", status: 403, dispatched: false });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
   test("resolves an advertised review without forwarding an idempotency key", async () => {
     const current = user("11111111-1111-4111-8111-111111111111");
     let review = false;
     const result = await reviewAiCapability({
       conversationId: "conversation-1",
-      authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+      authority: {
+        actor: { kind: "user", user: current },
+        accessSubject: { type: "user", userId: current.id },
+        credentialKind: "session",
+        scopes: [],
+      },
       entry: buildAiCapabilityCatalog([app()])[0]!,
       args: { title: "Ada" },
       context: {
@@ -255,7 +311,12 @@ describe("AI capability authority", () => {
     };
     const base = {
       conversationId: "conversation-1",
-      authority: { actor: { kind: "user" as const, user: current }, accessSubject: { type: "user" as const, userId: current.id } },
+      authority: {
+        actor: { kind: "user" as const, user: current },
+        accessSubject: { type: "user" as const, userId: current.id },
+        credentialKind: "session" as const,
+        scopes: [],
+      },
       mandate,
       entry,
       args: { title: "Ada" },
@@ -286,7 +347,12 @@ describe("AI capability authority", () => {
     await expect(
       executeAiCapability({
         conversationId: "conversation-1",
-        authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+        authority: {
+          actor: { kind: "user", user: current },
+          accessSubject: { type: "user", userId: current.id },
+          credentialKind: "session",
+          scopes: [],
+        },
         entry: buildAiCapabilityCatalog([app()])[0]!,
         args: { title: "Denied" },
         context: {
@@ -310,7 +376,12 @@ describe("AI capability authority", () => {
       await expect(
         executeAiCapability({
           conversationId: "conversation-1",
-          authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+          authority: {
+            actor: { kind: "user", user: current },
+            accessSubject: { type: "user", userId: current.id },
+            credentialKind: "session",
+            scopes: [],
+          },
           entry: buildAiCapabilityCatalog([app()])[0]!,
           args: { title: "Test" },
           context: {
@@ -341,7 +412,12 @@ describe("AI capability authority", () => {
       await expect(
         executeAiCapability({
           conversationId: "conversation-1",
-          authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+          authority: {
+            actor: { kind: "user", user: current },
+            accessSubject: { type: "user", userId: current.id },
+            credentialKind: "session",
+            scopes: [],
+          },
           entry: buildAiCapabilityCatalog([registered])[0]!,
           args: { title: "Test" },
           context: {
@@ -354,6 +430,9 @@ describe("AI capability authority", () => {
               if (failure === "registry unavailable") throw new Error("Registry offline");
               return upstream ? registered : null;
             },
+            // App-access enforcement is tested at the broker seam; this dispatch
+            // test supplies its signer without performing live identity/registry reads.
+            signInvocation: signInvocationToken,
             withActiveSigner: async (_purpose, callback) =>
               callback(
                 { kid: "test", key: privateKey, issuer: "https://cloud.example.test", signUntil: new Date("2099-01-01T00:00:00Z") },
@@ -372,7 +451,12 @@ describe("AI capability authority", () => {
     await expect(
       executeAiCapability({
         conversationId: "conversation-1",
-        authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+        authority: {
+          actor: { kind: "user", user: current },
+          accessSubject: { type: "user", userId: current.id },
+          credentialKind: "session",
+          scopes: [],
+        },
         entry: buildAiCapabilityCatalog([app()])[0]!,
         args: { title: "invalid-secret-value" },
         context: {
@@ -423,7 +507,12 @@ describe("Action outcome checks", () => {
       entry,
       catalog,
       check: { query: "check", input: { id: "original" } },
-      authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+      authority: {
+        actor: { kind: "user", user: current },
+        accessSubject: { type: "user", userId: current.id },
+        credentialKind: "session",
+        scopes: [],
+      },
       locale: "de",
       context: { callId: "send", signal: new AbortController().signal },
       dependencies: { dispatch },
@@ -445,7 +534,12 @@ describe("Action outcome checks", () => {
       entry,
       catalog,
       check: { query: "check", input: { id: "original" } },
-      authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+      authority: {
+        actor: { kind: "user", user: current },
+        accessSubject: { type: "user", userId: current.id },
+        credentialKind: "session",
+        scopes: [],
+      },
       context: { signal: new AbortController().signal },
       dependencies: { dispatch },
     });
@@ -460,7 +554,12 @@ describe("Action outcome checks", () => {
           entry,
           catalog,
           check: { query: "send", input: {} },
-          authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+          authority: {
+            actor: { kind: "user", user: current },
+            accessSubject: { type: "user", userId: current.id },
+            credentialKind: "session",
+            scopes: [],
+          },
           context: { signal: new AbortController().signal },
           dependencies: { dispatch },
         })

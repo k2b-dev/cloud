@@ -3,7 +3,7 @@ id: mail-compose
 title: Write and send messages
 icon: ti ti-pencil
 description: Compose, recover drafts, use templates, attach files, and control delivery.
-updated: 2026-10-19
+updated: 2026-10-20
 order: 30
 kind: task
 ---
@@ -27,6 +27,8 @@ For recipients without doubt, Mail can also attach the matching contacts that yo
 The Assistant chat does not copy the message into a separate Mail draft and does not gain additional mailbox access. Mail checks your current access each time Assistant reads or changes the draft. Assistant shows updating or sending mail as an Action review. Sending still requires your explicit approval and the normal final check of Mail. To review the current composer state directly, return to Mail through the draft link.
 
 When the Assistant asks to send this draft, a band above the draft shows the waiting request. Review the request there. You can approve or reject it without returning to the chat.
+
+The send question shows the sender, To, Cc and Bcc, attachments, delivery time, and Mail warnings. Choose **Read the complete proposal** to read the exact proposed message, including its signature and generated attachment descriptions. Approval becomes available after this snapshot loads. The draft link opens the current draft, which may have changed. If the sending content changes after your check, Mail stops and queues no message: open the draft, check it again and approve a new attempt. Mail does not retry automatically. A signature that changes with the current time may need editing first. After approval, “queued” or “scheduled” confirms the request, not delivery.
 
 ## Use Cloud Mail for email links {icon="link"}
 
@@ -87,7 +89,7 @@ Mail shows a temporary connection problem separately and does not ask you to tak
 
 Drafts live in Cloud as shared drafts.
 
-- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer.
+- **Drafts folder:** The Drafts folder in the sidebar lists every shared draft of the mailbox, the most recently edited first. Its number counts them. Choose a draft to open it in the composer. The count is in the workspace head. Each row starts with the subject and shows recipients, a preview, the edit time, and who started the draft.
 - **Reply indicator:** A conversation with drafts shows an indicator on Reply.
 - **CLI:** `cld mail draft list` lists these drafts, together with drafts that are scheduled or being sent.
 - **Provider copy:** When the provider allows it, Mail keeps a copy of each draft in the provider's Drafts folder, so other mail programs show it. Drafts that another mail program saves there appear in Mail as shared drafts.

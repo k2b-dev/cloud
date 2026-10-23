@@ -11,6 +11,7 @@ import { renderToString } from "solid-js/web";
 import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
 import { SpaceSettingsContextSchema } from "@/settings-context";
 import { browserName, launchBrowser, storedCookie } from "../../../../../../ui/test/browser";
+import { headOverlaps } from "../../../../../../ui/test/head-overlap";
 import type { KanbanBucketInitial } from "../kanban/types";
 import { parseSpaceSettings } from "../settings/SpaceSettingsStore";
 import type { SpacesViewSnapshot } from "./workspace-types";
@@ -207,6 +208,12 @@ const overviewActivity = [
 /** Screenshots for review, light and dark at every width; nothing personal, all invented. */
 const shots = join(tmpdir(), "spaces-white-canvas", browserName);
 mkdirSync(shots, { recursive: true });
+// Only successful captures from this run can replace a duplicate page visit.
+const capturedShots = new Set<string>();
+const capture = async (page: Page, name: string) => {
+  await page.screenshot({ path: join(shots, name) });
+  capturedShots.add(name);
+};
 const people: SpaceAssignableUser[] = Array.from({ length: 6 }, (_, index) => ({
   id: `${index + 1}1111111-1111-4111-8111-111111111111`,
   uid: `person${index}`,
@@ -254,6 +261,18 @@ let server: ReturnType<typeof Bun.serve>;
 // Recorded before island imports, after fonts load. The same selectors measure the hydrated frame. The collapsed rail's
 // own rows are hidden at these widths, so the frame records the four expanded rows.
 const geometryScript = `window.headGeometry = () => Array.from(document.querySelectorAll('.k2b-app-workspace__head-views,.k2b-app-workspace__head-filters,.k2b-app-workspace__head-actions,[data-workspace-primary],.spaces-sidebar-list .k2b-app-workspace__sidebar-item:not([data-sidebar-mode=collapsed])')).map(e => {const r=e.getBoundingClientRect(); return {class:e.className.trim().split(/\\s+/).sort().join(" "),x:r.x,y:r.y,width:r.width,height:r.height}});`;
+/**
+ * `?shell=1` lays the page out like Cloud's signed-in shell from 1024 px: a 56 px rail, the card spacing, and the
+ * window as the app host. `&panel=416` adds Cloud's panel column (Help or Assistant), which makes the app area beside
+ * it the host. Without `shell`, the window is the app area.
+ */
+const shell = (url: URL, html: string) => {
+  if (url.searchParams.get("shell") !== "1")
+    return `<main style="container-type:inline-size;container-name:k2b-app-area;display:flex;flex-direction:column;height:100dvh">${html}</main>`;
+  const panel = Number(url.searchParams.get("panel")) || 0;
+  const inset = "round(clamp(0.25rem, calc(0.25rem + (100vw - 64rem) / 104), 0.5rem), 1px)";
+  return `<div style="display:flex;box-sizing:border-box;height:100dvh;padding:${inset} ${inset} ${inset} 0"><div style="flex:none;width:3.5rem"></div><div data-fixture-app-area style="display:flex;flex:1;min-width:0;flex-direction:column;container:k2b-app-area / inline-size"><main style="display:flex;flex:1;min-height:0;flex-direction:column">${html}</main></div>${panel ? `<aside data-fixture-panel style="flex:none;width:${panel}px;margin-inline-start:${inset}"></aside>` : ""}</div>`;
+};
 const pageHtml = (url: URL, cookie: string | undefined) => {
   const view = resolveView(url, cookie);
   const wanted = url.searchParams.get("hint");
@@ -283,13 +302,16 @@ const pageHtml = (url: URL, cookie: string | undefined) => {
             itemsResult,
             buckets,
             people,
+            locale: url.searchParams.get("locale") === "de" ? "de" : "en",
+            detail: url.searchParams.has("item"),
           }),
         );
   const theme = url.searchParams.get("theme") === "dark" ? "dark" : "light";
+  const lang = url.searchParams.get("locale") === "de" ? "de" : "en";
   return (
-    `<!doctype html><html lang="en" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<!doctype html><html lang="${lang}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
     `<link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style>` +
-    `<style>solid-client,solid-island{display:contents}@media not all and (min-width:48rem){[data-workspace-primary]{position:fixed;right:12px;bottom:24px}}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:0"><main style="container-type:inline-size;container-name:k2b-app-area;display:flex;flex-direction:column;height:100dvh">${html}</main>` +
+    `<style>solid-client,solid-island{display:contents}@media not all and (min-width:48rem){[data-workspace-primary]{position:fixed;right:12px;bottom:24px}}</style></head><body class="k2b-ui" data-theme="${theme}" style="margin:0">${shell(url, html)}` +
     `<script>${controller}</script><script type="module">${geometryScript}await document.fonts.ready;document.documentElement.dataset.serverCurrent=document.querySelector('.k2b-app-workspace__head-views [aria-current="page"]')?.textContent;document.documentElement.dataset.serverGeometry=JSON.stringify(window.headGeometry());` +
     `await Promise.all(Array.from(document.querySelectorAll('solid-island'),e=>import('/_ssr/'+e.dataset.id+'.js')));document.documentElement.dataset.headReady='true';</script></body></html>`
   );
@@ -405,6 +427,8 @@ describe(`Spaces shared head in ${browserName}`, () => {
             const frame = await geometry(page);
             // querySelectorAll records all four rows even when the phone sidebar has zero-sized rectangles.
             expect(frame.filter((part) => part.class.includes("k2b-app-workspace__sidebar-item"))).toHaveLength(4);
+            // The review matrix needs this exact initial state too; capture before reload or interaction.
+            if (theme === "light" || view === "kanban" || width === 1440) await capture(page, `${view}-${theme}-${width}.png`);
             await page.reload();
             await ready(page);
             await expectStableFrame(page);
@@ -433,6 +457,36 @@ describe(`Spaces shared head in ${browserName}`, () => {
       }
     }, 30_000);
   }
+  // Error class: head controls overflow their row at intermediate widths and draw over each other. The real head,
+  // in German, with and without an open task detail, in a narrowing window with Cloud's panel closed and open.
+  for (const view of ["kanban", "list"] as const)
+    for (const item of [false, true])
+      test(`${view}${item ? " with a task detail" : ""}: head controls never overlap or leave the head at 1024 to 834 px`, async () => {
+        const problems: string[] = [];
+        for (const panel of [0, 416]) {
+          const page = await open(`/app/spaces/Space1?view=${view}&locale=de&shell=1&panel=${panel}${item ? "&item=Item01" : ""}`, 1024);
+          try {
+            for (const width of [1024, 960, 900, 834]) {
+              if (width !== 1024) {
+                await page.setViewportSize({ width, height: 1000 });
+                // Keep a fresh server render and island mount at every width,
+                // while reusing this scenario's browser context and asset cache.
+                await page.reload();
+                await ready(page);
+              }
+              const result = await page.evaluate(headOverlaps, undefined);
+              expect(
+                result.controls.some((name) => name.startsWith("primary")),
+                `primary at ${width}`,
+              ).toBe(true);
+              for (const problem of result.problems) problems.push(`${width} panel ${panel}: ${problem}`);
+            }
+          } finally {
+            await page.context().close();
+          }
+        }
+        expect(problems).toEqual([]);
+      }, 60_000);
   test("tab clicks keep every neighboring tab in place", async () => {
     const page = await open("/app/spaces/Space1?view=list");
     try {
@@ -707,13 +761,16 @@ describe(`Spaces shared head in ${browserName}`, () => {
           "/app/spaces",
         ]) {
           if (theme === "dark" && path !== "/app/spaces/Space1?view=kanban" && width !== 1440) continue;
+          const name = path === "/app/spaces" ? "overview" : new URL(path, server.url).searchParams.get("view");
+          const filename = `${name}-${theme}-${width}.png`;
+          if (capturedShots.has(filename)) continue;
           const page = await open(`${path}${path.includes("?") ? "&" : "?"}theme=${theme}`, width);
           try {
-            const name = path === "/app/spaces" ? "overview" : new URL(path, server.url).searchParams.get("view");
-            await page.screenshot({ path: join(shots, `${name}-${theme}-${width}.png`) });
+            await capture(page, filename);
           } finally {
             await page.context().close();
           }
         }
+    expect(capturedShots.size).toBe(28);
   }, 180_000);
 });

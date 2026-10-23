@@ -1,4 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: Preserve grouped service barrel exports.
+export { appAccessAuthority, canUseApp, usableAppIds } from "./app-access";
 export { ipa } from "./ipa";
 export { accounts } from "./accounts";
 export { accountsAppService } from "./accounts";
@@ -227,6 +228,8 @@ export type { WebVitalsOverview, WebVitalsQuery, WebVitalMetric, WebVitalName } 
 
 export { mail } from "./outgoing-mail";
 export type {
+  MailContent,
+  MailContentContext,
   MailProfile,
   MailAttachment,
   MailMessage,
@@ -263,3 +266,5 @@ export { deviceOffersApproval } from "./approvals/device";
 /** Core-owned geo implementation; applications use geoClient from the server entry. */
 export { coreGeo, createGeoService } from "./geo/service";
 export { migrate as migrateGeo } from "./geo/migrate";
+
+export { coreGeoMap, createGeoMapService } from "./geo/map";

@@ -1,3 +1,5 @@
+import type { AiComposerSendInput } from "@k2b/cloud/ai/ui";
+
 /** The server revision belongs to the local content, not the latest conversation fetch. */
 export type ComposerSession = {
   baseRevision: number;
@@ -49,3 +51,18 @@ export const sendBesideComposer = async (
   if (!sent || input.hasContent()) await input.save();
   return sent;
 };
+
+/** A failed submit restores the original composer and advances its edit generation.
+ * Compare that restored content, including File identity, before clearing an accepted submission. */
+const submissionContent = (input: AiComposerSendInput) =>
+  JSON.stringify({
+    message: input.message,
+    content: input.content,
+    draftContent: input.draftContent,
+    resources: input.resources,
+    storedFiles: input.storedFiles,
+  });
+export const sameComposerSubmission = (current: AiComposerSendInput, submitted: AiComposerSendInput): boolean =>
+  submissionContent(current) === submissionContent(submitted) &&
+  (current.files?.length ?? 0) === (submitted.files?.length ?? 0) &&
+  (current.files ?? []).every((file, index) => file === submitted.files?.[index]);

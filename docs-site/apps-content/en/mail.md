@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Mail
@@ -16,16 +16,35 @@ context such as assignments, comments, local tags, reminders, and follow-up stat
 
 The sidebar lists **Focus** and your mailboxes, with pinned mailboxes first.
 The open mailbox expands to Inbox, Drafts, Scheduled, Send problems, Sent,
-Archive/Trash/Junk under **More**, and custom folders. On a phone, open the
-mailbox title to reach these places.
+Archive/Trash/Junk under **More**, and custom folders. In the sidebar, the open
+mailbox and its folders share a quiet teal surface. Other mailboxes stay readable
+and clickable with less emphasis. On a phone, open the mailbox title to reach
+these places.
+Mail's teal accent also marks selections and **Compose**; status and tag colors
+keep their own meanings.
 
 The head contains view tabs (**All**, **Needs action**, **Assigned to me**,
 **Waiting for reply**, **Unassigned**, and **More** for the remaining and saved
-views), a **Tag** chip, and a **Search** chip for an active structured search.
-Remove that chip or use **Reset** to clear filters. Folders, Scheduled, and
-Send problems have no view tabs. **Choose list view**, the **…** mailbox menu,
-and **Compose** are also in the head. The mailbox menu contains details,
-tools, and Settings according to your access.
+views) and a **Search** chip for an active structured search. The **Tag** icon
+next to **Search** filters by a local tag; its tooltip
+names the selected tag. Open it to change or clear that choice.
+Remove the **Search** chip or use **Reset** to clear filters. Folders, Scheduled, and
+Send problems have no view tabs. Use the magnifier or press `/` to search:
+the input replaces the views, with field and place options beside it (below it
+on a phone). Text searches the whole mailbox by default; **Place** can restrict
+it to the starting folder. The input's clear button keeps search open. **Reset**,
+**Cancel**, or Escape leaves search and returns to the starting view.
+
+**Select conversations**, the **…** mailbox menu, and **Compose** are also in
+the head. Selection replaces the views with its count and labeled actions;
+**Exit selection** restores them. The mailbox menu contains **Choose list view**
+for conversations or individual messages, plus details, tools, and Settings
+according to your access.
+
+Drafts and Scheduled show their count in the workspace head. Draft rows lead
+with the subject, followed by recipients and a preview, with the edit time and
+person who started the draft. Members with write access can open a draft to
+continue it; readers can view the list.
 
 Assignee filters in search and saved-view summaries read **Assigned to a
 specific person**. Open the search editor to change the selected
@@ -34,10 +53,15 @@ Saved automation assignments use the same label when the person is no longer
 available in the choices.
 
 On wide screens the conversation list grows with the window from 320 to
-440 px, and the subject and messages stay in a centered reading column of at
-most 760 px. **Conversation details** stand beside the reader while the reader
+440 px. The fixed reader toolbar combines the subject, message-count chip,
+list toggle, and conversation actions above the centered 760 px reading
+column. The subject stays visible when messages scroll; its full text is
+available on hover. On a phone, the workspace head appears over the list and
+leaves the screen while reading. Back, subject, overflow, and Details remain
+at the top; the message count is hidden. Reply actions stay in the bottom bar. **Conversation details** stand beside the reader while the reader
 keeps 440 px next to them; otherwise they wait behind **Details** and open with
-one click, also from the reader's own details button. Hiding the list gives
+one click from the shared head button. On a phone, use **Details** in the reader
+while the list head is hidden. Hiding the list gives
 the reader that room. In Focus, a conversation opens its details beside the
 queue, or over its end when there is no room; on a phone it opens in its
 mailbox. List rows have three lines (sender and time, subject with its marks,
@@ -49,6 +73,11 @@ settings open before you enter the mailbox. If settings cannot load, the
 mailbox opens directly.
 
 ## Use Mail
+
+Opening a conversation checks its current read state, flags, folders, and message
+count across the entire thread, even when the reader loads only its newest 100
+messages. Changes to older messages therefore also refresh the list row before
+automatic marking as read.
 
 - Read complete conversations and search synchronized message and attachment
   content across a mailbox. Pull the conversation list down at its top, by
@@ -434,6 +463,10 @@ New messages, replies, and forwards start with the sender's default; a personal
 default takes precedence over the mailbox default. Choose another signature or
 **No signature**. Switching the sender switches to that sender's default.
 
+Tables in formatted messages also have readable columns and rows in the
+plain-text alternative. Links keep their destinations. Plain-format signatures
+and snippets preserve their table structure too.
+
 Signatures stay separate from the editable text. Preview and the sent message
 show the signature after your text. When you write above a quoted reply or a
 forwarded message, the signature goes between your text and that message. The
@@ -537,6 +570,24 @@ cld mail admin contact-directory candidates --app crm
 cld mail admin contact-directory set --app crm --suggest customer.suggest --resolve customer.match --no-read --no-books --no-create --yes
 cld mail admin contact-directory reset --yes
 ```
+
+If Mail cannot read a saved directory setting, the dialog lists that setting
+under **Stored settings cannot be read**. Select **Replace stored value** only
+for values you want to replace. Unselected unreadable settings stay in storage;
+failed saves keep the dialog, draft, and replacement choices open.
+
+A directory update locks the mapping, reads its current values, validates the
+combined provider and functions, and commits all supplied settings together.
+Concurrent partial updates cannot combine functions from different providers.
+If a value becomes
+unreadable while the dialog is open, its replacement checkbox appears after
+the rejected save; the draft and existing selections remain available.
+
+`show --json` includes `unreadable` by setting name. `set` preserves omitted
+functions when the app stays the same. Replacing a supplied unreadable value
+requires `--replace-unreadable`; `reset` needs that flag as well when defaults
+would replace unreadable values. API updates may omit unchanged fields and
+accept `replaceUnreadable` as an array of the supplied setting names.
 
 | Setting | Default | Required |
 | --- | --- | --- |
@@ -762,6 +813,40 @@ command needs read access to the whole mailbox. See
 `cld mail reference operations.md` for the states and how to tell retries from
 a lasting problem.
 
+## Narrow a folder from the head
+
+In a folder, **Unread**, **Flagged**, **With attachment**, and **Date range**
+narrow the list within that folder. Sent offers attachment and date filters.
+These filters combine with a **Tag**; choosing a tag keeps **All** selected in
+the view tabs while preserving the folder restriction, named beside the filters. **Reset** returns to
+the view and selection where filtering began.
+
+The seven- and thirty-day presets record the time range when chosen, so Back,
+reload, and a saved URL keep the same bounds. **Custom date range…** opens the
+existing search editor with the folder and current conditions already filled
+in. Text search defaults to the whole mailbox; its **Place** option can restrict it to the starting folder.
+
+## Search by read state or flag
+
+**Search filters** includes **Unread** and **Flagged**. Each condition can name
+a folder or use **Any included folder**. A message can be read in one folder
+and unread in another; choosing a folder checks its state there. A separate
+**Folder** condition does not change the scope of an Unread or Flagged condition.
+
+Structured search accepts `{ "type": "unread", "folderId": "<folder-id>" }`
+and `{ "type": "flagged", "folderId": "<folder-id>" }` in the API, CLI
+expressions, capabilities, saved views, and search URLs. `folderId` is an
+optional public folder ID; omitted or `null` checks any included active copy
+of the message. Deleted copies and folders excluded by the containing view
+cannot supply a matching flag. Ordinary mailbox searches include Trash and Junk.
+
+Use an `and` group with both `folder_id` and a flag condition carrying the same
+`folderId` to search unread or flagged mail in that folder. Conditions apply
+to the same message before results are grouped into conversations and paged.
+`or` and `not` keep their usual meaning. A saved filter whose folder is deleted
+keeps a condition that matches nothing, including inside a negated group;
+it never becomes an unscoped flag condition.
+
 ## Search in large mailboxes
 
 Search reads a bounded amount of mail in each mailbox, so a word that appears
@@ -816,3 +901,9 @@ Cloud search exposes reply, reply-all when applicable, and forwarding for the se
 Available keyboard shortcuts appear next to actions and in Layout Help.
 
 Cmd/Ctrl+Shift+K searches conversations across accessible mailboxes. Cmd/Ctrl+Alt+N opens a new email from the current writable mailbox. R opens a reply to the selected conversation outside input fields; it never sends it. Search actions update the open palette in place. Actions for the selected object appear before page actions.
+
+## Check the complete message before approval
+
+When the Assistant asks to send or change a draft, choose **Read the complete proposal** to inspect the full proposed text, recipients and attachment list. The proposal can include unsaved changes. The draft link opens the current draft, which may have changed since the question was asked.
+
+If the sending content changes after your check, Mail stops and queues no message. Open the draft, check it again and approve a new attempt. A signature that changes with the current time may need editing first. Mail does not retry or approve the new content automatically.

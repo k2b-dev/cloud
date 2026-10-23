@@ -6,15 +6,8 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
-import { launchBrowser } from "../../test/browser";
-import {
-  type FixtureOptions,
-  uiDirectory,
-  workspaceCss,
-  workspaceDist,
-  workspaceFrames,
-  workspaceTree,
-} from "../../test/workspace-host-fixture";
+import { launchBrowser, settled } from "../../test/browser";
+import { type FixtureOptions, uiDirectory, workspaceCss, workspaceDist, workspaceTree } from "../../test/workspace-host-fixture";
 
 declare global {
   interface Window {
@@ -118,7 +111,7 @@ const load = async (options: FixtureOptions = {}, viewport = 1440, host = viewpo
   await page.goto("http://workspace.test/");
   await page.addScriptTag({ content: client });
   if (mount) await page.evaluate(() => window.mountHead());
-  await workspaceFrames(page);
+  await settled(page);
   return page;
 };
 // A count may leave its text below a one-line clipping box instead of using display:none.
@@ -151,7 +144,7 @@ const resizeHost = async (page: Page, width: number) => {
   await page.locator("#app").evaluate((element, width) => {
     element.style.width = `${width}px`;
   }, width);
-  await workspaceFrames(page);
+  await settled(page);
 };
 
 test("workspace width wraps filters while tabs and actions keep the first row", async () => {
@@ -187,6 +180,106 @@ test("a waiting detail's Details button stays in the first row when the filters 
     expect(Math.abs(center(toggle) - center(primary))).toBeLessThanOrEqual(2);
     expect(toggle.x).toBeGreaterThanOrEqual(primary.x + primary.width);
     expect(toggle.x + toggle.width).toBeLessThanOrEqual(head.x + head.width);
+  } finally {
+    await page.close();
+  }
+});
+
+test("the Plex head keeps Details close to its actions", async () => {
+  const page = await load({ head: { items: 4, detail: "sm" } }, 1440, 620);
+  try {
+    // Match the public presets used by Cloud. The default system font and an
+    // unloaded icon font have different metrics on the browser runner hosts.
+    await page.route("http://workspace.test/ui/**", (route) =>
+      route.fulfill({ path: resolve(workspaceDist, new URL(route.request().url()).pathname.slice(4)) }),
+    );
+    await page.addStyleTag({ url: "http://workspace.test/ui/plex.css" });
+    await page.addStyleTag({ url: "http://workspace.test/ui/tabler.css" });
+    await page.evaluate(() => document.fonts.ready);
+    await settled(page);
+    const toggle = await rect(page, "[data-app-workspace-detail-toggle]");
+    const primary = await rect(page, "[data-workspace-primary]");
+    const gap = toggle.x - primary.x - primary.width;
+    console.info(`Plex Details gap: ${gap}px; button width: ${toggle.width}px`);
+    expect(gap).toBeGreaterThanOrEqual(4);
+    expect(gap).toBeLessThanOrEqual(12);
+    expect(Math.abs(center(toggle) - center(primary))).toBeLessThanOrEqual(2);
+  } finally {
+    await page.close();
+  }
+});
+
+test("the Plex Details glyph aligns with its label and keeps keyboard focus", async () => {
+  const page = await load({ head: { items: 4, detail: "sm" } }, 1440, 620, true);
+  try {
+    await page.route("http://workspace.test/ui/**", (route) =>
+      route.fulfill({ path: resolve(workspaceDist, new URL(route.request().url()).pathname.slice(4)) }),
+    );
+    await page.addStyleTag({ url: "http://workspace.test/ui/plex.css" });
+    await page.addStyleTag({ url: "http://workspace.test/ui/tabler.css" });
+    await settled(page);
+    const toggle = page.locator("[data-app-workspace-detail-toggle]");
+    const boxes = await toggle.evaluate((button) => {
+      const label = button.querySelector(".k2b-button__label")!;
+      const icon = label.querySelector("i")!;
+      const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT);
+      if (!walker.nextNode()) throw new Error("Details label missing");
+      const range = document.createRange();
+      range.selectNodeContents(walker.currentNode);
+      const rect = (element: Element | Range) => {
+        const r = element.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      return { button: rect(button), label: rect(label), icon: rect(icon), text: rect(range) };
+    });
+    const clip = {
+      x: Math.floor(boxes.label.x),
+      y: Math.floor(boxes.label.y),
+      width: Math.ceil(boxes.label.width) + 1,
+      height: Math.ceil(boxes.label.height) + 1,
+    };
+    const png = await page.screenshot({ clip });
+    const inkOffset = await page.evaluate(
+      async ({ src, clip, boxes }) => {
+        const image = new Image();
+        image.src = src;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        const center = (box: typeof boxes.icon) => {
+          let top = image.height;
+          let bottom = -1;
+          for (let x = Math.floor(box.x - clip.x); x < Math.ceil(box.x + box.width - clip.x); x++) {
+            for (let y = Math.floor(box.y - clip.y); y < Math.ceil(box.y + box.height - clip.y); y++) {
+              const [r, g, b] = context.getImageData(x, y, 1, 1).data;
+              if (Math.max(r!, g!, b!) < 180) {
+                top = Math.min(top, y);
+                bottom = Math.max(bottom, y);
+              }
+            }
+          }
+          if (bottom < top) throw new Error("Details ink missing");
+          return (top + bottom + 1) / 2;
+        };
+        return center(boxes.icon) - center(boxes.text);
+      },
+      { src: `data:image/png;base64,${png.toString("base64")}`, clip, boxes },
+    );
+    console.info(`Plex Details ink offset: ${inkOffset}px`);
+    expect(Math.abs(inkOffset)).toBeLessThanOrEqual(0.5);
+    expect(boxes.button.height).toBe(32);
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await settled(page);
+    expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+    await page.keyboard.press("Escape");
+    await settled(page);
+    expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(await toggle.evaluate((button) => document.activeElement === button)).toBe(true);
+    expect(await toggle.boundingBox()).toEqual(boxes.button);
   } finally {
     await page.close();
   }
@@ -302,15 +395,20 @@ test("view, classic tab, and segment selection and hover never move neighbouring
     const before = await boxes(page, ".k2b-view-tabs__tab");
     expect(await boxes(other, ".k2b-view-tabs__tab")).toEqual(before);
     await page.locator(".k2b-view-tabs__tab").nth(1).hover();
+    await settled(page);
     expect(await boxes(page, ".k2b-view-tabs__tab")).toEqual(before);
     await page.evaluate(() => window.mountControls());
+    await settled(page);
     for (const selector of ['[role="tab"]', '[role="radio"]']) {
       const initial = await boxes(page, selector);
       await page.locator(selector).nth(1).hover();
+      await settled(page);
       expect(await boxes(page, selector)).toEqual(initial);
       await page.locator(selector).nth(1).click();
+      await settled(page);
       expect(await boxes(page, selector)).toEqual(initial);
       await page.locator(selector).first().click();
+      await settled(page);
       expect(await boxes(page, selector)).toEqual(initial);
     }
   } finally {
@@ -379,7 +477,7 @@ test("phone views stay at the top while Main scrolls and the primary is a named 
     await page.locator(".k2b-app-workspace__main").evaluate((element) => {
       element.scrollTop = 400;
     });
-    await workspaceFrames(page);
+    await settled(page);
     expect(await page.locator(".k2b-app-workspace__main").evaluate((element) => element.scrollTop)).toBe(400);
     expect(await rect(page, ".k2b-view-tabs")).toEqual(tabs);
     const primary = page.getByRole("link", { name: "New task", exact: true });
@@ -393,12 +491,39 @@ test("phone views stay at the top while Main scrolls and the primary is a named 
   }
 });
 
+for (const actions of [true, false]) {
+  for (const width of [320, 390]) {
+    test(`phone root views keep their row with actions=${actions} at ${width}px`, async () => {
+      const page = await load({ head: { root: true, actions } }, width);
+      try {
+        const assertRows = async () => {
+          const views = await rect(page, ".k2b-app-workspace__head-views");
+          const filters = await rect(page, ".k2b-app-workspace__head-filters");
+          const current = await rect(page, '.k2b-view-tabs [aria-current="page"]');
+          expect(filters.y).toBeGreaterThanOrEqual(views.y + views.height);
+          expect(current.x).toBeGreaterThanOrEqual(views.x);
+          expect(current.x + current.width).toBeLessThanOrEqual(views.x + views.width);
+        };
+        await assertRows();
+        const before = await page.evaluate(headGeometry);
+        await page.evaluate(() => window.mountHead());
+        await settled(page);
+        expect(await page.evaluate(headGeometry)).toEqual(before);
+        await assertRows();
+      } finally {
+        await page.close();
+      }
+    });
+  }
+}
+
 test("keyboard order follows views, chips, Reset, secondary, primary with unclipped rings", async () => {
   const page = await load({ head: { items: 3 } });
   try {
     const expected = ["?view=1", "?view=2", "?view=3", "Tags: Customer", "Status", "?view=1", "Search", "?new=task"];
     for (const name of expected) {
       await page.keyboard.press("Tab");
+      await settled(page);
       const focus = await page.evaluate(() => {
         const element = document.activeElement as HTMLElement;
         const style = getComputedStyle(element);
@@ -435,7 +560,7 @@ for (const width of [1440, 1194, 834, 390])
       const before = await page.evaluate(headGeometry);
       await page.evaluate(() => window.mountHead());
       const mounted = await page.evaluate(() => window.headMountedFrame);
-      await workspaceFrames(page);
+      await settled(page);
       const after = await page.evaluate(headGeometry);
       expect(before.length).toBeGreaterThan(10);
       for (const frame of [mounted, after]) {
@@ -470,6 +595,7 @@ for (const theme of ["light", "dark"])
           createComponent(SegmentedControl, { value: "a", onValueChange: () => {}, ariaLabel: "Mode", options }),
         ]),
       );
+      await settled(page);
       const styles = await page.evaluate(() => {
         const read = (selector: string, pseudo?: string) =>
           [...document.querySelectorAll(selector)].map((element) => {

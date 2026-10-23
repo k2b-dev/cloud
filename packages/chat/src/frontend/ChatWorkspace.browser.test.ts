@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
+import { CreateConversationSchema, CreateOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 declare global {
@@ -206,6 +207,56 @@ describe("ChatWorkspace browser full view", () => {
         await page.locator(`${selector}[data-highlighted]`).waitFor({ state: "detached" });
         await settle(page);
         expect(await page.evaluate(() => window.chatShifts)).toBe(0);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+    test(`oversized messages keep the draft and recover after shortening on ${name}`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], count: 4, end: harness.now() });
+      const locale = name === "phone" ? "de-DE" : "en";
+      const { page, errors } = await load(options, { chat }, false, undefined, { locale });
+      try {
+        const start = harness.posted.length;
+        const field = page.getByRole("textbox");
+        const hint = page.locator(".k2b-chat-composer__hint-text");
+        const send = page.getByRole("button", { name: locale === "en" ? "Send message" : "Nachricht senden", exact: true });
+        const messagesUrl = `**/api/chat/conversations/${chat}/messages`;
+        let rejectedPosts = 0;
+        // A server refusal must leave the browser assertions running, even if the client guard regresses.
+        await page.route(messagesUrl, async (route) => {
+          if (route.request().method() !== "POST") return route.continue();
+          rejectedPosts++;
+          await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ message: "Invalid input" }) });
+        });
+        for (const body of ["a".repeat(20_001), "😀".repeat(20_001)]) {
+          await field.fill(body);
+          // Keyboard and touch submission both preserve text that the server would reject.
+          if (name === "desktop") await field.press("Enter");
+          else await send.click();
+          // Touch submission first settles dialog history. The restored, enabled send button proves it finished.
+          await page.waitForFunction(() => {
+            const send = document.querySelector<HTMLButtonElement>(".k2b-chat-composer__send");
+            return send !== null && !send.disabled;
+          });
+          await page
+            .getByText(locale === "en" ? "Shorten to at most 20,000 characters." : "Kürze auf höchstens 20.000 Zeichen.", { exact: true })
+            .waitFor();
+          expect(await hint.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+          expect((await field.inputValue()) === body).toBe(true);
+          expect(rejectedPosts).toBe(0);
+          expect(harness.posted.slice(start)).toEqual([]);
+          expect(await page.locator('[data-status="failed"], [data-status="pending"]').count()).toBe(0);
+        }
+        await page.unroute(messagesUrl);
+        const valid = "😀".repeat(20_000);
+        await field.fill(valid);
+        expect(await hint.textContent()).toBe("");
+        await send.click();
+        await until(() => harness.posted.length === start + 1);
+        await page.locator('[data-status="pending"]').waitFor({ state: "detached" });
+        expect(await field.inputValue()).toBe("");
+        expect(harness.posted.slice(start).map((input) => input.body)).toEqual([valid]);
         expect(errors).toEqual([]);
       } finally {
         await page.context().close();
@@ -783,8 +834,189 @@ describe("ChatWorkspace browser read state", () => {
   }
 });
 
+describe("Chat member input mode", () => {
+  beforeEach(() => harness.reset());
+  for (const width of [1440, 820, 390]) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`member removal follows touch and trackpad mode without moving at ${width}px in ${theme}`, async () => {
+        const chat = harness.addChat({ members: [viewer, nora], count: 4, end: harness.now() });
+        harness.setPermission(chat, "admin");
+        const t = chatMessages.resolve(["en"]).t;
+        const { page, errors } = await load(
+          { viewport: { width, height: 900 }, hasTouch: width < 1024, isMobile: width < 1024, reducedMotion: "reduce" },
+          { chat, panel: "info" },
+          false,
+          undefined,
+          { theme },
+        );
+        try {
+          const panel = page.locator("#k2b-workspace-detail-chat-info");
+          await panel.waitFor({ state: "visible" });
+          await panel.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+          const row = panel.locator(".chat-member-row").filter({ hasText: nora.name });
+          const action = row.locator(".chat-member-row__remove");
+          const remove = row.getByRole("button", { name: t.removeName({ name: nora.name }), exact: true });
+          await remove.waitFor();
+          await panel.getByRole("button", { name: t.closeChatInfo, exact: true }).focus();
+          await page.mouse.move(0, 0);
+          await settled(page);
+          const box = await row.boundingBox();
+          const actionBox = await action.boundingBox();
+          const opacity = async (value: string) => {
+            const element = await action.elementHandle();
+            await page.waitForFunction(({ element, value }) => element !== null && getComputedStyle(element).opacity === value, {
+              element,
+              value,
+            });
+          };
+          const canHover = await page.evaluate(() => {
+            delete document.documentElement.dataset.k2bInput;
+            return matchMedia("(any-hover: hover)").matches;
+          });
+          await opacity(width < 640 || !canHover ? "1" : "0");
+          // The shared controller owns these attributes. Exercise its public CSS contract in both pointer environments.
+          for (const mode of ["touch", "trackpad", "touch"] as const) {
+            await page.evaluate((mode) => {
+              document.documentElement.dataset.k2bInput = mode;
+            }, mode);
+            await opacity(width < 640 || mode === "touch" ? "1" : "0");
+            expect(await row.boundingBox()).toEqual(box);
+            expect(await action.boundingBox()).toEqual(actionBox);
+          }
+          await page.evaluate(() => {
+            document.documentElement.dataset.k2bInput = "trackpad";
+          });
+          await remove.focus();
+          await opacity("1");
+          expect(await row.boundingBox()).toEqual(box);
+          await page.keyboard.press("Enter");
+          const dialog = page.getByRole("dialog");
+          await dialog.waitFor();
+          await dialog.getByRole("button", { name: t.cancel, exact: true }).click();
+          await dialog.waitFor({ state: "hidden" });
+          await focused(remove);
+          expect(await row.boundingBox()).toEqual(box);
+          expect(errors).toEqual([]);
+        } finally {
+          await page.context().close();
+        }
+      }, 30_000);
+    }
+  }
+});
+
 describe("ChatWorkspace start chats and members", () => {
   beforeEach(() => harness.reset());
+  for (const { name, options } of viewports) {
+    const locale = name === "phone" ? "de" : "en";
+    const t = chatMessages.resolve([locale]).t;
+    for (const kind of ["anyway", "group", "fresh"] as const) {
+      test(`lost create response retries exactly one ${kind} chat on ${name} in ${locale}`, async () => {
+        const chat = harness.addChat({ members: [viewer, nora], count: 4, end: harness.now() });
+        harness.setPermission(chat, "admin");
+        const group = { id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", name: "Project Team", size: 3 };
+        harness.addGroup(group);
+        const { page, errors } = await load(options, kind === "fresh" ? { chat } : {}, false, undefined, { locale });
+        const requests: ReturnType<typeof CreateConversationSchema.parse>[] = [];
+        let drop = true;
+        let createdId: string | undefined;
+        try {
+          await page.route("**/api/chat/conversations", async (route) => {
+            if (route.request().method() !== "POST") return route.continue();
+            const body = CreateConversationSchema.parse(route.request().postDataJSON());
+            requests.push(body);
+            if (drop && (body.allowDuplicate || kind === "group")) {
+              drop = false;
+              // Commit at the HTTP fixture first, then discard only the response on its way to the browser.
+              const response = await route.fetch();
+              expect(response.status()).toBe(201);
+              const outcome = CreateOutcomeSchema.parse(await response.json());
+              if (outcome.outcome !== "created") throw new Error("Expected the committed chat");
+              createdId = outcome.conversation.id;
+              await route.abort("failed");
+            } else await route.continue();
+          });
+          const entry = () =>
+            kind === "fresh"
+              ? page.locator(".chat-conversation__header").getByRole("button", { name: t.addPeople, exact: true })
+              : page.getByRole("button", { name: t.newChat, exact: true }).filter({ visible: true });
+          const title = kind === "fresh" ? t.addPeople : t.newChat;
+          await entry().click();
+          let dialog = page.getByRole("dialog", { name: title, exact: true });
+          const person = kind === "fresh" ? tobias.name : kind === "group" ? group.name : nora.name;
+          await dialog.getByRole("combobox").fill(person);
+          await page.getByRole("option", { name: person }).click();
+          await dialog.getByRole("textbox", { name: t.name, exact: true }).fill("Recovered intent");
+          if (kind === "fresh") {
+            const start = dialog.getByRole("button", { name: t.startWithoutHistory, exact: true });
+            await start.click();
+          } else {
+            await dialog.getByRole("button", { name: t.startChat, exact: true }).click();
+            if (kind === "anyway") await dialog.getByRole("button", { name: t.createAnyway, exact: true }).click();
+          }
+          await dialog.getByRole("alert").waitFor();
+          if (!createdId) throw new Error("The dropped response must identify the committed chat");
+          const destination = `/app/chat/c/${createdId}`;
+          expect(createdId).not.toBe(chat);
+          const accepted = requests.at(-1)!;
+          expect(accepted.createKey).toMatch(/^[0-9a-f-]{36}$/);
+          expect(harness.chatCount()).toBe(2);
+          await dialog.getByText(t.createRecovery, { exact: true }).waitFor();
+          if (kind === "anyway") {
+            for (const match of await dialog.getByRole("list", { name: t.existingChatsLabel }).getByRole("button").all())
+              expect(await match.isDisabled()).toBe(true);
+          }
+          // Dismissing is temporary: only the explicit Cancel button discards this intent.
+          await page.keyboard.press("Escape");
+          await dialog.waitFor({ state: "hidden" });
+          await focused(entry());
+          await entry().click();
+          dialog = page.getByRole("dialog", { name: title, exact: true });
+          await dialog.getByText(t.createRecovery, { exact: true }).waitFor();
+          if (kind !== "anyway") {
+            expect(await dialog.getByRole("textbox", { name: t.name, exact: true }).isDisabled()).toBe(true);
+            // Reopen after a real document reload: same tab, same immutable unresolved intent.
+            await page.reload();
+            await settle(page);
+            await page.evaluate(({ props, locale }) => window.mountChat(props, locale), {
+              props: harness.props(kind === "fresh" ? { chat } : {}),
+              locale,
+            });
+            await entry().click();
+            dialog = page.getByRole("dialog", { name: title, exact: true });
+            await dialog.getByText(t.createRecovery, { exact: true }).waitFor();
+            expect(await dialog.getByRole("textbox", { name: t.name, exact: true }).inputValue()).toBe("Recovered intent");
+          }
+          await dialog.getByRole("button", { name: t.retry, exact: true }).click();
+          // The source chat already matches a generic chat URL; wait for the originally committed ID.
+          await page.waitForURL((url) => url.pathname === destination);
+          await page.locator(".chat-conversation__header").getByText("Recovered intent", { exact: true }).waitFor();
+          await dialog.waitFor({ state: "hidden" });
+          expect(requests.at(-1)).toEqual(accepted);
+          expect(harness.chatCount()).toBe(2);
+          const id = new URL(page.url()).pathname.split("/").at(-1)!;
+          expect(id).toBe(createdId);
+          expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("chat.create:")).length)).toBe(0);
+          // An explicit cancellation discards a later dialog and returns keyboard focus to its entry.
+          if (name === "phone") {
+            await page.getByRole("link", { name: t.backToChats, exact: true }).click();
+            await page.waitForURL((url) => url.pathname === "/app/chat");
+          }
+          const newChat = page.getByRole("button", { name: t.newChat, exact: true }).filter({ visible: true });
+          await newChat.click();
+          const fresh = page.getByRole("dialog", { name: t.newChat, exact: true });
+          await fresh.getByRole("textbox", { name: t.name, exact: true }).waitFor();
+          expect(await fresh.getByRole("textbox", { name: t.name, exact: true }).inputValue()).toBe("");
+          await fresh.getByRole("button", { name: t.cancel, exact: true }).click();
+          await fresh.waitFor({ state: "hidden" });
+          await focused(newChat);
+          expect(errors).toEqual([]);
+        } finally {
+          await page.context().close();
+        }
+      }, 30_000);
+    }
+  }
   for (const { name, options } of viewports) {
     for (const theme of ["light", "dark"] as const) {
       for (const locale of ["en", "de"]) {
@@ -946,4 +1178,58 @@ describe("ChatWorkspace start chats and members", () => {
       }
     }
   }
+});
+
+// Route-owned visibility must use the same info route from every entry point.
+describe("Chat info reopening", () => {
+  beforeEach(() => harness.reset());
+  for (const { name, options } of viewports) {
+    test(`info stays reachable after X and preserves Back on ${name}`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], count: 8, end: harness.now() });
+      const { page, errors } = await load(options, { chat });
+      try {
+        const toggle = page.locator('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]');
+        expect(await toggle.isVisible()).toBe(true);
+        expect(await toggle.isEnabled()).toBe(true);
+        // A surviving Info link must remain a real hit target beside People,
+        // including the phone's fixed conversation header.
+        await toggle.click({ trial: true });
+        await page.locator(".chat-conversation__header").getByRole("button", { name: "Add people", exact: true }).click({ trial: true });
+        await toggle.focus();
+        await page.keyboard.press("Enter");
+        await page.waitForURL("**?panel=info");
+        expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+        await page.getByRole("button", { name: "Close chat info", exact: true }).click();
+        await page.waitForURL(`**/c/${chat}`);
+        expect(await toggle.isVisible()).toBe(true);
+        expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+        await toggle.click();
+        await page.waitForURL("**?panel=info");
+        await page.goBack();
+        await page.waitForURL(`**/c/${chat}`);
+        expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+        await page.reload();
+        // This harness mounts explicitly rather than hydrating an island.
+        await page.evaluate((props) => window.mountChat(props, "en"), harness.props({ chat }));
+        await settle(page);
+        expect(await toggle.isVisible()).toBe(true);
+        expect(await toggle.isEnabled()).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }, 30_000);
+  }
+  test("no info action can reveal a retained chat without selection", async () => {
+    const { page, errors } = await load(viewports[0]!.options, {});
+    try {
+      const toggle = page.locator("[data-app-workspace-detail-toggle]");
+      expect(await toggle.isVisible()).toBe(false);
+      expect(await page.locator('.chat-conversation__header a[aria-controls="k2b-workspace-detail-chat-info"]').count()).toBe(0);
+      expect(await page.locator(".k2b-app-workspace__detail").isVisible()).toBe(false);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  });
 });

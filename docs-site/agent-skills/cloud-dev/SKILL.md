@@ -44,6 +44,8 @@ and durable data.
 
 - Use `defineApp()` for the declaration, the Hono router for requests, and
   `app.start()` for registration and lifecycle.
+- Declare `access` for app use; Cloud applies it before app code and to discovery. Keep resource checks in services.
+  Read **App access** (`/en/docs/identity/app-access`) for public routes and migration.
 - Keep declared prefixes, mounted routes, and registration aligned. A running
   process alone does not prove route readiness.
 - Cloud authenticates and resolves access subjects. The application checks
@@ -139,24 +141,22 @@ SolidJS library remains independent of Cloud and application domains.
   Build no back buttons for it; an app with its own header places `PageTrail` there.
 
 ## Ship CLI commands and Assistant Skills with the app
-
 Read **Application CLI modules** (`/en/docs/platform/cli-modules`) and its *Design commands* section before adding `cld` commands.
 Declare modules as `defineApp({ cli: { <name>: { module, references } } })`: `module` exports `defineCliCommands()` named
 `<name>`, `references` holds agent Markdown with `index.md`. The app image serves both at `/cli/plugins/<name>/` to signed-in
 callers `cli.plugins.access` allows; `cld` installs them per profile and writes the references into the agent skill per version. The server authorizes.
 
 Read **Ship Assistant Skills** (`/en/docs/platform/assistant-skills`) first: keep each Skill in `src/skills/<name>/SKILL.md` (+ `references/*.md`), import the files `with { type: "text" }` in `src/skills.ts`, export `SKILLS = [skill({ markdown, references })]` from `@k2b/cloud`, and pass `skills: SKILLS` to `defineApp()`.
-Cloud validates them at start and updates them by content hash; it offers them only while the app runs and to the people who may see its Help (`nav.requiresRoles`, or administrators for an app reached only through `adminHref`). A Skill grants nothing; never seed or rewrite Skill rows from code.
+Cloud validates Skills at start, updates them by content hash, and offers them only while their app runs and its access rule (legacy: Help audience) permits use. Skills grant nothing; never seed or rewrite Skill rows from code.
 
 ## Build and verify one complete slice
-
 For capability design or changes, read **App capabilities** in the Docs collection (`/en/docs/platform/capabilities`),
 especially its machine-composition and design-review guidance. Trace real task paths and consumers before choosing
 result fields or changing contracts; keep detailed API rules in that guide. Cloud records one execution row for every
 capability call on every surface; an application writes `context.requestId` into its own audit rows so the two trails
 join without sharing payloads. Actions may word themselves with optional, translated `presentation.sentences`
 (`approval`, `done`, `rejected`, `notRun`; `{input.path}`, `{data.path}` in `done`); consumers never special-case an app.
-Every Type with a page declares a reader that returns the resource's `open` link, a page the caller may open; link resources with `cloudResourceHref`, never a hand-built URL, and check each reader with `assertResourceOpenLink` (*Resource links*). Cloud records every approval as one platform request and repeats the Action's review right before the approved call runs; a changed review asks again, so keep reviews deterministic and carry a revision in the input of Actions on changeable state. Routines check the mandate first, review each Action that needs approval, and refuse it without an `approvalScope`; a review only narrows. Apps show and decide their open approvals only through the shared `Approvals` component and `/api/approvals` route, with no app-owned approval routes or tables; an editor bridge can only reject `confirm` requests.
+Every Type with a page declares a reader that returns the resource's `open` link, a page the caller may open; link resources with `cloudResourceHref`, never a hand-built URL, and check each reader with `assertResourceOpenLink` (*Resource links*). Cloud records every approval as one platform request and repeats the Action's review right before the approved call runs; a changed review asks again, so keep reviews deterministic and carry a revision in the input of Actions on changeable state. Routines check the mandate first, review each Action that needs approval, and refuse it without an `approvalScope`; a review only narrows. Use the public complete-review `content` contract for unsaved or large proposals; a link to the current resource is not a snapshot of the proposed change. Keep streams and lists compact and read stored content through Cloud's authorized reader. Apps show and decide their open approvals only through the shared `Approvals` component and `/api/approvals` route, with no app-owned approval routes or tables; an editor bridge can only reject `confirm` requests.
 For a shared cross-app contract, read `/en/docs/platform/contact-directory` or `/en/docs/platform/file-providers`. To review an application against Cloud's conventions, read **Conventions for Cloud applications** (`/en/docs/conventions`) and follow its audit procedure.
 
 For deployment questions, read **Deployment requirements** in the Docs

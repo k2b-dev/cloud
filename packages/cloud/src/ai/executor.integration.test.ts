@@ -16,6 +16,7 @@ import { type CapabilityActionReviewData, defineCapabilities } from "../contract
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
+import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import { type CapabilityGrant, mandates } from "../services/mandates";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { normalizeLocale } from "../shared/locale";
@@ -39,6 +40,7 @@ import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
 import { completeThroughStream, createAiProvider } from "./provider";
 import { AiQuotaError } from "./quotas";
+import { readReviewContent } from "./review-content";
 import { listPendingAiTurnActions } from "./runtime";
 import * as settings from "./settings";
 import { aiSkills } from "./skills";
@@ -275,8 +277,10 @@ const installAppSkill = async (definition: AppSkillDefinition) => {
     icon: "ti ti-sparkles",
     baseUrl: "http://assistant:3000",
     routes: [],
+    access: { kind: "signedIn" },
     skills: { manifestHash },
   };
+  await registry.appRegistry().upsert({ key: `apps/${entry.id}`, value: entry });
   await registerAppSkills(entry.id, [definition], manifestHash);
   await reconcileAppSkills([entry]);
   return {
@@ -285,6 +289,7 @@ const installAppSkill = async (definition: AppSkillDefinition) => {
       if (row?.skill_id) await aiSkills.admin.delete(row.skill_id);
       await sql`DELETE FROM ai.app_skills WHERE app_id = ${entry.id}`;
       await sql`DELETE FROM ai.app_skill_catalogs WHERE app_id = ${entry.id}`;
+      await registry.appRegistry().delete({ key: `apps/${entry.id}` });
     },
   };
 };
@@ -413,6 +418,10 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
+  // Capability discovery and mandate issuance need the owning app's live access declaration.
+  useRegisteredTestApp("core", { kind: "signedIn" });
+  useRegisteredTestApp("demo", { kind: "signedIn" });
+  useRegisteredTestApp("spaces", { kind: "signedIn" });
   const resumeModes = ["unchanged", "changed", "revoked", "used", "rejected_empty", "approved_empty", "failed_empty"] as const;
   test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();
@@ -1019,13 +1028,19 @@ suite("AI executor integration", () => {
   test("offers to keep recurring work as a Skill only in chats a person follows with skill-creator", async () => {
     const userId = await insertUser();
     const owner = { type: "user" as const, userId };
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const authority = await capabilityExecution.resolveAiCapabilityActor({
+      conversationId: conversation.id,
+      persistedActor: { kind: "user", user: actorUser(userId) },
+      store: aiConversations,
+    });
     // Assistant ships skill-creator as an app Skill; install it the same way through the registry catalog.
     const creatorApp = await installAppSkill(
       appSkill({
         markdown: "---\nname: skill-creator\ndescription: Create and improve reusable Assistant Skills.\n---\n\nDraft the Skill.\n",
       }),
     );
-    const creator = (await aiSkills.list(owner)).find((candidate) => candidate.name === "skill-creator");
+    const creator = (await aiSkills.list(owner, { authority })).find((candidate) => candidate.name === "skill-creator");
     if (!creator?.enabled) throw new Error("Expected the app's skill-creator to be enabled for a new user");
     const skill = await aiSkills.create({
       subject: owner,
@@ -1033,7 +1048,6 @@ suite("AI executor integration", () => {
       description: "Write the weekly sales report.",
       instructions: "Summarize the week.",
     });
-    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     const prompts = new Map<string, string>();
     const runTurn = async (label: string, turnId: string) => {
       const claim = await aiConversations.claimTurn({
@@ -1109,7 +1123,7 @@ suite("AI executor integration", () => {
       expect(background).not.toContain("Offer once at the end");
 
       // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
-      expect(await aiSkills.setEnabled(creator.id, owner, false)).toBeFalse();
+      expect(await aiSkills.setEnabled(creator.id, owner, false, authority)).toBeFalse();
       const { turn: withoutCreator } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
         modelProfileId: MODEL_ID,
@@ -1395,7 +1409,7 @@ suite("AI executor integration", () => {
     }
   });
 
-  test("a linked Studio approval asks with its own record's question and only while that request is open", async () => {
+  test.each([false, true])("a linked Studio approval retains its stored question and content (full=%s)", async (fullContent) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
@@ -1430,7 +1444,18 @@ suite("AI executor integration", () => {
         approvalPolicies: new Map([["code_run", "never"]]),
         frontendModes: new Map(),
       };
-      const studio = async (kind: "studio_app" | "assistant_turn") => {
+      const content = {
+        kind: "page" as const,
+        title: "Unsaved proposal",
+        body: `${"x".repeat(80_000)}\u0000END`,
+        format: "plain" as const,
+      };
+      const fullReview = { ...reviewFixture(), ask: "app_asks" as const, content };
+      const reviews = new Map<string, CapabilityActionReviewData>();
+      pipeline.setApprovalReviews(reviews, new Map());
+      const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "linked-approval-test" });
+      await session.append({ role: "assistant", content: [{ type: "tool_call", id: "run", name: "code_run", args: {} }] });
+      const studio = async (kind: "studio_app" | "assistant_turn", review?: CapabilityActionReviewData) => {
         const record = await approvals.request({
           appId: "demo",
           action: "write",
@@ -1440,6 +1465,7 @@ suite("AI executor integration", () => {
           assurance: "standard",
           sentence: "Demo: Write item\nWrite one?",
           input: { value: "one" },
+          review,
           expiresInMs: 60_000,
         });
         if (!record.ok) throw new Error("Expected a new approval request");
@@ -1468,11 +1494,11 @@ suite("AI executor integration", () => {
           approvalContext: { actorUserId: userId },
           allowRememberedApprovals: true,
           rememberableCapabilityApprovals: new Map(),
-          capabilityActionReviews: new Map(),
+          capabilityActionReviews: reviews,
           approvalTargets: new Map(),
           linkedApprovals: new Map([[callId, approvalId]]),
         });
-      const linked = await studio("studio_app");
+      const linked = await studio("studio_app", fullContent ? fullReview : undefined);
       await ask("run-approval-0", linked);
       expect(
         await aiConversations.getPendingTurnAction({ conversationId: chat.id, turnId: turn.id, callId: "run-approval-0" }),
@@ -1480,6 +1506,32 @@ suite("AI executor integration", () => {
         approvalId: linked,
         message: "Demo: Write item\nWrite one?",
       });
+      if (fullContent) {
+        const block = pipeline.blocks.find((block) => block.kind === "tool" && block.callId === "run-approval-0");
+        if (!block || block.kind !== "tool" || !block.review || !("contentRef" in block.review) || !block.review.contentRef)
+          throw new Error("The relayed proposal must carry its stored content reference");
+        const { digest, href } = block.review.contentRef;
+        expect(href).toContain(`/turns/${turn.id}/reviews/run`);
+        expect(JSON.stringify(pipeline.blocks)).not.toContain("x".repeat(1_000));
+        expect(block.approval?.review).toMatchObject({ contentRef: { href, digest } });
+        expect(await readReviewContent({ conversationId: chat.id, turnId: turn.id, callId: "run" }, digest, userId)).toEqual(content);
+        await pipeline.flush();
+        const history = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id });
+        expect(JSON.stringify(history)).not.toContain("x".repeat(1_000));
+        expect(buildBlocksFromMessages(history)).toContainEqual(
+          expect.objectContaining({ review: expect.objectContaining({ contentRef: { href, digest } }) }),
+        );
+        await approvals.decide(linked, { approved: true }, { userId, via: "web_session" });
+        const request = await approvals.get(linked);
+        expect(
+          await approvals.consume(linked, {
+            input: { value: "one" },
+            review: fullReview,
+            requester: { kind: "studio_app", ref: request!.requesterRef },
+          }),
+        ).toMatchObject({ ok: true });
+        expect(await readReviewContent({ conversationId: chat.id, turnId: turn.id, callId: "run" }, digest, userId)).toEqual(content);
+      }
       const decided = await studio("studio_app");
       await approvals.decide(decided, { approved: false }, { userId, via: "web_session" });
       for (const [callId, approvalId] of [
@@ -3998,6 +4050,7 @@ suiteFor(
   "nats",
   "valkey",
 )("stored Assistant Action outcomes", () => {
+  useRegisteredTestApp("demo", { kind: "signedIn" });
   beforeAll(async () => {
     await migrateCloudAi();
   });

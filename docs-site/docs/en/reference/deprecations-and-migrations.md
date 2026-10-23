@@ -5,10 +5,71 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Deprecations and migrations
+
+## Weather city search uses Core geo
+
+The standalone `geoService`, `geo`, `services.geo`, and their legacy
+`GeoPlace`/`GeoService` server exports are removed. Applications use
+`geoClient` from `@k2b/cloud/server` with current request credentials, or call
+Core's address capabilities directly. `weather.city.search` is replaced by
+Core `address.autocomplete` with `type: "city"` and `countryCode: "DE"`.
+Autocomplete takes at least three characters and returns at most five
+suggestions. Choose a suggestion and pass its coordinates to Weather for a forecast.
+
+Operators configure the secret `geo.api_key` and credit budgets in Core.
+`weather.geo_url`, `GEO_ALLOWED_TARGETS`, and the development `geo` container
+are removed. Existing saved locations and their coordinates remain valid.
+Remove the old URL and allowlist from deployment configuration; stored legacy
+setting rows are ignored. Core must be upgraded and configured before Weather
+city searches can succeed. Upgrade Weather’s schema before its new code; the
+additive `weather_locations.provenance` column retains the selected place’s
+source. Coordinate-only locations keep an empty provenance value.
+
+`GET /api/weather/geo/search` and `/api/weather/forecast/by-city` now require
+sign-in and charge Core's geo budget. Coordinate-based forecasts stay public.
+The public display labels the forecast with its weather station, avoiding a
+paid anonymous reverse-geocode lookup. Server callers of
+`weatherService.forecast.getByCityName` and `weatherService.location.city.list`
+must pass `caller` credentials. The old `weatherService.location.city.get`
+reverse lookup is removed; use `geoClient.reverse` in an authenticated request.
+
+## Application mail content grants
+
+`mail.content(id, context)` adds audited plain-text and attachment-name reads.
+Existing grants stay at metadata, and `mail.list` still omits foreign bodies.
+Upgrade Core's additive schema before application libraries and admin clients.
+Older clients replace selected sources with metadata access; a Core code
+rollback alone does not revoke stored content grants. See the
+[upgrade and rollback sequence](/en/docs/operations/outgoing-mail#upgrade-and-rollback)
+for the required order and explicit downgrade.
+
+## Mail send requires a content fingerprint
+
+`mail.draft.send` now requires `expectedContentHash`. This is a breaking input
+change. Update HTTP, MCP, CLI and automation clients together with Mail.
+Read `draft.send.review` under the same actor and copy its returned
+`contentHash` into `expectedContentHash`, alongside the current draft revision
+and any required safety approval. Browser, Mail CLI and built-in workflows
+perform this preparation themselves. Built-in workflows resume already-issued
+send commands, including commands created before this upgrade, under their
+current execution authority and original inputs. Resuming an existing command
+does not render or approve a new message.
+
+The hash binds the effective text and HTML, sender, recipients, attachments and
+generated MIME parts. It grants neither permission nor consent. Mail renders
+once more in the final transaction and compares that exact snapshot before
+writing its outbox. A change returns `SEND_CONTENT_CHANGED` (HTTP 409), rolls
+back the command and outbox, and queues no message.
+
+Open the draft, check it again, read a fresh fingerprint and explicitly approve
+a new send attempt with a new idempotency key. There is no automatic retry or
+new approval. If a signature uses the current time and keeps changing, edit it
+before retrying. For an unknown network outcome, use the existing outcome check
+and retry identity instead of treating it as this confirmed conflict.
 
 ## Pulse requires ClickHouse and starts empty
 
@@ -60,9 +121,13 @@ The following CLI groups and commands are removed, without a current query repla
 
 The removed capability IDs are `pulse.resource.search`, `pulse.resource.read`,
 `pulse.metric.search`, `pulse.field.search`, `pulse.query.compile`,
-`pulse.query.execute`, `pulse.saved_query.list`, `pulse.saved_query.read`, and
-`pulse.saved_query.execute`. Pulse's remaining capabilities find/read bases and
-sources; agents have no measurement-query capability until SQL arrives.
+`pulse.query.execute`, `pulse.saved_query.read`, and
+`pulse.saved_query.execute`. Use `pulse.sql.run` for measurement queries.
+`pulse.saved_query.list` now returns saved SQL instead of the former DSL result.
+Base/source discovery remains available. Agent writes use `base.create`,
+`base.clear_data`, `base.delete`, and source-scoped `ingest.write`; see
+[Pulse](/en/apps/pulse#let-an-agent-create-and-write-telemetry) for permissions
+and approval requirements.
 Update scripts, scheduled tasks, and agents that call the removed operations.
 
 Refresh the Pulse CLI plugin for each profile with `cld plugins update pulse`.

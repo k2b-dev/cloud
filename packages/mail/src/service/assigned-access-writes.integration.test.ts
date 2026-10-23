@@ -5,6 +5,7 @@ import { notifications } from "@k2b/cloud/services";
 import { type Result, unwrap } from "@k2b/stdlib";
 import { sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { reviewedDraftContentHash } from "../../test/fixtures/send-content";
 import { mailCapabilities } from "../capabilities";
 import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import { mailConversationContextQuerySchema } from "../contracts";
@@ -109,7 +110,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
         idempotencyKey: crypto.randomUUID(),
       },
     });
-  const queueSend = (user: User, draft: { id: string; revision: number; senderIdentityId: string }) =>
+  const queueSend = async (user: User, draft: { id: string; revision: number; senderIdentityId: string }) =>
     commands.createActorCommand({
       context: contextFor(user),
       mailboxId,
@@ -118,6 +119,7 @@ suite("assigned-only Mail actions authorize every target and queued effect", () 
         kind: "send",
         draftId: draft.id,
         expectedDraftRevision: draft.revision,
+        expectedContentHash: await reviewedDraftContentHash(contextFor(user), mailboxId, draft.id, draft.revision),
         senderIdentityId: draft.senderIdentityId,
         scheduledAt: new Date(Date.now() + 3600000).toISOString(),
         undoSeconds: 0,

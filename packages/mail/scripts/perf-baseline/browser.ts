@@ -35,6 +35,7 @@ import {
   traceBreakdown,
 } from "./browser-model";
 import { monotonicMs } from "./measure";
+import { measurePageChanges } from "./page-change";
 import { draftSeedBodies } from "./requests";
 
 type Profile = (typeof profiles)[number];
@@ -240,6 +241,7 @@ type Setup = {
   mailboxB: { shortId: string };
   interactions: InteractionId[];
   loads: LoadPage[];
+  pageChanges: boolean;
   nextUid: () => number;
 };
 type Recorded = { request: Request; at: number };
@@ -834,7 +836,7 @@ export async function measureBrowsers(setup: Setup, section: BrowserSection, sav
   if (playwright.version !== catalog.playwright)
     throw new Error("Installed Playwright differs from the root catalog; run bun install --frozen-lockfile");
   section.playwrightVersion = playwright.version;
-  const browsers = new Browsers(setup.signal);
+  const browsers = new Browsers(setup.signal, await setup.runtime.browserSpki());
   try {
     await browsers.launch(await setup.runtime.startBrowsers(catalog.playwright), section.engines);
     section.versions = browsers.versions();
@@ -869,6 +871,21 @@ export async function measureBrowsers(setup: Setup, section: BrowserSection, sav
         result.reason = failures.join("; ");
       }
     };
+    if (setup.pageChanges) {
+      section.pageChanges = {
+        gates: { desktopMs: 203, phoneMs: 821, panelChanges: 20 },
+        profiles: [],
+        sequence: { status: "skipped", reason: "Not measured yet", snapshots: [], first20PanelReloads: 0, first20DocumentLoads: 0 },
+      };
+      await measurePageChanges(
+        { signal: setup.signal, origin: setup.api.origin, cookie: setup.api.cookie, mailboxId: setup.mailbox.shortId },
+        browsers,
+        section.runs,
+        section.engines,
+        section.pageChanges,
+        save,
+      );
+    }
     for (const id of setup.loads) {
       const page: BrowserSection["pages"][number] = { id, path: "", errors: [], static: null, profiles: [] };
       section.pages.push(page);

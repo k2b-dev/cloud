@@ -92,6 +92,7 @@ describe("chat dialogs and info", () => {
   beforeEach(() => {
     setSystemTime(new Date(now));
     dom = createDomTestHarness();
+    window.sessionStorage.clear();
     delegateEvents(["click", "input", "keydown"], dom.document);
     // happy-dom has no Popover API. Only emulate opening; the real picker,
     // loader, options and selection handlers still run.
@@ -284,6 +285,118 @@ describe("chat dialogs and info", () => {
       expect(onAdded).toHaveBeenCalledTimes(1);
       expect(close.mock.calls).toEqual([[]]);
     });
+    for (const kind of ["new", "fresh"] as const) {
+      test(`${kind} permits correction after a definitive initial rejection in ${locale}`, async () => {
+        const create = mock<ChatDialogStore["create"]>(async () => {
+          throw new modules!.ChatRequestError("Selected member unavailable", "BAD_INPUT", 400);
+        });
+        const fake = store({
+          create,
+          members: async () => ({ items: [nora], nextCursor: null, managers: 1, self }),
+          previewMembers: async () => ({ joining: 1, throughGroups: 0, memberCount: 3 }),
+        });
+        await mount(locale, () =>
+          kind === "new"
+            ? createComponent(modules!.NewChatDialog, {
+                store: fake,
+                guest: true,
+                viewerId,
+                locale,
+                close: () => {},
+                dateConfig: { timeZone: "UTC" },
+                setDismissHandler: () => {},
+              })
+            : createComponent(modules!.AddPeopleDialog, {
+                store: fake,
+                guest: true,
+                viewerId,
+                locale,
+                close: () => {},
+                conversation: { ...conversation, name: null },
+                setDismissHandler: () => {},
+              }),
+        );
+        await chooseNora();
+        if (kind === "fresh") await Bun.sleep(270);
+        type(input('input:not([role="combobox"])'), "Preserved name");
+        const submit = () =>
+          kind === "fresh"
+            ? button(t.startWithoutHistory).click()
+            : dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        submit();
+        await settle();
+        expect(input('input:not([role="combobox"])').disabled).toBe(false);
+        expect(input('input:not([role="combobox"])').value).toBe("Preserved name");
+        expect(window.sessionStorage.length).toBe(0);
+        type(input('input:not([role="combobox"])'), "Corrected name");
+        submit();
+        await settle();
+        expect(create.mock.calls[1]![0].name).toBe("Corrected name");
+        expect(create.mock.calls[1]![0].createKey).not.toBe(create.mock.calls[0]![0].createKey);
+      });
+    }
+    for (const kind of ["new", "fresh"] as const) {
+      test(`${kind} retries preserve the immutable create intent and cancellation clears it in ${locale}`, async () => {
+        const create = mock<ChatDialogStore["create"]>(async () => {
+          throw new Error("Response lost");
+        });
+        const close = mock<(id?: string) => void>();
+        const fake = store({
+          create,
+          members: async () => ({ items: [nora], nextCursor: null, managers: 1, self }),
+          previewMembers: async () => ({ joining: 1, throughGroups: 0, memberCount: 3 }),
+        });
+        await mount(locale, () =>
+          kind === "new"
+            ? createComponent(modules!.NewChatDialog, {
+                store: fake,
+                guest: true,
+                viewerId,
+                locale,
+                close,
+                dateConfig: { timeZone: "UTC" },
+                setDismissHandler: () => {},
+              })
+            : createComponent(modules!.AddPeopleDialog, {
+                store: fake,
+                guest: true,
+                viewerId,
+                locale,
+                close,
+                conversation: { ...conversation, name: null },
+                setDismissHandler: () => {},
+              }),
+        );
+        await chooseNora();
+        if (kind === "fresh") await Bun.sleep(270);
+        type(input('input:not([role="combobox"])'), "Original name");
+        if (kind === "fresh") button(t.startWithoutHistory).click();
+        else dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        await settle();
+        expect(input('input:not([role="combobox"])').disabled).toBe(true);
+        expect(dom.root.textContent).toContain(t.createRecovery);
+        if (kind === "fresh") expect(button(t.add).disabled).toBe(true);
+        // Even a programmatic field mutation cannot rebuild a pending request.
+        type(input('input:not([role="combobox"])'), "Changed after failure");
+        button(t.retry).click();
+        await settle();
+        expect(create.mock.calls).toHaveLength(2);
+        expect(create.mock.calls[1]).toEqual(create.mock.calls[0]);
+        expect(create.mock.calls[0]![0]).toMatchObject({ name: "Original name", createKey: expect.any(String) });
+        expect(window.sessionStorage.length).toBe(1);
+        create.mockImplementation(async () => {
+          throw new modules!.ChatRequestError("No access", "NOT_FOUND", 404);
+        });
+        button(t.retry).click();
+        await settle();
+        expect(create.mock.calls[2]).toEqual(create.mock.calls[0]);
+        expect(window.sessionStorage.length).toBe(1);
+        expect(input('input:not([role="combobox"])').disabled).toBe(true);
+        button(t.cancel).click();
+        expect(window.sessionStorage.length).toBe(0);
+        expect(close.mock.calls).toEqual([[]]);
+      });
+    }
     for (const action of ["open", "create", "back"] as const) {
       test(`new chat duplicate ${action} preserves order, archive state and choice in ${locale}`, async () => {
         const matches = [
@@ -309,7 +422,9 @@ describe("chat dialogs and info", () => {
         type(input('input:not([role="combobox"])'), "Chosen name");
         dom.root.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
         await settle();
-        expect(create.mock.calls).toEqual([[{ members: [nora.principal], name: "Chosen name" }]]);
+        expect(create.mock.calls).toEqual([
+          [{ members: [nora.principal], name: "Chosen name", allowDuplicate: false, createKey: expect.any(String) }],
+        ]);
         const rows = [...dom.root.querySelectorAll("li")];
         expect(rows).toHaveLength(2);
         expect(rows[0]?.textContent).toContain("Latest");
@@ -324,7 +439,10 @@ describe("chat dialogs and info", () => {
         } else if (action === "create") {
           button(t.createAnyway).click();
           await settle();
-          expect(create.mock.calls[1]).toEqual([{ members: [nora.principal], name: "Chosen name", allowDuplicate: true }]);
+          expect(create.mock.calls[1]).toEqual([
+            { members: [nora.principal], name: "Chosen name", allowDuplicate: true, createKey: expect.any(String) },
+          ]);
+          expect(create.mock.calls[1]![0].createKey).not.toBe(create.mock.calls[0]![0].createKey);
           expect(close.mock.calls).toEqual([["Chat04"]]);
         } else {
           button(t.back).click();
@@ -462,7 +580,9 @@ describe("chat dialogs and info", () => {
       expect(button(t.startWithoutHistory).disabled).toBe(false);
       button(t.startWithoutHistory).click();
       await settle();
-      expect(create.mock.calls).toEqual([[{ members: [existing.principal, nora.principal], allowDuplicate: true }]]);
+      expect(create.mock.calls).toEqual([
+        [{ members: [existing.principal, nora.principal], allowDuplicate: true, createKey: expect.any(String) }],
+      ]);
     });
     test(`a guest cannot start without history when the current entries include a group in ${locale}`, async () => {
       const group = MemberSchema.parse({

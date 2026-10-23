@@ -18,3 +18,13 @@ for caller changes. Its database-backed provider tests validate permissions,
 query results, conflict protection, and durable issuance replay. The independent
 required-idempotency inventory and normal evolution check remain active for
 future changes; this is not a blanket exemption for Grids.
+
+The Mail send migration intentionally requires `expectedContentHash` on
+`draft.send` and returns `contentHash` from `draft.send.review`. These two schema
+entries and their hashes are updated for the approved breaking contract; other
+Mail evolution checks remain active. See the [Mail migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#mail-send-requires-a-content-fingerprint).
+
+The Weather geo migration removes only `city.search` from its baseline. Call
+Core `address.autocomplete` with `type: "city"` and pass the selected coordinates
+to Weather. The remaining evolution checks stay active. See the
+[Weather migration](../../../docs-site/docs/en/reference/deprecations-and-migrations.md#weather-city-search-uses-core-geo).

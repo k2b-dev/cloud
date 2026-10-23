@@ -3,6 +3,8 @@ import { type LoopAggregate, type Message, nessi, type Provider, type ProviderRe
 import { sql } from "bun";
 import { collectPages, descending } from "../../../../scripts/fixtures/stable-paging";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
+import { readReviewContent } from "./review-content";
 import "../../../../scripts/fixtures/authorization-preload";
 import { approvalArgsDigest, approvalReviewDigest, approvals } from "../services/approvals";
 import { toPgTextArray } from "../services/postgres";
@@ -22,7 +24,7 @@ import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import { buildBlocksFromMessages } from "./protocol";
 import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
-import { aiConversations, recordAiToolCheck, recordAiToolReview } from "./store";
+import { AiConversationCreationError, aiConversations, recordAiToolCheck, recordAiToolReview } from "./store";
 import { loadAiStreamState } from "./stream";
 
 /** Reported as skipped rather than silently passing when the backing service is absent. */
@@ -58,6 +60,35 @@ suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("creation request identity survives concurrency, changed input, archive and deletion", async () => {
+    const userId = await insertUser();
+    const otherUserId = await insertUser();
+    const input = { ownerUserId: userId, requestId: crypto.randomUUID(), title: "One chat" };
+    try {
+      const created = await Promise.all(Array.from({ length: 8 }, () => aiConversations.createConversation(input)));
+      expect(new Set(created.map((chat) => chat.id)).size).toBe(1);
+      const chat = created[0]!;
+      expect((await aiConversations.createConversation({ ...input, title: " One chat " })).id).toBe(chat.id);
+      await expect(aiConversations.createConversation({ ...input, title: "Changed" })).rejects.toBeInstanceOf(AiConversationCreationError);
+      await expect(aiConversations.createConversation({ ...input, allowedTools: [] })).rejects.toThrow("different input");
+      const other = await aiConversations.createConversation({ ...input, ownerUserId: otherUserId });
+      expect(other.id).not.toBe(chat.id);
+      await sql`UPDATE ai.conversations SET archived_at = '2026-10-21T20:00:00Z' WHERE id = ${chat.id}::uuid`;
+      await expect(aiConversations.createConversation(input)).rejects.toThrow("no longer available");
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await expect(aiConversations.createConversation(input)).rejects.toThrow("no longer available");
+      const [count] = await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      expect(count!.count).toBe(0);
+      const deliberate = await aiConversations.createConversation({ ...input, requestId: crypto.randomUUID() });
+      expect(deliberate.id).not.toBe(chat.id);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id IN (${userId}::uuid, ${otherUserId}::uuid)`;
+      await sql`DELETE FROM auth.users WHERE id IN (${userId}::uuid, ${otherUserId}::uuid)`;
+    }
+  });
+
   test.each((["done", "not_done", "pending"] as const).flatMap((state) => [false, true].map((background) => ({ state, background }))))(
     "projects $state Action checks into loaded model history (background=$background)",
     async ({ state, background }) => {
@@ -482,6 +513,69 @@ suite("AI conversation store integration", () => {
       await cleanupFixture({ userId, conversationIds });
     }
   });
+  test("full review content survives JSONB, history and forks with owner-bound exact reads", async () => {
+    const userId = await insertUser();
+    const strangerId = await insertUser();
+    const source = await aiConversations.createConversation({ ownerUserId: userId });
+    const conversationIds = [source.id];
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: source.id,
+        modelProfileId: "test-model",
+        runConfig,
+        userMessage: userMessage("Review"),
+      });
+      const session = aiConversations.createSessionStore({ conversationId: source.id, turnId: turn.id });
+      await session.append({ role: "assistant", content: [{ type: "tool_call", id: "proposal", name: "demo__action__write", args: {} }] });
+      const content = {
+        kind: "page" as const,
+        title: "Draft",
+        body: `${"x".repeat(65_536)}\u0000\ud800END\udc00`,
+        format: "plain" as const,
+      };
+      const location = { conversationId: source.id, turnId: turn.id, callId: "proposal" };
+      const compact = await recordAiToolReview({
+        ...location,
+        review: { ...reviewFixture(), preview: { ...content, body: "Short" }, content },
+      });
+      if (!("contentRef" in compact) || !compact.contentRef) throw new Error("Missing content reference");
+      const digest = compact.contentRef.digest;
+      expect(await readReviewContent(location, digest, userId)).toEqual(content);
+      expect(await readReviewContent(location, digest, strangerId)).toBeNull();
+      expect(await readReviewContent(location, "0".repeat(64), userId)).toBeNull();
+      expect(await readReviewContent({ ...location, callId: "other" }, digest, userId)).toBeNull();
+      await aiConversations.savePendingTurnAction({
+        ...location,
+        kind: "approval",
+        status: "pending",
+        name: "demo__action__write",
+        args: {},
+        allowAlways: false,
+        approvalScope: "demo.write",
+        resolvedEvent: null,
+        review: { ...reviewFixture(), preview: { ...content, body: "Short" }, content },
+      });
+      const [pending] = await sql<{ review: { content: string } }[]>`
+        SELECT review FROM ai.pending_actions WHERE turn_id=${turn.id}::uuid AND call_id='proposal'`;
+      expect(JSON.parse(pending!.review.content)).toEqual(content);
+      const pendingList = await aiConversations.listPendingTurnActions(location);
+      expect(JSON.stringify(pendingList)).not.toContain("x".repeat(1_000));
+      expect((await aiConversations.getPendingTurnAction(location))?.review).toEqual(compact);
+      const messages = await aiConversations.listMessages({ conversationId: source.id });
+      expect(JSON.stringify(messages)).not.toContain("x".repeat(1_000));
+      const [last] = await sql<{ seq: number }[]>`SELECT max(seq)::int AS seq FROM ai.messages WHERE conversation_id=${source.id}::uuid`;
+      const fork = await aiConversations.forkConversation({ sourceConversationId: source.id, ownerUserId: userId, throughSeq: last!.seq });
+      conversationIds.push(fork.id);
+      await sql`DELETE FROM ai.conversations WHERE id=${source.id}::uuid`;
+      expect(await readReviewContent({ ...location, conversationId: fork.id }, digest, userId)).toEqual(content);
+      await sql`UPDATE ai.conversations SET archived_at=now() WHERE id=${fork.id}::uuid`;
+      expect(await readReviewContent({ ...location, conversationId: fork.id }, digest, userId)).toBeNull();
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+      await sql`DELETE FROM auth.users WHERE id=${strangerId}::uuid`;
+    }
+  });
+
   test("a fork and a copy keep a call's stored review and settled check, so they read and project the same", async () => {
     const userId = await insertUser();
     const source = await aiConversations.createConversation({ ownerUserId: userId });

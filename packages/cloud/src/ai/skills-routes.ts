@@ -1,9 +1,13 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
+import { getApp } from "../_internal/registry";
 import { AuthenticatedPrincipalSchema } from "../contracts/shared";
 import { type AuthContext, auth, err, fail, ok, rateLimit, respond, v } from "../server";
+import { appAccessDeniedBody } from "../server/middleware/app-access";
 import { noTransform } from "../server/middleware/no-transform";
+import { appAccessAuthority, canUseApp } from "../services/app-access";
+import { recordAppAccessDenied } from "../services/app-access-metrics";
 import { localizedAppName } from "../ssr/runtime";
 import { aiProjects } from "./projects";
 import {
@@ -62,6 +66,20 @@ type AiSkillsRouteDependencies = {
   authenticate?: MiddlewareHandler<AuthContext>;
 };
 
+// Core exempts this mixed router from its method-independent public-path gate.
+// Only list/get are brokers; management retains Core entry and its user-backed policy.
+const requireCoreAccess: MiddlewareHandler<AuthContext> = async (c, next) => {
+  const core = await getApp("core").catch(() => null);
+  const allowed = core && (await canUseApp(appAccessAuthority(c), core).catch(() => false));
+  if (!allowed) {
+    if (core) recordAppAccessDenied(core.id);
+    c.header("Cache-Control", "private, no-store");
+    c.header("X-Cloud-App-Access-Denied", "core");
+    return c.json(appAccessDeniedBody(core ?? { id: "core", name: "Core" }), 403);
+  }
+  await next();
+};
+
 const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
   new Hono<AuthContext>()
     // The list combines skills from separate grants; the writer of one can rename it next to another skill's text.
@@ -86,13 +104,19 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
         const { q, name } = c.req.valid("query");
         const skills =
           name !== undefined
-            ? await aiSkills.list(subject, { name })
+            ? await aiSkills.list(subject, { name, authority: appAccessAuthority(c) })
             : q === undefined
-              ? await aiSkills.list(subject)
-              : (await aiSkills.search(subject, q)).skills;
+              ? await aiSkills.list(subject, { authority: appAccessAuthority(c) })
+              : (await aiSkills.search(subject, q, 30, { authority: appAccessAuthority(c) })).skills;
         return respond(c, ok({ skills: skills.map(publicSummary(c)) }));
       },
     )
+    .get("/:skillId", async (c) => {
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "read", appAccessAuthority(c));
+      return skill ? respond(c, ok({ skill: publicSkill(c, skill) })) : respond(c, fail(err.notFound("Skill")));
+    })
+    .use("*", requireCoreAccess)
+    .use("*", auth.requireUser())
     .get(
       "/project-links/:projectId",
       v(
@@ -108,7 +132,12 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
           query = c.req.valid("query");
         const project = await aiProjects.getByShortId(c.req.param("projectId")!, subject, query.available === "true" ? "admin" : "read");
         const result = project
-          ? await aiSkills.projectSkills(project.id, subject, { query: query.q, page: query.page, available: query.available === "true" })
+          ? await aiSkills.projectSkills(project.id, subject, {
+              query: query.q,
+              page: query.page,
+              available: query.available === "true",
+              authority: appAccessAuthority(c),
+            })
           : null;
         return result
           ? respond(c, ok({ ...result, items: result.items.map(publicSummary(c)) }))
@@ -117,8 +146,8 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
     )
     .get("/:skillId/projects", async (c) => {
       const subject = c.get("accessSubject") ?? null;
-      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, subject, "admin");
-      const projects = skill ? await aiSkills.linkedProjects(skill.id, subject) : null;
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, subject, "admin", appAccessAuthority(c));
+      const projects = skill ? await aiSkills.linkedProjects(skill.id, subject, appAccessAuthority(c)) : null;
       return projects
         ? respond(c, ok({ projects: projects.map((project) => ({ id: project.shortId, name: project.name })) }))
         : respond(c, fail(err.notFound("Skill")));
@@ -126,11 +155,11 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
     .put("/:skillId/projects/:projectId", v("json", z.object({ linked: z.boolean() }).strict()), async (c) => {
       const subject = c.get("accessSubject") ?? null;
       const [skill, project] = await Promise.all([
-        aiSkills.getByShortId(c.req.param("skillId")!, subject, "admin"),
+        aiSkills.getByShortId(c.req.param("skillId")!, subject, "admin", appAccessAuthority(c)),
         aiProjects.getByShortId(c.req.param("projectId")!, subject, "admin"),
       ]);
       const linked = c.req.valid("json").linked;
-      return skill && project && (await aiSkills.linkProject(skill.id, project.id, linked, subject))
+      return skill && project && (await aiSkills.linkProject(skill.id, project.id, linked, subject, appAccessAuthority(c)))
         ? respond(c, ok({ linked }))
         : respond(c, fail(err.notFound("Skill or Project")));
     })
@@ -138,22 +167,22 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
       const subject = c.get("accessSubject");
       if (!subject) return respond(c, fail(err.forbidden("Skills require an authenticated access subject.")));
       try {
-        return respond(c, ok({ skill: publicSkill(c, await aiSkills.create({ subject, ...c.req.valid("json") })) }), 201);
+        return respond(
+          c,
+          ok({ skill: publicSkill(c, await aiSkills.create({ subject, ...c.req.valid("json") }, appAccessAuthority(c))) }),
+          201,
+        );
       } catch (error) {
         if (isUniqueViolation(error)) return respond(c, fail(err.conflict("A skill with this name already exists.")));
         if (error instanceof AiSkillInputError) return respond(c, fail(err.badInput(error.message)));
         throw error;
       }
     })
-    .get("/:skillId", async (c) => {
-      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null);
-      return skill ? respond(c, ok({ skill: publicSkill(c, skill) })) : respond(c, fail(err.notFound("Skill")));
-    })
     .put("/:skillId", v("json", UpdateSkillSchema), async (c) => {
-      const existing = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "write");
+      const existing = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "write", appAccessAuthority(c));
       if (!existing) return respond(c, fail(err.notFound("Skill")));
       try {
-        const skill = await aiSkills.update(existing.id, c.get("accessSubject") ?? null, c.req.valid("json"));
+        const skill = await aiSkills.update(existing.id, c.get("accessSubject") ?? null, c.req.valid("json"), appAccessAuthority(c));
         return skill ? respond(c, ok({ skill: publicSkill(c, skill) })) : respond(c, fail(err.notFound("Skill")));
       } catch (error) {
         if (isUniqueViolation(error)) return respond(c, fail(err.conflict("A skill with this name already exists.")));
@@ -163,32 +192,41 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
       }
     })
     .delete("/:skillId", async (c) => {
-      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin");
-      return skill && (await aiSkills.delete(skill.id, c.get("accessSubject") ?? null))
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin", appAccessAuthority(c));
+      return skill && (await aiSkills.delete(skill.id, c.get("accessSubject") ?? null, appAccessAuthority(c)))
         ? respond(c, ok({ deleted: true }))
         : respond(c, fail(err.notFound("Skill")));
     })
     .put("/:skillId/enabled", dependencies.authenticate ?? auth.requireRole("authenticated"), v("json", SkillEnabledSchema), async (c) => {
       const subject = c.get("accessSubject") ?? null;
-      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, subject);
-      const enabled = skill ? await aiSkills.setEnabled(skill.id, subject, c.req.valid("json").enabled) : null;
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, subject, "read", appAccessAuthority(c));
+      const enabled = skill ? await aiSkills.setEnabled(skill.id, subject, c.req.valid("json").enabled, appAccessAuthority(c)) : null;
       return enabled === null ? respond(c, fail(err.notFound("Skill"))) : respond(c, ok({ enabled }));
     })
     .get("/:skillId/access", async (c) => {
-      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin");
-      const access = skill ? await aiSkills.listAccess(skill.id, c.get("accessSubject") ?? null) : null;
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin", appAccessAuthority(c));
+      const access = skill ? await aiSkills.listAccess(skill.id, c.get("accessSubject") ?? null, appAccessAuthority(c)) : null;
       return access ? respond(c, ok({ access })) : respond(c, fail(err.notFound("Skill")));
     })
     .post("/:skillId/access", v("json", SkillAccessSchema), async (c) => {
-      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin");
-      const access = skill ? await aiSkills.grantAccess(skill.id, c.get("accessSubject") ?? null, c.req.valid("json")) : null;
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin", appAccessAuthority(c));
+      const access = skill
+        ? await aiSkills.grantAccess(skill.id, c.get("accessSubject") ?? null, c.req.valid("json"), undefined, appAccessAuthority(c))
+        : null;
       return access ? respond(c, ok({ access }), 201) : respond(c, fail(err.notFound("Skill")));
     })
     .patch("/:skillId/access/:accessId", v("json", SkillAccessUpdateSchema), async (c) => {
-      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin");
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin", appAccessAuthority(c));
       try {
         return skill &&
-          (await aiSkills.updateAccess(skill.id, c.req.param("accessId")!, c.get("accessSubject") ?? null, c.req.valid("json").permission))
+          (await aiSkills.updateAccess(
+            skill.id,
+            c.req.param("accessId")!,
+            c.get("accessSubject") ?? null,
+            c.req.valid("json").permission,
+            undefined,
+            appAccessAuthority(c),
+          ))
           ? respond(c, ok({ updated: true }))
           : respond(c, fail(err.notFound("Access entry")));
       } catch (error) {
@@ -197,9 +235,16 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
       }
     })
     .delete("/:skillId/access/:accessId", async (c) => {
-      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin");
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin", appAccessAuthority(c));
       try {
-        return skill && (await aiSkills.revokeAccess(skill.id, c.req.param("accessId")!, c.get("accessSubject") ?? null))
+        return skill &&
+          (await aiSkills.revokeAccess(
+            skill.id,
+            c.req.param("accessId")!,
+            c.get("accessSubject") ?? null,
+            undefined,
+            appAccessAuthority(c),
+          ))
           ? respond(c, ok({ deleted: true }))
           : respond(c, fail(err.notFound("Access entry")));
       } catch (error) {

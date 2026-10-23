@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 import { listCapabilities } from "../_internal/registry";
 import { resolveAiChatRequestContext } from "../ai/request-context";
 import type { ApprovalListQuery, ApprovalPage } from "../contracts/approvals";
-import { CapabilityActionCallReviewSchema, capabilityActionPolicy } from "../contracts/capabilities";
+import { CapabilityActionReviewPresentationSchema, capabilityActionPolicy } from "../contracts/capabilities";
 import type { AuthContext } from "../server/middleware/auth";
 import { listPending, presentPendingApproval } from "../services/approvals/list";
 import { logger } from "../services/logging";
@@ -16,8 +16,8 @@ export const loadPendingApprovals = async <T extends AuthContext>(c: Context<T>,
   const apps = getLocalizedRuntimeContext(c).apps;
   const needsPolicy = page.items.some((row) => {
     if (row.storedReview && "sentence" in row.storedReview) return false;
-    const review = CapabilityActionCallReviewSchema.safeParse(row.details);
-    return review.success && !review.data.ask;
+    const review = CapabilityActionReviewPresentationSchema.safeParse(row.details);
+    return review.success && "sentence" in review.data && !review.data.ask;
   });
   const capabilities = needsPolicy
     ? await listCapabilities().catch((error: unknown) => {

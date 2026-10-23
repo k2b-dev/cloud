@@ -4,6 +4,7 @@ import {
   ConversationKeepInputSchema,
   ConversationKeepReleaseDataSchema,
   ConversationListInputSchema,
+  ConversationSearchInputSchema,
   DraftPatchInputSchema,
   MailboxBrowseDataSchema,
   MailboxListDataSchema,
@@ -49,4 +50,17 @@ describe("Mail agent contracts", () => {
     expect(MessageContentReadInputSchema.safeParse({ id: "MsH890", offset: -1 }).success).toBeFalse();
     expect(MessageContentReadInputSchema.safeParse({ id: "MsH890", length: 65537 }).success).toBeFalse();
   });
+});
+
+test("agent flag searches preserve their folder scope through Boolean expressions", () => {
+  for (const type of ["unread", "flagged"] as const) {
+    const expression = { type: "not" as const, expression: { type, folderId: "Fold01" } };
+    expect(ConversationSearchInputSchema.parse({ mailboxId: "MbA123", expression }).expression).toEqual(expression);
+    expect(
+      ConversationSearchInputSchema.safeParse({
+        mailboxId: "MbA123",
+        expression: { type, folderId: "11111111-1111-4111-8111-111111111111" },
+      }).success,
+    ).toBe(false);
+  }
 });

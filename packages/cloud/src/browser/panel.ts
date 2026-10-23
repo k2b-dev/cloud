@@ -1,4 +1,7 @@
 import type { PanelPageContext } from "../contracts/panel-context";
+
+export { onPanelBeforeLeave } from "./panel-leave";
+
 import {
   PAGE_CONTEXT_CHANGED,
   PAGE_CONTEXT_COLLECT,

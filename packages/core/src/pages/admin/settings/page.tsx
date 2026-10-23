@@ -134,13 +134,6 @@ const tabs = (t: ReturnType<typeof adminMessages.resolve>["t"], locale: string) 
       group: "gotenberg" as const,
     },
     {
-      id: "places",
-      title: t.placesSettings,
-      description: t.placesSettingsDescription,
-      icon: "ti ti-map-pin",
-      group: "geo" as const,
-    },
-    {
       id: "email-templates",
       title: t.emailTemplateSettings,
       description: t.emailTemplateSettingsDescription,
@@ -230,6 +223,8 @@ export default ssr<AuthContext>(async (c) => {
   const rawTab = c.req.query("tab");
   // SMTP delivery moved to sender profiles — keep old links working.
   if (rawTab === "mail") return c.redirect("/admin/outgoing-mail", 302);
+  // Places and maps has its own page that checks the key with the provider — keep old links working.
+  if (rawTab === "places") return c.redirect("/admin/places-and-maps", 302);
   // "ai" predates the split into the AI sidebar group — keep old links working.
   const legacyTab = rawTab === "ai" ? "ai-general" : rawTab;
   const tabId: TabId = isTabId(legacyTab, availableTabs) ? legacyTab : "general";

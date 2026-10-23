@@ -92,6 +92,7 @@ const data: MailboxPageData = {
   nextListCursor: null,
   listError: null,
   listTitle: "Needs action",
+  conversationRowState: null,
   detailMessages: [],
   conversationSummary: null,
   conversationDrafts: [],
@@ -422,7 +423,8 @@ describe("Mail workspace folder switches", () => {
       folderId: "Child1",
       listTitle: "Nested",
     });
-    const listHeading = () => dom.root.querySelector("[data-mail-list-heading]")!;
+    const listHeading = () => dom.root.querySelector("[data-mail-head-title]")!;
+    expect(dom.root.querySelector("[data-mail-list-heading]")?.classList.contains("sr-only")).toBe(true);
     const childRow = () => dom.root.querySelector('[role="treeitem"][data-k2b-nav-tree-id="Child1"]');
     const toggle = () =>
       dom.root.querySelector<HTMLElement>(
@@ -494,6 +496,7 @@ describe("Mail workspace folder switches", () => {
     await switchTo("folder=Filed1");
     assertList(`${path}?folder=Filed1`, "Filed");
     requests = [];
+    dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")?.click();
     const input = dom.root.querySelector<HTMLInputElement>('input[name="q"]')!;
     input.value = "invoice";
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -648,7 +651,7 @@ describe("Mail workspace folder switches", () => {
   test("changing the list mode through its control keeps the snapshot path", async () => {
     mount();
     await caughtUp();
-    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Choose list view"]')!.click();
+    dom.root.querySelector<HTMLButtonElement>('.k2b-app-workspace__head button[aria-label="Options for Support"]')!.click();
     await Bun.sleep(0);
     const item = [...dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
       (item) => item.textContent?.trim() === "Message view",

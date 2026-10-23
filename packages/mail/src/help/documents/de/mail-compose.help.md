@@ -3,7 +3,7 @@ id: mail-compose
 title: E-Mails verfassen und senden
 icon: ti ti-pencil
 description: Nachrichten verfassen, Entwürfe wiederherstellen, Vorlagen nutzen, Dateien anhängen und die Zustellung steuern.
-updated: 2026-10-19
+updated: 2026-10-20
 order: 30
 ---
 
@@ -26,6 +26,8 @@ Für eindeutige Empfänger kann Mail auch die passenden Kontakte anhängen, die 
 Der Assistant-Chat kopiert die Nachricht nicht in einen separaten Mail-Entwurf und erhält keinen zusätzlichen Zugriff auf das Postfach. Mail prüft deinen aktuellen Zugriff jedes Mal, wenn Assistant den Entwurf liest oder ändert. Assistant zeigt das Ändern oder Senden von E-Mails als Aktionsprüfung. Das Senden braucht weiterhin deine ausdrückliche Zustimmung und die normale letzte Prüfung von Mail. Um den aktuellen Stand im Editor direkt zu prüfen, kehre über den Entwurfslink zu Mail zurück.
 
 Wenn der Assistent diesen Entwurf senden möchte, zeigt eine Leiste über dem Entwurf die wartende Anfrage. Prüfe die Anfrage dort. Du kannst sie freigeben oder ablehnen, ohne zum Chat zurückzukehren.
+
+Die Frage zum Senden zeigt Absender, An, Cc und Bcc, Anhänge, Zeitpunkt und die Warnungen von Mail. Wähle **Vollständigen Vorschlag lesen** für die genaue vorgeschlagene Nachricht samt Signatur und Angaben zu erzeugten Anhängen. Nach dem Laden kannst du sie freigeben. Der Entwurfslink öffnet den aktuellen Entwurf, der sich inzwischen geändert haben kann. Ändert sich der Versandinhalt nach deiner Prüfung, stoppt Mail und reiht keine Nachricht ein: Öffne den Entwurf, prüfe ihn erneut und gib einen neuen Versuch frei. Mail wiederholt den Versuch nicht automatisch. Eine Signatur mit wechselnder Uhrzeit musst du gegebenenfalls vorher bearbeiten. Nach deiner Freigabe bestätigt „wird gesendet“ oder „geplant für“ den Auftrag, nicht die Zustellung.
 
 ## Cloud Mail für E-Mail-Links verwenden {icon="link"}
 
@@ -86,7 +88,7 @@ Ein vorübergehendes Verbindungsproblem zeigt Mail getrennt an und fordert dich 
 
 Entwürfe liegen in Cloud als gemeinsame Entwürfe.
 
-- **Ordner Entwürfe:** Der Ordner Entwürfe in der Seitenleiste listet alle gemeinsamen Entwürfe des Postfachs, die zuletzt bearbeiteten zuerst. Seine Zahl zählt sie. Wähle einen Entwurf, um ihn im Editor zu öffnen.
+- **Ordner Entwürfe:** Der Ordner Entwürfe in der Seitenleiste listet alle gemeinsamen Entwürfe des Postfachs, die zuletzt bearbeiteten zuerst. Seine Zahl zählt sie. Wähle einen Entwurf, um ihn im Editor zu öffnen. Die Zahl steht im Kopf des Arbeitsbereichs. Jede Zeile beginnt mit dem Betreff und zeigt Empfänger, eine Vorschau, Bearbeitungszeit und erstellende Person.
 - **Hinweis bei Antworten:** Eine Unterhaltung mit Entwürfen zeigt einen Hinweis an der Antwortaktion.
 - **CLI:** `cld mail draft list` listet diese Entwürfe, zusammen mit geplanten Entwürfen und Entwürfen, die gerade gesendet werden.
 - **Kopie beim Anbieter:** Erlaubt es der Anbieter, legt Mail von jedem Entwurf eine Kopie im Entwürfe-Ordner des Anbieters ab, sodass andere E-Mail-Programme ihn zeigen. Entwürfe, die ein anderes E-Mail-Programm dort speichert, erscheinen in Mail als gemeinsame Entwürfe.

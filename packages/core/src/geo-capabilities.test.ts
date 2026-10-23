@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
-import { type CapabilityExecutionContext, capabilityResultSchema, geoContract } from "@k2b/cloud/contracts";
+import { type CapabilityExecutionContext, capabilityResultSchema, geoContract, geoRouteContract } from "@k2b/cloud/contracts";
 import { coreGeo } from "@k2b/cloud/services";
 import { GeoError } from "@k2b/cloud/services/geo/errors";
 import { GEO_TEST_NOW, geoTestContext } from "@k2b/cloud/services/geo/geo.test-fixture";
@@ -20,9 +20,9 @@ const context: CapabilityExecutionContext = {
   user: null,
 };
 afterEach(() => mock.restore());
-test("Core registers all five queries with shared schemas and en/de presentation", () => {
+test("Core registers all geo queries with shared schemas and en/de presentation", () => {
   const manifest = compileCapabilityManifest("core", aiCapabilities);
-  for (const contract of Object.values(geoContract)) {
+  for (const contract of Object.values({ ...geoContract, ...geoRouteContract })) {
     const entry = manifest.queries.find((query) => query.localId === contract.id)!;
     expect(entry).toBeDefined();
     expect(entry.inputSchema).toEqual(expect.any(Object));
@@ -67,7 +67,42 @@ test("stable errors preserve structured details and localize only their message"
     "GEO_ADDRESS_NOT_FOUND",
     "GEO_ADDRESS_AMBIGUOUS",
     "GEO_PROVIDER_FAILED",
+    "GEO_NO_ROUTE",
+    "GEO_COST_OVERRUN",
   ] as const) {
     expect(geoCapabilityMessages("de")[code]).not.toBe(geoCapabilityMessages("en")[code]);
   }
+});
+
+test("routing queries dispatch through the same service context and structured result contracts", async () => {
+  const { savedRouteFixture } = await import("@k2b/cloud/services/geo/route.test-fixture");
+  const route = await savedRouteFixture();
+  const input = { plan: { stops: route.stops.map((stop) => ({ id: stop.id, point: stop.point })) } };
+  const calculate = spyOn(coreGeo, "calculateRoute").mockResolvedValue({ route });
+  const result = await aiCapabilities.queries["route.calculate"].run(input, context);
+  expect(calculate).toHaveBeenCalledWith(input, context);
+  expect(result).toEqual({ ok: true, data: { data: { route } } });
+  if (result.ok) capabilityResultSchema(geoRouteContract.calculateRoute.data).parse(result.data);
+  const summary = {
+    stopIds: route.stops.map((stop) => stop.id),
+    distanceMeters: route.distanceMeters,
+    durationSeconds: route.durationSeconds,
+  };
+  const data = { route, before: summary, after: summary, delta: { distanceMeters: 0, durationSeconds: 0 } };
+  const update = spyOn(coreGeo, "updateRoute").mockResolvedValue(data);
+  const change = { route, changes: { type: "move" as const, stopId: "B", toIndex: 1 } };
+  const updated = await aiCapabilities.queries["route.update"].run(change, context);
+  expect(update).toHaveBeenCalledWith(change, context);
+  if (updated.ok) capabilityResultSchema(geoRouteContract.updateRoute.data).parse(updated.data);
+  calculate.mockRejectedValue(
+    new GeoError("GEO_COST_OVERRUN", {
+      distanceAllowanceMeters: 500000,
+      actualDistanceMeters: 600000,
+      costs: { settledCredits: 2, unknownCredits: 0 },
+    }),
+  );
+  expect(await aiCapabilities.queries["route.calculate"].run(input, context)).toMatchObject({
+    ok: false,
+    error: { code: "GEO_COST_OVERRUN", details: { costs: { settledCredits: 2, unknownCredits: 0 } } },
+  });
 });

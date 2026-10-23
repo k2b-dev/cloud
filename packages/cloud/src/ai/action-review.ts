@@ -4,6 +4,7 @@ import type {
   CapabilityActionReceipt,
   CapabilityActionReview,
   CapabilityActionReviewData,
+  CapabilityReviewContentRef,
   CapabilitySemanticLink,
 } from "../contracts/capabilities";
 
@@ -32,7 +33,7 @@ export type AiLegacyActionReview = {
 };
 
 /** A new review, with `ask` filled from the declared policy when the call itself names no reason. */
-export type AiStoredActionReview = CapabilityActionCallReview | AiLegacyActionReview;
+export type AiStoredActionReview = (CapabilityActionCallReview & { contentRef?: CapabilityReviewContentRef }) | AiLegacyActionReview;
 
 export const isLegacyActionReview = (review: AiStoredActionReview): review is AiLegacyActionReview => "legacy" in review;
 

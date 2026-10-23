@@ -166,7 +166,10 @@ export function mailboxData(url: URL): MailboxPageData {
   const permission = variant === "assigned-only" ? "write" : variant;
   const search = resolveMailSearchRoute(url);
   const searching = Boolean(search.query || search.expression);
-  const folderId = searching ? null : url.searchParams.get("folder");
+  const folderId =
+    Object.hasOwn(viewCounts, url.searchParams.get("view") ?? "") || url.searchParams.has("savedView")
+      ? null
+      : url.searchParams.get("folder");
   const scheduledMode = !searching && url.searchParams.get("scheduled") === "1";
   const draftsMode = folderId === "Drafts1";
   const savedViewId = searching || folderId || scheduledMode ? null : url.searchParams.get("savedView");
@@ -190,7 +193,27 @@ export function mailboxData(url: URL): MailboxPageData {
     scheduledPage: scheduledMode ? { items: [], nextCursor: null, total: 0 } : null,
     scheduledError: null,
     draftsMode,
-    draftsPage: draftsMode ? { items: [], nextCursor: null, total: 0 } : null,
+    draftsPage: draftsMode
+      ? {
+          items: url.searchParams.has("drafts-fixture")
+            ? ["Quarterly figures", "Workshop follow-up"].map((subject, index) => ({
+                id: `Draft${index + 1}`,
+                conversationId: null,
+                intent: "new" as const,
+                subject,
+                to: [{ name: "Ada Example", address: "ada@example.test" }],
+                cc: [],
+                bcc: [],
+                bodyPreview: "Invented draft text for the compact mailbox view.",
+                createdByDisplayName: "Example writer",
+                // Keep relative wording stable while the browser clock advances through hydration.
+                updatedAt: "2026-10-13T04:00:00.000Z",
+              }))
+            : [],
+          nextCursor: url.searchParams.has("drafts-cursor") ? "next" : null,
+          total: url.searchParams.has("drafts-fixture") ? 2 : 0,
+        }
+      : null,
     draftsError: null,
     activeView,
     savedViewId,
@@ -247,9 +270,20 @@ export function mailboxData(url: URL): MailboxPageData {
                 kept: "Kept",
               }[activeView]
             : (folders.find((folder) => folder.id === folderId)?.name ?? "All mail"),
+    conversationRowState: null,
     detailMessages: selectedConversationId
       ? selectedConversationId === "Conv02"
-        ? longThread
+        ? longThread.map((message, index) =>
+            url.searchParams.has("long-subject") && index === longThread.length - 1
+              ? {
+                  ...message,
+                  plainText: Array.from(
+                    { length: 50 },
+                    (_, line) => `Delivery note ${line + 1}: Please check the revised exhibition schedule.`,
+                  ).join("\n\n"),
+                }
+              : message,
+          )
         : [
             {
               id: "Msg001",
@@ -314,7 +348,11 @@ export function mailboxData(url: URL): MailboxPageData {
       summary: null,
       drafts: null,
     },
-    selectedSubject: selectedConversationId ? "Example request 1" : "",
+    selectedSubject: url.searchParams.has("long-subject")
+      ? "Delivery confirmation for the autumn exhibition — review the revised schedule and delivery documents before Wednesday"
+      : selectedConversationId
+        ? "Example request 1"
+        : "",
     selectedReference: null,
   };
 }
@@ -367,7 +405,12 @@ export function mailboxList(url: URL): MailboxListView {
   };
 }
 
-export default function MailShellFixture(props: { source: string; locale?: "en" | "de"; theme: "light" | "dark" }) {
+export default function MailShellFixture(props: {
+  source: string;
+  locale?: "en" | "de";
+  theme: "light" | "dark";
+  workspaceCookieHeader?: string | null;
+}) {
   const url = new URL(props.source, "http://mail.example.test");
   const locale = props.locale ?? "en";
   const data = mailboxData(url);
@@ -402,7 +445,9 @@ export default function MailShellFixture(props: { source: string; locale?: "en" 
           dateConfig={{ locale, timeZone: "UTC" }}
           initialPreferences={{
             ...readMailWorkspacePreferences(""),
-            detailsOpen: url.searchParams.get("details") === "1",
+            detailsOpen: url.searchParams.has("persist-details")
+              ? readMailWorkspacePreferences(props.workspaceCookieHeader).detailsOpen
+              : url.searchParams.get("details") === "1",
             listCollapsed: url.searchParams.get("list") === "hidden",
             // A person's own toolbar (`?toolbar=reply,archive`), as the preference cookie stores it.
             ...(url.searchParams.has("toolbar")

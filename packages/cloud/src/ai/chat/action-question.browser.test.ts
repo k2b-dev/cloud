@@ -458,3 +458,57 @@ describe("server render", () => {
       }
     }, 60_000);
 });
+
+describe("complete review proposal", () => {
+  for (const view of VIEWS)
+    for (const theme of ["light", "dark"] as const) {
+      test(`requires an exact full read and recovers from reader failure (${view.name}, ${theme})`, async () => {
+        const { page, errors, close } = await open(view, "scenarios=mail&full=1&lang=en", theme);
+        try {
+          let reads = 0;
+          const body = `${"Complete proposal. ".repeat(4_000)}\u0000\u202e\ud800FINAL-END`;
+          await page.route("**/api/approvals/*/content?digest=*", async (route) => {
+            reads++;
+            await route.fulfill(
+              reads === 1
+                ? { status: 403, json: { message: "Unavailable" } }
+                : {
+                    json: {
+                      kind: "message",
+                      baseRevision: 7,
+                      from: { name: "Original actor", address: "sender@example.test" },
+                      to: [{ address: "recipient@example.test" }],
+                      subject: "Unsaved proposal",
+                      body,
+                      format: "plain",
+                      attachments: [{ name: "complete.pdf", size: 123 }],
+                    },
+                  },
+            );
+          });
+          const send = page.getByRole("button", { name: /^Send to / });
+          expect(await send.isDisabled()).toBe(true);
+          await page.getByRole("button", { name: "Read the complete proposal", exact: true }).click();
+          const dialog = page.getByRole("dialog");
+          await dialog.getByText("The complete proposal could not be loaded. Try again before approving.", { exact: true }).waitFor();
+          expect(await send.isDisabled()).toBe(true);
+          await dialog.getByRole("button", { name: "Try again", exact: true }).click();
+          await dialog.getByText("Unsaved proposal", { exact: true }).waitFor();
+          const rendered = await dialog.textContent();
+          expect(rendered).toContain("Based on revision 7");
+          expect(rendered).toContain("Complete proposal. ".repeat(4_000));
+          expect(rendered).toContain("⟦U+0000⟧⟦U+202E⟧⟦U+D800⟧FINAL-END");
+          expect(rendered).toContain("sender@example.test");
+          expect(rendered).toContain("complete.pdf");
+          expect(await dialog.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+          await dialog.getByRole("button", { name: "Close", exact: true }).click();
+          await dialog.waitFor({ state: "hidden" });
+          expect(await send.isEnabled()).toBe(true);
+          expect(reads).toBe(2);
+          expect(errors).toEqual([]);
+        } finally {
+          await close();
+        }
+      }, 30_000);
+    }
+});

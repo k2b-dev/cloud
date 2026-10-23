@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
 import { z } from "zod";
 import { aggregate, metricsSchema, staticSchema } from "../../../../scripts/perf-baseline/model";
+import { pageChangesSchema, renderPageChanges } from "./page-change-model";
 
 export const engines = ["chromium", "webkit"] as const;
 export type Engine = (typeof engines)[number];
@@ -75,6 +76,7 @@ export function parseBrowsers(value: string): Engine[] {
 }
 
 export function parseInteractions(value: string): InteractionId[] {
+  if (value === "none") return [];
   const list = z.array(z.enum(interactionIds)).min(1).parse(value.split(","));
   if (new Set(list).size !== list.length) throw new Error("--interactions contains duplicates");
   return list;
@@ -204,6 +206,7 @@ export const browserSectionSchema = z.object({
   pages: z.array(loadPageSchema),
   interactions: z.array(interactionResultSchema),
   errors: z.array(z.string()),
+  pageChanges: pageChangesSchema.nullable().optional(),
 });
 export type BrowserSection = z.infer<typeof browserSectionSchema>;
 
@@ -614,6 +617,7 @@ export function renderBrowserSummary(section: BrowserSection) {
     lines.push("");
   }
   for (const error of section.errors) lines.push(`- Browser error: ${cell(error)}`);
+  if (section.pageChanges) lines.push(...renderPageChanges(section.pageChanges));
   return lines;
 }
 
@@ -672,6 +676,14 @@ export function timeMetrics(result: {
           for (const key of ["totalMs", "busyMs", "scriptMs", "parseCompileMs", "islandRenderMs", "styleLayoutMs", "otherMs"] as const)
             index.set(`interactionTrace.${interaction.id}.${profile.browser}.${profile.profile}.${key}`, profile.trace[key]);
       }
+  for (const profile of result.browser?.pageChanges?.profiles ?? []) {
+    if (profile.status !== "ok" || !profile.samples.length) continue;
+    for (const key of ["clickToMainMs", "clickToFirstActionMs", "panelContextMs"] as const) {
+      const values = profile.samples.flatMap((sample) => (sample[key] === null ? [] : [sample[key]]));
+      if (values.length)
+        index.set(`pageChange.${profile.id}.${profile.browser}.${profile.profile}.${profile.cache}.${key}`, median(values));
+    }
+  }
   return index;
 }
 
@@ -679,6 +691,12 @@ export const bottleneckCandidateSchema = z.object({
   title: z.string().min(1),
   /** Repository-relative `path:line` of the code that owns the cost. */
   location: z.string(),
+  /** The complete source line, with surrounding whitespace removed. */
+  anchor: z
+    .string()
+    .refine((value) => !/[\r\n]/.test(value), "Anchor must be one non-empty source line")
+    .trim()
+    .min(1),
   /** A key of timeMetrics(result); its value from this run ranks the candidate. */
   metric: z.string().min(1),
   evidence: z.string().min(1),
@@ -688,7 +706,7 @@ export type BottleneckCandidate = z.infer<typeof bottleneckCandidateSchema>;
 
 /**
  * Validates candidates against the repository and this run, then ranks them by the
- * measured time of their metric. Refuses a candidate without a real file:line or
+ * measured time of their metric. Refuses a blank or changed source line, a candidate without a real file:line or
  * without a measured number, fewer than `top` candidates, and a list that mixes
  * server and browser metrics.
  */
@@ -702,9 +720,15 @@ export function rankBottlenecks(metrics: Map<string, number>, candidates: unknow
       throw new Error(`Bottleneck "${candidate.title}" location must be repository-relative`);
     const path = join(repository, file!);
     if (!existsSync(path)) throw new Error(`Bottleneck "${candidate.title}" location does not exist: ${file}`);
-    const lines = readFileSync(path, "utf8").split("\n").length;
-    if (Number(line) < 1 || Number(line) > lines)
-      throw new Error(`Bottleneck "${candidate.title}" line ${line} is outside ${file} (${lines} lines)`);
+    const lines = readFileSync(path, "utf8").split("\n");
+    if (Number(line) < 1 || Number(line) > lines.length)
+      throw new Error(`Bottleneck "${candidate.title}" line ${line} is outside ${file} (${lines.length} lines)`);
+    const source = lines[Number(line) - 1]!.trim();
+    if (!source) throw new Error(`Bottleneck "${candidate.title}" location points to a blank line: ${candidate.location}`);
+    if (source !== candidate.anchor)
+      throw new Error(
+        `Bottleneck "${candidate.title}" source anchor no longer matches ${candidate.location}; check the code and update the reference`,
+      );
     const value = metrics.get(candidate.metric);
     if (value === undefined || !Number.isFinite(value))
       throw new Error(`Bottleneck "${candidate.title}" has no measured number in this run for ${candidate.metric}`);

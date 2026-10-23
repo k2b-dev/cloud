@@ -162,6 +162,16 @@ describe("ACP mappings", () => {
     expect(approvalOptions(approval).map((o) => o.optionId)).toEqual(["once", "chat", "reject"]);
     expect(approvalOptions({ ...approval, allowChat: false }).map((o) => o.optionId)).toEqual(["once", "reject"]);
     expect(approvalOptions({ ...approval, website: "https://example.test" }).map((o) => o.optionId)).toEqual(["once", "reject"]);
+    const full = {
+      ...approval,
+      review: {
+        locale: "en",
+        sentence: { action: "Write", running: "Writing", done: "Wrote", confirm: "Write", decline: "Keep" },
+        slots: {},
+        contentRef: { href: "/api/approvals/11111111-1111-4111-8111-111111111111/content", digest: "a".repeat(64) },
+      },
+    };
+    expect(approvalOptions(full).map((option) => option.optionId)).toEqual(["cloud", "reject"]);
     expect(approvalOptions({ ...approval, allowChat: false, allowAlways: false })).toEqual([
       { optionId: "cloud", name: "Confirm in Cloud", kind: "allow_once" },
       { optionId: "reject", name: "Reject", kind: "reject_once" },

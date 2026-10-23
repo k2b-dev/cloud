@@ -83,6 +83,7 @@ const data: MailboxPageData = {
   nextListCursor: null,
   listError: null,
   listTitle: "Needs action",
+  conversationRowState: null,
   detailMessages: [],
   conversationSummary: null,
   conversationDrafts: [],
@@ -307,6 +308,7 @@ describe("Mail workspace search return", () => {
   };
   const input = () => dom.root.querySelector<HTMLInputElement>('input[name="q"]')!;
   const type = (value: string) => {
+    if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
     input().value = value;
     input().dispatchEvent(new Event("input", { bubbles: true }));
   };
@@ -327,7 +329,7 @@ describe("Mail workspace search return", () => {
     expect(title()).toBe(expectedTitle);
   };
   const clickLink = async (query: string) => {
-    const href = `${path}?${query}`;
+    const href = `${path}${query ? `?${query}` : ""}`;
     if (!dom.root.querySelector(`a[href="${href}"]`)) dom.root.querySelector<HTMLButtonElement>('button[aria-label="More views"]')!.click();
     dom.document.querySelector<HTMLAnchorElement>(`a[href="${href}"]`)!.click();
     await settle();
@@ -339,21 +341,21 @@ describe("Mail workspace search return", () => {
     expect(dom.root.querySelector('[data-conversation-id="page-two"]')).not.toBeNull();
   };
 
-  for (const action of ["Reset", "view tab"]) {
-    test(`head ${action} cancels a pending quick search before a slow navigation`, async () => {
+  for (const action of ["Reset", "sidebar folder"]) {
+    test(`${action} cancels a pending quick search before a slow navigation`, async () => {
       jest.useFakeTimers();
       setSystemTime(new Date(now));
       mount("q=old");
       const response = Promise.withResolvers<Response>();
       heldNavigationResponse = response.promise;
-      const target = action === "Reset" ? path : `${path}?view=needs_action`;
+      const target = action === "Reset" ? path : `${path}?folder=Inbox1`;
       const head = dom.root.querySelector(".k2b-app-workspace__head")!;
       type("new");
       jest.advanceTimersByTime(100);
       if (action === "Reset") {
-        [...head.querySelectorAll<HTMLAnchorElement>("a")].find((link) => link.textContent?.trim() === "Reset")!.click();
+        [...head.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Reset")!.click();
       } else {
-        head.querySelector<HTMLAnchorElement>(`a[href="${target}"]`)!.click();
+        dom.root.querySelector<HTMLAnchorElement>(`a[href="${target}"]`)!.click();
       }
       const flush = async () => {
         for (let turn = 0; turn < 40; turn++) await Promise.resolve();
@@ -367,8 +369,8 @@ describe("Mail workspace search return", () => {
       expect(location.pathname + location.search).toBe(target);
       expect(workspaceRequests).toEqual([target]);
       expect(new URL(location.href).searchParams.has("q")).toBe(false);
-      expect(input().value).toBe("");
-      expect(title()).toBe(action === "Reset" ? "All mail" : "Needs action");
+      expect(input()?.value ?? "").toBe("");
+      expect(title()).toBe(action === "Reset" ? "All mail" : "Inbox");
     });
   }
 
@@ -389,7 +391,7 @@ describe("Mail workspace search return", () => {
       response.resolve(Response.json(snapshotFor(workspaceRequests[0]!)));
       await settle();
       assertRoute("view=needs_action&conversation=one", "Needs action");
-      expect(input().value).toBe("");
+      expect(input()?.value ?? "").toBe("");
       expect(history.length).toBe(historyLength);
       expect(dom.root.querySelector("[data-mail-reader-heading]")?.textContent).toBe("one");
     });
@@ -404,7 +406,7 @@ describe("Mail workspace search return", () => {
       await Bun.sleep(380);
       expect(location.pathname + location.search).toBe(`${path}?${tagQuery}`);
       expect(workspaceRequests).toEqual([]);
-      expect(input().value).toBe("");
+      expect(input()?.value ?? "").toBe("");
       expect(title()).toBe("Tagged mail");
     });
   }
@@ -418,7 +420,7 @@ describe("Mail workspace search return", () => {
       else input().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
       await settle();
       assertRoute("view=needs_action&conversation=one", "Needs action");
-      expect(input().value).toBe("");
+      expect(input()?.value ?? "").toBe("");
       expect(dom.root.querySelector("[data-mail-reader-heading]")?.textContent).toBe("one");
     });
   }
@@ -446,7 +448,7 @@ describe("Mail workspace search return", () => {
     const last = new URL(workspaceRequests.at(-1)!, "http://localhost");
     expect(last.pathname + last.search).toBe(`${path}?scheduled=1`);
     expect(dom.root.querySelector("[data-mail-conversation-list]")).toBeNull();
-    expect(dom.root.querySelector("section > header h1")?.textContent).toBe("Scheduled");
+    expect(dom.root.querySelector("section > h1")?.textContent).toBe("Scheduled");
   });
 
   test("structured search records Needs action and builder clear restores it", async () => {
@@ -456,11 +458,13 @@ describe("Mail workspace search return", () => {
       sort: "newest" as const,
     };
     builderResult = { action: "apply", state, serialized: JSON.stringify(state) };
+    if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
     await settle();
     expect(new URL(location.href).searchParams.get("searchFrom")).toBe("view=needs_action&conversation=one");
     expect(title()).toBe("Search results");
     builderResult = { action: "clear" };
+    if (!input()) dom.root.querySelector<HTMLButtonElement>("[data-mail-search-trigger]")!.click();
     dom.root.querySelector<HTMLButtonElement>('button[aria-label="Search filters"]')!.click();
     await settle();
     assertRoute("view=needs_action&conversation=one", "Needs action");
@@ -574,14 +578,14 @@ describe("Mail workspace search return", () => {
     expect(workspaceRequests).toEqual([`${path}?view=needs_action`]);
     expect(listRequests).toEqual([`${path}?view=needs_action&cursor=needs-action-next`]);
     scroller().scrollTop = 35;
-    await clickLink("view=done");
-    assertRoute("view=done", "Done");
+    await clickLink("folder=Inbox1");
+    assertRoute("folder=Inbox1", "Inbox");
     expect(scroller().scrollTop).toBe(35);
     response.resolve(Response.json(snapshotFor(`${path}?view=needs_action&cursor=needs-action-next`)));
     await settle();
-    expect(workspaceRequests).toEqual([`${path}?view=needs_action`, `${path}?view=done`]);
+    expect(workspaceRequests).toEqual([`${path}?view=needs_action`, `${path}?folder=Inbox1`]);
     expect(listRequests).toEqual([`${path}?view=needs_action&cursor=needs-action-next`]);
-    expect(title()).toBe("Done");
+    expect(title()).toBe("Inbox");
     expect(dom.root.querySelector('[data-conversation-id="page-two"]')).toBeNull();
     expect(scroller().scrollTop).toBe(35);
   });
@@ -591,9 +595,10 @@ describe("Mail workspace search return", () => {
     scroller().scrollTop = 480;
     await search();
     scroller().scrollTop = 20;
-    await clickLink("view=done");
-    assertRoute("view=done", "Done");
+    await clickLink("folder=Inbox1");
+    assertRoute("folder=Inbox1", "Inbox");
     scroller().scrollTop = 35;
+    await clickLink("");
     await clickLink("view=needs_action");
     assertRoute("view=needs_action", "Needs action");
     expect(scroller().scrollTop).toBe(35);
@@ -603,8 +608,8 @@ describe("Mail workspace search return", () => {
     mount();
     scroller().scrollTop = 480;
     await search();
-    await clickLink("view=done");
-    assertRoute("view=done", "Done");
+    await clickLink("folder=Inbox1");
+    assertRoute("folder=Inbox1", "Inbox");
     scroller().scrollTop = 120;
     history.back();
     await settle();

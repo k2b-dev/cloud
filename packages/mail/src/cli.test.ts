@@ -2970,7 +2970,13 @@ const composeServer = (bodies: Array<{ path: string; body: unknown }>, draftOver
         draftOverrides.subject === "Attachment"
           ? [{ id: "missing_attachment", title: "Attachment may be missing", description: "No attachment is included." }]
           : [];
-      return api({ draftId: DRAFT_ID, revision: draftOverrides.revision ?? 1, fingerprint: "b".repeat(64), warnings });
+      return api({
+        draftId: DRAFT_ID,
+        revision: draftOverrides.revision ?? 1,
+        fingerprint: "b".repeat(64),
+        contentHash: "c".repeat(64),
+        warnings,
+      });
     }
     if (request.method === "POST" && url.pathname === `${root}/commands`) {
       bodies.push({ path: url.pathname, body: await request.json() });
@@ -3024,6 +3030,7 @@ test("reply drafts from the latest message with the default identity, and send s
     kind: "send",
     draftId: DRAFT_ID,
     expectedDraftRevision: 1,
+    expectedContentHash: "c".repeat(64),
     senderIdentityId: IDENTITY_ID,
     undoSeconds: 0,
   });
@@ -3083,6 +3090,7 @@ test("send requires explicit approval for the exact safety review", async () => 
   expect(approved.exitCode, approved.stderr).toBe(0);
   expect(bodies[0]!.body).toMatchObject({
     expectedDraftRevision: 3,
+    expectedContentHash: "c".repeat(64),
     safetyApproval: { revision: 3, fingerprint: "b".repeat(64), warningIds: ["missing_attachment"] },
   });
 });
@@ -3711,7 +3719,9 @@ test("admin contact-directory commands show, validate through the server, reset,
     if (request.method === "PUT") {
       const body = await request.json();
       puts.push(body);
-      return body.resolve === "customer.nope" ? api(invalid, { status: 400 }) : api(body);
+      return body.resolve === "customer.nope"
+        ? api(invalid, { status: 400 })
+        : api({ ...(body.appId === "contacts" ? contactsDefaults : crmMapping), ...body });
     }
     return api({ message: "unexpected" }, { status: 500 });
   });
@@ -3728,6 +3738,7 @@ test("admin contact-directory commands show, validate through the server, reset,
     usesDefaults: true,
     catalogAvailable: true,
     issues: [],
+    unreadable: {},
   });
   expect(shownText.exitCode, shownText.stderr).toBe(0);
   expect(shownText.stdout).toContain("App: Contacts (contacts); defaults");
@@ -3781,7 +3792,7 @@ test("admin contact-directory commands show, validate through the server, reset,
     crmMapping,
     { ...crmMapping, resolve: "customer.nope" },
     { ...crmMapping, resolve: "customer.nope" },
-    { ...contactsDefaults, listWritableBooks: "", create: "" },
+    { appId: "contacts", listWritableBooks: "", create: "" },
     contactsDefaults,
   ]);
 }, 60_000);

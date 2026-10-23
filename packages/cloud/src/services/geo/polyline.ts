@@ -142,7 +142,7 @@ const reduceRadialDistance = (points: readonly GeoPoint[], tolerance: number): G
   return line;
 };
 /** Iterative Douglas–Peucker: no recursion depth depends on untrusted line length. */
-const simplify = (points: readonly GeoPoint[], tolerance: number): GeoPoint[] => {
+const simplify = (points: readonly GeoPoint[], tolerance: number, pointLimit: number): GeoPoint[] => {
   const keep = new Set([0, points.length - 1]);
   const stack: Array<[number, number]> = [[0, points.length - 1]];
   while (stack.length) {
@@ -160,25 +160,25 @@ const simplify = (points: readonly GeoPoint[], tolerance: number): GeoPoint[] =>
     if (furthest >= 0) {
       keep.add(furthest);
       // This tolerance already cannot fit: stop work and try the next tolerance.
-      if (keep.size > 2000) return [...points];
+      if (keep.size > pointLimit) return [...points];
       stack.push([start, furthest], [furthest, end]);
     }
   }
   return [...keep].sort((a, b) => a - b).map((index) => points[index]!);
 };
-export const simplifyGeoLine = (points: readonly GeoPoint[]) => {
-  let toleranceMeters = 0,
+export const simplifyGeoLine = (points: readonly GeoPoint[], minimumToleranceMeters = 0, pointLimit = 2000) => {
+  let toleranceMeters = minimumToleranceMeters,
     reduced = [...points];
   // Bound quadratic Douglas–Peucker work independently of the decoded input size.
-  while (reduced.length > 4000) {
+  while (reduced.length > pointLimit * 2) {
     toleranceMeters = toleranceMeters ? toleranceMeters * 2 : 1;
     reduced = reduceRadialDistance(points, toleranceMeters);
   }
-  let line = reduced;
-  while (line.length > 2000) {
+  let line = minimumToleranceMeters ? simplify(reduced, toleranceMeters, pointLimit) : reduced;
+  while (line.length > pointLimit) {
     toleranceMeters ||= 1;
-    line = simplify(reduced, toleranceMeters);
-    if (line.length > 2000) toleranceMeters *= 2;
+    line = simplify(reduced, toleranceMeters, pointLimit);
+    if (line.length > pointLimit) toleranceMeters *= 2;
   }
   return { line, toleranceMeters };
 };

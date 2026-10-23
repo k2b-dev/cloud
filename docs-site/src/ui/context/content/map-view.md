@@ -229,8 +229,10 @@ the pins stay where the server put them.
 | `no-webgl` | The browser has no WebGL 2, which MapLibre 6 needs: pins remain with a capability message, and MapLibre is never downloaded. |
 | `empty` | The host's `empty` content; MapLibre never loads. |
 
-The root's `data-state` exposes these states. Image tile errors after the map
-has loaded leave the ready map in place. All states keep the requested height.
+The root's `data-state` and optional `onStateChange` callback expose these
+states. Failed tiles or glyphs also enter `error`, retaining pins and the retry
+action; the map stops further resource requests until that action. All states
+keep the requested height.
 
 ## Theme and appearance
 

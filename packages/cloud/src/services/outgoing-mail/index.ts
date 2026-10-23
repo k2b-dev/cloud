@@ -1,7 +1,10 @@
 import { fail, ok, type Result } from "@k2b/stdlib";
+import { z } from "zod";
 import { getProcessApplicationId, getProcessPlatformPermissions } from "../../_internal/process-identity";
 import {
   MailBatchSchema,
+  type MailContent,
+  type MailContentContext,
   type MailFilter,
   MailFilterSchema,
   type MailMessage,
@@ -13,6 +16,7 @@ import {
   type MailRecord,
   type MailServiceError,
 } from "../../contracts/outgoing-mail";
+import { ServiceAccountSchema, UserSchema } from "../../contracts/shared";
 import { cancelMailStreams } from "./attachments";
 import { enqueueMail } from "./enqueue";
 import { outgoingMailMessages, recordMailBatch, recordMailSend } from "./messages";
@@ -42,7 +46,57 @@ const failure = (error: unknown): MailServiceError => {
     ...("requested" in error && typeof error.requested === "number" ? { requested: error.requested } : {}),
   };
 };
+// Runtime validation protects the transport boundary; authentication is owned by the caller's
+// trusted server context. Unknown actor fields never reach the read audit.
+const delegation = z.object({
+  kind: z.literal("invocation"),
+  callingAppId: z.string().min(1),
+  credentialKind: z.enum(["session", "oauth", "api_key", "mandate"]),
+  invocationId: z.string().min(1),
+  requestId: z.string().nullable().optional(),
+  mandateId: z.string().optional(),
+  mandateRevision: z.int().positive().optional(),
+  workloadType: z.string().optional(),
+  workloadId: z.string().optional(),
+});
+const contentContext = z.object({
+  actor: z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("user"),
+      user: UserSchema.refine((user) => z.uuid().safeParse(user.id).success && !!user.uid),
+      delegation: delegation.optional(),
+    }),
+    z.object({
+      kind: z.literal("service_account"),
+      serviceAccount: ServiceAccountSchema.refine((account) => account.status === "active"),
+      delegatedUser: UserSchema.nullable(),
+      scopes: z.array(z.string()),
+      delegation: delegation.optional(),
+    }),
+  ]),
+  requestId: z.string().optional(),
+});
 export const mail = {
+  async content(id: string, context: MailContentContext): Promise<Result<MailContent, MailServiceError>> {
+    const caller = identity(true);
+    if (!caller.ok) return caller;
+    const parsedId = z.uuid().safeParse(id);
+    const parsedContext = contentContext.safeParse(context);
+    if (!parsedId.success || !parsedContext.success)
+      return fail({ code: "bad_input", message: "Provide a valid mail ID and authenticated actor context.", status: 400 });
+    try {
+      return ok(
+        await outgoingMailMessages.appContent(
+          parsedId.data,
+          caller.data,
+          getProcessPlatformPermissions().includes("mail:read"),
+          parsedContext.data,
+        ),
+      );
+    } catch (error) {
+      return fail(failure(error));
+    }
+  },
   async readableApps(): Promise<Result<string[], MailServiceError>> {
     const caller = identity(true);
     if (!caller.ok) return caller;
