@@ -80,6 +80,56 @@ suite("Files machine storage through actual API tokens", () => {
       idempotencyKey: Bun.randomUUIDv7(),
     };
   }
+  async function revokedPublication(share: { id: string; url: string }, directory: string, revoke: () => Promise<unknown>) {
+    const racingToken = new URL(share.url).pathname.split("/").at(-1)!;
+    const racingUpload = await service.publicInboxUpload(racingToken, {
+      name: "revoked-publication.txt",
+      size: 3,
+      idempotencyKey: Bun.randomUUIDv7(),
+    });
+    const racingPath = new URL(racingUpload.url!).pathname.replace("/share/filesv2", "");
+    expect((await publicApi.request(`${racingPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
+    const reservation = await uploads.getForShare(racingUpload.id, share.id);
+    if (!reservation?.filegate_session_id) throw new Error("Missing Filegate session receipt");
+    const sessionId = reservation.filegate_session_id;
+    let inspected = 0;
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const originalSession = FilesRoot.prototype.session;
+    const inspection = spyOn(FilesRoot.prototype, "session").mockImplementation(async function (this: FilesRoot, ...args) {
+      const session = await originalSession.apply(this, args);
+      // First inspection reconciles the receipt; the second precedes publication.
+      if (args[0] === sessionId && ++inspected === 2) {
+        entered.resolve();
+        await release.promise;
+      }
+      return session;
+    });
+    const committing = service.publicInboxCommit(racingToken, racingUpload.id).then(
+      (value) => ({ value, error: null }),
+      (error) => ({ value: null, error }),
+    );
+    try {
+      await Promise.race([
+        entered.promise,
+        committing.then(() => {
+          throw new Error("Commit finished before the inspection barrier");
+        }),
+      ]);
+      await revoke();
+      release.resolve();
+      expect((await committing).error).toMatchObject({ status: 404 });
+      expect((await uploads.getForShare(racingUpload.id, share.id))?.state).toBe("open");
+      await expect(service.publicInboxCommit(racingToken, racingUpload.id)).rejects.toMatchObject({ status: 404 });
+      await expect(client.root("cloud").stat(`${directory}/revoked-publication.txt`)).rejects.toMatchObject({
+        status: 404,
+      });
+    } finally {
+      release.resolve();
+      await committing;
+      inspection.mockRestore();
+    }
+  }
   beforeAll(async () => {
     await assertPrivateDatabase();
     // Use real Core schemas and public services; no stand-in authentication or grant resolver.
@@ -280,54 +330,9 @@ suite("Files machine storage through actual API tokens", () => {
           expiresIn: "1d",
         }),
       );
-      const racingToken = new URL(racingInbox.url).pathname.split("/").at(-1)!;
-      const racingUpload = await service.publicInboxUpload(racingToken, {
-        name: "revoked-publication.txt",
-        size: 3,
-        idempotencyKey: Bun.randomUUIDv7(),
-      });
-      const racingPath = new URL(racingUpload.url!).pathname.replace("/share/filesv2", "");
-      expect((await publicApi.request(`${racingPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
-      const reservation = await uploads.getForShare(racingUpload.id, racingInbox.id);
-      let inspected = 0;
-      const entered = Promise.withResolvers<void>();
-      const release = Promise.withResolvers<void>();
-      const originalSession = FilesRoot.prototype.session;
-      const inspection = spyOn(FilesRoot.prototype, "session").mockImplementation(async function (this: FilesRoot, ...args) {
-        const session = await originalSession.apply(this, args);
-        // First inspection reconciles the receipt; the second precedes publication.
-        if (args[0] === reservation!.filegate_session_id && ++inspected === 2) {
-          entered.resolve();
-          await release.promise;
-        }
-        return session;
-      });
-      const committing = service.publicInboxCommit(racingToken, racingUpload.id).then(
-        (value) => ({ value, error: null }),
-        (error) => ({ value: null, error }),
+      await revokedPublication(racingInbox, `${prefix}/users/machine-${account.id}/allowed`, () =>
+        request(credential.token, `/shares/${racingInbox.id}/revoke`, "POST", {}).then(data),
       );
-      try {
-        await Promise.race([
-          entered.promise,
-          committing.then(() => {
-            throw new Error("Commit finished before the inspection barrier");
-          }),
-        ]);
-        await data(await request(credential.token, `/shares/${racingInbox.id}/revoke`, "POST", {}));
-        release.resolve();
-        expect((await committing).error).toMatchObject({ status: 404 });
-        expect((await uploads.getForShare(racingUpload.id, racingInbox.id))?.state).toBe("open");
-        await expect(service.publicInboxCommit(racingToken, racingUpload.id)).rejects.toMatchObject({ status: 404 });
-        await expect(
-          client.root("cloud").stat(`${prefix}/users/machine-${account.id}/allowed/revoked-publication.txt`),
-        ).rejects.toMatchObject({
-          status: 404,
-        });
-      } finally {
-        release.resolve();
-        await committing;
-        inspection.mockRestore();
-      }
       const pending = await data<{ id: string; url: string }>(
         await request(credential.token, `${base}/uploads`, "POST", {
           idempotencyKey: Bun.randomUUIDv7(),
@@ -529,6 +534,43 @@ suite("Files machine storage through actual API tokens", () => {
       });
     }, 60000);
   }
+  for (const delegated of [false, true]) {
+    test(`${delegated ? "personal delegated" : "human"}: publication guard and owner cleanup survive storage grant removal`, async () => {
+      const owner = await serviceAccounts.createStandalone({ name: "Human share storage", kind: "standalone", createdBy: admin.user.id });
+      if (!owner.ok) throw new Error(owner.error.code);
+      const storage = await service.createMachineStorage(call(), { ownerId: owner.data.id, area: "cloud" });
+      const grant = await service.grantStorage(call(), storage.id, {
+        path: "",
+        principal: { type: "user", userId: admin.user.id },
+        permission: "admin",
+      });
+      let personal: string | null = null;
+      if (delegated) {
+        const account = await serviceAccounts.createUserDelegated({ name: "Share cleanup", delegatedUserId: admin.user.id });
+        if (!account.ok) throw new Error(account.error.code);
+        const credential = await serviceAccountCredentials.createApiToken({
+          serviceAccountId: account.data.id,
+          name: "Personal share cleanup",
+          scopes: [],
+        });
+        if (!credential.ok) throw new Error(credential.error.code);
+        personal = credential.data.token;
+      }
+      const create = async () => {
+        const input = { kind: "inbox" as const, title: "Human publication fixture", folder: "", expiresIn: "1d" as const };
+        return personal
+          ? data<{ id: string; url: string }>(await request(personal, `/bases/${storage.baseId}/shares`, "POST", input))
+          : service.createShare(call(), { ...input, baseId: storage.baseId });
+      };
+      const revoke = async (id: string) =>
+        personal ? data(await request(personal, `/shares/${id}/revoke`, "POST", {})) : service.revokeShare(call(), { id });
+      const racing = await create();
+      await revokedPublication(racing, `${prefix}/users/machine-${owner.data.id}`, () => revoke(racing.id));
+      const cleanup = await create();
+      await service.revokeStorage(call(), storage.id, grant.id);
+      await revoke(cleanup.id);
+    }, 60000);
+  }
   for (const kind of ["standalone", "agent"] as const) {
     test(`${kind}: signed OAuth authority survives in transfers and editors only while its client is live`, async () => {
       const created = await serviceAccounts.createStandalone({ name: `OAuth Files ${kind}`, kind, createdBy: admin.user.id });
@@ -582,14 +624,31 @@ suite("Files machine storage through actual API tokens", () => {
         scopes: ["admin"],
       });
       expect((await service.editorFileInfo(editor.token, ref)).UserCanWrite).toBe(true);
+      expect(await service.editorSave(editor.token, ref, { timestamp: null, read: async () => new Blob(["abc"]) })).toHaveProperty(
+        "modified",
+      );
       const readEditor = await data<OfficeEditorLaunch>(await request(readBearer, `${base}/editor`, "POST", { path: "oauth.odt" }));
       expect((await service.editorFileInfo(readEditor.token, ref)).UserCanWrite).toBe(false);
+      await expect(
+        service.editorSave(readEditor.token, ref, { timestamp: null, read: async () => new Blob(["denied"]) }),
+      ).rejects.toMatchObject({ status: 403 });
       await denied(await request(readBearer, `${base}/directories`, "POST", { path: "scope-denied" }));
       await denied(await request(await sign("admin", Math.floor(Date.now() / 1000) - 1), `${base}/entries`));
+      const originalTime = Date.now();
+      const shortBearer = await sign("read", Math.floor(originalTime / 1000) + 1);
+      const shortTransfer = await data<{ url: string }>(await request(shortBearer, `${base}/download`, "POST", { path: "oauth.odt" }));
+      const shortEditor = await data<OfficeEditorLaunch>(await request(shortBearer, `${base}/editor`, "POST", { path: "oauth.odt" }));
+      try {
+        setSystemTime(originalTime + 2000);
+        await denied(await publicApi.request(new URL(shortTransfer.url).pathname.replace("/share/filesv2", "")));
+        await expect(service.editorFileInfo(shortEditor.token, ref)).rejects.toMatchObject({ status: 403 });
+      } finally {
+        setSystemTime(originalTime);
+      }
       // Only safe identity references are retained; upstream lease material stays encrypted.
       const [ticket] = await sql<
         { oauth_client_id: string; payload: string; scopes: string[] }[]
-      >`SELECT oauth_client_id,payload,scopes FROM filesv2.transfer_tickets WHERE base_id=${storage.id}::uuid AND permission='read' ORDER BY expires_at DESC LIMIT 1`;
+      >`SELECT oauth_client_id,payload,scopes FROM filesv2.transfer_tickets WHERE base_id=${storage.id}::uuid AND permission='read' AND scopes=ARRAY['admin']::text[] ORDER BY expires_at DESC LIMIT 1`;
       expect(ticket?.oauth_client_id).toBe(clientId);
       expect(ticket?.scopes).toEqual(["admin"]);
       expect(JSON.stringify(ticket)).not.toContain(bearer);
@@ -626,6 +685,10 @@ suite("Files machine storage through actual API tokens", () => {
       await denied(await publicApi.request(transferPath));
       await denied(await publicApi.request(`${uploadPath}?segment=0`, { method: "PUT", body: "abc" }));
       await expect(service.editorFileInfo(editor.token, ref)).rejects.toMatchObject({ status: 403 });
+      await expect(service.editorContent(editor.token, ref)).rejects.toMatchObject({ status: 403 });
+      await expect(
+        service.editorSave(editor.token, ref, { timestamp: null, read: async () => new Blob(["denied"]) }),
+      ).rejects.toMatchObject({ status: 403 });
       await expect(service.editorFileInfo(readEditor.token, ref)).rejects.toMatchObject({ status: 403 });
     }, 60000);
   }

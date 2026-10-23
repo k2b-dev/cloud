@@ -62,6 +62,11 @@ Use the returned `baseId` with the existing Files API, file providers and
 capabilities. Template permissions are independent: a machine needs a template
 read grant and a destination storage write grant to create a file from a template.
 
+Share owners can revoke their own links after their storage grant is removed.
+For a standalone service account or agent, revocation still requires an
+administration-scoped credential. A read or write credential cannot administer
+links. Human and personal delegated callers keep their owner cleanup access.
+
 ## Transfers and revocation
 
 Transfers from machine storage return expiring Cloud URLs. Each download, archive request,
@@ -98,8 +103,3 @@ FreeIPA access.
 Files records the acting machine, storage binding and request ID for changes.
 Authorization audit entries use a path hash and depth. File contents and transfer
 bearer URLs do not belong in audit metadata.
-
-Share owners can revoke their own links after their storage grant is removed.
-For a standalone service account or agent, revocation still requires an
-administration-scoped credential. A read or write credential cannot administer
-links. Human and personal delegated callers keep their owner cleanup access.
