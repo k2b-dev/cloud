@@ -412,19 +412,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       setListRetry(() => () => void changeList(next));
     }
   };
-  const refreshList = async (path?: string) => {
-    const live = store;
-    if (!live) return;
+  const refreshList = async (path = location.pathname + location.search) => {
+    if (!store) return;
     try {
-      if (path) {
-        if ((await applyListUrl(new URL(path, location.href), true)) === null) return;
-      } else await loadList(() => live.showArchive(archived(), filter() === "unread", [...retainedUnread]));
+      if ((await applyListUrl(new URL(path, location.href), true)) === null) return;
       sortRows();
       setListError(null);
       setListRetry(null);
     } catch {
       setListError(t().listFailed);
-      setListRetry(() => () => void refreshList(path ? location.pathname + location.search : undefined));
+      setListRetry(() => () => void refreshList());
     }
   };
   const personal = async (id: string, patch: z.infer<typeof PersonalConversationSchema>) => {
@@ -548,8 +545,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   const openFromList = async (id: string, navigation: LinkNavigateEvent) => {
     const fromList = route().chatId === null;
-    if ((await open({ chatId: id, messageId: null, panel: null })) === "applied")
-      navigation.push(listHref(panelHref(id, null)), { scroll: "preserve", state: { chatFromList: fromList } });
+    if ((await open({ chatId: id, messageId: null, panel: null })) !== "applied") return;
+    const target = listHref(panelHref(id, null));
+    navigation.push(target, { scroll: "preserve", state: { chatFromList: fromList } });
+    // A row navigation keeps its visible list context even if an older mode request is still pending.
+    if (pendingListIntent !== null) await refreshList(target);
   };
 
   // Info adds one entry above a chat opened from the list.

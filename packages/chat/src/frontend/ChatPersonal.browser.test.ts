@@ -392,7 +392,7 @@ test("active filters add no duplicate history and the archive unread chip toggle
   }
 }, 30_000);
 
-for (const failRefresh of [false, true, "position"] as const)
+for (const failRefresh of [false, true, "position", "position-target"] as const)
   test(`choosing an existing chat supersedes a pending list without stuck loading (refresh failure=${failRefresh})`, async () => {
     const existing = add("Existing design", 2);
     const other = harness.addChat({ name: "Another unread", members: [viewer, nora, tobias], count: 4, end: harness.now(), unread: 2 });
@@ -448,15 +448,18 @@ for (const failRefresh of [false, true, "position"] as const)
       await dialog.getByRole("button", { name: "Open existing", exact: true }).click();
       await page.waitForURL(`**/app/chat/c/${existing}`);
       release?.();
+      const stayOnTarget = failRefresh === "position-target";
       if (failRefresh) {
         await visible(page).getByRole("alert").waitFor();
-        await visible(page).getByText("Another unread", { exact: true }).click();
-        await page.waitForURL(`**/app/chat/c/${other}?filter=unread`);
-        if (failRefresh === "position") {
+        if (!stayOnTarget) {
+          await visible(page).getByText("Another unread", { exact: true }).click();
+          await page.waitForURL(`**/app/chat/c/${other}?filter=unread`);
+        }
+        if (failRefresh === "position" || stayOnTarget) {
           await page.route("**/api/chat/conversations/*/personal", (route) =>
             route.fulfill({ status: 400, json: { message: "Invalid position" } }),
           );
-          await actions(page, "Another unread", "en");
+          await actions(page, stayOnTarget ? "Existing design" : "Another unread", "en");
           await page.getByRole("menuitem", { name: "Pin chat", exact: true }).click();
           await visible(page)
             .getByRole("alert")
@@ -469,20 +472,63 @@ for (const failRefresh of [false, true, "position"] as const)
         await visible(page).getByRole("button", { name: "Try again", exact: true }).click();
         await visible(page).getByRole("alert").waitFor({ state: "hidden" });
         expect(await visible(page).getByText("Read during visit", { exact: true }).count()).toBe(1);
-        expect(unreadReads).toBe(readsBeforeRetry + 1);
-        expect(allReads).toBe(allBeforeRetry);
+        expect(unreadReads).toBe(readsBeforeRetry + (stayOnTarget ? 0 : 1));
+        expect(allReads).toBe(allBeforeRetry + (stayOnTarget ? 1 : 0));
         expect(await page.evaluate(() => history.length)).toBe(entries);
-        expect(await visible(page).getByRole("button", { name: "Unread", exact: true }).getAttribute("aria-pressed")).toBe("true");
+        expect(
+          await visible(page)
+            .getByRole("button", { name: stayOnTarget ? "All" : "Unread", exact: true })
+            .getAttribute("aria-pressed"),
+        ).toBe("true");
         await visible(page).getByRole("button", { name: "All", exact: true }).click();
-        await page.waitForURL(`**/app/chat/c/${other}`);
+        await page.waitForURL(`**/app/chat/c/${stayOnTarget ? existing : other}`);
       }
       await visible(page).getByRole("button", { name: "All", exact: true }).and(page.locator(":not([disabled])")).waitFor();
       expect(await visible(page).locator(".chat-list-status").textContent()).toBe("");
       await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
-      await page.waitForURL(`**/app/chat/c/${failRefresh ? other : existing}?filter=unread`);
+      await page.waitForURL(`**/app/chat/c/${failRefresh && !stayOnTarget ? other : existing}?filter=unread`);
       expect(errors).toEqual([]);
     } finally {
       release?.();
       await context.close();
     }
   }, 30_000);
+
+test("opening a visible row supersedes a pending filter without changing its list URL later", async () => {
+  const chat = add("Visible unread", 2);
+  const { page, context, errors } = await start(false, "en", "/app/chat?filter=unread");
+  let release: (() => void) | undefined;
+  try {
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let intercepted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      intercepted = resolve;
+    });
+    let first = true;
+    await page.route("**/api/chat/conversations?**", async (route) => {
+      const url = new URL(route.request().url());
+      if (first && url.searchParams.get("unread") === "false") {
+        first = false;
+        intercepted?.();
+        await held;
+      }
+      await route.continue();
+    });
+    await visible(page).getByRole("button", { name: "All", exact: true }).click();
+    await started;
+    await visible(page).getByText("Visible unread", { exact: true }).click();
+    await page.waitForURL(`**/app/chat/c/${chat}?filter=unread`);
+    const entries = await page.evaluate(() => history.length);
+    release?.();
+    await visible(page).getByRole("button", { name: "All", exact: true }).and(page.locator(":not([disabled])")).waitFor();
+    expect(new URL(page.url()).searchParams.get("filter")).toBe("unread");
+    expect(await visible(page).getByRole("button", { name: "Unread", exact: true }).getAttribute("aria-pressed")).toBe("true");
+    expect(await page.evaluate(() => history.length)).toBe(entries);
+    expect(errors).toEqual([]);
+  } finally {
+    release?.();
+    await context.close();
+  }
+}, 30_000);
