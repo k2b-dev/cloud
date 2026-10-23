@@ -185,39 +185,37 @@ test("the phone All sheet keeps Sources and settings reachable without replacing
   }
 });
 
-test("overview phone action reports launch failure and stays unavailable without an authorized snapshot", async () => {
-  for (const mode of ["ready", "loading", "denied"] as const) {
-    const props = {
-      ...snapshot("overview"),
-      ...(mode === "loading"
-        ? { initialOverview: undefined }
-        : mode === "denied"
-          ? { initialOverview: { data: null, error: { code: "FORBIDDEN", message: "Denied" } } }
-          : {}),
-    };
-    const tab = await browser.newPage({ viewport: { width: 390, height: 1000 } });
-    try {
-      await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
-      await tab.route(`${origin}/api/**`, (route) => route.fulfill({ status: 503, json: { code: "REQUEST_FAILED" } }));
-      await tab.route(`${origin}/app/pulse/**`, (route) => route.fulfill({ contentType: "text/html", body: harness(props, "de", true) }));
-      await tab.goto(`${origin}/app/pulse/Lad001`);
-      await tab.locator('#root[data-mounted="true"]').waitFor();
-      const header = tab.locator(".pulse-workspace__mobile-header");
-      const action = header.getByRole("button", { name: "Mit KI fragen", exact: true });
-      if (mode === "ready") {
-        await action.click();
-        await tab.locator(".pulse-overview__assistant-feedback").filter({ hasText: "Assistant" }).waitFor();
-        expect(await action.isEnabled()).toBe(true);
-      } else {
-        expect(await action.count()).toBe(0);
-        if (mode === "denied") {
-          const switcher = await header.locator(".k2b-sidebar-switcher").innerText();
-          expect(switcher).toContain("Pulse");
-          expect(switcher).not.toContain("Laden");
-        }
+test.each(["ready", "loading", "denied"] as const)("overview phone action preserves its authorized state (%s)", async (mode) => {
+  const props = {
+    ...snapshot("overview"),
+    ...(mode === "loading"
+      ? { initialOverview: undefined }
+      : mode === "denied"
+        ? { initialOverview: { data: null, error: { code: "FORBIDDEN", message: "Denied" } } }
+        : {}),
+  };
+  const tab = await browser.newPage({ viewport: { width: 390, height: 1000 } });
+  try {
+    await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
+    await tab.route(`${origin}/api/**`, (route) => route.fulfill({ status: 503, json: { code: "REQUEST_FAILED" } }));
+    await tab.route(`${origin}/app/pulse/**`, (route) => route.fulfill({ contentType: "text/html", body: harness(props, "de", true) }));
+    await tab.goto(`${origin}/app/pulse/Lad001`);
+    await tab.locator('#root[data-mounted="true"]').waitFor();
+    const header = tab.locator(".pulse-workspace__mobile-header");
+    const action = header.getByRole("button", { name: "Mit KI fragen", exact: true });
+    if (mode === "ready") {
+      await action.click();
+      await tab.locator(".pulse-overview__assistant-feedback").filter({ hasText: "Assistant" }).waitFor();
+      expect(await action.isEnabled()).toBe(true);
+    } else {
+      expect(await action.count()).toBe(0);
+      if (mode === "denied") {
+        const switcher = await header.locator(".k2b-sidebar-switcher").innerText();
+        expect(switcher).toContain("Pulse");
+        expect(switcher).not.toContain("Laden");
       }
-    } finally {
-      await tab.close();
     }
+  } finally {
+    await tab.close();
   }
 });
