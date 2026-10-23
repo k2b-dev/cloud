@@ -112,6 +112,38 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
 });
 
 describe("identity key administration", () => {
+  test("administrative mutations retain OAuth write caps", async () => {
+    let effects = 0;
+    const mutationService = dependencies({
+      rewrap: async () => {
+        effects++;
+        return 0;
+      },
+    });
+    for (const scopes of [["read"], ["write"], ["admin"]]) {
+      const scopedAdmin: MiddlewareHandler<AuthContext> = async (c, next) => {
+        c.set("user", admin);
+        c.set("oauthScopes", scopes);
+        await next();
+      };
+      const routes = createAdminIdentityRoutes(scopedAdmin, mutationService);
+      expect((await routes.request("/keys")).status).toBe(200);
+      expect((await routes.request("/keys/rewrap", { method: "POST" })).status).toBe(scopes[0] === "read" ? 403 : 200);
+      if (scopes[0] === "read") {
+        for (const [method, path] of [
+          ["POST", "/service-accounts"],
+          ["PATCH", `/service-accounts/${STANDALONE_ID}`],
+          ["POST", `/service-accounts/${STANDALONE_ID}/api-keys`],
+          ["POST", "/workloads/grids/credentials"],
+          ["DELETE", `/workloads/grids/credentials/${CREDENTIAL_ID}`],
+          ["POST", `/keys/${CREDENTIAL_ID}/revoke`],
+        ])
+          expect((await routes.request(path!, { method })).status).toBe(403);
+      }
+    }
+    expect(effects).toBe(2);
+  });
+
   test("refuses the reserved inference scope on standalone API keys", async () => {
     const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());
     const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {

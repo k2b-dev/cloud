@@ -119,6 +119,9 @@ export const createAdminIdentityRoutes = (
     // Mandate lists hold every user's grant inputs, which users write at will and which can carry private text.
     .use("*", noTransform())
     .use(authenticate)
+    .use("*", (c, next) =>
+      ["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method) ? auth.requireOAuthScope("write", "admin")(c, next) : next(),
+    )
     .use("*", async (c, next) => {
       c.header("Cache-Control", "no-store");
       await next();
