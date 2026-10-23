@@ -548,6 +548,7 @@ test("interaction traces and main requests survive result parsing, render once a
 const candidate = (title: string, metric: string, location = "packages/mail/scripts/perf-baseline/browser-model.ts:1") => ({
   title,
   location,
+  anchor: 'import { existsSync, readFileSync } from "node:fs";',
   metric,
   evidence: "measured",
   slice: "mail-perf-fix",
@@ -800,5 +801,34 @@ test("mailbox-switch waits for the destination path, viewport row, mounted works
     } finally {
       env.cleanup();
     }
+  }
+});
+
+test("ranking refuses blank and stale source rows (#1472)", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mail-perf-source-"));
+  try {
+    await writeFile(join(directory, "source.ts"), "export const current = 1;\n  \t\nexport const unrelated = 2;\n");
+    const metrics = new Map([["measured", 42]]);
+    const entry = { ...candidate("Current cost", "measured", "source.ts:1"), anchor: "export const current = 1;" };
+    expect(rankBottlenecks(metrics, [entry], directory, 1)[0]?.value).toBe(42);
+    expect(() => rankBottlenecks(metrics, [{ ...entry, location: "source.ts:2" }], directory, 1)).toThrow("blank");
+    expect(() => rankBottlenecks(metrics, [{ ...entry, location: "source.ts:3" }], directory, 1)).toThrow("anchor");
+    for (const anchor of [
+      undefined,
+      "",
+      "   ",
+      "export const current = 1;\nexport const unrelated = 2;",
+      `\n${entry.anchor}`,
+      `${entry.anchor}\r\n`,
+    ]) {
+      expect(() => rankBottlenecks(metrics, [{ ...entry, anchor }], directory, 1)).toThrow();
+    }
+    expect(rankBottlenecks(metrics, [{ ...entry, anchor: `  ${entry.anchor}  ` }], directory, 1)[0]?.value).toBe(42);
+    // The same line number becomes stale when the named code changes or moves.
+    await writeFile(join(directory, "source.ts"), "export const replacement = 3;\nexport const current = 1;\n");
+    expect(() => rankBottlenecks(metrics, [entry], directory, 1)).toThrow("anchor");
+    expect(rankBottlenecks(metrics, [{ ...entry, location: "source.ts:2" }], directory, 1)[0]?.value).toBe(42);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });
