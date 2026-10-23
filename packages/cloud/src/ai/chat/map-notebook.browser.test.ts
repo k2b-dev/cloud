@@ -4,6 +4,7 @@ import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser"
 import { mapPlaces } from "../map.test-fixture";
 import { startMapBrowserFixture } from "../map-browser.test-fixture";
 import { aiMapNotebookContent } from "../map-notebook";
+import { saveMapNotebook } from "../map-notebook-save";
 
 let fixture: Awaited<ReturnType<typeof startMapBrowserFixture>>;
 let browser: Browser;
@@ -57,7 +58,7 @@ const largeSource = (scenario: string) => {
   return aiMapNotebookContent(map);
 };
 
-test.each([390, 1440])("large exact save reports confirmed progress, cancels, resumes and retains its receipt at %i", async (width) => {
+test.each([390, 1440])("large exact save reports confirmed progress and cancels an uncertain append at %i", async (width) => {
   const scenario = `route-chunked-save-${width}`;
   const expected = largeSource(scenario);
   const { page, context } = await open(scenario, width, width === 390 ? "&theme=dark" : "");
@@ -90,6 +91,77 @@ test.each([390, 1440])("large exact save reports confirmed progress, cancels, re
     await page.getByRole("button", { name: "Speicherstand prüfen", exact: true }).waitFor({ state: "visible" });
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".ai-map__save .ai-map__actions button")?.disabled);
     expect(fixture.notes.get(scenario)).toBe(expected.slice(0, 200_000));
+    expect(writes).toHaveLength(2);
+    expect(writes.every((write) => write.bytes <= 256 * 1024)).toBe(true);
+    expect(JSON.stringify(writes[0]!.checkpoint)).toContain("create");
+    expect(JSON.stringify(writes[1]!.checkpoint)).toContain("append");
+    // Keep the browser cancellation -> persisted receipt seam covered after
+    // splitting reconciliation into its own case below.
+    expect(
+      await page.evaluate(() => {
+        const receipt = Object.entries(localStorage).find(([key]) => key.startsWith("cloud.ai.map-save:v1:"));
+        return receipt ? JSON.parse(receipt[1]) : null;
+      }),
+    ).toMatchObject({ status: "cancelled", checkpoint: { completed: 200_000, noteId: "Note01", pending: { kind: "append" } } });
+    expect(await page.locator(".ai-map__save").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  } finally {
+    release();
+    await context.close();
+  }
+});
+
+// Produce the cancelled receipt through the real helper and capability fixture.
+// The separate cancellation case covers dispatch, browser progress and request bounds.
+test.each([390, 1440])("a late append receipt reconciles without resending and survives reload at %i", async (width) => {
+  const scenario = `route-late-append-${width}`;
+  const expected = largeSource(scenario);
+  const map = fixture.get(scenario).map;
+  const sourceKey = JSON.stringify(["fictional-owner", scenario, map.id, map.revision]);
+  const writes: string[] = [];
+  const controller = new AbortController();
+  const result = await saveMapNotebook({
+    content: expected,
+    notebookId: "Book01",
+    sourceKey,
+    signal: controller.signal,
+    onCheckpoint: () => {},
+    client: {
+      baseUrl: `${fixture.server.url.origin}/api`,
+      headers: { referer: `${fixture.server.url}?scenario=${scenario}` },
+      fetch: async (url, request) => {
+        if (String(url).includes("/actions/notebooks/")) writes.push(String(url));
+        if (String(url).endsWith("note.edit")) {
+          controller.abort();
+          throw controller.signal.reason;
+        }
+        return fetch(url, request);
+      },
+    },
+  });
+  expect(result.status).toBe("cancelled");
+  expect(result.checkpoint?.pending?.kind).toBe("append");
+  expect(fixture.notes.get(scenario)).toBe(expected.slice(0, 200_000));
+  const { page, context } = await open(scenario, width, width === 390 ? "&theme=dark" : "");
+  await page.route("**/actions/notebooks/*", async (route) => {
+    writes.push(route.request().url());
+    await route.continue();
+  });
+  try {
+    await page.evaluate(
+      ({ sourceKey, result }) => {
+        localStorage.setItem(
+          `cloud.ai.map-save:v1:${sourceKey}`,
+          JSON.stringify({
+            checkpoint: result.checkpoint,
+            status: result.status,
+            code: "cancelled",
+            message: result.message,
+          }),
+        );
+      },
+      { sourceKey, result },
+    );
+    await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).click();
     // A pending append at the before-hash must never be resent, even on explicit resume.
     await page.getByRole("button", { name: "Speicherstand prüfen", exact: true }).click();
     await page.getByText(/Der letzte Teil wird möglicherweise noch gespeichert/).waitFor();
@@ -101,12 +173,8 @@ test.each([390, 1440])("large exact save reports confirmed progress, cancels, re
     await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
     expect(fixture.notes.get(scenario)).toBe(expected);
     expect(writes).toHaveLength(2);
-    expect(writes.every((write) => write.bytes <= 256 * 1024)).toBe(true);
-    expect(JSON.stringify(writes[0]!.checkpoint)).toContain("create");
-    expect(JSON.stringify(writes[1]!.checkpoint)).toContain("append");
     expect(await page.locator(".ai-map__save").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   } finally {
-    release();
     await context.close();
   }
 });

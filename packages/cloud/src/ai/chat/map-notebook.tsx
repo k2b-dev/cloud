@@ -61,7 +61,12 @@ export function MapNotebookSave(props: { map: AiMap; onCancel: () => void }) {
       signal,
     });
     if (!response.ok) throw new Error(t().saveFailed);
-    const value = snapshotSchema.parse(await response.json());
+    // WebKit can reject invalid JSON with a DOMException named SyntaxError,
+    // which is not instanceof SyntaxError. Normalize at the response boundary.
+    const payload: unknown = await response.json().catch(() => {
+      throw new Error(t().saveFailed);
+    });
+    const value = snapshotSchema.parse(payload);
     if (value.revision !== source.revision) throw new Error(t().conflict);
     return value;
   };

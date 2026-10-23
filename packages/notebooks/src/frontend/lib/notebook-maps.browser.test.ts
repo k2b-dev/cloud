@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GeoMapSnapshotManifestSchema } from "@k2b/cloud/contracts/geo-snapshot";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
@@ -22,10 +22,17 @@ afterAll(async () => {
   await browser?.close();
   await fixture?.dispose();
 });
+// A timed-out snapshot must not continue against another case's fixture state.
+afterEach(async () => {
+  await Promise.all(browser.contexts().map((context) => context.close()));
+});
 const first = (page: Page) => page.locator("figure.notebook-map").first();
 async function open(query = "", width = 1440) {
   const context = await browser.newContext({ viewport: { width, height: 1000 } });
   const page = await context.newPage();
+  // Snapshot readiness needs animation frames and MapLibre render events; remote WebKit
+  // may throttle a newly created background page. Activate it before capture starts.
+  await page.bringToFront();
   await page.goto(`${server.url}${query}`);
   await page
     .locator(query.includes("pdf=") ? ".notebook-map-export__preview" : "figure.notebook-map[data-map-enhanced]")
@@ -336,24 +343,39 @@ test("PDF preview waits for complete map PNGs, preserves sources and uploads ima
   try {
     const preview = page.locator(".notebook-map-export__preview");
     await preview.locator("img.notebook-map__image").nth(1).waitFor();
-    expect(await preview.locator("img.notebook-map__image").count()).toBe(2);
-    expect(await preview.innerText()).toContain("OpenMapTiles");
-    const frame = page.locator(".notebook-map-preview-frame");
-    expect((await frame.boundingBox())!.width).toBe(640);
-    const header = frame.locator(".k2b-panel-dialog__header");
-    expect(await header.innerText()).toContain("PDF-Vorschau");
-    const guidanceBox = await frame.locator(".notebook-map-export__guidance").boundingBox();
-    const headerBox = await header.boundingBox();
-    expect(guidanceBox!.y - headerBox!.y - headerBox!.height).toBe(14);
-    expect(await header.getByRole("button", { name: "Drucken", exact: true }).isEnabled()).toBe(true);
-    expect(await frame.getByRole("combobox", { name: "Vorlage", exact: true }).isVisible()).toBe(false);
-    expect(await frame.getByText("Im PDF stehen Karte und Route als Bild.", { exact: false }).isVisible()).toBe(true);
-    const sheet = await preview.evaluate((node) => ({
-      background: getComputedStyle(node).backgroundColor,
-      width: node.getBoundingClientRect().width,
-      images: [...node.querySelectorAll(".notebook-map__image")].map((image) => image.getBoundingClientRect().height),
-    }));
-    expect(sheet).toEqual({ background: "rgb(255, 255, 255)", width: 576, images: [186, 150] });
+    // Read the completed preview atomically; remote browsers need one transport
+    // round trip for this snapshot, not one for every independent style assertion.
+    const rendered = await preview.evaluate((sheet) => {
+      const frame = sheet.closest(".notebook-map-preview-frame")!;
+      const header = frame.querySelector(".k2b-panel-dialog__header")!;
+      const guidance = frame.querySelector(".notebook-map-export__guidance")!;
+      const images = [...sheet.querySelectorAll(".notebook-map__image")];
+      const print = [...header.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Drucken");
+      return {
+        count: images.length,
+        text: sheet.textContent,
+        frameWidth: frame.getBoundingClientRect().width,
+        headerText: header.textContent,
+        guidanceGap: guidance.getBoundingClientRect().y - header.getBoundingClientRect().bottom,
+        printEnabled: !!print && !print.disabled,
+        templateVisible: [...frame.querySelectorAll('[role="combobox"]')].some((node) => node.getBoundingClientRect().height > 0),
+        guidanceText: guidance.textContent,
+        sheet: {
+          background: getComputedStyle(sheet).backgroundColor,
+          width: sheet.getBoundingClientRect().width,
+          images: images.map((image) => image.getBoundingClientRect().height),
+        },
+      };
+    });
+    expect(rendered.count).toBe(2);
+    expect(rendered.text).toContain("OpenMapTiles");
+    expect(rendered.frameWidth).toBe(640);
+    expect(rendered.headerText).toContain("PDF-Vorschau");
+    expect(rendered.guidanceGap).toBe(14);
+    expect(rendered.printEnabled).toBe(true);
+    expect(rendered.templateVisible).toBe(false);
+    expect(rendered.guidanceText).toContain("Im PDF stehen Karte und Route als Bild.");
+    expect(rendered.sheet).toEqual({ background: "rgb(255, 255, 255)", width: 576, images: [186, 150] });
     const download = page.getByRole("button", { name: "PDF laden", exact: true }).last();
     await download.click();
     await page.waitForFunction(() => !document.querySelector(".notebook-map-export__preview"));
