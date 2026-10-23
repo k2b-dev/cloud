@@ -1106,7 +1106,7 @@ describe("PermissionEditor pending controls", () => {
     return;
   }
 
-  const deferred = <T = void>() => {
+  function deferred<T = void>() {
     let resolve!: (value: T) => void;
     let reject!: (error: Error) => void;
     const promise = new Promise<T>((yes, no) => {
@@ -1123,7 +1123,7 @@ describe("PermissionEditor pending controls", () => {
         await promise;
       },
     };
-  };
+  }
 
   const setup = async (
     options: { expanded?: boolean; beforeChange?: (entry: AccessEntry, next: GrantableLevel | null) => Promise<boolean> } = {},
