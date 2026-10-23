@@ -77,8 +77,8 @@ const resolveFallback = (def: SettingDef | undefined): unknown => {
  */
 export const readKey = async (key: string): Promise<unknown> => (await bulkRead([key])).get(key);
 
-export const readKeyState = async (key: string): Promise<SettingRead> => {
-  const state = (await readStates([key])).get(key);
+export const readKeyState = async (key: string, db: SqlClient = sql): Promise<SettingRead> => {
+  const state = (await readStates([key], db)).get(key);
   if (!state) throw new Error(`Missing read state for setting "${key}"`);
   return state;
 };
@@ -149,10 +149,10 @@ export const bulkRead = async (keys: readonly string[]): Promise<Map<string, unk
  * State reads go directly to Postgres without reading or filling the cache;
  * value reads (`get`, snapshot) keep using the cache.
  */
-export const readStates = async (keys: readonly string[]): Promise<Map<string, SettingRead>> => {
+export const readStates = async (keys: readonly string[], db: SqlClient = sql): Promise<Map<string, SettingRead>> => {
   const result = new Map<string, SettingRead>();
   if (keys.length === 0) return result;
-  const rows = await sql<StoredRow[]>`SELECT key, value FROM settings.entries WHERE key = ANY(${toPgTextArray([...keys])}::text[])`;
+  const rows = await db<StoredRow[]>`SELECT key, value FROM settings.entries WHERE key = ANY(${toPgTextArray([...keys])}::text[])`;
   const byKey = new Map(rows.map((row) => [row.key, row]));
   for (const key of keys) {
     const row = byKey.get(key);

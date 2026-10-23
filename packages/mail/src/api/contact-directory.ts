@@ -4,7 +4,11 @@ import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { contactDirectoryMessages } from "../contact-directory-messages";
-import { mailContactDirectoryUpdateSchema, requestContactDirectoryConfig } from "../contact-directory-settings";
+import {
+  mailContactDirectoryPatchSchema,
+  mailContactDirectoryUpdateSchema,
+  requestContactDirectoryConfig,
+} from "../contact-directory-settings";
 import { contactDirectory, type MailRequestContext } from "../service";
 import type { MailApiContext } from "./public-resource-boundary";
 
@@ -25,6 +29,7 @@ const contactDirectoryInvalidResponseSchema = ErrorResponseSchema.extend({ issue
 const capabilityOptionsSchema = z.array(z.object({ id: z.string(), title: z.string() }));
 const contactDirectoryAdminViewSchema = z.object({
   config: mailContactDirectoryUpdateSchema,
+  unreadable: z.record(z.string(), z.boolean()),
   apps: z
     .array(
       z.object({
@@ -78,10 +83,14 @@ export default new Hono<MailApiContext>()
         200: jsonResponse(mailContactDirectoryUpdateSchema, "Stored contact directory mapping"),
         400: jsonResponse(contactDirectoryInvalidResponseSchema, "Mapping Mail cannot use, with field-level issues"),
         403: jsonResponse(ErrorResponseSchema, "Cloud administration access is required"),
+        409: jsonResponse(
+          z.object({ code: z.literal("setting_unreadable"), message: z.string() }),
+          "Stored key needs explicit replacement",
+        ),
         503: jsonResponse(ErrorResponseSchema, "Capability catalog unavailable"),
       },
     }),
-    v("json", mailContactDirectoryUpdateSchema),
+    v("json", mailContactDirectoryPatchSchema),
     async (c) => {
       const locale = getLocale(c);
       const result = await contactDirectory.saveContactDirectory(requestContext(c), c.req.valid("json"), locale);

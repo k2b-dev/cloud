@@ -162,7 +162,13 @@ export const SETTINGS: SettingDef[] = [
   ...toLegacySettingDefs(CORE_SETTINGS),
 ];
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Keep the existing permissive grammar without ambiguous regex backtracking.
+const isEmail = (value: string): boolean => {
+  const at = value.indexOf("@");
+  if (at < 1 || value.indexOf("@", at + 1) !== -1 || /\s/.test(value)) return false;
+  const dot = value.indexOf(".", at + 2);
+  return dot !== -1 && dot < value.length - 1;
+};
 
 const toStringValue = (value: unknown): string | null => {
   if (typeof value === "string") return value;
@@ -303,7 +309,7 @@ export const validateSettingValue = (def: SettingDef, raw: unknown): SettingVali
         : { ok: false, error: `${getSettingLabel(def)} must be one of: ${def.options.map((option) => option.value).join(", ")}` };
     case "email":
       if (typeof value !== "string") return { ok: false, error: `${getSettingLabel(def)} must be a valid email address` };
-      return value.length === 0 || EMAIL_RE.test(value)
+      return value.length === 0 || isEmail(value)
         ? { ok: true, value }
         : { ok: false, error: `${getSettingLabel(def)} must be a valid email address` };
     case "url":

@@ -123,3 +123,38 @@ describe("SQL lexical contract", () => {
     expect(prepareSql("SELECT :v, ':v'", { v: attack })).toEqual({ sql: "SELECT {v:String}, ':v'", params: { v: attack } });
   });
 });
+
+test("bucket compiles nested timestamp expressions and keeps quotes, comments and duration values separate", () => {
+  const query = `SELECT bucket(coalesce(ts, now()), /* interval */ :bucket), :bucket, 'bucket(ts,:bucket)', "bucket" -- bucket(ts,:bucket)
+FROM events`;
+  const result = prepareSql(query, { bucket: "1d" }, "Europe/Berlin");
+  expect(result.sql).toContain(
+    "toStartOfInterval(coalesce(ts, now()), /* interval */ toIntervalDay({pulse_bucket_1:UInt32}), {base_tz:String})",
+  );
+  expect(result.sql).toContain("{bucket:UInt32}, 'bucket(ts,:bucket)', \"bucket\" -- bucket(ts,:bucket)");
+  expect(result.params).toMatchObject({ bucket: "86400", pulse_bucket_1: "1", base_tz: "Europe/Berlin" });
+  expect(prepareSql("SELECT bucket(bucket(ts,:hour),:day)", { hour: "1h", day: "1d" }).sql).toContain(
+    "toStartOfInterval(toStartOfInterval(",
+  );
+});
+test.each(["0d", "-1h", "1 month", "1d); DROP TABLE x; --", "4294967296d"])("bucket refuses invalid interval %s", (bucket) => {
+  expect(() => prepareSql("SELECT bucket(ts,:bucket)", { bucket })).toThrow(SqlInputError);
+});
+test.each(["SELECT bucket(ts, 1)", "SELECT bucket(ts,:x,:x)", "SELECT bucket(,:x)", "SELECT bucket(ts,(:x))"])(
+  "bucket refuses unsupported shape %s",
+  (sql) => {
+    expect(() => prepareSql(sql, sql.includes(":x") ? { x: "1d" } : {})).toThrow(SqlInputError);
+  },
+);
+
+test("bucket's compiler bindings cannot collide with caller values", () => {
+  const result = prepareSql(
+    "SELECT bucket(ts,:day), :pulse_bucket_1",
+    { day: "1d", pulse_bucket_1: "'); SELECT secret; --" },
+    "Europe/Berlin",
+  );
+  expect(result.sql).toBe(
+    "SELECT toStartOfInterval(ts,toIntervalDay({pulse_bucket_1_:UInt32}), {base_tz:String}), {pulse_bucket_1:String}",
+  );
+  expect(result.params).toMatchObject({ pulse_bucket_1: "'); SELECT secret; --", pulse_bucket_1_: "1", base_tz: "Europe/Berlin" });
+});

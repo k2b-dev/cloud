@@ -1,4 +1,5 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { appAccessAuthority } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../../config";
 import {
@@ -37,7 +38,7 @@ export default ssr<AuthContext>(async (c) => {
     // Assigned-only writers reply here too; the draft and seed services refuse anything they cannot see.
     mailboxAccess.requireMailboxAccess(context, mailboxId, "write"),
     senderIdentities.listSenderIdentities(context, mailboxId),
-    calendarInvitations.composerIntegrationAvailable(),
+    calendarInvitations.composerIntegrationAvailable(appAccessAuthority(c)),
     composeTemplates.listComposeTemplates(context, mailboxId),
     composeTemplates.listComposeSignatureDefaults(context, mailboxId),
   ]);
