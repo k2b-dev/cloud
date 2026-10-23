@@ -1378,9 +1378,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   query={route().query ?? ""}
                   onQuery={(query) => {
                     setRoute({ ...route(), query });
+                    // Typing only rewrites the address; it never animates the page.
                     navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
                       replace: true,
                       scroll: "preserve",
+                      viewTransition: false,
                     });
                   }}
                   revision={channelRevision()}

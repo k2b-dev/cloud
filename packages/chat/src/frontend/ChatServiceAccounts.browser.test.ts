@@ -1,9 +1,12 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import type { Browser, BrowserContext } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { MemberPageSchema, MemberSchema } from "../service/contracts";
 import { chatTestNow, nora, pinPageClock, startChatHarness, viewer } from "./ChatWorkspace.browser-fixture";
+
+// Each test drives a whole flow in a browser, with the same budget as the other Chat browser suites.
+setDefaultTimeout(30_000);
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
 let browser: Browser;
