@@ -16,12 +16,14 @@ import {
   PageTitle,
   rememberEmoji,
   startsMessageGroup,
+  toast,
   useLocale,
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { chatMessages } from "../messages";
+import { MAX_MESSAGE_REFS } from "../service/contracts";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { dayLabel, messageTime, sameDay } from "./chat-format";
 import { followVisualViewport } from "./follow-viewport";
@@ -140,6 +142,11 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     ),
   );
   const pickResource = async () => {
+    // The server takes at most this many elements per message; the reader learns it before picking more.
+    if (shared().length >= MAX_MESSAGE_REFS) {
+      toast(t().tooManyResources({ count: MAX_MESSAGE_REFS }), { iconClass: "ti ti-info-circle" });
+      return;
+    }
     const picked = await props.onPickResource?.();
     if (!picked) return;
     const id = `${picked.ref.type}:${picked.ref.id}`;

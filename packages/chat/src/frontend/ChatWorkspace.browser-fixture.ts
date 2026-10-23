@@ -972,7 +972,9 @@ export const startChatHarness = async () => {
               const elements = message.refs.map((ref) => ({ kind: "element" as const, ref, ...meta }));
               return [...(kind === "all" || kind === "elements" ? elements : []), ...(kind === "all" || kind === "links" ? links : [])];
             });
-          return Response.json({ items: items.slice(0, 30), nextCursor: null });
+          const offset = Number(url.searchParams.get("cursor") ?? 0);
+          const next = offset + 30 < items.length ? String(offset + 30) : null;
+          return Response.json({ items: items.slice(offset, offset + 30), nextCursor: next });
         }
         if (part === "changes") return Response.json({ rev: chat.conversation.rev, more: false, conversation: null, messages: [] });
         if (part === "messages" && request.method === "GET") return Response.json(page(chat, url.searchParams));

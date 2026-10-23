@@ -96,6 +96,34 @@ describe("Shared Cloud elements", () => {
   }, 30_000);
 });
 
+test("a message shares at most ten elements; the eleventh is refused before the draft is touched", async () => {
+  const chat = harness.addChat({ members: [viewer, nora], count: 2, end: new Date(chatTestNow.getTime() - 3_600_000) });
+  for (let index = 1; index <= 11; index++) harness.addElement({ id: `t${index}`, title: `Task number ${index}` });
+  const { page, errors } = await load(desktop, { chat });
+  try {
+    const pick = async (index: number) => {
+      await page.getByRole("button", { name: "Add to chat", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Share a Cloud element" }).click();
+      await page.locator('input[role="combobox"]').fill(`Task number ${index}`);
+      await page.getByRole("option", { name: new RegExp(`Task number ${index}$`) }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Add", exact: true }).click();
+      await page.locator(".k2b-chat-composer").getByText(`Task number ${index}`, { exact: true }).waitFor();
+    };
+    for (let index = 1; index <= 10; index++) await pick(index);
+    await page.getByRole("button", { name: "Add to chat", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Share a Cloud element" }).click();
+    await page.locator(".k2b-toast", { hasText: "A message shares at most 10 Cloud elements." }).waitFor();
+    expect(await page.locator('input[role="combobox"]').count()).toBe(0);
+    await page.locator("textarea:not([aria-hidden])").fill("Ten tasks");
+    await page.keyboard.press("Enter");
+    await until(() => harness.posted.some((post) => post.body === "Ten tasks"));
+    expect(harness.posted.at(-1)?.refs).toHaveLength(10);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
+}, 60_000);
+
 describe("Shared in the chat's info", () => {
   test("lists links and elements newest first, filters by kind, and a row jumps to its message", async () => {
     const { chat } = seed();
@@ -118,6 +146,33 @@ describe("Shared in the chat's info", () => {
       await section.getByRole("button", { name: "All", exact: true }).click();
       await section.locator(".chat-shared__row", { hasText: "Delivery cooling shelves" }).click();
       await page.locator(".k2b-virtual-feed__item[data-highlighted]", { hasText: "Here is the task:" }).waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("Show more keeps its depth when a new message arrives; a filter starts over", async () => {
+    const chat = harness.addChat({ members: [viewer, nora], count: 2, end: new Date(chatTestNow.getTime() - 3_600_000) });
+    for (let index = 1; index <= 35; index++) harness.receiveShared(chat, nora, `Link https://example.com/${index}`, []);
+    const { page, errors } = await load(desktop, { chat, panel: "info" });
+    try {
+      const section = page.locator("#k2b-workspace-detail-chat-info .chat-shared");
+      const rows = section.locator(".chat-shared__row");
+      await rows.nth(29).waitFor();
+      expect(await rows.count()).toBe(30);
+      await section.getByRole("button", { name: "Show more", exact: true }).click();
+      await rows.nth(34).waitFor();
+      harness.receiveShared(chat, nora, "Newest https://example.com/new", []);
+      await section.locator(".chat-shared__title", { hasText: "example.com/new" }).waitFor();
+      expect(await rows.count()).toBe(36);
+      expect(await rows.first().locator(".chat-shared__title").innerText()).toBe("example.com/new");
+      expect(await rows.last().locator(".chat-shared__title").innerText()).toBe("example.com/1");
+      await section.getByRole("button", { name: "Cloud elements", exact: true }).click();
+      await section.getByText("Nothing for this filter.", { exact: true }).waitFor();
+      await section.getByRole("button", { name: "Links", exact: true }).click();
+      await rows.nth(29).waitFor();
+      expect(await rows.count()).toBe(30);
       expect(errors).toEqual([]);
     } finally {
       await page.context().close();

@@ -44,42 +44,65 @@ export default function ChatSharedSection(props: {
   const [cursor, setCursor] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<"loading" | "ready" | "failed">("loading");
   const [loadingMore, setLoadingMore] = createSignal(false);
+  // A filter or chat starts a new list; each answer and "Show more" belong to the list they were asked for.
+  let generation = 0;
   let request = 0;
   const query = (next?: string) => ({
     kind: kind(),
     ...(thread() === "all" ? {} : { thread: thread() }),
     ...(next ? { cursor: next } : {}),
   });
-  const load = async () => {
+  const restart = () => {
+    generation++;
+    setItems([]);
+    setCursor(null);
+    setLoadingMore(false);
+    void refresh();
+  };
+  /**
+   * Reads the newest page. New messages arrive at the top, so the rows the reader already loaded further down stay;
+   * a row the newest page no longer holds within its range is gone, such as a deleted message.
+   */
+  const refresh = async () => {
+    const list = generation;
     const token = ++request;
-    setStatus((current) => (current === "ready" && items().length > 0 ? current : "loading"));
+    if (items().length === 0) setStatus("loading");
     try {
       const page = await props.load(query());
-      if (token !== request) return;
-      setItems(page.items);
-      setCursor(page.nextCursor);
+      if (list !== generation || token !== request) return;
+      const oldest = page.items.at(-1)?.seq;
+      const deeper = page.nextCursor !== null && oldest !== undefined ? items().filter((item) => item.seq < oldest) : [];
+      setItems([...page.items, ...deeper]);
+      if (deeper.length === 0) setCursor(page.nextCursor);
       setStatus("ready");
     } catch {
-      if (token === request) setStatus("failed");
+      if (list === generation && token === request) setStatus("failed");
     }
   };
   const more = async () => {
     const next = cursor();
-    if (!next || loadingMore()) return;
-    const token = request;
+    if (!next || loadingMore() || status() !== "ready") return;
+    const list = generation;
     setLoadingMore(true);
     try {
       const page = await props.load(query(next));
-      if (token !== request) return;
+      if (list !== generation || cursor() !== next) return;
       setItems((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
     } catch {
-      if (token === request) setStatus("failed");
+      if (list === generation) setStatus("failed");
     } finally {
-      setLoadingMore(false);
+      if (list === generation) setLoadingMore(false);
     }
   };
-  createEffect(on([kind, thread, () => props.chatId, () => props.revision], () => void load()));
+  createEffect(on([kind, thread, () => props.chatId], restart));
+  createEffect(
+    on(
+      () => props.revision,
+      () => void refresh(),
+      { defer: true },
+    ),
+  );
 
   const threadOptions = () => [
     { value: "all", label: t().wholeChat, icon: "ti ti-messages" },
@@ -121,7 +144,7 @@ export default function ChatSharedSection(props: {
           <Match when={status() === "failed"}>
             <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
               {t().sharedFailed}{" "}
-              <Button variant="text" size="xs" onClick={() => void load()}>
+              <Button variant="text" size="xs" onClick={() => void refresh()}>
                 {t().retry}
               </Button>
             </InlineGuidance>
@@ -143,7 +166,14 @@ export default function ChatSharedSection(props: {
               </For>
             </ul>
             <Show when={cursor()}>
-              <Button variant="text" size="xs" class="self-start" loading={loadingMore()} onClick={() => void more()}>
+              <Button
+                variant="text"
+                size="xs"
+                class="self-start"
+                loading={loadingMore()}
+                disabled={status() !== "ready"}
+                onClick={() => void more()}
+              >
                 {t().showMoreShared}
               </Button>
             </Show>

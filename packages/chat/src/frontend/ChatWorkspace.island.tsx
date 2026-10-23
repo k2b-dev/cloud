@@ -24,6 +24,7 @@ import { chatMessages } from "../messages";
 import {
   type ConversationPageSchema,
   type ConversationSchema,
+  MAX_MESSAGE_REFS,
   MESSAGE_MAX_CODE_POINTS,
   MessageBodySchema,
   type MessagePageSchema,
@@ -772,7 +773,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const send = async (text: string, refs: readonly CloudResourceRef[] = []): Promise<boolean> => {
     const current = openChat();
     const body = refs.length > 0 && !text.trim() ? "" : text;
-    if (!current || !outbox || (body === "" ? refs.length === 0 : !MessageBodySchema.safeParse(body).success)) return false;
+    if (!current || !outbox || refs.length > MAX_MESSAGE_REFS) return false;
+    if (body === "" ? refs.length === 0 : !MessageBodySchema.safeParse(body).success) return false;
     if (current.hasNewer) await store?.loadLatest();
     const answered = reply();
     const thread = answered ? (answered.thread ?? "general") : current.view === "all" ? "general" : current.view;
