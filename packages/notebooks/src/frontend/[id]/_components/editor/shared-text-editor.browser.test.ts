@@ -479,10 +479,7 @@ describe("Notebook on the shared text editor", () => {
       ).join("\n");
       const { page, close } = await open({ doc, device });
       try {
-        await page.evaluate(() => window.noteHarness.placeCaret("Paragraph 40 with selected words", 18));
-        await page.keyboard.down("Shift");
-        for (let index = 0; index < 14; index++) await page.keyboard.press("ArrowRight");
-        await page.keyboard.up("Shift");
+        await page.evaluate(() => window.noteHarness.placeCaret("Paragraph 40 with selected words", 18, 14));
         const paragraph = page.locator(".cm-line").filter({ hasText: "Paragraph 40 with" }).first();
         await paragraph.scrollIntoViewIfNeeded();
         await paragraph.evaluate((line) => {

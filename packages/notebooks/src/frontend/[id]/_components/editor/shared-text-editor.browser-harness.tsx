@@ -278,7 +278,7 @@ function Harness() {
         current.focus();
         return insertTable(current, { rows, cols }, locale);
       },
-      placeCaret(text, offset) {
+      placeCaret(text, offset, selectedLength = 0) {
         if (!window.noteHarness.ready()) throw new Error("Editor runtime is not ready");
         const current = view();
         const from = current?.state.doc.toString().indexOf(text) ?? -1;
@@ -287,7 +287,7 @@ function Harness() {
         if (!current.hasFocus) throw new Error("Caret placement did not focus the visible editor");
         // Record native focus in the selection transaction. Browser tests also
         // cover Enter followed immediately by typing on Android.
-        current.dispatch({ selection: { anchor: from + offset } });
+        current.dispatch({ selection: { anchor: from + offset, head: from + offset + selectedLength } });
       },
       async settle() {
         for (let frame = 0; frame < 4; frame++) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -380,7 +380,7 @@ export type NoteHarness = {
   peerType: (after: string, insert: string) => void;
   peerCursor: (inside: string, color?: string) => void;
   insertTable: (rows: number, cols: number) => Promise<void>;
-  placeCaret: (text: string, offset: number) => void;
+  placeCaret: (text: string, offset: number, selectedLength?: number) => void;
   settle: () => Promise<void>;
 };
 
