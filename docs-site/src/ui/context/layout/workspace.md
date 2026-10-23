@@ -561,6 +561,15 @@ the window with the page surface and safe-area padding, without sheet gestures,
 detents, or extra Main space. The rest of the workspace is inert. From 48 rem
 it follows the same column/waiting rules as every Detail.
 
+A page Detail with `onOpen` keeps its visibility across layouts, for example
+a column that is open by default. On a phone such a page waits behind its
+control like a drawer, so it never covers the window on load. **Details**, or
+a control in Main or the page that names it in `aria-controls`, opens the
+page and moves focus to its title. That control, Escape, or the close control
+parks it again without calling `onClose`, and focus returns to the control.
+A column that narrows to a phone while focus is in it or on its controls stays
+open as the page; otherwise it waits.
+
 The first server-rendered or newly inserted Detail appears without motion.
 After two frames, column opening reserves its space immediately and slides
 Detail in; closing gives the column back after the slide. Reduced motion
@@ -1275,7 +1284,8 @@ Parse/serialize use a URI-encoded JSON string; normalize accepts a decoded objec
 With `Detail.onOpen`, a responsive layout that hides a focused Details control
 moves focus to a visible, enabled control for the same Detail in the same
 workspace. Application controls participate through this `aria-controls`
-reference. An open `phone="page"` Detail receives focus on its title instead.
+reference. An open `phone="page"` Detail receives focus on its title instead;
+a waiting one hands focus to that visible control.
 The transfer does not open or close the panel. Moving focus elsewhere takes
 precedence.
 

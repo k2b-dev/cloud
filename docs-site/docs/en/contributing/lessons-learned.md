@@ -961,6 +961,13 @@ convention still needs a check or a test.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
 
+### Assistant chat details looked unlike every other Details
+
+- **What happened:** The Assistant's **In this chat** column was reported twice as looking different from Mail and the other applications: its own surface, header, width, and phone sheet instead of the shared Details.
+- **Root cause:** The Assistant rendered the shared `DetailPanel` in its own column, drawer, and bottom sheet inside the chat pane, so later changes to `AppWorkspace.Detail` (surface, header rhythm, resize edge, shadow, phone page) never reached it. Flattening the sections in #1661 fixed one symptom, not the host.
+- **Error class:** An application recreates a shared layout host around a shared component.
+- **Guard:** The Assistant contract test requires `<AppWorkspace.Detail` with `phone="page"`, and its browser suite checks the column, drawer, phone page, and flat sections in Chromium and WebKit. A reopenable phone page now waits behind its control, so a default-open Detail no longer needs an application host to stay off the phone screen.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

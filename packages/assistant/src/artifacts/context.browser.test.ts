@@ -87,7 +87,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(server.url.href);
-    const context = page.locator("#assistant-chat-context");
+    const context = page.locator(".assistant-context-sidebar");
     // One-off runs stay one level deeper, as a row under working files.
     await context.getByRole("button", { name: /Working files/ }).click();
     expect(await context.getByRole("button", { name: /Script runs · 3/ }).count()).toBe(1);

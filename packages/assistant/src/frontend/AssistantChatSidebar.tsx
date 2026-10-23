@@ -2,19 +2,18 @@ import type { AiConversationSource, AiFileStat, AiProject, AiProjectFile, AiChat
 import { type ConversationFileSource, conversationFileSource } from "@k2b/cloud/ai/solid";
 import { SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
-  BottomSheet,
+  appWorkspaceDetailElementId,
   Button,
   ButtonLink,
-  bottomSheetOptions,
   DetailPanel,
   Dropdown,
   type DropdownItem,
-  dialogCore,
   formatFileViewSize,
   IconButton,
   Lightbox,
   type LightboxImage,
   Placeholder,
+  parkWorkspaceDetailDrawers,
   prompts,
   TextInput,
   toast,
@@ -772,8 +771,8 @@ export function AssistantChatSidebarContent(props: {
               title={copy().results}
               icon="ti ti-sparkles"
               class="assistant-sidebar-results"
-              // No count while empty: the body already says there are no results yet.
-              count={snapshot().results.length || undefined}
+              // Empty, the count reads "None yet", like every empty section of a details panel.
+              count={snapshot().results.length}
               meta={
                 <span class="assistant-sidebar-meta">
                   {/* Always rendered, so the heading keeps its height when new results wait. */}
@@ -792,7 +791,7 @@ export function AssistantChatSidebarContent(props: {
                 </span>
               }
             >
-              <Show when={snapshot().results.length} fallback={<p class="assistant-sidebar-empty">{copy().resultsEmpty}</p>}>
+              <Show when={snapshot().results.length}>
                 <div class="assistant-sidebar-results__list">
                   <For each={results().current}>
                     {(result, index) => (
@@ -1501,7 +1500,7 @@ function SidebarSearchResults(props: {
   );
 }
 
-/** The search field that takes the title's place, in the same row height. `Escape` closes it. */
+/** The search field below the details' header. `Escape` closes it. */
 function SidebarSearchField(props: { search: ChatSidebarSearch; onClosed: () => void }) {
   const copy = useSidebarCopy();
   let field: HTMLDivElement | undefined;
@@ -1584,81 +1583,85 @@ const createReadingFreeze = () => {
 };
 
 /**
- * The sidebar as the chat's right column or as a drawer over its edge; the chat layout's CSS decides which. The close
- * button reports the presentation the CSS chose, so the host persists only the closing of the column.
+ * The chat details inside `AppWorkspace.Detail`, which decides between column, drawer, and phone page. Close parks a
+ * drawer or phone page (it names the Detail in `aria-controls`) and closes only the column. An action that leaves the
+ * details, such as opening a file or jumping in the chat, parks a drawer or page first, so its result is in view.
  */
 export function AssistantChatSidebarPanel(props: {
-  id: string;
+  /** The `AppWorkspace.Detail` id. */
+  detailId: string;
   state: ChatSidebarState;
   actions: ChatSidebarActions;
+  chatTitle?: string;
   project?: AiProject | null;
   runCount?: number;
   onClose: () => void;
-  headingRef?: (element: HTMLHeadingElement) => void;
 }) {
   const copy = useSidebarCopy();
-  const headingId = `${props.id}-title`;
   const search = createChatSidebarSearch();
   const freeze = createReadingFreeze();
+  let host: HTMLDivElement | undefined;
   let searchButton: HTMLButtonElement | undefined;
+  const leave =
+    <A extends unknown[]>(run: (...args: A) => void) =>
+    (...args: A) => {
+      const content = host?.closest(".k2b-app-workspace__detail")?.parentElement;
+      if (content) parkWorkspaceDetailDrawers(content);
+      run(...args);
+    };
+  const actions = (): ChatSidebarActions => ({
+    ...props.actions,
+    onOpenFile: leave(props.actions.onOpenFile),
+    onOpenApp: leave(props.actions.onOpenApp),
+    onJump: leave(props.actions.onJump),
+    onOpenStudio: props.actions.onOpenStudio && leave(props.actions.onOpenStudio),
+    onOpenTask: props.actions.onOpenTask && leave(props.actions.onOpenTask),
+    onOpenKnowledge: props.actions.onOpenKnowledge && leave(props.actions.onOpenKnowledge),
+    onOpenReferences: props.actions.onOpenReferences && leave(props.actions.onOpenReferences),
+    onOpenProjectFile: props.actions.onOpenProjectFile && leave(props.actions.onOpenProjectFile),
+    onOpenSecrets: props.actions.onOpenSecrets && leave(props.actions.onOpenSecrets),
+  });
   return (
-    <aside
-      id={props.id}
-      class="assistant-context-sidebar"
-      aria-labelledby={headingId}
-      {...freeze.handlers}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && !event.defaultPrevented && getComputedStyle(event.currentTarget).position === "absolute") {
-          event.preventDefault();
-          freeze.release();
-          props.onClose();
-        }
-      }}
-    >
-      <DetailPanel surface="plain" class="assistant-context-sidebar__panel">
-        <header class="assistant-context-sidebar__header">
-          <h2
-            id={headingId}
-            ref={props.headingRef}
-            tabIndex={-1}
-            class="assistant-context-sidebar__title"
-            classList={{ "sr-only": search.active() }}
-          >
-            {copy().title}
-          </h2>
-          <Show when={search.active()}>
-            <SidebarSearchField search={search} onClosed={() => searchButton?.focus()} />
-          </Show>
-          <div class="assistant-context-sidebar__actions">
-            <IconButton
-              ref={searchButton}
-              size="sm"
-              variant="ghost"
-              label={search.active() ? copy().clearSearch : copy().search}
-              aria-pressed={search.active()}
-              onClick={() => (search.active() ? search.close() : search.open())}
-            >
-              <i class={search.active() ? "ti ti-x" : "ti ti-search"} aria-hidden="true" />
-            </IconButton>
-            <IconButton
-              size="sm"
-              variant="ghost"
-              label={copy().close}
-              aria-expanded="true"
-              aria-controls={props.id}
-              onClick={() => {
-                freeze.release();
-                props.onClose();
-              }}
-            >
-              <i class="ti ti-layout-sidebar-right-collapse" aria-hidden="true" />
-            </IconButton>
-          </div>
-        </header>
-        <DetailPanel.Body class="assistant-context-sidebar__body">
+    <div ref={host} class="assistant-context-sidebar" {...freeze.handlers}>
+      <DetailPanel>
+        <DetailPanel.Header
+          icon="ti ti-message-circle"
+          title={copy().title}
+          subtitle={props.chatTitle}
+          actions={
+            <>
+              <IconButton
+                ref={searchButton}
+                size="sm"
+                variant="ghost"
+                label={search.active() ? copy().clearSearch : copy().search}
+                aria-pressed={search.active()}
+                onClick={() => (search.active() ? search.close() : search.open())}
+              >
+                <i class={search.active() ? "ti ti-x" : "ti ti-search"} aria-hidden="true" />
+              </IconButton>
+              <IconButton
+                size="sm"
+                variant="ghost"
+                label={copy().close}
+                aria-controls={appWorkspaceDetailElementId(props.detailId)}
+                onClick={() => {
+                  freeze.release();
+                  props.onClose();
+                }}
+              >
+                <i class="ti ti-x" aria-hidden="true" />
+              </IconButton>
+            </>
+          }
+        />
+        <Show when={search.active()}>
+          <SidebarSearchField search={search} onClosed={() => searchButton?.focus()} />
+        </Show>
+        <DetailPanel.Body scrollPreserveKey="assistant-chat-context">
           <AssistantChatSidebarContent
             state={props.state}
-            actions={props.actions}
+            actions={actions()}
             project={props.project}
             frozen={freeze.frozen}
             search={search}
@@ -1666,87 +1669,9 @@ export function AssistantChatSidebarPanel(props: {
           />
         </DetailPanel.Body>
       </DetailPanel>
-    </aside>
+    </div>
   );
 }
-
-/**
- * The sidebar as a bottom sheet on phones. Its Back entry closes it; an action that leaves the sheet (open, jump)
- * runs only after the sheet and its history entry are gone, so the jump's own history entry follows it.
- */
-export const openAssistantChatSidebarSheet = async (props: {
-  state: ChatSidebarState;
-  actions: ChatSidebarActions;
-  project?: AiProject | null;
-  runCount?: number;
-  wrap?: (children: () => JSX.Element) => JSX.Element;
-}) => {
-  let after: (() => void) | undefined;
-  const leave =
-    <A extends unknown[]>(close: () => void, run: (...args: A) => void) =>
-    (...args: A) => {
-      after = () => run(...args);
-      close();
-    };
-  await dialogCore.open<void>(
-    (close, context) => {
-      const copy = chatSidebarMessages.resolve([document.documentElement.lang || "en"]).t;
-      const search = createChatSidebarSearch();
-      const dismiss = () => void context.requestDismiss();
-      const actions: ChatSidebarActions = {
-        ...props.actions,
-        onOpenFile: leave(() => close(), props.actions.onOpenFile),
-        onOpenApp: leave(() => close(), props.actions.onOpenApp),
-        onJump: leave(() => close(), props.actions.onJump),
-        onOpenStudio: props.actions.onOpenStudio && leave(() => close(), props.actions.onOpenStudio),
-        onOpenTask: props.actions.onOpenTask && leave(() => close(), props.actions.onOpenTask),
-        onOpenKnowledge: props.actions.onOpenKnowledge && leave(() => close(), props.actions.onOpenKnowledge),
-        onOpenReferences: props.actions.onOpenReferences && leave(() => close(), props.actions.onOpenReferences),
-        onOpenProjectFile: props.actions.onOpenProjectFile && leave(() => close(), props.actions.onOpenProjectFile),
-        onOpenSecrets: props.actions.onOpenSecrets && leave(() => close(), props.actions.onOpenSecrets),
-      };
-      const content = () => (
-        <BottomSheet onDismiss={dismiss}>
-          <BottomSheet.Header
-            title={copy.title}
-            close={dismiss}
-            actions={
-              <IconButton
-                size="sm"
-                variant="ghost"
-                label={search.active() ? copy.clearSearch : copy.search}
-                aria-pressed={search.active()}
-                onClick={() => (search.active() ? search.close() : search.open())}
-              >
-                <i class={search.active() ? "ti ti-x" : "ti ti-search"} aria-hidden="true" />
-              </IconButton>
-            }
-          />
-          <BottomSheet.Body>
-            <DetailPanel surface="plain" class="assistant-context-sheet">
-              <Show when={search.active()}>
-                <SidebarSearchField search={search} onClosed={() => undefined} />
-              </Show>
-              <DetailPanel.Body scrollFade={false}>
-                <AssistantChatSidebarContent
-                  state={props.state}
-                  actions={actions}
-                  project={props.project}
-                  frozen={() => true}
-                  search={search}
-                  runCount={props.runCount}
-                />
-              </DetailPanel.Body>
-            </DetailPanel>
-          </BottomSheet.Body>
-        </BottomSheet>
-      );
-      return props.wrap ? props.wrap(content) : content();
-    },
-    { ...bottomSheetOptions, history: true },
-  );
-  after?.();
-};
 
 /** The same list as a workspace tab ("Files"), with the search field always at hand. */
 export function AssistantChatSidebarTab(props: {

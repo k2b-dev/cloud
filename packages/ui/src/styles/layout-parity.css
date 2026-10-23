@@ -1353,6 +1353,22 @@ html {
     display: none;
   }
 
+  /* A page whose application keeps it open across layouts (`onOpen`) would
+     otherwise cover the window on every load. It waits behind its control
+     like a drawer and opens only when someone asks for it. */
+  .k2b-ui .k2b-app-workspace__detail[data-workspace-detail-phone="page"][data-workspace-detail-reopen="true"]:not([hidden]) {
+    --k2b-workspace-detail-waiting: 1;
+    --k2b-workspace-detail-phone-page: 1;
+  }
+
+  .k2b-ui
+    .k2b-app-workspace__detail[data-workspace-detail-phone="page"][data-workspace-detail-reopen="true"]:not(
+      [hidden],
+      [data-workspace-detail-drawer="open"]
+    ) {
+    display: none;
+  }
+
   /* The header drags the sheet, so the browser must not claim a pan first. */
   .k2b-ui .k2b-app-workspace__detail:not([data-workspace-detail-phone="page"]) .k2b-detail-panel__header {
     touch-action: none;
@@ -3643,6 +3659,16 @@ html {
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-side);
   clip-path: inset(-4rem 0 0 -4rem);
+}
+
+/* An opened phone page stays the page: no drawer corner or shadow. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-app-workspace .k2b-app-workspace__detail[data-width][data-workspace-detail-phone="page"][data-workspace-detail-drawer="open"] {
+    border-top-left-radius: 0;
+    background: var(--k2b-surface);
+    box-shadow: none;
+    clip-path: none;
+  }
 }
 
 /* These containers clip their content, so focus rings inside them are drawn
