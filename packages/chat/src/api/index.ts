@@ -47,6 +47,8 @@ import {
   MessageViewSchema,
   PeoplePageSchema,
   PeopleQuerySchema,
+  ReactionParamSchema,
+  ReactionsSchema,
   ReadAllOutcomeSchema,
   ReadAllSchema,
   ReadSchema,
@@ -66,7 +68,12 @@ import {
 import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
 
-const context = (c: Context<AuthContext>) => ({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) });
+const context = (c: Context<AuthContext>) => ({
+  actor: c.get("actor"),
+  accessSubject: c.get("accessSubject"),
+  locale: getLocale(c),
+  credentialScopes: c.get("credentialScopes"),
+});
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
 const audienceUnavailableResponse = jsonResponse(
   z.object({ code: z.literal("AUDIENCE_UNAVAILABLE"), message: z.string() }),
@@ -352,7 +359,7 @@ const app = new Hono<AuthContext>()
       tags: ["Chat"],
       summary: "Post a Markdown message",
       description:
-        "Accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored message unchanged.",
+        "Accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageViewSchema, "Idempotent retry"),
@@ -420,6 +427,107 @@ const app = new Hono<AuthContext>()
         c,
         chatService.messages.list({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
       ),
+  )
+  .get(
+    "/conversations/:conversation/messages/:message/reactions",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read message reactions",
+      ...requiresAuth,
+      description: "First-reaction order, with up to 10 newest display names per emoji. Requires message read access.",
+      responses: {
+        200: jsonResponse(ReactionsSchema, "Reactions for this viewer"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Message unavailable"),
+      },
+    }),
+    validator("param", MessageParamSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.reactions.list({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          messageId: c.req.valid("param").message,
+        }),
+      ),
+  )
+  .put(
+    "/conversations/:conversation/messages/:message/reactions/:emoji",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Add a message reaction",
+      ...requiresAuth,
+      description: "Idempotent. Requires message read access and write/admin credential scope. One emoji grapheme, at most 32 UTF-8 bytes.",
+      responses: {
+        204: { description: "Reaction state saved" },
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid emoji"),
+        403: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Credential lacks write scope"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Message unavailable"),
+        409: jsonResponse(
+          z.object({ code: z.enum(["REACTION_PERSON_LIMIT", "REACTION_MESSAGE_LIMIT"]), message: z.string() }),
+          "Reaction budget reached",
+        ),
+        429: {
+          ...jsonResponse(z.object({ code: z.string().optional(), message: z.string() }), "Chat write rate limit reached"),
+          headers: { "Retry-After": { description: "Seconds until retry", schema: { type: "integer", minimum: 1 } } },
+        },
+      },
+    }),
+    validator("param", ReactionParamSchema, invalidInput),
+    async (c) => {
+      const param = c.req.valid("param");
+      const result = await chatService.reactions.set({
+        ...context(c),
+        conversationId: param.conversation,
+        messageId: param.message,
+        emoji: param.emoji,
+        on: true,
+      });
+      if (!result.ok) {
+        if ("retryAfter" in result) c.header("Retry-After", String(result.retryAfter));
+        return respond(c, result);
+      }
+      return c.body(null, 204);
+    },
+  )
+  .delete(
+    "/conversations/:conversation/messages/:message/reactions/:emoji",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Remove a message reaction",
+      ...requiresAuth,
+      description: "Idempotent. Requires message read access and write/admin credential scope. One emoji grapheme, at most 32 UTF-8 bytes.",
+      responses: {
+        204: { description: "Reaction state saved" },
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid emoji"),
+        403: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Credential lacks write scope"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Message unavailable"),
+        409: jsonResponse(
+          z.object({ code: z.enum(["REACTION_PERSON_LIMIT", "REACTION_MESSAGE_LIMIT"]), message: z.string() }),
+          "Reaction budget reached",
+        ),
+        429: {
+          ...jsonResponse(z.object({ code: z.string().optional(), message: z.string() }), "Chat write rate limit reached"),
+          headers: { "Retry-After": { description: "Seconds until retry", schema: { type: "integer", minimum: 1 } } },
+        },
+      },
+    }),
+    validator("param", ReactionParamSchema, invalidInput),
+    async (c) => {
+      const param = c.req.valid("param");
+      const result = await chatService.reactions.set({
+        ...context(c),
+        conversationId: param.conversation,
+        messageId: param.message,
+        emoji: param.emoji,
+        on: false,
+      });
+      if (!result.ok) {
+        if ("retryAfter" in result) c.header("Retry-After", String(result.retryAfter));
+        return respond(c, result);
+      }
+      return c.body(null, 204);
+    },
   )
   .get(
     "/conversations/:conversation/messages/:message",

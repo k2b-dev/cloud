@@ -13,7 +13,13 @@ import { type SQLQuery, sql } from "bun";
 import { app } from "../config";
 import { chatMessages } from "../messages";
 
-export type ChatContext = { actor: RequestActor; accessSubject: AccessSubject; locale?: string; requestId?: string };
+export type ChatContext = {
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+  locale?: string;
+  credentialScopes?: readonly string[];
+  requestId?: string;
+};
 export type ConversationRow = {
   id: string;
   short_id: string;

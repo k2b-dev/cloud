@@ -281,7 +281,8 @@ A body of `""` is accepted only with at least one ref. Refs identify resources;
 clients resolve each card with the reader's session. Sharing grants no access
 to the referenced resource. Message responses and live message events always
 include `refs`, including an empty array for messages without refs. A retry
-with the same `clientId` returns the stored message unchanged.
+with the same `clientId` returns the stored content with the caller's current
+reactions.
 
 `GET /api/chat/conversations/:conversation/shared` requires chat read access.
 It returns `{ items, nextCursor }`, with up to 30 items, newest message first.
@@ -522,3 +523,57 @@ server the device's last appearance and holds no personal data. Add it to the
 cookie list in your privacy notice if you keep one.
 No data migration or configuration change is required. See
 [Follow the person's theme](/en/docs/frontend/styling-and-accessibility#follow-the-persons-theme).
+
+## Chat reactions after the upgrade
+
+Chat's additive startup migration creates the message reaction table and indexes.
+Existing messages have no reactions. No configuration or backfill is needed.
+Reactions apply to every chat, including channels and named or archived threads.
+
+Anyone who can read a text message can react, including read-only members,
+channel audience readers, guests and service accounts. Credentials also need
+`write` or `admin` scope: reacting writes the reader's own state, so a
+read-scoped token cannot react. Resource grants still need only `read`.
+User-delegated credentials react as their person; other service and agent
+credentials react as their service account. Reacting does not join a channel.
+
+Use these endpoints below `/api/chat/conversations/:conversation/messages/:message`:
+
+| Method and path | Result |
+| --- | --- |
+| `PUT /reactions/:emoji` | Add your reaction; 204 with no body |
+| `DELETE /reactions/:emoji` | Remove your reaction; 204 with no body |
+| `GET /reactions` | `{ items: [{ emoji, count, own, people }] }` |
+
+URL-encode the emoji path segment. Each reaction is one Unicode emoji grapheme,
+validated with `Intl.Segmenter` and Unicode pictographic or regional-indicator
+properties, including ZWJ sequences, skin tones, flags and keycaps. It must fit
+in 32 UTF-8 bytes; invalid input returns 400. Each principal can hold at most
+20 different emoji on one message, the product budget for one picker row group.
+A message can carry at most 50 distinct emoji, the reaction bar's budget for
+two wrapped lines. Exceeding these limits returns 409 with
+`REACTION_PERSON_LIMIT` or `REACTION_MESSAGE_LIMIT`. Remove a reaction before
+adding another. Repeated adds or removes preserve the same state and revision.
+Reactions share the existing send limits: 10 writes per principal and chat in
+10 seconds and 60 per principal in 60 seconds. A limit returns 429 with
+`Retry-After`; retry after that many seconds.
+
+Groups are ordered by their first remaining reaction. `own` refers to the
+caller's access subject; `people` contains up to 10 display names, newest
+reaction first, with the standard principal-label fallback and no account IDs.
+History, snapshots, single-message reads, send responses and changes include
+`reactions: [{ emoji, count, own }]`, or an empty array. Pages load their reaction
+summaries in one grouped query. Unavailable chats or messages, including system
+and deleted messages, return the same `NOT_FOUND` 404 as message reads.
+
+A changed reaction advances the message and conversation revisions. Changes
+reads therefore include that message again. One conversation live hint carries
+`{ type: "reactions", conversationId, messageId, rev }`; consumers fetch
+`GET /reactions` for their own projection. Message live events carry no
+viewer-specific reactions. The browser store updates optimistically, restores
+failed changes and throws the failure for the caller to display. It fetches
+once per loaded message in a live batch and ignores older revisions.
+
+Reactions leave read state, unread counts, sidebar order and notifications
+unchanged. Leaving a chat preserves the principal and display name on existing
+reactions; deleting the message removes them.

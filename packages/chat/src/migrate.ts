@@ -57,6 +57,16 @@ export const migrate = async (): Promise<void> => {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_seq ON chat.messages(conversation_id, seq);
     CREATE INDEX IF NOT EXISTS idx_chat_messages_rev ON chat.messages(conversation_id, rev);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_messages_client ON chat.messages(conversation_id, author_type, author_id, client_id);
+    CREATE TABLE IF NOT EXISTS chat.message_reactions (
+      message_id uuid NOT NULL REFERENCES chat.messages(id) ON DELETE CASCADE,
+      principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
+      principal_id uuid NOT NULL,
+      display_name text NOT NULL,
+      emoji text NOT NULL CHECK (octet_length(emoji) BETWEEN 1 AND 32),
+      position bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+      PRIMARY KEY (message_id, principal_type, principal_id, emoji)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_reactions_message ON chat.message_reactions(message_id, emoji, position);
     CREATE TABLE IF NOT EXISTS chat.threads (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       short_id text NOT NULL CHECK (short_id ~ '^[0-9A-Za-z]{6}$') UNIQUE,

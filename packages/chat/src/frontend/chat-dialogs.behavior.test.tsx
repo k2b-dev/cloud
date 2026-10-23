@@ -887,12 +887,14 @@ describe("chat dialogs and info", () => {
       expect(onChange.mock.calls).toEqual([[[{ principal: nora.principal, displayName: "Nora" }]]]);
       expect(fetched).toEqual([]);
     });
-    test(`full-account picker renders the platform user/group search in ${locale}`, async () => {
+    test(`full-account picker renders the platform user/group/service-account search in ${locale}`, async () => {
       const people = mock<ChatDialogStore["people"]>(unexpected);
       await mount(locale, () =>
         createComponent(modules!.MemberPicker, { guest: false, chosen: [], excluded: [], people, onChange: () => {} }),
       );
-      expect(input("input").placeholder).toBe(locale === "en" ? "Add user or group…" : "Benutzer oder Gruppe hinzufügen…");
+      expect(input("input").placeholder).toBe(
+        locale === "en" ? "Add user, group, or service account…" : "Benutzer, Gruppe oder Dienstkonto hinzufügen…",
+      );
       expect(people).not.toHaveBeenCalled();
     });
     test(`info search debounces q, and Show more sends its cursor and appends in ${locale}`, async () => {

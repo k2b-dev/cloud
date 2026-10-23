@@ -772,6 +772,7 @@ describe("ChatWorkspace browser read state", () => {
         const ownMenu = await openMessageMenu(page, name, own);
         expect(await ownMenu.getByRole("menuitem").allInnerTexts()).toEqual([
           expect.stringContaining("Reply"),
+          expect.stringContaining("Add reaction"),
           expect.stringContaining("Copy text"),
         ]);
         await page.keyboard.press("Escape");
@@ -914,7 +915,7 @@ describe("ChatWorkspace browser read state", () => {
       const { page, errors } = await load(options, {});
       const geometry = () =>
         rows(page, name)
-          .locator("a[href]")
+          .locator('a[href^="/app/chat/c/"]')
           .evaluateAll((links) =>
             links.map((link) => {
               const time = link.querySelector("time")!.getBoundingClientRect();

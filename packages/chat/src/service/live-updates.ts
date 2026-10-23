@@ -9,7 +9,7 @@ type Update = { key: string; data: z.infer<typeof ChatLiveEventSchema>; access?:
 /** Message and sidebar updates precede each affected person's membership hint. */
 export const chatLiveUpdates = (
   conversationId: string,
-  message: z.infer<typeof MessageSchema>,
+  message: Omit<z.infer<typeof MessageSchema>, "reactions">,
   preview: string | null,
   affected: readonly string[],
 ): Update[] => {

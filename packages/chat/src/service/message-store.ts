@@ -9,6 +9,7 @@ import { type MessageSchema, type SystemMessage, SystemMessageSchema } from "./c
 import { chatLive } from "./live";
 import { chatLiveUpdates } from "./live-updates";
 import { extractMessageLinks } from "./message-links";
+import { reactionGroups } from "./reaction-store";
 
 export type MessageRow = {
   short_id: string;
@@ -33,6 +34,7 @@ export const projectMessage = (
   thread: string | null = null,
   replyTo: z.infer<typeof MessageSchema>["replyTo"] = null,
 ): z.infer<typeof MessageSchema> => ({
+  reactions: [],
   thread,
   replyTo,
   id: row.short_id,
@@ -71,7 +73,19 @@ const systemPeople = (system: SystemMessage | null) => {
       return [];
   }
 };
-export const messageViews = async (db: typeof sql, rows: MessageRow[], conversationId: string, locale?: string) => {
+export const messageViews = async (
+  db: typeof sql,
+  rows: MessageRow[],
+  conversationId: string,
+  subject: ChatContext["accessSubject"],
+  locale?: string,
+) => {
+  const reactions = await reactionGroups(
+    db,
+    rows.map((row) => row.short_id),
+    subject,
+    locale,
+  );
   const threadIds = [...new Set(rows.flatMap((row) => (row.thread_id ? [row.thread_id] : [])))];
   const threadRows = threadIds.length
     ? await db<{ id: string; short_id: string }[]>`
@@ -108,6 +122,7 @@ export const messageViews = async (db: typeof sql, rows: MessageRow[], conversat
     for (const person of systemPeople(message.system)) if (deleted.has(person.id)) person.name = former;
   }
   return projected.map((message, index) => {
+    message.reactions = (reactions.get(message.id) ?? []).map(({ emoji, count, own }) => ({ emoji, count, own }));
     const seq = rows[index]!.reply_to_seq;
     const original = replies.get(String(seq));
     message.replyTo =
@@ -176,10 +191,10 @@ export const appendMessage = async (
   }
   if (!row) throw new Error("Chat message ID could not be allocated");
   if (row.thread_id) await db`UPDATE chat.threads SET last_activity_at = ${row.created_at} WHERE id = ${row.thread_id}::uuid`;
-  const [view] = await messageViews(db, [row], conversation.short_id);
+  const [view] = await messageViews(db, [row], conversation.short_id, context.accessSubject);
   if (!view) throw new Error("Chat message could not be projected");
   // Every member renders a system line in their own language, so the live event carries its code, not its text.
-  const { systemText: _, ...projected } = view;
+  const { systemText: _, reactions: _reactions, ...projected } = view;
   for (const row of chatLiveUpdates(
     conversation.short_id,
     projected,

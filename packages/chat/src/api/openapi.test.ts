@@ -227,3 +227,17 @@ test("shared items document typed filters, opaque cursors, bounds, and errors", 
   expect(response.content["application/json"].schema.required).toEqual(["items", "nextCursor"]);
   expect(response.content["application/json"].schema.properties.items.maxItems).toBe(30);
 });
+
+test("reactions document read projection, empty writes and stable budget errors", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const path = "/api/chat/conversations/{conversation}/messages/{message}/reactions";
+  expect(spec.paths[path]?.get?.responses["200"]).toBeDefined();
+  for (const method of ["put", "delete"]) {
+    const op = spec.paths[`${path}/{emoji}`]?.[method];
+    expect(op?.parameters).toHaveLength(3);
+    for (const code of ["204", "400", "403", "404", "409", "429"]) expect(op?.responses[code]).toBeDefined();
+    expect(JSON.stringify(op?.responses["409"])).toContain("REACTION_PERSON_LIMIT");
+    expect(JSON.stringify(op?.responses["409"])).toContain("REACTION_MESSAGE_LIMIT");
+    expect(JSON.stringify(op?.responses["204"])).not.toContain("content");
+  }
+});

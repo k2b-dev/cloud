@@ -184,6 +184,8 @@ export const startChatHarness = async () => {
   let nextAccess = 0;
   let nextPerson = 0;
   let failing = 0;
+  let failingReactions = 0;
+  const reactionRequests: { method: string; messageId: string; emoji?: string }[] = [];
   let failingUnread = 0;
   let failingThreads = 0;
   let failingShared = 0;
@@ -235,7 +237,7 @@ export const startChatHarness = async () => {
       principal,
       displayName:
         principal.type === "user" ? people.get(id)!.name : principal.type === "group" ? group!.name : serviceAccounts.get(id)!.name,
-      serviceAccountKind: principal.type === "service_account" ? serviceAccounts.get(id)!.kind : null,
+      ...(principal.type === "service_account" ? { serviceAccountKind: serviceAccounts.get(id)!.kind } : {}),
       guest: false,
       deactivated: false,
       groupSize: group?.size ?? null,
@@ -420,6 +422,7 @@ export const startChatHarness = async () => {
     const original = target.replyTo ? entry.messages.find((message) => message.id === target.replyTo) : undefined;
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
+      reactions: [],
       refs: target.refs ?? [],
       thread,
       replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,
@@ -455,6 +458,31 @@ export const startChatHarness = async () => {
     };
     project(entry);
     return message;
+  };
+  // Who reacted with which emoji, per message; the viewer's views count them and mark their own.
+  const reactors = new Map<string, Map<string, Set<string>>>();
+  const reactionView = (messageId: string) =>
+    [...(reactors.get(messageId) ?? new Map<string, Set<string>>())]
+      .filter(([, people]) => people.size > 0)
+      .map(([emoji, people]) => ({ emoji, count: people.size, own: people.has(viewer.id) }));
+  /** Adds or removes a reaction as the server does: the message's revision moves and a hint goes out. */
+  const setReaction = (chat: string, messageId: string, personId: string, emoji: string, on: boolean) => {
+    const entry = chats.get(chat)!;
+    const message = entry.messages.find((candidate) => candidate.id === messageId);
+    if (!message) return false;
+    const byEmoji = reactors.get(messageId) ?? new Map<string, Set<string>>();
+    reactors.set(messageId, byEmoji);
+    const people = byEmoji.get(emoji) ?? new Set<string>();
+    byEmoji.set(emoji, people);
+    if (people.has(personId) === on) return true;
+    if (on) people.add(personId);
+    else people.delete(personId);
+    const rev = entry.conversation.rev + 1;
+    entry.conversation = { ...entry.conversation, rev };
+    message.rev = rev;
+    message.reactions = reactionView(messageId);
+    deliver("conversation", chat, { type: "reactions", conversationId: chat, messageId, rev });
+    return true;
   };
   const publish = (message: Message) => {
     const { systemText: _, ...live } = message;
@@ -857,6 +885,27 @@ export const startChatHarness = async () => {
         if (!confirmed && batch.length >= READ_ALL_CONFIRM_FROM) return Response.json({ outcome: "confirm" });
         for (const chat of batch) read(chat.conversation.id, chat.messages.length, "all");
         return Response.json({ outcome: "done", marked: batch.length, more: candidates().length > 0 });
+      }
+      const reaction = /^\/api\/chat\/conversations\/([^/]+)\/messages\/([^/]+)\/reactions(?:\/([^/]+))?$/.exec(url.pathname);
+      if (reaction) {
+        const [, chat, messageId, emoji] = reaction;
+        if (!chats.has(chat!)) return Response.json({ code: "NOT_FOUND", message: "Chat not found." }, { status: 404 });
+        reactionRequests.push({ method: request.method, messageId: messageId!, emoji: emoji ? decodeURIComponent(emoji) : undefined });
+        if (request.method === "GET")
+          return Response.json({
+            items: reactionView(messageId!).map((item) => ({
+              ...item,
+              people: [...(reactors.get(messageId!)?.get(item.emoji) ?? [])].map((id) => people.get(id)?.name ?? "Someone"),
+            })),
+          });
+        if (failingReactions > 0) {
+          failingReactions -= 1;
+          return Response.json({ message: "Reactions are unavailable." }, { status: 503 });
+        }
+        const done = setReaction(chat!, messageId!, viewer.id, decodeURIComponent(emoji!), request.method === "PUT");
+        return done
+          ? new Response(null, { status: 204 })
+          : Response.json({ code: "NOT_FOUND", message: "Message not found." }, { status: 404 });
       }
       const match = /^\/api\/chat\/conversations\/([^/]+)(?:\/([a-z]+)(?:\/([^/]+))?)?$/.exec(url.pathname);
       if (match) {
@@ -1307,6 +1356,14 @@ export const startChatHarness = async () => {
     /** Returns the current member entries for assertions. */
     members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
     posted,
+    reactionRequests,
+    /** Someone else reacts, as the server would tell the open chat. */
+    react: (chat: string, messageId: string, personId: string, emoji: string, on = true) =>
+      setReaction(chat, messageId, personId, emoji, on),
+    /** The next reaction changes fail. */
+    failReactions: (count = 1) => {
+      failingReactions = count;
+    },
     /** An element of the made-up "spaces" app; `readable: false` makes its card "not available". */
     addElement: (element: { id: string; title: string; preview?: string; readable?: boolean }) => {
       elements.set(element.id, { preview: "", readable: true, ...element });
@@ -1345,6 +1402,9 @@ export const startChatHarness = async () => {
       reads.length = 0;
       readViews.length = 0;
       posted.length = 0;
+      reactionRequests.length = 0;
+      reactors.clear();
+      failingReactions = 0;
       failing = 0;
       failingUnread = 0;
       failingThreads = 0;

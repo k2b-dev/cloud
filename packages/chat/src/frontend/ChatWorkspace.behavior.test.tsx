@@ -81,6 +81,7 @@ class FakeWebSocket {
 const settle = () => Bun.sleep(60);
 const message = (seq: number, body = `Message ${seq}`) =>
   MessageViewSchema.parse({
+    reactions: [],
     refs: [],
     thread: null,
     replyTo: null,
@@ -348,6 +349,8 @@ describe("ChatWorkspace interactions", () => {
     answer(
       Response.json(
         {
+          reactions: [],
+          refs: [],
           thread: null,
           replyTo: null,
           id: "Chat010001",

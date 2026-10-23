@@ -306,7 +306,31 @@ export const SystemMessageSchema = z.discriminatedUnion("code", [
   z.object({ code: z.literal("permission_changed"), params: z.object({ member: personSnapshot, permission: PermissionSchema }) }),
 ]);
 export type SystemMessage = z.infer<typeof SystemMessageSchema>;
+// Product budgets: one picker row group per person; two wrapped reaction-bar lines per message.
+export const REACTIONS_PER_PERSON = 20;
+export const REACTIONS_PER_MESSAGE = 50;
+export const REACTION_PEOPLE = 10;
+const emojiSegments = new Intl.Segmenter("en", { granularity: "grapheme" });
+const emojiPart = String.raw`(?:\p{Emoji_Modifier_Base}\uFE0F?\p{Emoji_Modifier}|\p{Extended_Pictographic}\uFE0F?)`;
+const emojiPattern = new RegExp(
+  String.raw`^(?:${emojiPart}(?:\u200D${emojiPart})*|\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3|\u{1F3F4}[\u{E0061}-\u{E007A}]+\u{E007F})$`,
+  "u",
+);
+export const EmojiSchema = z
+  .string()
+  .refine(
+    (emoji) =>
+      emoji.length <= 32 &&
+      new TextEncoder().encode(emoji).byteLength <= 32 &&
+      [...emojiSegments.segment(emoji)].length === 1 &&
+      emojiPattern.test(emoji),
+  );
+export const ReactionSchema = z.strictObject({ emoji: EmojiSchema, count: z.number().int().positive(), own: z.boolean() });
+export const ReactionsSchema = z.strictObject({
+  items: z.array(ReactionSchema.extend({ people: z.array(z.string()).max(REACTION_PEOPLE) })).max(REACTIONS_PER_MESSAGE),
+});
 export const MessageSchema = z.object({
+  reactions: z.array(ReactionSchema).max(REACTIONS_PER_MESSAGE),
   refs: z.array(CloudResourceRefSchema).max(MAX_MESSAGE_REFS),
   thread: ThreadIdSchema.nullable(),
   replyTo: z
@@ -380,6 +404,7 @@ export const MessageQuerySchema = z
   .strictObject({ before: sequenceQuery(1).optional(), after: sequenceQuery(0).optional(), thread: ThreadSelectorSchema.optional() })
   .refine((query) => query.before === undefined || query.after === undefined);
 export const MessageParamSchema = ConversationParamSchema.extend({ message: MessageIdSchema });
+export const ReactionParamSchema = MessageParamSchema.extend({ emoji: EmojiSchema });
 export const ChangesQuerySchema = z.object({ afterRev: sequenceQuery(0) });
 /**
  * `from` and `to` are the positions the page covers for its thread selection: every selected message in that range is
@@ -416,7 +441,13 @@ export const ChatLiveEventSchema = z.discriminatedUnion("type", [
   ReadUpdateSchema.extend({ type: z.literal("read") }),
   z.object({ type: z.literal("membership"), conversationId: ShortIdSchema }),
   z.strictObject({ type: z.literal("threads"), conversationId: ShortIdSchema }),
-  z.object({ type: z.literal("message"), message: MessageSchema }),
+  z.strictObject({
+    type: z.literal("reactions"),
+    conversationId: ShortIdSchema,
+    messageId: MessageIdSchema,
+    rev: z.number().int().nonnegative(),
+  }),
+  z.object({ type: z.literal("message"), message: MessageSchema.omit({ reactions: true }) }),
   MessageSchema.pick({
     thread: true,
     conversationId: true,
