@@ -5,7 +5,7 @@ section: Contributing
 order: 1302
 description: How a change on a feature branch becomes a versioned Cloud release with images, CLI, website, PWA, and npm packages.
 tags: [contributing, release, versioning, ci]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Release process
@@ -177,6 +177,12 @@ the branch conflicts with `main`. Before the maintainer merges it,
 fast-forward the fork's `main` to `main`, merge `main` into the fork branch,
 push both to the fork only, and check that
 `git merge-tree --write-tree origin/main HEAD` reports no conflict.
+
+Before asking the maintainer to merge, check the advisory page and the current
+`main` commit: the fix may already have been merged there even if an earlier
+review still says it is pending. Record the actual resulting commit and parse
+its message; when it contains only `Merge commit from fork`, use the verified
+private pull request title for the override entry.
 
 Before the release, open a small pull request with a real change and put a
 `BEGIN_COMMIT_OVERRIDE` block in its body. release-please then reads the

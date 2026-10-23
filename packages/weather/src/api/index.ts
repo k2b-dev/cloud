@@ -1,3 +1,4 @@
+import { GeoProvenanceSchema } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getLocale, getUserBackedActor, jsonResponse, rateLimit, requiresAuth, respond } from "@k2b/cloud/server";
 import { weatherService } from "@k2b/cloud/services";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
@@ -8,6 +9,23 @@ import { CurrentWeatherSchema, WeatherDataSchema, WeatherLocationIdSchema } from
 import { weatherMessages } from "../messages";
 import { weatherSettingsRouter } from "./settings";
 import widgetRoutes from "./widgets";
+
+const geoCaller = (c: Context<AuthContext>) => ({
+  cookie: c.req.header("cookie"),
+  authorization: c.req.header("authorization"),
+  requestId: c.req.header("x-request-id"),
+  locale: getLocale(c),
+  signal: c.req.raw.signal,
+});
+
+const budgetReset = (details: unknown, locale: string) => {
+  const value = z.object({ details: z.object({ resetsAt: z.iso.datetime() }) }).safeParse(details);
+  return value.success
+    ? new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short", timeZone: "UTC" }).format(
+        new Date(value.data.details.resetsAt),
+      ) + " UTC"
+    : "—";
+};
 
 const coordinateString = (min: number, max: number) =>
   z
@@ -26,6 +44,18 @@ const WeatherQuerySchema = z.object({
 const ErrorResponseSchema = z.object({
   message: z.string(),
 });
+const GeoErrorResponseSchema = ErrorResponseSchema.extend({
+  code: z.string().optional(),
+  details: z
+    .object({
+      scope: z.enum(["person", "cloud"]).optional(),
+      resetsAt: z.iso.datetime().optional(),
+      retryAfterSeconds: z.number().optional(),
+      costs: z.object({ settledCredits: z.number(), unknownCredits: z.number() }).optional(),
+    })
+    .passthrough()
+    .optional(),
+});
 const MessageResponseSchema = z.object({
   message: z.string(),
 });
@@ -36,6 +66,7 @@ const LocationSchema = z.object({
   state: z.string().nullable(),
   lat: z.number(),
   lon: z.number(),
+  provenance: GeoProvenanceSchema.nullable().optional(),
 });
 
 const CreateLocationSchema = z.object({
@@ -48,6 +79,7 @@ const CreateLocationSchema = z.object({
     .transform((value) => (value ? value : undefined)),
   lat: z.number().min(-90).max(90),
   lon: z.number().min(-180).max(180),
+  provenance: GeoProvenanceSchema.optional(),
 });
 
 const LocationParamSchema = z.object({
@@ -60,6 +92,7 @@ const GeoResultSchema = z.object({
   lon: z.number(),
   country: z.string().optional(),
   state: z.string().optional(),
+  provenance: GeoProvenanceSchema,
 });
 
 const GeoSearchQuerySchema = z.object({
@@ -113,9 +146,9 @@ const locationsApi = new Hono<AuthContext>()
       const { t } = weatherMessages.resolve([getLocale(c)]);
       const user = requireUserBackedActor(c);
       if (!user.ok) return respond(c, user);
-      const { name, state, lat, lon } = c.req.valid("json");
+      const { name, state, lat, lon, provenance } = c.req.valid("json");
 
-      const result = await weatherService.location.saved.create({ userId: user.data.id, data: { name, state, lat, lon } });
+      const result = await weatherService.location.saved.create({ userId: user.data.id, data: { name, state, lat, lon, provenance } });
       return respond(c, result.ok ? result : fail({ ...result.error, message: t.addLocationFailed }), 201);
     },
   )
@@ -235,16 +268,22 @@ const app = new Hono<AuthContext>()
       });
     },
   )
-  // Public: Forecast lookup by city name (DE only)
+  // Authenticated: city lookups consume the caller’s Core geo budget
   .get(
     "/forecast/by-city",
+    auth.requireRole("authenticated"),
     describeRoute({
       tags: ["Weather"],
       summary: "Get forecast by city name",
+      ...requiresAuth,
       description: "Uses the first German city search result and returns weather for its coordinates.",
       responses: {
         200: jsonResponse(WeatherDataSchema, "Weather data"),
         400: jsonResponse(ErrorResponseSchema, "Invalid city query"),
+        401: jsonResponse(ErrorResponseSchema, "Unauthorized"),
+        429: jsonResponse(GeoErrorResponseSchema, "Geo budget or provider capacity exhausted"),
+        502: jsonResponse(GeoErrorResponseSchema, "Geo provider failed"),
+        503: jsonResponse(GeoErrorResponseSchema, "Geo service not configured"),
         404: jsonResponse(ErrorResponseSchema, "City not found"),
         500: jsonResponse(ErrorResponseSchema, "Failed to fetch weather"),
       },
@@ -257,29 +296,38 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const { t } = weatherMessages.resolve([getLocale(c)]);
       const { q } = c.req.valid("query");
-      const result = await weatherService.forecast.getByCityName({ query: q });
+      const result = await weatherService.forecast.getByCityName({ query: q, caller: geoCaller(c) });
       if (result.ok) return respond(c, result);
       const message =
         result.error.code === "NOT_FOUND"
           ? t.cityForecastUnavailable
           : result.error.code === "BAD_INPUT"
             ? t.cityQueryRequired
-            : result.error.code === "WEATHER_CITY_SEARCH_NOT_CONFIGURED"
+            : result.error.code === "GEO_NOT_CONFIGURED"
               ? t.citySearchNotConfigured
-              : t.fetchWeatherFailed;
-      return respond(c, fail({ ...result.error, message }));
+              : result.error.code === "GEO_BUDGET_EXHAUSTED"
+                ? t.citySearchBudget({ reset: budgetReset(result.error, getLocale(c)) })
+                : t.fetchWeatherFailed;
+      return Response.json({ ...result.error, message }, { status: result.error.status });
     },
   )
-  // Public: Geo search proxy
+  // Authenticated: Core address autocomplete
   .get(
     "/geo/search",
+    auth.requireRole("authenticated"),
     describeRoute({
       tags: ["Weather"],
       summary: "Search for locations",
-      description: "Search for cities using the configured geo service. Weather app supports country=DE only.",
+      ...requiresAuth,
+      description:
+        "Suggest up to five German cities using Core address.autocomplete (at least three characters). Requires sign-in and uses the caller’s geo budget.",
       responses: {
         200: jsonResponse(z.array(GeoResultSchema), "Search results"),
         400: jsonResponse(ErrorResponseSchema, "Invalid query"),
+        401: jsonResponse(ErrorResponseSchema, "Unauthorized"),
+        429: jsonResponse(GeoErrorResponseSchema, "Geo budget or provider capacity exhausted"),
+        502: jsonResponse(GeoErrorResponseSchema, "Geo provider failed"),
+        503: jsonResponse(GeoErrorResponseSchema, "Geo service not configured"),
         500: jsonResponse(ErrorResponseSchema, "Geo service unavailable"),
       },
     }),
@@ -291,24 +339,23 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const { t } = weatherMessages.resolve([getLocale(c)]);
       const { q, country } = c.req.valid("query");
-      return respond(c, async () => {
-        const result = await weatherService.location.city.list({
-          pagination: { page: 1, perPage: 25 },
-          filter: { query: q, country },
-        });
-        if (!result.ok) {
-          return fail({
-            ...result.error,
-            message:
-              result.error.code === "BAD_INPUT"
-                ? t.onlyGermanCitySearch
-                : result.error.code === "WEATHER_CITY_SEARCH_NOT_CONFIGURED"
-                  ? t.citySearchNotConfigured
-                  : t.locationSearchUnavailable,
-          });
-        }
-        return ok(result.data.items);
+      const result = await weatherService.location.city.list({
+        caller: geoCaller(c),
+        pagination: { page: 1, perPage: 5 },
+        filter: { query: q, country },
       });
+      if (!result.ok) {
+        const message =
+          result.error.code === "BAD_INPUT"
+            ? t.onlyGermanCitySearch
+            : result.error.code === "GEO_NOT_CONFIGURED"
+              ? t.citySearchNotConfigured
+              : result.error.code === "GEO_BUDGET_EXHAUSTED"
+                ? t.citySearchBudget({ reset: budgetReset(result.error, getLocale(c)) })
+                : t.locationSearchUnavailable;
+        return Response.json({ ...result.error, message }, { status: result.error.status });
+      }
+      return respond(c, ok(result.data.items));
     },
   )
   // Auth: Locations CRUD
