@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Redundant reads after a confirmed insert | First sync repeats content updates and queries state that cannot exist for a newly inserted message, multiplying database latency. | Test: Mail `lifecycle.integration.test.ts` counts PostgreSQL commands for a 200-envelope import and replays it to check canonical IDs, conversations and read state. Only a confirmed insert skips these reads; existing and raced copies keep the full path ([#1487](https://github.com/k2b-dev/cloud/issues/1487)). |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
@@ -961,3 +962,10 @@ with "Suspected:"; the fix pull request replaces it with the confirmed cause.
 When the guard does not exist yet, write "Pending in #n" with the issue that
 tracks it, or "None, because …". A pull request that adds a guard for a class
 updates that class's row in the table.
+
+### Mail first-sync database latency (#1487)
+
+- **Error class:** Redundant reads after a confirmed insert.
+- **Cause and fix:** New content followed the same update and lookup path as existing copies. The insertion result now distinguishes a new row from an upsert conflict; only a new row skips the redundant update and four reads. Remote-reference races fall back to the full path.
+- **Guard:** The PostgreSQL integration imports 200 envelopes through `ingestEnvelope`, counts commands at the wire, and replays the batch to verify stable IDs, conversation count and read state.
+- **Measurement:** On the same local test database, the original path used 4,602 commands and 4,554 ms (44 messages/s); the fixed path used 3,602 commands and 3,641 ms (55 messages/s). Command count fell 22%; timings are observations on a shared host, not a guaranteed throughput target. Batch limits and lease scheduling are unchanged.
