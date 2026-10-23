@@ -24,6 +24,11 @@ export const shellMessages = i18n.define({
       invalidLink: "This isn't a pairing link. Copy the link on the web again.",
       otherCloudLink: "This link belongs to another Cloud. Open that Cloud's app instead.",
       cloudLoginLink: "This link is for Cloud Login, not for this app.",
+      adminConfirmTitle: ({ name }: { name: string }) => `Sign in as ${name}?`,
+      adminConfirmBody: ({ name }: { name: string }) => `Set up by ${name} (Administration). Confirm only if this is your device.`,
+      adminConfirm: "Confirm",
+      adminReject: "Reject",
+      adminRejected: "You rejected the pairing. Nothing was paired.",
       // Waiting
       connectingAs: ({ cloud, account }: { cloud: string; account: string }) => `Connecting to ${cloud} as ${account}`,
       codeLabel: "Pairing code",
@@ -76,6 +81,11 @@ export const shellMessages = i18n.define({
       offlineBody: "Check your connection, then try again.",
     },
     de: {
+      adminConfirmTitle: ({ name }) => `Als ${name} anmelden?`,
+      adminConfirmBody: ({ name }) => `Eingerichtet von ${name} (Administration). Bestätige nur, wenn das dein Gerät ist.`,
+      adminConfirm: "Bestätigen",
+      adminReject: "Ablehnen",
+      adminRejected: "Du hast abgelehnt. Es wurde nichts gekoppelt.",
       connect: ({ cloud }: Cloud) => `Mit ${cloud} verbinden`,
       connectLead: "Kopple diese App mit deinem Konto im Web. Du bleibst angemeldet, solange du sie nutzt.",
       ended: "Dieses Gerät wurde abgemeldet. Verbinde es erneut.",

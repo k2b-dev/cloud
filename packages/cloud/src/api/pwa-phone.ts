@@ -1,8 +1,19 @@
 import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { describeRoute } from "hono-openapi";
 import { env } from "../config/env";
-import { PWA_AUTH_PATH, PWA_COOKIES, PWA_LIMITS, PWA_SCOPE, PwaClaimSchema, type PwaLaunchState, PwaRenameSchema } from "../contracts/pwa";
-import { type AuthContext, auth, getLocale, rateLimit, v } from "../server";
+import {
+  PWA_AUTH_PATH,
+  PWA_COOKIES,
+  PWA_LIMITS,
+  PWA_SCOPE,
+  PwaClaimSchema,
+  PwaDeviceDecisionSchema,
+  PwaCompleteResultSchema,
+  type PwaLaunchState,
+  PwaRenameSchema,
+} from "../contracts/pwa";
+import { type AuthContext, auth, getLocale, jsonResponse, rateLimit, v } from "../server";
 import { type PwaCredentials, type PwaDeviceNotifier, PwaError, pwaDevices } from "../services/pwa-devices";
 import { defaultShellAvailable, handlePwaError, type PwaRouteOptions, pwaErrorResponse, pwaInvalidRequest, pwaTransport } from "./pwa";
 
@@ -98,29 +109,67 @@ export const createPwaPhoneRoutes = (options: PwaPhoneRouteOptions) => {
       });
       return c.json({ code: claimed.code, account: claimed.account, expiresAt: claimed.expiresAt });
     })
-    .post("/pairings/complete", async (c) => {
-      requireShell(c);
-      const web = await webSession(c);
-      try {
-        const result = await service.completePairing(c, {
-          completionSecret: getCookie(c, PWA_COOKIES.pairing),
-          deviceKey: getCookie(c, PWA_COOKIES.device),
-          appSession: await appSession(c),
-          webUserId: web?.user.id ?? null,
-          locale: getLocale(c),
-          notify: options.notify,
-        });
-        if (result.state === "waiting") return c.json(result, 202);
-        if (result.credentials) setAppCredentials(c, result.credentials);
-        clearPairing(c);
-        // A Home Screen app on iOS has its own cookie jar; a web session there is only a copy from Safari.
-        if (result.platform === "ios" && auth.session.getWebToken(c)) deleteCookie(c, "session_token", { path: "/" });
-        return c.json({ state: "paired" as const });
-      } catch (error) {
-        if (error instanceof PwaError && error.code === "EXPIRED") clearPairing(c);
-        throw error;
-      }
-    })
+    .post(
+      "/pairings/complete",
+      describeRoute({
+        tags: ["Cloud app"],
+        summary: "Poll or complete a claimed pairing",
+        description:
+          "Requires the HttpOnly completion cookie from claim. Administrative code confirmation returns confirmation_required with the target, administrator and a pairing-bound decision token; polling alone never completes it. Only a subsequent explicit device decision permits credentials. Self-pairing is unchanged.",
+        responses: {
+          200: jsonResponse(PwaCompleteResultSchema, "Paired"),
+          202: jsonResponse(PwaCompleteResultSchema, "Waiting or device decision required"),
+        },
+      }),
+      async (c) => {
+        requireShell(c);
+        const web = await webSession(c);
+        try {
+          const result = await service.completePairing(c, {
+            completionSecret: getCookie(c, PWA_COOKIES.pairing),
+            deviceKey: getCookie(c, PWA_COOKIES.device),
+            appSession: await appSession(c),
+            webUserId: web?.user.id ?? null,
+            locale: getLocale(c),
+            notify: options.notify,
+          });
+          if (result.state === "waiting" || result.state === "confirmation_required") return c.json(result, 202);
+          if (result.state === "rejected") {
+            clearPairing(c);
+            return c.json(result);
+          }
+          if (result.credentials) setAppCredentials(c, result.credentials);
+          clearPairing(c);
+          // A Home Screen app on iOS has its own cookie jar; a web session there is only a copy from Safari.
+          if (result.platform === "ios" && auth.session.getWebToken(c)) deleteCookie(c, "session_token", { path: "/" });
+          return c.json({ state: "paired" as const });
+        } catch (error) {
+          if (error instanceof PwaError && error.code === "EXPIRED") clearPairing(c);
+          throw error;
+        }
+      },
+    )
+    .post(
+      "/pairings/decision",
+      describeRoute({
+        tags: ["Cloud app"],
+        summary: "Accept or reject administrative Cloud app pairing on the device",
+        description:
+          "Requires both the claim's HttpOnly completion cookie and the confirmationToken returned for this pairing after the administrator matched the code. decision is confirm or reject. Repeating the same decision is idempotent. Confirm permits a subsequent complete request; reject issues no credentials.",
+        responses: {
+          204: { description: "Device decision recorded" },
+          403: { description: "Invalid decision token" },
+          409: { description: "Pairing is not awaiting this decision" },
+          410: { description: "Pairing expired" },
+        },
+      }),
+      v("json", PwaDeviceDecisionSchema, pwaInvalidRequest),
+      async (c) => {
+        requireShell(c);
+        await service.decidePairing(getCookie(c, PWA_COOKIES.pairing), c.req.valid("json"));
+        return c.body(null, 204);
+      },
+    )
     .get("/session/launch", async (c) => {
       const to = launchTarget(c.req.query("to"));
       if (!shellAvailable(c)) return c.redirect(stateUrl("unavailable"), 302);

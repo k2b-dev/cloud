@@ -52,6 +52,7 @@ export type PwaDevicePairedNotice = {
   platform: PwaPlatform;
   pairedAt: string;
   locale: string | null;
+  pairedBy?: { userId: string | null; name: string };
 };
 export type PwaDeviceNotifier = (notice: PwaDevicePairedNotice) => Promise<unknown>;
 
@@ -59,6 +60,8 @@ type PairingRow = {
   id: string;
   user_id: string;
   initiator_sid: string;
+  initiator_user_id: string | null;
+  device_confirmation_hash: string | null;
   auth_epoch: string;
   comparison: string | null;
   platform: PwaPlatform | null;
@@ -83,6 +86,8 @@ type DeviceRow = {
   revoked_at: Date | null;
   locale: string | null;
   notified_at: Date | null;
+  paired_by_user_id: string | null;
+  paired_by_name: string | null;
 };
 type UserRow = {
   id: string;
@@ -160,10 +165,17 @@ const initiatorValid = async (tx: SQL, pairing: PairingRow): Promise<boolean> =>
     SELECT 1 FROM auth.session_families sf
     JOIN auth.users u ON u.id = sf.user_id
     JOIN auth.signing_keys sk ON sk.kid = sf.signing_kid AND sk.state <> 'revoked'
-    WHERE sf.sid = ${pairing.initiator_sid}::uuid AND sf.user_id = ${pairing.user_id}::uuid
+    WHERE sf.sid = ${pairing.initiator_sid}::uuid AND sf.user_id = ${pairing.initiator_user_id ?? pairing.user_id}::uuid
       AND sf.revoked_at IS NULL AND sf.expires_at > now() AND sf.auth_epoch = u.auth_epoch AND sf.pwa_device_id IS NULL
+      AND (${pairing.initiator_user_id === null} OR u.admin = true)
+      AND (${pairing.initiator_user_id === null} OR u.account_expires IS NULL OR u.account_expires > now())
   `;
-  return Boolean(row);
+  if (!row) return false;
+  if (pairing.initiator_user_id) {
+    const [admin] = await tx<UserRow[]>`SELECT * FROM auth.users WHERE id = ${pairing.initiator_user_id}::uuid`;
+    return Boolean(admin && (await isAccountCategoryAllowed(admin, tx)));
+  }
+  return true;
 };
 
 const accountExpired = (user: UserRow) => Boolean(user.account_expires && passed(user.account_expires));
@@ -176,6 +188,7 @@ const pairedNotice = (device: DeviceRow, name: string): PwaDevicePairedNotice =>
   platform: device.platform,
   pairedAt: iso(device.created_at),
   locale: device.locale,
+  ...(device.paired_by_name ? { pairedBy: { userId: device.paired_by_user_id, name: device.paired_by_name } } : {}),
 });
 
 /**
@@ -268,6 +281,14 @@ export type PwaRenewal =
 
 export type PwaCompletion =
   | { state: "paired"; credentials: PwaCredentials | null; platform: PwaPlatform }
+  | { state: "rejected" }
+  | {
+      state: "confirmation_required";
+      account: { name: string };
+      administrator: { name: string };
+      confirmationToken: string;
+      expiresAt: string;
+    }
   | { state: "waiting"; code: string; account: { name: string }; expiresAt: string };
 
 export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairingClaimHints) => {
@@ -336,28 +357,48 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
     return value;
   };
 
+  const startPairing = async (actor: PwaWebActor, targetUserId?: string) => {
+    const id = crypto.randomUUID();
+    const secret = pairingSecret.create();
+    const now = Date.now();
+    const claimUntil = new Date(now + limits.linkClaimSeconds * 1000);
+    const expiresAt = new Date(now + limits.pairingSeconds * 1000);
+    await sql.begin(async (tx) => {
+      const userId = targetUserId ?? actor.userId;
+      await tx`SELECT id FROM auth.users WHERE id IN (${actor.userId}::uuid, ${userId}::uuid) ORDER BY id FOR UPDATE`;
+      const account = await requireRecentWebSession(tx, actor, limits.recentSessionSeconds, (code) => fail(code, 403));
+      if (targetUserId) {
+        const [admin] = await tx`SELECT admin FROM auth.users WHERE id = ${actor.userId}::uuid`;
+        if (!admin?.admin) fail("FORBIDDEN", 403);
+      }
+      const target = targetUserId ? await lockUser(tx, targetUserId) : account;
+      if (!target) return fail("NOT_FOUND", 404);
+      if (targetUserId && (accountExpired(target) || !(await isAccountCategoryAllowed(target, tx)))) fail("ACCOUNT_BLOCKED", 403);
+      const [open] = await tx<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM auth.pwa_pairings
+          WHERE user_id = ${userId}::uuid AND expires_at > now() AND state IN ('pending', 'claimed', 'awaiting_device', 'confirmed')
+        `;
+      if ((open?.count ?? 0) >= limits.pendingPerAccount) fail("LIMIT_REACHED", 429);
+      await tx`INSERT INTO auth.pwa_pairings (id, user_id, initiator_sid, initiator_user_id, auth_epoch, link_secret_hash, state, claim_until, expires_at)
+          VALUES (${id}::uuid, ${userId}::uuid, ${actor.sid}::uuid, ${targetUserId ? actor.userId : null}::uuid, ${target.auth_epoch}, ${pairingSecret.hash(secret)}, 'pending', ${claimUntil}, ${expiresAt})`;
+      await record(
+        tx,
+        "pairing.start",
+        { type: "pwa_pairing", id },
+        actor.userId,
+        targetUserId ? { targetUserId, administratorUserId: actor.userId } : {},
+      );
+    });
+    return { id, secret, claimUntil: iso(claimUntil), expiresAt: iso(expiresAt) };
+  };
+
   return {
     // ---------- Web side: the initiating web session ----------
 
-    startPairing: async (actor: PwaWebActor) => {
-      const id = crypto.randomUUID();
-      const secret = pairingSecret.create();
-      const now = Date.now();
-      const claimUntil = new Date(now + limits.linkClaimSeconds * 1000);
-      const expiresAt = new Date(now + limits.pairingSeconds * 1000);
-      await sql.begin(async (tx) => {
-        await lockUser(tx, actor.userId);
-        const account = await requireRecentWebSession(tx, actor, limits.recentSessionSeconds, (code) => fail(code, 403));
-        const [open] = await tx<{ count: number }[]>`
-          SELECT count(*)::int AS count FROM auth.pwa_pairings
-          WHERE user_id = ${actor.userId}::uuid AND expires_at > now() AND state IN ('pending', 'claimed', 'confirmed')
-        `;
-        if ((open?.count ?? 0) >= limits.pendingPerAccount) fail("LIMIT_REACHED", 429);
-        await tx`INSERT INTO auth.pwa_pairings (id, user_id, initiator_sid, auth_epoch, link_secret_hash, state, claim_until, expires_at)
-          VALUES (${id}::uuid, ${actor.userId}::uuid, ${actor.sid}::uuid, ${account.auth_epoch}, ${pairingSecret.hash(secret)}, 'pending', ${claimUntil}, ${expiresAt})`;
-        await record(tx, "pairing.start", { type: "pwa_pairing", id }, actor.userId);
-      });
-      return { id, secret, claimUntil: iso(claimUntil), expiresAt: iso(expiresAt) };
+    startPairing: (actor: PwaWebActor) => startPairing(actor),
+    startUserPairing: (actor: PwaWebActor & PwaDeviceAdministrator, userId: string) => {
+      if (!actor.admin) return fail("FORBIDDEN", 403);
+      return startPairing(actor, userId);
     },
 
     /** Never returns the code: the person types what the phone shows. */
@@ -365,12 +406,12 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
       const read = async (validateInitiator = false) => {
         const [p] = await sql<(PairingRow & { current_epoch: string })[]>`
           SELECT p.*, u.auth_epoch AS current_epoch FROM auth.pwa_pairings p JOIN auth.users u ON u.id = p.user_id
-          WHERE p.id = ${id}::uuid AND p.user_id = ${actor.userId}::uuid AND p.initiator_sid = ${actor.sid}::uuid
+          WHERE p.id = ${id}::uuid AND COALESCE(p.initiator_user_id, p.user_id) = ${actor.userId}::uuid AND p.initiator_sid = ${actor.sid}::uuid
         `;
         if (!p) return fail("NOT_FOUND", 404);
         if (passed(p.expires_at) || p.current_epoch !== p.auth_epoch || (p.state === "pending" && passed(p.claim_until)))
           return fail("EXPIRED", 410);
-        if (validateInitiator && !(await initiatorValid(sql, p))) return fail("EXPIRED", 410);
+        if ((validateInitiator || p.initiator_user_id !== null) && !(await initiatorValid(sql, p))) return fail("EXPIRED", 410);
         return {
           state: p.state,
           claimUntil: iso(p.claim_until),
@@ -406,10 +447,10 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
     confirmPairing: async (actor: PwaWebActor, id: string, code: string) => {
       type Outcome = { ok: true } | { ok: false; code: PwaErrorCode; status: PwaError["status"]; attemptsLeft?: number };
       const outcome = await sql.begin(async (tx): Promise<Outcome> => {
-        const user = await lockUser(tx, actor.userId);
-        const [p] = await tx<PairingRow[]>`
-          SELECT * FROM auth.pwa_pairings WHERE id = ${id}::uuid AND user_id = ${actor.userId}::uuid AND initiator_sid = ${actor.sid}::uuid FOR UPDATE
-        `;
+        const [snapshot] = await tx<PairingRow[]>`SELECT * FROM auth.pwa_pairings WHERE id = ${id}::uuid
+          AND COALESCE(initiator_user_id, user_id) = ${actor.userId}::uuid AND initiator_sid = ${actor.sid}::uuid`;
+        const user = snapshot ? await lockUser(tx, snapshot.user_id) : null;
+        const [p] = await tx<PairingRow[]>`SELECT * FROM auth.pwa_pairings WHERE id = ${snapshot?.id ?? null}::uuid FOR UPDATE`;
         if (!user || !p) return { ok: false, code: "NOT_FOUND", status: 404 };
         if (p.state === "cancelled" || passed(p.expires_at) || user.auth_epoch !== p.auth_epoch || !(await initiatorValid(tx, p)))
           return { ok: false, code: "EXPIRED", status: 410 };
@@ -426,8 +467,11 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
           await tx`UPDATE auth.pwa_pairings SET failed_attempts = ${failed} WHERE id = ${p.id}::uuid`;
           return { ok: false, code: "WRONG_CODE", status: 409, attemptsLeft: limits.confirmAttempts - failed };
         }
-        await tx`UPDATE auth.pwa_pairings SET state = 'confirmed' WHERE id = ${p.id}::uuid`;
-        await record(tx, "pairing.confirm", { type: "pwa_pairing", id: p.id }, actor.userId, { platform: p.platform });
+        await tx`UPDATE auth.pwa_pairings SET state = ${p.initiator_user_id ? "awaiting_device" : "confirmed"} WHERE id = ${p.id}::uuid`;
+        await record(tx, "pairing.confirm", { type: "pwa_pairing", id: p.id }, actor.userId, {
+          platform: p.platform,
+          ...(p.initiator_user_id ? { targetUserId: p.user_id, administratorUserId: p.initiator_user_id } : {}),
+        });
         return { ok: true };
       });
       if (!outcome.ok) fail(outcome.code, outcome.status, outcome.attemptsLeft);
@@ -435,10 +479,10 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
 
     cancelPairing: async (actor: PwaWebActor, id: string) => {
       await sql.begin(async (tx) => {
-        await lockUser(tx, actor.userId);
-        const [p] = await tx<PairingRow[]>`
-          SELECT * FROM auth.pwa_pairings WHERE id = ${id}::uuid AND user_id = ${actor.userId}::uuid AND initiator_sid = ${actor.sid}::uuid FOR UPDATE
-        `;
+        const [snapshot] = await tx<PairingRow[]>`SELECT * FROM auth.pwa_pairings WHERE id = ${id}::uuid
+          AND COALESCE(initiator_user_id, user_id) = ${actor.userId}::uuid AND initiator_sid = ${actor.sid}::uuid`;
+        if (snapshot) await lockUser(tx, snapshot.user_id);
+        const [p] = await tx<PairingRow[]>`SELECT * FROM auth.pwa_pairings WHERE id = ${snapshot?.id ?? null}::uuid FOR UPDATE`;
         if (!p) return fail("NOT_FOUND", 404);
         if (p.state === "completed") return fail("CONFLICT", 409);
         if (p.state === "cancelled") return;
@@ -517,6 +561,28 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
         SELECT * FROM auth.pwa_pairings WHERE completion_secret_hash = ${pairingSecret.hash(input.completionSecret)}
       `;
       if (!snapshot || snapshot.state === "cancelled" || passed(snapshot.expires_at)) return fail("EXPIRED", 410);
+      if (snapshot.state === "rejected") return { state: "rejected" };
+      if (snapshot.state === "awaiting_device") {
+        return sql.begin(async (tx) => {
+          const user = await lockUser(tx, snapshot.user_id);
+          const [p] = await tx<PairingRow[]>`SELECT * FROM auth.pwa_pairings WHERE id = ${snapshot.id}::uuid FOR UPDATE`;
+          if (!user || !p || passed(p.expires_at) || user.auth_epoch !== p.auth_epoch || !(await initiatorValid(tx, p)))
+            return fail("EXPIRED", 410);
+          if (p.state !== "awaiting_device" || !p.initiator_user_id) return fail("CONFLICT", 409);
+          if (accountExpired(user) || !(await isAccountCategoryAllowed(user, tx))) return fail("ACCOUNT_BLOCKED", 403);
+          const [admin] = await tx<UserRow[]>`SELECT * FROM auth.users WHERE id = ${p.initiator_user_id}::uuid`;
+          if (!admin) return fail("EXPIRED", 410);
+          const confirmationToken = pairingSecret.create();
+          await tx`UPDATE auth.pwa_pairings SET device_confirmation_hash = ${pairingSecret.hash(confirmationToken)} WHERE id = ${p.id}::uuid`;
+          return {
+            state: "confirmation_required" as const,
+            account: { name: accountName(user) },
+            administrator: { name: accountName(admin) },
+            confirmationToken,
+            expiresAt: iso(p.expires_at),
+          };
+        });
+      }
       if (snapshot.state === "claimed") {
         const [user] = await sql<UserRow[]>`SELECT * FROM auth.users WHERE id = ${snapshot.user_id}::uuid`;
         // Signing out on the web, or everywhere, voids the pairing at once.
@@ -570,12 +636,17 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
         // An unusually long locale tag is dropped; the notice then uses the operator's locale.
         const locale = input.locale && input.locale.length <= 35 ? input.locale : null;
         const [device] = await tx<DeviceRow[]>`
-          INSERT INTO auth.pwa_devices (id, user_id, name, platform, auth_epoch, secret_hash, rotated_at, locale)
-          VALUES (${deviceId}::uuid, ${user.id}::uuid, ${p.device_name}, ${p.platform}, ${user.auth_epoch}, ${pairingSecret.hash(secret)}, now(), ${locale})
+          INSERT INTO auth.pwa_devices (id, user_id, name, platform, auth_epoch, secret_hash, rotated_at, locale, paired_by_user_id, paired_by_name)
+          VALUES (${deviceId}::uuid, ${user.id}::uuid, ${p.device_name}, ${p.platform}, ${user.auth_epoch}, ${pairingSecret.hash(secret)}, now(), ${locale}, ${p.initiator_user_id}::uuid,
+            (SELECT COALESCE(NULLIF(trim(display_name), ''), uid) FROM auth.users WHERE id = ${p.initiator_user_id}::uuid))
           RETURNING *`;
         await issue(user.id, appSession(deviceId));
         await tx`UPDATE auth.pwa_pairings SET state = 'completed', device_id = ${deviceId}::uuid WHERE id = ${p.id}::uuid`;
-        await record(tx, "device.enroll", { type: "pwa_device", id: deviceId }, user.id, { platform: p.platform, pairingId: p.id });
+        await record(tx, "device.enroll", { type: "pwa_device", id: deviceId }, p.initiator_user_id ?? user.id, {
+          platform: p.platform,
+          pairingId: p.id,
+          ...(p.initiator_user_id ? { targetUserId: user.id, administratorUserId: p.initiator_user_id } : {}),
+        });
         return { kind: "issued", deviceKey: `${deviceId}.${secret}`, notice: pairedNotice(device!, p.device_name) };
       });
       const platform = snapshot.platform ?? "other";
@@ -583,6 +654,45 @@ export const createPwaDeviceService = (hints: PwaPairingClaimHints = syncPairing
       if (!token) throw new Error("App session was not issued");
       if (value.notice) await announce(input.notify, value.notice);
       return { state: "paired", credentials: { deviceKey: value.deviceKey, sessionToken: token }, platform };
+    },
+
+    decidePairing: async (
+      completionSecret: string | null | undefined,
+      input: { confirmationToken: string; decision: "confirm" | "reject" },
+    ) => {
+      if (!completionSecret) return fail("EXPIRED", 410);
+      const [snapshot] = await sql<
+        PairingRow[]
+      >`SELECT * FROM auth.pwa_pairings WHERE completion_secret_hash = ${pairingSecret.hash(completionSecret)}`;
+      if (!snapshot) return fail("EXPIRED", 410);
+      await sql.begin(async (tx) => {
+        const user = await lockUser(tx, snapshot.user_id);
+        const [p] = await tx<PairingRow[]>`SELECT * FROM auth.pwa_pairings WHERE id = ${snapshot.id}::uuid FOR UPDATE`;
+        if (
+          !user ||
+          !p ||
+          !p.initiator_user_id ||
+          passed(p.expires_at) ||
+          user.auth_epoch !== p.auth_epoch ||
+          !(await initiatorValid(tx, p))
+        )
+          return fail("EXPIRED", 410);
+        if (!p.device_confirmation_hash || !pairingSecret.matches(input.confirmationToken, p.device_confirmation_hash))
+          return fail("FORBIDDEN", 403);
+        const next = input.decision === "confirm" ? "confirmed" : "rejected";
+        if (p.state === next || (next === "confirmed" && p.state === "completed")) return;
+        if (p.state !== "awaiting_device") return fail("CONFLICT", 409);
+        if (accountExpired(user) || !(await isAccountCategoryAllowed(user, tx))) return fail("ACCOUNT_BLOCKED", 403);
+        await tx`UPDATE auth.pwa_pairings SET state = ${next} WHERE id = ${p.id}::uuid`;
+        await record(
+          tx,
+          input.decision === "confirm" ? "pairing.device_confirm" : "pairing.reject",
+          { type: "pwa_pairing", id: p.id },
+          user.id,
+          { targetUserId: user.id, administratorUserId: p.initiator_user_id },
+        );
+      });
+      hints.publish(snapshot.id);
     },
 
     /** Renewal with device-key rotation; `launch` and `renew` share it. */

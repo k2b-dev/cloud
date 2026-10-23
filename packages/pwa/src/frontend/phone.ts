@@ -24,6 +24,8 @@ const request = async (method: "POST" | "PATCH" | "DELETE", path: string, body?:
 export const phoneAuth = {
   claim: (secret: string, platform: PwaPlatform) => request("POST", "/pairings/claim", { secret, platform }),
   complete: () => request("POST", "/pairings/complete"),
+  decide: (confirmationToken: string, decision: "confirm" | "reject") =>
+    request("POST", "/pairings/decision", { confirmationToken, decision }),
   renew: () => request("POST", "/session/renew"),
   rename: (name: string) => request("PATCH", "/session", { name }),
   signOut: () => request("DELETE", "/session"),

@@ -39,7 +39,14 @@ const render = (devices: PwaDeviceView[] | null, locale = "en") =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(AppDevicesSection, { userId: "11111111-1111-4111-8111-111111111111", devices, locale });
+        return createComponent(AppDevicesSection, {
+          userId: "11111111-1111-4111-8111-111111111111",
+          devices,
+          locale,
+          name: "Ada",
+          cloud: "Example Cloud",
+          blocked: false,
+        });
       },
     }),
   );
@@ -47,8 +54,9 @@ const render = (devices: PwaDeviceView[] | null, locale = "en") =>
 describe("App devices on the user detail page", () => {
   test("lists each phone with name, platform, pairing date, last use and a remove button", () => {
     const html = render(phones);
-    expect(html).toContain("App devices");
-    expect(html).toContain("2 devices are signed in to the Cloud app");
+    expect(html).toContain("Cloud app");
+    expect(html).toContain("Example Cloud as an app on a phone or tablet: tasks and chat.");
+    expect(html).toContain("Pair Cloud app");
     for (const header of ["Device", "Platform", "Paired since", "Last used"]) expect(html).toContain(header);
     expect(html).toContain("Personal iPhone");
     expect(html).toContain("iOS");
@@ -60,21 +68,22 @@ describe("App devices on the user detail page", () => {
 
   test("speaks German", () => {
     const html = render(phones.slice(0, 1), "de");
-    expect(html).toContain("App-Geräte");
-    expect(html).toContain("1 Gerät ist in der Cloud-App angemeldet");
+    expect(html).toContain("Cloud-App");
+    expect(html).toContain("Example Cloud als App auf Telefon oder Tablet: Aufgaben und Chat.");
     expect(html).toContain("Plattform");
     expect(html).toContain('aria-label="Gerät Personal iPhone entfernen"');
   });
 
-  test("is absent while the person has no phones", () => {
+  test("offers pairing when the person has no devices", () => {
     const html = render([]);
-    expect(html).not.toContain("App devices");
-    expect(html).not.toContain("<h2");
+    expect(html).toContain("Cloud app");
+    expect(html).toContain("No paired devices.");
+    expect(html).toContain("Pair Cloud app");
   });
 
   test("shows an error instead of hiding phones when they could not be loaded", () => {
     const html = render(null);
-    expect(html).toContain("App devices");
+    expect(html).toContain("Cloud app");
     expect(html).toContain("Devices in the Cloud app could not be loaded. Refresh the page.");
     expect(html).not.toContain("Remove device");
   });

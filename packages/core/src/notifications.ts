@@ -70,6 +70,7 @@ const notificationMessages = i18n.define({
       phonePairedTitle: "New device paired",
       phonePairedBody: ({ name, platform, time, where }: { name: string; platform: PwaPlatform; time: string; where: string }) =>
         `The device “${name}” (${platformLabel(platform, "other platform")}) was paired with your account in the Cloud app on ${time}. If this wasn't you, remove it ${where} and contact your administrator.`,
+      phonePairedBy: ({ name }: { name: string }) => `Set up by ${name} (Administration).`,
       phonePairedInApp: "under App in your profile menu",
       phonePairedAt: ({ url }: { url: string }) => `at ${url}`,
     },
@@ -121,6 +122,7 @@ const notificationMessages = i18n.define({
       phonePairedTitle: "Neues Gerät gekoppelt",
       phonePairedBody: ({ name, platform, time, where }) =>
         `Das Gerät „${name}“ (${platformLabel(platform, "andere Plattform")}) wurde am ${time} in der Cloud-App mit deinem Konto gekoppelt. Falls du das nicht warst, entferne es ${where} und wende dich an die Administration.`,
+      phonePairedBy: ({ name }) => `Eingerichtet von ${name} (Administration).`,
       phonePairedInApp: "unter „App“ in deinem Profilmenü",
       phonePairedAt: ({ url }) => `unter ${url}`,
     },
@@ -146,10 +148,13 @@ const installationTime = async (at: string, locale: string): Promise<string> => 
   return `${dates.formatDateTime(at, { locale, timeZone })} (${timeZone})`;
 };
 const phonePairedBody = async (
-  data: { name: string; platform: PwaPlatform; pairedAt: string },
+  data: { name: string; platform: PwaPlatform; pairedAt: string; pairedByName?: string },
   locale: string,
   where: string,
-): Promise<string> => text(locale).phonePairedBody({ ...data, time: await installationTime(data.pairedAt, locale), where });
+): Promise<string> => {
+  const body = text(locale).phonePairedBody({ ...data, time: await installationTime(data.pairedAt, locale), where });
+  return data.pairedByName ? `${body} ${text(locale).phonePairedBy({ name: data.pairedByName })}` : body;
+};
 
 const newBrowserData = z.object({
   browser: z.enum(APP_LOGIN_CONTEXT_BROWSERS),
@@ -313,6 +318,7 @@ export const NOTIFICATIONS = {
       name: z.string().min(1).max(80),
       platform: z.enum(["ios", "android", "other"]),
       pairedAt: z.string().datetime(),
+      pairedByName: z.string().optional(),
     }),
     render: async (data, { locale }) => ({
       title: text(locale).phonePairedTitle,
@@ -462,10 +468,10 @@ export const createCoreNotificationSender = (definitions: CoreNotificationDescri
       idempotencyKey: `device-enrollment:${deviceId}`,
       locale: await configuredLocale(),
     }),
-  sendAppDevicePaired: async ({ deviceId, userId, name, platform, pairedAt, locale }) => {
+  sendAppDevicePaired: async ({ deviceId, userId, name, platform, pairedAt, locale, pairedBy }) => {
     const result = await notifications.send(definitions.appDevicePaired, {
       recipient: { userId },
-      data: { name, platform, pairedAt },
+      data: { name, platform, pairedAt, ...(pairedBy ? { pairedByName: pairedBy.name } : {}) },
       idempotencyKey: `pwa-device-paired:${deviceId}`,
       locale: await configuredLocale(locale ?? undefined),
     });
