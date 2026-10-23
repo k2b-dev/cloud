@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 
 // Whether a row keeps its height, whether hover moves anything, and what a link really is are results of layout,
 // paint, and the DOM in a real engine. The rows run inside VirtualFeed, as in a conversation.
@@ -410,6 +410,7 @@ describe(`MessageRow in ${browserName}`, () => {
   test('one reading column: rows sit in 760 px centered in a wide feed, "…" beside the bubble\'s inner side', async () => {
     const page = await open({ width: 2000 });
     try {
+      await settled(page);
       const geometry = await page.evaluate(() => {
         const feed = document.querySelector(".k2b-virtual-feed__viewport")!.getBoundingClientRect();
         const item = document.querySelector<HTMLElement>('[data-key="m4"]')!.getBoundingClientRect();
@@ -421,6 +422,7 @@ describe(`MessageRow in ${browserName}`, () => {
 
       for (const key of ["m3", "m6"]) {
         await rowOf(page, key).locator(".k2b-message-row__bubble").hover();
+        await settled(page);
         const place = await rowOf(page, key).evaluate((row) => {
           const bubble = row.querySelector(".k2b-message-row__bubble")!.getBoundingClientRect();
           const menu = row.querySelector(".k2b-message-row__menu")!.getBoundingClientRect();
@@ -450,11 +452,13 @@ describe(`MessageRow in ${browserName}`, () => {
       ]);
       expect(await menu.locator("[role='menuitem']").nth(2).textContent()).toContain("Starts the new messages here.");
       await page.keyboard.press("Escape");
+      await settled(page);
 
       const before = await boxes(page);
       await bubble.click({ modifiers: ["Alt"] });
       expect(await page.evaluate(() => (window as unknown as { unread?: number }).unread ?? 0)).toBe(1);
       expect(await page.locator("[role='menu']:popover-open, .k2b-context-menu[role='menu']").count()).toBe(0);
+      await settled(page);
       expect(await boxes(page)).toEqual(before);
     } finally {
       await page.close();
@@ -464,11 +468,13 @@ describe(`MessageRow in ${browserName}`, () => {
   test('a tap where the hidden "…" sits runs nothing and leaves it hidden; a long press opens the menu as a sheet', async () => {
     const page = await open({ width: 390, touch: true });
     try {
+      await settled(page);
       const trigger = rowOf(page, "m3").locator(".k2b-message-row__menu");
       const box = (await trigger.boundingBox())!;
       expect(await opacity(page, "m3")).toBe("0");
 
       await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      await settled(page);
       expect(await replied(page)).toBe(0);
       expect(await opacity(page, "m3")).toBe("0");
       expect(await page.locator("dialog[open]").count()).toBe(0);

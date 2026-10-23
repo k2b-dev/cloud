@@ -395,6 +395,8 @@ const scrollFeed = async (page: Page, direction: number) => {
 };
 /** Opens a message's menu the way each device does: "…" beside the bubble on a desktop, a long press on a phone. */
 const openMessageMenu = async (page: Page, name: string, item: Locator) => {
+  // The menu's place and the finger's target are read from the page, so the page settles first.
+  await settled(page);
   if (name === "phone") {
     await item.locator(".k2b-message-row__text").scrollIntoViewIfNeeded();
     const box = (await item.locator(".k2b-message-row__text").boundingBox())!;

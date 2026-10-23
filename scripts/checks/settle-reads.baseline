@@ -97,7 +97,7 @@ packages/ui/src/content/data-table-minimal.browser.test.ts | 8
 packages/ui/src/content/help-blocks.browser.test.ts | 5
 packages/ui/src/content/markdown-callouts.browser.test.ts | 1
 packages/ui/src/content/markdown-links.browser.test.ts | 4
-packages/ui/src/content/message-row.browser.test.ts | 43
+packages/ui/src/content/message-row.browser.test.ts | 40
 packages/ui/src/content/reaction-bar.browser.test.ts | 19
 packages/ui/src/content/timeline.browser.test.ts | 1
 packages/ui/src/content/virtual-feed.browser.test.ts | 10
