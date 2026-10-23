@@ -10,6 +10,7 @@ import { artifactDatabase } from "./database";
 import { createMachineRoutes } from "./machine-api";
 import { MachineRights } from "./machine-contracts";
 import { activeMachineHosts, createMachineHostRoutes, executeMachine } from "./machine-execution";
+import * as machineService from "./machine-service";
 import { machineAccess, machineHttp } from "./machine-service";
 import { type ArtifactIdentity, artifacts } from "./service";
 
@@ -307,6 +308,201 @@ export function machineIntegrationCases(owner: ArtifactIdentity) {
     },
     120000,
   );
+
+  for (const operation of ["http", "database"] as const) {
+    test.each(["agent", "standalone"] as const)(
+      `%s runtime: individual request cancellation stops queued ${operation} effects with live execution`,
+      async (kind) => {
+        const created = await serviceAccounts.createStandalone({ name: "Request cancellation fixture", kind });
+        if (!created.ok) throw new Error("Account fixture failed");
+        const account = created.data;
+        const issued = await serviceAccountCredentials.createApiToken({ serviceAccountId: account.id, name: "Runtime", scopes: ["write"] });
+        if (!issued.ok) throw new Error("Credential fixture failed");
+        const authenticated = await serviceAccountCredentials.authenticateApiToken(issued.data.token);
+        if (!authenticated) throw new Error("Authentication failed");
+        const identity: ArtifactIdentity = {
+          actor: {
+            kind: "service_account",
+            serviceAccount: authenticated.serviceAccount,
+            delegatedUser: null,
+            credentialId: authenticated.credential.id,
+            scopes: authenticated.credential.scopes,
+          },
+          accessSubject: { type: "service_account", serviceAccountId: account.id },
+          machineExecution: { version: 1 },
+        };
+        const settings = spyOn(assistantApp.settings, "get").mockImplementation(
+          async (key) =>
+            ({
+              "assistant.storage_total_mib": 250,
+              "assistant.storage_file_mib": 50,
+              "assistant.rsql_url": testInfra.rsql!,
+              "assistant.rsql_api_token": "artifact-test-only",
+            })[key],
+        );
+        const app = await artifacts.create({ title: "Request cancellation", source }, owner);
+        try {
+          await artifacts.publish(app.id, app.revision, owner, "Request cancellation publication");
+          const grant = await artifacts.grant(app.id, { type: "service_account", serviceAccountId: account.id }, "read", owner);
+          await machineAccess.save(
+            app.id,
+            grant!.id,
+            {
+              rights: MachineRights.parse({
+                execute: true,
+                database: "write",
+                http: [{ origin: "https://example.com", methods: ["POST"] }],
+              }),
+              expectedRevision: null,
+            },
+            owner,
+          );
+          await artifactDatabase.connect(app.id, owner);
+          await artifactDatabase.call(
+            app.id,
+            {
+              operation: "tables.create",
+              name: "records",
+              columns: [{ name: "value", type: "text" }],
+              write: "own",
+            },
+            owner,
+            undefined,
+            "maintenance",
+          );
+          const execution = new AbortController();
+          const host = createMachineHostRoutes({
+            id: app.id,
+            input: { ...request(), artifactId: app.id },
+            identity,
+            locale: "en",
+            timeZone: "UTC",
+            signal: execution.signal,
+          });
+          const originalHttp = machineHttp;
+          const originalDatabase = artifactDatabase.runtime.bind(artifactDatabase);
+          const cancel = new AbortController();
+          const queued = Promise.withResolvers<void>();
+          const release = Promise.withResolvers<void>();
+          let lock: Promise<unknown> | undefined;
+          // The service is entered only after real runtime middleware authorization.
+          // Hold its real artifact row lock until PostgreSQL observes the effect waiting.
+          const blockedEffect = async <T>(run: () => Promise<T>) => {
+            const acquired = Promise.withResolvers<number>();
+            lock = sql.begin(async (db) => {
+              const [backend] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+              await db`SELECT id FROM assistant.artifacts WHERE short_id=${app.id} FOR UPDATE`;
+              acquired.resolve(backend!.pid);
+              await release.promise;
+            });
+            void lock.catch((error) => {
+              acquired.reject(error);
+              queued.reject(error);
+            });
+            const pid = await acquired.promise;
+            const effect = run();
+            void effect.catch(() => {});
+            try {
+              const until = performance.now() + 3000;
+              for (;;) {
+                const [blocked] = await sql<{ waiting: boolean }[]>`SELECT EXISTS(
+                  SELECT 1 FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))
+                ) AS waiting`;
+                if (blocked!.waiting) break;
+                if (performance.now() >= until) throw new Error("Runtime effect did not reach the lock barrier");
+                await Bun.sleep(5);
+              }
+              queued.resolve();
+            } catch (error) {
+              queued.reject(error);
+              release.resolve();
+            }
+            return effect;
+          };
+          let sends = 0;
+          const send: NonNullable<Parameters<typeof machineHttp>[5]> = async () => {
+            sends++;
+            return { status: 200, headers: {}, body: new Uint8Array() };
+          };
+          const http =
+            operation === "http"
+              ? spyOn(machineService, "machineHttp").mockImplementation((id, version, input, actor, signal) =>
+                  blockedEffect(() => originalHttp(id, version, input, actor, signal, send)),
+                )
+              : undefined;
+          const database =
+            operation === "database"
+              ? spyOn(artifactDatabase, "runtime").mockImplementation((...args) => blockedEffect(() => originalDatabase(...args)))
+              : undefined;
+          const snapshot = () => sql`SELECT data_revision FROM assistant.artifact_databases
+            WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${app.id})`;
+          const before = await snapshot();
+          const body =
+            operation === "http"
+              ? { url: "https://example.com/report", method: "POST", headers: {}, body: "eA==" }
+              : { operation: "insert", table: "records", rows: { value: "cancelled" } };
+          const invoke = (signal?: AbortSignal) =>
+            host.request(`/api/assistant/artifacts/runtime/machine/${operation}`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body),
+              signal,
+            });
+          let response: Promise<Response> | undefined;
+          try {
+            response = Promise.resolve(invoke(cancel.signal));
+            await Promise.race([
+              queued.promise,
+              response.then(() => {
+                throw new Error("Effect finished before the lock barrier");
+              }),
+            ]);
+            expect(execution.signal.aborted).toBe(false);
+            cancel.abort();
+            release.resolve();
+            expect((await response).ok).toBe(false);
+          } finally {
+            release.resolve();
+            try {
+              if (response) await response;
+              await lock;
+            } finally {
+              http?.mockRestore();
+              database?.mockRestore();
+            }
+          }
+          expect(execution.signal.aborted).toBe(false);
+          expect(sends).toBe(0);
+          expect(await snapshot()).toEqual(before);
+          expect(await originalDatabase(app.id, { operation: "query", sql: "SELECT value FROM records", params: [] }, identity)).toEqual(
+            [],
+          );
+          // A fresh request through the same host proves execution and grants stay active.
+          const liveHttp =
+            operation === "http"
+              ? spyOn(machineService, "machineHttp").mockImplementation((id, version, input, actor, signal) =>
+                  originalHttp(id, version, input, actor, signal, send),
+                )
+              : undefined;
+          try {
+            expect((await invoke()).ok).toBe(true);
+          } finally {
+            liveHttp?.mockRestore();
+          }
+          if (operation === "http") expect(sends).toBe(1);
+          else
+            expect(await originalDatabase(app.id, { operation: "query", sql: "SELECT value FROM records", params: [] }, identity)).toEqual([
+              { value: "cancelled" },
+            ]);
+        } finally {
+          await artifacts.remove(app.id, owner);
+          settings.mockRestore();
+          await sql`DELETE FROM auth.service_account_credentials WHERE service_account_id=${account.id}::uuid`;
+          await sql`DELETE FROM auth.service_accounts WHERE id=${account.id}::uuid`;
+        }
+      },
+    );
+  }
 
   for (const surface of ["direct", "runtime"] as const) {
     for (const reason of ["AbortError", "TimeoutError"] as const) {

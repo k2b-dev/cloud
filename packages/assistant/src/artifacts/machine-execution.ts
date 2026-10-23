@@ -291,9 +291,16 @@ export function createMachineHostRoutes(context: {
       });
     })
     .post("/api/assistant/artifacts/runtime/machine/database", async (c) =>
-      c.json(await artifactDatabase.runtime(id, FlatDatabaseRequest.parse(await c.req.json()), identity, signal)),
+      c.json(
+        await artifactDatabase.runtime(
+          id,
+          FlatDatabaseRequest.parse(await c.req.json()),
+          identity,
+          AbortSignal.any([signal, c.req.raw.signal]),
+        ),
+      ),
     )
     .post("/api/assistant/artifacts/runtime/machine/http", async (c) =>
-      c.json(await machineHttp(id, input.publishedVersion, await c.req.json(), identity, signal)),
+      c.json(await machineHttp(id, input.publishedVersion, await c.req.json(), identity, AbortSignal.any([signal, c.req.raw.signal]))),
     );
 }

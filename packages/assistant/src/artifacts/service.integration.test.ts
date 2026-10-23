@@ -2155,11 +2155,15 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     const [metadata] = await sql<{ bytes: number }[]>`SELECT pg_column_size(ROW('é-1'::text,${mediaType}::text)) AS bytes`;
     const metadataBytes = Number(metadata!.bytes);
     let totalBytes = 2 * metadataBytes;
-    const settings = spyOn(app.settings, "get").mockImplementation(async (key) => {
-      if (key === "assistant.storage_total_mib") return totalBytes / (1024 * 1024);
-      if (key === "assistant.storage_file_mib") return 50;
-      return 250;
-    });
+    const settings = spyOn(app.settings, "get").mockImplementation(
+      async (key) =>
+        ({
+          "assistant.storage_total_mib": totalBytes / (1024 * 1024),
+          "assistant.storage_file_mib": 50,
+          "assistant.rsql_url": requireInfraUrl("rsql"),
+          "assistant.rsql_api_token": "artifact-test-only",
+        })[key],
+    );
     const write = (key: string, data = new Uint8Array(), type = mediaType) =>
       artifacts.storage(resource.id, { area: "files", operation: "write", key, mediaType: type }, owner, false, data);
     const remove = (key: string) => artifacts.storage(resource.id, { area: "files", operation: "delete", key }, owner);

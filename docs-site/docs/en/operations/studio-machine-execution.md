@@ -23,7 +23,9 @@ secret service.
 Executions share Studio's existing limit of 8 code hosts and its 45-second
 operation deadline. Database, shared storage and HTTP use their existing
 configuration and budgets. Machine execution does not create or configure an
-app database; an app manager prepares it first.
+app database; an app manager prepares it first. Storage, database and HTTP
+operations observe both execution cancellation and cancellation of their
+individual runtime request.
 
 Shared file storage counts payload bytes and each file's stored key/media-type
 metadata record against `assistant.storage_total_mib`. This applies to all Studio
