@@ -124,9 +124,9 @@ describe("Spaces overview", () => {
         timeBlockCounts: { today: 2, upcoming: 2 },
       });
       expect(html).toContain("Review launch plan");
-      const blockTime = [...html.matchAll(/<time\b[^>]*datetime="([^"]+)"[^>]*>([\s\S]*?)<\/time>/g)]
-        .find((match) => match[1] === startsAt)?.[2]
-        ?.replace(/<[^>]*>/g, "");
+      const blockTime = [...html.matchAll(/<time\b[^>]*datetime="([^"]+)"[^>]*>([\s\S]*?)<\/time>/g)].find(
+        (match) => match[1] === startsAt,
+      )?.[2];
       expect(blockTime).toContain("10:00");
       expect(blockTime).toContain("11:00");
       if (view === "upcoming") expect(blockTime).toContain("2033");
