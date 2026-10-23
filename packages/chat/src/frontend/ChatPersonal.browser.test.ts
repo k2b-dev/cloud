@@ -526,6 +526,11 @@ test("opening a visible row supersedes a pending filter without changing its lis
     expect(new URL(page.url()).searchParams.get("filter")).toBe("unread");
     expect(await visible(page).getByRole("button", { name: "Unread", exact: true }).getAttribute("aria-pressed")).toBe("true");
     expect(await page.evaluate(() => history.length)).toBe(entries);
+    const opened = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/chat/conversations/${chat}/snapshot`);
+    await visible(page).getByText("Visible unread", { exact: true }).click();
+    await opened;
+    await page.locator(".k2b-app-workspace__main[aria-busy=false]").waitFor();
+    expect(await page.evaluate(() => history.length)).toBe(entries);
     expect(errors).toEqual([]);
   } finally {
     release?.();

@@ -547,7 +547,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const fromList = route().chatId === null;
     if ((await open({ chatId: id, messageId: null, panel: null })) !== "applied") return;
     const target = listHref(panelHref(id, null));
-    navigation.push(target, { scroll: "preserve", state: { chatFromList: fromList } });
+    if (location.pathname + location.search !== target) navigation.push(target, { scroll: "preserve", state: { chatFromList: fromList } });
     // A row navigation keeps its visible list context even if an older mode request is still pending.
     if (pendingListIntent !== null) await refreshList(target);
   };
