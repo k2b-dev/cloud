@@ -263,10 +263,10 @@ suite("real Filegate directory lifecycle", () => {
     "two concurrent upload sequences commit five pairs starting at %i into one root and base",
     async (first) => {
       const baseId = `freeipa:users:${id(ipaUser)}`;
-      const folder = "concurrent-uploads";
+      const folder = `concurrent-uploads-${first}`;
       const root = client.root("freeipa");
       const target = `${prefix}/home/${name(ipaUser)}/${folder}`;
-      if (first === 0) await root.mkdir(target, { ownership: { uid, gid, dirMode: "0700" } });
+      await root.mkdir(target, { ownership: { uid, gid, dirMode: "0700" } });
       const failures: string[] = [];
       const uncommitted = new Set<string>();
       try {
@@ -298,8 +298,8 @@ suite("real Filegate directory lifecycle", () => {
           });
         }
         expect(failures).toEqual([]);
-        expect((await service.list(testCall(ipaUser), { baseId, path: folder })).items).toHaveLength((first + 5) * 2);
-        for (let index = 0; index < first + 5; index++)
+        expect((await service.list(testCall(ipaUser), { baseId, path: folder })).items).toHaveLength(10);
+        for (let index = first; index < first + 5; index++)
           for (const tab of [0, 1])
             expect(await (await root.contentRaw(`${target}/tab-${tab}-${index}.txt`)).text()).toBe(`tab ${tab}, file ${index}`);
       } finally {
