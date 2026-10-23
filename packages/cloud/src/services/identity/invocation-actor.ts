@@ -108,7 +108,7 @@ export const resolveInvocationAuthority = async (
   if (serviceAccount.kind === "user_delegated" && (!delegatedUser || isAccountExpired(delegatedUser.accountExpires))) return null;
   if (delegatedUser && !(await isAccountCategoryAllowed(delegatedUser, query))) return null;
 
-  const actor: RequestActor = {
+  const actor: Extract<RequestActor, { kind: "service_account" }> = {
     kind: "service_account",
     serviceAccount,
     delegatedUser,

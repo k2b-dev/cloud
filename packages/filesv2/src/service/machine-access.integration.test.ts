@@ -14,7 +14,7 @@ import { activityFilegate } from "../../test/activity-filegate";
 import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import api from "../api";
-import type { OfficeEditorLaunch } from "../contracts";
+import type { EntriesResult, OfficeEditorLaunch } from "../contracts";
 import { entryRef } from "../data/references";
 import { uploads } from "../data/uploads";
 import { fileActions, fileQueries } from "../file-capabilities";
@@ -34,7 +34,7 @@ suite("Files machine storage through actual API tokens", () => {
   let office: ReturnType<typeof Bun.serve> | undefined;
   let oauthPrivateKey: CryptoKey;
   let oauthPublicKey: Awaited<ReturnType<typeof exportJWK>>;
-  const oauthKid = "files-fixture-oauth";
+  const oauthKid = "d2b94f53-f6d2-4b4f-9e90-e5bbd0f3ce10";
   const originalIdentityOrigin = process.env.CLOUD_IDENTITY_JWKS_ORIGIN;
   const originalJwksOrigin = process.env.CLOUD_OAUTH_JWKS_ORIGIN;
   const prefix = `machine-access-${Bun.randomUUIDv7()}`;
@@ -266,7 +266,30 @@ suite("Files machine storage through actual API tokens", () => {
           expiresIn: "1d",
         }),
       );
-      await service.revokeStorage(call(), storage.id, readGrant.id);
+      const copyLeafWrite = await service.grantStorage(call(), storage.id, { path: "note.txt", principal, permission: "write" });
+      const writeToken = await token(account.id, ["write"]);
+      const copyInput = { paths: ["note.txt"], targetBaseId: storage.baseId, folder: "" };
+      const directory = `${prefix}/users/machine-${account.id}`;
+      const beforeCopy = await client.root("cloud").list(directory);
+      const deniedCopy = await data<EntriesResult>(await request(writeToken.token, `${base}/copy`, "POST", copyInput));
+      expect(deniedCopy.results).toEqual([{ path: "note.txt", ok: false, error: "forbidden" }]);
+      expect(deniedCopy.entries).toEqual([]);
+      expect((await client.root("cloud").list(directory)).items.map((item) => item.path).sort()).toEqual(
+        beforeCopy.items.map((item) => item.path).sort(),
+      );
+      // Parent write authority permits the intended same-folder conflict rename.
+      const parentWrite = await service.grantStorage(call(), storage.id, { path: "", principal, permission: "write" });
+      const copied = await data<EntriesResult>(await request(writeToken.token, `${base}/copy`, "POST", copyInput));
+      expect(copied.results).toMatchObject([{ path: "note.txt", ok: true }]);
+      expect(copied.entries).toHaveLength(1);
+      const sibling = copied.entries[0]!.path;
+      expect(sibling).not.toBe("note.txt");
+      expect(sibling.includes("/")).toBe(false);
+      expect(await (await client.root("cloud").contentRaw(`${directory}/${sibling}`)).text()).toBe("abc");
+      await client.root("cloud").remove(`${directory}/${sibling}`);
+      expect(parentWrite.id).toBe(readGrant.id);
+      await service.revokeStorage(call(), storage.id, parentWrite.id);
+      await service.revokeStorage(call(), storage.id, copyLeafWrite.id);
       const adminGrant = await service.grantStorage(call(), storage.id, { path: "", principal, permission: "admin" });
       const actor: RequestActor = {
         kind: "service_account",
@@ -330,8 +353,8 @@ suite("Files machine storage through actual API tokens", () => {
           expiresIn: "1d",
         }),
       );
-      await revokedPublication(racingInbox, `${prefix}/users/machine-${account.id}/allowed`, () =>
-        request(credential.token, `/shares/${racingInbox.id}/revoke`, "POST", {}).then(data),
+      await revokedPublication(racingInbox, `${prefix}/users/machine-${account.id}/allowed`, async () =>
+        data(await request(credential.token, `/shares/${racingInbox.id}/revoke`, "POST", {})),
       );
       const pending = await data<{ id: string; url: string }>(
         await request(credential.token, `${base}/uploads`, "POST", {

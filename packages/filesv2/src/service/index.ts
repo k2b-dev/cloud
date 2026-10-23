@@ -754,8 +754,11 @@ export function createFilesService(
             options.move ? "write" : "read",
             call.requestId,
           );
-        if (destination.inspection.candidate.storage)
-          await checkStorage(call.actor, destination.inspection.candidate.storage, destination.relative, "write", call.requestId);
+        if (destination.inspection.candidate.storage) {
+          // A conflict rename may publish any sibling, beyond an exact leaf grant.
+          const target = options.onConflict === "rename" ? destination.relative.split("/").slice(0, -1).join("/") : destination.relative;
+          await checkStorage(call.actor, destination.inspection.candidate.storage, target, "write", call.requestId);
+        }
         const result = await source.root.transfer(source.target, destination.root.name, path, options);
         if (result.state !== "completed") throw new FilesError("operation_pending", 409);
         const node = result.node;

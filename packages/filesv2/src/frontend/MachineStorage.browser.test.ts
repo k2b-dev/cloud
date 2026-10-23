@@ -4,12 +4,11 @@ import type { Browser, BrowserContextOptions, Route } from "playwright";
 
 type Fixture = (route: Route) => Promise<void>;
 
+import { appHostCss } from "../../../ui/test/app-host-fixture";
 import { launchBrowser } from "../../../ui/test/browser";
 
 const ui = new URL("../../../ui/", import.meta.url).pathname;
-const appCss = readFileSync(new URL("../styles/app.css", import.meta.url), "utf8")
-  // Tailwind directives; the settings use app classes and @k2b/ui.
-  .replace(/^@(import|source|custom-variant)[^\n]*\n/gm, "");
+const hostCss = await appHostCss(new URL("../styles/app.css", import.meta.url).pathname);
 
 const buildHarness = async (): Promise<string> => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -44,14 +43,13 @@ const buildHarness = async (): Promise<string> => {
 const harness = await buildHarness();
 const assets: Record<string, [string, string | Buffer]> = {
   "/harness.js": ["text/javascript; charset=utf-8", harness],
-  // As in Cloud: the app sheet first, @k2b/ui after it.
-  "/app.css": ["text/css", appCss],
-  "/styles.css": ["text/css", readFileSync(`${ui}dist/styles.css`, "utf8")],
+  // Compile the app and root shell in the same order as a Cloud page.
+  "/styles.css": ["text/css", hostCss],
   "/tabler.css": ["text/css", readFileSync(`${ui}dist/tabler.css`, "utf8")],
 };
 const page = (theme: "light" | "dark", lang: string) =>
   `<!doctype html><html lang="${lang}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-  `<link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css">` +
+  `<link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/styles.css">` +
   `</head><body class="k2b-ui" data-theme="${theme}"><div id="root"></div><script src="/harness.js"></script></body></html>`;
 
 const desktop: BrowserContextOptions = { viewport: { width: 1366, height: 768 } };

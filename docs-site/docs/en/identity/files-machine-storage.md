@@ -28,7 +28,8 @@ Open the storage row and add a named principal. An empty **Relative path** grant
 access to the whole storage. A nonempty path includes that folder and its
 descendants; it does not grant access to parent folders or similarly named
 siblings. Use the exact path when addressing a narrower grant through the API
-or capabilities.
+or capabilities. Copying a file into its current folder creates a new name and
+requires write access to that folder.
 
 | Permission | Allowed operations |
 | --- | --- |
