@@ -5,7 +5,7 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Deprecations and migrations
@@ -121,9 +121,13 @@ The following CLI groups and commands are removed, without a current query repla
 
 The removed capability IDs are `pulse.resource.search`, `pulse.resource.read`,
 `pulse.metric.search`, `pulse.field.search`, `pulse.query.compile`,
-`pulse.query.execute`, `pulse.saved_query.list`, `pulse.saved_query.read`, and
-`pulse.saved_query.execute`. Pulse's remaining capabilities find/read bases and
-sources; agents have no measurement-query capability until SQL arrives.
+`pulse.query.execute`, `pulse.saved_query.read`, and
+`pulse.saved_query.execute`. Use `pulse.sql.run` for measurement queries.
+`pulse.saved_query.list` now returns saved SQL instead of the former DSL result.
+Base/source discovery remains available. Agent writes use `base.create`,
+`base.clear_data`, `base.delete`, and source-scoped `ingest.write`; see
+[Pulse](/en/apps/pulse#let-an-agent-create-and-write-telemetry) for permissions
+and approval requirements.
 Update scripts, scheduled tasks, and agents that call the removed operations.
 
 Refresh the Pulse CLI plugin for each profile with `cld plugins update pulse`.

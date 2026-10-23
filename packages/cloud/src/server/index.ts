@@ -8,6 +8,7 @@ export type { CreateApiClientConfig } from "./api-client";
 export { api as apiClient } from "./api-client";
 export { appAssetPath } from "./app-assets";
 export type { AppContext } from "./app-context";
+export { clientIp, clientIpBucket } from "./client-ip";
 export { defineHelp, defineHelpCollection, type HelpCollection, type HelpDefinition, type HelpDefinitionDocument } from "./help";
 export { DEFAULT_LOCALE, getLocale, LOCALE_COOKIE, LOCALE_HEADER, locale, preferredLocale, resolveLocale } from "./locale";
 export type {

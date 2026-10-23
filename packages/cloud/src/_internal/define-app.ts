@@ -91,6 +91,7 @@ import { cliPluginRoutePrefixes, createCliPluginRoutes, validateAppCliModules } 
 import { FONT_PRELOAD_LINKS } from "./font-preloads";
 import { createHeartbeat, createRegistryMembership } from "./heartbeat";
 import { compileHelp } from "./help";
+import { createHttpDrain } from "./http-drain";
 import { createPageResponses } from "./page-responses";
 import { configurePostgresApplicationName } from "./postgres-application-name";
 import { getProcessSync, startProcessSync } from "./process-sync";
@@ -599,6 +600,7 @@ export const defineApp = <
     const port = startOpts.port ?? 3000;
     const baseUrl = opts.baseUrl;
     const log = logger("app");
+    const http = createHttpDrain();
     if (!meta.access) log.warn("Application has no access declaration; legacy entry and discovery rules remain active", { appId: meta.id });
 
     // Settings are encrypted at rest, so every container needs the secret. It
@@ -1066,18 +1068,36 @@ export const defineApp = <
       log.info(`Registered "${meta.id}"`, { baseUrl });
 
       // Graceful shutdown
-      let stopping = false;
-      const shutdown = async () => {
-        if (stopping) return;
-        stopping = true;
-        log.info(`Stopping: ${meta.id}`);
-        await stopStartedResources();
+      let shutdownPromise: Promise<void> | undefined;
+      const shutdown = () =>
+        (shutdownPromise ??= (async () => {
+          const drained = http.stop();
+          log.info(`Stopping: ${meta.id}`);
+          try {
+            await drained;
+          } finally {
+            await stopStartedResources();
+          }
+        })());
+
+      const stopAndExit = () =>
+        void shutdown().then(
+          () => process.exit(0),
+          (error: unknown) => {
+            log.error("HTTP shutdown failed", { appId: meta.id, error: error instanceof Error ? error.message : String(error) });
+            process.exit(1);
+          },
+        );
+      process.on("SIGTERM", stopAndExit);
+      process.on("SIGINT", stopAndExit);
+
+      return {
+        hostname: "0.0.0.0",
+        port,
+        development: isDevelopment,
+        idleTimeout: REQUEST_IDLE_TIMEOUT_SECONDS,
+        fetch: (request, bunServer) => http.fetch(request, bunServer, (request) => server.fetch(request, bunServer)),
       };
-
-      process.on("SIGTERM", () => void shutdown().then(() => process.exit(0)));
-      process.on("SIGINT", () => void shutdown().then(() => process.exit(0)));
-
-      return { hostname: "0.0.0.0", port, development: isDevelopment, idleTimeout: REQUEST_IDLE_TIMEOUT_SECONDS, fetch: server.fetch };
     } catch (error) {
       await stopStartedResources();
       throw error;
