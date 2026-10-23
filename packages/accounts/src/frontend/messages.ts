@@ -283,6 +283,8 @@ export const accountsMessages = i18n.define({
       noMatchingMembers: "No members match your search.",
       noMembers: "This group has no members.",
       noManagers: "This group has no managers.",
+      machineManagementHint:
+        "Agents and service accounts need a separate management grant. It lets them change this group’s members, but not its managers. Membership alone grants no management rights.",
       noParentGroups: "This group is not a member of another group.",
       showDirectMembers: "Show direct members only",
       showAllMembers: "Show all members, including indirect members",
@@ -1115,6 +1117,8 @@ export const accountsMessages = i18n.define({
       noMatchingMembers: "Keine Mitglieder entsprechen der Suche.",
       noMembers: "Diese Gruppe hat keine Mitglieder.",
       noManagers: "Für diese Gruppe sind keine Verantwortlichen eingetragen.",
+      machineManagementHint:
+        "Agenten und Dienstkonten brauchen ein eigenes Verwaltungsrecht. Damit können sie Mitglieder dieser Gruppe ändern, aber keine Verantwortlichen. Die Mitgliedschaft allein erlaubt keine Verwaltung.",
       noParentGroups: "Diese Gruppe ist kein Mitglied einer anderen Gruppe.",
       showDirectMembers: "Nur direkte Mitglieder anzeigen",
       showAllMembers: "Alle Mitglieder einschließlich indirekter anzeigen",

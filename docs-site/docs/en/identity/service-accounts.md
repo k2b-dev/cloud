@@ -201,3 +201,9 @@ before it expires, and obtains a new one after a `401`. Nothing else changes:
 the agent runs the same `cld` commands as a person, under its own identity, and
 only sees what it was granted. Read the CLI's `cld admin reference` for the
 complete command list.
+
+## Local group management by machines
+
+Standalone and agent accounts can receive a direct, revocable local group
+management grant, separate from membership. A matching token scope is also
+required. See [Machine group management](./machine-group-management.md).

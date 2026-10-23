@@ -139,12 +139,12 @@ const app = new Hono<AuthContext>()
   // Add/remove members — accessible by full-account users (backend/provider enforces permissions)
   .post(
     "/:id/members",
-    auth.requireRole("user"),
+    auth.requireRole("authenticated"),
     describeRoute({
       tags: ["Groups"],
       summary: "Add member to group",
       description:
-        "Add a user, group, or active standalone/agent account as a local group member. Admins and group managers can perform this action where allowed.",
+        "Add a user, group, or active standalone/agent account as a local group member. Admins, human group managers, and explicitly granted machine managers can perform this action where allowed.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Member added"),
@@ -155,15 +155,32 @@ const app = new Hono<AuthContext>()
     }),
     v("param", GroupIdParamSchema),
     v("json", GroupMemberInputSchema),
-    (c) => handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.member.add, "added as member"),
+    (c) => {
+      const actor = c.get("actor");
+      if (actor.kind !== "service_account" || actor.delegatedUser)
+        return handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.member.add, "added as member");
+      const input = c.req.valid("json");
+      return respond(c, async () => {
+        const result = await accountsService.group.member.add({
+          actor,
+          id: c.req.valid("param").id,
+          requestId: c.req.header("x-request-id"),
+          userId: input.type === "user" ? input.id : undefined,
+          groupId: input.type === "group" ? input.id : undefined,
+          serviceAccountId: input.type === "service_account" ? input.id : undefined,
+        });
+        return result.ok ? ok({ message: "Group membership updated" }) : result;
+      });
+    },
   )
   .delete(
     "/:id/members",
-    auth.requireRole("user"),
+    auth.requireRole("authenticated"),
     describeRoute({
       tags: ["Groups"],
       summary: "Remove member from group",
-      description: "Remove a user, group, or service account member. Admins and group managers can perform this action where allowed.",
+      description:
+        "Remove a user, group, or service account member. Admins, human group managers, and explicitly granted machine managers can perform this action where allowed.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Member removed"),
@@ -174,7 +191,23 @@ const app = new Hono<AuthContext>()
     }),
     v("param", GroupIdParamSchema),
     v("json", GroupMemberInputSchema),
-    (c) => handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.member.remove, "removed"),
+    (c) => {
+      const actor = c.get("actor");
+      if (actor.kind !== "service_account" || actor.delegatedUser)
+        return handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.member.remove, "removed");
+      const input = c.req.valid("json");
+      return respond(c, async () => {
+        const result = await accountsService.group.member.remove({
+          actor,
+          id: c.req.valid("param").id,
+          requestId: c.req.header("x-request-id"),
+          userId: input.type === "user" ? input.id : undefined,
+          groupId: input.type === "group" ? input.id : undefined,
+          serviceAccountId: input.type === "service_account" ? input.id : undefined,
+        });
+        return result.ok ? ok({ message: "Group membership updated" }) : result;
+      });
+    },
   )
   .post(
     "/:id/managers",
@@ -182,7 +215,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Groups"],
       summary: "Add manager to group",
-      description: "Add a user or group as a member manager. This matches FreeIPA and requires admin access.",
+      description:
+        "Grant management to a user or group, or directly to an active standalone/agent account for a local group. Requires administrator access.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Manager added"),
@@ -201,7 +235,7 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Groups"],
       summary: "Remove manager from group",
-      description: "Remove a user or group member manager. This matches FreeIPA and requires admin access.",
+      description: "Revoke a user, group, or direct machine management grant. Requires administrator access.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Manager removed"),

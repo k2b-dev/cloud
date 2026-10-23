@@ -731,3 +731,9 @@ users, such as guests, and machine accounts cannot be members and need a
 local Cloud group or a direct grant. Cloud rejects these recipients in
 directory groups. Change eligible membership in the directory, or grant the
 local recipient separately.
+
+## Local group management by machines
+
+Standalone and agent accounts can receive a direct, revocable local group
+management grant, separate from membership. A matching token scope is also
+required. See [Machine group management](./machine-group-management.md).

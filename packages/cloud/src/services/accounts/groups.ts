@@ -267,9 +267,12 @@ export const addManager = async (params: {
   provider?: UserProvider;
   user?: string;
   group?: string;
+  serviceAccount?: string;
 }): Promise<MutationResult<void>> => {
-  const provider = params.provider ?? (await getGroup(params.id))?.provider;
-  if (provider === "local") return localGroups.addManager({ id: params.id, user: params.user, group: params.group });
+  const provider = (await getGroup(params.id))?.provider;
+  if (provider === "local")
+    return localGroups.addManager({ id: params.id, user: params.user, group: params.group, serviceAccount: params.serviceAccount });
+  if (params.serviceAccount) return { ok: false, error: "Machine management requires a local group", status: 400 };
   const serviceSession = await getServiceIpaSession();
   if (!serviceSession.ok) return serviceSession;
   return providers.ipa.groups.addManager({
@@ -285,9 +288,12 @@ export const removeManager = async (params: {
   provider?: UserProvider;
   user?: string;
   group?: string;
+  serviceAccount?: string;
 }): Promise<MutationResult<void>> => {
-  const provider = params.provider ?? (await getGroup(params.id))?.provider;
-  if (provider === "local") return localGroups.removeManager({ id: params.id, user: params.user, group: params.group });
+  const provider = (await getGroup(params.id))?.provider;
+  if (provider === "local")
+    return localGroups.removeManager({ id: params.id, user: params.user, group: params.group, serviceAccount: params.serviceAccount });
+  if (params.serviceAccount) return { ok: false, error: "Machine management requires a local group", status: 400 };
   const serviceSession = await getServiceIpaSession();
   if (!serviceSession.ok) return serviceSession;
   return providers.ipa.groups.removeManager({

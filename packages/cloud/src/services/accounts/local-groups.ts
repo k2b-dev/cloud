@@ -1,4 +1,4 @@
-import { sql } from "bun";
+import { sql, type TransactionSQL } from "bun";
 import type { BaseGroup, GroupMember, MutationResult, UserProvider } from "../../contracts/shared";
 import { escapeLikePattern, isUniqueViolation } from "../postgres";
 import { buildBaseGroup, personalOwnerJoin } from "./base-group";
@@ -23,8 +23,8 @@ const toBaseGroup = (row: LocalGroupRow): BaseGroup => ({
   personalOwner: null,
 });
 
-const getLocalGroupById = async (id: string): Promise<LocalGroupRow | null> => {
-  const [row] = await sql<DbRow[]>`
+const getLocalGroupById = async (id: string, db: typeof sql | TransactionSQL = sql): Promise<LocalGroupRow | null> => {
+  const [row] = await db<DbRow[]>`
     SELECT id, provider, name, description, gid_number
     FROM auth.groups
     WHERE id = ${id}::uuid AND provider = 'local'
@@ -39,20 +39,23 @@ const getLocalGroupById = async (id: string): Promise<LocalGroupRow | null> => {
   };
 };
 
-const getUserProvider = async (userId: string): Promise<UserProvider | null> => {
-  const [row] = await sql<DbRow[]>`SELECT provider FROM auth.users WHERE id = ${userId}`;
+const getUserProvider = async (userId: string, db: typeof sql | TransactionSQL = sql): Promise<UserProvider | null> => {
+  const [row] = await db<DbRow[]>`SELECT provider FROM auth.users WHERE id = ${userId}`;
   return (row?.provider as UserProvider | undefined) ?? null;
 };
 
-const ensureLocalGroupTreeMember = async (groupId: string): Promise<boolean> => {
-  const [row] = await sql<DbRow[]>`SELECT 1 FROM auth.groups WHERE id = ${groupId} AND provider = 'local'`;
+const ensureLocalGroupTreeMember = async (groupId: string, db: typeof sql | TransactionSQL = sql): Promise<boolean> => {
+  const [row] = await db<DbRow[]>`SELECT 1 FROM auth.groups WHERE id = ${groupId} AND provider = 'local'`;
   return Boolean(row);
 };
 
-const wouldCreateLocalGroupCycle = async (params: { parentGroupId: string; childGroupId: string }): Promise<boolean> => {
+const wouldCreateLocalGroupCycle = async (
+  params: { parentGroupId: string; childGroupId: string },
+  db: typeof sql | TransactionSQL = sql,
+): Promise<boolean> => {
   if (params.parentGroupId === params.childGroupId) return true;
 
-  const [row] = await sql<DbRow[]>`
+  const [row] = await db<DbRow[]>`
     WITH RECURSIVE descendants AS (
       SELECT gg.child_group_id
       FROM auth.group_groups_v2 gg
@@ -268,7 +271,11 @@ export const getMembers = async (params: { id: string; type?: GroupMember["type"
   return members;
 };
 
-export const getManagers = async (params: { id: string; type?: "user" | "group"; recursive?: boolean }): Promise<GroupMember[]> => {
+export const getManagers = async (params: {
+  id: string;
+  type?: "user" | "group" | "service_account";
+  recursive?: boolean;
+}): Promise<GroupMember[]> => {
   const group = await getLocalGroupById(params.id);
   if (!group) return [];
 
@@ -337,6 +344,16 @@ export const getManagers = async (params: { id: string; type?: "user" | "group";
     }
   }
 
+  if (!params.type || params.type === "service_account") {
+    const rows = await sql<{ id: string; name: string; kind: "standalone" | "agent" }[]>`
+      SELECT sa.id, sa.name, sa.kind FROM auth.group_manager_service_accounts gm
+      JOIN auth.service_accounts sa ON sa.id = gm.service_account_id
+      WHERE gm.group_id = ${group.id}::uuid AND sa.kind IN ('standalone', 'agent')
+      ORDER BY sa.name, sa.id`;
+    managers.push(
+      ...rows.map((row) => ({ type: "service_account" as const, id: row.id, displayName: row.name, serviceAccountKind: row.kind })),
+    );
+  }
   return managers;
 };
 
@@ -407,22 +424,25 @@ export const getManagedGroups = async (params: { id: string; recursive?: boolean
   return rows.map((row) => row.group_id as string);
 };
 
-export const addMember = async (params: {
-  id: string;
-  user?: string;
-  group?: string;
-  serviceAccount?: string;
-}): Promise<MutationResult<void>> => {
-  const group = await getLocalGroupById(params.id);
+export const addMember = async (
+  params: {
+    id: string;
+    user?: string;
+    group?: string;
+    serviceAccount?: string;
+  },
+  db: typeof sql | TransactionSQL = sql,
+): Promise<MutationResult<void>> => {
+  const group = await getLocalGroupById(params.id, db);
   if (!group) return { ok: false, error: "Group not found", status: 404 };
 
   if (params.serviceAccount) {
-    const [account] = await sql<{ id: string }[]>`
+    const [account] = await db<{ id: string }[]>`
       SELECT id FROM auth.service_accounts
       WHERE id = ${params.serviceAccount}::uuid AND status = 'active' AND kind IN ('standalone', 'agent')
     `;
     if (!account) return { ok: false, error: "An active standalone or agent account is required", status: 400 };
-    const inserted = await sql`
+    const inserted = await db`
       INSERT INTO auth.service_account_groups (service_account_id, group_id)
       VALUES (${account.id}::uuid, ${group.id}::uuid) ON CONFLICT DO NOTHING
     `;
@@ -431,9 +451,9 @@ export const addMember = async (params: {
   }
 
   if (params.user) {
-    const provider = await getUserProvider(params.user);
+    const provider = await getUserProvider(params.user, db);
     if (!provider) return { ok: false, error: "User not found", status: 404 };
-    const [existing] = await sql<DbRow[]>`
+    const [existing] = await db<DbRow[]>`
       SELECT 1
       FROM auth.user_groups_v2
       WHERE user_id = ${params.user}::uuid
@@ -441,14 +461,14 @@ export const addMember = async (params: {
       LIMIT 1
     `;
     if (existing) return { ok: false, error: "User is already a direct member of this group", status: 409 };
-    await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${params.user}, ${group.id}) ON CONFLICT DO NOTHING`;
+    await db`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${params.user}, ${group.id}) ON CONFLICT DO NOTHING`;
     return { ok: true, data: undefined };
   }
 
   if (params.group) {
-    const isLocal = await ensureLocalGroupTreeMember(params.group);
+    const isLocal = await ensureLocalGroupTreeMember(params.group, db);
     if (!isLocal) return { ok: false, error: "Only local groups can be nested into local groups", status: 400 };
-    const [existing] = await sql<DbRow[]>`
+    const [existing] = await db<DbRow[]>`
       SELECT 1
       FROM auth.group_groups_v2
       WHERE parent_group_id = ${group.id}::uuid
@@ -456,17 +476,48 @@ export const addMember = async (params: {
       LIMIT 1
     `;
     if (existing) return { ok: false, error: "Group is already a direct member of this group", status: 409 };
-    if (await wouldCreateLocalGroupCycle({ parentGroupId: group.id, childGroupId: params.group })) {
+    if (await wouldCreateLocalGroupCycle({ parentGroupId: group.id, childGroupId: params.group }, db)) {
       return { ok: false, error: "Local group nesting cannot create cycles", status: 400 };
     }
-    await sql`INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id) VALUES (${group.id}, ${params.group}) ON CONFLICT DO NOTHING`;
+    await db`INSERT INTO auth.group_groups_v2 (parent_group_id, child_group_id) VALUES (${group.id}, ${params.group}) ON CONFLICT DO NOTHING`;
     return { ok: true, data: undefined };
   }
 
   return { ok: false, error: "Missing member", status: 400 };
 };
 
-export const removeMember = async (params: {
+export const removeMember = async (
+  params: {
+    id: string;
+    user?: string;
+    group?: string;
+    serviceAccount?: string;
+  },
+  db: typeof sql | TransactionSQL = sql,
+): Promise<MutationResult<void>> => {
+  const group = await getLocalGroupById(params.id, db);
+  if (!group) return { ok: false, error: "Group not found", status: 404 };
+
+  if (params.serviceAccount) {
+    await db`DELETE FROM auth.service_account_groups
+      WHERE service_account_id = ${params.serviceAccount}::uuid AND group_id = ${group.id}::uuid`;
+    return { ok: true, data: undefined };
+  }
+
+  if (params.user) {
+    await db`DELETE FROM auth.user_groups_v2 WHERE user_id = ${params.user}::uuid AND group_id = ${group.id}::uuid`;
+    return { ok: true, data: undefined };
+  }
+
+  if (params.group) {
+    await db`DELETE FROM auth.group_groups_v2 WHERE parent_group_id = ${group.id}::uuid AND child_group_id = ${params.group}::uuid`;
+    return { ok: true, data: undefined };
+  }
+
+  return { ok: false, error: "Missing member", status: 400 };
+};
+
+export const addManager = async (params: {
   id: string;
   user?: string;
   group?: string;
@@ -476,27 +527,14 @@ export const removeMember = async (params: {
   if (!group) return { ok: false, error: "Group not found", status: 404 };
 
   if (params.serviceAccount) {
-    await sql`DELETE FROM auth.service_account_groups
-      WHERE service_account_id = ${params.serviceAccount}::uuid AND group_id = ${group.id}::uuid`;
+    const [account] = await sql`SELECT id FROM auth.service_accounts
+      WHERE id = ${params.serviceAccount}::uuid AND status = 'active' AND kind IN ('standalone', 'agent')`;
+    if (!account) return { ok: false, error: "An active standalone or agent account is required", status: 400 };
+    const inserted = await sql`INSERT INTO auth.group_manager_service_accounts(group_id, service_account_id)
+      VALUES (${group.id}::uuid, ${params.serviceAccount}::uuid) ON CONFLICT DO NOTHING`;
+    if (inserted.count === 0) return { ok: false, error: "Service account already manages this group", status: 409 };
     return { ok: true, data: undefined };
   }
-
-  if (params.user) {
-    await sql`DELETE FROM auth.user_groups_v2 WHERE user_id = ${params.user}::uuid AND group_id = ${group.id}::uuid`;
-    return { ok: true, data: undefined };
-  }
-
-  if (params.group) {
-    await sql`DELETE FROM auth.group_groups_v2 WHERE parent_group_id = ${group.id}::uuid AND child_group_id = ${params.group}::uuid`;
-    return { ok: true, data: undefined };
-  }
-
-  return { ok: false, error: "Missing member", status: 400 };
-};
-
-export const addManager = async (params: { id: string; user?: string; group?: string }): Promise<MutationResult<void>> => {
-  const group = await getLocalGroupById(params.id);
-  if (!group) return { ok: false, error: "Group not found", status: 404 };
 
   if (params.user) {
     const provider = await getUserProvider(params.user);
@@ -531,9 +569,20 @@ export const addManager = async (params: { id: string; user?: string; group?: st
   return { ok: false, error: "Missing manager", status: 400 };
 };
 
-export const removeManager = async (params: { id: string; user?: string; group?: string }): Promise<MutationResult<void>> => {
+export const removeManager = async (params: {
+  id: string;
+  user?: string;
+  group?: string;
+  serviceAccount?: string;
+}): Promise<MutationResult<void>> => {
   const group = await getLocalGroupById(params.id);
   if (!group) return { ok: false, error: "Group not found", status: 404 };
+
+  if (params.serviceAccount) {
+    await sql`DELETE FROM auth.group_manager_service_accounts
+      WHERE group_id = ${group.id}::uuid AND service_account_id = ${params.serviceAccount}::uuid`;
+    return { ok: true, data: undefined };
+  }
 
   if (params.user) {
     await sql`DELETE FROM auth.group_manager_users_v2 WHERE group_id = ${group.id}::uuid AND user_id = ${params.user}::uuid`;

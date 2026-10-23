@@ -1,6 +1,7 @@
 import { sql } from "bun";
 import { repairEncodedMetadata } from "./jsonb-metadata";
 import { migratePosix } from "./posix";
+import { migrate as migrateServiceAccountGroupManagers } from "./service-account-group-managers";
 import { migrate as migrateServiceAccountGroups } from "./service-account-groups";
 
 export const migrate = async (): Promise<void> => {
@@ -555,6 +556,7 @@ export const migrate = async (): Promise<void> => {
   await sql`DROP INDEX IF EXISTS uniq_service_accounts_resource_bound`.simple();
   console.log("  ✓ auth.service_accounts table");
   await migrateServiceAccountGroups();
+  await migrateServiceAccountGroupManagers();
 
   await sql`
     CREATE TABLE IF NOT EXISTS auth.mandates (

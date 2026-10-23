@@ -31,10 +31,7 @@ export default function AddMember(props: AddMemberProps) {
       const res =
         props.membershipRole === "members"
           ? await apiClient.groups[":id"].members.$post({ param: { id: props.groupId }, json: vars })
-          : vars.type !== "service_account"
-            ? await apiClient.groups[":id"].managers.$post({ param: { id: props.groupId }, json: { type: vars.type, id: vars.id } })
-            : undefined;
-      if (!res) throw new Error(messages().addManagerFailed);
+          : await apiClient.groups[":id"].managers.$post({ param: { id: props.groupId }, json: vars });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.message ?? (props.membershipRole === "members" ? messages().addMemberFailed : messages().addManagerFailed));
@@ -63,14 +60,14 @@ export default function AddMember(props: AddMemberProps) {
           providers={[props.groupProvider]}
           includeUsers={props.searchUsers !== false}
           includeGroups={props.searchGroups}
-          includeServiceAccounts={props.membershipRole === "members" && props.groupProvider === "local"}
+          includeServiceAccounts={props.groupProvider === "local"}
           serviceAccountKinds={["standalone", "agent"]}
           serviceAccountStatus="active"
           excludeServiceAccountIds={props.excludeServiceAccountIds}
           excludeUserIds={props.excludeUserIds}
           excludeGroupIds={props.excludeGroups}
           placeholder={
-            props.membershipRole === "members" && props.groupProvider === "local"
+            props.groupProvider === "local"
               ? messages().searchMembers
               : props.searchGroups
                 ? messages().searchUsersOrGroups

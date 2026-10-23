@@ -480,8 +480,8 @@ export const list = async (
             AND ug.group_id = ANY(${toPgUuidArray(params.userMemberOfGroupIds ?? [])}::uuid[])
         ))`;
 
-  // Machine recipients have local membership, but no directory management/parent relation.
-  const otherRelation = Boolean(params.managerOfGroupId || params.parentGroupId || params.managedByUserId);
+  // Machine management is direct only; membership never implies management.
+  const otherRelation = Boolean(params.parentGroupId || params.managedByUserId);
   const machineRelation = params.memberOfGroupId
     ? sql`sa.kind IN ('standalone', 'agent') AND EXISTS (
         SELECT 1 FROM auth.groups target
@@ -493,11 +493,18 @@ export const list = async (
                   WHERE sg.service_account_id = sa.id AND sg.group_id = target.id)`
           }
       )`
-    : sql`TRUE`;
+    : params.managerOfGroupId
+      ? sql`sa.kind IN ('standalone', 'agent') AND EXISTS (
+        SELECT 1 FROM auth.group_manager_service_accounts gm JOIN auth.groups g ON g.id = gm.group_id
+        WHERE gm.service_account_id = sa.id AND gm.group_id = ${params.managerOfGroupId}::uuid AND g.provider = 'local'
+      )`
+      : sql`TRUE`;
   const machineDirect = params.memberOfGroupId
     ? sql`EXISTS (SELECT 1 FROM auth.service_account_groups sg
         WHERE sg.service_account_id = sa.id AND sg.group_id = ${params.memberOfGroupId}::uuid)`
-    : sql`NULL::boolean`;
+    : params.managerOfGroupId
+      ? sql`TRUE`
+      : sql`NULL::boolean`;
   const where = sql`
     ${visibilityCondition}
     AND ${kindsCondition}

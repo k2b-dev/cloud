@@ -25,10 +25,7 @@ export default function RemoveMember(props: RemoveMemberProps) {
       const res =
         props.membershipRole === "members"
           ? await apiClient.groups[":id"].members.$delete({ param: { id: props.groupId }, json: { type: props.type, id: props.id } })
-          : props.type !== "service_account"
-            ? await apiClient.groups[":id"].managers.$delete({ param: { id: props.groupId }, json: { type: props.type, id: props.id } })
-            : undefined;
-      if (!res) throw new Error(messages().removeFailed);
+          : await apiClient.groups[":id"].managers.$delete({ param: { id: props.groupId }, json: { type: props.type, id: props.id } });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.message ?? messages().removeFailed);
