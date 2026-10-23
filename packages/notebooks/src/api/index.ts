@@ -960,6 +960,8 @@ const notePdfError = (error: unknown, locale?: string): { message: string; statu
   }
   if (error instanceof GotenbergRenderError) {
     switch (error.code) {
+      case "busy":
+        return { message: t.pdfBusy, status: 503 };
       // The rendered note, not its Markdown, exceeds the operator's render budget.
       case "html_too_large":
       case "pdf_too_large":

@@ -19,7 +19,7 @@ import { type SQL, sql } from "bun";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
-import { testInfra } from "../../../../scripts/fixtures/test-infra";
+import { testFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { createCustomAppsApi } from "../api/custom-apps";
 import { createDocumentResourceRoutes } from "../api/document-resource-routes";
 import { createWorkflowDocumentConfirmationRoutes, FinancialExportPreviewSchema } from "../api/workflow-document-confirmations";
@@ -716,7 +716,7 @@ steps:
     }
   });
 
-  postgresTest(
+  testFor("database", "valkey")(
     "query documents produce PDF, CSV, JSON and XML through one frozen capture and survive replay",
     async () => {
       const fixture = createFixture();
