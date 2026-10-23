@@ -2,7 +2,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import type { MessageResponse } from "../../contracts/shared";
 import * as settings from "../../services/settings";
-import { clientIp } from "../client-ip";
+import { clientIp, clientIpBucket } from "../client-ip";
 import { ratelimit } from "../ratelimit";
 import { type AuthContext, auth } from "./auth";
 
@@ -81,13 +81,13 @@ const getLimiter = (limitPerSecond: number, windowSecs: number) => {
 };
 
 const resolveIdentifier = async (c: Context<AuthContext>, keyBy: RateLimitConfig["keyBy"]): Promise<string> => {
-  if (keyBy === "ip") return `ip:${clientIp(c)}`;
+  if (keyBy === "ip") return clientIpBucket(clientIp(c));
 
   const token = auth.session.getToken(c);
-  if (!token) return `ip:${clientIp(c)}`;
+  if (!token) return clientIpBucket(clientIp(c));
 
   const userId = await auth.session.getRequestSubject(c, token);
-  if (!userId) return `ip:${clientIp(c)}`;
+  if (!userId) return clientIpBucket(clientIp(c));
 
   return `user:${userId}`;
 };

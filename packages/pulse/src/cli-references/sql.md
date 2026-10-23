@@ -23,6 +23,12 @@ durations such as `30s`, `5m`, `1h`, `1d`, and `2w` as seconds (`UInt32`),
 finite numbers as `Float64`, and other values as `String`. Values travel as
 bound data. Raw ClickHouse `{name:Type}` syntax is refused.
 
+Use `bucket(ts,:bucket)` with a positive integer duration in `s`, `m`, `h`,
+`d`, or `w`, for example `--param bucket=1d`. Days and weeks follow the base
+calendar timezone across DST; smaller units use fixed durations. The helper
+requires a named parameter as its second argument. It leaves quoted SQL and
+comments unchanged and binds interval values as data.
+
 Use `--format table`, `json`, or `csv`. JSON includes columns, compact row
 arrays, row count, truncation, statistics, and limits. CSV quotes commas,
 quotes, and newlines. The default follows the global output option; JSONL

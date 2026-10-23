@@ -855,6 +855,7 @@ test("Browser Back asks before discarding base settings and Cancel preserves the
     expect(await tab.getByRole("button", { name: "Verwerfen", exact: true }).isVisible()).toBe(true);
     expect(await confirmDiscard.count()).toBe(0);
     await tab.evaluate(() => window.history.back());
+    await confirmation.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
     await confirmDiscard.click();
     await tab.waitForFunction(() => !new URL(window.location.href).searchParams.has("settings"));
     expect(await name.count()).toBe(0);
