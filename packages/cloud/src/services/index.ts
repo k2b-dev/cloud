@@ -265,3 +265,5 @@ export { deviceOffersApproval } from "./approvals/device";
 /** Core-owned geo implementation; applications use geoClient from the server entry. */
 export { coreGeo, createGeoService } from "./geo/service";
 export { migrate as migrateGeo } from "./geo/migrate";
+
+export { coreGeoMap, createGeoMapService } from "./geo/map";

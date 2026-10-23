@@ -243,3 +243,18 @@ test("unreplaced unreadable values retain the recovery error", async () => {
   expect((await save({ updates: { [month]: 1000 } })).status).toBe(409);
   expect(tx.begin).not.toHaveBeenCalled();
 });
+
+test("the generic settings route refuses the Geoapify key, which only the verifying geo route writes", async () => {
+  const tx = await transaction();
+  for (const body of [{ updates: { "geo.api_key": "unverified" } }, { resets: ["geo.api_key"] }, { "geo.api_key": "unverified" }]) {
+    const response = await save(body);
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(Object.keys(json.errors)).toEqual(["geo.api_key"]);
+    expect(JSON.stringify(json)).not.toContain("unverified");
+  }
+  const reset = await routes.request("/geo.api_key", { method: "DELETE", headers: { Cookie: "session_token=test" } });
+  expect(reset.status).toBe(400);
+  expect(tx.begin).not.toHaveBeenCalled();
+  expect(mutations(tx.queries)).toEqual([]);
+});

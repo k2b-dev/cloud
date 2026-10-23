@@ -51,10 +51,11 @@ Plain Postgres uses search fallback; BM25 availability is recorded.
   --loads pages      Comma list of mailbox,compose, or none (default both)
   --rank <result.json> --bottlenecks <candidates.json>
                      Print the top 5 bottlenecks as Markdown and exit: each
-                     candidate {title, location "path:line", metric, evidence,
+                     candidate {title, location "path:line", anchor, metric, evidence,
                      slice} is ranked by its metric's time in that result.
-                     Refuses a candidate without a real file:line or without
-                     a measured number, and a list that mixes server and
+                     Anchor is the complete trimmed source line (no newlines).
+                     Refuses blank or changed source lines, invalid file:line, missing
+                     measured numbers, and a list that mixes server and
                      browser metrics. No lock, build or Docker.
   --help             Usage only: no lock, build or Docker
 
