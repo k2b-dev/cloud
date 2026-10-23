@@ -68,7 +68,7 @@ Deleting never removes anything permanently: entries move into the trash of thei
 
 ## Versions {icon="history"}
 
-Where the storage keeps versions, the details panel lists earlier versions of a file above its history. On a phone, open the list from the version count in **Info**. For each version you can add a comment, download it, restore it in place, or restore it as a new file next to the current one. Restoring as a new file leaves the original file and its history unchanged. Only administrators can permanently delete versions. Restoring in place keeps the current state as a new version.
+Where the storage keeps versions, the details panel lists earlier versions of a file above its history. On a phone, open the list from the version count in **Info**. For each version you can add a comment, download it, restore it in place, or restore it as a new file next to the current one. Restoring as a new file leaves the original file and its history unchanged. Only administrators can permanently delete versions. Restoring in place keeps the current state as a new version. If the storage cannot confirm the current revision, use **Restore as a new file** to preserve newer content.
 
 ## History and activity {icon="activity"}
 

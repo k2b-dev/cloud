@@ -68,7 +68,7 @@ Löschen entfernt nie etwas endgültig: Einträge wandern in den Papierkorb ihre
 
 ## Versionen {icon="history"}
 
-Wo die Ablage Versionen behält, listet das Detailpanel frühere Versionen einer Datei über ihrem Verlauf. Am Telefon öffnest du die Liste über die Versionszahl unter **Info**. Zu jeder Version kannst du einen Kommentar hinterlegen, sie herunterladen, an Ort und Stelle wiederherstellen oder als neue Datei neben der aktuellen wiederherstellen. Beim Wiederherstellen als neue Datei bleiben die ursprüngliche Datei und ihre Versionsgeschichte unverändert. Nur die Administration darf Versionen endgültig löschen. Beim Wiederherstellen an Ort und Stelle bleibt der aktuelle Stand als neue Version erhalten.
+Wo die Ablage Versionen behält, listet das Detailpanel frühere Versionen einer Datei über ihrem Verlauf. Am Telefon öffnest du die Liste über die Versionszahl unter **Info**. Zu jeder Version kannst du einen Kommentar hinterlegen, sie herunterladen, an Ort und Stelle wiederherstellen oder als neue Datei neben der aktuellen wiederherstellen. Beim Wiederherstellen als neue Datei bleiben die ursprüngliche Datei und ihre Versionsgeschichte unverändert. Nur die Administration darf Versionen endgültig löschen. Beim Wiederherstellen an Ort und Stelle bleibt der aktuelle Stand als neue Version erhalten. Kann der Speicher den aktuellen Stand nicht bestätigen, nutze **Als neue Datei wiederherstellen**, damit neuere Inhalte erhalten bleiben.
 
 ## Verlauf und Aktivität {icon="activity"}
 

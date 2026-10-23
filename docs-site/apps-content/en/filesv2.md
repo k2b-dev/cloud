@@ -377,7 +377,8 @@ keeps its exact item scope. Rows name version numbers for entries that carry
 a version ID, counted over the versions the list holds; the current content is the next number. An
 overwrite or editor save whose new revision is the file's current revision
 offers **Restore version N** for the newest retained version, through the
-existing version restore. A revision is never treated as a version ID. For public links the person created, the
+existing version restore. In-place restoration in the details panel requires a current storage revision;
+without one, restore as a new file to preserve newer content. A revision is never treated as a version ID. For public links the person created, the
 panel shows page views, released downloads, the period's page networks when
 exact, networks by use, and access over time with older periods on request,
 for the last 30 days, next to **Revoke link**.
