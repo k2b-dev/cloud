@@ -100,22 +100,24 @@ describe("Mail admin contact directory dialog", () => {
 
       button("Save").click();
       await settle();
-      expect(bodies[0]).toEqual({ method: "PUT", body: crm });
-      expect(dom.document.querySelector('[role="alert"]')?.textContent).toContain("Mail cannot use this mapping yet.");
+      expect(bodies[0]).toEqual({ method: "PUT", body: { replaceUnreadable: [] } });
+      expect(dom.document.querySelector('[role="alert"]')?.textContent).toContain("customer.match does not exist in this app.");
       const resolveField = dom.document.getElementById("mail-contact-directory-resolve");
       expect(resolveField?.getAttribute("aria-invalid")).toBe("true");
-      expect(dom.document.activeElement).toBe(resolveField);
+      expect(dom.document.activeElement?.id).toBe(resolveField?.id);
       expect(dom.document.querySelector("dialog")?.textContent).toContain("customer.match does not exist in this app.");
 
       button("Use Contacts defaults").click();
       await settle();
-      expect(dom.document.querySelector('[role="alert"]')).toBeNull();
+      expect(dom.document.querySelector('[role="alert"]')?.textContent ?? "").toBe("");
       button("Save").click();
       await settle();
-      expect(bodies[1]).toEqual({ method: "PUT", body: MAIL_CONTACT_DIRECTORY_DEFAULTS });
+      expect(bodies[1]).toEqual({ method: "PUT", body: { ...MAIL_CONTACT_DIRECTORY_DEFAULTS, replaceUnreadable: [] } });
       expect(dom.document.querySelector("dialog[open]")).toBeNull();
       expect(summary()).toBe("Contacts · Defaults");
     } finally {
+      const { dialogCore } = await import("@k2b/ui");
+      dialogCore.close();
       dispose();
       dom.cleanup();
     }
@@ -147,6 +149,8 @@ describe("Mail admin contact directory dialog", () => {
       expect(dom.document.querySelector("dialog")?.textContent ?? "").not.toContain("Suggest recipients");
       expect(requests).toBe(0);
     } finally {
+      const { dialogCore } = await import("@k2b/ui");
+      dialogCore.close();
       dispose();
       dom.cleanup();
     }

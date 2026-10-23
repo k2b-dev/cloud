@@ -6,6 +6,8 @@ import {
   AddMembersSchema,
   CHANGES_PAGE_SIZE,
   ChangeSchema,
+  CONVERSATION_PAGE_SIZE,
+  ConversationQuerySchema,
   ConversationSchema,
   CreateConversationSchema,
   CreateOutcomeSchema,
@@ -25,12 +27,14 @@ import {
   PeoplePageSchema,
   PeopleQuerySchema,
   PermissionSchema,
+  PersonalConversationSchema,
   READ_ALL_BATCH,
   READ_ALL_CONFIRM_FROM,
   ReadAllSchema,
   ReadSchema,
   readStart,
   SendMessageSchema,
+  SidebarPreferencesSchema,
   SuccessSchema,
   type SystemMessage,
   UNREAD_CAP,
@@ -112,7 +116,7 @@ const messageId = (chat: string, seq: number) => `${chat}${String(seq).padStart(
  * the live socket. Tests add messages from others with `receive`, which the server stores and delivers live like
  * the chat app does, and make the next sends fail with `failSends`.
  */
-export const startChatHarness = async () => {
+export const startChatHarness = async (options: { autoMount?: boolean } = {}) => {
   const started = performance.now();
   const now = () => new Date(chatTestNow.getTime() + (performance.now() - started));
   const [harness, css, fontAssets] = await Promise.all([
@@ -324,6 +328,9 @@ export const startChatHarness = async () => {
         memberCount: members.length,
         unread: 0,
         read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+        archived: false,
+        pinnedRank: null,
+        member: true,
         withGuests: false,
         peerDeactivated: false,
         rev: 0,
@@ -372,10 +379,37 @@ export const startChatHarness = async () => {
       : all.filter((message) => (before ? message.seq < Number(before) : true)).slice(-50);
     return { items, seqHead: all.length, rev: chat.conversation.rev };
   };
-  const list = () => ({
-    items: [...chats.values()].map((chat) => chat.conversation).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
-    nextCursor: null,
-  });
+  let collapsed: string[] = [];
+  const list = (archived = false, unread = false, ids?: string[], cursor?: z.infer<typeof ConversationQuerySchema>["cursor"]) => {
+    const items = [...chats.values()]
+      .map((chat) => chat.conversation)
+      .filter(
+        (row) =>
+          row.member &&
+          row.archived === archived &&
+          (!ids || ids.includes(row.id)) &&
+          (!unread || row.unread > 0 || row.read?.unreadFromSeq != null) &&
+          (!cursor ||
+            (row.pinnedRank ?? 2147483647) > cursor.rank ||
+            ((row.pinnedRank ?? 2147483647) === cursor.rank &&
+              (row.lastActivityAt < cursor.at || (row.lastActivityAt === cursor.at && row.id < cursor.id)))),
+      )
+      .sort(
+        (a, b) =>
+          (a.pinnedRank ?? 2147483647) - (b.pinnedRank ?? 2147483647) ||
+          b.lastActivityAt.localeCompare(a.lastActivityAt) ||
+          b.id.localeCompare(a.id),
+      );
+    const page = items.slice(0, CONVERSATION_PAGE_SIZE);
+    const last = page.at(-1);
+    return {
+      items: page,
+      nextCursor:
+        items.length > CONVERSATION_PAGE_SIZE && last
+          ? JSON.stringify({ at: last.lastActivityAt, id: last.id, rank: last.pinnedRank ?? 2147483647 })
+          : null,
+    };
+  };
   const snapshot = (id: string, focus: string | null) => {
     const chat = chats.get(id);
     if (!chat) return null;
@@ -391,6 +425,27 @@ export const startChatHarness = async () => {
     };
   };
 
+  const viewProps = (
+    address: { chat?: string; message?: string; panel?: string; archived?: boolean; filter?: "all" | "unread" },
+    options: { guest?: boolean } = {},
+  ): ChatWorkspaceProps => {
+    const open = address.chat ? snapshot(address.chat, address.message ?? null) : null;
+    return {
+      cursor: `c.${cursor}`,
+      sidebar: list(address.archived, address.filter === "unread"),
+      archived: address.archived,
+      filter: address.filter,
+      collapsed: SidebarPreferencesSchema.parse({ collapsed }).collapsed,
+      open: open && { conversation: open.conversation, page: open.page, focus: open.focus },
+      chatId: address.chat ?? null,
+      guest: options.guest ?? false,
+      panel: open && address.panel === "info" ? "info" : null,
+      viewerId: viewer.id,
+      dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+      now: now().toISOString(),
+    };
+  };
+
   const server = Bun.serve<unknown, never>({
     port: 0,
     hostname: "127.0.0.1",
@@ -398,6 +453,20 @@ export const startChatHarness = async () => {
       const url = new URL(request.url);
       if (url.pathname === "/api/chat/live")
         return bun.upgrade(request, { data: undefined }) ? undefined : new Response("upgrade failed", { status: 400 });
+      if (url.pathname === "/__props") {
+        const target = new URL(url.searchParams.get("path") ?? "/app/chat", "https://chat.test");
+        const match = /^\/app\/chat(?:\/panel)?\/c\/([^/]+)(?:\/m\/([^/]+))?/.exec(target.pathname);
+        return Response.json({
+          ...viewProps({
+            chat: match?.[1],
+            message: match?.[2],
+            panel: target.searchParams.get("panel") ?? undefined,
+            archived: target.pathname.endsWith("/archive") || target.searchParams.get("list") === "archive",
+            filter: target.searchParams.get("filter") === "unread" ? "unread" : "all",
+          }),
+          embedded: target.pathname === "/app/chat/panel" || target.pathname.startsWith("/app/chat/panel/"),
+        });
+      }
       if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/fonts.css") return new Response(fontAssets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
@@ -420,6 +489,48 @@ export const startChatHarness = async () => {
             .map((group) => ({ kind: "group", group: { id: group.id, name: group.name, description: null } })),
         ];
         return Response.json({ items: items.slice(0, 10), pagination: { total: items.length, page: 1, per_page: 10, has_next: false } });
+      }
+      if (url.pathname === "/api/chat/preferences") {
+        if (request.method === "PUT") {
+          collapsed = SidebarPreferencesSchema.parse(await request.json()).collapsed;
+          deliver("me", "", { type: "preferences", collapsed });
+        }
+        return Response.json({ collapsed });
+      }
+      const personalMatch = /^\/api\/chat\/conversations\/([^/]+)\/personal$/.exec(url.pathname);
+      if (personalMatch && request.method === "PUT") {
+        const chat = chats.get(personalMatch[1]!);
+        if (!chat) return Response.json({ message: "Not found" }, { status: 404 });
+        const patch = PersonalConversationSchema.parse(await request.json());
+        const target = patch.before ?? patch.after;
+        if (
+          target &&
+          (target === chat.conversation.id ||
+            ![...chats.values()].some((entry) => entry.conversation.id === target && entry.conversation.pinnedRank !== null))
+        )
+          return Response.json({ code: "BAD_INPUT", message: "The pinned list changed" }, { status: 400 });
+        if (patch.archived !== undefined) chat.conversation.archived = patch.archived;
+        if (patch.pinned === false) chat.conversation.pinnedRank = null;
+        if (patch.pinned === true) {
+          const pins = [...chats.values()]
+            .filter((entry) => entry.conversation.pinnedRank !== null)
+            .sort((a, b) => a.conversation.pinnedRank! - b.conversation.pinnedRank!);
+          const old = pins.indexOf(chat);
+          const remaining = pins.filter((entry) => entry !== chat);
+          const index = patch.after
+            ? remaining.findIndex((entry) => entry.conversation.id === patch.after) + 1
+            : patch.before
+              ? remaining.findIndex((entry) => entry.conversation.id === patch.before)
+              : patch.before === undefined && old >= 0
+                ? old
+                : remaining.length;
+          remaining.splice(index, 0, chat);
+          remaining.forEach((entry, rank) => {
+            entry.conversation.pinnedRank = rank;
+          });
+        }
+        deliver("me", chat.conversation.id, { type: "personal" });
+        return Response.json(chat.conversation);
       }
       if (url.pathname === "/api/chat/people" && request.method === "GET") {
         const { search, cursor } = PeopleQuerySchema.parse(Object.fromEntries(url.searchParams));
@@ -450,7 +561,10 @@ export const startChatHarness = async () => {
           }),
         );
       }
-      if (url.pathname === "/api/chat/conversations" && request.method === "GET") return Response.json(list());
+      if (url.pathname === "/api/chat/conversations" && request.method === "GET") {
+        const query = ConversationQuerySchema.parse(Object.fromEntries(url.searchParams));
+        return Response.json(list(query.archived === "true", query.unread === "true", query.ids, query.cursor));
+      }
       if (url.pathname === "/api/chat/conversations" && request.method === "POST") {
         const input = CreateConversationSchema.parse(await request.json());
         const replay = input.createKey && createIntents.get(input.createKey);
@@ -697,7 +811,11 @@ export const startChatHarness = async () => {
           // Every weight and the icon font load with the page, so a font swap never moves rows during a test.
           '<div aria-hidden="true" style="position:absolute;visibility:hidden"><b>a</b><b style="font-weight:600">a</b><span style="font-weight:500">a</span><em>a</em>' +
           '<span>a</span><i class="ti ti-check"></i></div>' +
-          '<script src="/harness.js"></script></body></html>',
+          '<script src="/harness.js"></script>' +
+          (options.autoMount
+            ? `<script>window.addEventListener('load',async()=>{const props=await(await fetch('/__props?path='+encodeURIComponent(location.pathname+location.search))).json();window.mountChat(props,new URLSearchParams(location.search).get('locale')||'en')})</script>`
+            : "") +
+          "</body></html>",
         { headers: { "Content-Type": "text/html" } },
       );
     },
@@ -775,6 +893,7 @@ export const startChatHarness = async () => {
     /** Sets the viewer's archived flag reported by duplicate-chat matches. */
     archive: (chat: string, archived: boolean) => {
       chats.get(chat)!.archived = archived;
+      chats.get(chat)!.conversation.archived = archived;
     },
     /** Returns the current member entries for assertions. */
     members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
@@ -785,6 +904,7 @@ export const startChatHarness = async () => {
     readElsewhere: read,
     /** Isolates scenarios; IDs stay unique so a closing page cannot report against a later chat. */
     reset: () => {
+      collapsed = [];
       chats.clear();
       createIntents.clear();
       people.clear();
@@ -826,20 +946,7 @@ export const startChatHarness = async () => {
     revoke,
     messageId,
     /** The island's props for an address, as the server renders them. */
-    props: (address: { chat?: string; message?: string; panel?: string }, options: { guest?: boolean } = {}): ChatWorkspaceProps => {
-      const open = address.chat ? snapshot(address.chat, address.message ?? null) : null;
-      return {
-        cursor: `c.${cursor}`,
-        sidebar: list(),
-        open: open && { conversation: open.conversation, page: open.page, focus: open.focus },
-        chatId: address.chat ?? null,
-        guest: options.guest ?? false,
-        panel: open && address.panel === "info" ? "info" : null,
-        viewerId: viewer.id,
-        dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
-        now: now().toISOString(),
-      };
-    },
+    props: viewProps,
     stop: () => server.stop(true),
   };
 };

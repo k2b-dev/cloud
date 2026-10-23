@@ -88,12 +88,17 @@ object navigation precedes view controls in both reading and keyboard order.
 Callers without an explicit slot retain the automatic head. Individual parts may be islands.
 
 For a split list/reader page, set `Head.mobilePane` to the list region's ID.
-Below 48rem, the head and its shared Details control appear only while that
-region is active. `Main.mobilePane` remains the single selection source; the
-server and hydrated page use the same region markers. Unsplit Mains, desktop,
-and tablet keep their head. A reader must provide its own visible way back and
-a Details control with `aria-controls={appWorkspaceDetailElementId(detailId)}`;
-closing details returns focus to that control while the head is hidden.
+Below 48rem, the head appears only while that region is active; while no
+object is available it shows neither the shared Details control nor room for
+it. `Main.mobilePane` remains
+the single selection source; the server and hydrated page use the same region
+markers. Unsplit Mains, desktop, and tablet keep their head. A reader must
+provide its own visible way back and a Details control with
+`aria-controls={appWorkspaceDetailElementId(detailId)}`; closing details
+returns focus to that control while the head is hidden.
+
+Where a place has no views, `views` may hold a plain title instead, such as a
+folder name. On phones it keeps the same inset from the edge as the view strip.
 
 Give the chips `showValue`, keep secondary actions quiet, and put the one filled
 action in `primary`.
@@ -937,11 +942,13 @@ Put `SidebarItemStatus` in `meta`, `SidebarItemMeta`, or a `NavTree.Item`
   regular weight, and `0` stays as a muted count for a count that dropped to
   zero while the row is still shown.
 
-Each mark has a fixed width and fits the label line, so the row keeps its
+Each mark reserves a fixed-width slot and fits the label line, so the row keeps its
 height in every state. Whenever the status shows anything, it reserves the
 unread slot at the end of the row, which a count and a dot share; the bell and
 then "@" sit before it. New activity, a mention, or reading therefore never
 moves another mark, and counts, dots, and bells stay aligned across rows.
+Counts grow toward the end of their reserved slot, keeping their start and text
+in place when a count gains a digit.
 Unread rows differ in weight and count, never in color alone.
 
 The marks are hidden from assistive technology; the row's accessible name gets

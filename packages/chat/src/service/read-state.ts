@@ -7,6 +7,7 @@ import {
   type ChatContext,
   capPermission,
   messages,
+  principalCondition,
   readableMemberCondition,
   requireConversation,
   subjectPrincipal,
@@ -35,11 +36,17 @@ export type ReadProjection = {
   unread_from_seq: string | bigint | null;
   joined_seq: string | bigint | null;
   unread: number;
+  archived_at: Date | null;
+  pinned_rank: number | null;
+  member: boolean;
 };
 /** Production and EXPLAIN use this same bounded, index-backed count and snapshot revision. */
 export const unreadQuery = (db: typeof sql, subject: AccessSubject, conversationIds: readonly string[]) => {
   const self = subjectPrincipal(subject);
-  return db`SELECT c.id AS conversation_id, c.short_id, c.rev, p.last_read_seq, p.unread_from_seq, p.joined_seq,
+  return db`SELECT c.id AS conversation_id, c.short_id, c.rev, p.archived_at, p.pinned_rank,
+    EXISTS(SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = c.id AND ca.role = 'member' AND ${principalCondition(subject, db)}
+        AND a.permission IN ('read', 'write', 'admin')) AS member, p.last_read_seq, p.unread_from_seq, p.joined_seq,
     CASE WHEN p.conversation_id IS NOT NULL AND c.seq_head > ${readStartSql(db)} THEN
       (SELECT count(*)::int FROM (SELECT seq FROM chat.messages m
         WHERE m.conversation_id = c.id AND m.seq > ${readStartSql(db)} AND m.kind = 'text'
@@ -49,7 +56,12 @@ export const unreadQuery = (db: typeof sql, subject: AccessSubject, conversation
       AND p.principal_type = ${self.type} AND p.principal_id = ${self.id}::uuid
     WHERE c.id = ANY(${toPgUuidArray([...conversationIds])}::uuid[])`;
 };
-export const projectRead = (row: ReadProjection): { read: ReadState | null; unread: number } => ({
+export const projectRead = (
+  row: ReadProjection,
+): { read: ReadState | null; unread: number; archived: boolean; pinnedRank: number | null; member: boolean } => ({
+  archived: row.archived_at !== null,
+  pinnedRank: row.pinned_rank,
+  member: row.member,
   read:
     row.joined_seq === null
       ? null

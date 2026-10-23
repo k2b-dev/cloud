@@ -2,7 +2,7 @@ import { PANEL_HELP_ID_MAX_LENGTH } from "@k2b/cloud/contracts/panel-context";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { canReadAppHelp } from "@k2b/cloud/services/help";
 import { HELP_VIEW_LIMIT } from "@k2b/cloud/shared";
-import { getLocalizedRuntimeContext, LayoutHelpPanel, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
+import { getDisplayRuntimeContext, getLocalizedRuntimeContext, LayoutHelpPanel, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
 import { layoutHelpFailed, preloadLayoutHelp, preloadLayoutHelpArticle } from "@k2b/cloud/ssr/help";
 import { keyboardPlatform } from "@k2b/ui";
@@ -14,12 +14,13 @@ export default ssr<AuthContext>(async (c) => {
   const context = readPanelContext(c);
   const id = context?.app ?? "core";
   // Context selects Help; the reader's grants still decide whether the app exists for them.
-  const candidate = getLocalizedRuntimeContext(c).apps.find((app) => app.id === id);
+  const visibleIds = new Set(getDisplayRuntimeContext(c).apps.map((app) => app.id));
+  const candidate = getLocalizedRuntimeContext(c).apps.find((app) => visibleIds.has(app.id) && app.id === id);
   // Runtime metadata lifts adminHref out of registry navigation; restore it for the shared reader's visibility rule.
   const nav = candidate?.adminHref
     ? { ...candidate.nav, href: candidate.nav?.href ?? "", section: candidate.nav?.section ?? "hidden", adminHref: candidate.adminHref }
     : candidate?.nav;
-  const app = candidate && canReadAppHelp({ nav }, c.get("actor")) ? candidate : undefined;
+  const app = candidate && (candidate.access !== undefined || canReadAppHelp({ nav }, c.get("actor"))) ? candidate : undefined;
   const help = app?.help ? await preloadLayoutHelp(c, app.id) : null;
   const documents = help?.documents ?? [];
   const ids = new Set(documents.map((document) => document.id));

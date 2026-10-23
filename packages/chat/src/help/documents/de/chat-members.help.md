@@ -84,3 +84,9 @@ Deaktivierte Konten behalten ihren Namen.
 Wenn das Konto der letzten verwaltenden Person gelöscht wird, übernimmt ein
 aktives Mitglied, das am längsten im Chat ist, die Verwaltung.
 Eine Nachricht erklärt den Wechsel.
+
+## Deine Chats ordnen {icon="pin"}
+
+Wähle im Listenmenü eines Chats **Chat anheften**, um ihn unter **Angeheftet** abzulegen. Mit **Nach oben** und **Nach unten** oder durch Ziehen am Griff änderst du die Reihenfolge. Am Griff startet die Leertaste das Verschieben, die Pfeiltasten wählen die Position, Eingabe legt ab und Escape bricht ab. Bei mehr als 15 angehefteten Chats scrollt der Abschnitt; eine Höchstzahl gibt es nicht. Eingeklappte Abschnitte bleiben über deine Geräte hinweg gespeichert.
+
+**Chat archivieren** blendet einen Chat aus deiner Liste aus, ohne ihn zu verlassen. Auch neue Nachrichten holen ihn nicht zurück. Öffne **Archiv** am Fuß der Liste und wähle im Menü **Zurückholen**, um ihn wieder einzublenden, einschließlich seiner alten Position unter **Angeheftet**. Archivieren ändert nur deine eigene Liste.

@@ -12,6 +12,7 @@ import {
   ChangesPageSchema,
   ChatLiveEventSchema,
   ChatSnapshotSchema,
+  CONVERSATION_PAGE_SIZE,
   ConversationPageSchema,
   ConversationSchema,
   type CreateConversationSchema,
@@ -24,9 +25,11 @@ import {
   MessageSchema,
   PeoplePageSchema,
   type PermissionSchema,
+  type PersonalConversationSchema,
   ReadAllOutcomeSchema,
   ReadUpdateSchema,
   readStart,
+  SidebarPreferencesSchema,
   SuccessSchema,
   UNREAD_CAP,
 } from "../service/contracts";
@@ -37,7 +40,14 @@ type ConversationPage = z.infer<typeof ConversationPageSchema>;
 type MessagePage = z.infer<typeof MessagePageSchema>;
 type ChangesPage = z.infer<typeof ChangesPageSchema>;
 type Summary = Extract<z.infer<typeof ChatLiveEventSchema>, { type: "summary" }>;
+const compareRows = (a: Conversation, b: Conversation) =>
+  (a.pinnedRank ?? 2147483647) - (b.pinnedRank ?? 2147483647) ||
+  b.lastActivityAt.localeCompare(a.lastActivityAt) ||
+  b.id.localeCompare(a.id);
 export type ChatStoreApi = {
+  personal(id: string, patch: z.infer<typeof PersonalConversationSchema>): Promise<Conversation>;
+  preferences(): Promise<z.infer<typeof SidebarPreferencesSchema>>;
+  savePreferences(collapsed: z.infer<typeof SidebarPreferencesSchema>["collapsed"]): Promise<z.infer<typeof SidebarPreferencesSchema>>;
   create(input: z.input<typeof CreateConversationSchema>): Promise<z.infer<typeof CreateOutcomeSchema>>;
   updateDetails(id: string, patch: { name?: string | null; icon?: string | null; purpose?: string | null }): Promise<Conversation>;
   members(id: string, query: { q?: string; cursor?: string }): Promise<z.infer<typeof MemberPageSchema>>;
@@ -50,7 +60,7 @@ export type ChatStoreApi = {
   read(id: string, seq: number): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
   readAll(confirmed: boolean): Promise<z.infer<typeof ReadAllOutcomeSchema>>;
-  conversations(cursor?: string): Promise<ConversationPage>;
+  conversations(cursor?: string, archived?: boolean, unread?: boolean, ids?: string[]): Promise<ConversationPage>;
   conversation(id: string): Promise<Conversation | null>;
   messages(id: string, query?: { before?: number; after?: number }): Promise<MessagePage | null>;
   snapshot(id: string, message?: string): Promise<(OpenChatSnapshot & { focus: string | null }) | null>;
@@ -58,6 +68,9 @@ export type ChatStoreApi = {
 };
 export type OpenChatSnapshot = { cursor: string; conversation: Conversation; page: MessagePage };
 export type ChatStoreSnapshot = {
+  collapsed?: z.infer<typeof SidebarPreferencesSchema>["collapsed"];
+  archived?: boolean;
+  unread?: boolean;
   viewerId: string;
   cursor: string;
   sidebar: ConversationPage;
@@ -103,6 +116,14 @@ export const createChatStoreApi = (): ChatStoreApi => {
     return schema.parse(await response.json());
   };
   return {
+    personal: async (id, patch) =>
+      requiredResponse(
+        await client.conversations[":conversation"].personal.$put({ param: { conversation: id }, json: patch }),
+        ConversationSchema,
+      ),
+    preferences: async () => requiredResponse(await client.preferences.$get(), SidebarPreferencesSchema),
+    savePreferences: async (collapsed) =>
+      requiredResponse(await client.preferences.$put({ json: { collapsed } }), SidebarPreferencesSchema),
     create: async (input) => requiredResponse(await client.conversations.$post({ json: input }), CreateOutcomeSchema),
     updateDetails: async (id, patch) =>
       requiredResponse(
@@ -154,7 +175,13 @@ export const createChatStoreApi = (): ChatStoreApi => {
       ),
     readAll: async (confirmed) =>
       requiredResponse(await client.conversations["read-all"].$post({ json: { confirmed } }), ReadAllOutcomeSchema),
-    conversations: async (cursor) => requiredResponse(await client.conversations.$get({ query: { cursor } }), ConversationPageSchema),
+    conversations: async (cursor, archived, unread, ids) =>
+      requiredResponse(
+        await client.conversations.$get({
+          query: { cursor, archived: archived ? "true" : "false", unread: unread ? "true" : "false", ids: ids?.join(",") },
+        }),
+        ConversationPageSchema,
+      ),
     conversation: async (id) =>
       parseResponse(await client.conversations[":conversation"].$get({ param: { conversation: id } }), ConversationSchema),
     messages: async (id, query) =>
@@ -206,7 +233,11 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const connection = dependencies.connection ?? liveConnection("/api/chat/live");
   const listeners = new Set<() => void>();
   // Rows stay in server order: a contiguous prefix of the sidebar, the whole list when `complete`.
+  let collapsed = snapshot.collapsed ?? [];
+  let archived = snapshot.archived ?? false;
+  let unread = snapshot.unread ?? false;
   let rows = [...snapshot.sidebar.items];
+  const excludedRows = new Set<string>();
   const unreadRev = new Map(rows.map((row) => [row.id, row.rev]));
   let nextCursor = snapshot.sidebar.nextCursor;
   let complete = nextCursor === null;
@@ -460,35 +491,57 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     sidebarWork = work.catch(() => {});
     return work;
   };
-  const reloadSidebar = async () => {
-    const page = await api.conversations();
+  const reloadSidebar = async (nextArchived = archived, nextUnread = unread, retainedIds: readonly string[] = []) => {
+    const same = nextArchived === archived && nextUnread === unread;
+    const depth = same ? rows.length : 0;
+    let page = await api.conversations(undefined, nextArchived, nextUnread);
+    const loaded = [...page.items];
+    while (loaded.length < depth && page.nextCursor) {
+      page = await api.conversations(page.nextCursor, nextArchived, nextUnread);
+      loaded.push(...page.items);
+    }
+    // Read rows remain visible for this visit to Unread, also after a live resync.
+    const retained: Conversation[] = [];
+    if (nextUnread) {
+      // The visible visit can outlive a superseded mode request; its owner supplies those retained IDs on recovery.
+      const candidates = new Set([...retainedIds, ...(same ? rows.map((row) => row.id) : [])]);
+      const loadedIds = new Set(loaded.map((row) => row.id));
+      const missing = [...candidates].filter((id) => !loadedIds.has(id));
+      for (let offset = 0; offset < missing.length; offset += CONVERSATION_PAGE_SIZE) {
+        const page = await api.conversations(undefined, nextArchived, false, missing.slice(offset, offset + CONVERSATION_PAGE_SIZE));
+        retained.push(...page.items);
+      }
+    }
+    const chat = current;
+    const openRow = chat && active(chat) ? await api.conversation(chat.view.id) : undefined;
     if (disposed) return;
-    rows = [...page.items];
+    archived = nextArchived;
+    unread = nextUnread;
+    excludedRows.clear();
+    rows = retained.length ? [...loaded, ...retained].sort(compareRows) : loaded;
     unreadRev.clear();
     for (const row of rows) unreadRev.set(row.id, row.rev);
     nextCursor = page.nextCursor;
     complete = nextCursor === null;
-    notify();
-    // The open chat may lie outside the first sidebar page, so its read state is refreshed on its own.
-    const chat = current;
-    if (chat && active(chat)) {
-      const row = await api.conversation(chat.view.id);
-      if (active(chat)) {
-        if (row === null) noAccess(chat);
-        else {
-          metadata(chat, row);
-          unreadRev.set(row.id, Math.max(unreadRev.get(row.id) ?? 0, row.rev));
-        }
+    if (chat && active(chat) && openRow !== undefined) {
+      if (openRow === null) noAccess(chat);
+      else {
+        metadata(chat, openRow);
+        unreadRev.set(openRow.id, Math.max(unreadRev.get(openRow.id) ?? 0, openRow.rev));
       }
     }
     notify();
   };
   // Server order is last activity, then ID, both descending. Only unknown rows past an incomplete prefix stay out.
   const place = (row: Conversation) => {
+    if (!row.member || row.archived !== archived) {
+      excludedRows.add(row.id);
+      rows = rows.filter((other) => other.id !== row.id);
+      return;
+    }
+    excludedRows.delete(row.id);
     const rest = rows.filter((other) => other.id !== row.id);
-    const index = rest.findIndex(
-      (other) => row.lastActivityAt > other.lastActivityAt || (row.lastActivityAt === other.lastActivityAt && row.id > other.id),
-    );
+    const index = rest.findIndex((other) => compareRows(row, other) < 0);
     if (index >= 0) rest.splice(index, 0, row);
     else if (complete || rest.length < rows.length) rest.push(row);
     rows = rest;
@@ -520,6 +573,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     notify();
   };
   const applySummary = async (summary: Summary) => {
+    // Collection events span both personal list modes; an excluded chat needs no read for each text message.
+    if (summary.kind === "text" && excludedRows.has(summary.conversationId)) return;
     let known = rows.find((row) => row.id === summary.conversationId);
     if (known && summary.rev > (unreadRev.get(known.id) ?? known.rev)) {
       const start = readStart(known.read);
@@ -537,6 +592,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       if (disposed) return;
       if (row !== null) unreadRev.set(row.id, row.rev);
       if (row === null) {
+        excludedRows.add(summary.conversationId);
         unreadRev.delete(summary.conversationId);
         rows = rows.filter((other) => other.id !== summary.conversationId);
         if (current?.view.id === summary.conversationId) noAccess(current);
@@ -576,16 +632,51 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: (events) =>
           sidebar(async () => {
-            if (events.some(({ data }) => data.type === "membership")) await reloadSidebar();
+            if (events.some(({ data }) => data.type === "membership" || data.type === "personal")) await reloadSidebar();
+            for (const { data } of events)
+              if (data.type === "preferences") {
+                collapsed = data.collapsed;
+                notify();
+              }
             for (const { data } of events) if (data.type === "read") await applyRead(data);
           }),
-        resync: () => sidebar(reloadSidebar),
+        resync: () =>
+          sidebar(async () => {
+            await reloadSidebar();
+            const preferences = await api.preferences();
+            collapsed = preferences.collapsed;
+            notify();
+          }),
         unavailable: stopped,
       },
     ),
   );
   if (snapshot.open) open({ ...snapshot.open, cursor: snapshot.cursor });
   return {
+    get collapsed() {
+      return collapsed;
+    },
+    preferences: () => api.preferences(),
+    savePreferences: async (next: Parameters<ChatStoreApi["savePreferences"]>[0]) => {
+      const saved = await api.savePreferences(next);
+      collapsed = saved.collapsed;
+      notify();
+      return saved;
+    },
+    personal: async (id: string, patch: Parameters<ChatStoreApi["personal"]>[1]) => {
+      let result: Conversation;
+      try {
+        result = await api.personal(id, patch);
+      } catch (error) {
+        // Another device may have unpinned the requested neighbor. Refresh before offering a new position.
+        if (error instanceof ChatRequestError && error.status === 400) await sidebar(reloadSidebar).catch(() => {});
+        throw error;
+      }
+      await sidebar(reloadSidebar);
+      return result;
+    },
+    showArchive: (next: boolean, nextUnread = unread, retainedIds: readonly string[] = []) =>
+      sidebar(() => reloadSidebar(next, nextUnread, retainedIds)),
     // A change the reader made shows at once: its chat's row is read again instead of waiting for the live event.
     // Refresh failures leave committed changes successful; live updates and resync repair the row.
     // A chat the reader left answers 404, which removes the row and ends an open view in "No access".
@@ -640,7 +731,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       if (disposed || nextCursor === null) return Promise.resolve();
       const work = sidebar(async () => {
         if (nextCursor === null) return;
-        const page = await api.conversations(nextCursor);
+        const page = await api.conversations(nextCursor, archived, unread);
         if (disposed) return;
         const present = new Set(rows.map((row) => row.id));
         const appended = [...rows];

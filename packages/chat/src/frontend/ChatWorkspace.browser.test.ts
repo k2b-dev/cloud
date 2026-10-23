@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:tes
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
-import { CreateConversationSchema, CreateOutcomeSchema } from "../service/contracts";
+import { CreateConversationSchema, CreateOutcomeSchema, ReadAllOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 declare global {
@@ -84,7 +84,7 @@ const readStarts = (page: Page, chat: string) =>
   page.evaluate((chat) => window.chatReadStarts.filter((start) => start.chat === chat).map((start) => start.at), chat);
 const load = async (
   options: BrowserContextOptions,
-  address: { chat?: string; message?: string; panel?: "info" },
+  address: { chat?: string; message?: string; panel?: "info"; archived?: boolean; filter?: "all" | "unread"; embedded?: boolean },
   observe = false,
   prepare?: (page: Page) => Promise<void>,
   presentation: { locale?: string; theme?: "light" | "dark"; guest?: boolean } = {},
@@ -97,10 +97,13 @@ const load = async (
     page.setDefaultTimeout(5_000);
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    const path = address.chat ? `/app/chat/c/${address.chat}${address.message ? `/m/${address.message}` : ""}` : "/app/chat";
+    const base = address.embedded ? "/app/chat/panel" : "/app/chat";
+    const path = address.chat ? `${base}/c/${address.chat}${address.message ? `/m/${address.message}` : ""}` : base;
     const url = new URL(path, harness.url);
     if (presentation.theme) url.searchParams.set("theme", presentation.theme);
     if (address.panel) url.searchParams.set("panel", address.panel);
+    if (address.archived) url.searchParams.set("list", "archive");
+    if (address.filter) url.searchParams.set("filter", address.filter);
     await page.goto(url.href);
     await settle(page);
     // real clock: proves the page reads the pinned day, not the machine's
@@ -110,7 +113,7 @@ const load = async (
     if (observe) await observeShifts(page);
     await prepare?.(page);
     await page.evaluate(({ props, locale }) => window.mountChat(props, locale), {
-      props: harness.props(address, { guest: presentation.guest }),
+      props: { ...harness.props(address, { guest: presentation.guest }), embedded: address.embedded },
       locale: presentation.locale ?? "en",
     });
     await settle(page);
@@ -646,11 +649,12 @@ describe("ChatWorkspace browser read state", () => {
         }
       }, 30_000);
 
-    test(`an opening marker survives while a later unread gap can reload after resync on ${name}`, async () => {
+    for (const embedded of [false, true]) test(`an opening marker survives while a later unread gap can reload after resync on ${name} (${embedded ? "panel archive" : "full view"})`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 8, unread: 4, end: harness.now() });
       const openingRead = harness.props({ chat }).open!.conversation.read!;
       const openingMarker = harness.messageId(chat, openingRead.lastReadSeq! + 1);
-      const { page, errors } = await load(options, { chat });
+      if (embedded) harness.archive(chat, true);
+      const { page, errors } = await load(options, { chat, ...(embedded ? { embedded: true, archived: true, filter: "unread" as const } : {}) });
       try {
         await until(() => harness.subscribed(chat));
         await until(() => chatReads(chat).at(-1)?.seq === 8);
@@ -720,6 +724,16 @@ describe("ChatWorkspace browser read state", () => {
         await jump.click();
         await reloaded;
         await inFeed(page, `[data-key="${harness.messageId(chat, 9)}"]`);
+        const recovered = new URL(page.url());
+        expect(recovered.pathname).toBe(`/app/chat${embedded ? "/panel" : ""}/c/${chat}`);
+        expect(recovered.searchParams.get("list")).toBe(embedded ? "archive" : null);
+        expect(recovered.searchParams.get("filter")).toBe(embedded ? "unread" : null);
+        if (embedded) {
+          const fullView = new URL((await page.getByRole("link", { name: "Open full view", exact: true }).getAttribute("href"))!, page.url());
+          expect(fullView.pathname).toBe(`/app/chat/c/${chat}`);
+          expect(fullView.searchParams.get("list")).toBe("archive");
+          expect(fullView.searchParams.get("filter")).toBe("unread");
+        }
         expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(openingMarker);
         await until(() => chatReads(chat).at(-1)!.seq > 8);
         expect(chatReads(chat).at(-1)!.seq).toBeLessThan(68);
@@ -805,9 +819,17 @@ describe("ChatWorkspace browser read state", () => {
           await dialog.waitFor();
           await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
           expect(many.every((chat) => harness.props({ chat }).open!.conversation.unread === 2)).toBe(true);
-          expect(await rows(second.page, name).locator("[data-unread]").count()).toBe(51);
+          // The first page has 50 rows; mark-all must also clear the unloaded 51st chat.
+          expect(await rows(second.page, name).locator("[data-unread]").count()).toBe(50);
           await readAllAction(second.page, name);
+          // Clearing the 50 rendered rows does not finish the unloaded 51st chat's batch.
+          const completed = second.page.waitForResponse(async (response) => {
+            if (!response.url().endsWith("/api/chat/conversations/read-all") || !response.ok()) return false;
+            const result = ReadAllOutcomeSchema.parse(await response.json());
+            return result.outcome === "done" && !result.more;
+          });
           await dialog.getByRole("button", { name: "Mark all read", exact: true }).click();
+          await completed;
           await second.page.waitForFunction(() => document.querySelectorAll("[data-unread]").length === 0);
           expect(many.every((chat) => harness.props({ chat }).open!.conversation.unread === 0)).toBe(true);
           expect(second.errors).toEqual([]);
@@ -958,7 +980,7 @@ describe("ChatWorkspace browser read state", () => {
       const geometry = async () => {
         await settled(page);
         return rows(page, name)
-          .locator("a[href]")
+          .locator('a[href*="/app/chat/c/"]')
           .evaluateAll((links) =>
             links.map((link) => {
               const time = link.querySelector("time")!.getBoundingClientRect();
@@ -973,6 +995,7 @@ describe("ChatWorkspace browser read state", () => {
       try {
         await until(() => harness.subscribed());
         const before = await geometry();
+        const stableRow = await row(page, name, dot).elementHandle();
         await page.evaluate(() => {
           window.chatNavigationMarker = "survives read from another device";
         });
@@ -989,6 +1012,7 @@ describe("ChatWorkspace browser read state", () => {
           );
           await settle(page);
           expect(await geometry()).toEqual(before);
+          expect(await stableRow!.evaluate((element) => element.isConnected)).toBe(true);
           expect(await page.evaluate(() => window.chatShifts)).toBe(0);
         }
         harness.readElsewhere(chat, 104);

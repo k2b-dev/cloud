@@ -6,7 +6,7 @@ import { requireInfraUrl, testFor } from "../../../../scripts/fixtures/test-infr
 import { executePdf } from "./pdf-service";
 import { invoice } from "./test-invoice";
 
-testFor("gotenberg")(
+testFor("gotenberg", "valkey")(
   "real Gotenberg renders offline HTML and roundtrips Factur-X and XML attachments",
   async () => {
     const config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };

@@ -40,3 +40,8 @@ test("provider navigation stays below the panel route, including list, info and 
   expect(parseRoute(new URL("https://cloud.test/app/chat/panel"))).toEqual({ chatId: null, messageId: null, panel: null });
   expect(parseRoute(new URL("https://cloud.test/app/chat/panel-other"))).toBeNull();
 });
+
+test("personal archive routes remain inside either full view or provider", () => {
+  for (const base of ["/app/chat", "/app/chat/panel"])
+    expect(parseRoute(new URL(`https://cloud.test${base}/archive?filter=unread`))).toEqual({ chatId: null, messageId: null, panel: null });
+});

@@ -112,6 +112,9 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
         memberCount: 1,
         unread: 0,
         read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+        archived: false,
+        pinnedRank: null,
+        member: true,
         withGuests: false,
         peerDeactivated: false,
         lastMessage: null,
@@ -218,6 +221,9 @@ test("snapshot reads the cursor before history and tolerates invalid message lin
     memberCount: 1,
     unread: 0,
     read: { lastReadSeq: null, unreadFromSeq: null, joinedSeq: 0 },
+    archived: false,
+    pinnedRank: null,
+    member: true,
     withGuests: false,
     peerDeactivated: false,
     lastMessage: null,
@@ -283,4 +289,31 @@ test("people forwards trimmed search and a re-encoded strict cursor to the servi
   expect(people).toHaveBeenCalledWith(
     expect.objectContaining({ accessSubject: { type: "user", userId }, query: { search: "Lea", cursor } }),
   );
+});
+
+test("account preferences require a readable account-wide credential", async () => {
+  for (const serviceAccount of [
+    { ...account, kind: "resource_bound" as const, appId: "chat", resourceType: "conversation", resourceId: "abcdef" },
+    account,
+  ]) {
+    spyOn(platform.serviceAccountCredentials, "authenticateApiToken").mockResolvedValue({
+      credential: { ...credential, scopes: serviceAccount.kind === "resource_bound" ? ["openid", "read"] : ["openid"] },
+      serviceAccount,
+      delegatedUser: null,
+    });
+    for (const method of ["GET", "PUT"]) {
+      const response = await chatApi.request("/preferences", {
+        method,
+        headers: { authorization: "Bearer test-key", "content-type": "application/json" },
+        ...(method === "PUT" ? { body: JSON.stringify({ collapsed: ["pinned"] }) } : {}),
+      });
+      expect(response.status).toBe(403);
+    }
+    const personal = await chatApi.request("/conversations/abcdef/personal", {
+      method: "PUT",
+      headers: { authorization: "Bearer test-key", "content-type": "application/json" },
+      body: JSON.stringify({ pinned: true }),
+    });
+    expect(personal.status).toBe(403);
+  }
 });

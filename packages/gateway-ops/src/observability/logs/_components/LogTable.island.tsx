@@ -24,6 +24,7 @@ type Props = {
   filter: LogFilterState;
   sources: string[];
   retentionDays: number;
+  retentionUnreadable?: boolean;
   timeZone: string;
   totalPages: number;
   baseUrl: string;
@@ -160,7 +161,12 @@ export default function LogTable(props: Props) {
         }
       />
       <DataTable.Controls>
-        <LogFilterBar filter={props.filter} sources={props.sources} retentionDays={props.retentionDays} />
+        <LogFilterBar
+          filter={props.filter}
+          sources={props.sources}
+          retentionDays={props.retentionDays}
+          retentionUnreadable={props.retentionUnreadable}
+        />
       </DataTable.Controls>
       <Show
         when={!props.loadError}
