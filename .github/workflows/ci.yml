@@ -323,7 +323,7 @@ jobs:
         run: |
           set -euo pipefail
           # The Files Filegate suites, the Notebooks shared-log suite and the Assistant artifact suite start their own containers from these images.
-          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.0.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.0.0
+          "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine ghcr.io/k2b-dev/filegate:7.1.0 debian:13-slim postgres:17-alpine ghcr.io/k2b-dev/rsql:1.0.0
           docker run --detach --name ci-nats --publish 127.0.0.1:4222:4222 --volume "$GITHUB_WORKSPACE/.github/nats-ci.conf:/etc/nats.conf:ro" nats:2.14.3-alpine --config /etc/nats.conf
           "$GITHUB_WORKSPACE/.github/poppler.sh" install
           curl --fail --silent --retry 20 --retry-connrefused --retry-delay 1 "$CLOUD_TEST_GOTENBERG_URL/health"
