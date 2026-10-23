@@ -305,6 +305,103 @@ suite("chat conversations, people, and directory groups", () => {
     expect(archived).toMatchObject({ outcome: "existing", matches: [{ id: duplicate.id, archived: true }] });
   });
 
+  test("concurrent create intents survive a lost response without duplicating allowDuplicate or group chats", async () => {
+    const owner = await user();
+    const other = await user();
+    const headers = await cookie(owner);
+    const groupId = await group([other]);
+    for (const members of [[{ type: "user", userId: other }], [{ type: "group", groupId }]]) {
+      const body = { createKey: crypto.randomUUID(), members, allowDuplicate: members[0]!.type === "user", name: "One intent" };
+      const responses = await Promise.all(Array.from({ length: 4 }, () => request(headers, "", "POST", body)));
+      const ids = new Set<string>();
+      for (const response of responses) {
+        expect(response.status).toBe(201);
+        const result = CreateOutcomeSchema.parse(await response.json());
+        if (result.outcome !== "created") throw new Error("Expected created");
+        ids.add(result.conversation.id);
+        conversations.push(result.conversation.id);
+      }
+      expect(ids.size).toBe(1);
+      const [effects] = await sql<{ messages: number; audits: number }[]>`SELECT
+        (SELECT count(*)::int FROM chat.messages m JOIN chat.conversations c ON c.id = m.conversation_id WHERE c.short_id = ${[...ids][0]!}) AS messages,
+        (SELECT count(*)::int FROM audit.events WHERE target_type = 'chat_conversation' AND target_id = ${[...ids][0]!} AND action = 'chat.conversation.create') AS audits`;
+      expect(effects).toEqual({ messages: members[0]!.type === "user" ? 1 : 2, audits: 1 });
+      // The caller never receives this accepted response; a subsequent HTTP request must reconcile it.
+      await request(headers, "", "POST", body);
+      const retry = CreateOutcomeSchema.parse(await (await request(headers, "", "POST", body)).json());
+      expect(retry).toMatchObject({ outcome: "created", conversation: { id: [...ids][0] } });
+      const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM chat.conversations
+        WHERE created_by_id = ${owner}::uuid AND name = 'One intent'`;
+      expect(count!.count).toBe(members[0]!.type === "user" ? 1 : 2);
+    }
+  });
+
+  test("failed creation does not reserve a key and normalized retries survive migration replay", async () => {
+    const owner = await user();
+    const other = await user();
+    const headers = await cookie(owner);
+    const createKey = crypto.randomUUID();
+    expect((await request(headers, "", "POST", { createKey, members: [{ type: "user", userId: crypto.randomUUID() }] })).status).toBe(400);
+    const chat = await create(headers, [other], { createKey, name: "  Intent  ", allowDuplicate: true });
+    await migrate();
+    const replay = await request(headers, "", "POST", {
+      createKey: createKey.toUpperCase(),
+      members: [
+        { type: "user", userId: owner },
+        { type: "user", userId: other },
+        { type: "user", userId: other },
+      ],
+      name: "Intent",
+      icon: null,
+      purpose: "",
+      allowDuplicate: true,
+    });
+    expect(replay.status).toBe(201);
+    expect(CreateOutcomeSchema.parse(await replay.json())).toMatchObject({ outcome: "created", conversation: { id: chat.id } });
+    const [mapping] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM chat.create_intents WHERE user_id = ${owner}::uuid`;
+    expect(mapping!.count).toBe(1);
+    const entries = await sql<
+      { access_id: string }[]
+    >`SELECT access_id FROM chat.conversation_access WHERE conversation_id = (SELECT id FROM chat.conversations WHERE short_id = ${chat.id})`;
+    accessIds.push(...entries.map((entry) => entry.access_id));
+    await sql`DELETE FROM chat.conversations WHERE short_id = ${chat.id}`;
+    const [removed] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM chat.create_intents WHERE user_id = ${owner}::uuid`;
+    expect(removed!.count).toBe(0);
+  });
+
+  test("create keys reject changed input, isolate subjects, and replay only currently readable chats", async () => {
+    const owner = await user();
+    const other = await user();
+    const headers = await cookie(owner);
+    const body = { createKey: crypto.randomUUID(), members: [{ type: "user", userId: other }], allowDuplicate: true };
+    const chat = await create(headers, [], body);
+    for (const patch of [{ name: "Changed" }, { members: [] }, { allowDuplicate: false }, { icon: "ti ti-star" }, { purpose: "Changed" }]) {
+      const response = await request(headers, "", "POST", { ...body, ...patch });
+      expect(response.status).toBe(409);
+      expect((await response.json()).code).toBe("CONFLICT");
+    }
+    const distinct = await create(headers, [], { ...body, createKey: crypto.randomUUID() });
+    expect(distinct.id).not.toBe(chat.id);
+    const anotherSubject = await create(await cookie(other), [], body);
+    expect(anotherSubject.id).not.toBe(chat.id);
+    const delegated = await credential("user_delegated", owner);
+    expect(CreateOutcomeSchema.parse(await (await request(delegated.headers, "", "POST", body)).json())).toMatchObject({
+      outcome: "created",
+      conversation: { id: chat.id },
+    });
+    await sql`UPDATE auth.access SET permission = 'read' WHERE id IN (SELECT ca.access_id FROM chat.conversation_access ca
+      JOIN chat.conversations c ON c.id = ca.conversation_id WHERE c.short_id = ${chat.id}) AND user_id = ${owner}::uuid`;
+    const replay = CreateOutcomeSchema.parse(await (await request(headers, "", "POST", body)).json());
+    expect(replay).toMatchObject({ outcome: "created", conversation: { id: chat.id, permission: "read" } });
+    await sql`DELETE FROM auth.access WHERE id IN (SELECT ca.access_id FROM chat.conversation_access ca
+      JOIN chat.conversations c ON c.id = ca.conversation_id WHERE c.short_id = ${chat.id}) AND user_id = ${owner}::uuid`;
+    expect((await request(headers, "", "POST", body)).status).toBe(404);
+    const [count] = await sql<
+      { count: number }[]
+    >`SELECT count(*)::int AS count FROM chat.conversations WHERE created_by_id = ${owner}::uuid`;
+    expect(count!.count).toBe(2);
+  });
+
   test("a chat with a group entry is not an exact match for a direct-only set", async () => {
     const owner = await user();
     const other = await user();
@@ -604,7 +701,12 @@ suite("chat conversations, people, and directory groups", () => {
   test("limits new chats to 30 per acting account, but existing matches do not consume the limit", async () => {
     const owner = await user();
     const headers = await cookie(owner);
-    for (let i = 0; i < 30; i++) await create(headers, [], { allowDuplicate: true });
+    const keyed = { createKey: crypto.randomUUID(), allowDuplicate: true };
+    const first = await create(headers, [], keyed);
+    for (let i = 1; i < 30; i++) await create(headers, [], { allowDuplicate: true });
+    const replay = await request(headers, "", "POST", keyed);
+    expect(replay.status).toBe(201);
+    expect(CreateOutcomeSchema.parse(await replay.json())).toMatchObject({ outcome: "created", conversation: { id: first.id } });
     const response = await request({ ...headers, "accept-language": "de" }, "", "POST", { allowDuplicate: true });
     expect(response.status).toBe(429);
     expect(await response.json()).toMatchObject({
