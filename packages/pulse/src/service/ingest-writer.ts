@@ -159,7 +159,8 @@ const lockIngestScope = async (baseId: string, sourceId: string, db: PulseSqlCli
     { enabled: boolean; last_accepted_at: Date | null }[]
   >`SELECT enabled,last_accepted_at FROM pulse.sources WHERE id=${sourceId}::uuid AND base_id=${baseId}::uuid AND NOT deleted FOR NO KEY UPDATE`;
   if (!source) throw new IngestTransactionFailure(err.notFound("Pulse source"));
-  if (!source.enabled) throw new IngestTransactionFailure(err.conflict("Pulse source is disabled"));
+  if (!source.enabled)
+    throw new IngestTransactionFailure({ code: "PULSE_SOURCE_DISABLED", status: 409, message: "Pulse source is disabled" });
   const [base] = await db<(CheckpointIdentity & { database_name: string; retention_days: number })[]>`
     SELECT s.database_name,b.retention_days,s.reset_generation::text AS reset_generation,s.checkpoint_id,s.pending_checkpoint_id
     FROM pulse.base_stores s JOIN pulse.bases b ON b.id=s.base_id WHERE b.id=${baseId}::uuid`;
@@ -262,7 +263,11 @@ export const createIngestWriter = ({
           >`SELECT *,reset_generation::text AS reset_generation FROM pulse.ingest_idempotency WHERE source_id=${params.sourceId}::uuid AND idempotency_key=${key} FOR UPDATE`;
           if (!existing) throw new Error("Missing idempotency reservation");
           if (existing.request_hash !== hash)
-            throw new IngestTransactionFailure(err.conflict("Idempotency key was already used for a different ingest batch"));
+            throw new IngestTransactionFailure({
+              code: "CONFLICT",
+              status: 409,
+              message: "Idempotency key was already used for a different ingest batch",
+            });
           const response = completedIngestResponse(existing, base);
           if (response) return { response };
           acceptedAt = existing.accepted_at;

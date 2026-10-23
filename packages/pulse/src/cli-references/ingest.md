@@ -180,6 +180,21 @@ group access is not expanded. Cloud administrators receive one disk notification
 per crossing and one notification per store outage, subject to preferences.
 A successful disk measurement ends the outage.
 
+
+### Collector error codes
+
+A valid source token keeps identifying its source while collection is paused.
+A disabled source returns `409 PULSE_SOURCE_DISABLED`. A provisioning, clearing,
+or failed base returns `409 PULSE_BASE_NOT_WRITABLE`; keep the delivery pending
+until the operation completes or an administrator repairs the base. An authenticated lookup of a deleted
+source or base returns `404 NOT_FOUND`. Normal deletion also revokes its source
+tokens, so later requests using those tokens return `401`. Recovery blocks retain
+`409 PULSE_BASE_WRITE_BLOCKED` and their recovery guidance.
+
+Schema validation failures and service input errors return `400 BAD_INPUT`.
+Fix the batch before retrying. Reusing an idempotency key for a different batch
+returns `409 CONFLICT`; retry only the original batch with that key.
+
 ## Set up Prometheus collection
 
 ```sh

@@ -6,9 +6,12 @@ import { MessageSchema } from "./schemas";
 
 export const ingestResponses = {
   200: jsonResponse(z.object({ metrics: z.number(), events: z.number(), states: z.number() }), "Ingest counts"),
-  400: jsonResponse(MessageSchema, "Invalid public ID, telemetry, timestamp, or registry cap exceeded"),
+  400: jsonResponse(MessageSchema, "BAD_INPUT: invalid public ID, telemetry schema, timestamp, or registry cap exceeded"),
   403: jsonResponse(MessageSchema, "Ingest permission required"),
-  409: jsonResponse(MessageSchema, "Idempotency conflict, disabled source, base reset during ingest, or base not writable"),
+  409: jsonResponse(
+    MessageSchema,
+    "CONFLICT: idempotency or reset conflict; PULSE_SOURCE_DISABLED: paused source; PULSE_BASE_NOT_WRITABLE: paused base; recovery/storage blocks also return 409",
+  ),
   429: jsonResponse(MessageSchema, "Ingest rate limit exceeded; retry after the indicated delay"),
   503: jsonResponse(
     MessageSchema,

@@ -14,7 +14,7 @@ const routes = new Hono<AuthContext>().post(
     summary: "Ingest Pulse metrics, events, and states by source API key",
     responses: ingestResponses,
   }),
-  v("json", IngestBatchSchema),
+  v("json", IngestBatchSchema, () => ({ code: "BAD_INPUT", message: "Invalid ingest batch. Check telemetry fields and types." })),
   async (c) => {
     const actor = c.get("actor");
     if (actor.kind !== "service_account") return respond(c, fail(err.forbidden("Pulse ingest requires a resource API key")));
