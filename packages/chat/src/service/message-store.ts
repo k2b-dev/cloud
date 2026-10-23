@@ -155,8 +155,10 @@ export const appendMessage = async (
   }
   if (!row) throw new Error("Chat message ID could not be allocated");
   if (row.thread_id) await db`UPDATE chat.threads SET last_activity_at = ${row.created_at} WHERE id = ${row.thread_id}::uuid`;
-  const [projected] = await messageViews(db, [row], conversation.short_id);
-  if (!projected) throw new Error("Chat message could not be projected");
+  const [view] = await messageViews(db, [row], conversation.short_id);
+  if (!view) throw new Error("Chat message could not be projected");
+  // Every member renders a system line in their own language, so the live event carries its code, not its text.
+  const { systemText: _, ...projected } = view;
   for (const row of chatLiveUpdates(
     conversation.short_id,
     projected,
