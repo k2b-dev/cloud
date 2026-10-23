@@ -340,6 +340,7 @@ let tileBarrier: Promise<void> | undefined;
 let failedStyleRequests = 0;
 let failedDarkRequests = 0;
 let failedTileRequests = 0;
+let failedGlyphRequests = 0;
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
@@ -378,6 +379,23 @@ const server = Bun.serve({
     if (url.pathname === "/dark.json" && url.searchParams.has("fail") && ++failedDarkRequests === 1)
       return new Response("Style unavailable", { status: 500 });
     if (["/light.json", "/dark.json", "/flaky.json"].includes(url.pathname)) return Response.json(style(url.pathname === "/dark.json"));
+    if (url.pathname === "/glyphs.json") {
+      return Response.json({
+        version: 8,
+        glyphs: `${url.origin}/glyphs/{fontstack}/{range}.pbf`,
+        sources: {
+          label: { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [9.991, 48.401] } } },
+        },
+        layers: [
+          { id: "land", type: "background", paint: { "background-color": "#e8dcc8" } },
+          { id: "label", type: "symbol", source: "label", layout: { "text-field": "Museum", "text-font": ["IBM Plex Sans Medium"] } },
+        ],
+      });
+    }
+    if (url.pathname.startsWith("/glyphs/")) {
+      failedGlyphRequests++;
+      return new Response("Glyph unavailable", { status: 500 });
+    }
     if (url.pathname === "/tiles.json") {
       const base = style(false) as { sources: Record<string, unknown>; layers: unknown[] };
       return Response.json({
@@ -400,7 +418,9 @@ const server = Bun.serve({
           ? "/flaky.json"
           : url.searchParams.has("tilefail")
             ? "/tiles.json"
-            : "/light.json",
+            : url.searchParams.has("glyphfail")
+              ? "/glyphs.json"
+              : "/light.json",
       darkPath: url.searchParams.has("vector") ? "/vector-dark.json" : url.searchParams.has("darkfail") ? "/dark.json?fail" : "/dark.json",
       vector: url.searchParams.has("vector"),
       empty: url.searchParams.has("empty"),
@@ -1333,6 +1353,20 @@ test("clearing geometry during fresh-frame capture rejects immediately rather th
         );
       }),
     ).toBe("changed");
+  } finally {
+    await page.close();
+  }
+});
+
+test("a missing glyph range produces visible retry instead of a silent fallback font", async () => {
+  failedGlyphRequests = 0;
+  const page = await browser.newPage({ reducedMotion: "reduce" });
+  try {
+    await page.goto(`${origin}/?glyphfail`);
+    await page.waitForSelector('.k2b-map-view[data-state="error"]');
+    expect(failedGlyphRequests).toBeGreaterThan(0);
+    expect(await page.getByRole("button", { name: "Try again" }).isVisible()).toBe(true);
+    expect(await page.locator(".k2b-map-view__pin").count()).toBeGreaterThan(0);
   } finally {
     await page.close();
   }
