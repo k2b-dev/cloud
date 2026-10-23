@@ -391,6 +391,17 @@ test("sidebar text summaries sort rows, guard revisions, and fetch missing and s
   store.dispose();
 });
 
+test("a channel subscription by someone else updates the open chat's members and its sidebar row", async () => {
+  const { store, connection } = fixture({ conversation: async () => ({ ...conversation, channel: true, rev: 2, memberCount: 3 }) });
+  await connection.get("conversation").apply({ type: "membership", conversationId: conversation.id });
+  expect(store.openConversation?.membershipRev).toBe(1);
+  expect(store.openConversation?.conversation?.memberCount).toBe(3);
+  expect(store.openConversation?.messages).toHaveLength(1);
+  await connection.get("list").apply({ type: "membership", conversationId: conversation.id });
+  expect(store.sidebar.find((row) => row.id === conversation.id)?.memberCount).toBe(3);
+  store.dispose();
+});
+
 test("unavailable exposes stopped live updates and notifies listeners", () => {
   const { store, connection } = fixture();
   let notifications = 0;

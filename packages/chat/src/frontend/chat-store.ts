@@ -509,6 +509,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           for (const { data } of events) {
             if (!active(chat)) return;
             if (data.type === "threads" && data.conversationId === chat.view.id) threadsChanged = true;
+            // A channel's subscriptions change its members without a timeline line; the members and counts follow.
+            if (data.type === "membership" && data.conversationId === chat.view.id) membership = system = true;
             if (data.type !== "message" || data.message.conversationId !== chat.view.id) continue;
             if (data.message.kind === "text" && chatHasThreads(chat.view.conversation)) threadsChanged = true;
             applyMessage(chat, data.message);
@@ -663,7 +665,11 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: (events) =>
           sidebar(async () => {
-            for (const { data } of events) if (data.type === "summary") await applySummary(data);
+            for (const { data } of events) {
+              if (data.type === "summary") await applySummary(data);
+              else if (data.type === "membership" && rows.some((row) => row.id === data.conversationId))
+                await refetchRow(data.conversationId);
+            }
           }),
         resync: () => sidebar(reloadSidebar),
         unavailable: stopped,
