@@ -45,7 +45,7 @@ test("resolves current readers with the caller and loads each provider manifest 
   const readerCalls: Array<{ input: { appId: string; capabilityId: string; id: string }; caller: CapabilityCaller }> = [];
   const references = [reference("First1"), reference("Second")];
 
-  const result = await resolveReferenceViews(references, caller, {
+  const result = await resolveReferenceViews(references, caller, null, {
     getCatalogApp: async (appId) => {
       catalogCalls.push(appId);
       return { appId, manifest };
@@ -104,7 +104,7 @@ test("preserves snapshots when a provider, reader, permission, or link is unavai
     reference("NoLink"),
   ];
 
-  const result = await resolveReferenceViews(references, caller, {
+  const result = await resolveReferenceViews(references, caller, null, {
     getCatalogApp: async (appId) => (appId === "provider" ? { appId, manifest } : null),
     invokeReader: async ({ id }) =>
       id === "Denied" || id === "NoLink" ? null : { refs: [], links: [{ rel: "open", href: `/app/provider/${id}` }] },
@@ -118,7 +118,7 @@ test("bounds concurrent reader calls while preserving reference order", async ()
   let active = 0;
   let maximumActive = 0;
 
-  const result = await resolveReferenceViews(references, caller, {
+  const result = await resolveReferenceViews(references, caller, null, {
     getCatalogApp: async (appId) => ({ appId, manifest }),
     invokeReader: async ({ id }) => {
       active += 1;
@@ -135,7 +135,7 @@ test("bounds concurrent reader calls while preserving reference order", async ()
 
 test("falls back to stored labels and Type icons when readers return bare refs", async () => {
   const item = reference("Bare1");
-  const [result] = await resolveReferenceViews([item], caller, {
+  const [result] = await resolveReferenceViews([item], caller, null, {
     getCatalogApp: async (appId) => ({ appId, manifest }),
     invokeReader: async () => ({ refs: [{ type: "provider.item", id: item.ref.id }], links: [{ rel: "open", href: "/item" }] }),
   });
