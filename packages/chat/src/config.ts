@@ -7,7 +7,7 @@ export const app = defineApp({
   description: "Chats and channels for working together.",
   presentation: {
     baseLocale: "en",
-    translations: { de: { description: "Chats und Kanäle für die Zusammenarbeit." } },
+    translations: { de: { panelLabel: "Chat", description: "Chats und Kanäle für die Zusammenarbeit." } },
   },
   appearance: { accent: "#7c3aed", background: { from: "#8b5cf6", to: "#d946ef", angle: 135 } },
   basePath: "/app/chat",
@@ -20,6 +20,7 @@ export const app = defineApp({
     requiresAuth: true,
     requiresRoles: ["user", "guest"],
   },
+  panel: { href: "/app/chat/panel", label: "Chat", icon: "ti ti-messages", requiresRoles: ["user", "guest"] },
   openapi: "/api/chat/openapi.json",
   routes: ["/api/chat", "/app/chat", "/admin/chat", "/public/chat"],
 });

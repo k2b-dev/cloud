@@ -1,4 +1,4 @@
-import { mutation } from "@k2b/stdlib/solid";
+import { mutation, query } from "@k2b/stdlib/solid";
 import {
   Button,
   DateTimePicker,
@@ -274,6 +274,16 @@ function SearchConditionValue(props: {
   const snoozedTerm = () => node() as Extract<MailSearchExpression, { type: "snoozed" }>;
   const folderTerm = () => node() as Extract<MailSearchExpression, { type: "folder_id" }>;
   const localTagTerm = () => node() as Extract<MailSearchExpression, { type: "local_tag_id" }>;
+  const flagTerm = () => {
+    const value = node();
+    return value.type === "unread" || value.type === "flagged" ? value : undefined;
+  };
+
+  const flagFolders = query.create({
+    source: () => "folders",
+    enabled: () => Boolean(flagTerm()),
+    load: (_source, { abortSignal }) => props.fetchFolders("", abortSignal),
+  });
 
   return (
     <>
@@ -387,6 +397,33 @@ function SearchConditionValue(props: {
             { id: "false", label: messages().notSnoozed, icon: "ti ti-alarm-off" },
           ]}
         />
+      </Show>
+      <Show when={flagTerm()}>
+        {(condition) => (
+          <div class="flex min-w-0 flex-col gap-2">
+            <Select
+              label={messages().folder}
+              value={() => condition().folderId ?? null}
+              selectedLabel={() => (flagFolders.loading() ? messages().loading : messages().inSpecificFolder)}
+              placeholder={messages().anyIncludedFolder}
+              clearable
+              searchable
+              disabled={flagFolders.loading() || Boolean(flagFolders.error())}
+              onValueChange={(folderId) => props.replace({ ...condition(), folderId: folderId ?? null })}
+              options={flagFolders.data() ?? []}
+            />
+            <Show when={flagFolders.error()}>
+              {(error) => (
+                <NoticeCard tone="danger" role="alert">
+                  {error().message}
+                  <Button variant="secondary" size="sm" type="button" onClick={() => void flagFolders.refresh()}>
+                    {messages().retry}
+                  </Button>
+                </NoticeCard>
+              )}
+            </Show>
+          </div>
+        )}
       </Show>
       <Show when={node().type === "folder_id"}>
         <Select

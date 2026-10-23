@@ -8,6 +8,8 @@ order: 20
 
 ## Die passende Unterhaltung finden {icon="search"}
 
+Öffne die Lupe im Kopf oder drücke `/`, um das Postfach zu durchsuchen. **Ort** steht zunächst auf **Ganzes Postfach**. Hast du in einem Ordner begonnen, kannst du die Suche dort auf diesen Ordner begrenzen. Wenn du die Suche mit der Lupe oder `/` geöffnet hast, bringt dich das X oder Löschen des Textes zur Ausgangsansicht zurück und lässt das Eingabefeld offen. **Zurücksetzen**, **Abbrechen** oder Escape bringt dich zur Ausgangsansicht zurück. Ist ein Optionsmenü offen, schließt das erste Escape nur dieses Menü.
+
 Mit **Postfach durchsuchen** suchst du schnell im aktuellen Postfach. Standardmäßig ist **Alles** ausgewählt. Das umfasst die synchronisierten Nachrichtenfelder und den aus Anhängen erkannten Text.
 
 Um die Suche einzugrenzen, nutze die Schaltfläche für den Suchbereich. Wähle eine beliebige Kombination aus **Absender**, **Empfänger**, **Betreff**, **Nachrichteninhalt** und **Anhangsnamen**. Bei mehreren Wörtern passt eine Nachricht, wenn jedes Wort irgendwo in ihr vorkommt, etwa der Name des Absenders und ein Wort aus dem Betreff.
@@ -27,10 +29,19 @@ Der Filterdialog kann diese Felder durchsuchen:
 - Unterhaltungsreferenz
 - Ordner
 - Lokaler Tag
+- Ungelesen
+- Markiert
+
+Bei **Ungelesen** oder **Markiert** wählst du einen Ordner, um den Zustand der
+Nachricht dort zu prüfen. **Beliebiger einbezogener Ordner** findet Nachrichten,
+die diesen Zustand in einem der durchsuchten Ordner haben. Eine zusätzliche
+Bedingung **Ordner** grenzt diese Auswahl nicht ein: Wähle den Ordner auch bei
+Ungelesen oder Markiert. Du kannst die Bedingung ausschließen, um Nachrichten
+ohne diesen Zustand im gewählten Bereich zu finden.
 
 Wähle **Mindestens eine Bedingung**, damit mindestens ein ausgefülltes Feld passen muss. Wähle **Alle Bedingungen**, damit jedes ausgefüllte Feld passen muss. Suchfilter bleiben in der Seiten-URL. Ein Neuladen oder eine geteilte URL behält deshalb das aktuelle Ergebnis.
 
-Eine Suche merkt sich die Ansicht, in der du sie gestartet hast, etwa **Handlungsbedarf** oder einen Ordner. Um die Suche zu beenden, wähle **Leeren** im Suchfeld, lösche den Text, drücke Esc oder entferne den Chip **Suche** im Kopfbereich. **Zurücksetzen** entfernt ebenfalls die Filter. Mail kehrt dann zu dieser Ansicht zurück und öffnet die Unterhaltung, die vorher offen war. Die URL behält die Ausgangsansicht. Ein Neuladen oder Zurück behält sie deshalb auch.
+Eine Suche merkt sich die Ansicht, in der du sie gestartet hast, etwa **Handlungsbedarf** oder einen Ordner. **Zurücksetzen**, **Abbrechen** oder Escape schließt das Suchfeld und bringt dich zu dieser Ansicht und der zuvor geöffneten Unterhaltung zurück. Außerhalb des Textfeldes entfernt **Zurücksetzen** die erweiterten Suchfilter. Die URL behält die Ausgangsansicht. Ein Neuladen oder Zurück behält sie deshalb auch.
 
 Anbieter-Schlüsselwörter sind erweiterte synchronisierte Metadaten, kein normales System zum Kennzeichnen. Vorhandene Such-URLs mit Schlüsselwörtern funktionieren weiter, und du kannst sie weiter bearbeiten. Neue Filter nutzen für Kennzeichnungen, die Menschen lesen, lokale Tags.
 
@@ -108,6 +119,8 @@ Damit der Posteingang auch in anderen E-Mail-Programmen leer ist, wähle zusätz
   Jede Person arbeitet aus **Mir zugewiesen**. Ihre bestätigte Antwort setzt **Wartet auf Antwort**; sie markiert die Unterhaltung als **Erledigt**.
   Nutze **Nur im Ordner** für Teamordner, die außerhalb gemeinsamer Listen bleiben sollen, wie oben beschrieben.
 
+Im Ordner grenzen **Ungelesen**, **Markiert**, **Mit Anhang** und **Zeitraum** im Kopfbereich die Liste auf diesen Ordner ein. Gesendet bietet Anhang und Zeitraum. Das **Tag**-Symbol neben **Suchen** öffnet die Tag-Auswahl. Sein Tooltip nennt den aktiven Tag; **Leeren** entfernt diese Auswahl. Ein Tag behält die Ordnergrenze bei und wählt **Alle** in den Ansichten. **Zurücksetzen** bringt dich zum Ausgangsort und zur vorherigen Auswahl zurück. Zeitvorgaben behalten beim Neuladen ihren gewählten Zeitraum. **Eigener Zeitraum…** öffnet den Sucheditor mit den aktuellen Filtern. Eine Textsuche durchsucht weiterhin das ganze Postfach.
+
 ## Kurz hineinschauen, ohne zu öffnen {icon="eye"}
 
 Lass den Mauszeiger kurz auf einer Zeile der Unterhaltungsliste ruhen. Neben der Liste öffnet sich eine Kurzansicht. Sie zeigt:
@@ -122,6 +135,8 @@ Bewegst du den Zeiger in die Karte, bleibt sie offen. Sie schließt sich, wenn d
 Die Kurzansicht markiert nichts als gelesen, erstellt keine Zusammenfassung und lädt keine externen Bilder. Sie erscheint nicht für die bereits geöffnete Unterhaltung und nicht, während du Unterhaltungen auswählst. Sie erscheint auch nicht auf Touch-Geräten und nicht, wenn neben der Liste kein Platz ist.
 
 ## Einen vollständigen Verlauf lesen {icon="route"}
+
+Der Betreff bleibt beim Scrollen über den Nachrichten stehen. Die Nachrichtenanzahl erscheint auf breiteren Bildschirmen. Mit der ersten Schaltfläche im Leser blendest du auf breiten Bildschirmen die Liste aus oder ein. Auf dem Telefon kehrst du mit Zurück zur Liste und ihrer Kopfzeile zurück.
 
 Wähle eine Unterhaltungszeile, um ihren Verlauf zu öffnen. Jede Nachricht hat eigene Absender, Empfänger, Datum, Inhalt und Anhänge. Klappe eine ältere Nachricht auf, wenn du ihren vollständigen Inhalt brauchst.
 
@@ -262,7 +277,7 @@ Mehr zu Verfassen, Entwürfen, Anhängen, Signaturen und Zustelloptionen findest
 - **Alle Personen mit Postfachzugriff** erstellt eine Postfachansicht und braucht Zugriff **Bearbeiten**.
 - Die Sichtbarkeit kannst du nach dem Erstellen nicht ändern. Erstelle eine neue Ansicht, wenn du eine andere Sichtbarkeit brauchst.
 
-Lokale Tags sind Kennzeichnungen im Postfach für Menschen, Suche und Automatisierungen. Wähle einen Tag über den Chip **Tag** im Kopfbereich, um alle passenden Unterhaltungen zu öffnen. Lokale Tags sind keine IMAP-Ordner und keine Anbieter-Schlüsselwörter, und andere Programme zeigen sie nicht.
+Lokale Tags sind Kennzeichnungen im Postfach für Menschen, Suche und Automatisierungen. Wähle einen Tag über das **Tag**-Symbol neben **Suchen** im Kopfbereich, um alle passenden Unterhaltungen zu öffnen. Lokale Tags sind keine IMAP-Ordner und keine Anbieter-Schlüsselwörter, und andere Programme zeigen sie nicht.
 
 :::warning Ein gelöschter lokaler Tag verschwindet überall
 Mail entfernt einen gelöschten lokalen Tag aus jeder Unterhaltung im Postfach. Gespeicherte Ansichten und Suchlinks, die nach einem gelöschten Tag oder Ordner filtern, finden für diese Bedingung keine Unterhaltungen.
