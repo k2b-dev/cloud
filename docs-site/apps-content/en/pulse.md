@@ -578,14 +578,13 @@ unknown source `404`, and a disabled source, busy or blocked base, or conflictin
 key `409`. Successful ingest returns `200` with the three counts. Temporary
 refusals and their retry delays are described below.
 
-
 ### Collector error codes
 
 A valid source token keeps identifying its source while collection is paused.
 A disabled source returns `409 PULSE_SOURCE_DISABLED`. A provisioning, clearing,
 or failed base returns `409 PULSE_BASE_NOT_WRITABLE`; keep the delivery pending
-until the operation completes or an administrator repairs the base. An authenticated lookup of a deleted
-source or base returns `404 NOT_FOUND`. Normal deletion also revokes its source
+until the operation completes or an administrator repairs the base.
+An authenticated lookup of a deleted source or base returns `404 NOT_FOUND`. Normal deletion also revokes its source
 tokens, so later requests using those tokens return `401`. Recovery blocks retain
 `409 PULSE_BASE_WRITE_BLOCKED` and their recovery guidance.
 
@@ -687,12 +686,10 @@ is charged, so later batches wait until enough quota has refilled.
 | Instance disk below 10% free | `503 PULSE_STORE_DISK_LOW`, `Retry-After: 300`; reads continue. Cloud administrators receive a notification. |
 | Data store unreachable | `503 PULSE_STORE_UNAVAILABLE`, `Retry-After: 30`; retry with the same key. Scrapes fail and record the error. |
 
-Storage notifications go once per threshold crossing to direct user base
-administrators; group access is not expanded. Disk notifications go once per
-crossing to Cloud administrators. Store outages notify Cloud administrators
-once per outage; a successful disk measurement closes the outage. Delivery
-follows notification preferences. A failed or throttled scrape waits for its
-next scheduled attempt.
+Storage and disk notifications go once per threshold crossing; store outages
+notify once per outage. A successful disk measurement closes the outage.
+Delivery follows notification preferences and the recipient rules below.
+A failed or throttled scrape waits for its next scheduled attempt.
 
 ### Maintenance admission and health delivery in this release
 
