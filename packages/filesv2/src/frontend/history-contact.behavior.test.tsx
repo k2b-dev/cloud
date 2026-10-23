@@ -5,7 +5,24 @@ import { z } from "zod";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { entry, gone, hidden, page } from "../../test/history-fixtures";
 
-if (!isServer) {
+// Compile the workspace before the cases, as in the other workspace behavior suites.
+// A cold Solid transform must not consume the interaction's unchanged 5 s deadline.
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return {
+      Workspace: (await import("./Workspace.island")).default,
+      toast: (await import("@k2b/ui")).toast,
+      registerCommandHandler: (await import("@k2b/cloud/browser/commands")).registerCommandHandler,
+    };
+  } finally {
+    dom.cleanup();
+  }
+};
+const modules = isServer ? undefined : await load();
+
+if (modules) {
+  const { Workspace, toast, registerCommandHandler } = modules;
   test("Message actor reports unavailable Chat and retries with only the UUID through the public command", async () => {
     setSystemTime(new Date("2026-10-20T12:30:00.000Z"));
     const dom = createDomTestHarness();
@@ -27,9 +44,6 @@ if (!isServer) {
     let dispose = () => {};
     let unregister = () => {};
     try {
-      const { toast } = await import("@k2b/ui");
-      const { registerCommandHandler } = await import("@k2b/cloud/browser/commands");
-      const { default: Workspace } = await import("./Workspace.island");
       const failed = Promise.withResolvers<string>();
       const error = spyOn(toast, "error").mockImplementation((message) => {
         failed.resolve(message);
@@ -116,8 +130,6 @@ if (!isServer) {
         );
         let dispose = () => {};
         try {
-          const { toast } = await import("@k2b/ui");
-          const { default: Workspace } = await import("./Workspace.island");
           const navigate = spyOn(window.location, "assign").mockImplementation(() => {});
           const error = spyOn(toast, "error").mockImplementation(() => ({ dismiss() {}, update() {} }));
           dispose = render(
