@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Browser, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import { launchBrowser } from "../../../ui/test/browser";
 import {
   historyActivity,
@@ -11,11 +11,39 @@ import {
   historyDirectory,
   historyFile,
   historyInspectorSource,
+  historyMove,
   historyNow,
   historyPage,
   historySearch,
   historyVersions,
 } from "./History.browser-fixtures";
+
+// A complete item timeline with older rows, using the real FileInspector / ItemHistory path.
+const inspectorHistory = historyPage(
+  Array.from({ length: 6 }, (_, index) => ({
+    ...historyMove,
+    id: `20000000-0000-4000-8000-00000000000${index + 1}`,
+    action: "file.upload" as const,
+    time: `2026-10-${20 - index}T09:00:00.000Z`,
+    startedAt: `2026-10-${20 - index}T09:00:00.000Z`,
+    finishedAt: `2026-10-${20 - index}T09:00:00.000Z`,
+    before: { visibility: "hidden" as const },
+    after: {
+      visibility: "full" as const,
+      source: "snapshot" as const,
+      name: historyFile.name,
+      path: `groups/vertrieb/${historyFile.path}`,
+      root: "cloud" as const,
+      baseId: "10000000-0000-4000-8000-000000000001",
+      publicBaseId: historyBase.id,
+      relativePath: historyFile.path,
+      itemId: "20000000-0000-4000-8000-000000000010",
+      directory: false,
+      size: historyFile.size,
+      revision: null,
+    },
+  })),
+);
 
 const ui = new URL("../../../ui/", import.meta.url).pathname;
 const appCss =
@@ -94,8 +122,9 @@ async function open(
   search = "",
   lang = "de",
   mountInitially = true,
-  inspector = false,
+  inspector: boolean | "history" | "paged-history" = false,
   touch = false,
+  historySize = 6,
 ) {
   const context = await browser.newContext({ viewport: { width, height: 844 }, reducedMotion: "reduce", hasTouch: touch });
   const tab = await context.newPage();
@@ -103,6 +132,8 @@ async function open(
   const errors: string[] = [];
   tab.on("pageerror", (error) => errors.push(error.message));
   let fail = false;
+  let recoveryFails = false;
+  const recoveryRequests: { method: string; path: string; failed: boolean }[] = [];
   let holdContacts = !mountInitially;
   const contacts: (() => void)[] = [];
   const requests: { query: string; fail: boolean }[] = [];
@@ -119,7 +150,14 @@ async function open(
       });
     const json = (body: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     if (url.pathname === "/api/filesv2/activity") {
-      if (inspector) return json(historyPage([]));
+      if (inspector === "paged-history") {
+        if (!url.searchParams.has("cursor"))
+          return json({ ...historyPage(inspectorHistory.items.slice(0, 1)), next: "older-history", exhausted: false });
+        return fail
+          ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "unavailable" }) })
+          : json(historyPage(inspectorHistory.items.slice(1, historySize)));
+      }
+      if (inspector) return json(inspector === "history" ? inspectorHistory : historyPage([]));
       requests.push({ query: url.search, fail });
       if (fail)
         return route.fulfill({
@@ -128,6 +166,19 @@ async function open(
           body: JSON.stringify({ message: "Temporarily unavailable", code: "unavailable" }),
         });
       return json(url.searchParams.has("q") ? historySearch : historyActivity);
+    }
+    if (url.pathname.endsWith("/move-back")) {
+      recoveryRequests.push({ method: route.request().method(), path: url.pathname, failed: recoveryFails });
+      return recoveryFails
+        ? route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ message: "Recovery temporarily unavailable", code: "unavailable" }),
+          })
+        : json({
+            base: historyBase,
+            entry: { name: "Angebote 2025", path: "Angebote 2025", directory: true, size: 0, modified: historyNow },
+          });
     }
     if (holdContacts && (url.pathname.endsWith("/chain") || url.pathname.endsWith("/recovery")))
       await new Promise<void>((resolve) => contacts.push(resolve));
@@ -156,7 +207,10 @@ async function open(
   if (mountInitially) await tab.waitForFunction(() => document.body.dataset.ready === "true");
   if (inspector && !(await tab.locator(".filesv2-inspector-info").isVisible())) {
     // A narrow desktop host parks the shared detail behind its real Details control.
-    await tab.locator("[data-app-workspace-detail-toggle]").click();
+    if (typeof inspector === "string") {
+      await tabTo(tab, tab.getByRole("button", { name: "Details", exact: true }));
+      await tab.keyboard.press("Enter");
+    } else await tab.locator("[data-app-workspace-detail-toggle]").click();
     await tab.locator(".filesv2-inspector-info").waitFor();
   }
   await tab.evaluate(() => document.fonts.ready);
@@ -165,6 +219,7 @@ async function open(
     tab,
     errors,
     requests,
+    recoveryRequests,
     releaseContacts,
     mount: async () => {
       await tab.addScriptTag({ url: "http://files-history.test/harness.js" });
@@ -173,7 +228,47 @@ async function open(
     fail: (value: boolean) => {
       fail = value;
     },
+    failRecovery: (value: boolean) => {
+      recoveryFails = value;
+    },
   };
+}
+
+async function focused(tab: Page, target: Locator) {
+  const element = await target.elementHandle({ timeout: 5_000 });
+  if (!element) throw new Error(`Missing focus target: ${target}`);
+  try {
+    await tab.waitForFunction((element) => document.activeElement === element, element, { timeout: 5_000 });
+  } finally {
+    await element.dispose();
+  }
+}
+
+/** Reach a named control through real Tab stops; fail after a focus cycle instead of bypassing a keyboard trap. */
+async function tabTo(tab: Page, target: Locator) {
+  await target.waitFor({ state: "visible" });
+  const visited = await tab.evaluateHandle(() => ({ elements: new Set<Element>(), outsideStops: 0 }));
+  try {
+    while (!(await target.evaluate((element) => element === document.activeElement))) {
+      const repeated = await visited.evaluate((seen) => {
+        const active = document.activeElement;
+        // Tab can cross browser chrome after a focused control was removed. While focus is outside
+        // the document, activeElement is body; that is not a repeated in-page focus stop.
+        if (!active || active === document.body || active === document.documentElement) return ++seen.outsideStops > 2;
+        seen.outsideStops = 0;
+        if (seen.elements.has(active)) return true;
+        seen.elements.add(active);
+        return false;
+      });
+      if (repeated)
+        throw new Error(
+          `Keyboard focus cycled without reaching ${target}; active: ${await tab.evaluate(() => document.activeElement?.outerHTML)}`,
+        );
+      await tab.keyboard.press("Tab");
+    }
+  } finally {
+    await visited.dispose();
+  }
 }
 async function metrics(tab: Page) {
   return tab.evaluate(() => {
@@ -187,6 +282,228 @@ async function metrics(tab: Page) {
     };
   });
 }
+
+for (const language of [
+  {
+    locale: "en",
+    search: "Search activity by name or old path",
+    clear: "Clear search",
+    retry: "Try again",
+    filters: ["Storage", "Who", "What", "When"],
+    moveBack: "Move back",
+    history: "History",
+    older: "Show 2 older",
+    fewer: "Show fewer",
+  },
+  {
+    locale: "de",
+    search: "Aktivität nach Name oder altem Pfad durchsuchen",
+    clear: "Suche leeren",
+    retry: "Erneut versuchen",
+    filters: ["Ablage", "Wer", "Was", "Wann"],
+    moveBack: "Zurückverschieben",
+    history: "Verlauf",
+    older: "2 ältere anzeigen",
+    fewer: "Weniger anzeigen",
+  },
+]) {
+  test(`keyboard search retries and browser history preserves its storage and query in ${language.locale}`, async () => {
+    const { context, tab, errors, fail } = await open(1440, "light", "", language.locale);
+    try {
+      const storage = tab.getByRole("button", { name: language.filters[0], exact: true });
+      await tabTo(tab, storage);
+      await tab.keyboard.press("Enter");
+      const option = tab.getByRole("menuitemradio", { name: "Team Vertrieb", exact: true });
+      await focused(tab, option);
+      await tab.keyboard.press("Space");
+      await tab.waitForURL((url) => url.searchParams.get("base") === historyBase.id);
+      await tab.keyboard.press("Escape");
+      const selectedStorage = tab.getByRole("button", { name: `${language.filters[0]}: Team Vertrieb`, exact: true });
+      await focused(tab, selectedStorage);
+
+      fail(true);
+      const search = tab.getByRole("searchbox", { name: language.search, exact: true });
+      await tabTo(tab, search);
+      await tab.keyboard.type("Angebote 2025");
+      await tab.keyboard.press("Enter");
+      await tab.waitForURL((url) => url.searchParams.get("q") === "Angebote 2025");
+      const address = tab.url();
+      const retry = tab.getByRole("button", { name: language.retry, exact: true });
+      await tabTo(tab, retry);
+      fail(false);
+      await tab.keyboard.press("Enter");
+      await tab.getByRole("article", { name: /Angebote 2025/ }).waitFor();
+      expect(tab.url()).toBe(address);
+      expect(await search.inputValue()).toBe("Angebote 2025");
+      expect(await selectedStorage.isVisible()).toBe(true);
+
+      await tabTo(tab, tab.getByRole("button", { name: language.clear, exact: true }));
+      await tab.keyboard.press("Space");
+      await tab.waitForURL((url) => !url.searchParams.has("q"));
+      await focused(tab, search);
+      expect(new URL(tab.url()).searchParams.get("base")).toBe(historyBase.id);
+      expect(await search.inputValue()).toBe("");
+      // Browser traversal is explicit: the document interactions above use only the keyboard.
+      await tab.goBack();
+      await tab.getByRole("article", { name: /Angebote 2025/ }).waitFor();
+      expect(tab.url()).toBe(address);
+      expect(await search.inputValue()).toBe("Angebote 2025");
+      expect(await selectedStorage.isVisible()).toBe(true);
+      await tab.goForward();
+      await tab.waitForURL((url) => !url.searchParams.has("q"));
+      await tab.getByRole("article", { name: /Angebote 2025/ }).waitFor({ state: "hidden" });
+      await tabTo(tab, search);
+      expect(await search.inputValue()).toBe("");
+      expect(new URL(tab.url()).searchParams.get("base")).toBe(historyBase.id);
+      await tab.keyboard.type("clear focus check");
+      await tabTo(tab, tab.getByRole("button", { name: language.clear, exact: true }));
+      await tab.keyboard.press("Space");
+      await focused(tab, search);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  test(`every history filter returns keyboard focus on Escape in ${language.locale}`, async () => {
+    const { context, tab, errors } = await open(1440, "light", "", language.locale);
+    try {
+      const address = tab.url();
+      for (const label of language.filters) {
+        const trigger = tab.getByRole("button", { name: label, exact: true });
+        await tabTo(tab, trigger);
+        await tab.keyboard.press("ArrowDown");
+        const menu = tab.getByRole("menu", { name: label, exact: true });
+        const options = menu.getByRole("menuitemradio");
+        await focused(tab, options.first());
+        expect(await trigger.getAttribute("aria-expanded")).toBe("true");
+        if ((await options.count()) > 1) {
+          await tab.keyboard.press("ArrowDown");
+          await focused(tab, options.nth(1));
+        }
+        await tab.keyboard.press("Escape");
+        await menu.waitFor({ state: "hidden" });
+        await focused(tab, trigger);
+        expect(await trigger.getAttribute("aria-expanded")).toBe("false");
+        expect(tab.url()).toBe(address);
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  test(`a failed move-back remains keyboard-recoverable without losing search context in ${language.locale}`, async () => {
+    const { context, tab, errors, failRecovery, recoveryRequests } = await open(1440, "light", "Angebote 2025", language.locale);
+    try {
+      const address = tab.url();
+      const moveBack = tab.getByRole("button", { name: language.moveBack, exact: true });
+      await tabTo(tab, moveBack);
+      failRecovery(true);
+      await tab.keyboard.press("Enter");
+      const error = tab.getByRole("alert").filter({ hasText: "Recovery temporarily unavailable" });
+      await error.waitFor();
+      expect(tab.url()).toBe(address);
+      expect(await tab.getByRole("searchbox", { name: language.search, exact: true }).inputValue()).toBe("Angebote 2025");
+
+      await tabTo(tab, moveBack);
+      failRecovery(false);
+      const recovered = tab.waitForResponse(
+        (response) => response.url().endsWith(`/activity/${historyMove.id}/move-back`) && response.request().method() === "POST",
+      );
+      await tab.keyboard.press("Space");
+      expect((await recovered).ok()).toBe(true);
+      await error.waitFor({ state: "hidden" });
+      expect(recoveryRequests).toEqual([
+        { method: "POST", path: `/api/filesv2/activity/${historyMove.id}/move-back`, failed: true },
+        { method: "POST", path: `/api/filesv2/activity/${historyMove.id}/move-back`, failed: false },
+      ]);
+      expect(tab.url()).toBe(address);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  test(`keyboard opens the parked detail and expands and collapses item history in ${language.locale}`, async () => {
+    const { context, tab, errors } = await open(1200, "light", "", language.locale, true, "history");
+    try {
+      const address = tab.url();
+      await focused(tab, tab.getByRole("heading", { name: historyFile.name, exact: true }));
+      const history = tab.getByRole("group", { name: language.history, exact: true });
+      const rows = history.getByRole("article");
+      const older = history.getByRole("button", { name: language.older, exact: true });
+      await tabTo(tab, older);
+      expect(await rows.count()).toBe(4);
+      expect(await older.getAttribute("aria-expanded")).toBe("false");
+      const controlledRows = await older.getAttribute("aria-controls");
+      expect(controlledRows).toBeTruthy();
+      expect(await history.locator("ul").getAttribute("id")).toBe(controlledRows);
+      await tab.keyboard.press("Enter");
+      await rows.nth(5).waitFor();
+      expect(await rows.count()).toBe(6);
+      const fewer = history.getByRole("button", { name: language.fewer, exact: true });
+      await focused(tab, fewer);
+      expect(await fewer.getAttribute("aria-expanded")).toBe("true");
+      await tab.keyboard.press("Space");
+      await rows.nth(4).waitFor({ state: "hidden" });
+      expect(await rows.count()).toBe(4);
+      await focused(tab, older);
+      expect(await older.getAttribute("aria-expanded")).toBe("false");
+      expect(tab.url()).toBe(address);
+
+      await tab.keyboard.press("Escape");
+      const details = tab.getByRole("button", { name: "Details", exact: true });
+      await focused(tab, details);
+      await history.waitFor({ state: "hidden" });
+      expect(tab.url()).toBe(address);
+      await tab.keyboard.press("Enter");
+      await focused(tab, tab.getByRole("heading", { name: historyFile.name, exact: true }));
+      await older.waitFor();
+      expect(await rows.count()).toBe(4);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+}
+
+for (const count of [2, 6])
+  test(`keyboard paging retries and keeps focus when history ends with ${count} rows`, async () => {
+    const { context, tab, errors, fail } = await open(1200, "light", "", "en", true, "paged-history", false, count);
+    try {
+      const history = tab.getByRole("group", { name: "History", exact: true });
+      const rows = history.getByRole("article");
+      const older = history.getByRole("button", { name: "Show older", exact: true });
+      await tabTo(tab, older);
+      expect(await rows.count()).toBe(1);
+      fail(true);
+      await tab.keyboard.press("Enter");
+      const retry = history.getByRole("button", { name: "Try again", exact: true });
+      await focused(tab, retry);
+      expect(await history.getByRole("alert").innerText()).toContain("Older entries could not be loaded.");
+      fail(false);
+      await tab.keyboard.press("Enter");
+      await rows.nth(count - 1).waitFor();
+      expect(await rows.count()).toBe(count);
+      await retry.waitFor({ state: "hidden" });
+      const fewer = history.getByRole("button", { name: "Show fewer", exact: true });
+      if (count <= 4) {
+        expect(await fewer.count()).toBe(0);
+        await focused(tab, history.locator("ul"));
+      } else {
+        await focused(tab, fewer);
+        await tab.keyboard.press("Space");
+        await rows.nth(4).waitFor({ state: "hidden" });
+        await focused(tab, history.getByRole("button", { name: "Show 2 older", exact: true }));
+        expect(await rows.count()).toBe(4);
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
 for (const touch of [false, true])
   test(`file inspector follows its app container width with ${touch ? "touch" : "mouse"} input`, async () => {
     const { context, tab, errors } = await open(1200, "light", "", "en", true, true, touch);
