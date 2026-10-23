@@ -4172,7 +4172,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   }
 }
 
-@media (max-width: 63.999rem) {
+@container k2b-app-area (max-width: 63.999rem) {
   .k2b-ui
     .k2b-mobile-shell
     > .k2b-mobile-shell__main
@@ -4203,7 +4203,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   }
 }
 
-@media (min-width: 64rem) {
+@container k2b-app-area (min-width: 64rem) {
   .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level]:not(:last-of-type) {
     background: var(--k2b-surface-canvas);
   }

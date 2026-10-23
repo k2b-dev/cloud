@@ -74,7 +74,13 @@ export default function PwaLayout(props: PwaLayoutProps) {
       sections={[
         {
           title: t.apps,
-          items: parts.map((part) => ({ id: part.id, label: part.name, icon: part.icon, href: part.pwa.href, current: part === currentPart })),
+          items: parts.map((part) => ({
+            id: part.id,
+            label: part.name,
+            icon: part.icon,
+            href: part.pwa.href,
+            current: part === currentPart,
+          })),
         },
       ]}
       footer={[{ id: "settings", label: t.settings, icon: "ti ti-settings", href: settingsHref, current: path === settingsHref }]}

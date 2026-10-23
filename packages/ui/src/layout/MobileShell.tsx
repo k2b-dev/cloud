@@ -246,7 +246,10 @@ function MobileShellHeader(props: MobileShellHeaderProps): JSX.Element {
               <IconButton
                 class="k2b-mobile-shell__back"
                 data-with-sidebar={back().withSidebar === false ? "false" : undefined}
-                label={back().label} tooltip={false} onClick={() => back().onClick?.()}>
+                label={back().label}
+                tooltip={false}
+                onClick={() => back().onClick?.()}
+              >
                 <i class="ti ti-chevron-left" aria-hidden="true" />
               </IconButton>
             }

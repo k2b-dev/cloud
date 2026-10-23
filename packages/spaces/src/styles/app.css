@@ -135,11 +135,11 @@
 @media (hover: hover) { .spaces-pwa__row:not([aria-current="true"]):has(> .spaces-pwa__copy:hover) { background: var(--k2b-app-workspace-hover); } }
 .spaces-pwa__dot--head { width: .625rem; height: .625rem; }
 /* Beside the task the list uses its whole column. */
-@media (min-width: 64rem) { .spaces-pwa-workspace .spaces-pwa { max-width: none; } }
+@container k2b-app-area (min-width: 64rem) { .spaces-pwa-workspace .spaces-pwa { max-width: none; } }
 
 /* One task: a column of at most 44 rem; on a wide screen its head lines up with it. Rows below the title start where
    the title does, after the 2.75 rem check. */
-@media (min-width: 64rem) {
+@container k2b-app-area (min-width: 64rem) {
   .k2b-ui .spaces-pwa-workspace [data-workspace-main-region="task"] > .k2b-app-workspace__level-head { padding-inline: max(1.25rem, calc((100% - 44rem) / 2)); }
 }
 .spaces-pwa-task { display: flex; width: 100%; max-width: 44rem; flex-direction: column; gap: 1.5rem; margin: 0 auto; }
