@@ -138,7 +138,7 @@ describe("Pulse base overview", () => {
         expect(unexpectedRequests).toEqual([]);
         expect(
           await tab
-            .locator('img[src="/branding/logo"]')
+            .locator(".layout-rail-logo img, .layout-header img")
             .evaluateAll(
               (images) =>
                 images.length > 0 && images.every((image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0),
