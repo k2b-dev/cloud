@@ -288,7 +288,10 @@ describe("Core AI capabilities", () => {
       "ai.tasks.list",
       "entities.search",
       "geo.availability",
+      "map.style",
       "place.search",
+      "route.calculate",
+      "route.update",
     ];
     const actions = [
       "ai.chat.message",
@@ -315,7 +318,7 @@ describe("Core AI capabilities", () => {
         .filter((query) => query.openWorld)
         .map((query) => query.localId)
         .sort(),
-    ).toEqual(["address.autocomplete", "address.geocode", "address.reverse", "place.search"]);
+    ).toEqual(["address.autocomplete", "address.geocode", "address.reverse", "place.search", "route.calculate", "route.update"]);
     expect(manifest.actions.map((action) => action.localId).sort()).toEqual(actions);
     expect(manifest.actions.every((action) => action.openWorld === false)).toBe(true);
     expect(

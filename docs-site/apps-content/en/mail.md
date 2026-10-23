@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Mail
@@ -73,6 +73,11 @@ settings open before you enter the mailbox. If settings cannot load, the
 mailbox opens directly.
 
 ## Use Mail
+
+Opening a conversation checks its current read state, flags, folders, and message
+count across the entire thread, even when the reader loads only its newest 100
+messages. Changes to older messages therefore also refresh the list row before
+automatic marking as read.
 
 - Read complete conversations and search synchronized message and attachment
   content across a mailbox. Pull the conversation list down at its top, by

@@ -270,6 +270,7 @@ export function mailboxData(url: URL): MailboxPageData {
                 kept: "Kept",
               }[activeView]
             : (folders.find((folder) => folder.id === folderId)?.name ?? "All mail"),
+    conversationRowState: null,
     detailMessages: selectedConversationId
       ? selectedConversationId === "Conv02"
         ? longThread.map((message, index) =>

@@ -1382,14 +1382,7 @@ function MailboxWorkspace(
     // A search, also a saved view's, states unread for the folders it is limited to, as the server does.
     const searchExpression = data.search.expression ?? data.savedViews.find((view) => view.id === data.savedViewId)?.filter.expression;
     const searchFolderIds = searchExpression ? guaranteedMailSearchFolderIds(searchExpression) : null;
-    // The detail's placement is the row's when the list has one folder, or the row lies in one folder only.
-    const rowOlder = mailRowOlderThanDetail(
-      row,
-      selection,
-      listedFolderIds,
-      folderList !== null || row?.activeFolderIds.length === 1,
-      searchFolderIds ? new Set(searchFolderIds) : null,
-    );
+    const rowOlder = mailRowOlderThanDetail(row, selection, listedFolderIds, searchFolderIds ? new Set(searchFolderIds) : null);
     commitSelectionInList(href, {
       ...selection,
       selectedConversationId: conversationId,
