@@ -50,7 +50,7 @@ export default function ChatThreadsPage(props: {
       onNavigate={(navigation) => props.onOpen(view, navigation)}
       description={<span class="chat-list__preview">{preview(last, fallback)}</span>}
     >
-      <AppWorkspace.SidebarItemIcon icon={viewIcon(view)} />
+      <AppWorkspace.SidebarItemIcon icon={viewIcon(view, props.threads)} />
       <AppWorkspace.SidebarItemLabel marquee={false}>{name}</AppWorkspace.SidebarItemLabel>
       <AppWorkspace.SidebarItemMeta>
         <span class="chat-list__meta">

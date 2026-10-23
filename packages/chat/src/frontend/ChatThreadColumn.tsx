@@ -55,7 +55,7 @@ export default function ChatThreadColumn(props: {
         data-unread={count() > 0 ? "" : undefined}
         data-thread={view}
       >
-        <i class={`${viewIcon(view)} chat-thread-column__icon`} aria-hidden="true" />
+        <i class={`${viewIcon(view, props.threads)} chat-thread-column__icon`} aria-hidden="true" />
         <span class="chat-thread-column__copy">
           <span class="chat-thread-column__line">
             <span class="chat-thread-column__name">{name}</span>

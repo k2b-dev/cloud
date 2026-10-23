@@ -9,14 +9,15 @@ import {
   type ThreadList,
   type ThreadView,
   threadHref,
+  threadIcon,
   threadOf,
   viewName,
   viewUnread,
 } from "./threads";
 
 /** The icon of a view, the same in the list, the head, the badges, and the phone's thread page. */
-export const viewIcon = (view: ThreadView) =>
-  view === "all" ? "ti ti-list-details" : view === "general" ? "ti ti-messages" : "ti ti-hash";
+export const viewIcon = (view: ThreadView, threads?: ThreadList | null) =>
+  view === "all" ? "ti ti-list-details" : view === "general" ? "ti ti-messages" : threadIcon(threadOf(threads ?? null, view));
 
 type RowsProps = {
   chatId: string;
@@ -62,7 +63,7 @@ export function ThreadRows(props: RowsProps): JSX.Element {
         active={props.view === view}
         data={{ thread: view }}
       >
-        <AppWorkspace.SidebarItemIcon icon={viewIcon(view)} />
+        <AppWorkspace.SidebarItemIcon icon={viewIcon(view, props.threads)} />
         <AppWorkspace.SidebarItemLabel marquee={false}>{viewName(view, props.threads, t())}</AppWorkspace.SidebarItemLabel>
         <AppWorkspace.SidebarItemMeta>
           <AppWorkspace.SidebarItemStatus unread={(props.view === view && !marked()) || unread() === 0 ? undefined : unread()} />
@@ -158,7 +159,7 @@ export function ThreadPicker(
     const unread = view === "all" ? props.unread : viewUnread(view, null, props.threads);
     return {
       label: viewName(view, props.threads, t()),
-      icon: viewIcon(view),
+      icon: viewIcon(view, props.threads),
       class: unread > 0 && view !== props.view ? "chat-thread-picker__unread" : undefined,
       trailing: unread > 0 && view !== props.view ? <span class="chat-thread-count">{unread > 99 ? "99+" : unread}</span> : undefined,
       href: threadHref(props.chatId, view, null, props.basePath),
@@ -227,7 +228,7 @@ export function ThreadPicker(
         label={t().switchThread({ name: name() })}
         tooltip={false}
       >
-        <i class={viewIcon(props.view)} aria-hidden="true" />
+        <i class={viewIcon(props.view, props.threads)} aria-hidden="true" />
         <span class="chat-thread-picker__name">{name()}</span>
         <span class="chat-thread-picker__dot" data-on={othersUnread() ? "" : undefined} aria-hidden="true" />
         <Show when={othersUnread()}>

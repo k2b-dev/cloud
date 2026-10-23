@@ -6,7 +6,7 @@ import { chatMessages } from "../messages";
 import type { Conversation } from "./chat-dialog";
 import { listTime } from "./chat-format";
 import { loadSystemThreads, type ThreadQuery } from "./system-chats";
-import { byActivity, type ThreadList, type ThreadView, threadHref } from "./threads";
+import { byActivity, type ThreadList, type ThreadView, threadHref, threadIcon } from "./threads";
 
 /** The same server-filtered, paged directory in the overview and the wide thread column. */
 export default function SystemThreadDirectory(props: {
@@ -167,15 +167,7 @@ export default function SystemThreadDirectory(props: {
                 </span>
               }
             >
-              <AppWorkspace.SidebarItemIcon
-                icon={
-                  thread.resource?.kind === "note"
-                    ? "ti ti-note"
-                    : thread.resource?.kind === "event"
-                      ? "ti ti-calendar-event"
-                      : "ti ti-circle-check"
-                }
-              />
+              <AppWorkspace.SidebarItemIcon icon={threadIcon(thread)} />
               <AppWorkspace.SidebarItemLabel marquee={false}>{thread.name}</AppWorkspace.SidebarItemLabel>
               <AppWorkspace.SidebarItemMeta>
                 <span class="chat-list__meta">

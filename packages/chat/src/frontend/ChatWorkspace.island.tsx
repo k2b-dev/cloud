@@ -67,6 +67,7 @@ import {
   messageThread,
   type ThreadView,
   threadHref as threadAddress,
+  threadIcon,
   threadOf,
   viewName,
   viewReadStart,
@@ -383,7 +384,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (!name) return undefined;
     return {
       label: name,
-      icon: view === "general" ? "ti ti-messages" : "ti ti-hash",
+      icon: view === "general" ? "ti ti-messages" : threadIcon(threadOf(openChat()?.threads ?? null, view)),
       selectLabel: t().openThread({ name }),
       onSelect: () => void openView(chatId, view),
     };
@@ -1633,9 +1634,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         subtitle={
                           system() && openThread()
                             ? current().title
-                            : current().channel
-                              ? t().subscribers({ count: current().memberCount })
-                              : undefined
+                            : system()
+                              ? `${current().resource?.type === "notebooks.notebook" ? t().notebook : t().space} · ${t().members({ count: current().memberCount })}`
+                              : current().channel
+                                ? t().subscribers({ count: current().memberCount })
+                                : undefined
                         }
                         items={items()}
                         hasOlder={openChat()?.hasOlder ?? false}

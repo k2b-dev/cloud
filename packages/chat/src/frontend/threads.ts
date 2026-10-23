@@ -34,6 +34,15 @@ export const messageThread = (message: Pick<Message, "thread">): ThreadView => m
 
 export const inView = (view: ThreadView, message: Pick<Message, "thread">) => view === "all" || messageThread(message) === view;
 
+/** A thread's symbol: an item thread shows its item's kind (an open or a done task, an event, a note), others "#". */
+export const threadIcon = (thread: Pick<Thread, "resource"> | null | undefined) => {
+  const resource = thread?.resource;
+  if (!resource) return "ti ti-hash";
+  if (resource.kind === "event") return "ti ti-calendar-event";
+  if (resource.kind === "note") return "ti ti-note";
+  return resource.done ? "ti ti-circle-check" : "ti ti-circle";
+};
+
 export const threadOf = (list: ThreadList | null, id: string | null | undefined) =>
   id ? (list?.items.find((thread) => thread.id === id) ?? null) : null;
 
