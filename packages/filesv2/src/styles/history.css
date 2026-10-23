@@ -703,4 +703,5 @@
 @container filesv2-history (max-width: 40rem) {
   .k2b-ui .filesv2-history-placeholder { padding: 48px 8px; }
   .filesv2-history-head__filters .k2b-filter-chip > i:not(.k2b-filter-chip__chevron) { display: none; }
+  .k2b-ui .filesv2-history-head__filters .k2b-filter-chip { padding-inline: 7px; gap: 4px; }
 }

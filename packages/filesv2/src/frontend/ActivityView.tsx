@@ -92,7 +92,7 @@ export function HistoryAvatar(props: { actor: ActorView; size: "xs" | "sm" }) {
 function MetaDot() {
   return (
     <span class="filesv2-history-row__dot" aria-hidden="true">
-      ·
+      {"\u2060·\u2060"}
     </span>
   );
 }
@@ -102,18 +102,22 @@ function MetaDot() {
  * wrap happens inside a fact and never leaves a dot at the start or end of a line.
  */
 export function MetaLine(props: { parts: readonly MetaPart[] }) {
+  const followingTime = (index: number) => {
+    const next = props.parts[index + 1];
+    return next?.kind === "time" ? next : undefined;
+  };
   return (
     <p class="filesv2-history-row__meta">
       <For each={props.parts}>
         {(part, index) => (
-          <>
-            <Show when={index() > 0 && props.parts[index() - 1]?.kind !== "status"}>
+          <Show when={!(part.kind === "time" && props.parts[index() - 1]?.kind === "status")}>
+            <Show when={index() > 0}>
               <MetaDot />
             </Show>
             <Switch>
               <Match when={part.kind === "status" && part}>
                 {(status) => (
-                  // A badge is a box and lets the line break beside it; it keeps its following dot.
+                  // A badge is a box; group it with its time so WebKit cannot strand their separator.
                   <span class="filesv2-history-row__lead">
                     <StatusBadge
                       class="filesv2-history-row__status"
@@ -121,8 +125,13 @@ export function MetaLine(props: { parts: readonly MetaPart[] }) {
                       icon={status().icon}
                       label={status().label}
                     />
-                    <Show when={index() < props.parts.length - 1}>
-                      <MetaDot />
+                    <Show when={followingTime(index())}>
+                      {(time) => (
+                        <>
+                          <MetaDot />
+                          <time datetime={time().iso}>{time().text}</time>
+                        </>
+                      )}
                     </Show>
                   </span>
                 )}
@@ -137,7 +146,7 @@ export function MetaLine(props: { parts: readonly MetaPart[] }) {
               </Match>
               <Match when={part.kind === "text" && part}>{(item) => <span>{item().text}</span>}</Match>
             </Switch>
-          </>
+          </Show>
         )}
       </For>
     </p>
