@@ -336,6 +336,10 @@ suite("share authority, public privacy and durable inbox budgets", () => {
   test("hashes links, reveals their URL once, and keeps internal notes private", async () => {
     const share = await create({ note: "internal secret", publicNote: "hello visitors" });
     const saved = await shares.get(share.id);
+    expect(saved?.target_snapshots).toEqual([{ path: "home/alice/Inbox", directory: true, itemId: null }]);
+    const [stored] = await sql`SELECT jsonb_typeof(target_snapshots) AS snapshots_type,jsonb_typeof(items) AS items_type
+      FROM filesv2.shares WHERE id=${share.id}::uuid`;
+    expect(stored).toEqual({ snapshots_type: "array", items_type: "array" });
     expect(saved?.token_hash).toBe(shareTokenHash(token(share)));
     expect(JSON.stringify(saved)).not.toContain(token(share));
     expect((await service.listShares(testCall(actor))).items[0]?.url).toBeNull();
@@ -375,38 +379,40 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     expect((await service.listShares(testCall(actor), { admin: true })).items).toHaveLength(1);
     expect((await service.revokeShare(testCall(actor), { id: share.id, admin: true })).state).toBe("revoked");
   });
-  test("item filtering precedes 50-row pagination and legacy path matching keeps own management bounded", async () => {
-    await Promise.all(
-      Array.from({ length: 51 }, (_, i) =>
-        create({ kind: "download", paths: ["Docs/file.txt"], title: `Match ${i}`, expiresIn: "unlimited" }),
-      ),
-    );
-    await Promise.all(
-      Array.from({ length: 51 }, (_, i) =>
-        create({ kind: "download", paths: ["Other/file.txt"], title: `Other ${i}`, expiresIn: "unlimited" }),
-      ),
-    );
-    const input = { baseId: summary.id, path: "Docs/file.txt" };
-    const first = await service.listShares(testCall(actor), input);
-    expect(first.items).toHaveLength(50);
-    expect(first.items.every((row) => row.title.startsWith("Match") && row.managementMode === "creator")).toBe(true);
-    expect(first.items.every((row) => row.createdBy === "Current Alice" && row.url === null)).toBe(true);
-    const second = await service.listShares(testCall(actor), { ...input, after: first.next! });
-    expect(second.items).toHaveLength(1);
-    expect(second.next).toBeNull();
-    expect(new Set([...first.items, ...second.items].map((row) => row.id)).size).toBe(51);
-    const stranger: RequestActor = { ...actor, user: { ...actor.user, id: randomUUID() } };
-    expect((await service.listShares(testCall(stranger), input)).items).toEqual([]);
-    denied = true;
-    await expect(service.listShares(testCall(actor), input)).rejects.toMatchObject({ code: "forbidden" });
-    expect((await service.listShares(testCall(actor))).items).toHaveLength(50);
-  });
+  test.each(["array", "legacy"] as const)(
+    "item filtering precedes 50-row pagination for %s snapshots and keeps own management bounded",
+    async (representation) => {
+      await Promise.all(
+        Array.from({ length: 51 }, (_, i) =>
+          create({ kind: "download", paths: ["Docs/file.txt"], title: `Match ${i}`, expiresIn: "unlimited" }),
+        ),
+      );
+      await Promise.all(
+        Array.from({ length: 51 }, (_, i) =>
+          create({ kind: "download", paths: ["Other/file.txt"], title: `Other ${i}`, expiresIn: "unlimited" }),
+        ),
+      );
+      if (representation === "legacy") await sql`UPDATE filesv2.shares SET target_snapshots=NULL`;
+      const input = { baseId: summary.id, path: "Docs/file.txt" };
+      const first = await service.listShares(testCall(actor), input);
+      expect(first.items).toHaveLength(50);
+      expect(first.items.every((row) => row.title.startsWith("Match") && row.managementMode === "creator")).toBe(true);
+      expect(first.items.every((row) => row.createdBy === "Current Alice" && row.url === null)).toBe(true);
+      const second = await service.listShares(testCall(actor), { ...input, after: first.next! });
+      expect(second.items).toHaveLength(1);
+      expect(second.next).toBeNull();
+      expect(new Set([...first.items, ...second.items].map((row) => row.id)).size).toBe(51);
+      const stranger: RequestActor = { ...actor, user: { ...actor.user, id: randomUUID() } };
+      expect((await service.listShares(testCall(stranger), input)).items).toEqual([]);
+      denied = true;
+      await expect(service.listShares(testCall(actor), input)).rejects.toMatchObject({ code: "forbidden" });
+      expect((await service.listShares(testCall(actor))).items).toHaveLength(50);
+    },
+  );
   test("item links use fresh stable identity, and never a replaced item or a rebound server", async () => {
-    const link = await create({ kind: "download", paths: ["Docs/old.txt"], expiresIn: "unlimited" });
-    const targets = JSON.stringify([{ path: "home/alice/Docs/old.txt", directory: false, itemId: "stable-file" }]);
-    await sql`UPDATE filesv2.shares SET server_url=${config.url}, target_snapshots=${targets}::jsonb WHERE id=${link.id}::uuid`;
     stableIds = true;
     currentItemId = "stable-file";
+    const link = await create({ kind: "download", paths: ["Docs/old.txt"], expiresIn: "unlimited" });
     expect((await service.listShares(testCall(actor), { baseId: summary.id, path: "Moved/new.txt" })).items.map((row) => row.id)).toEqual([
       link.id,
     ]);
@@ -425,6 +431,8 @@ suite("share authority, public privacy and durable inbox budgets", () => {
   test("item administration is server-selected and every administrator revoke checks administration again", async () => {
     const link = await create({ kind: "download", paths: ["Docs/file.txt"], expiresIn: "unlimited" });
     const stranger: RequestActor = { ...actor, user: { ...actor.user, id: randomUUID() } };
+    await sql`INSERT INTO auth.users(id,uid,provider,profile,admin)
+      VALUES(${stranger.user.id}::uuid,'administrator','local','user',true)`;
     admin = true;
     const page = await service.listShares(testCall(stranger), { baseId: summary.id, path: "Docs/file.txt" });
     expect(page.items).toMatchObject([{ id: link.id, managementMode: "admin", createdBy: "Current Alice", url: null }]);

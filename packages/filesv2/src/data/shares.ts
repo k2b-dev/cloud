@@ -59,7 +59,7 @@ export const shares = {
     const [row] = await db<
       ShareRow[]
     >`INSERT INTO filesv2.shares(token_hash,password_hash,kind,base_id,root,base_path,scope,items,title,note,public_note,owner_uid,owner_gid,created_by,created_by_name,expires_at,max_file_size,max_total_size,show_upload_names,server_url,target_snapshots)
-      VALUES(${input.token_hash},${input.password_hash},${input.kind},${input.base_id}::uuid,${input.root},${input.base_path},${input.scope},${input.items},${input.title},${input.note},${input.public_note},${input.owner_uid},${input.owner_gid},${input.created_by}::uuid,${input.created_by_name},${input.expires_at},${input.max_file_size},${input.max_total_size},${input.show_upload_names},${input.server_url},${input.target_snapshots === null ? null : JSON.stringify(input.target_snapshots)}::jsonb) RETURNING *`;
+      VALUES(${input.token_hash},${input.password_hash},${input.kind},${input.base_id}::uuid,${input.root},${input.base_path},${input.scope},${input.items},${input.title},${input.note},${input.public_note},${input.owner_uid},${input.owner_gid},${input.created_by}::uuid,${input.created_by_name},${input.expires_at},${input.max_file_size},${input.max_total_size},${input.show_upload_names},${input.server_url},${input.target_snapshots === null ? null : JSON.stringify(input.target_snapshots)}::text::jsonb) RETURNING *`;
     return normalize(row!);
   },
   /** An owner's unscoped management list never depends on retaining access to the old storage.
@@ -74,7 +74,7 @@ export const shares = {
   }): Promise<{ items: ShareRow[]; next: string | null }> {
     const limit = input.limit ?? 50;
     const item = input.item;
-    // JSON null is legacy absence; CASE keeps scalars out of array expansion even if SQL reorders predicates.
+    // Only SQL/JSON null permits legacy path matching; CASE rejects all non-array snapshots safely.
     const rows = item
       ? await sql<ShareRow[]>`SELECT * FROM filesv2.shares
       WHERE (${input.ownerId ?? null}::uuid IS NULL OR created_by=${input.ownerId ?? null}::uuid)
@@ -85,13 +85,15 @@ export const shares = {
             SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(target_snapshots)='array'
               THEN target_snapshots ELSE '[]'::jsonb END) AS target
             WHERE (kind='download' OR ${item.directory})
-            AND (target->>'directory')::boolean=${item.directory}
+            AND target->'directory'=to_jsonb(${item.directory}::boolean)
+            AND jsonb_typeof(target->'path')='string'
+            AND jsonb_typeof(target->'itemId') IN ('string','null')
             AND CASE WHEN ${item.itemId}::text IS NOT NULL AND target->>'itemId' IS NOT NULL
               THEN target->>'itemId'=${item.itemId}
               ELSE target->>'path'=${item.target} END
           ))
           OR ((target_snapshots IS NULL OR target_snapshots='null'::jsonb) AND (
-            (kind='download' AND items @> ${JSON.stringify([item.path])}::jsonb)
+            (kind='download' AND items @> ${JSON.stringify([item.path])}::text::jsonb)
             OR (kind='inbox' AND ${item.directory} AND scope=${item.path})
           ))
         )
