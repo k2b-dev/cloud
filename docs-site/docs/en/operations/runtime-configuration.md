@@ -42,6 +42,19 @@ Saved coordinates remain valid. Follow the
 [Weather migration instructions](/en/docs/reference/deprecations-and-migrations#weather-city-search-uses-core-geo)
 for schema order and server caller changes.
 
+## Outbound request budgets
+
+Assistant file downloads use a 20-second total budget; Mail remote images and
+one-click unsubscribe use 10 seconds; Mail provider discovery uses 5 seconds;
+Web Push delivery uses 15 seconds by default. Each budget includes DNS,
+connection attempts, redirects, headers and body reads. A slow stream cannot
+extend it. Leaving a Mail request cancels its outbound work. Discovery keeps
+candidates already found when its budget expires; manual setup remains
+available. Unused redirect and rejected response bodies are closed immediately.
+These deadlines preserve the existing destination policies and require no new
+environment variables. Applications using the shared HTTP transports supply
+[their own deadline signal](/en/docs/data/secrets-and-persistent-state#call-a-public-https-address).
+
 ## Set infrastructure variables
 
 | Variable | Purpose |

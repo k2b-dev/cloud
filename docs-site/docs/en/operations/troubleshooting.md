@@ -86,6 +86,13 @@ application read the original value again. If the saved value is no longer
 needed, explicitly replace it with a complete new value or reset it to the
 default. Reset deletes the saved row.
 
+Assistant storage and database settings, Linux identities, outgoing-mail
+retention, Mail's contact directory, and Gateway Ops log retention also show a
+warning for each unreadable setting. Select **Replace stored value** only for
+the settings you intend to replace. Saving another field leaves unselected
+unreadable values in storage. A failed save keeps the draft and replacement
+choices open so you can correct the problem and save again.
+
 For Files, enter a nonempty Filegate token with the complete configuration to
 replace the unreadable configuration. Without a token, the API returns HTTP
 409 `configuration_unreadable`. Alternatively, choose **Reset configuration**

@@ -73,7 +73,14 @@ export async function* parseAiSse(response: Response, signal: AbortSignal): Asyn
           .filter((line) => line.startsWith("data:"))
           .map((line) => line.slice(5).trimStart())
           .join("\n");
-        if (data) yield JSON.parse(data) as AiStreamEvent;
+        if (data) {
+          const value: unknown = JSON.parse(data);
+          if (value && typeof value === "object" && "code" in value && value.code === "app_access_denied") {
+            const message = "message" in value && typeof value.message === "string" ? value.message : "Application access denied";
+            throw new AiStreamError("access_denied", message);
+          }
+          yield value as AiStreamEvent;
+        }
       }
     }
   } finally {
@@ -133,8 +140,13 @@ export const subscribeAiStream = (input: {
           if (stopped) break;
           input.onEvent(event);
         }
-      } catch {
+      } catch (error) {
         if (stopped) return;
+        if (error instanceof AiStreamError) {
+          stopped = true;
+          input.onError?.(error);
+          return;
+        }
       } finally {
         clearConnectTimer();
         if (activeAttempt === attempt) activeAttempt = null;

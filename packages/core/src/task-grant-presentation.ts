@@ -1,13 +1,14 @@
 import type { AiChatTaskView } from "@k2b/cloud/ai";
 import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
+import type { RequestAuthority } from "@k2b/cloud/server";
 
 // Presentation only: enforcement continues to use the exact stored grants.
-export async function taskGrantPresentation(grants: AiChatTaskView["grants"], locale = "en") {
+export async function taskGrantPresentation(grants: AiChatTaskView["grants"], locale = "en", authority: RequestAuthority | null = null) {
   const de = locale.startsWith("de");
   const apps = new Map(
     await Promise.all(
       [...new Set(grants.flatMap((grant) => ("appId" in grant ? [grant.appId] : [])))].map(
-        async (id) => [id, await getCapabilityCatalogApp(id, locale)] as const,
+        async (id) => [id, await getCapabilityCatalogApp(id, locale, authority)] as const,
       ),
     ),
   );
@@ -91,8 +92,8 @@ export async function taskGrantPresentation(grants: AiChatTaskView["grants"], lo
   });
 }
 
-export async function taskGrantReview(grants: AiChatTaskView["grants"], locale = "en") {
-  const items = await taskGrantPresentation(grants, locale);
+export async function taskGrantReview(grants: AiChatTaskView["grants"], locale = "en", authority: RequestAuthority | null = null) {
+  const items = await taskGrantPresentation(grants, locale, authority);
   const escape = (value: string) => value.replace(/[\\`*_{}\[\]()<>#+.!|~-]/gu, "\\$&");
   return {
     label: locale.startsWith("de") ? "Das erlaubst du dieser Routine" : "What you allow this routine to do",

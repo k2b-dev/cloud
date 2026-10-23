@@ -45,7 +45,7 @@ import {
   PrincipalSchema,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
-import { accessRevision, isAppSessionActor, resolveDisplayNames } from "@k2b/cloud/server";
+import { accessRevision, isAppSessionActor, type RequestAuthority, resolveDisplayNames } from "@k2b/cloud/server";
 import { type AuditActor, accountsAppService, audit, coreGeo, coreGeoMap } from "@k2b/cloud/services";
 import { principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
@@ -602,11 +602,12 @@ const skillRevisionError = (error: unknown) =>
           ? fail(err.conflict("A Skill with this name already exists."))
           : null;
 
-const readableSkill = (
-  skillId: string,
-  context: { accessSubject: Parameters<typeof aiSkills.getByShortId>[1] },
-  permission: "read" | "write" | "admin" = "read",
-) => aiSkills.getByShortId(skillId, context.accessSubject, permission);
+// The framework must supply the resolved request authority. Missing metadata
+// fails closed for declared app Skills; never reconstruct OAuth scopes from an actor.
+const skillAuthority = (context: CapabilityExecutionContext): RequestAuthority | null => context.authority ?? null;
+
+const readableSkill = (skillId: string, context: CapabilityExecutionContext, permission: "read" | "write" | "admin" = "read") =>
+  aiSkills.getByShortId(skillId, context.accessSubject, permission, skillAuthority(context));
 
 const chatHref = (chatId: string): string => `/app/assistant?conversation=${encodeURIComponent(chatId)}`;
 const skillHref = (skillId: string): string => `/app/assistant?skill=${encodeURIComponent(skillId)}`;
@@ -834,7 +835,7 @@ export const aiCapabilities = defineCapabilities({
       async run({ skillId }, context) {
         try {
           const skill = await readableSkill(skillId, context, "admin");
-          const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject));
+          const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject, skillAuthority(context)));
           if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
           return ok({
             data: { skillId, accessRevision: accessRevision(grants), levels: ["read", "write", "admin"], grants },
@@ -857,7 +858,7 @@ export const aiCapabilities = defineCapabilities({
       async run(input, context) {
         const query = input.query.toLocaleLowerCase();
         const offset = Number(input.cursor ?? "0");
-        const matches = (await aiSkills.list(context.accessSubject)).filter(
+        const matches = (await aiSkills.list(context.accessSubject, { authority: skillAuthority(context) })).filter(
           (skill) =>
             (input.enabled === undefined || skill.enabled === input.enabled) &&
             (!query || skill.name.toLocaleLowerCase().includes(query) || skill.description.toLocaleLowerCase().includes(query)),
@@ -1146,7 +1147,7 @@ export const aiCapabilities = defineCapabilities({
       async review(input, context) {
         try {
           const skill = await readableSkill(input.skillId, context, "admin");
-          const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject));
+          const grants = skill && (await aiSkills.listAccess(skill.id, context.accessSubject, skillAuthority(context)));
           if (!grants) return fail(err.forbidden("Skill access requires Manage permission."));
           if (accessRevision(grants) !== input.expectedAccessRevision)
             return fail(err.conflict("Skill grants changed; read and review them again."));
@@ -1183,6 +1184,7 @@ export const aiCapabilities = defineCapabilities({
                     context.accessSubject,
                     { principal: input.principal, permission: input.permission },
                     input.expectedAccessRevision,
+                    skillAuthority(context),
                   ),
                 )
               : input.accessId
@@ -1193,8 +1195,15 @@ export const aiCapabilities = defineCapabilities({
                       context.accessSubject,
                       input.permission,
                       input.expectedAccessRevision,
+                      skillAuthority(context),
                     )
-                  : await aiSkills.revokeAccess(skill.id, input.accessId, context.accessSubject, input.expectedAccessRevision)
+                  : await aiSkills.revokeAccess(
+                      skill.id,
+                      input.accessId,
+                      context.accessSubject,
+                      input.expectedAccessRevision,
+                      skillAuthority(context),
+                    )
                 : false;
           if (!changed) return fail(err.forbidden("The grant or permission is no longer available."));
           const readable = await readableSkill(input.skillId, context);
@@ -1237,7 +1246,7 @@ export const aiCapabilities = defineCapabilities({
       async run(input, context) {
         if (!context.accessSubject) return fail(err.forbidden("Creating Skills requires an authenticated actor"));
         try {
-          const skill = await aiSkills.create({ subject: context.accessSubject, ...input });
+          const skill = await aiSkills.create({ subject: context.accessSubject, ...input }, skillAuthority(context));
           return ok({
             data: skillData(skill),
             summary: coreCapabilityMessages(context.locale).t.skillCreated({ name: skill.name }),
@@ -1284,14 +1293,19 @@ export const aiCapabilities = defineCapabilities({
         try {
           const skill = await readableSkill(input.skillId, context, "write");
           if (!skill) return fail(err.notFound("Skill"));
-          const updated = await aiSkills.update(skill.id, context.accessSubject, {
-            expectedRevision: input.expectedRevision,
-            name: input.name ?? skill.name,
-            description: input.description ?? skill.description,
-            instructions: input.instructions ?? skill.instructions,
-            extraFrontmatter: skill.extraFrontmatter,
-            references: skill.references,
-          });
+          const updated = await aiSkills.update(
+            skill.id,
+            context.accessSubject,
+            {
+              expectedRevision: input.expectedRevision,
+              name: input.name ?? skill.name,
+              description: input.description ?? skill.description,
+              instructions: input.instructions ?? skill.instructions,
+              extraFrontmatter: skill.extraFrontmatter,
+              references: skill.references,
+            },
+            skillAuthority(context),
+          );
           if (!updated) return fail(err.notFound("Skill"));
           return ok({
             data: skillData(updated),
@@ -1339,7 +1353,7 @@ export const aiCapabilities = defineCapabilities({
         try {
           const skill = await readableSkill(input.skillId, context, "write");
           if (!skill) return fail(err.notFound("Skill"));
-          const updated = await aiSkills.setReference(skill.id, context.accessSubject, input);
+          const updated = await aiSkills.setReference(skill.id, context.accessSubject, input, skillAuthority(context));
           if (!updated) return fail(err.notFound("Skill"));
           return ok({
             data: skillData(updated),
@@ -1387,7 +1401,7 @@ export const aiCapabilities = defineCapabilities({
         try {
           const skill = await readableSkill(input.skillId, context, "write");
           if (!skill) return fail(err.notFound("Skill"));
-          const updated = await aiSkills.setReferences(skill.id, context.accessSubject, input);
+          const updated = await aiSkills.setReferences(skill.id, context.accessSubject, input, skillAuthority(context));
           if (!updated) return fail(err.notFound("Skill"));
           return ok({
             data: skillData(updated),
@@ -1429,7 +1443,7 @@ export const aiCapabilities = defineCapabilities({
         try {
           const skill = await readableSkill(input.skillId, context, "write");
           if (!skill) return fail(err.notFound("Skill"));
-          const updated = await aiSkills.removeReference(skill.id, context.accessSubject, input);
+          const updated = await aiSkills.removeReference(skill.id, context.accessSubject, input, skillAuthority(context));
           if (!updated) return fail(err.notFound("Skill reference"));
           return ok({
             data: skillData(updated),
@@ -1467,7 +1481,7 @@ export const aiCapabilities = defineCapabilities({
         if (!context.user) return fail(err.forbidden("Personal Skill state requires a user-backed actor"));
         const skill = await readableSkill(input.skillId, context);
         if (!skill) return fail(err.notFound("Skill"));
-        const enabled = await aiSkills.setEnabled(skill.id, context.accessSubject, input.enabled);
+        const enabled = await aiSkills.setEnabled(skill.id, context.accessSubject, input.enabled, skillAuthority(context));
         if (enabled === null) return fail(err.notFound("Skill"));
         return ok({
           data: { skillId: skill.shortId, name: skill.name, enabled },
@@ -1509,7 +1523,7 @@ export const aiCapabilities = defineCapabilities({
           if (!context.idempotencyKey) return fail(err.badInput("An idempotency key is required"));
           const skill = await readableSkill(input.skillId, context, "admin");
           if (!skill) return fail(err.notFound("Skill"));
-          const deleted = await aiSkills.delete(skill.id, context.accessSubject);
+          const deleted = await aiSkills.delete(skill.id, context.accessSubject, skillAuthority(context));
           return audit.recordResultAfterSideEffect({
             ...actionAudit(context, "ai.skill.delete", "ai_skill", skill.id),
             result: deleted
@@ -1551,7 +1565,7 @@ export const aiCapabilities = defineCapabilities({
               { label: t.chat, value: chat.title },
               { label: t.schedule, value: scheduleLabel(normalized.schedule, normalized.timezone, context.locale) },
               { label: t.instructions, value: input.prompt, display: "block" },
-              await taskGrantReview(input.grants, context.locale),
+              await taskGrantReview(input.grants, context.locale, context.authority ?? null),
             ],
           });
         } catch (error) {
@@ -1643,7 +1657,7 @@ export const aiCapabilities = defineCapabilities({
                 value: scheduleLabel(normalized?.schedule ?? task.schedule, normalized?.timezone ?? task.timezone, context.locale),
               },
               { label: t.instructions, value: input.prompt ?? task.prompt, display: "block" },
-              await taskGrantReview(input.grants ?? task.grants, context.locale),
+              await taskGrantReview(input.grants ?? task.grants, context.locale, context.authority ?? null),
             ],
           });
         } catch (error) {

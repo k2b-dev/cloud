@@ -84,7 +84,7 @@ test("Help panel SSR authorizes selectors and renders the first view without she
     expect(html).toContain("--app-canvas-from:#16a34a");
     expect(html).toContain('data-panel-provider="core"');
     for (const absent of ["rail-item", "cloud-app-canvas", 'id="cloud-panel"', "Help for spaces"]) expect(html).not.toContain(absent);
-    for (const id of ["restricted", "admin-only", "nope"]) {
+    for (const id of ["restricted", "app-denied", "admin-only", "nope"]) {
       const unavailable = await (await server.request(`${panelUrl(id)}&topic=${id}-share`)).text();
       expect(unavailable).toContain("This Help is not available");
       expect(unavailable).toContain("You may not have access to it, or it no longer exists.");
@@ -97,6 +97,7 @@ test("Help panel SSR authorizes selectors and renders the first view without she
       expect(unavailable).not.toContain("data-help-menu");
     }
     expect(requestedApps).not.toContain("restricted");
+    expect(requestedApps).not.toContain("app-denied");
     expect(requestedApps).not.toContain("nope");
     expect(requestedApps).not.toContain("admin-only");
     const core = await (await server.request("/panel")).text();

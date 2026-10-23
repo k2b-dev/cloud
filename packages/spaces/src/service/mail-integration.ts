@@ -1,5 +1,6 @@
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import type { CapabilityResult } from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
 import { z } from "zod";
 import {
   type MailEventInvitationDraft,
@@ -53,9 +54,9 @@ const senderIdentityListSchema = z
   .max(100);
 const draftDataSchema = z.object({ id: mailResourceIdSchema }).passthrough();
 
-export const isMailInvitationIntegrationAvailable = async (): Promise<boolean> => {
+export const isMailInvitationIntegrationAvailable = async (authority: RequestAuthority | null): Promise<boolean> => {
   try {
-    const catalog = await getCapabilityCatalogApp("mail");
+    const catalog = await getCapabilityCatalogApp("mail", undefined, authority);
     if (!catalog.ok || !catalog.data) return false;
     const queries = new Set(catalog.data.manifest.queries.map((operation) => operation.localId));
     const actions = new Set(catalog.data.manifest.actions.map((operation) => operation.localId));

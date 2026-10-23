@@ -1,15 +1,23 @@
-import { expect, mock, setSystemTime, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { defineTool, type InboundEvent, nessi, type Provider, type StoreEntry } from "@k2b/nessi";
 import { sql } from "bun";
 import { z } from "zod";
 import * as registry from "../_internal/registry";
 import { IDENTITY_REFRESH_TIMEOUT_MS } from "../services/identity/constants";
+import { signInvocationToken } from "../services/identity/invocation-token";
+import * as issuer from "../services/identity/issue-invocation";
 import * as identity from "../services/identity/key-ring";
 import * as execution from "./capability-execution";
 import { CODE_CAPABILITY_TOKEN_HEADER } from "./code-capability-transport";
 import * as codeExecution from "./code-execution";
 import { runManagedCodeTool, waitForManagedCodeCall } from "./code-runtime-tools";
 import { aiConversations } from "./store";
+
+// Broker authorization is covered at its own seam; these tests exercise host protocol and retries.
+beforeEach(() => {
+  spyOn(issuer, "issueInvocationToken").mockImplementation(signInvocationToken);
+});
+afterEach(() => mock.restore());
 
 test("two managed approvals retain their Nessi action IDs across two suspended attempts", async () => {
   const entries: StoreEntry[] = [];
@@ -257,7 +265,12 @@ const stubManagedCodeTurn = async () => {
     timeZone: "Pacific/Honolulu",
   };
   spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue(config);
-  spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({ actor, accessSubject: { type: "user", userId: user.id } });
+  spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
+    actor,
+    accessSubject: { type: "user", userId: user.id },
+    credentialKind: "session",
+    scopes: [],
+  });
   spyOn(codeExecution, "authorizeCodeExecution").mockResolvedValue({
     config,
     conversation: {
@@ -570,4 +583,38 @@ test("a code approval names the website or Action it asks for, and receipts are 
   reported.length = 0;
   await expect(waitForManagedCodeCall(host({ failed: true, error: "Boom." }), context)).rejects.toThrow("Boom.");
   expect(reported).toEqual(receipts.map((receipt, index) => ({ index, ...receipt })));
+});
+
+test("managed code retains the mobile session in both host and callback invocations", async () => {
+  const { actor } = await stubManagedCodeTurn();
+  const mobile = { ...actor, sessionKind: "app" as const };
+  spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
+    actor: mobile,
+    accessSubject: { type: "user", userId: actor.user.id },
+    credentialKind: "session",
+    scopes: [],
+  });
+  const issuances = spyOn(issuer, "issueInvocationToken");
+  spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => Response.json({ ok: true, data: { status: "done", result: {}, approvals: [] } }), {
+      preconnect: fetch.preconnect,
+    }),
+  );
+  await runManagedCodeTool("code_run")(
+    {},
+    {
+      actor: mobile,
+      conversationId: "chat-test",
+      turnId: "turn-test",
+      callId: "mobile",
+      signal: new AbortController().signal,
+      requestClientTool: async () => {
+        throw new Error("Unexpected client tool");
+      },
+      requestApproval: async () => true,
+    },
+  );
+  expect(issuances).toHaveBeenCalledTimes(2);
+  for (const [params] of issuances.mock.calls)
+    expect(params.authority).toMatchObject({ credential_kind: "session", session_kind: "app", scopes: [] });
 });

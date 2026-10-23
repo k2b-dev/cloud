@@ -149,7 +149,13 @@ for (const viewport of [
       const cardTop = (await measure(page)).receipt!.top;
       const scrollTop = await page.locator(".k2b-chat-timeline__viewport").evaluate((element) => element.scrollTop);
       await card.getByRole("button", { name: "Send email", exact: true }).click();
-      await page.getByText("Email to Jana Berger sent").waitFor();
+      // The accessible announcement intentionally repeats the visible outcome.
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll('.k2b-chat-outcome [role="status"]')].some((status) =>
+          status.textContent?.includes("Email to Jana Berger sent"),
+        ),
+      );
+      await page.locator('.k2b-chat-outcome__text[data-current="true"]').getByText("Email to Jana Berger sent").waitFor();
       expect((await measure(page)).receipt!.top).toBe(cardTop);
       expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(true);
       if (viewport.width > 600) {

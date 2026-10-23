@@ -367,3 +367,34 @@ test("a transformed server page renders rich props as escaped JSON data", async 
   expect([...props.map]).toEqual([["k", "v"]]);
   expect(props.text).toBe('</script>"&');
 });
+
+test("spread attributes reach the island props in JSX order", async () => {
+  const root = makeResolvableTempRoot(".ssr-transform-spread-");
+  tempRoots.push(root);
+  writeFileSync(join(root, "Probe.island.tsx"), "export default () => null;");
+  const filename = join(root, "Page.tsx");
+  const result = await transform(
+    `
+    import Probe from "./Probe.island";
+    const props = { route: { view: "overview" }, label: "from spread", count: 1, get hidden() { throw new Error("read") } };
+    export default () => <Probe label="before" {...props} count={2} hidden="override" {...{ label: undefined }} />;
+  `,
+    filename,
+    "ssr",
+    false,
+    root,
+  );
+  const output = join(root, "Page.js");
+  writeFileSync(output, result);
+  const { default: Page } = await import(output);
+  const html = renderToString(() => Page());
+  const attribute = html.match(/data-props="([^"]*)"/)?.[1];
+  expect(attribute).toBeDefined();
+  const decoded = attribute!.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+  expect(fromJSON<Record<string, unknown>>(JSON.parse(decoded))).toEqual({
+    label: "from spread",
+    route: { view: "overview" },
+    count: 2,
+    hidden: "override",
+  });
+});
