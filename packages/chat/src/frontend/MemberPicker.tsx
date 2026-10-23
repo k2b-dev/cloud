@@ -48,6 +48,8 @@ export default function MemberPicker(props: {
   /** Already in the chat, or the viewer: never offered. */
   excluded: readonly MemberPrincipal[];
   people: ChatDialogStore["people"];
+  /** The chat that gains the members; only accounts bound to it, besides standalone and agent accounts, can join. */
+  conversationId?: string;
   disabled?: boolean;
   onChange: (chosen: ChosenMember[]) => void;
 }): JSX.Element {
@@ -73,6 +75,16 @@ export default function MemberPicker(props: {
             <PrincipalPicker
               existing={taken()}
               allowServiceAccounts
+              serviceAccountFilter={(account) =>
+                account.status === "active" &&
+                (account.kind === "standalone" ||
+                  account.kind === "agent" ||
+                  (account.kind === "resource_bound" &&
+                    account.appId === "chat" &&
+                    account.resourceType === "conversation" &&
+                    props.conversationId !== undefined &&
+                    account.resourceId === props.conversationId))
+              }
               allowAuthenticated={false}
               disabled={props.disabled || full()}
               onSelect={(principal, display) => {

@@ -61,9 +61,19 @@ export const DiscoveryEntriesSchema = z
       new Set(entries.map((entry) => (entry.principal.type === "group" ? entry.principal.groupId : "authenticated"))).size ===
       entries.length,
   );
-export const DiscoveryUpdateSchema = z.strictObject({ entries: DiscoveryEntriesSchema, name: clearedText(80), purpose: clearedText(300) });
+export const DiscoveryUpdateSchema = z.strictObject({
+  entries: DiscoveryEntriesSchema,
+  name: clearedText(80),
+  purpose: clearedText(300),
+  /** The `revision` of the settings this change starts from; a newer stored audience answers 409 DISCOVERY_CHANGED. */
+  revision: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+});
 export const DiscoveryStateSchema = z.object({
   entries: z.array(DiscoveryEntrySchema.extend({ accessId: z.uuid(), displayName: z.string() })),
+  revision: z.string(),
   allowAuthenticated: z.boolean(),
   audienceCount: z.number().int().nonnegative(),
 });
@@ -278,6 +288,8 @@ export const MemberPreviewSchema = z.object({
 });
 export const ChangeSchema = z.object({ added: z.number().int() });
 export const MemberRemovalSchema = z.object({ success: z.literal(true), keptThroughGroup: z.boolean() });
+/** `canRejoin`: a channel the person left still lets them find and subscribe to it again. */
+export const LeaveResultSchema = MemberRemovalSchema.extend({ canRejoin: z.boolean() });
 export const SuccessSchema = z.object({ success: z.literal(true) });
 
 const personSnapshot = z.object({ id: z.uuid(), name: z.string(), type: z.literal("service_account").optional() });

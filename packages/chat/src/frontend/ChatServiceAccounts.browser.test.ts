@@ -1,9 +1,12 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import type { Browser, BrowserContext } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { MemberPageSchema, MemberSchema } from "../service/contracts";
 import { chatTestNow, nora, pinPageClock, startChatHarness, viewer } from "./ChatWorkspace.browser-fixture";
+
+// Each test drives a whole flow in a browser, with the same budget as the other Chat browser suites.
+setDefaultTimeout(30_000);
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
 let browser: Browser;
@@ -71,6 +74,50 @@ for (const mode of [
       await role.getByText(t.permissionRead, { exact: true }).waitFor();
       const id = new URL(page.url()).pathname.split("/").at(-1)!;
       expect(harness.members(id).find((entry) => entry.displayName === account.name)?.permission).toBe("read");
+    });
+    test("the pickers offer only accounts this chat can accept", async () => {
+      context = await browser.newContext({
+        viewport: { width: mode.width, height: 900 },
+        isMobile: mode.width === 390,
+        hasTouch: mode.width === 390,
+      });
+      const page = await context.newPage();
+      await page.addInitScript(pinPageClock, chatTestNow.getTime());
+      const t = chatMessages.resolve([mode.locale]).t;
+      const chat = harness.addChat({ members: [viewer, nora], name: "Ops", count: 1, end: chatTestNow });
+      const accounts = [
+        { id: "a1111111-1111-4111-8111-111111111111", name: "Bot standalone", kind: "standalone" as const },
+        { id: "a2222222-2222-4222-8222-222222222222", name: "Bot disabled", kind: "agent" as const, status: "disabled" as const },
+        { id: "a3333333-3333-4333-8333-333333333333", name: "Bot personal key", kind: "user_delegated" as const },
+        {
+          id: "a4444444-4444-4444-8444-444444444444",
+          name: "Bot bound here",
+          kind: "resource_bound" as const,
+          binding: `chat:conversation:${chat}`,
+        },
+        {
+          id: "a5555555-5555-4555-8555-555555555555",
+          name: "Bot bound elsewhere",
+          kind: "resource_bound" as const,
+          binding: "chat:conversation:Other01",
+        },
+      ];
+      for (const account of accounts) harness.addServiceAccount(account);
+      await page.goto(new URL(`/app/chat/c/${chat}`, harness.url).href);
+      await page.evaluate(
+        async ({ chat, locale }) =>
+          window.mountChat(await (await fetch(`/__props?path=${encodeURIComponent(`/app/chat/c/${chat}`)}`)).json(), locale),
+        { chat, locale: mode.locale },
+      );
+      await page.getByRole("link", { name: t.chatInfo, exact: true }).filter({ visible: true }).click();
+      await page.locator("#k2b-workspace-detail-chat-info").getByRole("button", { name: t.addPeople, exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("combobox").fill("Bot");
+      await page.getByRole("option").first().waitFor();
+      expect((await page.getByRole("option").allInnerTexts()).map((text) => text.split("\n")[0])).toEqual([
+        "Bot standalone",
+        "Bot bound here",
+      ]);
     });
     for (const kind of ["agent", "standalone"] as const) {
       for (const managers of [1, 2]) {

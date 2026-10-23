@@ -122,6 +122,48 @@ suite("channel authorization, publication and audience bounds", () => {
     expect(bodies[0]).not.toHaveProperty("audienceCount");
   });
 
+  test("leaving tells whether the channel's audience still lets the person subscribe again", async () => {
+    const owner = await f.person("Owner");
+    const reader = await f.person("Group reader");
+    const outsider = await f.person("Added directly");
+    const chat = await f.fixture(owner, [{ person: outsider, permission: "read" }]);
+    const groupId = await f.group([reader]);
+    const audience = [{ principal: { type: "group", groupId }, permission: "read" }];
+    expect(
+      (await f.request(owner.headers, `/${chat.shortId}/discovery`, "PUT", { entries: audience, name: "News", purpose: "Updates" })).status,
+    ).toBe(200);
+    expect((await f.request(reader.headers, `/${chat.shortId}/join`, "POST")).status).toBe(200);
+    const left = async (person: typeof reader) =>
+      (await (await f.request(person.headers, `/${chat.shortId}/leave`, "POST", {})).json()) as { canRejoin: boolean };
+    expect((await left(reader)).canRejoin).toBe(true);
+    // Outside the audience, only a manager can add them again.
+    expect((await left(outsider)).canRejoin).toBe(false);
+    expect((await f.request(outsider.headers, `/${chat.shortId}/join`, "POST")).status).toBe(404);
+  });
+
+  test("a change based on an older audience is refused and leaves the newer one in place", async () => {
+    const owner = await f.person("Owner");
+    const reader = await f.person("Reader");
+    const chat = await f.fixture(owner);
+    const groupId = await f.group([reader]);
+    const audience = [{ principal: { type: "group", groupId }, permission: "read" }];
+    const put = (body: object) => f.request(owner.headers, `/${chat.shortId}/discovery`, "PUT", body);
+    expect((await put({ entries: audience, name: "News", purpose: "Updates" })).status).toBe(200);
+    const read = async () =>
+      (await (await f.request(owner.headers, `/${chat.shortId}/discovery`, "GET")).json()) as { revision: string; entries: unknown[] };
+    const opened = await read();
+    expect(opened.revision).toMatch(/^[0-9a-f]{64}$/);
+    // One admin removes the audience; a dialog opened before tries to save it again.
+    expect((await put({ entries: [], revision: opened.revision })).status).toBe(200);
+    const stale = await put({ entries: audience, purpose: "New purpose", revision: opened.revision });
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as { code: string }).code).toBe("DISCOVERY_CHANGED");
+    const now = await read();
+    expect(now.entries).toEqual([]);
+    expect(now.revision).not.toBe(opened.revision);
+    expect((await put({ entries: audience, purpose: "New purpose", revision: now.revision })).status).toBe(200);
+  });
+
   test("combined discovery and details updates enqueue both access hints before any data", async () => {
     const owner = await f.person("Owner");
     const reader = await f.person("Removed reader");

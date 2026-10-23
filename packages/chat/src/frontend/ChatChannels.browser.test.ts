@@ -1,9 +1,12 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema } from "../service/contracts";
 import { chatTestNow, nora, pinPageClock, startChatHarness, viewer } from "./ChatWorkspace.browser-fixture";
+
+// Each test drives a whole flow in a browser, with the same budget as the other Chat browser suites.
+setDefaultTimeout(30_000);
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
 let browser: Browser;
@@ -109,6 +112,25 @@ for (const mode of [
         await discover().waitFor();
       }
     });
+    test("a subscription made in another tab shows in the open catalog", async () => {
+      harness.addChannel("Atlas", "Project decisions");
+      await mount(page, mode.locale, "/app/chat/channels");
+      const row = catalog().getByRole("listitem").filter({ hasText: "Atlas" });
+      await row.getByRole("button", { name: t.subscribe, exact: true }).waitFor();
+      const other = await context.newPage();
+      await other.addInitScript(pinPageClock, chatTestNow.getTime());
+      await mount(other, mode.locale, "/app/chat/channels");
+      await other
+        .getByRole("region", { name: t.browseChannels, exact: true })
+        .getByRole("listitem")
+        .filter({ hasText: "Atlas" })
+        .getByRole("button", { name: t.subscribe, exact: true })
+        .click();
+      // The first tab learns it from its personal live channel, without a reload.
+      await row.getByRole("button", { name: t.subscribed, exact: true }).waitFor();
+      await other.close();
+    });
+
     test("loading skeleton, catalog error/retry and empty/search-empty states", async () => {
       let fail = true;
       let release!: () => void;
@@ -160,7 +182,7 @@ for (const mode of [
       await page.keyboard.press("Enter");
       await page.waitForURL(`**/app/chat/c/${two}`);
     });
-    test("readers see editors notice, channels have no threads, unsubscribe offers undo", async () => {
+    test("readers see editors notice, channels have no threads, unsubscribe offers to subscribe again", async () => {
       const id = harness.addChannel("Handbook", "Read the handbook", true, "read");
       harness.addThread(id, { name: "Legacy thread", count: 1, end: chatTestNow });
       harness.setPermission(id, "read");
@@ -176,7 +198,7 @@ for (const mode of [
       await page.waitForURL("**/app/chat/channels");
       await page.getByText(t.unsubscribed({ name: "Handbook" }), { exact: true }).waitFor();
       expect(harness.props({}).sidebar.items.some((row) => row.id === id)).toBe(false);
-      await page.getByRole("button", { name: t.undo, exact: true }).click();
+      await page.getByRole("button", { name: t.subscribeAgain, exact: true }).click();
       await catalog().getByRole("button", { name: t.subscribed, exact: true }).waitFor();
       expect(harness.props({}).sidebar.items.some((row) => row.id === id)).toBe(true);
     });
@@ -200,6 +222,45 @@ for (const mode of [
       await dialog.getByRole("button", { name: t.save, exact: true }).click();
       await dialog.waitFor({ state: "hidden" });
       expect(harness.props({}).sidebar.items[0]?.purpose).toBe("New purpose");
+    });
+    test("the audience line keeps the dialog still while it counts, fails, and shows the count", async () => {
+      await mount(page, mode.locale);
+      const dialog = await newChannel();
+      const create = dialog.getByRole("button", { name: t.newChannel, exact: true });
+      // settled: focus moves between the dialog's fields and fades their colours meanwhile; the spinner runs on, so only
+      // finite transitions are awaited before reading geometry.
+      const transitionsDone = () =>
+        page.evaluate(() =>
+          Promise.all(
+            document
+              .getAnimations()
+              .filter((animation) => Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Number.POSITIVE_INFINITY))
+              .map((animation) => animation.finished.catch(() => undefined)),
+          ),
+        );
+      let hold: (() => void) | undefined;
+      let first = true;
+      await page.route("**/api/chat/channels/preview*", async (route) => {
+        if (!first) return route.continue();
+        first = false;
+        await new Promise<void>((resolve) => {
+          hold = resolve;
+        });
+        await route.fulfill({ status: 503, json: { message: "Unavailable" } });
+      });
+      await dialog.getByRole("button", { name: t.allAuthenticated, exact: true }).click();
+      await dialog.getByText(t.countingAudience).waitFor();
+      await transitionsDone();
+      const counting = await create.boundingBox();
+      // Counting fails, then Try again counts: the line keeps its height through all three.
+      hold?.();
+      await dialog.getByRole("button", { name: t.retry, exact: true }).waitFor();
+      await transitionsDone();
+      expect(await create.boundingBox()).toEqual(counting);
+      await dialog.getByRole("button", { name: t.retry, exact: true }).click();
+      await dialog.getByText(t.discoveryAudience({ count: 42 }), { exact: true }).waitFor();
+      await transitionsDone();
+      expect(await create.boundingBox()).toEqual(counting);
     });
     test("catalog membership is independent of sidebar pagination and returning refreshes the SSR snapshot", async () => {
       const id = harness.addChannel("Atlas", "Already subscribed", true);
@@ -231,6 +292,8 @@ for (const mode of [
       await dialog.getByText(t.discoveryAudience({ count: 42 }), { exact: true }).waitFor();
       await dialog.getByRole("button", { name: t.newChannel, exact: true }).click();
       await dialog.waitFor({ state: "hidden" });
+      // The new channel's address follows once it opened.
+      await page.waitForURL(/\/app\/chat\/c\/[^/?]+$/);
       const id = new URL(page.url()).pathname.split("/").at(-1)!;
       await page.getByRole("link", { name: t.chatInfo, exact: true }).filter({ visible: true }).click();
       const info = page.locator("#k2b-workspace-detail-chat-info");
@@ -250,6 +313,36 @@ for (const mode of [
       await dialog.waitFor({ state: "hidden" });
       expect(harness.props({ chat: id }).open?.conversation.purpose).toBe("Updated purpose");
     });
+    test("saving over an audience someone else changed is refused and shows the stored one", async () => {
+      harness.addGroup({ id: "77777777-7777-4777-8777-777777777777", name: "Press group", size: 3 });
+      const id = harness.addChannel("Press", "Press releases", true);
+      await mount(page, mode.locale, `/app/chat/c/${id}`);
+      await page.getByRole("link", { name: t.chatInfo, exact: true }).filter({ visible: true }).click();
+      const info = page.locator("#k2b-workspace-detail-chat-info");
+      await info.getByRole("button", { name: t.chatActions({ title: "Press" }), exact: true }).click();
+      await page.getByRole("menuitem", { name: t.discoverySettings, exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByText(t.discoveryAudience({ count: 42 }), { exact: true }).waitFor();
+      // Another admin narrows the audience to a group while this dialog is open.
+      harness.setDiscovery(id, [
+        { principal: { type: "group", groupId: "77777777-7777-4777-8777-777777777777" }, permission: "read", displayName: "Press group" },
+      ]);
+      await dialog.getByRole("textbox", { name: t.purpose, exact: true }).fill("Updated releases");
+      await dialog.getByRole("button", { name: t.save, exact: true }).click();
+      await dialog.getByText(t.discoveryChanged, { exact: true }).waitFor();
+      await dialog.getByText("Press group", { exact: true }).waitFor();
+      expect(await dialog.getByRole("textbox", { name: t.purpose, exact: true }).inputValue()).toBe("Updated releases");
+      // Only the changed purpose and the audience it started from went to the server.
+      expect(harness.discoveryUpdates[0]).toMatchObject({ purpose: "Updated releases", revision: expect.stringMatching(/^[0-9a-f]{64}$/) });
+      expect(harness.discoveryUpdates[0]).not.toHaveProperty("name");
+      await dialog.getByText(t.discoveryAudience({ count: 42 }), { exact: true }).waitFor();
+      await dialog.getByRole("button", { name: t.save, exact: true }).click();
+      await dialog.waitFor({ state: "hidden" });
+      expect(harness.discoveryUpdates.at(-1)?.entries).toEqual([
+        { principal: { type: "group", groupId: "77777777-7777-4777-8777-777777777777" }, permission: "read" },
+      ]);
+    });
+
     test("the last manager must choose a successor before unsubscribing", async () => {
       const id = harness.addChannel("Design", "Shared decisions", true);
       await mount(page, mode.locale, `/app/chat/c/${id}`);

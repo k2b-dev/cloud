@@ -66,6 +66,8 @@ export const createResourceCards = (
   let catalog: Promise<Map<string, CatalogApp> | null> | undefined;
   let running = 0;
   const waiting: { entry: Entry; start: () => void }[] = [];
+  // Elements whose last read ran out of time while waiting; they go first next time, so no card waits forever.
+  const starved = new Set<string>();
   // Shown cards read again when this changes; the page advances it once a minute while it is visible.
   const [epoch, setEpoch] = createSignal(0);
 
@@ -85,18 +87,22 @@ export const createResourceCards = (
     })();
     return catalog;
   };
-  /** Waits for a place; false when nobody wants the answer any more or its time is up. */
-  const slot = (entry: Entry) =>
+  /** Starts waiting reads while places are free, in queue order. */
+  const drain = () => {
+    while (running < CONCURRENCY && waiting.length > 0) waiting.shift()!.start();
+  };
+  /**
+   * Waits for a place; false when nobody wants the answer any more or its time is up. Every read queues first and the
+   * queue drains right after, so an element that ran out of time last round goes before the ones asked with it now.
+   */
+  const slot = (entry: Entry, key: string) =>
     new Promise<boolean>((resolve) => {
       const signal = entry.abort.signal;
       if (signal.aborted) return resolve(false);
-      if (running < CONCURRENCY) {
-        running++;
-        return resolve(true);
-      }
       const cancel = () => {
         const index = waiting.indexOf(waiter);
         if (index >= 0) waiting.splice(index, 1);
+        if (entry.users > 0) starved.add(key);
         resolve(false);
       };
       const waiter = {
@@ -108,11 +114,13 @@ export const createResourceCards = (
         },
       };
       signal.addEventListener("abort", cancel, { once: true });
-      waiting.push(waiter);
+      if (starved.delete(key)) waiting.unshift(waiter);
+      else waiting.push(waiter);
+      queueMicrotask(drain);
     });
   const release = () => {
     running--;
-    waiting.shift()?.start();
+    drain();
   };
 
   /** The catalog, or null once the card's own time is up or nobody waits for it any more. */
@@ -140,7 +148,7 @@ export const createResourceCards = (
     const app = known.get(appId);
     const reader = app ? resolveCapabilityResourceReader(app.manifest, ref) : null;
     if (!app || !reader) return { state: "no_access" };
-    if (!(await slot(entry))) return unavailable;
+    if (!(await slot(entry, resourceKey(ref)))) return unavailable;
     try {
       const result = await dependencies.invokeCapability({
         appId,

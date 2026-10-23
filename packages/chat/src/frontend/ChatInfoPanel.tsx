@@ -303,7 +303,8 @@ export default function ChatInfoPanel(props: {
             </Show>
           </div>
         </DetailPanel.Section>
-        {props.shared}
+        {/* Below the members, it waits for their first page, so their arrival never pushes it down. */}
+        <Show when={status() !== "loading" || rows.length > 0}>{props.shared}</Show>
       </DetailPanel.Body>
     </DetailPanel>
   );

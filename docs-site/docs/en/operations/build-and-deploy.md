@@ -418,6 +418,21 @@ Blocked framing prevents Help from becoming ready; the slot shows **The panel
 did not load** with **Try again**.
 See [Offer a panel](/en/docs/platform/panels).
 
+Chat and Assistant now register their existing workspaces as panel providers.
+Assistant's conversation recovery uses the current Core AI API. Core's normal
+AI migration adds the owner-bound `ai.conversation_creations` request ledger and
+a submitted-draft lookup index on `ai.messages`; no manual configuration is
+required. Keep this ledger when backing up or restoring AI data: deleted
+conversations retain their request tombstone so replay cannot create a replacement.
+Update Core before enabling the new Assistant consumer.
+
+Editable providers can register the synchronous `onPanelBeforeLeave` guard
+from `@k2b/cloud/browser/panel`. Updated hosts keep a guarded provider mounted
+when it reports unsaved work; the provider owns saving and recovery. Deploy
+the host and editable provider against this contract together. Older hosts
+do not consult the guard. It does not replace application persistence or
+guarantee recovery after browser termination.
+
 `defineApp()` now rejects a `panel.href` at or below the application's
 `<basePath>/help` path, because the framework's Help redirects would shadow
 it. An application with such a provider route must move it before it upgrades,

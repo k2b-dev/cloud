@@ -167,7 +167,9 @@ test("member removal and leave require the group access outcome", async () => {
         }),
       })
       .parse(spec.paths[path]?.[method]?.responses["200"]);
-    expect(response.content["application/json"].schema.required).toEqual(["success", "keptThroughGroup"]);
+    expect(response.content["application/json"].schema.required).toEqual(
+      method === "post" ? ["success", "keptThroughGroup", "canRejoin"] : ["success", "keptThroughGroup"],
+    );
     expect(response.content["application/json"].schema.properties.keptThroughGroup).toMatchObject({ type: "boolean" });
   }
 });

@@ -11,6 +11,10 @@ import { chatHasThreads } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 
+/** A channel's line under its name: what it is for and how many subscribe. */
+export const channelLine = (row: Pick<Conversation, "purpose" | "memberCount">, t: ReturnType<typeof chatMessages.resolve>["t"]) =>
+  [row.purpose, t.subscribers({ count: row.memberCount })].filter(Boolean).join(" · ");
+
 export const chatHref = (id: string, message?: string | null) => `/app/chat/c/${id}${message ? `/m/${message}` : ""}`;
 
 /** What a row shows of its unread state: the count, a dot for a chat marked unread without new messages, or nothing. */
@@ -28,6 +32,7 @@ export default function ChatList(props: {
   channelsActive?: boolean;
   chatsActions?: JSX.Element;
   onDiscover?: (navigation: LinkNavigateEvent) => Promise<void>;
+  basePath?: string;
   activeId: string | null;
   viewerId: string;
   dateConfig: DateContext;
@@ -50,7 +55,7 @@ export default function ChatList(props: {
         return (
           <>
             <AppWorkspace.SidebarItem
-              href={chatHref(row.id)}
+              href={`${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(row.id)}`}
               navigation="enhanced"
               onNavigate={(navigation) => props.onOpen(row.id, navigation)}
               // With its threads shown, the open thread's row carries the selection, not the chat's.
@@ -85,13 +90,13 @@ export default function ChatList(props: {
                     <span class="chat-list__preview chat-list__members">{t().members({ count: row.memberCount })}</span>
                   </Show>
                   <span class="chat-list__preview" data-collapsed-only={expanded() ? "" : undefined}>
-                    {row.channel ? row.purpose : lastMessageLine(row, props.viewerId, locale())}
+                    {row.channel ? channelLine(row, t()) : lastMessageLine(row, props.viewerId, locale())}
                   </span>
                 </>
               }
             >
               <AppWorkspace.SidebarItemIcon
-                icon={row.icon ?? (row.channel ? "ti ti-hash" : row.memberCount <= 2 ? "ti ti-user" : "ti ti-users")}
+                icon={row.icon ?? (row.channel ? "ti ti-speakerphone" : row.memberCount <= 2 ? "ti ti-user" : "ti ti-users")}
               />
               <AppWorkspace.SidebarItemLabel marquee={false}>
                 {row.title}
@@ -118,7 +123,7 @@ export default function ChatList(props: {
             <Show when={expanded() ? props.threads : undefined}>
               {(threads) => (
                 <div class="chat-list__threads">
-                  <ThreadRows {...threads()} chatId={row.id} unread={row.unread} />
+                  <ThreadRows {...threads()} chatId={row.id} basePath={props.basePath} unread={row.unread} />
                 </div>
               )}
             </Show>
@@ -140,7 +145,7 @@ export default function ChatList(props: {
       <AppWorkspace.SidebarSection title={t().channels}>
         {rows(true)}
         <AppWorkspace.SidebarItem
-          href="/app/chat/channels"
+          href={`${props.basePath ?? "/app/chat"}/channels`}
           navigation="enhanced"
           onNavigate={props.onDiscover}
           active={props.channelsActive}

@@ -38,19 +38,15 @@ export default ssr(async (c) => {
     );
   }
 
-  const [initialData, geoResult] = await Promise.all([
-    weatherService.forecast.get({ lat, lon }),
-    weatherService.location.city.get({ lat: Number(lat), lon: Number(lon) }),
-  ]);
-  const city = geoResult.ok ? geoResult.data : null;
+  const initialData = await weatherService.forecast.get({ lat, lon });
 
   return () => (
     <LocaleProvider locale={locale}>
       <PublicWeatherDisplay
         lat={lat}
         lon={lon}
-        location={city?.name ?? `${lat}, ${lon}`}
-        state={city?.state ?? null}
+        location={initialData?.current.stationName ?? `${lat}, ${lon}`}
+        state={null}
         initialData={initialData}
         initialNow={new Date().toISOString()}
         zoom={zoom}

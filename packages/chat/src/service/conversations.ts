@@ -1032,7 +1032,9 @@ const leave = async (input: ChatContext & { conversationId: string; input: unkno
       );
     }
     await record(db, input, allowed.data.short_id, "chat.member.leave", { count: 1, ...(needsSuccessor ? { permission: "admin" } : {}) });
-    return ok({ success: true as const, keptThroughGroup });
+    // Subscribing again uses the channel's audience; a person added directly outside it cannot come back alone.
+    const canRejoin = !!channel?.exists && (await requireConversation({ ...input, required: "read" }, db)).ok;
+    return ok({ success: true as const, keptThroughGroup, canRejoin });
   });
 };
 

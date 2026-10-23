@@ -757,7 +757,7 @@ describe("chat dialogs and info", () => {
     for (const managers of [1, 2]) {
       test(`leaving with ${managers} managers ${managers === 1 ? "requires a successor" : "needs no successor"} in ${locale}`, async () => {
         const members = mock<ChatDialogStore["members"]>(async () => ({ items: [nora], self, managers, nextCursor: null }));
-        const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
+        const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false, canRejoin: false }));
         const close = mock<(left?: boolean) => void>();
         await mount(locale, () =>
           createComponent(modules!.LeaveChatDialog, {
@@ -793,7 +793,7 @@ describe("chat dialogs and info", () => {
         managers: 1,
         nextCursor: null,
       }));
-      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
+      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false, canRejoin: false }));
       const close = mock<(left?: boolean) => void>();
       await mount(locale, () =>
         createComponent(modules!.LeaveChatDialog, {
@@ -816,7 +816,7 @@ describe("chat dialogs and info", () => {
     });
     test(`a writer leaves without loading members in ${locale}`, async () => {
       const members = mock<ChatDialogStore["members"]>(unexpected);
-      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false }));
+      const leave = mock<ChatDialogStore["leave"]>(async () => ({ success: true, keptThroughGroup: false, canRejoin: false }));
       await mount(locale, () =>
         createComponent(modules!.LeaveChatDialog, {
           setDismissHandler: () => {},

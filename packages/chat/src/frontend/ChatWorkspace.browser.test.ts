@@ -915,7 +915,8 @@ describe("ChatWorkspace browser read state", () => {
       const { page, errors } = await load(options, {});
       const geometry = () =>
         rows(page, name)
-          .locator('a[href^="/app/chat/c/"]')
+          // Chat rows only; "Discover channels" has no time.
+          .locator('a[href*="/app/chat/c/"]')
           .evaluateAll((links) =>
             links.map((link) => {
               const time = link.querySelector("time")!.getBoundingClientRect();

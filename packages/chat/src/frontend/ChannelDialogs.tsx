@@ -1,10 +1,11 @@
 import { Button, Combobox, IconButton, InlineGuidance, LocaleProvider, prompts, Select, TextInput } from "@k2b/ui";
-import { createEffect, createResource, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { chatMessages } from "../messages";
 import { type DiscoveryEntrySchema, MEMBER_PAGE_SIZE } from "../service/contracts";
 import { type ChannelApi, createChannelApi } from "./channel-api";
 import { type ChatDialogStore, type Conversation, DialogActions, DialogError, errorMessage, useChatMessages } from "./chat-dialog";
+import { ChatRequestError } from "./chat-store";
 import { createIntent } from "./create-intent";
 
 type Entry = z.infer<typeof DiscoveryEntrySchema> & { displayName: string };
@@ -76,9 +77,12 @@ export function ChannelDialog(
     props.close();
   };
   let previewGeneration = 0;
+  // The audience this dialog shows; a save starts from it.
+  let revision: string | undefined;
   const [options, { refetch }] = createResource(async () => {
     if (!props.conversation) return api.options();
     const settings = await api.get(props.conversation.id);
+    revision = settings.revision;
     setEntries(settings.entries);
     return settings;
   });
@@ -142,7 +146,15 @@ export function ChannelDialog(
     try {
       const discovery = entries().map(({ principal, permission }) => ({ principal, permission }));
       if (props.conversation) {
-        await api.update(props.conversation.id, { name: name().trim(), purpose: purpose().trim(), entries: discovery });
+        // Only what this dialog changed is sent, and only on top of the audience it showed.
+        const nextName = name().trim();
+        const nextPurpose = purpose().trim();
+        await api.update(props.conversation.id, {
+          entries: discovery,
+          ...(nextName !== (props.conversation.name ?? "") ? { name: nextName } : {}),
+          ...(nextPurpose !== (props.conversation.purpose ?? "") ? { purpose: nextPurpose } : {}),
+          ...(revision ? { revision } : {}),
+        });
         await props.onSaved?.();
         props.close(props.conversation.id);
       } else if (intent) {
@@ -160,7 +172,10 @@ export function ChannelDialog(
     } catch (failure) {
       intent?.failed(failure);
       setRecovering(!!intent?.pending());
-      setError(errorMessage(failure, t().requestFailed));
+      // Someone else changed the audience: show the stored one, so a second save cannot bring back what they removed.
+      const changed = failure instanceof ChatRequestError && failure.code === "DISCOVERY_CHANGED";
+      setError(changed ? t().discoveryChanged : errorMessage(failure, t().requestFailed));
+      if (changed) void refetch();
     } finally {
       setBusy(false);
     }
@@ -299,20 +314,27 @@ export function ChannelDialog(
           <Show when={entries().some((entry) => entry.principal.type === "authenticated")}>
             <p class="text-sm text-dimmed">{t().authenticatedExplanation}</p>
           </Show>
-          <Show when={!intent?.pending() && countLoading()}>
-            <InlineGuidance loading>{t().loadingChats}</InlineGuidance>
-          </Show>
-          <Show when={!intent?.pending() && previewError()}>
-            <DialogError message={t().requestFailed} />
-            <Button variant="text" onClick={() => void preview()}>
-              {t().retry}
-            </Button>
-          </Show>
-          <Show when={!recovering() && count() !== undefined}>
-            <p role="status" class="text-sm text-secondary">
-              {t().discoveryAudience({ count: count()! })}
-            </p>
-          </Show>
+          {/* Counting, its result, and a failure share one line of fixed height, so nothing below moves. */}
+          <div class="chat-channel-audience">
+            <Switch>
+              <Match when={!intent?.pending() && previewError()}>
+                <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
+                  {t().audienceCountFailed}{" "}
+                  <Button variant="text" size="xs" onClick={() => void preview()}>
+                    {t().retry}
+                  </Button>
+                </InlineGuidance>
+              </Match>
+              <Match when={!intent?.pending() && countLoading()}>
+                <InlineGuidance loading>{t().countingAudience}</InlineGuidance>
+              </Match>
+              <Match when={!recovering() && count() !== undefined}>
+                <p role="status" class="text-sm text-secondary">
+                  {t().discoveryAudience({ count: count()! })}
+                </p>
+              </Match>
+            </Switch>
+          </div>
         </Show>
       </form>
       <Show when={intent?.pending() && !busy()}>

@@ -11,6 +11,7 @@ import {
   CreateOutcomeSchema,
   CreateThreadSchema,
   ExistingMatchSchema,
+  LeaveResultSchema,
   LeaveSchema,
   MAX_EXISTING_MATCHES,
   MarkUnreadSchema,
@@ -46,7 +47,14 @@ import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageViewSchema>;
 type Person = { id: string; name: string };
-type ServiceAccount = { id: string; name: string; kind: "agent" | "standalone" };
+type ServiceAccount = {
+  id: string;
+  name: string;
+  kind: "agent" | "standalone" | "resource_bound" | "user_delegated";
+  status?: "active" | "disabled";
+  /** A resource-bound account's binding, as `app:type:id`. */
+  binding?: string;
+};
 type Group = { id: string; name: string; size: number };
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
@@ -226,6 +234,7 @@ export const startChatHarness = async () => {
   // Which part of the chat each read named: "general", "all", or a thread.
   const readViews: { chat: string; seq: number; thread: string }[] = [];
   const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] }[] = [];
+  const discoveryUpdates: { entries: unknown[]; name?: string; purpose?: string; revision?: string }[] = [];
 
   const principalId = (principal: MemberPrincipal) =>
     principal.type === "user" ? principal.userId : principal.type === "group" ? principal.groupId : principal.serviceAccountId;
@@ -714,7 +723,15 @@ export const startChatHarness = async () => {
             )
             .map((account) => ({
               kind: "service_account",
-              serviceAccount: { ...account, appId: null, resourceType: null, resourceId: null },
+              serviceAccount: {
+                id: account.id,
+                name: account.name,
+                kind: account.kind,
+                status: account.status ?? "active",
+                appId: account.binding?.split(":")[0] ?? null,
+                resourceType: account.binding?.split(":")[1] ?? null,
+                resourceId: account.binding?.split(":")[2] ?? null,
+              },
             })),
           ...[...people.values()]
             .filter((person) => kinds.includes("user") && !excludedUsers.includes(person.id) && person.name.toLowerCase().includes(search))
@@ -913,8 +930,15 @@ export const startChatHarness = async () => {
         const chat = chats.get(id!);
         if (!chat) return Response.json({ code: "NOT_FOUND", message: "Chat not found." }, { status: 404 });
         if (part === "discovery") {
+          const key = (entries: NonNullable<Chat["discovery"]>) =>
+            entries
+              .map((entry) => `${entry.principal.type === "group" ? entry.principal.groupId : "authenticated"}:${entry.permission}`)
+              .sort()
+              .join(",");
+          const revision = new Bun.CryptoHasher("sha256").update(key(chat.discovery ?? [])).digest("hex");
           if (request.method === "GET")
             return Response.json({
+              revision,
               entries: (chat.discovery ?? []).map((entry, index) => ({
                 ...entry,
                 displayName:
@@ -926,12 +950,21 @@ export const startChatHarness = async () => {
               allowAuthenticated,
               audienceCount: chat.discovery?.length ? 42 : 0,
             });
-          const input = (await request.json()) as { entries: NonNullable<Chat["discovery"]>; name?: string; purpose?: string };
-          const key = (entries: NonNullable<Chat["discovery"]>) =>
-            entries
-              .map((entry) => `${entry.principal.type === "group" ? entry.principal.groupId : "authenticated"}:${entry.permission}`)
-              .sort()
-              .join(",");
+          const input = (await request.json()) as {
+            entries: NonNullable<Chat["discovery"]>;
+            name?: string;
+            purpose?: string;
+            revision?: string;
+          };
+          discoveryUpdates.push(input);
+          if (input.revision !== undefined && input.revision !== revision)
+            return Response.json(
+              {
+                code: "DISCOVERY_CHANGED",
+                message: "Someone changed who can find this channel in the meantime. Check the current settings and save again.",
+              },
+              { status: 409 },
+            );
           const discoveryChanged = key(chat.discovery ?? []) !== key(input.entries);
           const detailsChanged =
             (input.name !== undefined && input.name !== chat.conversation.name) ||
@@ -955,12 +988,8 @@ export const startChatHarness = async () => {
             chat.members.push(makeMember({ type: "user", userId: viewer.id }, permission, now().toISOString()));
             chat.conversation = { ...chat.conversation, member: true, permission, memberCount: chat.conversation.memberCount + 1 };
             chat.conversation.rev++;
-            const update = {
-              type: "members" as const,
-              conversationId: id!,
-              memberCount: chat.conversation.memberCount,
-              rev: chat.conversation.rev,
-            };
+            // As the server: a channel's subscriptions change its members without a timeline line.
+            const update = { type: "membership" as const, conversationId: id! };
             deliver("conversation", id!, update);
             deliver("list", id!, update);
             deliver("me", id!, { type: "membership", conversationId: id! });
@@ -1160,17 +1189,13 @@ export const startChatHarness = async () => {
           refreshMembers(chat);
           if (chat.conversation.channel) {
             chat.conversation = { ...chat.conversation, member: false, permission: "read", rev: chat.conversation.rev + 1 };
-            const update = {
-              type: "members" as const,
-              conversationId: id!,
-              memberCount: chat.conversation.memberCount,
-              rev: chat.conversation.rev,
-            };
+            // As the server: a channel's subscriptions change its members without a timeline line.
+            const update = { type: "membership" as const, conversationId: id! };
             deliver("conversation", id!, update);
             deliver("list", id!, update);
             deliver("me", id!, { type: "membership", conversationId: id! });
           } else revoke(id!);
-          return Response.json(MemberRemovalSchema.parse({ success: true, keptThroughGroup: false }));
+          return Response.json(LeaveResultSchema.parse({ success: true, keptThroughGroup: false, canRejoin: !!chat.discovery?.length }));
         }
         if (part === "read" && request.method === "POST") {
           const { seq, thread } = ReadSchema.parse(await request.json());
@@ -1364,6 +1389,11 @@ export const startChatHarness = async () => {
     failReactions: (count = 1) => {
       failingReactions = count;
     },
+    discoveryUpdates,
+    /** Changes who can find a channel, as another admin would. */
+    setDiscovery: (chat: string, entries: NonNullable<Chat["discovery"]>) => {
+      chats.get(chat)!.discovery = entries;
+    },
     /** An element of the made-up "spaces" app; `readable: false` makes its card "not available". */
     addElement: (element: { id: string; title: string; preview?: string; readable?: boolean }) => {
       elements.set(element.id, { preview: "", readable: true, ...element });
@@ -1405,6 +1435,7 @@ export const startChatHarness = async () => {
       reactionRequests.length = 0;
       reactors.clear();
       failingReactions = 0;
+      discoveryUpdates.length = 0;
       failing = 0;
       failingUnread = 0;
       failingThreads = 0;

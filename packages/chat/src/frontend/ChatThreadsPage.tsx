@@ -18,6 +18,7 @@ type LastMessage = Thread["lastMessage"];
  */
 export default function ChatThreadsPage(props: {
   conversation: Conversation;
+  basePath?: string;
   threads: ThreadList | null;
   status: "loading" | "ready" | "failed";
   viewerId: string;
@@ -40,7 +41,7 @@ export default function ChatThreadsPage(props: {
   };
   const row = (view: ThreadView, name: string, unread: number, last: LastMessage, fallback: string) => (
     <AppWorkspace.SidebarItem
-      href={threadHref(props.conversation.id, view)}
+      href={threadHref(props.conversation.id, view, null, props.basePath)}
       navigation="enhanced"
       onNavigate={(navigation) => props.onOpen(view, navigation)}
       description={<span class="chat-list__preview">{preview(last, fallback)}</span>}
@@ -68,7 +69,13 @@ export default function ChatThreadsPage(props: {
     <section class="chat-threads-page" aria-label={t().threadsIn({ title: props.conversation.title })}>
       <header class="chat-conversation__header">
         <span class="chat-conversation__back">
-          <IconButtonLink href="/app/chat" navigation="enhanced" onNavigate={props.onBack} label={t().backToChats} tooltip={false}>
+          <IconButtonLink
+            href={props.basePath ?? "/app/chat"}
+            navigation="enhanced"
+            onNavigate={props.onBack}
+            label={t().backToChats}
+            tooltip={false}
+          >
             <i class="ti ti-chevron-left" aria-hidden="true" />
           </IconButtonLink>
         </span>
