@@ -36,7 +36,7 @@ export const filesTitle = (
 
 /** The workspace title: the overview above storage roots, a folder, a document, or an app view. */
 export const snapshotTitle = (
-  snapshot: Pick<WorkspaceSnapshot, "source" | "directory" | "editor" | "bases">,
+  snapshot: Pick<WorkspaceSnapshot, "source" | "directory" | "editor" | "bases"> & { moved?: { baseId: string; path: string } | null },
   appName: string,
   messages: { personal: string; allStorage: string; activity?: string },
   locale: string,
@@ -54,6 +54,11 @@ export const snapshotTitle = (
     );
   }
   if (view === "activity" && messages.activity) return [{ title: appName, href: filesUrl() }, { title: messages.activity }];
+  const moved = snapshot.moved;
+  if (!view && moved) {
+    const base = snapshot.bases.items.find((item) => item.id === moved.baseId);
+    if (base) return filesTitle(appName, { id: base.id, label: baseLabel(base, messages, locale) }, { folder: moved.path });
+  }
   const directory = snapshot.directory;
   if (view || !directory) return [{ title: appName }];
   return filesTitle(appName, { id: directory.base.id, label: baseLabel(directory.base, messages, locale) }, { folder: directory.path });
