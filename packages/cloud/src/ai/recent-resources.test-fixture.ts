@@ -2,7 +2,7 @@ import { ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
-import type { CapabilityRegistryEntry } from "../contracts/registry";
+import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestAuthority } from "../server";
 import type { AiSkillSummary } from "./skills";
 
@@ -74,3 +74,12 @@ export const recentTestSkill = (shortId: string, enabled = true): AiSkillSummary
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
 });
+
+export const recentTestRegistryApp: AppRegistryEntry = {
+  id: recentTestApp.appId,
+  name: recentTestApp.appName,
+  icon: recentTestApp.appIcon,
+  description: recentTestApp.appDescription,
+  routes: [],
+  baseUrl: "http://test.invalid",
+};

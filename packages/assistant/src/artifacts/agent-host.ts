@@ -245,7 +245,10 @@ export async function hostFetch(context: CodeToolContext, session: Session, path
       ),
     )
     .use("*", async (c, next) => {
-      c.set("credentialKind", "invocation");
+      if (context.authority) {
+        c.set("credentialKind", context.authority.credentialKind);
+        c.set("credentialScopes", context.authority.scopes);
+      }
       c.set("actor", context.actor);
       c.set("accessSubject", context.accessSubject);
       await next();
