@@ -33,7 +33,11 @@ import {
   requireConversation,
   subjectPrincipal,
 } from "./access";
-import { validateDiscovery, writeDiscovery } from "./channels";
+import { validateDiscovery, writeDiscovery } from "./discovery";
+import { TransactionFailure, value } from "./transaction-failure";
+
+export { value };
+
 import {
   AddMembersSchema,
   CONVERSATION_PAGE_SIZE,
@@ -63,15 +67,6 @@ import { deriveTitle, TITLE_NAME_LIMIT } from "./titles";
 
 const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_LIMIT, windowSecs: CREATE_WINDOW_SECONDS });
 // Throw after any write failure so returning a failed Result cannot commit partial work.
-class TransactionFailure extends Error {
-  constructor(readonly error: ServiceError) {
-    super(error.message);
-  }
-}
-export const value = <T>(result: Result<T>): T => {
-  if (!result.ok) throw new TransactionFailure(result.error);
-  return result.data;
-};
 export const transaction = async <T>(work: (db: typeof sql) => Promise<Result<T>>): Promise<Result<T>> => {
   try {
     const result = await sql.begin(work);

@@ -77,6 +77,27 @@ type Subscription = { socket: ServerWebSocket<unknown>; id: string; channel: str
 /** Midday in Berlin keeps even the longest seeded history on one fixed calendar day. */
 export const chatTestNow = new Date("2026-10-14T10:00:00.000Z");
 
+/**
+ * Starts the page's wall clock at the harness clock and lets it flow from there; each new document starts again at that
+ * instant. Only `Date` changes: Playwright's `clock` also replaces timers, animation frames, and `performance`, and
+ * WebKit then stops reporting reads in the read-state tests.
+ */
+export const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 export const viewer: Person = { id: "11111111-1111-4111-8111-111111111111", name: "Robin Example" };
 export const nora: Person = { id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" };
 export const tobias: Person = { id: "33333333-3333-4333-8333-333333333333", name: "Tobias Brandt" };

@@ -3,7 +3,7 @@ import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema } from "../service/contracts";
-import { chatTestNow, nora, startChatHarness, viewer } from "./ChatWorkspace.browser-fixture";
+import { chatTestNow, nora, pinPageClock, startChatHarness, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
 let browser: Browser;
@@ -39,7 +39,7 @@ for (const mode of [
         hasTouch: mode.width === 390,
       });
       page = await context.newPage();
-      await page.clock.setFixedTime(chatTestNow);
+      await page.addInitScript(pinPageClock, chatTestNow.getTime());
     });
     afterEach(async () => {
       await context.close();
@@ -278,7 +278,7 @@ test("disabled authenticated discovery explains removal without an impossible pr
   harness.setAllowAuthenticated(false);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
-  await page.clock.setFixedTime(chatTestNow);
+  await page.addInitScript(pinPageClock, chatTestNow.getTime());
   const t = chatMessages.resolve(["en"]).t;
   try {
     await mount(page, "en", `/app/chat/c/${id}?panel=info`);
@@ -317,7 +317,7 @@ for (const { locale, width } of [
     harness.addGroup(group);
     const context = await browser.newContext({ viewport: { width, height: 900 } });
     const page = await context.newPage();
-    await page.clock.setFixedTime(chatTestNow);
+    await page.addInitScript(pinPageClock, chatTestNow.getTime());
     const t = chatMessages.resolve([locale]).t;
     const requests: ReturnType<typeof CreateConversationSchema.parse>[] = [];
     let committed: string | undefined;
@@ -435,7 +435,7 @@ for (const { locale, width } of [
   test(`explicit channel Cancel discards a pending intent on ${locale} ${width}`, async () => {
     const context = await browser.newContext({ viewport: { width, height: 900 } });
     const page = await context.newPage();
-    await page.clock.setFixedTime(chatTestNow);
+    await page.addInitScript(pinPageClock, chatTestNow.getTime());
     const t = chatMessages.resolve([locale]).t;
     try {
       await mount(page, locale);

@@ -1,9 +1,8 @@
-import { createAccess, deleteAccess, err, fail, ok, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
+import { err, fail, ok, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
 import { sql, type TransactionSQL } from "bun";
 import type { z } from "zod";
 import {
-  actingPrincipal,
   boundConversation,
   type ChatContext,
   type ConversationRow,
@@ -24,28 +23,13 @@ import {
   DiscoveryUpdateSchema,
   MAX_PARTICIPANTS,
 } from "./contracts";
-import { addDirectSubject, conversations, lockConversation, projectConversations, record, transaction, value } from "./conversations";
+import { addDirectSubject, conversations, lockConversation, projectConversations, record, transaction } from "./conversations";
+import { validateDiscovery, writeDiscovery } from "./discovery";
 import { chatLive } from "./live";
 import { publishMembership } from "./live-updates";
 import { appendMessage } from "./message-store";
 
 type Entry = z.infer<typeof DiscoveryEntrySchema>;
-export const validateDiscovery = async (db: typeof sql, entries: Entry[], context: ChatContext) => {
-  const t = messages(context);
-  if (entries.some((entry) => entry.principal.type === "authenticated") && !(await discoveryAllowed()))
-    return fail(err.badInput(t.authenticatedDiscoveryDisabled));
-  const groupIds = entries.flatMap((entry) => (entry.principal.type === "group" ? [entry.principal.groupId] : []));
-  if (groupIds.length) {
-    const [caller] =
-      context.accessSubject.type === "user"
-        ? await db<{ profile: string }[]>`SELECT profile FROM auth.users WHERE id = ${context.accessSubject.userId}::uuid`
-        : [];
-    if (caller?.profile === "guest") return fail(err.badInput(t.fullAccountGroups));
-    const rows = await db<{ id: string }[]>`SELECT id FROM auth.groups WHERE id = ANY(${toPgUuidArray(groupIds)}::uuid[]) FOR SHARE`;
-    if (rows.length !== groupIds.length) return fail(err.badInput(t.groupUnavailable));
-  }
-  return ok();
-};
 // Spend at most 5s of the default 10s request budget on counting, leaving half
 // for authorization, settings, and the response. Never return a partial count.
 const AUDIENCE_TIMEOUT_MS = (REQUEST_IDLE_TIMEOUT_SECONDS * 1_000) / 2;
@@ -86,18 +70,6 @@ export const countAudience = async (
     )
       return { ok: false as const, code: "AUDIENCE_UNAVAILABLE" as const, status: 503 as const, error: messages(context).requestFailed };
     throw error;
-  }
-};
-export const writeDiscovery = async (db: typeof sql, row: ConversationRow, entries: Entry[], context: ChatContext) => {
-  const previous = await db<
-    { access_id: string }[]
-  >`SELECT access_id FROM chat.conversation_access WHERE conversation_id = ${row.id}::uuid AND role = 'discoverable'`;
-  for (const entry of previous) value(await deleteAccess({ id: entry.access_id }, db));
-  const actor = actingPrincipal(context.actor);
-  for (const entry of entries) {
-    const access = value(await createAccess({ principal: entry.principal, permission: entry.permission }, db));
-    await db`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
-      VALUES (${row.id}::uuid, ${access.id}::uuid, 'discoverable', ${actor.type}, ${actor.id}::uuid)`;
   }
 };
 const preview = async (input: ChatContext & { input: unknown; conversationId?: string }) => {

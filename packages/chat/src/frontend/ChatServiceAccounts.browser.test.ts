@@ -3,7 +3,7 @@ import type { Browser, BrowserContext } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { MemberPageSchema, MemberSchema } from "../service/contracts";
-import { chatTestNow, nora, startChatHarness, viewer } from "./ChatWorkspace.browser-fixture";
+import { chatTestNow, nora, pinPageClock, startChatHarness, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
 let browser: Browser;
@@ -34,7 +34,7 @@ for (const mode of [
         hasTouch: mode.width === 390,
       });
       const page = await context.newPage();
-      await page.clock.setFixedTime(chatTestNow);
+      await page.addInitScript(pinPageClock, chatTestNow.getTime());
       const t = chatMessages.resolve([mode.locale]).t;
       const agent = { id: "44444444-4444-4444-8444-444444444444", name: "Atlas Agent", kind: "agent" as const };
       const account = { id: "55555555-5555-4555-8555-555555555555", name: "Studio Service", kind: "standalone" as const };
@@ -77,7 +77,7 @@ for (const mode of [
         test(`${kind} keeps its avatar, kind and manager guard with ${managers} managers`, async () => {
           context = await browser.newContext({ viewport: { width: mode.width, height: 900 } });
           const page = await context.newPage();
-          await page.clock.setFixedTime(chatTestNow);
+          await page.addInitScript(pinPageClock, chatTestNow.getTime());
           const id = harness.addChat({ name: "Planning", members: [viewer, nora], count: 1, end: harness.now() });
           const member = MemberSchema.parse({
             ...harness.members(id)[0],

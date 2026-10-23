@@ -3,7 +3,7 @@ import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema } from "../service/contracts";
-import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
+import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 declare global {
   interface Window {
@@ -46,26 +46,6 @@ const settle = (page: Page) =>
     await document.fonts.ready;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
-/**
- * Starts the page's wall clock at the harness clock and lets it flow from there; each new document starts again at that
- * instant. Only `Date` changes: Playwright's `clock` also replaces timers, animation frames, and `performance`, and
- * WebKit then stops reporting reads in the read-state tests.
- */
-const pinPageClock = (at: number) => {
-  const RealDate = Date;
-  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
-  class PinnedDate extends RealDate {
-    constructor(...args: ConstructorParameters<DateConstructor> | []) {
-      if (args.length === 0)
-        super(RealDate.now() + offset); // real clock: flows from the pinned instant
-      else super(...(args as ConstructorParameters<DateConstructor>));
-    }
-    static override now() {
-      return RealDate.now() + offset; // real clock: flows from the pinned instant
-    }
-  }
-  globalThis.Date = PinnedDate as DateConstructor;
-};
 /** Records when the page starts each read post, on the page's own clock, so throttle assertions do not depend on event delivery. */
 const recordReadStarts = () => {
   window.chatReadStarts = [];
