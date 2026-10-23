@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-22
+updated: 2026-10-23
 ---
 
 # Lessons learned
@@ -27,6 +27,7 @@ convention still needs a check or a test.
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | A source location is valid but no longer names its evidence | A ranking accepts an in-range line number even when the line is blank or different code now occupies it. | Test: Mail `scripts/perf-baseline/browser-model.test.ts` rejects blank, changed and moved source lines and missing or multiline anchors; ranking requires the complete source line ([#1472](https://github.com/k2b-dev/cloud/issues/1472)). |
+| An app links assets below a prefix it never declared | The platform links `/public/<id>/app.css` on every page, but the gateway routes only declared prefixes, so the stylesheet answers 404 and the pages render unstyled. | Check: `app-public-route` requires the app's own `/public/<id>` prefix in every app config that declares pages below `/app/` or `/admin/`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |
 | Positional input-union compatibility | A manifest check rejects preserved input variants after additions or reordering, or accepts a `oneOf` change that makes old inputs match multiple variants. | Tests: Cloud `_internal/capabilities.test.ts` covers nested additive unions, required disjoint tags, removed or narrowed branches, overlaps, optional tags, and unchanged result-union restrictions. |
 | An app adds an unnecessary administration group | A single administration entry declares `adminNav`, separating it from the shared app administration list. | Test: Pulse `frontend/admin/navigation.render.test.ts` checks the German and English SSR sidebar and mobile snapshot, active link, default data-store tab, and unchanged admin-only route access. Convention: use `adminHref` for one app administration entry. |
@@ -198,6 +199,13 @@ convention still needs a check or a test.
 - **Root cause:** Every replica wrote the same keys and deleted them unconditionally on stop. No membership check protected the shared entries from a stop racing a new replica’s start.
 - **Error class:** Shared resource removed by one of several owners.
 - **Guard:** The replica-membership cases in `heartbeat.test.ts` cover clean stops, surge races, TTL expiry, late writes, registry failures, a survivor replacing the entry of a departed newer replica, and a newer replica taking back an entry that an older one repaired. A stale stop snapshot cannot remove shared entries unless at least half the membership lease remains. `heartbeat.integration.test.ts` checks real Sync watches. The nightly scale-acceptance `chat-replica-stop` scenario checks gateway requests across a graceful stop and a surge rollout, and requires the container to be stopped with exit code 0 and no OOM kill before removal.
+
+### Pulse pages rendered without the Pulse stylesheet
+
+- **What happened:** Every Pulse page linked `/public/pulse/app.css`, but the gateway answered it with 404, so overview, SQL console and settings showed unstyled text.
+- **Root cause:** A September change removed `/public/pulse` from the Pulse routes; the platform still links the stylesheet and favicon below that prefix. Browser harnesses load the stylesheet directly, so no test noticed.
+- **Error class:** An app links assets below a prefix it never declared to the gateway.
+- **Guard:** The `app-public-route` check requires the app's own `/public/<id>` prefix in every app config that declares pages below `/app/` or `/admin/`.
 
 ### Mail rows missed changes outside the detail page
 
