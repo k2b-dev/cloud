@@ -34,6 +34,7 @@ import {
   DiscoveryPreviewSchema,
   DiscoveryStateSchema,
   DiscoveryUpdateSchema,
+  LeaveResultSchema,
   LeaveSchema,
   MarkUnreadSchema,
   MemberPageSchema,
@@ -536,7 +537,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/conversations/:conversation/leave",
-    description("Leave a chat, handing over management when needed", MemberRemovalSchema),
+    description("Leave a chat, handing over management when needed", LeaveResultSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("json", LeaveSchema, invalidInput),
     async (c) =>

@@ -160,7 +160,7 @@ for (const mode of [
       await page.keyboard.press("Enter");
       await page.waitForURL(`**/app/chat/c/${two}`);
     });
-    test("readers see editors notice, channels have no threads, unsubscribe offers undo", async () => {
+    test("readers see editors notice, channels have no threads, unsubscribe offers to subscribe again", async () => {
       const id = harness.addChannel("Handbook", "Read the handbook", true, "read");
       harness.addThread(id, { name: "Legacy thread", count: 1, end: chatTestNow });
       harness.setPermission(id, "read");
@@ -176,7 +176,7 @@ for (const mode of [
       await page.waitForURL("**/app/chat/channels");
       await page.getByText(t.unsubscribed({ name: "Handbook" }), { exact: true }).waitFor();
       expect(harness.props({}).sidebar.items.some((row) => row.id === id)).toBe(false);
-      await page.getByRole("button", { name: t.undo, exact: true }).click();
+      await page.getByRole("button", { name: t.subscribeAgain, exact: true }).click();
       await catalog().getByRole("button", { name: t.subscribed, exact: true }).waitFor();
       expect(harness.props({}).sidebar.items.some((row) => row.id === id)).toBe(true);
     });

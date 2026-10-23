@@ -288,6 +288,8 @@ export const MemberPreviewSchema = z.object({
 });
 export const ChangeSchema = z.object({ added: z.number().int() });
 export const MemberRemovalSchema = z.object({ success: z.literal(true), keptThroughGroup: z.boolean() });
+/** `canRejoin`: a channel the person left still lets them find and subscribe to it again. */
+export const LeaveResultSchema = MemberRemovalSchema.extend({ canRejoin: z.boolean() });
 export const SuccessSchema = z.object({ success: z.literal(true) });
 
 const personSnapshot = z.object({ id: z.uuid(), name: z.string(), type: z.literal("service_account").optional() });

@@ -11,6 +11,7 @@ import {
   CreateOutcomeSchema,
   CreateThreadSchema,
   ExistingMatchSchema,
+  LeaveResultSchema,
   LeaveSchema,
   MAX_EXISTING_MATCHES,
   MarkUnreadSchema,
@@ -923,12 +924,8 @@ export const startChatHarness = async () => {
             chat.members.push(makeMember({ type: "user", userId: viewer.id }, permission, now().toISOString()));
             chat.conversation = { ...chat.conversation, member: true, permission, memberCount: chat.conversation.memberCount + 1 };
             chat.conversation.rev++;
-            const update = {
-              type: "members" as const,
-              conversationId: id!,
-              memberCount: chat.conversation.memberCount,
-              rev: chat.conversation.rev,
-            };
+            // As the server: a channel's subscriptions change its members without a timeline line.
+            const update = { type: "membership" as const, conversationId: id! };
             deliver("conversation", id!, update);
             deliver("list", id!, update);
             deliver("me", id!, { type: "membership", conversationId: id! });
@@ -1128,17 +1125,13 @@ export const startChatHarness = async () => {
           refreshMembers(chat);
           if (chat.conversation.channel) {
             chat.conversation = { ...chat.conversation, member: false, permission: "read", rev: chat.conversation.rev + 1 };
-            const update = {
-              type: "members" as const,
-              conversationId: id!,
-              memberCount: chat.conversation.memberCount,
-              rev: chat.conversation.rev,
-            };
+            // As the server: a channel's subscriptions change its members without a timeline line.
+            const update = { type: "membership" as const, conversationId: id! };
             deliver("conversation", id!, update);
             deliver("list", id!, update);
             deliver("me", id!, { type: "membership", conversationId: id! });
           } else revoke(id!);
-          return Response.json(MemberRemovalSchema.parse({ success: true, keptThroughGroup: false }));
+          return Response.json(LeaveResultSchema.parse({ success: true, keptThroughGroup: false, canRejoin: !!chat.discovery?.length }));
         }
         if (part === "read" && request.method === "POST") {
           const { seq, thread } = ReadSchema.parse(await request.json());

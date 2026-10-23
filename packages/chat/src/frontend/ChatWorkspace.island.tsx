@@ -737,23 +737,32 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (!store || !current || unsubscribing()) return;
     setUnsubscribing(true);
     try {
+      let canRejoin = false;
       try {
-        await store.leave(current.id);
+        canRejoin = (await store.leave(current.id)).canRejoin;
       } catch (error) {
         if (!(error instanceof ChatRequestError) || error.status !== 409) throw error;
+        // The last manager hands over first; they gave the channel away on purpose, so nothing offers it back.
         if (!(await openLeaveChatDialog({ store, conversation: current, viewerId: props.viewerId, locale: locale() }))) return;
       }
-      await open(chatRoute(null, "all", { channels: true }));
-      navigate("/app/chat/channels", { replace: true });
-      const done = toast(t().unsubscribed({ name: current.title }), {
-        action: {
-          label: t().undo,
-          onClick: () => {
-            done.dismiss();
-            void subscribe(current.id).catch(() => toast.error(t().requestFailed));
-          },
-        },
-      });
+      // Only while the channel is still on screen does the page move on; a chat opened meanwhile stays.
+      if (route().chatId === current.id && pendingOpen === 0 && (await open(chatRoute(null, "all", { channels: true }))) === "applied")
+        navigate("/app/chat/channels", { replace: true });
+      // Subscribing again uses the channel's audience, which may not include someone a manager had added directly.
+      const done = toast(
+        t().unsubscribed({ name: current.title }),
+        canRejoin
+          ? {
+              action: {
+                label: t().subscribeAgain,
+                onClick: () => {
+                  done.dismiss();
+                  void subscribe(current.id).catch(() => toast.error(t().requestFailed));
+                },
+              },
+            }
+          : undefined,
+      );
     } catch {
       toast.error(t().requestFailed);
     } finally {

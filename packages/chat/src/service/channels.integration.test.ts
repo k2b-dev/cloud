@@ -122,6 +122,25 @@ suite("channel authorization, publication and audience bounds", () => {
     expect(bodies[0]).not.toHaveProperty("audienceCount");
   });
 
+  test("leaving tells whether the channel's audience still lets the person subscribe again", async () => {
+    const owner = await f.person("Owner");
+    const reader = await f.person("Group reader");
+    const outsider = await f.person("Added directly");
+    const chat = await f.fixture(owner, [{ person: outsider, permission: "read" }]);
+    const groupId = await f.group([reader]);
+    const audience = [{ principal: { type: "group", groupId }, permission: "read" }];
+    expect(
+      (await f.request(owner.headers, `/${chat.shortId}/discovery`, "PUT", { entries: audience, name: "News", purpose: "Updates" })).status,
+    ).toBe(200);
+    expect((await f.request(reader.headers, `/${chat.shortId}/join`, "POST")).status).toBe(200);
+    const left = async (person: typeof reader) =>
+      (await (await f.request(person.headers, `/${chat.shortId}/leave`, "POST", {})).json()) as { canRejoin: boolean };
+    expect((await left(reader)).canRejoin).toBe(true);
+    // Outside the audience, only a manager can add them again.
+    expect((await left(outsider)).canRejoin).toBe(false);
+    expect((await f.request(outsider.headers, `/${chat.shortId}/join`, "POST")).status).toBe(404);
+  });
+
   test("a change based on an older audience is refused and leaves the newer one in place", async () => {
     const owner = await f.person("Owner");
     const reader = await f.person("Reader");

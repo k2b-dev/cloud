@@ -16,6 +16,7 @@ import {
   ConversationSchema,
   type CreateConversationSchema,
   CreateOutcomeSchema,
+  LeaveResultSchema,
   MemberPageSchema,
   MemberPreviewSchema,
   type MemberPrincipal,
@@ -51,7 +52,7 @@ export type ChatStoreApi = {
   addMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof ChangeSchema>>;
   updateMember(id: string, accessId: string, permission: z.infer<typeof PermissionSchema>): Promise<z.infer<typeof SuccessSchema>>;
   removeMember(id: string, accessId: string): Promise<z.infer<typeof MemberRemovalSchema>>;
-  leave(id: string, successor?: string): Promise<z.infer<typeof MemberRemovalSchema>>;
+  leave(id: string, successor?: string): Promise<z.infer<typeof LeaveResultSchema>>;
   people(search: string, cursor?: string, signal?: AbortSignal): Promise<z.infer<typeof PeoplePageSchema>>;
   read(id: string, seq: number, thread?: ThreadView): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
@@ -155,7 +156,7 @@ export const createChatStoreApi = (): ChatStoreApi => {
     leave: async (id, successor) =>
       requiredResponse(
         await client.conversations[":conversation"].leave.$post({ param: { conversation: id }, json: { successor } }),
-        MemberRemovalSchema,
+        LeaveResultSchema,
       ),
     people: async (search, cursor, signal) =>
       requiredResponse(await client.people.$get({ query: { search, cursor } }, { init: { signal } }), PeoplePageSchema),

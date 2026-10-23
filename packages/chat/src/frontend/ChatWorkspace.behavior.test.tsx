@@ -170,7 +170,7 @@ describe("ChatWorkspace interactions", () => {
         }
         if (url.pathname === "/api/chat/conversations/Chat01/leave" && init?.method === "POST") {
           leavePosts.push(JSON.parse(String(init.body)));
-          return Response.json({ success: true, keptThroughGroup: false });
+          return Response.json({ success: true, keptThroughGroup: false, canRejoin: false });
         }
         if (url.pathname === "/api/chat/conversations") return Response.json({ items: [], nextCursor: null });
         if (url.pathname === "/api/chat/conversations/Chat01/read" && init?.method === "POST") {
