@@ -68,6 +68,9 @@ const settingsNotSavedMessage = (locale: string): string =>
   locale.startsWith("de") ? "Die Einstellungen wurden nicht gespeichert." : "The settings were not saved.";
 
 const isKnownSetting = (key: string): boolean => SETTINGS_MAP.has(key);
+// The Geoapify key is written only where Cloud verifies it with the provider first, so a refused key never replaces a working one.
+const GEO_KEY = "geo.api_key";
+const GEO_KEY_DEDICATED = "Set or remove the Geoapify key with /api/admin/core/geo/key, which verifies it first.";
 
 const AI_PROFILES_KEY = "ai.model_profiles_json";
 const AI_ENABLED_KEY = "ai.enabled";
@@ -385,6 +388,7 @@ const app = new Hono<AuthContext>()
           ownership[key] = `Setting "${key}" cannot be updated and reset in the same save`;
         }
       }
+      if (keys.includes(GEO_KEY)) ownership[GEO_KEY] = GEO_KEY_DEDICATED;
       if (Object.keys(ownership).length > 0) {
         return c.json({ message: "Invalid keys", errors: ownership }, 400);
       }
@@ -556,6 +560,7 @@ const app = new Hono<AuthContext>()
     if (!isKnownSetting(key)) {
       return c.json({ message: `Unknown setting "${key}"` }, 400);
     }
+    if (key === GEO_KEY) return c.json({ message: GEO_KEY_DEDICATED, errors: { [GEO_KEY]: GEO_KEY_DEDICATED } }, 400);
 
     let aiPlan: AiSettingsMutationPlan;
     try {
