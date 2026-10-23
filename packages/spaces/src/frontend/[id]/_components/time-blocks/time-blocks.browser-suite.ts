@@ -799,8 +799,8 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
           expect(cancel.height).toBeGreaterThanOrEqual(44);
           for (const control of [
             dialog.locator('[data-field="date"] .k2b-date-trigger'),
-            dialog.getByRole("combobox", { name: "Beginn", exact: true }),
-            dialog.getByLabel("Dauer", { exact: true }),
+            dialog.locator('[data-field="start"] .k2b-combobox__input'),
+            dialog.locator('[data-field="duration"] .k2b-input-shell'),
           ]) {
             expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(44);
           }

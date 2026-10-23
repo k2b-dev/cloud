@@ -203,4 +203,7 @@
   .spaces-time-block-fields { grid-template-columns: 1fr 1fr; }
   .spaces-time-block-fields > :first-child { grid-column: 1 / -1; }
 }
+@media (max-width: 767px) and (pointer: coarse) {
+  .k2b-ui .spaces-time-block-dialog .spaces-time-block-fields input { font-size: max(1rem, 16px); }
+}
 .spaces-time-block-row[data-selected] { background: var(--ui-surface-muted); box-shadow: inset 3px 0 var(--ui-app-accent-border); }
