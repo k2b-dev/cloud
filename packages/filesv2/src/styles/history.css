@@ -710,14 +710,14 @@
   .k2b-ui .filesv2-history-head__filters .k2b-filter-chip { padding-inline: 7px; gap: 4px; }
 }
 
-/* The selected sidebar names Activity on desktop. Phones keep the host's title visible above its filters. */
+/* History pages keep the host title visible on phones, including an opened old address. */
 @container k2b-app-area (max-width: 47.9375rem) {
-  .k2b-ui .filesv2-workspace--activity > .k2b-app-workspace__head[data-trail="title"] {
+  .k2b-ui :is(.filesv2-workspace--activity, .filesv2-workspace--moved) > .k2b-app-workspace__head[data-trail="title"] {
     display: flex;
     min-height: 3.75rem;
     padding-inline: 1rem;
   }
-  .k2b-ui .filesv2-workspace--activity > .k2b-app-workspace__head .k2b-page-title__title {
+  .k2b-ui :is(.filesv2-workspace--activity, .filesv2-workspace--moved) > .k2b-app-workspace__head .k2b-page-title__title {
     font-size: 1.5rem;
     height: auto;
     line-height: 2rem;

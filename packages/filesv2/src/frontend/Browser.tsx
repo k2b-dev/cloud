@@ -1478,7 +1478,7 @@ export default function Browser(props: {
               >
                 {(searchHistory) => (
                   <Placeholder
-                    class="flex-1"
+                    class="filesv2-history-placeholder"
                     variant="panel"
                     state="no-results"
                     icon="ti ti-search"
