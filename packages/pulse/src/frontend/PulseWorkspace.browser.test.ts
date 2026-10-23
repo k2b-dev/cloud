@@ -847,8 +847,9 @@ test("Browser Back asks before discarding base settings and Cancel preserves the
     await tab.getByRole("button", { name: "Abbrechen", exact: true }).last().click();
     expect(await name.inputValue()).toBe("Laden Entwurf");
     await tab.evaluate(() => window.history.back());
+    // Back dispatches asynchronously; the settings form also has a Discard button.
     const confirmation = tab.getByRole("dialog", { name: "Ungespeicherte Änderungen", exact: true });
-    await confirmation.waitFor();
+    await confirmation.getByText("Ungespeicherte Änderungen verwerfen?", { exact: true }).waitFor();
     await confirmation.getByRole("button", { name: "Verwerfen", exact: true }).click();
     await tab.waitForFunction(() => !new URL(window.location.href).searchParams.has("settings"));
     expect(await name.count()).toBe(0);

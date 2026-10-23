@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from "bun:test";
 import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { ALERT_CHECKS_PER_HOUR } from "../alert-contracts";
 import { validateSqlInput } from "../sql-params";
 import { createSqlAdmission, LEASE_MS, WAIT_MS } from "./sql-admission";
 
@@ -129,5 +130,39 @@ suite("SQL admission is atomic across replicas", () => {
     await expect(a.acquire(input("a", "run"))).rejects.toMatchObject({ code: "CANCELLED" });
     expect((await a.usage("a")).used).toBe(0);
     await a.forget("a", "run");
+  });
+  test("replaced alert executions share a 240-check budget across replicas without spending question quota", async () => {
+    const { a, b, advance } = setup();
+    const alert = (runId: string) => ({
+      ...input("base", runId),
+      quotaKind: "alerts" as const,
+      quota: ALERT_CHECKS_PER_HOUR,
+      freeOnly: true,
+    });
+    const held = await a.acquire(input("base", "occupied", false));
+    try {
+      await expect(b.acquire(alert("busy"))).rejects.toMatchObject({ code: "BUSY" });
+    } finally {
+      await held.release();
+    }
+    // All 240 still fit: the refused check did not spend one.
+    for (let i = 0; i < ALERT_CHECKS_PER_HOUR; i++) {
+      const lease = await (i % 2 ? a : b).acquire(alert(`revision-${i}`));
+      await lease.release();
+    }
+    await expect(a.acquire(alert("replacement"))).rejects.toMatchObject({
+      code: "QUOTA",
+      message: "The hourly alert check budget is reached",
+      details: { retryAfter: 30 },
+    });
+    expect((await a.usage("base")).used).toBe(0);
+    const question = await b.acquire({ ...input("base", "question"), quota: 1 });
+    await question.release();
+    expect((await a.usage("base")).used).toBe(1);
+    await expect(b.acquire(alert("still-full"))).rejects.toMatchObject({ code: "QUOTA" });
+    advance(30_000);
+    const next = await b.acquire(alert("next-hour"));
+    expect(next.used).toBe(1);
+    await next.release();
   });
 });
