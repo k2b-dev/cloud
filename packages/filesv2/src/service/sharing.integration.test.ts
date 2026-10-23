@@ -384,6 +384,15 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     await service.reconcileInboxUploads();
     expect((await uploads.getForShare(opened.id, share.id))?.state).toBe("expired");
   });
+  test("a committed receipt without its result leaves quota and history open", async () => {
+    const share = await create();
+    const opened = await service.publicInboxUpload(token(share), { idempotencyKey: randomUUID(), name: "a", size: 10 });
+    sessions.values().next().value!.state = "committed";
+    await expect(service.publicInboxCommit(token(share), opened.id)).rejects.toMatchObject({ code: "upload_changed" });
+    expect((await uploads.getForShare(opened.id, share.id))?.state).toBe("open");
+    expect((await sql`SELECT state FROM filesv2.activity WHERE upload_id=${opened.id}`)[0]?.state).toBe("pending");
+    expect(commitCalls).toBe(0);
+  });
   test("backend and session path changes fail closed without releasing quota", async () => {
     const share = await create();
     const opened = await service.publicInboxUpload(token(share), { idempotencyKey: randomUUID(), name: "a", size: 10 });
@@ -477,7 +486,12 @@ suite("share authority, public privacy and durable inbox budgets", () => {
     await expect(service.publicInboxUpload(token(share), input)).rejects.toThrow("lost create response");
     const reservation = await uploads.getForShare(input.idempotencyKey, share.id);
     expect(reservation?.filegate_session_id).toBeNull();
-    expect(reservation?.write_options).toEqual({ onConflict: "rename", ownership: { mode: "0600" } });
+    const [activity] = await sql`SELECT id FROM filesv2.activity WHERE upload_id=${input.idempotencyKey}`;
+    expect(reservation?.write_options).toEqual({
+      onConflict: "rename",
+      ownership: { mode: "0600" },
+      metadata: { activity: activity!.id },
+    });
     expect(sessions.size).toBe(1);
     loseCreate = false;
     const restarted = makeService();

@@ -8,23 +8,29 @@ export const GeoPointSchema = z
   .strict();
 export const GeoProvenanceSchema = z
   .object({
-    provider: z.literal("geoapify"),
-    attribution: z.object({ text: z.literal("Geoapify · OpenStreetMap"), links: z.array(z.url()).length(2) }).strict(),
-    computedAt: z.iso.datetime(),
+    provider: z.literal("geoapify").describe("Source provider."),
+    attribution: z
+      .object({
+        text: z.literal("Geoapify · OpenStreetMap").describe("Attribution to display with this result."),
+        links: z.array(z.url()).length(2).describe("Provider and data-source attribution links."),
+      })
+      .strict()
+      .describe("Required attribution; preserve when storing or reusing the result."),
+    computedAt: z.iso.datetime().describe("ISO timestamp when the provider result was computed."),
   })
   .strict();
 const text = z.string().max(300);
 export const GeoAddressSchema = z
   .object({
-    line1: text,
-    postalCode: text,
-    city: text,
-    stateRegion: text,
-    countryCode: z.string().max(2),
-    point: GeoPointSchema,
-    formatted: z.string().max(600),
-    confidence: z.number().min(0).max(1).nullable(),
-    provenance: GeoProvenanceSchema,
+    line1: text.describe("Street and house number."),
+    postalCode: text.describe("Postal code."),
+    city: text.describe("City or locality."),
+    stateRegion: text.describe("State or region."),
+    countryCode: z.string().max(2).describe("ISO alpha-2 country code, or empty when unavailable."),
+    point: GeoPointSchema.describe("Resolved geographic point."),
+    formatted: z.string().max(600).describe("Formatted provider address."),
+    confidence: z.number().min(0).max(1).nullable().describe("Provider match confidence, or null when unavailable."),
+    provenance: GeoProvenanceSchema.describe("Provider source and required attribution."),
   })
   .strict();
 
@@ -177,12 +183,51 @@ export const GeoErrorDetailsSchema = z.discriminatedUnion("code", [
   z.object({ code: z.literal("GEO_NOT_CONFIGURED") }).strict(),
   z.object({ code: z.literal("GEO_FORBIDDEN") }).strict(),
   z.object({ code: z.literal("GEO_UNSUPPORTED_OPTION") }).strict(),
-  z.object({ code: z.literal("GEO_ADDRESS_NOT_FOUND") }).strict(),
+  z.object({ code: z.literal("GEO_ADDRESS_NOT_FOUND"), stopId: z.string().optional(), costs: GeoCostsSchema.optional() }).strict(),
+  z.object({ code: z.literal("GEO_NO_ROUTE"), costs: GeoCostsSchema.optional() }).strict(),
+  z
+    .object({
+      code: z.literal("GEO_COST_OVERRUN"),
+      distanceAllowanceMeters: z.number().positive(),
+      actualDistanceMeters: z.number().nonnegative(),
+      costs: GeoCostsSchema,
+    })
+    .strict(),
   z.object({ code: z.literal("GEO_BUDGET_EXHAUSTED"), scope: z.enum(["person", "cloud"]), resetsAt: z.iso.datetime() }).strict(),
   z.object({ code: z.literal("GEO_BUSY"), retryAfterSeconds: z.number().positive(), costs: GeoCostsSchema.optional() }).strict(),
-  z.object({ code: z.literal("GEO_LIMIT_EXCEEDED"), limit: z.string(), max: z.number(), actual: z.number() }).strict(),
-  z.object({ code: z.literal("GEO_ADDRESS_AMBIGUOUS"), candidates: z.array(GeoAddressSchema).max(5) }).strict(),
-  z.object({ code: z.literal("GEO_PROVIDER_FAILED"), costs: GeoCostsSchema, adminHint: z.string().optional() }).strict(),
+  z
+    .object({
+      code: z.literal("GEO_LIMIT_EXCEEDED"),
+      limit: z.string(),
+      max: z.number(),
+      actual: z.number(),
+      costs: GeoCostsSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      code: z.literal("GEO_ADDRESS_AMBIGUOUS"),
+      stopId: z.string().optional(),
+      costs: GeoCostsSchema.optional(),
+      candidates: z.array(GeoAddressSchema).max(5),
+    })
+    .strict(),
+  z
+    .object({
+      code: z.literal("GEO_PROVIDER_FAILED"),
+      costs: GeoCostsSchema,
+      adminHint: z.string().optional(),
+      accounting: z
+        .object({
+          reservationCredits: z.number().nonnegative(),
+          knownReferenceCredits: z.number().nonnegative(),
+          unknownReferenceCredits: z.number().nonnegative(),
+        })
+        .strict()
+        .optional()
+        .describe("Present when ledger settlement failed: retained reservation and reference costs requiring operator reconciliation."),
+    })
+    .strict(),
 ]);
 export type GeoPoint = z.infer<typeof GeoPointSchema>;
 export type GeoProvenance = z.infer<typeof GeoProvenanceSchema>;
@@ -193,7 +238,7 @@ export type GeoGeocodeInput = z.infer<typeof GeoGeocodeInputSchema>;
 export type GeoReverseInput = z.infer<typeof GeoReverseInputSchema>;
 export type GeoPlaceSearchInput = z.infer<typeof GeoPlaceSearchInputSchema>;
 export type GeoErrorCode = z.infer<typeof GeoErrorDetailsSchema>["code"];
-export type GeoFunction = "autocomplete" | "geocode" | "reverse" | "places";
+export type GeoFunction = "autocomplete" | "geocode" | "reverse" | "places" | "route";
 export const geoContract = {
   autocomplete: { id: "address.autocomplete", input: GeoAutocompleteInputSchema, data: GeoAutocompleteDataSchema },
   geocode: { id: "address.geocode", input: GeoGeocodeInputSchema, data: GeoGeocodeDataSchema },

@@ -247,8 +247,9 @@ pass siblings as separate arguments or use shell expansion.
 
 ## History
 
-Files records folder creation, renames, moves, and copies through the web,
-mobile app, API and CLI, other apps, and agents. Each selected item has its
+Files records folder creation, renames, moves, copies, uploads, document creation,
+template use, and Office saves through the web, mobile app, API and CLI, other
+apps, and agents. Each selected item has its
 own entry; items changed in one batch share a batch ID. Moving a folder
 records one entry for the whole tree. Planning folder creation or finding an
 existing folder creates no entry.
@@ -264,7 +265,7 @@ keep the item identity, while a new copy has its own identity.
 | `done` | Files has evidence that the operation completed. |
 | `failed` | Files has a certain refusal that made no change. |
 | `unclear` | The response is missing; the current contents cannot prove the outcome. |
-| `not_done` | Reserved for checks that can prove no change; unused for folder creation, renames, moves, and copies. |
+| `not_done` | Confirmed upload abort or expiry; no file was published. |
 
 Files marks an operation done only with evidence. A folder that looks right
 could have been created by someone else. A missing source and an existing
@@ -277,6 +278,23 @@ History is kept for 365 days by default. Administrators change this under
 API use the `activityRetentionDays` configuration key. Pending entries are
 kept until their outcome is known. See
 [Files history](/en/docs/operations/files-history) for operators.
+
+An upload reservation and its pending history entry are saved together. Retries,
+lease renewal, status checks, commits, aborts, and public inbox maintenance finish
+that same entry from Filegate's retained result. A visitor stays a visitor even
+when maintenance finds the result later. The original person, channel, request,
+and delegated execution remain unchanged when another request resumes the upload.
+
+An open session or a failed publication condition does not mean the upload failed.
+A committed receipt records completion; a confirmed abort or expiry records
+`not_done`. A missing receipt stays uncertain. The reservation and history finish
+in the same transaction. An unresolved reservation keeps its history beyond the
+normal retention period. Journals created before this feature are adopted with
+their stored person or link and an unknown channel.
+
+Each new document, file created from bytes or a template, and Office save gets its
+own entry. Direct-write responses confirm completion; a lost response remains
+uncertain. Template-created files retain the template reference.
 
 ## Public shares
 

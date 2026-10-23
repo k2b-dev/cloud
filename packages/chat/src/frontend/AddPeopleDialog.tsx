@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { chatMessages } from "../messages";
 import { MEMBER_PAGE_SIZE, type MemberPreviewSchema, type MemberPrincipal } from "../service/contracts";
 import { type ChatDialogStore, type Conversation, DialogActions, DialogError, errorMessage, useChatMessages } from "./chat-dialog";
+import { createIntent } from "./create-intent";
 import MemberPicker, { type ChosenMember } from "./MemberPicker";
 
 type Preview = z.infer<typeof MemberPreviewSchema>;
@@ -75,6 +76,14 @@ export function AddPeopleDialog(
   const [checking, setChecking] = createSignal(false);
   const [previewError, setPreviewError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  const intent = createIntent(`${props.viewerId}:fresh:${props.conversation.id}`, (saved) => {
+    setChosen(saved.chosen);
+    setName(saved.input.name ?? "");
+  });
+  const cancel = () => {
+    intent.clear();
+    props.close();
+  };
   props.setDismissHandler(() => {
     if (!busy()) props.close();
   });
@@ -130,7 +139,7 @@ export function AddPeopleDialog(
 
   const ready = () => !busy() && (added() || (chosen().length > 0 && preview() !== null && !checking() && !previewError()));
   const add = async () => {
-    if (!ready()) return;
+    if (intent.pending() || !ready()) return;
     setBusy(true);
     setError("");
     try {
@@ -149,17 +158,24 @@ export function AddPeopleDialog(
   };
   const startFresh = async () => {
     const members = freshMembers();
-    if (added() || !ready() || !members) return;
+    if (busy() || added() || (!intent.pending() && (!ready() || !members))) return;
     setBusy(true);
     setError("");
     try {
-      const result = await props.store.create({
-        members,
-        ...(name().trim() ? { name: name().trim() } : {}),
-        allowDuplicate: true,
-      });
+      const result = await props.store.create(
+        intent.begin(
+          {
+            members: members ?? [],
+            ...(name().trim() ? { name: name().trim() } : {}),
+            allowDuplicate: true,
+          },
+          chosen(),
+        ),
+      );
+      intent.clear();
       if (result.outcome === "created") props.close(result.conversation.id);
     } catch (failure) {
+      intent.failed(failure);
       setError(errorMessage(failure, t().requestFailed));
     } finally {
       setBusy(false);
@@ -181,7 +197,7 @@ export function AddPeopleDialog(
           chosen={chosen()}
           excluded={[{ type: "user", userId: props.viewerId }]}
           people={props.store.people}
-          disabled={busy() || added()}
+          disabled={busy() || added() || !!intent.pending()}
           onChange={setChosen}
         />
         <Show when={chosen().length > 0}>
@@ -207,22 +223,34 @@ export function AddPeopleDialog(
           </Show>
         </Show>
         <Show when={unnamed()}>
-          <TextInput label={t().name} description={t().unnamedChat} maxLength={80} value={name} onValueChange={setName} disabled={busy()} />
+          <TextInput
+            label={t().name}
+            description={t().unnamedChat}
+            maxLength={80}
+            value={name}
+            onValueChange={setName}
+            disabled={busy() || !!intent.pending()}
+          />
         </Show>
       </form>
+      <Show when={intent.pending() && !busy()}>
+        <p class="text-sm text-dimmed" role="status">
+          {t().createRecovery}
+        </p>
+      </Show>
       <Show when={error()}>
         <DialogError message={error()} />
       </Show>
       <DialogActions>
-        <Button variant="secondary" disabled={busy()} onClick={() => props.close()}>
+        <Button variant="secondary" disabled={busy()} onClick={cancel}>
           {t().cancel}
         </Button>
-        <Show when={!added() && freshMembers()}>
-          <Button variant="secondary" disabled={!ready()} onClick={() => void startFresh()}>
-            {t().startWithoutHistory}
+        <Show when={intent.pending() || (!added() && freshMembers())}>
+          <Button variant="secondary" disabled={busy() || (!intent.pending() && !ready())} onClick={() => void startFresh()}>
+            {intent.pending() ? t().retry : t().startWithoutHistory}
           </Button>
         </Show>
-        <Button type="submit" form="chat-add-people" loading={busy()} disabled={!ready()}>
+        <Button type="submit" form="chat-add-people" loading={busy()} disabled={!!intent.pending() || !ready()}>
           {added() ? t().saveName : t().add}
         </Button>
       </DialogActions>

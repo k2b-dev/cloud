@@ -40,11 +40,13 @@ import {
   capabilityPage,
   defineCapabilities,
   geoContract,
+  geoMapContract,
+  geoRouteContract,
   PrincipalSchema,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
 import { accessRevision, isAppSessionActor, type RequestAuthority, resolveDisplayNames } from "@k2b/cloud/server";
-import { type AuditActor, accountsAppService, audit, coreGeo } from "@k2b/cloud/services";
+import { type AuditActor, accountsAppService, audit, coreGeo, coreGeoMap } from "@k2b/cloud/services";
 import { principalLabel } from "@k2b/cloud/shared";
 import { dates, err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
@@ -698,6 +700,33 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   queries: {
+    "map.style": {
+      title: "Show a map",
+      description:
+        "Return a Cloud map style URL. All map assets stay on Cloud; tiles cost 0.25 credits within the operator budget. Keep the supplied attribution visible.",
+      input: geoMapContract.style.input,
+      data: geoMapContract.style.data,
+      openWorld: false,
+      run: (input, context) => runGeoQuery(context, () => coreGeoMap.style(input, context)),
+    },
+    "route.calculate": {
+      title: "Calculate a route",
+      description:
+        "Calculate 2–26 stops by car, bike or on foot, with avoid preferences and per-leg options. Start/destination stay fixed when optimizing. Returns meters, seconds, polyline6 and provenance. Ambiguous addresses require a choice. Reserves the full chain against a reference-distance allowance (default 500 km per leg); an overrun is charged and stops the chain. This allowance is not a provider invoice ceiling. Keep attribution.",
+      input: geoRouteContract.calculateRoute.input,
+      data: geoRouteContract.calculateRoute.data,
+      openWorld: true,
+      run: (input, context) => runGeoQuery(context, () => coreGeo.calculateRoute(input, context)),
+    },
+    "route.update": {
+      title: "Preview a route change",
+      description:
+        "Update a self-contained saved route without persisting it: insert at a chosen gap or the best of up to three candidates, move a stop, optimize intermediate stops, or change default/per-leg options. Overrides travel with their departure stop on reorder. Returns the new route and before/after distance, duration and order. Insertion minimizes added seconds, then meters. Results use reference-credit accounting with charged overruns; no automatic retry. Keep attribution.",
+      input: geoRouteContract.updateRoute.input,
+      data: geoRouteContract.updateRoute.data,
+      openWorld: true,
+      run: (input, context) => runGeoQuery(context, () => coreGeo.updateRoute(input, context)),
+    },
     "address.autocomplete": {
       title: "Suggest addresses",
       description:
