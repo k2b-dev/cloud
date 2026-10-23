@@ -719,5 +719,7 @@
   }
   .k2b-ui .filesv2-workspace--activity > .k2b-app-workspace__head .k2b-page-title__title {
     font-size: 1.5rem;
+    height: auto;
+    line-height: 2rem;
   }
 }

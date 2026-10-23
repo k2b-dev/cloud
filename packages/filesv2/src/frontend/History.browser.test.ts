@@ -389,6 +389,13 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
     const title = tab.locator(".filesv2-workspace--activity > .k2b-app-workspace__head .k2b-page-title");
     expect(await title.isVisible()).toBe(true);
     expect(await title.innerText()).toContain("Aktivität");
+    const titleText = await title.locator(".k2b-page-title__text").evaluate((element) => ({
+      height: element.getBoundingClientRect().height,
+      fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+      clips: element.scrollHeight > element.clientHeight,
+    }));
+    expect(titleText.clips).toBe(false);
+    expect(titleText.height).toBeGreaterThanOrEqual(titleText.fontSize);
     expect(await title.evaluate((element) => element.getBoundingClientRect().bottom)).toBeLessThanOrEqual(
       await tab.locator(".filesv2-history-search").evaluate((element) => element.getBoundingClientRect().top),
     );
