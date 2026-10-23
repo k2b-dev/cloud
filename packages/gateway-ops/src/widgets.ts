@@ -23,6 +23,14 @@ export const gatewayHealthWidgetHandler = async (c: Context<AuthContext>) => {
   const [health, snapshot] = await Promise.all([buildGatewayHealth(), latestGatewayRouteSnapshot()]);
   const { apps: total, healthy, degraded, offline } = health.summary;
   const unhealthy = degraded + offline;
+  const { size } = getWidgetRequest(c);
+  const uptime = snapshot ? formatDurationMs(Date.now() - snapshot.startedAt, { locale }) : undefined;
+  const message = () =>
+    uptime
+      ? t.gatewayUptime({ uptime, total: formatNumber(total, { locale }) })
+      : t.widgetNoRouterSnapshot({ total: formatNumber(total, { locale }) });
+  // A small frame, on a phone only 8.5rem wide, has room for a short second line: the uptime while all apps run.
+  const smallMessage = () => (uptime && unhealthy === 0 ? t.gatewayUptimeShort({ uptime }) : undefined);
 
   const blocks: WidgetBlock[] = [
     {
@@ -35,12 +43,10 @@ export const gatewayHealthWidgetHandler = async (c: Context<AuthContext>) => {
           : unhealthy === 0
             ? t.needsAttention
             : t.appsNeedAttention({ unhealthy: formatNumber(unhealthy, { locale }), total: formatNumber(total, { locale }) }),
-      message: snapshot
-        ? t.gatewayUptime({ uptime: formatDurationMs(Date.now() - snapshot.startedAt, { locale }), total: formatNumber(total, { locale }) })
-        : t.widgetNoRouterSnapshot({ total: formatNumber(total, { locale }) }),
+      message: size === "small" ? smallMessage() : message(),
     },
   ];
-  if (getWidgetRequest(c).size !== "small") {
+  if (size !== "small") {
     blocks.push({
       kind: "pills",
       pills: [

@@ -5,7 +5,7 @@ section: Platform services
 order: 570
 description: Add application-owned information to the shared Cloud dashboard.
 tags: [dashboard, widgets, authorization]
-updated: 2026-10-13
+updated: 2026-10-23
 ---
 
 # Dashboard widgets
@@ -90,10 +90,21 @@ has one of three fixed sizes:
 | `medium` | two columns, one row | full width | a status with its counts, or two list rows |
 | `large` | two columns, two rows | full width, two rows | a list of about six rows, or several blocks |
 
-A row is about 10.5rem high, so a small or medium widget has room for about
-7rem of content below its header. Offer a size only when the handler fills it
-well. A widget without `sizes` offers only `large`, the height every widget
-had before sizes existed.
+A row is 10.5rem high on every screen. Below its header, a small or medium
+widget has 102px for its blocks and a large one at least 282px. The header has the
+same height with and without `meta`. The blocks stack with 0.5rem between
+them and add no spacing of their own, so their heights add up exactly: a
+stat with a supporting line is 70px, a row of pills 16px, and a list row with
+a subline 46px.
+
+A small widget can be as narrow as 8.5rem, on a 320px phone; on other phones
+and on tablets in portrait it is about 10rem wide.
+There the dashboard sets a hero and a status more densely, but long text still
+wraps to more lines. Fill a size so that it fits at its narrowest: keep a
+small widget to one short title and at most one short line under it. Offer a
+size only when the handler fills it well, and leave out a size whose content
+does not fit. A widget without `sizes` offers only `large`, the height every
+widget had before sizes existed.
 
 `presentation.defaultZone` and `presentation.defaultSpan` are deprecated: the
 dashboard has no zones or widths any more. Declare `sizes` and `defaultSize`
@@ -325,8 +336,12 @@ answers; widgets that already arrived never wait for slower ones.
   frame. Retrying asks only that widget again. The rest of the board is never
   affected.
 - **Layout:** the frame's size comes from the board, not from the content.
-  Longer content scrolls inside the widget, so put the most important
-  information at the top.
+  A list longer than its frame scrolls its own rows; the header and the
+  blocks after the list stay whole, and the list keeps room for its scrollbar
+  from the start, so its rows do not move. A list always shows at least one
+  row with a subline. Other content that is taller than
+  the frame scrolls the whole body, so put the most important information at
+  the top.
 - **Resizing:** when a person changes a widget's size, the board asks the
   widget again in the new size and keeps the old content until the new one
   arrives.

@@ -4,6 +4,7 @@ import type { WidgetResponse, WidgetStreamLine } from "@k2b/cloud/contracts";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
 import type { DashboardBoardEntry, DashboardCatalogWidget, DashboardSettings } from "../shared";
+import { builtInWidgets } from "./built-in-widgets.browser-fixture";
 import type { DashboardHomeProps } from "./dashboard-home";
 
 // Whether a widget that answers late, fails, is resized, dragged or added moves another one is a layout result of
@@ -204,7 +205,15 @@ beforeAll(async () => {
       return output.outputs[0]!.text();
     }),
   );
-  const css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  // The fonts Core serves: text wraps and icons take their height as on a real page.
+  const uiDist = resolve(ui, "dist");
+  const icons = await Bun.file(resolve(uiDist, "tabler.css")).text();
+  const iconFont = /tabler-icons-[\w-]+\.woff2/.exec(icons)![0];
+  const fonts = [
+    (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/fonts/"),
+    icons.replace(/\.\/tabler-icons-[\w-]+\.woff2/, `/${iconFont}`),
+  ];
+  const css = ["@layer properties, theme, base, components, utilities;", ...fonts, ...outputs].join("\n");
   server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -215,6 +224,8 @@ beforeAll(async () => {
         scripts.push(url.pathname);
         return new Response(script, { headers: { "content-type": "text/javascript" } });
       }
+      if (url.pathname.startsWith("/fonts/") || url.pathname === `/${iconFont}`)
+        return new Response(Bun.file(resolve(uiDist, url.pathname.slice(1))), { headers: { "content-type": "font/woff2" } });
       if (url.pathname === "/") {
         const lang = url.searchParams.get("lang") ?? "en";
         return new Response(
@@ -256,9 +267,9 @@ type View = { width: number; height: number; touch: boolean };
 const desktop: View = { width: 1440, height: 900, touch: false };
 const phone: View = { width: 390, height: 844, touch: true };
 
-const open = async (view: View, options: { lang?: string; props?: DashboardHomeProps } = {}) => {
+const open = async (view: View, options: { lang?: string; props?: DashboardHomeProps; engine?: Browser } = {}) => {
   props = options.props ?? baseProps;
-  const context = await browser.newContext({
+  const context = await (options.engine ?? browser).newContext({
     viewport: { width: view.width, height: view.height },
     isMobile: view.touch,
     hasTouch: view.touch,
@@ -1251,6 +1262,118 @@ describe("the dashboard board in a browser", () => {
       await close();
     }
   }, 30_000);
+
+  test("every built-in widget fits its frame in every size it offers, at desktop, tablet and phone widths", async () => {
+    // Only a list may hold more than its frame, and then it scrolls its own rows: the header and the blocks after it
+    // stay whole, and its scrollbar has its place from the start, so its rows are as wide as those of a list that fits.
+    // A list crowded by other blocks still shows a whole row; the body scrolls the rest into view.
+    const sizes = ["small", "medium", "large"] as const;
+    const fixtures = builtInWidgets.flatMap((built) => built.sizes.flatMap((size) => built.fixtures(size)));
+    const states = (["loading", "empty", "forbidden", "timeout", "error"] as const).flatMap((status) =>
+      sizes.map((size) => ({ id: `frame:${status}:${size}`, key: "frame/state", size, status })),
+    );
+    const footer: WidgetResponse["blocks"][number] = { kind: "pills", pills: [{ label: "Open", value: 12 }] };
+    const stat: WidgetResponse["blocks"][number] = { kind: "stat", value: 12, label: "Open", sub: "this week" };
+    const lists = (["long", "short", "crowded"] as const).flatMap((length) =>
+      sizes.map((size) => {
+        const response: WidgetResponse = {
+          title: "Tasks",
+          meta: "12 open",
+          blocks: [...(length === "crowded" ? [stat] : []), { kind: "list", items: list(length === "short" ? 1 : 12) }, footer],
+        };
+        return { id: `frame:${length}-list:${size}`, key: "frame/state", size, response };
+      }),
+    );
+    const responses = new Map<string, WidgetResponse>([
+      ...fixtures.map((fixture) => [`${fixture.key}:${fixture.size}:${fixture.variant}`, fixture.response] as const),
+      ...lists.map((entry) => [entry.id, entry.response] as const),
+    ]);
+    const entries: DashboardBoardEntry[] = [
+      ...fixtures.map(({ key, size, variant }) => ({ id: `${key}:${size}:${variant}`, key, size })),
+      ...[...states, ...lists].map(({ id, key, size }) => ({ id, key, size })),
+    ];
+    const fitCatalog: DashboardCatalogWidget[] = [
+      ...builtInWidgets.map((built) => widget(built.key, built.key, built.sizes, built.sizes[0]!, false)),
+      widget("frame/state", "Frame state", [...sizes], "small", false),
+    ];
+    const held = gate();
+    answer = async (asked, write) => {
+      for (const entry of asked) {
+        const response = responses.get(entry.id);
+        if (response) write({ type: "widget", id: entry.id, key: entry.key, status: "ok", ms: 5, widget: response });
+        const status = states.find((state) => state.id === entry.id)?.status;
+        if (status && status !== "loading") write({ type: "widget", id: entry.id, key: entry.key, status, ms: 5 });
+      }
+      await held.opened;
+    };
+    const views: View[] = [
+      { width: 2000, height: 1200, touch: false },
+      desktop,
+      { width: 1280, height: 800, touch: false },
+      { width: 1024, height: 768, touch: true },
+      { width: 820, height: 1180, touch: true },
+      { width: 768, height: 1024, touch: true },
+      phone,
+      { width: 360, height: 780, touch: true },
+      { width: 320, height: 640, touch: true },
+    ];
+    const report: { lang: string; width: number; misfits: string[] }[] = [];
+    // Playwright hides scrollbars; Windows and Linux desktops draw classic ones that take space. WebKit draws overlay ones.
+    const engine = browserName === "chromium" ? await launchBrowser({ ignoreDefaultArgs: ["--hide-scrollbars"] }) : browser;
+    try {
+      for (const lang of ["de", "en"]) {
+        for (const view of views) {
+          const { page, close } = await open(view, {
+            lang,
+            engine,
+            props: { ...baseProps, catalog: fitCatalog, board: entries, kept: [] },
+          });
+          try {
+            for (const entry of entries) await waitForState(page, entry.id, states.find((state) => state.id === entry.id)?.status ?? "ok");
+            await page.evaluate(() => document.fonts.ready);
+            const misfits = await page.evaluate(() => {
+              const tiles = Array.from(document.querySelectorAll<HTMLElement>(".dashboard-tile"));
+              const rowWidth = (id: string) =>
+                document.querySelector(`.dashboard-tile[data-id="${id}"] .k2b-widget-list__item`)!.getBoundingClientRect().width;
+              return tiles.flatMap((tile) => {
+                const id = tile.dataset.id!;
+                const body = tile.querySelector<HTMLElement>(".k2b-widget__body")!;
+                if (id.startsWith("frame:crowded-list:")) {
+                  const rows = tile.querySelector<HTMLElement>(".k2b-widget-list")!;
+                  const row = rows.querySelector<HTMLElement>(".k2b-widget-list__item")!;
+                  return rows.clientHeight >= row.offsetHeight ? [] : [`${id}: shows no whole row`];
+                }
+                const bottom = body.getBoundingClientRect().bottom;
+                const problems: string[] = [];
+                if (body.scrollHeight > body.clientHeight) problems.push(`scrolls ${body.scrollHeight - body.clientHeight}px`);
+                if (body.scrollWidth > body.clientWidth) problems.push(`scrolls sideways ${body.scrollWidth - body.clientWidth}px`);
+                // Everything but a list's own rows ends inside the frame, the list itself included.
+                const cut = Array.from(body.querySelectorAll<HTMLElement>("*")).find(
+                  (element) =>
+                    !element.parentElement?.closest(".k2b-widget-list") && element.getBoundingClientRect().bottom > bottom + 0.01,
+                );
+                if (cut) problems.push(`cuts off ${cut.className || cut.tagName}`);
+                if (id.startsWith("frame:long-list:")) {
+                  const rows = tile.querySelector<HTMLElement>(".k2b-widget-list")!;
+                  if (rows.scrollHeight <= rows.clientHeight) problems.push("does not scroll its rows");
+                  if (rowWidth(id) !== rowWidth(id.replace("long", "short"))) problems.push("rows narrower than in a list that fits");
+                }
+                return problems.length > 0 ? [`${id}: ${problems.join(", ")}`] : [];
+              });
+            });
+            if (misfits.length > 0) report.push({ lang, width: view.width, misfits });
+          } finally {
+            await close();
+          }
+        }
+      }
+      expect(report).toEqual([]);
+    } finally {
+      held.open();
+      answer = answerAll;
+      if (engine !== browser) await engine.close();
+    }
+  }, 120_000);
 
   test("speaks German", async () => {
     const { page, close } = await open(phone, { lang: "de" });

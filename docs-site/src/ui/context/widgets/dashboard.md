@@ -45,9 +45,17 @@ build its compact header. `size` is `"content"`, `"compact"`, `"standard"`, or
 `"fill"`; the default standard frame is 25rem high, compact is 14rem, fill takes
 the height its container gives it, such as a cell of a dashboard grid, and
 content has no fixed height. Compact fits a header with meta above one stat, status, or hero
-and a row of pills. A fixed frame scrolls body content taller than itself
-instead of cutting it off; it does not contain overscroll, so a wheel or swipe
-over a widget whose content fits still scrolls the page. When `href` is set,
+and a row of pills. The header has the same height with and without meta. The
+body owns the spacing: 0.5rem above, between, and 0.75rem below its blocks,
+which have no vertical padding of their own, and every line height is a whole
+number of pixels. A fill frame narrower than 15rem sets a hero and a status
+more densely; only a fill frame measures its width this way, so other frames
+keep the width of their content. A list gives up height down to one row with a
+subline and scrolls its own rows, with its scrollbar place reserved, so the
+blocks around it stay whole. A fixed frame scrolls other
+body content taller than itself instead of cutting it off; it does not contain
+overscroll, so a wheel or swipe over a widget whose content fits still scrolls
+the page. When `href` is set,
 only the header becomes a link, so links inside the body remain valid.
 
 ### Content blocks
