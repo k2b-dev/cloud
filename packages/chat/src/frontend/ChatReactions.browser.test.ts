@@ -112,6 +112,10 @@ describe("Reactions", () => {
         // Nora reacts too; the open chat shows it without a reload.
         harness.react(chat, last.id, nora.id, "🎉");
         await item.getByRole("button", { name: /🎉/ }).waitFor();
+        // Pointer and focus leave the reactions, so no hint fades in while the row is measured.
+        await page.mouse.move(1, 1);
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.waitForFunction(() => !document.querySelector(".k2b-tooltip:popover-open"));
         await settled(page);
         const height = (await item.boundingBox())!.height;
         // Taking a reaction back keeps the line, so nothing below moves.
@@ -120,6 +124,9 @@ describe("Reactions", () => {
         await until(() => harness.reactionRequests.some((request) => request.method === "DELETE" && request.emoji === "👍"));
         harness.react(chat, last.id, nora.id, "🎉", false);
         await item.getByRole("button", { name: /🎉/ }).waitFor({ state: "detached" });
+        await page.mouse.move(1, 1);
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.waitForFunction(() => !document.querySelector(".k2b-tooltip:popover-open"));
         await settled(page);
         expect((await item.boundingBox())!.height).toBe(height);
         expect(errors).toEqual([]);
