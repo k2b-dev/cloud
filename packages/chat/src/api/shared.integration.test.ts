@@ -1,4 +1,6 @@
-import { expect, setDefaultTimeout, test } from "bun:test";
+import { afterAll, expect, setDefaultTimeout, test } from "bun:test";
+import { createAccess } from "@k2b/cloud/server";
+import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
@@ -19,6 +21,13 @@ setDefaultTimeout(30_000);
 const suite = suiteFor("database", "nats", "valkey");
 suite("chat shared items API", () => {
   const f = messageFixtures();
+  const accounts: string[] = [];
+  afterAll(async () => {
+    for (const id of accounts) {
+      await sql`DELETE FROM audit.events WHERE target_id = ${id} OR actor_uid = ${id} OR metadata->>'serviceAccountId' = ${id}`;
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${id}::uuid`;
+    }
+  });
   const refs = [
     { type: "spaces.task", id: "task-1" },
     { type: "notebooks.note", id: "note-1" },
@@ -223,9 +232,26 @@ suite("chat shared items API", () => {
     expect((await f.request(owner.headers, `/${chat.shortId}/shared?thread=${foreign.id}`)).status).toBe(404);
     for (const query of ["kind=unknown", "thread=bad", "cursor=bad", "cursor=", `cursor=${"x".repeat(161)}`])
       expect((await f.request(owner.headers, `/${chat.shortId}/shared?${query}`)).status).toBe(400);
-    const credential = await f.credential(owner);
-    expect((await f.request(credential, `/${chat.shortId}/shared`)).status).toBe(200);
-    expect((await f.request(credential, `/${chat.shortId}/messages`, "POST", { clientId: "scoped", body: "", refs })).status).toBe(403);
+    // An agent with write access but a read-only token lists what was shared and cannot share more; a delegated token
+    // acts for its person, whose access applies (Identity → Authorization).
+    const [account] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.service_accounts (name, kind) VALUES ('Shared agent', 'agent') RETURNING id`;
+    accounts.push(account!.id);
+    const access = await createAccess({ principal: { type: "service_account", serviceAccountId: account!.id }, permission: "write" });
+    if (!access.ok) throw new Error(access.error.message);
+    await sql`INSERT INTO chat.conversation_access (conversation_id, access_id, role, added_by_type, added_by_id)
+      VALUES (${chat.id}::uuid, ${access.data.id}::uuid, 'member', 'user', ${owner.id}::uuid)`;
+    const token = await serviceAccountCredentials.createApiToken({
+      serviceAccountId: account!.id,
+      name: "shared",
+      scopes: ["openid", "read"],
+    });
+    if (!token.ok) throw new Error(token.error.message);
+    const readOnly = { authorization: `Bearer ${token.data.token}` };
+    expect((await f.request(readOnly, `/${chat.shortId}/shared`)).status).toBe(200);
+    expect((await f.request(readOnly, `/${chat.shortId}/messages`, "POST", { clientId: "scoped", body: "", refs })).status).toBe(403);
+    expect((await f.request(await f.credential(owner), `/${chat.shortId}/shared`)).status).toBe(200);
     expect((await f.request(await f.credential(), `/${chat.shortId}/shared`)).status).toBe(404);
   });
 
