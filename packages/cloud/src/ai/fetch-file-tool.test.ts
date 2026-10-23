@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import type { ClientRequest, IncomingMessage } from "node:http";
+import { networkTransportFixture } from "../../../../scripts/fixtures/network-transport";
 import { DOCUMENT_EXTRACTION_MAX_OUTPUT_BYTES } from "../services/document-extraction";
 import {
   buildPinnedFetchFileRequestOptions,
@@ -167,12 +168,13 @@ describe("fetch_file AI tool", () => {
     await expect(
       downloadPublicFile("https://files.example/report.pdf", {
         resolve: async () => [publicAddress],
+        timeoutMs: 10,
         request: ((_options: unknown, _callback: unknown) => {
           const outgoing = new EventEmitter() as EventEmitter & {
             end: () => void;
             destroy: (error?: Error) => void;
           };
-          outgoing.end = () => queueMicrotask(() => outgoing.emit("timeout"));
+          outgoing.end = () => undefined;
           outgoing.destroy = (error) => queueMicrotask(() => outgoing.emit("error", error));
           return outgoing as unknown as ClientRequest;
         }) as never,
@@ -226,8 +228,8 @@ describe("fetch_file AI tool", () => {
         }) as never,
         signal: controller.signal,
       }),
-    ).rejects.toThrow("cancelled");
-    expect(requests).toBe(1);
+    ).rejects.toThrow("aborted");
+    expect(requests).toBe(0);
   });
 
   test("stores a sanitized, assistant-owned conversation file and returns its canonical stat", async () => {
@@ -468,4 +470,158 @@ describe("fetch_file AI tool", () => {
     ).rejects.toThrow("conversation context");
     expect(requested).toBe(false);
   });
+});
+
+test("a discarded never-ending redirect is closed before downloading the next hop", async () => {
+  const fixture = await networkTransportFixture((req, res) => {
+    if (req.url === "/start") {
+      res.writeHead(302, { location: "/done" });
+      res.write("unused");
+    } else res.end("file");
+  });
+  try {
+    const downloaded = await downloadPublicFile("https://files.example/start", {
+      resolve: async () => [publicAddress],
+      request: fixture.request,
+    });
+    expect(new TextDecoder().decode(downloaded.bytes)).toBe("file");
+    expect(fixture.requests).toHaveLength(2);
+    expect(fixture.responses.every((response) => response.destroyed)).toBe(true);
+    expect(fixture.requests.every((request) => request.destroyed)).toBe(true);
+    await fixture.disconnected();
+  } finally {
+    await fixture.close();
+  }
+});
+
+for (const status of [403, 500])
+  test(`discarded HTTP ${status} closes both sides without draining`, async () => {
+    const fixture = await networkTransportFixture((_req, res) => {
+      res.writeHead(status);
+      res.write("unused");
+    });
+    try {
+      await expect(
+        downloadPublicFile("https://files.example/error", { resolve: async () => [publicAddress], request: fixture.request }),
+      ).rejects.toThrow();
+      expect(fixture.responses[0]!.destroyed).toBe(true);
+      expect(fixture.requests[0]!.destroyed).toBe(true);
+      await fixture.disconnected();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+test("a file deadline bounds stalled DNS and a late answer never starts a request", async () => {
+  const lookup = Promise.withResolvers<Array<typeof publicAddress>>();
+  let sent = false;
+  await expect(
+    downloadPublicFile("https://files.example/file", {
+      timeoutMs: 10,
+      resolve: () => lookup.promise,
+      request: () => {
+        sent = true;
+        throw new Error("unexpected");
+      },
+    }),
+  ).rejects.toThrow("did not respond");
+  lookup.resolve([publicAddress]);
+  await Bun.sleep(0);
+  expect(sent).toBe(false);
+});
+
+for (const mode of ["deadline", "caller"] as const)
+  test(`file ${mode} stops a slowly streaming body`, async () => {
+    const fixture = await networkTransportFixture((_req, res) => {
+      res.write("x");
+      const timer = setInterval(() => res.write("x"), 5);
+      res.once("close", () => clearInterval(timer));
+    });
+    const caller = new AbortController();
+    try {
+      const pending = downloadPublicFile("https://files.example/file", {
+        timeoutMs: mode === "deadline" ? 80 : 20_000,
+        signal: caller.signal,
+        resolve: async () => [publicAddress],
+        request: fixture.request,
+      });
+      await fixture.firstResponse;
+      if (mode === "caller") caller.abort(new Error("cancelled"));
+      await expect(pending).rejects.toThrow(mode === "deadline" ? "did not respond" : "cancelled");
+      expect(fixture.requests[0]!.destroyed).toBe(true);
+      await fixture.disconnected();
+      expect(fixture.responses[0]!.destroyed).toBe(true);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+for (const mode of ["deadline", "caller"] as const)
+  test(`file ${mode} covers a stalled connection before headers`, async () => {
+    const connected = Promise.withResolvers<void>();
+    const fixture = await networkTransportFixture(() => connected.resolve());
+    const caller = new AbortController();
+    try {
+      const pending = downloadPublicFile("https://files.example/file", {
+        timeoutMs: mode === "deadline" ? 80 : 20_000,
+        signal: caller.signal,
+        resolve: async () => [publicAddress],
+        request: fixture.request,
+      });
+      await connected.promise;
+      if (mode === "caller") caller.abort(new Error("cancelled"));
+      await expect(pending).rejects.toThrow(mode === "deadline" ? "did not respond" : "cancelled");
+      expect(fixture.requests[0]!.destroyed).toBe(true);
+      await fixture.disconnected();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+test("file redirects reuse one deadline through the next host's stalled DNS", async () => {
+  const caller = new AbortController();
+  const redirected = Promise.withResolvers<void>();
+  let requests = 0;
+  const pending = downloadPublicFile("https://files.example/start", {
+    signal: caller.signal,
+    resolve: async (host) => {
+      if (host === "cdn.example") {
+        redirected.resolve();
+        return new Promise(() => {});
+      }
+      return [publicAddress];
+    },
+    requestPublicFile: async () => {
+      requests++;
+      return { statusCode: 302, headers: { location: "https://cdn.example/file" }, bytes: new Uint8Array() };
+    },
+  });
+  await redirected.promise;
+  caller.abort(new Error("cancelled"));
+  await expect(pending).rejects.toThrow("cancelled");
+  expect(requests).toBe(1);
+});
+
+test("file address attempts retain one total deadline", async () => {
+  const attempted: string[] = [];
+  const fixture = await networkTransportFixture(() => {});
+  try {
+    await expect(
+      downloadPublicFile("https://files.example/file", {
+        timeoutMs: 80,
+        resolve: async () => [publicAddress, { address: "1.1.1.1", family: 4 }, { address: "8.8.8.8", family: 4 }],
+        request: (options, callback) => {
+          attempted.push(String(options.hostname));
+          const outgoing = fixture.request(options, callback);
+          if (attempted.length === 1) queueMicrotask(() => outgoing.destroy(new Error("connect failed")));
+          return outgoing;
+        },
+      }),
+    ).rejects.toThrow("did not respond");
+    expect(attempted).toEqual([publicAddress.address, "1.1.1.1"]);
+    expect(fixture.requests.every((request) => request.destroyed)).toBe(true);
+    await fixture.disconnected();
+  } finally {
+    await fixture.close();
+  }
 });

@@ -79,6 +79,7 @@ describe("invocation middleware", () => {
       const app = new Hono<AuthContext>()
         .use(
           requireInvocation(() => ({ ...expected(), schemaHash: targetHash }), {
+            getApp: async () => ({ id: "demo" }),
             verify: realVerify,
             resolve: async () => {
               resolved += 1;
@@ -113,6 +114,7 @@ describe("invocation middleware", () => {
     const app = new Hono<AuthContext>()
       .use(
         requireInvocation(() => ({ ...expected(), schemaHash: "b".repeat(64) }), {
+          getApp: async () => ({ id: "demo" }),
           verify: realVerify,
           resolve: async () => {
             resolved += 1;
@@ -137,6 +139,7 @@ describe("invocation middleware", () => {
     const app = new Hono<AuthContext>()
       .use(
         requireInvocation(expected, {
+          getApp: async () => ({ id: "demo" }),
           verify: async () => claims,
           resolve: async () => ({
             actor: { kind: "user", user },
@@ -157,6 +160,7 @@ describe("invocation middleware", () => {
     const app = new Hono<AuthContext>()
       .use(
         requireInvocation(() => ({ ...expected(), schemaHash: "b".repeat(64) }), {
+          getApp: async () => ({ id: "demo" }),
           verify: realVerify,
           resolve: async () => ({
             actor: { kind: "user", user },
@@ -171,6 +175,33 @@ describe("invocation middleware", () => {
       401,
     );
     expect((await app.request("/", { headers: { authorization: `Bearer ${await signedToken(claims)}` } })).status).toBe(409);
+  });
+
+  test("rechecks the app independently and refuses unknown or newly restricted targets", async () => {
+    for (const target of [null, { id: "demo", access: { kind: "roles" as const, roles: ["admin" as const] } }]) {
+      let executed = false;
+      const app = new Hono<AuthContext>()
+        .use(
+          requireInvocation(expected, {
+            getApp: async () => target,
+            verify: async () => claims,
+            resolve: async () => ({
+              actor: { kind: "user", user },
+              accessSubject: { type: "user", userId: user.id },
+              credentialKind: "invocation",
+              scopes: ["read"],
+            }),
+          }),
+        )
+        .get("/", (c) => {
+          executed = true;
+          return c.text("private");
+        });
+      const response = await app.request("/", { headers: { authorization: `Bearer ${invocationCandidate}` } });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ code: "app_access_denied", app: "demo" });
+      expect(executed).toBe(false);
+    }
   });
 
   test("strict mode rejects non-invocation credentials before verification", async () => {
