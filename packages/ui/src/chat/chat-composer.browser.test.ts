@@ -116,7 +116,10 @@ render(
                       label: "Focus header",
                       onSelect: async () => {
                         await new Promise((done) => setTimeout(done, 50));
-                        document.querySelector<HTMLElement>("#outside-header button")?.focus();
+                        const field = document.createElement("input");
+                        field.id = "intended";
+                        document.body.append(field);
+                        field.focus();
                       },
                     },
                   ]
@@ -533,9 +536,9 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     // An action that put the focus somewhere on purpose keeps it there.
     await page.locator(".k2b-chat-composer__attach").click();
     await page.getByRole("menuitem", { name: "Focus header" }).click();
-    await page.waitForFunction(() => document.activeElement?.closest("#outside-header") !== null);
+    await page.waitForFunction(() => document.activeElement?.id === "intended");
     await frames(page, 3);
-    expect(await page.evaluate(() => document.activeElement?.closest("#outside-header") !== null)).toBe(true);
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("intended");
     await page.close();
   }, 30_000);
 
