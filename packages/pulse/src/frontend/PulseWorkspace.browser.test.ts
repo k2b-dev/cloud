@@ -5,6 +5,7 @@ import {
   buildWorkspaceHarness,
   origin,
   overviewWorkspaceFixture,
+  pauseWorkspaceClock,
   renderWorkspaceSnapshot,
   workspaceFixture,
 } from "./PulseWorkspace.browser-fixture";
@@ -44,8 +45,7 @@ const open = async (
   const tab = await browser.newPage({ viewport: { width: view.width, height: view.height }, isMobile: view.touch, hasTouch: view.touch });
   // Timers are frozen at the fixture's time: the first frame comes from the server snapshot, and a refresh runs
   // only when a test advances the clock.
-  await tab.clock.install({ time: new Date("2026-10-19T12:40:00.000Z") });
-  await tab.clock.pauseAt(new Date("2026-10-19T12:40:00.000Z"));
+  await pauseWorkspaceClock(tab.clock, new Date("2026-10-19T12:40:00.000Z"));
   const calls: string[] = [];
   await tab.route(`${origin}/api/**`, async (route) => {
     calls.push(new URL(route.request().url()).pathname);
@@ -133,8 +133,7 @@ describe("Pulse base overview", () => {
           };
         });
       try {
-        await tab.clock.install({ time: new Date(props.initialNow!) });
-        await tab.clock.pauseAt(new Date(props.initialNow!));
+        await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
         await tab.goto(`${origin}/app/pulse/Lad001`);
         expect(unexpectedRequests).toEqual([]);
         expect(
@@ -247,8 +246,7 @@ describe("Pulse base overview", () => {
         route.fulfill({ contentType: "text/html", body: page(props, locale, false, undefined, { serverHtml, deferMount: true }) }),
       );
       try {
-        await tab.clock.install({ time: new Date(props.initialNow!) });
-        await tab.clock.pauseAt(new Date(props.initialNow!));
+        await pauseWorkspaceClock(tab.clock, new Date(props.initialNow!));
         await tab.goto(`${origin}/app/pulse/Lad001`);
         await tab.evaluate(() => document.fonts.ready);
         await tab.locator(".pulse-overview__headline").waitFor();
@@ -808,8 +806,7 @@ describe("Pulse base page after the cut", () => {
     const failed = { ...deleting, store: { ...deleting.store, state: "failed" as const, errorCode: "STORE_UNAVAILABLE" } };
     let answer: { status: number; json: unknown } = { status: 200, json: failed };
     const tab = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
-    await tab.clock.install({ time: new Date("2026-10-19T12:40:00.000Z") });
-    await tab.clock.pauseAt(new Date("2026-10-19T12:40:00.000Z"));
+    await pauseWorkspaceClock(tab.clock, new Date("2026-10-19T12:40:00.000Z"));
     const calls: string[] = [];
     await tab.route(`${origin}/api/**`, async (route) => {
       const path = new URL(route.request().url()).pathname;
