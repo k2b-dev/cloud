@@ -567,6 +567,64 @@ export const listConversations = async (params: {
   });
 };
 
+/** Complete state for row reconciliation, independent of the bounded message-detail page. */
+export type ConversationRowState = {
+  revision: number;
+  messageCount: number;
+  activeFolderIds: string[];
+  unreadFolderIds: string[];
+  flaggedFolderIds: string[];
+};
+
+export const getConversationRowState = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  conversationId: string;
+}): Promise<Result<ConversationRowState>> => {
+  const access = await resolveMailExecution({
+    mailboxId: params.mailboxId,
+    operation: "actorRead",
+    conversationScoped: true,
+    context: params.context,
+  });
+  if (!access.ok) return access;
+  const visibility = access.data.access;
+  if (!visibility) return fail(err.forbidden("Access denied"));
+  // Check visibility in the aggregate query too: the state belongs to this mailbox and current reader.
+  const [row] = await sql<
+    {
+      revision: string | number;
+      message_count: number;
+      active_folder_ids: string[];
+      unread_folder_ids: string[];
+      flagged_folder_ids: string[];
+    }[]
+  >`
+    SELECT c.revision,
+      COUNT(DISTINCT cm.message_id)::int AS message_count,
+      COALESCE(array_agg(DISTINCT mp.folder_id::text ORDER BY mp.folder_id::text)
+        FILTER (WHERE mp.folder_id IS NOT NULL), ARRAY[]::text[]) AS active_folder_ids,
+      COALESCE(array_agg(DISTINCT mp.folder_id::text ORDER BY mp.folder_id::text)
+        FILTER (WHERE mp.folder_id IS NOT NULL AND NOT ('\\Seen' = ANY(mp.flags))), ARRAY[]::text[]) AS unread_folder_ids,
+      COALESCE(array_agg(DISTINCT mp.folder_id::text ORDER BY mp.folder_id::text)
+        FILTER (WHERE mp.folder_id IS NOT NULL AND '\\Flagged' = ANY(mp.flags)), ARRAY[]::text[]) AS flagged_folder_ids
+    FROM mail.conversations c
+    LEFT JOIN mail.conversation_messages cm ON cm.conversation_id = c.id
+    LEFT JOIN mail.message_placements mp ON mp.message_id = cm.message_id AND mp.deleted_at IS NULL
+    WHERE c.id = ${params.conversationId}::uuid AND c.mailbox_id = ${params.mailboxId}::uuid
+      AND ${conversationVisibleTo(visibility, sql`c.id`)}
+    GROUP BY c.id
+  `;
+  if (!row) return fail(err.notFound("Conversation"));
+  return ok({
+    revision: Number(row.revision),
+    messageCount: row.message_count,
+    activeFolderIds: row.active_folder_ids,
+    unreadFolderIds: row.unread_folder_ids,
+    flaggedFolderIds: row.flagged_folder_ids,
+  });
+};
+
 export type ConversationViewCounts = Record<ConversationView, number>;
 
 export const getConversationViewCounts = async (params: {

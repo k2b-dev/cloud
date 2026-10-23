@@ -2272,8 +2272,8 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             await page.waitForFunction(() => !new URL(location.href).searchParams.has("conversation"));
             await settled(page);
             expect(await head.isVisible()).toBe(true);
-            expect(await shared.isVisible()).toBe(true);
-            expect(await shared.isDisabled()).toBe(true);
+            // The phone list head carries no Details; the reader owns that control.
+            expect(await shared.isVisible()).toBe(false);
             if (shots) await page.screenshot({ path: resolve(shots, browserName, `f6-list-${theme}-390.png`) });
             const backRoute = "**/api/mail/mailboxes/Box001/workspace-route?*";
             await page.route(

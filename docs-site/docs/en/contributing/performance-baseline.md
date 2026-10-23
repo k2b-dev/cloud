@@ -961,7 +961,11 @@ bun --no-env-file packages/mail/scripts/perf-baseline.ts \
 ```
 
 `candidates.json` is a list of entries with `title`, `location`
-(`path:line` relative to the repository), `metric`, `evidence`, and `slice`.
+(`path:line` relative to the repository), `anchor`, `metric`, `evidence`, and
+`slice`. Copy the complete source line at `location` into `anchor`, without
+leading or trailing whitespace. The line must be non-empty and match the
+anchor exactly. If code moves or changes, review the location and anchor
+before ranking again; a stale reference fails instead of ranking silently.
 The `metric` names a measured time in that result, for example
 `interaction.folder-switch.chromium.phone.median`,
 `load.mailbox.webkit.desktop.ttiMs`,
@@ -971,8 +975,8 @@ The `metric` names a measured time in that result, for example
 `totalMs`), or
 `server.search-common.totalMs.median`. The command prints the five entries
 with the largest measured times as a Markdown table. It refuses an entry
-whose location is not an existing file and line, or whose metric has no
-number in the result, and it needs at least five entries. It also refuses
+whose location is not an existing non-empty line matching its anchor, or whose
+metric has no number in the result, and it needs at least five entries. It also refuses
 a list that mixes `server.` metrics with browser metrics: a server request
 time and a throttled browser time do not measure the same thing. Pick the
 metric that isolates the named cost, for example the island render time
