@@ -8,13 +8,42 @@ import { FilesError } from "./errors";
  * rights: every WOPI call resolves the user and the current permissions again, so an instance that never
  * saw the editor start can answer, and revoked access ends the session at the next call.
  */
-const TokenPayloadSchema = z.object({ u: z.string().uuid(), b: z.string().min(1), p: z.string().min(1), e: z.number().int() }).strict();
-export type EditorTokenPayload = { userId: string; baseId: string; path: string; expiresAt: number };
+const TokenPayloadSchema = z
+  .object({
+    u: z.string().uuid(),
+    b: z.string().min(1),
+    p: z.string().min(1),
+    e: z.number().int(),
+    m: z
+      .object({
+        scopes: z.array(z.string()).max(100),
+        credentialId: z.string().uuid().nullable(),
+        credentialExpiresAt: z.string().nullable(),
+        delegatedUserId: z.string().uuid().nullable().optional(),
+      })
+      .optional(),
+  })
+  .strict();
+export type EditorTokenPayload = {
+  userId: string;
+  baseId: string;
+  path: string;
+  expiresAt: number;
+  machine?: { scopes: string[]; credentialId: string | null; credentialExpiresAt: string | null; delegatedUserId?: string | null };
+};
 const encode = (value: string) => Buffer.from(value).toString("base64url");
 const sign = (body: string) => createHmac("sha256", env.APP_SECRET).update(`filesv2.editor:${body}`).digest("base64url");
 
 export function signEditorToken(payload: EditorTokenPayload): string {
-  const body = encode(JSON.stringify({ u: payload.userId, b: payload.baseId, p: payload.path, e: payload.expiresAt }));
+  const body = encode(
+    JSON.stringify({
+      u: payload.userId,
+      b: payload.baseId,
+      p: payload.path,
+      e: payload.expiresAt,
+      ...(payload.machine ? { m: payload.machine } : {}),
+    }),
+  );
   return `${body}.${sign(body)}`;
 }
 export function verifyEditorToken(token: string, now = Date.now()): EditorTokenPayload | null {
@@ -26,7 +55,7 @@ export function verifyEditorToken(token: string, now = Date.now()): EditorTokenP
   try {
     const parsed = TokenPayloadSchema.parse(JSON.parse(Buffer.from(body, "base64url").toString()));
     if (parsed.e <= now) return null;
-    return { userId: parsed.u, baseId: parsed.b, path: parsed.p, expiresAt: parsed.e };
+    return { userId: parsed.u, baseId: parsed.b, path: parsed.p, expiresAt: parsed.e, ...(parsed.m ? { machine: parsed.m } : {}) };
   } catch {
     return null;
   }

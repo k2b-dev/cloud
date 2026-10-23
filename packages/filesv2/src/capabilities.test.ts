@@ -115,6 +115,11 @@ mock.module("./service", () => ({
       if (serviceFailure) throw serviceFailure;
       return { state: "completed", entry: uploaded };
     },
+    uploadTarget: async () => {
+      if (serviceFailure) throw serviceFailure;
+      if (failure) throw new Error("storage unavailable");
+      return base;
+    },
     upload: async (_actor: unknown, input: { idempotencyKey: string }) => {
       if (serviceFailure) throw serviceFailure;
       uploadKeys.push(input.idempotencyKey);

@@ -353,7 +353,7 @@ function TemplateAccess(props: { id: string; name: string; close: () => void }) 
                 initialEntries={items()}
                 canEdit
                 allowPublic={false}
-                allowServiceAccounts={false}
+                allowServiceAccounts={true}
                 allowedLevels={[{ level: "read", label: t().use }]}
                 grantAccess={async (principal) => {
                   if (principal.type === "public" || principal.type === "service_account") throw new Error(t().failed);

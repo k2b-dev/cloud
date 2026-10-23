@@ -52,6 +52,9 @@ export class FilesFilegate {
   archiveLease(...args: Parameters<Filegate["archiveLease"]>) {
     return this.#client.archiveLease(...args);
   }
+  leaseTransportUrl(url: string): string {
+    return this.#client.transferUrl(url);
+  }
   downloadRaw(...args: Parameters<Filegate["downloadRaw"]>) {
     return this.#client.downloadRaw(...args);
   }
@@ -62,11 +65,23 @@ export class FilesFilegate {
   }
 }
 
+export type StorageGuard = {
+  check(permission: "read" | "write", path: string, session?: boolean): Promise<void>;
+  target(root: string, path: string): Promise<void>;
+  lease(
+    kind: "download" | "upload",
+    path: string,
+    lease: { url: string; expires: string },
+    session?: boolean,
+  ): Promise<{ url: string; expires: string }>;
+};
+
 export class FilesRoot {
   #client: RootClient;
   constructor(
     client: RootClient,
     private readonly serverUrl: string,
+    private readonly guard?: StorageGuard,
   ) {
     this.#client = client;
   }
@@ -74,9 +89,17 @@ export class FilesRoot {
     return this.#client.name;
   }
   as(...args: Parameters<RootClient["as"]>): FilesRoot {
-    return new FilesRoot(this.#client.as(...args), this.serverUrl);
+    return new FilesRoot(this.#client.as(...args), this.serverUrl, this.guard);
   }
-  #mutate<T>(method: Mutation, path: string, run: () => Promise<T>): Promise<T> {
+  guarded(guard: StorageGuard): FilesRoot {
+    return new FilesRoot(this.#client, this.serverUrl, guard);
+  }
+  async #read<T>(path: string, run: () => Promise<T>, session = false): Promise<T> {
+    await this.guard?.check("read", path, session);
+    return run();
+  }
+  async #mutate<T>(method: Mutation, path: string, run: () => Promise<T>): Promise<T> {
+    await this.guard?.check("write", path, method === "commitSession" || method === "abortSession");
     return filegateMutation(this.serverUrl, this.name, method, path, run);
   }
   info(...args: Parameters<RootClient["info"]>) {
@@ -86,54 +109,75 @@ export class FilesRoot {
     return this.#client.resolve(...args);
   }
   stat(...args: Parameters<RootClient["stat"]>) {
-    return this.#client.stat(...args);
+    return this.#read(args[0], () => this.#client.stat(...args));
   }
   list(...args: Parameters<RootClient["list"]>) {
-    return this.#client.list(...args);
+    return this.#read(args[0] ?? "", () => this.#client.list(...args));
   }
   search(...args: Parameters<RootClient["search"]>) {
-    return this.#client.search(...args);
+    return this.#read(args[1]?.path ?? "", () => this.#client.search(...args));
   }
   getACL(...args: Parameters<RootClient["getACL"]>) {
-    return this.#client.getACL(...args);
+    return this.#read(args[0], () => this.#client.getACL(...args));
   }
   contentRaw(...args: Parameters<RootClient["contentRaw"]>) {
-    return this.#client.contentRaw(...args);
+    return this.#read(args[0], () => this.#client.contentRaw(...args));
   }
-  directDownload(...args: Parameters<RootClient["directDownload"]>) {
-    return this.#client.directDownload(...args);
+  async directDownload(...args: Parameters<RootClient["directDownload"]>) {
+    await this.guard?.check("read", args[0]);
+    const lease = await this.#client.directDownload(...args);
+    return this.guard ? { ...lease, ...(await this.guard.lease("download", args[0], lease)) } : lease;
   }
-  directThumbnail(...args: Parameters<RootClient["directThumbnail"]>) {
-    return this.#client.directThumbnail(...args);
+  async directThumbnail(...args: Parameters<RootClient["directThumbnail"]>) {
+    await this.guard?.check("read", args[0]);
+    const lease = await this.#client.directThumbnail(...args);
+    return this.guard ? { ...lease, ...(await this.guard.lease("download", args[0], lease)) } : lease;
   }
-  directVersionDownload(...args: Parameters<RootClient["directVersionDownload"]>) {
-    return this.#client.directVersionDownload(...args);
+  async directVersionDownload(...args: Parameters<RootClient["directVersionDownload"]>) {
+    await this.guard?.check("read", args[0]);
+    const lease = await this.#client.directVersionDownload(...args);
+    return this.guard ? { ...lease, ...(await this.guard.lease("download", args[0], lease)) } : lease;
   }
   session(...args: Parameters<RootClient["session"]>) {
-    return this.#client.session(...args);
+    return this.#read(args[0], () => this.#client.session(...args), true);
   }
-  sessionLease(...args: Parameters<RootClient["sessionLease"]>) {
-    return this.#client.sessionLease(...args);
+  async sessionLease(...args: Parameters<RootClient["sessionLease"]>) {
+    await this.guard?.check("write", args[0], true);
+    const lease = await this.#client.sessionLease(...args);
+    return this.guard ? { ...lease, ...(await this.guard.lease("upload", args[0], lease, true)) } : lease;
   }
   versions(...args: Parameters<RootClient["versions"]>) {
-    return this.#client.versions(...args);
+    return this.#read(args[0], () => this.#client.versions(...args));
   }
   mkdir(...args: Parameters<RootClient["mkdir"]>) {
     return this.#mutate("mkdir", args[0], () => this.#client.mkdir(...args));
   }
-  put(...args: Parameters<RootClient["put"]>) {
+  async put(...args: Parameters<RootClient["put"]>) {
+    await this.guard?.check("write", args[0]);
     return filegateMutation(this.serverUrl, this.name, "put", args[0], () => this.#client.put(...args), undefined, {
       size: args[1].size,
       options: args[2] ?? {},
     });
   }
-  createSession(...args: Parameters<RootClient["createSession"]>) {
+  async createSession(...args: Parameters<RootClient["createSession"]>) {
+    await this.guard?.check("write", args[0]);
     const { idempotencyKey, expiresIn: _expires, allowAbort: _abort, ...options } = args[2] ?? {};
-    return filegateMutation(this.serverUrl, this.name, "createSession", args[0], () => this.#client.createSession(...args), undefined, {
-      size: args[1],
-      options,
-      key: idempotencyKey,
-    });
+    const created = await filegateMutation(
+      this.serverUrl,
+      this.name,
+      "createSession",
+      args[0],
+      () => this.#client.createSession(...args),
+      undefined,
+      {
+        size: args[1],
+        options,
+        key: idempotencyKey,
+      },
+    );
+    return this.guard && created.lease
+      ? { ...created, lease: { ...created.lease, ...(await this.guard.lease("upload", args[0], created.lease)) } }
+      : created;
   }
   commitSession(...args: Parameters<RootClient["commitSession"]>) {
     return this.#mutate("commitSession", args[0], () => this.#client.commitSession(...args));
@@ -141,7 +185,9 @@ export class FilesRoot {
   abortSession(...args: Parameters<RootClient["abortSession"]>) {
     return this.#mutate("abortSession", args[0], () => this.#client.abortSession(...args));
   }
-  transfer(...args: Parameters<RootClient["transfer"]>) {
+  async transfer(...args: Parameters<RootClient["transfer"]>) {
+    await this.guard?.check(args[3]?.move ? "write" : "read", args[0]);
+    await this.guard?.target(args[1], args[2]);
     return filegateMutation(this.serverUrl, this.name, "transfer", args[0], () => this.#client.transfer(...args), {
       root: args[1],
       path: args[2],
@@ -152,8 +198,10 @@ export class FilesRoot {
   restore(...args: Parameters<RootClient["restore"]>) {
     return this.#mutate("restore", args[0], () => this.#client.restore(...args));
   }
-  copyVersion(...args: Parameters<RootClient["copyVersion"]>) {
-    return this.#mutate("copyVersion", args[0], () => this.#client.copyVersion(...args));
+  async copyVersion(...args: Parameters<RootClient["copyVersion"]>) {
+    await this.guard?.check("read", args[0]);
+    await this.guard?.target(args[2], args[3]);
+    return filegateMutation(this.serverUrl, this.name, "copyVersion", args[0], () => this.#client.copyVersion(...args));
   }
   updateVersion(...args: Parameters<RootClient["updateVersion"]>) {
     return this.#mutate("updateVersion", args[0], () => this.#client.updateVersion(...args));

@@ -10,13 +10,14 @@ import {
   type ResourceAccessAdapter,
   resolveDisplayNames,
 } from "@k2b/cloud/server";
-import { accountIdentities } from "@k2b/cloud/services";
+import { accountIdentities, serviceAccounts } from "@k2b/cloud/services";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { TEMPLATE_LIMIT } from "../document-assets";
 import type { FileTemplate, TemplatePage } from "../template-contracts";
 import { FilesError, filesService } from ".";
 import type { UserFilesCall } from "./activity";
+import { currentMachine, filesScope, machineActor } from "./machine-access";
 
 type Row = { id: string; name: string; description: string; filename: string; size: number; updated_at: Date };
 const view = (row: Row): FileTemplate => ({
@@ -29,6 +30,11 @@ const view = (row: Row): FileTemplate => ({
 });
 const fields = sql`id,name,description,filename,size,updated_at`;
 async function user(actor: RequestActor) {
+  if (machineActor(actor)) {
+    const account = await currentMachine(actor);
+    if (!hasPermission(filesScope(actor), "read")) throw new FilesError("forbidden", 403);
+    return { user: { id: account.id } };
+  }
   const self = await accountIdentities.self(actor);
   if (self.user.profile !== "user") throw new FilesError("forbidden", 403);
   return self;
@@ -40,8 +46,15 @@ async function admin(actor: RequestActor) {
 const access: ResourceAccessAdapter = {
   async list(id) {
     const rows = await sql<
-      { id: string; user_id: string | null; group_id: string | null; authenticated_only: boolean; created_at: Date }[]
-    >`SELECT a.id,a.user_id,a.group_id,a.authenticated_only,a.created_at FROM auth.access a JOIN filesv2.template_access ta ON ta.access_id=a.id WHERE ta.template_id=${id}::uuid`;
+      {
+        id: string;
+        user_id: string | null;
+        group_id: string | null;
+        service_account_id: string | null;
+        authenticated_only: boolean;
+        created_at: Date;
+      }[]
+    >`SELECT a.id,a.user_id,a.group_id,a.service_account_id,a.authenticated_only,a.created_at FROM auth.access a JOIN filesv2.template_access ta ON ta.access_id=a.id WHERE ta.template_id=${id}::uuid`;
     return resolveDisplayNames(
       rows.map((row) => ({
         id: row.id,
@@ -49,7 +62,9 @@ const access: ResourceAccessAdapter = {
           ? { type: "user" as const, userId: row.user_id }
           : row.group_id
             ? { type: "group" as const, groupId: row.group_id }
-            : { type: "authenticated" as const },
+            : row.service_account_id
+              ? { type: "service_account" as const, serviceAccountId: row.service_account_id }
+              : { type: "authenticated" as const },
         permission: "read" as const,
         createdAt: row.created_at.toISOString(),
       })),
@@ -173,7 +188,12 @@ export function createTemplateService(files = filesService) {
       const actor = call.actor;
       await admin(actor);
       await get(id);
-      if (!["user", "group", "authenticated"].includes(principal.type)) throw new FilesError("forbidden", 403);
+      if (!["user", "group", "authenticated", "service_account"].includes(principal.type)) throw new FilesError("forbidden", 403);
+      if (principal.type === "service_account") {
+        const account = await serviceAccounts.get({ id: principal.serviceAccountId });
+        if (!account || account.status !== "active" || !["standalone", "agent"].includes(account.kind))
+          throw new FilesError("forbidden", 403);
+      }
       const result = await createAccess({ principal, permission: "read" });
       if (!result.ok) throw new FilesError("invalid_configuration", 400);
       try {

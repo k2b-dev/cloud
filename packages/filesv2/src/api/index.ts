@@ -61,6 +61,7 @@ import { requestCall } from "../files-call";
 import { FilesError, filesService } from "../service";
 import { apiError, describeError } from "./api-error";
 import { inlinePdfApi } from "./inline-pdf";
+import { machineStorageApi } from "./machine-storage";
 import { errorMessage } from "./messages";
 import { templateApi } from "./templates";
 import { wopiApi } from "./wopi";
@@ -76,13 +77,14 @@ const api = new Hono<AuthContext>()
   // Collabora reaches these routes with an editor token instead of a session; they must answer before the role check.
   .route("/wopi", wopiApi)
   .use(rateLimit())
-  .use("*", auth.requireRole("user"))
+  .use("*", auth.requireRole("authenticated"))
   .onError((error, c) => {
     const { code, status } = apiError(error);
     if (status >= 500)
       log.error("Files request failed", { code, status, method: c.req.method, path: c.req.path, error: describeError(error) });
     return respond(c, { ok: false, error: errorMessage(code, getLocale(c)), status, code });
   })
+  .route("/admin/machine-storage", machineStorageApi)
   .route("/templates", templateApi)
   .route("/", inlinePdfApi)
   .post(

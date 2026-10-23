@@ -1,4 +1,12 @@
 const messages: Record<string, [string, string]> = {
+  transfer_expired: [
+    "This transfer expired. Request a new transfer from Files.",
+    "Diese Übertragung ist abgelaufen. Fordere in Dateien eine neue Übertragung an.",
+  ],
+  machine_storage_owned: [
+    "This directory belongs to a machine account. Manage its access under Machine storage.",
+    "Dieses Verzeichnis gehört einem Maschinenkonto. Verwalte den Zugriff unter Maschinenablagen.",
+  ],
   configuration_unreadable: [
     "Files cannot read its saved configuration. Enter the Filegate token again to replace it, or reset the configuration.",
     "Dateien kann die gespeicherte Konfiguration nicht lesen. Gib den Filegate-Token erneut ein, um sie zu ersetzen, oder setze die Konfiguration zurück.",
