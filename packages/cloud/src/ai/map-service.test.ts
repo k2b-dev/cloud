@@ -372,7 +372,8 @@ describe("native Assistant map transitions", () => {
     expect(markdown).toContain(`"id":"${providerId}"`);
     expect(markdown).toContain(unicodeWebsite);
     expect(markdown.match(/:::map/g)).toHaveLength(3);
-    expect(markdown).toContain('"distanceAllowanceMeters":500000');
+    expect(markdown).not.toContain("distanceAllowanceMeters");
+    expect(markdown).toContain('"distanceMeters":162000');
     expect(markdown).toContain('"computedAt":"2026-10-19T14:31:00.000Z"');
   });
 });

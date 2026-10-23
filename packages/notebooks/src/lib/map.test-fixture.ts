@@ -49,7 +49,6 @@ export const fictionalRouteMap = (): GeoDocument => ({
   savedAt: "2026-10-19T12:00:00.000Z",
   pins: [],
   route: {
-    distanceAllowanceMeters: 500000,
     stops: [
       { id: "a", label: "Ulm Hbf", point: { lat: 48.4, lon: 9.9836 } },
       { id: "b", label: "Blautopf", point: { lat: 48.4159, lon: 9.7853 } },

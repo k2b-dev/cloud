@@ -76,7 +76,6 @@ export const mapRoute = (): GeoRoute => {
     point: { lat: 48.4 + i * 0.08, lon: 10 - i * 0.15 },
   }));
   return {
-    distanceAllowanceMeters: 500000,
     stops,
     options: { mode: "car" },
     legs: stops.slice(1).map((stop, i) => ({

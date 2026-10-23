@@ -201,12 +201,24 @@ export const GeoErrorDetailsSchema = z.discriminatedUnion("code", [
   z
     .object({
       code: z.literal("GEO_COST_OVERRUN"),
-      distanceAllowanceMeters: z.number().positive(),
+      adminHint: z.string().optional(),
+      estimatedDistanceMeters: z.number().nonnegative(),
+      reservedCredits: z.number().nonnegative(),
+      actualCredits: z.number().nonnegative(),
       actualDistanceMeters: z.number().nonnegative(),
       costs: GeoCostsSchema,
     })
     .strict(),
-  z.object({ code: z.literal("GEO_BUDGET_EXHAUSTED"), scope: z.enum(["person", "cloud"]), resetsAt: z.iso.datetime() }).strict(),
+  z
+    .object({
+      code: z.literal("GEO_BUDGET_EXHAUSTED"),
+      scope: z.enum(["person", "cloud"]),
+      resetsAt: z.iso.datetime(),
+      requiredCredits: z.number().nonnegative().optional(),
+      availableCredits: z.number().optional(),
+      shortfallCredits: z.number().nonnegative().optional(),
+    })
+    .strict(),
   z.object({ code: z.literal("GEO_BUSY"), retryAfterSeconds: z.number().positive(), costs: GeoCostsSchema.optional() }).strict(),
   z
     .object({

@@ -19,7 +19,6 @@ const route = () => {
   };
   const document = GeoRouteSchema.parse({
     ...shared,
-    distanceAllowanceMeters: 1000,
     inputHash: "a".repeat(64),
     options: { mode: "car" },
     stops: Array.from({ length: 4 }, (_, index) => ({ id: String(index), point: { lat: index, lon: index }, label: "東京😀" })),
