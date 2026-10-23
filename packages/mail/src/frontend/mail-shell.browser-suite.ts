@@ -71,6 +71,7 @@ let controller = "";
 let browser: Browser;
 let server: ReturnType<typeof Bun.serve>;
 const pageErrors = new WeakMap<Page, string[]>();
+const assetFailures = new WeakMap<Page, string[]>();
 /**
  * `?shell=1` lays the page out like Cloud's signed-in shell from 1024 px: a 56 px rail, the card spacing, and the
  * window as the app host. `&panel=416` adds Cloud's panel column, which makes the app area beside it the host.
@@ -235,7 +236,10 @@ const ready = async (page: Page) => {
           .map((entry) => ({ name: entry.name, at: entry.startTime })),
       }))
       .catch(() => "unreadable");
-    throw new Error(`Mail shell page never got ready: ${JSON.stringify({ evidence, errors: pageErrors.get(page) })}`, { cause: error });
+    throw new Error(
+      `Mail shell page never got ready: ${JSON.stringify({ evidence, errors: pageErrors.get(page), assets: assetFailures.get(page) })}`,
+      { cause: error },
+    );
   }
   await page.waitForFunction(
     () => !Array.from(document.querySelectorAll(".k2b-app-workspace__main")).some((main) => main.getAttribute("aria-busy") === "true"),
@@ -262,6 +266,15 @@ const open = async (path: string, width = 1440, height: number = sizes.find(([w]
   page.setDefaultTimeout(6000);
   const errors: string[] = [];
   pageErrors.set(page, errors);
+  const assets: string[] = [];
+  assetFailures.set(page, assets);
+  page.on("requestfailed", (request) => {
+    if (request.resourceType() === "script") assets.push(`${request.url()}: ${request.failure()?.errorText}`);
+  });
+  page.on("response", (response) => {
+    if (response.request().resourceType() === "script" && response.status() >= 400)
+      assets.push(`${response.url()}: HTTP ${response.status()}`);
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   try {
     await page.goto(new URL(path, server.url).href);
