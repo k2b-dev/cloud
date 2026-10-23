@@ -94,11 +94,18 @@ describe.each([1440, 390])("saved map follow-up at %i", (width) => {
   });
 });
 describe.each(["/app/assistant", "/app/assistant/panel"])("older map navigation from %s", (path) => {
-  test.each([1440, 390])("keeps the host route when loading history at %i", async (width) => {
+  describe.each([1440, 390])("at %i", (width) => {
     const scenario = `places-jump-${path.endsWith("panel") ? "panel" : "full"}-${width}`;
-    const { page, context } = await open(scenario, width);
-    const errors = pageErrors(page);
-    try {
+    let opened: Awaited<ReturnType<typeof open>>;
+    beforeAll(async () => {
+      opened = await open(scenario, width);
+    });
+    afterAll(async () => {
+      await opened?.context.close();
+    });
+    test("keeps the host route when loading history", async () => {
+      const { page } = opened;
+      const errors = pageErrors(page);
       await page.evaluate(() =>
         window.mapFollowup({ type: "search", search: { title: "Cafés", categories: ["cafe"], placeId: "museum-0" } }),
       );
@@ -134,9 +141,7 @@ describe.each(["/app/assistant", "/app/assistant/panel"])("older map navigation 
       expect(target.hash).toBe(`#assistant-map-${fixture.get(scenario).map.id}`);
       expect(new URL(page.url()).pathname).toBe(path);
       expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
+    });
   });
 });
 test.each([1440, 390])("named place search submits the provider name, fits all results and restores after reload at %i", async (width) => {
@@ -580,25 +585,34 @@ describe.each([1440, 390])("route reservation address recovery at %i", (width) =
     expect(fixture.commands.at(-1)).toEqual({ type: "repair", stopId: "c", address: "Andere Adresse" });
     await page.getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
   });
-  test.each(["C", "B", "A"])("selected %s coordinates survive refusal, reload and final calculation", async (mark) => {
-    const { page } = opened;
-    await pick(mark);
-    const response = page.waitForResponse((r) => r.url().endsWith("/action") && r.request().method() === "POST");
-    await page.getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
-    await response;
-    const saved = fixture.get(name).map;
-    expect(saved.plan?.stops.find((stop) => stop.id === mark.toLowerCase())?.point).toEqual(mapAddress(mark.charCodeAt(0) - 65).point);
-    if (mark !== "A") {
-      expect(saved.issue?.code).toBe("GEO_BUDGET_EXHAUSTED");
-      await page.reload();
-      await page.getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
-    } else {
-      expect(saved.issue).toBeUndefined();
-      expect(saved.route?.stops.map((stop) => stop.id)).toEqual(["a", "b", "c"]);
-      expect(saved.route?.stops.map((stop) => stop.point)).toEqual([0, 1, 2].map((index) => mapAddress(index).point));
-      await page.getByRole("button", { name: "Optionen", exact: true }).waitFor();
-      if (process.env.MAP_RECOVERY_EVIDENCE_DIR)
-        await page.screenshot({ path: `${process.env.MAP_RECOVERY_EVIDENCE_DIR}/03-route-light-${width}.png`, fullPage: true });
-    }
+  describe.each(["C", "B", "A"])("selected %s coordinates", (mark) => {
+    test("survive refusal and final calculation", async () => {
+      const { page } = opened;
+      await pick(mark);
+      const response = page.waitForResponse((r) => r.url().endsWith("/action") && r.request().method() === "POST");
+      await page.getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
+      await response;
+      const saved = fixture.get(name).map;
+      expect(saved.plan?.stops.find((stop) => stop.id === mark.toLowerCase())?.point).toEqual(mapAddress(mark.charCodeAt(0) - 65).point);
+      if (mark !== "A") {
+        expect(saved.issue?.code).toBe("GEO_BUDGET_EXHAUSTED");
+        await page.getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
+      } else {
+        expect(saved.issue).toBeUndefined();
+        expect(saved.route?.stops.map((stop) => stop.id)).toEqual(["a", "b", "c"]);
+        expect(saved.route?.stops.map((stop) => stop.point)).toEqual([0, 1, 2].map((index) => mapAddress(index).point));
+        await page.getByRole("button", { name: "Optionen", exact: true }).waitFor();
+        if (process.env.MAP_RECOVERY_EVIDENCE_DIR)
+          await page.screenshot({ path: `${process.env.MAP_RECOVERY_EVIDENCE_DIR}/03-route-light-${width}.png`, fullPage: true });
+      }
+    });
+    if (mark !== "A")
+      test("remain available after reload before choosing the next stop", async () => {
+        await opened.page.reload();
+        await opened.page.getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
+        expect(fixture.get(name).map.plan?.stops.find((stop) => stop.id === mark.toLowerCase())?.point).toEqual(
+          mapAddress(mark.charCodeAt(0) - 65).point,
+        );
+      });
   });
 });
