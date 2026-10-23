@@ -150,3 +150,12 @@ test("the deadline counts from asking, so a card that waits too long shows not a
   await flush();
   expect(reads).not.toContain("late");
 });
+
+test("the minute tick makes every answer due again, so shown cards read once more", async () => {
+  const { cards, reads, revoke } = setup();
+  expect((await cards.view(ref("a")).view).state).toBe("ok");
+  revoke();
+  cards.tick();
+  expect(await cards.view(ref("a")).view).toEqual({ state: "no_access" });
+  expect(reads).toEqual(["a", "a"]);
+});

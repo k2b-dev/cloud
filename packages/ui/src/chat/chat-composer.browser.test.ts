@@ -111,7 +111,14 @@ render(
                 ? [
                     { id: "poll", label: "Poll", onSelect: () => {} },
                     // An action that moves the focus on purpose, as one that opens its own field.
-                    { id: "focus", label: "Focus header", onSelect: () => document.querySelector<HTMLElement>("#outside-header button")?.focus() },
+                    {
+                      id: "focus",
+                      label: "Focus header",
+                      onSelect: async () => {
+                        await new Promise((done) => setTimeout(done, 50));
+                        document.querySelector<HTMLElement>("#outside-header button")?.focus();
+                      },
+                    },
                   ]
                 : undefined,
             formatting: true,
@@ -526,6 +533,7 @@ describe(`conversation ChatComposer in ${browserName}`, () => {
     // An action that put the focus somewhere on purpose keeps it there.
     await page.locator(".k2b-chat-composer__attach").click();
     await page.getByRole("menuitem", { name: "Focus header" }).click();
+    await page.waitForFunction(() => document.activeElement?.closest("#outside-header") !== null);
     await frames(page, 3);
     expect(await page.evaluate(() => document.activeElement?.closest("#outside-header") !== null)).toBe(true);
     await page.close();

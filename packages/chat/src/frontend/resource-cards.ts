@@ -163,7 +163,11 @@ export const createResourceCards = (
     /** Changes when shown cards should read again. */
     epoch,
     /** Called once a minute while the page is visible. */
-    tick: () => setEpoch((value) => value + 1),
+    tick: () => {
+      // Every answer so far is due again, so each shown card reads once more now.
+      for (const entry of entries.values()) if (entry.settled) entry.at = Number.NEGATIVE_INFINITY;
+      setEpoch((value) => value + 1);
+    },
     /**
      * The card for one element, held by one card until `release`. Cards of the same element share one fresh read; a
      * read nobody holds any more stops.
