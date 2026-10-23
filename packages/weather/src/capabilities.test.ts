@@ -9,7 +9,7 @@ import {
   type User,
 } from "@k2b/cloud/contracts";
 import { audit, weatherService } from "@k2b/cloud/services";
-import { fail, ok } from "@k2b/stdlib";
+import { ok } from "@k2b/stdlib";
 import { decodeWeatherCapabilityCursor, weatherCapabilities } from "./capabilities";
 import { CurrentWeatherSchema } from "./contracts";
 
@@ -116,7 +116,6 @@ describe("weather capabilities", () => {
   test("declares the complete local v1 surface", () => {
     expect(Object.keys(weatherCapabilities.types)).toEqual(["location"]);
     expect(Object.keys(weatherCapabilities.queries).sort()).toEqual([
-      "city.search",
       "forecast.current",
       "forecast.get",
       "location.list",
@@ -343,21 +342,6 @@ describe("weather capabilities", () => {
     if (result.ok) expect(CurrentWeatherSchema.parse(result.data.data).stationName).toHaveLength(160);
   });
 
-  test("allows service accounts to search cities and forwards cancellation", async () => {
-    const list = spyOn(weatherService.location.city, "list").mockResolvedValue(
-      ok({ items: [{ name: "Ulm", lat: 48.4, lon: 9.99, country: "DE" }], page: 1, perPage: 5, total: 1, hasNext: false }),
-    );
-
-    const result = await weatherCapabilities.queries["city.search"].run({ query: "Ulm", limit: 5 }, serviceAccountContext);
-
-    expect(list).toHaveBeenCalledWith({
-      pagination: { page: 1, perPage: 5 },
-      signal: serviceAccountContext.signal,
-      filter: { query: "Ulm", country: "DE" },
-    });
-    expect(result).toMatchObject({ ok: true, data: { data: [{ name: "Ulm", lat: 48.4, lon: 9.99, country: "DE" }] } });
-  });
-
   test("audits location writes and returns schema-valid user outcomes from every action", async () => {
     const create = spyOn(weatherService.location.saved, "create").mockResolvedValue(ok(location));
     spyOn(weatherService.location.saved, "get").mockResolvedValue(location);
@@ -410,29 +394,6 @@ describe("weather capabilities", () => {
     expect(() => compileCapabilityManifest("weather", weatherCapabilities)).not.toThrow();
   });
 });
-
-for (const [locale, admin] of [
-  ["en", "administrator"],
-  ["de", "Administrator"],
-] as const) {
-  test(`city search preserves configuration failures and localizes recovery in ${locale}`, async () => {
-    const list = spyOn(weatherService.location.city, "list").mockResolvedValue(
-      fail({ code: "WEATHER_CITY_SEARCH_NOT_CONFIGURED", status: 500, message: "internal details" }),
-    );
-    const result = await weatherCapabilities.queries["city.search"].run({ query: "Ulm", limit: 5 }, { ...userContext, locale });
-    expect(result).toMatchObject({ ok: false, error: { code: "WEATHER_CITY_SEARCH_NOT_CONFIGURED", status: 500 } });
-    if (result.ok) throw new Error("Expected failure");
-    expect(result.error.message).toContain(admin);
-    expect(result.error.message).toContain('source.kind = "coordinates"');
-    expect(result.error.message).not.toContain("internal details");
-    list.mockResolvedValue(fail({ code: "WEATHER_CITY_SEARCH_UNAVAILABLE", status: 500, message: "private body" }));
-    const unavailable = await weatherCapabilities.queries["city.search"].run({ query: "Ulm", limit: 5 }, { ...userContext, locale });
-    expect(unavailable).toMatchObject({ ok: false, error: { code: "WEATHER_CITY_SEARCH_UNAVAILABLE", status: 500 } });
-    if (unavailable.ok) throw new Error("Expected failure");
-    expect(unavailable.error.message).toContain('source.kind = "coordinates"');
-    expect(unavailable.error.message).not.toContain("private body");
-  });
-}
 
 test("every declared Type has a reader open-link case or an explicit reason", async () => {
   spyOn(weatherService.location.saved, "get").mockResolvedValue(location);

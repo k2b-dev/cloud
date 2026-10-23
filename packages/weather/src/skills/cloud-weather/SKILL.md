@@ -11,13 +11,13 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 
 - Saved locations: `weather.location.search`, `weather.location.list`, `weather.location.read`, `weather.location.create`, and `weather.location.delete`.
 - Forecasts: `weather.forecast.current` and `weather.forecast.get`.
-- Unsaved places: `weather.city.search` finds German city candidates and explicit coordinates.
+- Unsaved places: Core’s `address.autocomplete` with `countryCode: "DE"` and `type: "city"` returns up to five city candidates and explicit coordinates.
 
 ## Normal flows
 
 - For a saved place, use location search or list and pass the returned location ID to `weather.forecast.current` for current conditions or `weather.forecast.get` for hourly and daily outlooks.
-- For an unsaved German city, use `weather.city.search`, choose an unambiguous candidate, and pass its coordinates directly to a forecast. Save it with `weather.location.create` only when the user asks.
-- If city search is unavailable, use known coordinates with `weather.forecast.current` or `weather.forecast.get` and `source.kind = "coordinates"`; an administrator can configure the Geo API URL in Weather settings.
+- For an unsaved German city, use Core’s `address.autocomplete` with at least three characters, `countryCode: "DE"` and `type: "city"`, choose an unambiguous candidate, and pass its coordinates directly to a forecast. Save it with `weather.location.create` only when the user asks.
+- If city search is unavailable, use known coordinates with `weather.forecast.current` or `weather.forecast.get` and `source.kind = "coordinates"`; an administrator can configure the Geoapify key and budgets in Core’s Places and maps settings.
 - If multiple city candidates remain plausible, ask which one instead of choosing silently. Delete a saved location only when explicitly requested.
 
 ## Reporting defaults

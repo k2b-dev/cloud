@@ -99,7 +99,14 @@ import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
 import { aiSkills } from "./skills";
-import { AI_TOOL_CHECK_STALE_MS, aiConversations, claimAiToolCheck, readAiToolCheck, settleAiToolCheck } from "./store";
+import {
+  AI_TOOL_CHECK_STALE_MS,
+  AiConversationCreationError,
+  aiConversations,
+  claimAiToolCheck,
+  readAiToolCheck,
+  settleAiToolCheck,
+} from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
@@ -616,24 +623,29 @@ export const aiRoutes = (() => {
         if (body.allowedTools && preloadTools.some((name) => !body.allowedTools!.includes(name!))) {
           return respond(c, fail(err.badInput("Preloaded tools must be included in allowedTools.")));
         }
-        return respond(
-          c,
-          ok(
-            publicConversation(
-              await aiConversations.createConversation({
-                ownerUserId: ctx.ownerUserId,
-                title: body.title,
-                projectId: project?.id,
-                draft: draft.data.content,
-                preloadTools: preloadTools.map((name) => name!),
-                allowedTools: body.allowedTools,
-                launchedByAppId: body.launchedByAppId,
-              }),
-              project?.shortId ?? null,
-            ),
-          ),
-          201,
-        );
+        try {
+          const conversation = await aiConversations.createConversation({
+            requestId: body.requestId,
+            ownerUserId: ctx.ownerUserId,
+            title: body.title,
+            projectId: project?.id,
+            draft: draft.data.content,
+            preloadTools: preloadTools.map((name) => name!),
+            allowedTools: body.allowedTools,
+            launchedByAppId: body.launchedByAppId,
+          });
+          // A replay may return a conversation assigned to a Project since creation.
+          const currentProject = conversation.projectId
+            ? await aiProjects.get(conversation.projectId, c.get("accessSubject"), "read")
+            : null;
+          if (conversation.projectId && !currentProject) return respond(c, fail(err.notFound("Project")));
+          return respond(c, ok(publicConversation(conversation, currentProject?.shortId ?? null)), 201);
+        } catch (error) {
+          if (error instanceof AiConversationCreationError) {
+            return respond(c, fail(error.reason === "conflict" ? err.conflict(error.message) : err.notFound("Conversation")));
+          }
+          throw error;
+        }
       })
       .get("/conversations/:conversationId", async (c) => {
         const ctx = await resolveContext(c);
@@ -642,6 +654,24 @@ export const aiRoutes = (() => {
         if (!conversation) return notFound(c);
         return respond(c, ok(await conversationDetail(conversation, c.get("accessSubject"))));
       })
+      .get(
+        "/conversations/:conversationId/submission/:draftRevision",
+        v("param", z.object({ conversationId: z.string().regex(AI_SHORT_ID_PATTERN), draftRevision: z.coerce.number().int().min(0) })),
+        async (c) => {
+          const ctx = await resolveContext(c);
+          if (ctx instanceof Response) return ctx;
+          const conversation = await loadConversation(c, ctx);
+          if (!conversation) return notFound(c);
+          if (conversation.projectId && !(await aiProjects.get(conversation.projectId, c.get("accessSubject"), "read"))) return notFound(c);
+          const submission = await aiConversations.getDraftSubmission({
+            conversationId: conversation.id,
+            ownerUserId: ctx.ownerUserId,
+            revision: c.req.valid("param").draftRevision,
+          });
+          // Null is deliberately not a claim that the request was rejected.
+          return respond(c, ok({ submission }));
+        },
+      )
       .get("/conversations/:conversationId/messages", v("query", MessagesPageQuerySchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
