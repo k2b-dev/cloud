@@ -174,15 +174,15 @@ describe("PermissionEditor last manager in a browser", () => {
     }
   };
 
-  test("locks the only manager's row without moving anything", async () => {
-    for (const width of [320, 1024]) {
+  for (const width of [320, 1024]) {
+    test(`${width}px: locks the only manager's row without moving anything`, async () => {
       const locked = await firstRow(width, [manager("qdt", "Quentin Dorn")]);
       const free = await firstRow(width, [manager("qdt", "Quentin Dorn"), manager("lym", "Lya Meyer")]);
       expect(locked.disabled).toBe(true);
       expect(free.disabled).toBe(false);
       expect({ ...locked, disabled: undefined }).toEqual({ ...free, disabled: undefined });
-    }
-  });
+    });
+  }
 });
 
 describe("PermissionEditor group coverage in a browser", () => {
@@ -204,14 +204,17 @@ describe("PermissionEditor group coverage in a browser", () => {
   ];
 
   // Loading the members changes nothing in the row (see the behavior test), so the server-rendered layout is final.
-  test("the members toggle stays whole beside a long group name on phones", async () => {
-    for (const name of ["Studierendenvertretung Vorstand", longName]) {
-      for (const [width, locale] of [
-        [320, "de"],
-        [375, "de"],
-        [390, "en"],
-        [1024, "de"],
-      ] as const) {
+  for (const [nameKind, name] of [
+    ["long group", "Studierendenvertretung Vorstand"],
+    ["unbroken group", longName],
+  ] as const) {
+    for (const [width, locale] of [
+      [320, "de"],
+      [375, "de"],
+      [390, "en"],
+      [1024, "de"],
+    ] as const) {
+      test(`${nameKind}, ${width}px, ${locale}: the members toggle stays whole`, async () => {
         const tab = await open(width, locale, groupEntries(name));
         try {
           const layout = await tab.evaluate(() => {
@@ -241,9 +244,9 @@ describe("PermissionEditor group coverage in a browser", () => {
         } finally {
           await tab.close();
         }
-      }
+      });
     }
-  });
+  }
 });
 
 const openHarness = async (width: number) => {
