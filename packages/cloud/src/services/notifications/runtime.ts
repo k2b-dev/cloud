@@ -95,6 +95,7 @@ const recover = (): Promise<void> => {
 const lifecycle = createRuntimeLifecycle({
   start: async () => {
     recoveryTasks.open();
+    // Local delivery orchestration; email enters the shared SMTP budget.
     const concurrency = Math.min(Math.max(Math.floor(runtimeOptions.concurrency ?? 4), 1), 16);
     const recoveryIntervalMs = Math.max(runtimeOptions.recoveryIntervalMs ?? 30_000, 5_000);
     worker = await deliveryJob().process(
