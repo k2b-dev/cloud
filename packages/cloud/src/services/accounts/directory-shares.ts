@@ -45,6 +45,13 @@ export const directoryShares = {
       WHERE share.recipient_id=${params.recipientId}::uuid
       ORDER BY share.created_at, share.id
       LIMIT ${params.perPage} OFFSET ${(params.page - 1) * params.perPage}`;
+    const total =
+      rows[0]?.total ??
+      (
+        await sql<
+          { total: number }[]
+        >`SELECT count(*)::int AS total FROM auth.directory_shares WHERE recipient_id=${params.recipientId}::uuid`
+      )[0]!.total;
     return ok({
       items: rows.map((row) => ({
         id: row.id,
@@ -56,7 +63,7 @@ export const directoryShares = {
             ? { type: "group" as const, groupId: row.group_id }
             : { type: "service_account" as const, serviceAccountId: row.service_account_id! },
       })),
-      total: rows[0]?.total ?? 0,
+      total,
       page: params.page,
       perPage: params.perPage,
     });

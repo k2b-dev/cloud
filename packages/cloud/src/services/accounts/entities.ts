@@ -513,9 +513,10 @@ export const list = async (
       OR (
         kind = 'service_account' AND (
           LOWER(name) LIKE ${pattern} ESCAPE '\\'
-          OR LOWER(COALESCE(app_id, '')) LIKE ${pattern} ESCAPE '\\'
+          OR (${params.visibility.type !== "directory_shares"} AND (LOWER(COALESCE(app_id, '')) LIKE ${pattern} ESCAPE '\\'
           OR LOWER(COALESCE(resource_type, '')) LIKE ${pattern} ESCAPE '\\'
           OR LOWER(COALESCE(resource_id, '')) LIKE ${pattern} ESCAPE '\\'
+          ))
         )
       )
     )
@@ -648,9 +649,28 @@ export const list = async (
     OFFSET ${offset}
   `;
 
-  const total = rows.length > 0 ? Number((rows[0] as Record<string, unknown>).total) : 0;
+  let total = rows.length > 0 ? Number(rows[0]!.total) : 0;
+  if (params.visibility.type === "directory_shares" && !rows.length && page > 1)
+    total = (await list({ ...params, page: 1, perPage: 1 })).total;
   return {
-    items: rows.map(mapEntityRow),
+    items: rows.map((row) => {
+      const entity = mapEntityRow(row);
+      if (params.visibility.type !== "directory_shares") return entity;
+      if (entity.kind === "group") return { ...entity, group: { ...entity.group, personalOwner: null } };
+      if (entity.kind === "service_account")
+        return {
+          ...entity,
+          serviceAccount: {
+            ...entity.serviceAccount,
+            delegatedUserId: null,
+            createdBy: null,
+            appId: null,
+            resourceType: null,
+            resourceId: null,
+          },
+        };
+      return entity;
+    }),
     total,
     pagination: {
       page,

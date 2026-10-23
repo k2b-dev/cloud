@@ -15,7 +15,7 @@ import {
   Tag,
   useLocale,
 } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { useAccountsMessages } from "../messages";
 import { directoryMessages } from "./directory-messages";
 
@@ -39,7 +39,7 @@ export function DirectorySharesDialog(props: { close: () => void; setDismissHand
       );
       const result = await response.json();
       if (!response.ok || !("items" in result)) throw new Error(t().loadFailed);
-      return result;
+      return { ...result, recipientId: source.recipientId, requestedPage: source.page };
     },
   });
   const change = mutation.create({
@@ -63,6 +63,13 @@ export function DirectorySharesDialog(props: { close: () => void; setDismissHand
   });
   props.setDismissHandler(() => {
     if (!change.loading()) props.close();
+  });
+  const currentEntries = () =>
+    entries.data()?.recipientId === recipient()?.id && entries.data()?.requestedPage === page() ? entries.data() : null;
+  createEffect(() => {
+    const snapshot = currentEntries();
+    if (!entries.loading() && !entries.refreshing() && !entries.error() && snapshot && !snapshot.items.length && page() > 1)
+      setPage(Math.max(1, Math.ceil(snapshot.total / 20)));
   });
   const blocked = () => change.loading() || entries.loading() || entries.refreshing() || Boolean(entries.error());
   return (
@@ -137,9 +144,12 @@ export function DirectorySharesDialog(props: { close: () => void; setDismissHand
               }}
             />
             <Show when={!entries.loading() && !entries.refreshing()} fallback={<Placeholder state="loading" title={t().loading} />}>
-              <Show when={entries.data()?.items.length} fallback={<p class="text-sm text-dimmed">{entries.error() ? "" : t().empty}</p>}>
+              <Show
+                when={currentEntries()?.items.length}
+                fallback={<p class="text-sm text-dimmed">{entries.error() || currentEntries()?.total !== 0 ? "" : t().empty}</p>}
+              >
                 <ul class="divide-y divide-border">
-                  <For each={entries.data()?.items}>
+                  <For each={currentEntries()?.items}>
                     {(entry) => (
                       <li class="flex items-center justify-between gap-3 py-2">
                         <span class="min-w-0 break-words text-sm">
@@ -170,7 +180,7 @@ export function DirectorySharesDialog(props: { close: () => void; setDismissHand
                 </ul>
               </Show>
             </Show>
-            <Show when={(entries.data()?.total ?? 0) > 20 || page() > 1}>
+            <Show when={(currentEntries()?.total ?? 0) > 20 || page() > 1}>
               <div class="flex justify-between gap-2">
                 <Button variant="secondary" size="sm" disabled={blocked() || page() === 1} onClick={() => setPage((value) => value - 1)}>
                   {t().previous}
@@ -178,7 +188,7 @@ export function DirectorySharesDialog(props: { close: () => void; setDismissHand
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={blocked() || page() * 20 >= (entries.data()?.total ?? 0)}
+                  disabled={blocked() || page() * 20 >= (currentEntries()?.total ?? 0)}
                   onClick={() => setPage((value) => value + 1)}
                 >
                   {t().next}

@@ -1,8 +1,10 @@
 ---
 title: Operate machine directory shares
+navTitle: Operate machine directory shares
 section: Operations
 order: 1450
 description: Roll out, inspect and revoke bounded directory access for machine accounts.
+tags: [identity, service-accounts, authorization]
 updated: 2026-10-23
 ---
 

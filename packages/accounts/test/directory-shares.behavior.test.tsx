@@ -8,11 +8,23 @@ const personId = "22222222-2222-4222-8222-222222222222";
 const flush = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
-const waitOptions = async () => {
-  await new Promise((resolve) => setTimeout(resolve, 250));
-  await flush();
+const waitFor = async (predicate: () => boolean) => {
+  for (let n = 0; n < 100; n++) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Expected directory UI state did not arrive");
 };
 
+const load = async () => {
+  const dom = createDomTestHarness();
+  try {
+    return await import("../src/frontend/service-accounts/DirectoryShares.island");
+  } finally {
+    dom.cleanup();
+  }
+};
+const components = isServer ? null : await load();
 describe("directory share administration", () => {
   if (isServer) {
     test.skip("requires the package DOM runner", () => {});
@@ -56,7 +68,7 @@ describe("directory share administration", () => {
       }
       throw new Error(`Unexpected request ${method} ${url.pathname}`);
     });
-    const { DirectorySharesDialog } = await import("../src/frontend/service-accounts/DirectoryShares.island");
+    const { DirectorySharesDialog } = components!;
     const dispose = render(() => createComponent(DirectorySharesDialog, { close: () => {}, setDismissHandler: () => {} }), dom.root);
     cleanup = () => {
       dispose();
@@ -67,16 +79,18 @@ describe("directory share administration", () => {
     const type = async (field: HTMLInputElement, value: string) => {
       field.value = value;
       field.dispatchEvent(new Event("input", { bubbles: true }));
-      await waitOptions();
+      await flush();
     };
     const option = (label: string) =>
       [...dom.document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((node) => node.textContent?.includes(label));
     await type(input()[0]!, "Release");
+    await waitFor(() => Boolean(option("Release helper")));
     expect(option("Release helper")).toBeDefined();
     option("Release helper")!.click();
     await flush();
     expect(dom.root.textContent).toContain("No entries shared");
     await type(input()[1]!, "Ada");
+    await waitFor(() => Boolean(option("Ada Example")));
     option("Ada Example")!.click();
     await flush();
     expect(dom.root.textContent).toContain("Could not update directory access");
@@ -92,5 +106,117 @@ describe("directory share administration", () => {
     expect(dom.root.textContent).toContain("No entries shared");
     expect(requests.filter((request) => request.startsWith("POST "))).toHaveLength(2);
     expect(requests.filter((request) => request.startsWith("DELETE "))).toHaveLength(1);
+  });
+  test("a failed recipient switch never displays the previous recipient's entries", async () => {
+    const dom = createDomTestHarness();
+    const secondId = "33333333-3333-4333-8333-333333333333";
+    let secondFails = true;
+    let release: ((value: Response) => void) | undefined;
+    const network = spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      if (url.pathname.endsWith("/service-accounts"))
+        return Response.json({
+          items: [
+            { id: accountId, name: "First helper", kind: "agent" },
+            { id: secondId, name: "Second helper", kind: "standalone" },
+          ],
+        });
+      if (url.pathname.includes(secondId)) {
+        if (secondFails) return Response.json({ message: "Unavailable" }, { status: 503 });
+        return new Promise<Response>((resolve) => {
+          release = resolve;
+        });
+      }
+      if (url.pathname.includes("/directory-shares/"))
+        return Response.json({
+          items: [
+            { id: "first-share", label: "First private entry", principal: { type: "user", userId: personId }, serviceAccountKind: null },
+          ],
+          total: 1,
+          page: 1,
+          perPage: 20,
+        });
+      throw new Error("Unexpected fixture path");
+    });
+    const dispose = render(
+      () => createComponent(components!.DirectorySharesDialog, { close: () => {}, setDismissHandler: () => {} }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      network.mockRestore();
+      dom.cleanup();
+    };
+    const select = async (name: string) => {
+      const field = dom.document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+      field.value = name;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+      await waitFor(() => [...dom.document.querySelectorAll('[role="option"]')].some((node) => node.textContent?.includes(name)));
+      [...dom.document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find((node) => node.textContent?.includes(name))!.click();
+      await flush();
+    };
+    await select("First helper");
+    expect(dom.root.textContent).toContain("First private entry");
+    await select("Second helper");
+    expect(dom.root.textContent).not.toContain("First private entry");
+    expect(dom.root.textContent).toContain("Could not load directory access");
+    secondFails = false;
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((node) => node.textContent?.trim() === "Retry")!.click();
+    await flush();
+    expect(dom.root.textContent).not.toContain("First private entry");
+    release!(Response.json({ items: [], total: 0, page: 1, perPage: 20 }));
+    await flush();
+    expect(dom.root.textContent).toContain("No entries shared");
+    expect(dom.root.textContent).not.toContain("First private entry");
+  });
+  test("revoking share 21 on page two returns to the remaining twenty entries", async () => {
+    const dom = createDomTestHarness();
+    let total = 21;
+    const network = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      if (url.pathname.endsWith("/service-accounts"))
+        return Response.json({ items: [{ id: accountId, name: "Release helper", kind: "agent" }] });
+      if (method === "DELETE") {
+        total = 20;
+        return Response.json({ ok: true });
+      }
+      const page = Number(url.searchParams.get("page") ?? 1);
+      return Response.json({
+        items: Array.from({ length: page === 1 ? 20 : total - 20 }, (_, n) => ({
+          id: `share-${(page - 1) * 20 + n}`,
+          label: `Entry ${(page - 1) * 20 + n + 1}`,
+          principal: { type: "user", userId: personId },
+          serviceAccountKind: null,
+        })),
+        total,
+        page,
+        perPage: 20,
+      });
+    });
+    const dispose = render(
+      () => createComponent(components!.DirectorySharesDialog, { close: () => {}, setDismissHandler: () => {} }),
+      dom.root,
+    );
+    cleanup = () => {
+      dispose();
+      network.mockRestore();
+      dom.cleanup();
+    };
+    const field = dom.document.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+    field.value = "Release";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    await waitFor(() => [...dom.document.querySelectorAll('[role="option"]')].some((n) => n.textContent?.includes("Release helper")));
+    [...dom.document.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+      .find((n) => n.textContent?.includes("Release helper"))!
+      .click();
+    await waitFor(() => Boolean(dom.root.querySelector('button[aria-label="Revoke directory access: Entry 1"]')));
+    [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((n) => n.textContent?.trim() === "Next")!.click();
+    await waitFor(() => Boolean(dom.root.querySelector('button[aria-label="Revoke directory access: Entry 21"]')));
+    dom.root.querySelector<HTMLButtonElement>('button[aria-label="Revoke directory access: Entry 21"]')!.click();
+    await waitFor(() => Boolean(dom.root.querySelector('button[aria-label="Revoke directory access: Entry 1"]')));
+    expect(dom.root.querySelectorAll('button[aria-label^="Revoke directory access:"]')).toHaveLength(20);
+    expect(dom.root.textContent).not.toContain("No entries shared");
   });
 });

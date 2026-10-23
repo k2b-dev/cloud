@@ -1,8 +1,10 @@
 ---
 title: Directory shares
-section: Identity
+navTitle: Directory shares
+section: Identity and access
 order: 650
 description: Let an agent or service account find explicitly shared directory entries by name.
+tags: [identity, service-accounts, authorization]
 updated: 2026-10-23
 ---
 
@@ -16,7 +18,8 @@ reveal group membership or management relationships.
 Open **Accounts → Service accounts → Directory access**, select the machine
 account, then add the exact entries it needs. Each entry has a revoke control.
 The account starts with no directory entries. Adding a group shares the group's
-name and directory information, not its members.
+name and directory information, not its members. Personal-group owner details
+and machine creator, delegation and resource-binding details are omitted.
 
 ## Search as the machine
 
@@ -39,7 +42,8 @@ a rejected resource operation succeed.
 
 ## Manage shares through the administrator API
 
-The following routes require an installation administrator:
+The following routes require an installation administrator. OAuth credentials
+also need `write` or `admin` for changes:
 
 - `GET /api/admin/identity/directory-shares/<account-id>` lists shares with
   the standard `page` and `per_page` pagination parameters.
