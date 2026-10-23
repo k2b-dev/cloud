@@ -11,7 +11,7 @@ import { renderDocumentHtmlPdf, renderDocumentPdfPreview } from "./document-rend
 // Explicit infrastructure test: requires Gotenberg and Poppler's pdftotext.
 // Keep the optional review directory to inspect the actual paginated output.
 const pdftotext = Bun.which(process.env.PDFTOTEXT ?? "pdftotext");
-const renderTest = pdftotext ? testFor("gotenberg") : test.skip;
+const renderTest = pdftotext ? testFor("gotenberg", "valkey") : test.skip;
 const skipReason = pdftotext ? "" : " (skipped: Poppler pdftotext is not on PATH; install Poppler or set PDFTOTEXT)";
 renderTest(
   `real Gotenberg renders multiple records, long nested items, repeated headers and an empty selection${skipReason}`,
@@ -74,7 +74,7 @@ renderTest(
   90_000,
 );
 
-testFor("gotenberg")(
+testFor("gotenberg", "valkey")(
   "PDF previews carry the template name, or the draft name, as their title",
   async () => {
     const config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 1_000_000, maxPdfBytes: 10_000_000 };
@@ -90,7 +90,7 @@ testFor("gotenberg")(
   60_000,
 );
 
-testFor("gotenberg")(
+testFor("gotenberg", "valkey")(
   "document templates render the body, page CSS, header, and footer offline",
   async () => {
     const config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 1_000_000, maxPdfBytes: 10_000_000 };

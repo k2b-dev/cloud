@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { GotenbergRenderError } from "@k2b/cloud/services/pdf";
 import { z } from "zod";
 import { germanBillingProfile, germanEInvoiceProfile } from "../document-profiles/einvoice-de";
 import { documentProfileInputMessage } from "../document-profiles/input-diagnostics";
@@ -17,6 +18,31 @@ const valid = () => ({
 });
 
 describe("document profile input diagnostics", () => {
+  test("profile previews preserve renderer busy/503 and localized retry guidance", async () => {
+    for (const [locale, message] of [
+      ["en", "The PDF renderer is busy. Try again shortly."],
+      ["de", "Die PDF-Erstellung ist ausgelastet. Versuche es in Kürze erneut."],
+    ] as const) {
+      for (const error of [
+        new GotenbergRenderError("busy", "private renderer details", 503),
+        { code: "busy", status: 503, message: "private renderer details" },
+      ]) {
+        const issue = mock(async () => {
+          throw error;
+        });
+        const service = createDocumentIssuanceService({ profiles: [{ ...germanEInvoiceProfile, issue }] });
+        const result = await service.preview({
+          profileId: germanEInvoiceProfile.id,
+          profileVersion: germanEInvoiceProfile.version,
+          snapshot: valid(),
+          locale,
+        });
+        expect(result).toMatchObject({ ok: false, error: { code: "busy", status: 503, message } });
+        expect(JSON.stringify(result)).not.toContain("private");
+        expect(issue).toHaveBeenCalledTimes(1);
+      }
+    }
+  });
   test("renderer failures never echo raw errors in any locale", async () => {
     for (const locale of ["en", "de", "fr"])
       for (const error of [

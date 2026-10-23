@@ -1,5 +1,5 @@
 import { GotenbergRenderError, mergePdfs, type RenderHtmlToPdfResult } from "@k2b/cloud/services";
-import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
+import { type DateContext, err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { Document, DocumentArtifact, DocumentTemplate } from "../contracts";
 import { type DocumentReadAuthorizer, loadReadableWorkflowRunDocumentScopes, workflowRunDocumentAccessWhere } from "./document-browse";
@@ -199,6 +199,7 @@ export const downloadWorkflowDocuments = async (
     return ok({ format: "pdf", pdf: merged.pdf, filename: `${base}.pdf`, documentCount: files.length });
   } catch (error) {
     if (error instanceof GotenbergRenderError) {
+      if (error.code === "busy" && isServiceError(error)) return fail({ code: error.code, status: error.status, message: t.pdfBusy });
       return fail(
         error.code === "bad_input" || error.code === "not_configured" ? err.badInput(error.message) : err.internal(error.message),
       );
