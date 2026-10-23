@@ -144,6 +144,7 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
     fonts(),
   ]);
   const chats = new Map<string, Chat>();
+  const createIntents = new Map<string, string>();
   const people = new Map([viewer, nora, tobias].map((person) => [person.id, person]));
   const groups = new Map<string, Group>();
   const subscriptions: Subscription[] = [];
@@ -472,6 +473,11 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
       if (url.pathname === "/api/chat/conversations" && request.method === "GET") return Response.json(list());
       if (url.pathname === "/api/chat/conversations" && request.method === "POST") {
         const input = CreateConversationSchema.parse(await request.json());
+        const replay = input.createKey && createIntents.get(input.createKey);
+        if (replay)
+          return Response.json(CreateOutcomeSchema.parse({ outcome: "created", conversation: chats.get(replay)!.conversation }), {
+            status: 201,
+          });
         const direct = new Set([viewer.id, ...input.members.flatMap((principal) => (principal.type === "user" ? [principal.userId] : []))]);
         if (!input.allowDuplicate && input.members.every((principal) => principal.type === "user")) {
           const matches = [...chats.values()]
@@ -498,6 +504,7 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
           end: new Date(Math.max(latest + 1, now().getTime())),
           spacing: 0,
         });
+        if (input.createKey) createIntents.set(input.createKey, id);
         const chat = chats.get(id)!;
         chat.conversation = { ...chat.conversation, icon: input.icon ?? null, purpose: input.purpose ?? null };
         for (const principal of input.members.filter((principal) => principal.type === "group"))
@@ -783,11 +790,13 @@ export const startChatHarness = async (options: { renderPage?: (request: Request
     members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
     posted,
     reads,
+    chatCount: () => chats.size,
     /** Advances the viewer's read state on another device, without recording a page report. */
     readElsewhere: read,
     /** Isolates scenarios; IDs stay unique so a closing page cannot report against a later chat. */
     reset: () => {
       chats.clear();
+      createIntents.clear();
       people.clear();
       for (const person of [viewer, nora, tobias]) people.set(person.id, person);
       groups.clear();

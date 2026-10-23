@@ -186,16 +186,22 @@
   flex: none;
   justify-content: center;
 }
-/* Removal stays quiet until the row is engaged where a pointer can hover; touch screens always show it. Only the
-   opacity changes, so nothing moves; the @k2b/ui motion tokens make it instant under reduced motion. */
-@media (hover: hover) and (min-width: 40rem) {
-  .chat-member-row .chat-member-row__remove {
+/* Follow the shared input mode on hybrid devices, keeping the action's space reserved. Phones always show it. */
+.chat-member-row .chat-member-row__remove {
+  transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+@media (any-hover: hover) and (min-width: 40rem) {
+  :where(html:not([data-k2b-input="touch"])) .chat-member-row .chat-member-row__remove {
     opacity: 0;
-    transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
   }
-  .chat-member-row:is(:hover, :focus-within) .chat-member-row__remove {
-    opacity: 1;
+}
+@media (min-width: 40rem) {
+  :where(html[data-k2b-input="trackpad"]) .chat-member-row .chat-member-row__remove {
+    opacity: 0;
   }
+}
+.chat-member-row:is(:hover, :focus-within) .chat-member-row__remove {
+  opacity: 1;
 }
 .chat-info__purpose {
   font-size: 0.875rem;
