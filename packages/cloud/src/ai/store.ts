@@ -1,6 +1,7 @@
 import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, StoreEntry } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
 import { type SQL, sql } from "bun";
+import { capabilityRequestHash } from "../capabilities/claims";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../capabilities/review-storage";
 import { type CapabilityActionReviewPresentation, CapabilityActionReviewPresentationSchema } from "../contracts/capabilities";
 import { logger } from "../services/logging";
@@ -1363,11 +1364,45 @@ export const saveAiDraftInTransaction = async (
   };
 };
 
+export class AiConversationCreationError extends Error {
+  constructor(readonly reason: "conflict" | "unavailable") {
+    super(
+      reason === "conflict"
+        ? "This creation request was already used with different input."
+        : "The conversation from this request is no longer available.",
+    );
+  }
+}
+
 export const aiConversations: AiConversationService = {
+  getDraftSubmission: async ({ conversationId, ownerUserId, revision }) => {
+    const [row] = await sql<{ message_id: string; turn_id: string | null }[]>`
+      SELECT message.short_id AS message_id, turn.short_id AS turn_id
+      FROM ai.messages message
+      JOIN ai.conversations conversation ON conversation.id = message.conversation_id
+      LEFT JOIN ai.turns turn ON turn.id::text = message.loop_id AND turn.conversation_id = conversation.id
+      WHERE conversation.id = ${conversationId}::uuid AND conversation.created_by_user_id = ${ownerUserId}::uuid
+        AND conversation.archived_at IS NULL AND message.role = 'user'
+        AND message.meta->>'submittedDraftRevision' = ${String(revision)}
+      LIMIT 1
+    `;
+    return row ? { messageId: row.message_id, turnId: row.turn_id } : null;
+  },
   createConversation: async (input) => {
-    const rows = await withAiShortId(
-      "idx_ai_conversations_short_id",
-      (shortId) => sql<ConversationRow[]>`
+    const normalized = {
+      title: input.title?.trim() || "New chat",
+      description: input.description?.trim() ?? "",
+      projectId: input.projectId ?? null,
+      draft: input.draft ?? [],
+      preloadTools: input.preloadTools ?? [],
+      allowedTools: input.allowedTools ?? null,
+      launchedByAppId: input.launchedByAppId?.trim() || null,
+    };
+    const insert = async (db: SQL) => {
+      const rows = await withAiShortIdForDb(
+        db,
+        "idx_ai_conversations_short_id",
+        (attempt, shortId) => attempt<ConversationRow[]>`
       INSERT INTO ai.conversations (
         short_id,
         title,
@@ -1383,8 +1418,8 @@ export const aiConversations: AiConversationService = {
       )
       SELECT
         ${shortId},
-        ${input.title?.trim() || "New chat"},
-        ${input.description?.trim() ?? ""},
+        ${normalized.title},
+        ${normalized.description},
         ${input.projectId ?? null}::uuid,
         ${JSON.stringify(input.draft ?? [])}::text::jsonb,
         ${input.draft?.length ? 1 : 0},
@@ -1396,10 +1431,38 @@ export const aiConversations: AiConversationService = {
       WHERE ${input.projectId ?? null}::uuid IS NULL
          OR EXISTS (SELECT 1 FROM ai.projects project WHERE project.id = ${input.projectId ?? null}::uuid)
       RETURNING *
-    `,
-    );
-    if (!rows[0]) throw new Error("Project does not exist.");
-    return rowToConversation(rows[0]);
+      `,
+      );
+      if (!rows[0]) throw new Error("Project does not exist.");
+      return rowToConversation(rows[0]);
+    };
+    if (!input.requestId) return insert(sql);
+    const hash = capabilityRequestHash(normalized);
+    return sql.begin(async (tx) => {
+      const reserved = await tx<{ request_id: string }[]>`
+        INSERT INTO ai.conversation_creations (owner_user_id, request_id, input_hash)
+        VALUES (${input.ownerUserId}::uuid, ${input.requestId}::uuid, ${hash})
+        ON CONFLICT (owner_user_id, request_id) DO NOTHING RETURNING request_id
+      `;
+      const [claim] = await tx<{ input_hash: string; conversation_id: string | null }[]>`
+        SELECT input_hash, conversation_id FROM ai.conversation_creations
+        WHERE owner_user_id = ${input.ownerUserId}::uuid AND request_id = ${input.requestId}::uuid
+        FOR UPDATE
+      `;
+      if (!claim || claim.input_hash !== hash) throw new AiConversationCreationError("conflict");
+      if (!reserved.length) {
+        const [existing] = await tx<ConversationRow[]>`
+          SELECT * FROM ai.conversations WHERE id = ${claim.conversation_id}::uuid
+            AND created_by_user_id = ${input.ownerUserId}::uuid AND archived_at IS NULL
+        `;
+        if (!existing) throw new AiConversationCreationError("unavailable");
+        return rowToConversation(existing);
+      }
+      const conversation = await insert(tx);
+      await tx`UPDATE ai.conversation_creations SET conversation_id = ${conversation.id}::uuid
+        WHERE owner_user_id = ${input.ownerUserId}::uuid AND request_id = ${input.requestId}::uuid`;
+      return conversation;
+    });
   },
 
   forkConversation: async (input) => {

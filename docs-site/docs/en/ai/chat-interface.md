@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-22
+updated: 2026-10-23
 ---
 
 # Chat interface
@@ -115,6 +115,23 @@ The controller exposes:
 - approval, outcome-check, and frontend-tool actions;
 - file URLs and file counts;
 - one error state for the active chat.
+
+`createConversation()` returns `null` on failure. `creationErrorStatus()` exposes
+the HTTP status when the controller reports a creation failure, or `null` when
+that status is unavailable. Applications can distinguish a definitive refusal (such as an unavailable
+creation replay) from an uncertain write; retain local drafts in either case.
+
+After a lost turn response, `uncertainSubmissions()` maps conversation IDs to
+their confirmed submitted draft revisions. Those conversations reject further
+saves and sends until resolved. `reconcileSubmission(id)` checks the exact
+server record; `retrySubmission(id)` first checks it, then deliberately retries
+the frozen submission if still unknown. Neither operation saves a new draft.
+They return `accepted`, `unknown`, or `none`. For the active conversation,
+acceptance also waits for its post-submission draft to load; a failed refresh
+keeps the draft locked and can be retried. Keep unresolved local content and
+later edits separate, and prevent panel removal while the outcome is unknown.
+The controller's pending identity is in memory, so native page departure still
+needs the application's unsaved-state warning.
 
 The controller consumes a transport-neutral conversation event stream over the
 conversation SSE route, like the CLI; `streamTransport` replaces it for an
