@@ -99,6 +99,7 @@ const data: MailboxPageData = {
   nextListCursor: null,
   listError: null,
   listTitle: "Needs action",
+  conversationRowState: null,
   detailMessages: [],
   conversationSummary: null,
   conversationDrafts: [],
