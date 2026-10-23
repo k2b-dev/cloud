@@ -5,7 +5,9 @@ import { type RequestActor, ServiceAccountSchema, UserSchema } from "./shared";
 export const PlatformPermissionSchema = z.enum(["mail:send", "mail:read"]);
 export type PlatformPermission = z.infer<typeof PlatformPermissionSchema>;
 export const MailRetentionSchema = z.object({ contentDays: z.int().min(1).max(36500), recordDays: z.int().min(1).max(36500) }).strict();
-export type MailRetention = z.infer<typeof MailRetentionSchema>;
+export type MailRetention = z.infer<typeof MailRetentionSchema> & {
+  unreadable?: Partial<Record<"outgoing_mail.content_retention_days" | "outgoing_mail.record_retention_days", boolean>>;
+};
 
 export const MailProfileKeySchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/);
 const headerText = z

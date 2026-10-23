@@ -1,5 +1,6 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import { createServer, type RequestListener, type Server } from "node:http";
+import { networkTransportFixture } from "../../../../scripts/fixtures/network-transport";
 import { parseNetworkAllowlistEnv } from "../shared/network-address";
 import { createAllowedNetworkFetch } from "./allowed-network-fetch";
 import { NetworkTargetBlockedError, type resolveAllowedNetworkAddresses } from "./network-security";
@@ -317,3 +318,45 @@ for (const via of ["init", "Request"] as const) {
     expect(await (await pending).text()).toBe("firstlast");
   });
 }
+
+test("a caller deadline bounds a lookup that never settles", async () => {
+  const request = mock(() => {
+    throw new Error("Must not connect");
+  });
+  await expect(
+    createAllowedNetworkFetch(allow(), { lookup: () => new Promise(() => {}), request })("https://target.example", {
+      signal: AbortSignal.timeout(10),
+    }),
+  ).rejects.toMatchObject({ name: "TimeoutError" });
+  expect(request).not.toHaveBeenCalled();
+});
+
+test("a caller deadline closes a slow response without resetting on body bytes", async () => {
+  const { url } = await serve((_req, res) => {
+    res.write("first");
+    const timer = setInterval(() => res.write("x"), 5);
+    res.once("close", () => clearInterval(timer));
+  });
+  const response = await createAllowedNetworkFetch(allow("127.0.0.1"))(url, { signal: AbortSignal.timeout(80) });
+  await expect(response.text()).rejects.toMatchObject({ name: "TimeoutError" });
+});
+
+test("redirect error destroys both request and never-ending response", async () => {
+  const fixture = await networkTransportFixture((_req, res) => {
+    res.writeHead(302, { location: "https://target.example/next" });
+    res.write("unused");
+  });
+  try {
+    await expect(
+      createAllowedNetworkFetch(allow(), { lookup: async () => [{ address: "1.1.1.1", family: 4 }], request: fixture.request })(
+        "https://target.example",
+        { redirect: "error" },
+      ),
+    ).rejects.toThrow("redirect");
+    expect(fixture.responses[0]!.destroyed).toBe(true);
+    expect(fixture.requests[0]!.destroyed).toBe(true);
+    await fixture.disconnected();
+  } finally {
+    await fixture.close();
+  }
+});
