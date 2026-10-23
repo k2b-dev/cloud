@@ -4,6 +4,7 @@ import type { ServerWebSocket } from "bun";
 import { z } from "zod";
 import {
   AddMembersSchema,
+  CHANGES_PAGE_SIZE,
   ChangeSchema,
   CONVERSATION_PAGE_SIZE,
   ConversationQuerySchema,
@@ -776,7 +777,17 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         }
         if (!part) return Response.json(chat.conversation);
         if (part === "snapshot") return Response.json(snapshot(id!, url.searchParams.get("message")));
-        if (part === "changes") return Response.json({ rev: chat.conversation.rev, more: false, conversation: null, messages: [] });
+        if (part === "changes") {
+          const after = Number(url.searchParams.get("afterRev"));
+          const messages = chat.messages.filter((message) => message.rev > after).slice(0, CHANGES_PAGE_SIZE);
+          const more = messages.length === CHANGES_PAGE_SIZE;
+          return Response.json({
+            rev: more ? messages.at(-1)!.rev : chat.conversation.rev,
+            more,
+            conversation: chat.conversation,
+            messages,
+          });
+        }
         if (part === "messages" && request.method === "GET") return Response.json(page(chat, url.searchParams));
         if (part === "messages" && request.method === "POST") {
           const input = SendMessageSchema.parse(await request.json());
@@ -822,7 +833,6 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         if (frame.t === "sub") {
           subscriptions.push({ socket, id: frame.id, channel: frame.channel!, scope: frame.scope ?? {} });
           const after = Number(frame.after?.slice(2) ?? cursor);
-          socket.send(JSON.stringify({ t: "ready", id: frame.id, cursor: `c.${after}` }));
           for (const event of events) {
             if (
               event.cursor <= after ||
@@ -832,6 +842,8 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
               continue;
             socket.send(JSON.stringify({ t: "event", id: frame.id, cursor: `c.${event.cursor}`, data: event.data }));
           }
+          // Match live-engine.replayTo: replay first, then confirm the current watermark.
+          socket.send(JSON.stringify({ t: "ready", id: frame.id, cursor: `c.${cursor}` }));
         }
         if (frame.t === "unsub") {
           const index = subscriptions.findIndex((subscription) => subscription.socket === socket && subscription.id === frame.id);
@@ -912,6 +924,12 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
           (subscription) => subscription.channel === channel && (channel !== "conversation" || subscription.scope.conversation === chat),
         ),
       ),
+    /** Simulates an expired live replay cursor using the production resync frame. */
+    resync: (chat: string) => {
+      for (const subscription of subscriptions)
+        if (subscription.channel === "conversation" && subscription.scope.conversation === chat)
+          subscription.socket.send(JSON.stringify({ t: "resync", id: subscription.id, cursor: `c.${cursor}` }));
+    },
     /** Makes the next `count` sends fail with 503. */
     failSends: (count = 1) => {
       failing = count;

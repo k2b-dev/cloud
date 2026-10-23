@@ -79,6 +79,7 @@ export type ChatStoreSnapshot = {
 export type OpenChat = {
   id: string;
   status: "live" | "no-access" | "stopped";
+  caughtUp: boolean;
   conversation: Conversation | null;
   messages: readonly Message[];
   membershipRev: number;
@@ -298,7 +299,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, message.rev), seqHead: Math.max(chat.view.seqHead, message.seq) };
     extendWindow(chat);
   };
-  const publishMessages = (chat: Current) => {
+  const publishMessages = (chat: Current, notifyListeners = true) => {
     if (!active(chat)) return;
     chat.view = {
       ...chat.view,
@@ -308,7 +309,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       hasOlder: chat.from !== null && chat.from > 1,
       hasNewer: chat.to !== null && chat.to < chat.view.seqHead,
     };
-    notify();
+    if (notifyListeners) notify();
   };
   const refreshMetadata = async (chat: Current) => {
     const row = await api.conversation(chat.view.id);
@@ -417,6 +418,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       view: {
         id: next.conversation.id,
         status: "live",
+        caughtUp: false,
         conversation: next.conversation,
         membershipRev: 0,
         watermark: next.page.rev,
@@ -459,12 +461,20 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           if (membership) chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
           if (system) await refreshMetadata(chat);
           if (active(chat)) chat.metadataRev = Math.max(chat.metadataRev, highestRev);
-          publishMessages(chat);
+        },
+        caughtUp: (caughtUp) => {
+          if (!active(chat) || chat.view.caughtUp === caughtUp) return;
+          // Publish live event replay once the subscription has no pending work; API history reads
+          // and resync snapshots still publish normally.
+          if (caughtUp) publishMessages(chat, false);
+          chat.view = { ...chat.view, caughtUp };
+          notify();
         },
         resync: () => resyncConversation(chat),
         revoked: () => noAccess(chat),
         unavailable: () => {
           if (!active(chat)) return;
+          publishMessages(chat, false);
           chat.view = { ...chat.view, status: "stopped" };
           stopped();
         },
@@ -776,6 +786,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         view: {
           id,
           status: "live",
+          caughtUp: false,
           conversation: null,
           messages: [],
           membershipRev: 0,

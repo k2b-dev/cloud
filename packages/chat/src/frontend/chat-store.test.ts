@@ -43,22 +43,34 @@ type Controls = {
   resync(): Promise<void>;
   revoked(): void;
   unavailable(): void;
+  caughtUp(value: boolean): void;
   closed: boolean;
   cursor: string | null;
 };
 class ManualConnection implements LiveConnection {
   channels = new Map<string, Controls>();
   subscribe<T>(channel: string, _scope: unknown, handlers: LiveSubscriptionHandlers<T>) {
+    let confirmed = true;
+    const run = async (apply: () => Promise<void>) => {
+      handlers.caughtUp?.(false);
+      await apply();
+      if (confirmed) handlers.caughtUp?.(true);
+    };
     const controls: Controls = {
-      apply: async (data) => handlers.apply([{ data: handlers.parse(data), cursor: "cursor" }]),
-      applyBatch: async (data) => handlers.apply(data.map((event) => ({ data: handlers.parse(event), cursor: "cursor" }))),
-      resync: handlers.resync,
+      apply: (data) => run(() => handlers.apply([{ data: handlers.parse(data), cursor: "cursor" }])),
+      applyBatch: (data) => run(() => handlers.apply(data.map((event) => ({ data: handlers.parse(event), cursor: "cursor" })))),
+      resync: () => run(handlers.resync),
       revoked: () => handlers.revoked?.("access_denied"),
       unavailable: handlers.unavailable,
+      caughtUp: (value) => {
+        confirmed = value;
+        handlers.caughtUp?.(value);
+      },
       closed: false,
       cursor: handlers.cursor,
     };
     this.channels.set(channel, controls);
+    controls.caughtUp(true);
     return {
       close: () => {
         controls.closed = true;
@@ -114,6 +126,44 @@ const fixture = (overrides: Partial<ChatStoreApi> = {}, options: { unread?: bool
   );
   return { api, connection, store };
 };
+
+test("replay publishes one complete feed window when caught up and retains accepted data when unavailable", async () => {
+  for (const outcome of ["ready", "unavailable"] as const) {
+    const { store, connection } = fixture();
+    const live = connection.get("conversation");
+    live.caughtUp(false);
+    const windows: number[][] = [];
+    store.subscribe(() => windows.push(store.openConversation!.messages.map((message) => message.seq)));
+    for (const rev of [2, 3]) await live.apply({ type: "message", message: message(rev) });
+    expect(store.openConversation?.watermark).toBe(3);
+    expect(store.openConversation?.messages.map((message) => message.seq)).toEqual([1]);
+    expect(windows).toEqual([]);
+    if (outcome === "ready") live.caughtUp(true);
+    else live.unavailable();
+    expect(windows).toHaveLength(1);
+    expect(windows.every((window) => window.join() === "1,2,3")).toBe(true);
+    expect(store.openConversation?.caughtUp).toBe(outcome === "ready");
+    expect(store.openConversation?.status).toBe(outcome === "ready" ? "live" : "stopped");
+    store.dispose();
+  }
+});
+
+test("personal writes and list refreshes preserve the open conversation's catch-up state", async () => {
+  const { store, connection } = fixture({ personal: async () => conversation });
+  try {
+    for (const caughtUp of [false, true]) {
+      connection.get("conversation").caughtUp(caughtUp);
+      await store.personal(conversation.id, { pinned: true });
+      expect(store.openConversation?.caughtUp).toBe(caughtUp);
+      await store.showArchive(false, true);
+      expect(store.openConversation?.caughtUp).toBe(caughtUp);
+      await connection.get("me").apply({ type: "personal" });
+      expect(store.openConversation?.caughtUp).toBe(caughtUp);
+    }
+  } finally {
+    store.dispose();
+  }
+});
 
 for (const historical of [false, true]) {
   test(`membership revisions count every author once per live batch${historical ? " outside the displayed history" : ""}`, async () => {
@@ -733,6 +783,7 @@ test("openChat 404 replaces the current chat without leaking its details", async
     id: "ghijkl",
     membershipRev: 0,
     status: "no-access",
+    caughtUp: false,
     conversation: null,
     messages: [],
     watermark: 0,

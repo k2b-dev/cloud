@@ -56,9 +56,13 @@ const fixture = (start = 0) => {
   let id = 0;
   const pending = new Map<number, { at: number; callback: () => void }>();
   const posts: number[] = [];
+  const gaps: number[] = [];
   const reporter = createReadReporter({
     start,
     active: () => active,
+    onGap: (from) => {
+      if (from !== null) gaps.push(from);
+    },
     post: async (seq) => {
       posts.push(seq);
       if (fails) throw new Error("offline");
@@ -78,6 +82,7 @@ const fixture = (start = 0) => {
   return {
     reporter,
     posts,
+    gaps,
     pending,
     active: (value: boolean) => {
       active = value;
@@ -225,4 +230,90 @@ test("dispose does not duplicate an advance already in flight", async () => {
   expect(posts).toEqual([5]);
   resolve?.();
   await settle();
+});
+
+test("reactivating a skipped range exposes the contiguous gap without reporting it read", async () => {
+  const f = fixture(8);
+  f.active(false);
+  f.reporter.seen(50, 68);
+  expect(f.gaps).toEqual([]);
+  expect(f.posts).toEqual([]);
+  f.active(true);
+  f.reporter.activate();
+  expect(f.gaps).toEqual([9]);
+  expect(f.posts).toEqual([]);
+  f.reporter.seen(9, 20);
+  await settle();
+  expect(f.posts).toEqual([20]);
+  f.reporter.seen(21, 30);
+  // The locally seen frontier includes the next throttled read, even before the server sees it.
+  f.reporter.seen(40, 50);
+  expect(f.gaps).toEqual([9, 31]);
+  f.reporter.dispose();
+});
+
+test("a read from another device clears a resolved gap immediately", () => {
+  const gaps: (number | null)[] = [];
+  const reporter = createReadReporter({ start: 8, active: () => true, post: async () => {}, onGap: (from) => gaps.push(from) });
+  reporter.seen(50, 68);
+  expect(gaps).toEqual([9]);
+  reporter.setStart(68);
+  expect(gaps).toEqual([9, null]);
+  reporter.dispose();
+});
+
+test("settled flushes throttled progress before a following unread write", async () => {
+  const f = fixture();
+  f.reporter.seen(1, 3);
+  await settle();
+  f.reporter.seen(4, 6);
+  expect(f.posts).toEqual([3]);
+  f.active(false);
+  f.reporter.seen(7, 9);
+  await f.reporter.settled();
+  expect(f.posts).toEqual([3, 6]);
+  expect(f.pending.size).toBe(0);
+  // A failed unread write can resume the range seen while reporting was paused.
+  f.active(true);
+  f.reporter.activate();
+  await f.advance(1000);
+  expect(f.posts).toEqual([3, 6, 9]);
+  f.reporter.dispose();
+});
+
+test("settled waits for the throttled post it flushes", async () => {
+  const release = Promise.withResolvers<void>();
+  let scheduled: (() => void) | undefined;
+  const posts: number[] = [];
+  const reporter = createReadReporter({
+    start: 0,
+    active: () => true,
+    post: async (seq) => {
+      posts.push(seq);
+      if (seq === 6) await release.promise;
+    },
+    timers: {
+      now: () => 0,
+      setTimeout: (callback) => { scheduled = callback; return 1; },
+      clearTimeout: () => { scheduled = undefined; },
+    },
+  });
+  try {
+    reporter.seen(1, 3);
+    await settle();
+    reporter.seen(4, 6);
+    expect(scheduled).toBeDefined();
+    let finished = false;
+    const waiting = reporter.settled().then(() => { finished = true; });
+    await settle();
+    expect(posts).toEqual([3, 6]);
+    expect(scheduled).toBeUndefined();
+    expect(finished).toBe(false);
+    release.resolve();
+    await waiting;
+    expect(finished).toBe(true);
+  } finally {
+    release.resolve();
+    reporter.dispose();
+  }
 });

@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A visible message advances past an unseen gap | A virtualized live feed reports its newest visible sequence as read after a hidden or unfocused burst, skipping unseen messages ([#1130](https://github.com/k2b-dev/cloud/issues/1130)). | Tests: Chat `read-reporter.test.ts` preserves a contiguous frontier; workspace behavior and browser tests cover hidden and unfocused bursts, reconnect replay, visible gap recovery and the separate fixed opening marker. Reading waits for catch-up and a painted visible range. |
 | A browser assertion races native link navigation | Completing a keyboard event does not mean the browser has applied the link’s destination. | Test: UI `data-table-focus.browser.test.ts` waits for the expected URL fragment before checking navigation and row-action counts ([#1743](https://github.com/k2b-dev/cloud/issues/1743)). |
 | Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
@@ -193,6 +194,13 @@ convention still needs a check or a test.
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
 
 ## Lessons
+
+### A live Chat burst skipped unseen messages
+
+- **What happened:** Returning to a chat after a hidden or unfocused burst could advance the read position over messages the person had not seen ([#1130](https://github.com/k2b-dev/cloud/issues/1130)).
+- **Root cause:** A skipped range had no recovery control, while intermediate reconnect windows could incorrectly look like contiguous reading before catch-up completed.
+- **Error class:** A visible message advances past an unseen gap.
+- **Guard:** The read reporter retains the contiguous frontier and exposes a recoverable unread gap. Workspace behavior and browser tests require a jump back through the gap after hidden and unfocused bursts and reconnect replay, while keeping the fixed opening marker distinct. Only the caught-up, painted range begins new reading.
 
 ### Rendered rows did not prove a bulk action had finished
 
