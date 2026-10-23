@@ -176,6 +176,7 @@
 .spaces-pwa-task__sk { height: .875rem; margin: .9rem 0; width: 70%; }
 .spaces-pwa-task__sk--wide { width: 92%; margin: .25rem 0; }
 .spaces-pwa-task__sk--short { width: 48%; }
+.spaces-pwa-task__sk--title { height: 1.25rem; width: 60%; margin: .5625rem 0 1rem 3.25rem; }
 .spaces-pwa-task__foot { padding-left: 3.25rem; }
 
 /* A Kanban card's footer lets the pointer through to the card link; only the reaction chips and "Add reaction" catch it.

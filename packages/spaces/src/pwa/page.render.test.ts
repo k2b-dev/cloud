@@ -289,6 +289,13 @@ describe("Spaces in the mobile app", () => {
     expect(json.status).toBe(200);
     expect(json.headers.get("vary")).toContain("Accept");
     expect(await json.json()).toEqual(task);
+    // A browser's own preference for HTML, or JSON excluded, gets the page.
+    for (const accept of ["text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "text/html, application/json;q=0"]) {
+      const page = await server.request("https://cloud.example.test/pwa/spaces/Space1/Item01", {
+        headers: { Cookie: "pwa_session=test-session", Accept: accept },
+      });
+      expect(page.headers.get("content-type")).toContain("text/html");
+    }
     for (const accept of ["application/json", "text/html"]) {
       const missing = await server.request("https://cloud.example.test/pwa/spaces/Space1/Other1", {
         headers: { Cookie: "pwa_session=test-session", Accept: accept },

@@ -1,6 +1,7 @@
 import { type AuthContext, expectUserBackedActor, getDateConfig } from "@k2b/cloud/server";
 import { PwaLayout } from "@k2b/cloud/ssr";
 import type { Context } from "hono";
+import { accepts } from "hono/accepts";
 import { type OverviewView, OverviewViewSchema } from "@/overview-contracts";
 import { loadOverviewWork } from "@/service/overview";
 import { ssr } from "../config";
@@ -47,7 +48,7 @@ export const taskPage = ssr<AuthContext>(async (c) => {
     actor: c.get("actor"),
     subject: c.get("accessSubject"),
   });
-  const json = c.req.header("Accept")?.includes("application/json");
+  const json = accepts(c, { header: "Accept", supports: ["text/html", "application/json"], default: "text/html" }) === "application/json";
   if (!task) return json ? c.json({ message: "Not found" }, 404) : ssr.error(c, 404, { layout: "pwa" });
   if (json) return c.json(task);
   return render(c, task);

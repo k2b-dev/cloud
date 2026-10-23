@@ -4118,67 +4118,74 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
   flex-direction: column;
 }
 
-html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__main[data-workspace-levels] {
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] {
   background: transparent;
 }
 
-html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
   padding-top: 0;
 }
 
-html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
   margin: 0;
   border-radius: 0;
   background: transparent;
   box-shadow: none;
 }
 
-html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__level-head {
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-head {
   gap: 0.75rem;
   min-height: calc(env(safe-area-inset-top) + 1.5rem + 44px);
   padding: calc(env(safe-area-inset-top) + 0.75rem) max(1rem, env(safe-area-inset-right)) 0.75rem max(1rem, env(safe-area-inset-left));
 }
 
-html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__level-title > h2 {
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-title > h2 {
   font-size: 1.125rem;
   line-height: 1.5rem;
 }
 
-html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
   margin-inline: -0.625rem -0.75rem;
   color: var(--k2b-action);
 }
 
-html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__level-back .ti {
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-back .ti {
   width: 1.5rem;
   height: 1.5rem;
   font-size: 1.5rem;
 }
 
-html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__level-body {
+.k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-body {
   padding: 0.5rem max(1rem, env(safe-area-inset-right)) calc(1rem + env(safe-area-inset-bottom) + var(--k2b-mobile-shell-toast-inset, 0px))
     max(1rem, env(safe-area-inset-left));
   scrollbar-gutter: auto;
 }
 
-/* A shell with a footer pads the bottom safe area in the footer. */
-html:has(.k2b-mobile-shell > .k2b-mobile-shell__main + *) .k2b-ui .k2b-app-workspace__level-body {
+/* A footer pads the bottom safe area itself; beside a sidebar the footer is gone. */
+.k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__main + *) > .k2b-mobile-shell__main .k2b-app-workspace__level-body {
   padding-bottom: calc(1rem + var(--k2b-mobile-shell-toast-inset, 0px));
 }
 
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-mobile-shell:has(> .k2b-mobile-shell__sidebar) > .k2b-mobile-shell__main .k2b-app-workspace__level-body {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom) + var(--k2b-mobile-shell-toast-inset, 0px));
+  }
+}
+
 @media (max-width: 63.999rem) {
-  html:has(.k2b-mobile-shell)
-    .k2b-ui
+  .k2b-ui
+    .k2b-mobile-shell
+    > .k2b-mobile-shell__main
     .k2b-app-workspace__main[data-workspace-levels]
     > [data-workspace-level-shown]:not([data-workspace-level-shown~="1"]) {
     display: none;
   }
 
-  html:has(.k2b-mobile-shell) .k2b-ui [data-workspace-level-first~="1"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main [data-workspace-level-first~="1"] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
     display: inline-flex;
   }
 
-  html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="1"] {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level-last~="1"] {
     width: auto;
     min-width: 0;
     flex: 1 1 0;
@@ -4186,22 +4193,22 @@ html:has(.k2b-mobile-shell > .k2b-mobile-shell__main + *) .k2b-ui .k2b-app-works
 }
 
 @media (min-width: 48rem) {
-  html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__level-head,
-  html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__level-body {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-head,
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__level-body {
     padding-inline: 1.25rem max(1.25rem, env(safe-area-inset-right));
   }
 
-  html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level] {
     background: var(--k2b-surface);
   }
 }
 
 @media (min-width: 64rem) {
-  html:has(.k2b-mobile-shell) .k2b-ui .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level]:not(:last-of-type) {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main .k2b-app-workspace__main[data-workspace-levels] > [data-workspace-level]:not(:last-of-type) {
     background: var(--k2b-surface-canvas);
   }
 
-  html:has(.k2b-mobile-shell) .k2b-ui [data-workspace-level-first] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
+  .k2b-ui .k2b-mobile-shell > .k2b-mobile-shell__main [data-workspace-level-first] > .k2b-app-workspace__level-head > .k2b-app-workspace__level-back {
     display: none;
   }
 }

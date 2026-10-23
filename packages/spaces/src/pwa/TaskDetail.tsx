@@ -1,32 +1,21 @@
 import type { DateContext } from "@k2b/stdlib";
-import {
-  Avatar,
-  Button,
-  ButtonLink,
-  Checkbox,
-  IconButton,
-  MarkdownView,
-  Placeholder,
-  Skeleton,
-  toast,
-  useLocale,
-} from "@k2b/ui";
-import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { Avatar, Button, ButtonLink, Checkbox, IconButton, MarkdownView, Placeholder, Skeleton, toast, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, type JSX, on, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { buildSpaceItemHref } from "@/routes";
 import { createRetryToasts } from "../frontend/lib/feedback";
 import { overviewMessages } from "../frontend/overview-messages";
 import { saveCompletion } from "./completion";
-import { myTasksMessages } from "./messages";
 import type { WorkItem } from "./MyTasks";
+import { myTasksMessages } from "./messages";
 import { workSchedule } from "./schedule";
 import type { PwaTask } from "./task";
 
 /** What the detail knows: the row it was opened from, then the whole task, or why it has none. */
 export type TaskDetailState =
-  | { kind: "loading"; item: WorkItem }
+  | { kind: "loading"; item?: WorkItem }
   | { kind: "ready"; task: PwaTask }
-  | { kind: "failed"; item: WorkItem }
+  | { kind: "failed"; item?: WorkItem }
   | { kind: "gone" };
 
 type Props = {
@@ -60,7 +49,7 @@ export default function TaskDetail(props: Props) {
   const summary = createMemo(() => {
     const state = props.state;
     if (state.kind === "ready") return state.task;
-    if (state.kind === "gone") return null;
+    if (state.kind === "gone" || !state.item) return null;
     return { ...state.item, event: Boolean(state.item.startsAt), completed: false } as const;
   });
   const task = () => (props.state.kind === "ready" ? props.state.task : null);
@@ -73,7 +62,18 @@ export default function TaskDetail(props: Props) {
   const isDone = () => done() ?? summary()?.completed ?? false;
   const checked = (entry: PwaTask["checklist"][number]) => entries().get(entry.id) ?? entry.completed;
   const writable = () => task()?.canWrite ?? true;
-  const ready = () => props.state.kind === "ready";
+  // The server renders the controls before this island runs; until then a tap would do nothing.
+  const [mounted, setMounted] = createSignal(false);
+  onMount(() => setMounted(true));
+  const ready = () => props.state.kind === "ready" && mounted();
+  // A completion saved here or elsewhere reaches the task: the task's state counts again.
+  createEffect(
+    on(
+      () => task()?.completed,
+      () => setDone(undefined),
+      { defer: true },
+    ),
+  );
 
   const toggleDone = async () => {
     const current = task();
@@ -86,7 +86,11 @@ export default function TaskDetail(props: Props) {
     if (outcome === "saved") return props.onCompletedChange(current.shortId, next);
     setDone(!next);
     if (outcome === "failed")
-      retryToast(next ? t().completeFailed({ title: current.title }) : t().reopenFailed({ title: current.title }), o().retry, () => void toggleDone());
+      retryToast(
+        next ? t().completeFailed({ title: current.title }) : t().reopenFailed({ title: current.title }),
+        o().retry,
+        () => void toggleDone(),
+      );
   };
 
   const patchState = (id: string, next: EntryState | undefined) =>
@@ -141,15 +145,34 @@ export default function TaskDetail(props: Props) {
     <Show
       when={summary()}
       fallback={
-        <Placeholder
-          icon="ti ti-checkbox"
-          title={t().taskGone}
-          action={
-            <ButtonLink variant="secondary" href={props.listHref}>
-              {t().toList}
-            </ButtonLink>
-          }
-        />
+        props.state.kind === "loading" ? (
+          <div class="spaces-pwa-task spaces-pwa-task__loading" aria-busy="true">
+            <Skeleton class="spaces-pwa-task__sk spaces-pwa-task__sk--title" />
+            <Skeleton class="spaces-pwa-task__sk spaces-pwa-task__sk--wide" />
+            <Skeleton class="spaces-pwa-task__sk spaces-pwa-task__sk--short" />
+          </div>
+        ) : props.state.kind === "failed" ? (
+          <Placeholder
+            state="error"
+            icon="ti ti-alert-circle"
+            title={t().taskLoadFailed}
+            action={
+              <Button variant="secondary" onClick={() => props.onRetry()}>
+                {t().retry}
+              </Button>
+            }
+          />
+        ) : (
+          <Placeholder
+            icon="ti ti-checkbox"
+            title={t().taskGone}
+            action={
+              <ButtonLink variant="secondary" href={props.listHref}>
+                {t().toList}
+              </ButtonLink>
+            }
+          />
+        )
       }
     >
       {(current) => (
@@ -276,7 +299,7 @@ export default function TaskDetail(props: Props) {
                               <Checkbox
                                 label={entry.label}
                                 value={() => checked(entry)}
-                                disabled={!loaded().canWrite}
+                                disabled={!loaded().canWrite || !mounted() || state()?.saving}
                                 onValueChange={(value) => void toggleEntry(entry, value)}
                               />
                               <span class="spaces-pwa-task__slot">

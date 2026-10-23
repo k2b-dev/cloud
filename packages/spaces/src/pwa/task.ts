@@ -41,7 +41,10 @@ export async function loadPwaTask(params: {
   actor: RequestActor;
   subject: AccessSubject;
 }): Promise<PwaTask | null> {
-  const [spaceId, itemId] = await Promise.all([resolvePublicId("spaces", params.spaceShortId), resolvePublicId("items", params.taskShortId)]);
+  const [spaceId, itemId] = await Promise.all([
+    resolvePublicId("spaces", params.spaceShortId),
+    resolvePublicId("items", params.taskShortId),
+  ]);
   if (!spaceId || !itemId) return null;
   const [permission = "none"] = await getActorsSpacePermissions(spaceId, [{ actor: params.actor, subject: params.subject }]);
   if (!hasPermission(permission, "read")) return null;

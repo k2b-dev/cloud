@@ -152,4 +152,41 @@ test("the way back leads to the list in place, and a task that failed to load of
   expect(requests.at(-1)).toBe("GET /pwa/spaces/Space1/Item02 application/json");
 });
 
+const travel = (path: string) => {
+  const view = dom!.window;
+  view.history.replaceState(view.history.state, "", path);
+  view.dispatchEvent(new view.PopStateEvent("popstate", { state: view.history.state }));
+};
+
+test("Back and Forward show the task their address names, and a late answer for another task never replaces it", async () => {
+  const root = mount("/pwa/spaces/Space1/Item02", detail("Item02", "Write the flyer"));
+  travel("/pwa/spaces/Space1/Item01");
+  // The flyer's controls are gone at once; the tents load.
+  await waitFor(() => root.querySelector('.spaces-pwa-task__loading[aria-busy="true"]') !== null, "the loading task");
+  expect(root.textContent).not.toContain("About Write the flyer.");
+  travel("/pwa/spaces/Space1/Item02");
+  await waitFor(() => requests.filter((request) => request.includes("/Item02")).length === 1, "the flyer's read");
+  waiting.get("/pwa/spaces/Space1/Item01")?.(Response.json(detail("Item01", "Order the tents")));
+  waiting.get("/pwa/spaces/Space1/Item02")!(Response.json(detail("Item02", "Write the flyer")));
+  await waitFor(() => root.textContent?.includes("About Write the flyer.") ?? false, "the flyer");
+  await Bun.sleep(20);
+  expect(root.textContent).not.toContain("Order the tents.");
+});
+
+test("a task that fails to load after Back offers Retry instead of calling it deleted", async () => {
+  const root = mount("/pwa/spaces");
+  travel("/pwa/spaces/Space1/Item01");
+  waiting.get("/pwa/spaces/Space1/Item01")!(Response.json({ message: "Unavailable" }, { status: 503 }));
+  await waitFor(() => root.textContent?.includes("The task could not be loaded.") ?? false, "the failure");
+  expect(root.textContent).not.toContain("no longer available");
+});
+
+test("another view keeps the open task in the address, and Back's view reaches the list", async () => {
+  const root = mount("/pwa/spaces/Space1/Item01", detail("Item01", "Order the tents"));
+  [...root.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((radio) => radio.textContent?.startsWith("Upcoming"))!.click();
+  expect(`${location.pathname}${location.search}`).toBe("/pwa/spaces/Space1/Item01?view=upcoming");
+  travel("/pwa/spaces/Space1/Item01");
+  await waitFor(() => root.querySelector('[role="radio"][aria-checked="true"]')?.textContent?.startsWith("For me") ?? false, "the view");
+});
+
 process.once("exit", () => fetchSpy.mockRestore());

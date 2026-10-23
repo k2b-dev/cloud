@@ -24,6 +24,10 @@ type Props = {
   listHref: (view: OverviewView) => string;
   /** Opens a task in place; without it a row is a link that loads the task's page. */
   onOpen?: (item: WorkItem, event: LinkNavigateEvent) => void;
+  /** The view the address names, such as after Back; the list follows it. */
+  view?: OverviewView;
+  /** The address of the page in a view, kept in place of the current one; the list's own address by default. */
+  viewHref?: (view: OverviewView) => string;
   /** The person chose another view. */
   onViewChange?: (view: OverviewView) => void;
   /** Raised when a task changed elsewhere on the page, such as in its detail; the list is read again. */
@@ -109,14 +113,23 @@ export default function MyTasks(props: Props) {
       { defer: true },
     ),
   );
+  // Back and Forward bring the view of their address.
+  createEffect(
+    on(
+      () => props.view,
+      (next) => {
+        if (next && next !== view()) setView(next);
+      },
+      { defer: true },
+    ),
+  );
 
   const select = (next: OverviewView) => {
     if (next === view()) return;
     setView(next);
     props.onViewChange?.(next);
-    // The view is the page's state, not a step back; the address keeps it, beside the open task, for a reload.
-    const open = props.selected ? items().find((item) => item.shortId === props.selected) : undefined;
-    navigate(open ? props.taskHref(open, next) : props.listHref(next), { replace: true, scroll: "manual", viewTransition: false });
+    // The view is the page's state, not a step back; the address keeps it, beside an open task, for a reload.
+    navigate((props.viewHref ?? props.listHref)(next), { replace: true, scroll: "manual", viewTransition: false });
   };
 
   /** Reads the list again; true when it did. */

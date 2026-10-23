@@ -52,7 +52,7 @@ export default function SpacesPwa(props: Props) {
     request?.abort();
     const controller = new AbortController();
     request = controller;
-    if (item) setDetail({ kind: "loading", item });
+    setDetail({ kind: "loading", item });
     readTask(target.spaceShortId, target.shortId, controller.signal).then(
       (task) => {
         if (request !== controller) return;
@@ -60,7 +60,7 @@ export default function SpacesPwa(props: Props) {
       },
       (error: unknown) => {
         if (request !== controller || (error instanceof Error && error.name === "AbortError")) return;
-        setDetail(item ? { kind: "failed", item } : { kind: "gone" });
+        setDetail({ kind: "failed", item });
       },
     );
   };
@@ -70,12 +70,11 @@ export default function SpacesPwa(props: Props) {
     const parsed = OverviewViewSchema.safeParse(url.searchParams.get("view") ?? "mine");
     if (parsed.success) setView(parsed.data);
     const target = taskAddress(url.pathname);
+    // Whatever was loading belongs to the entry history just left.
+    request?.abort();
+    request = undefined;
     setSelection(target);
-    if (!target) {
-      request?.abort();
-      setDetail(undefined);
-      return;
-    }
+    if (!target) return setDetail(undefined);
     const current = detail();
     if (current?.kind === "ready" && current.task.shortId === target.shortId) return;
     load(target, undefined);
@@ -100,7 +99,7 @@ export default function SpacesPwa(props: Props) {
   const retry = () => {
     const target = selection();
     const current = detail();
-    if (target) load(target, current?.kind === "failed" ? current.item : undefined);
+    if (target) load(target, current?.kind === "failed" || current?.kind === "loading" ? current.item : undefined);
   };
 
   /** The detail completed or reopened its task: the list reads its work again. */
@@ -118,9 +117,8 @@ export default function SpacesPwa(props: Props) {
   const spaceOf = () => {
     const current = detail();
     if (!current || current.kind === "gone") return undefined;
-    return current.kind === "ready"
-      ? { name: current.task.spaceName, color: current.task.spaceColor }
-      : { name: current.item.spaceName, color: current.item.spaceColor ?? undefined };
+    if (current.kind === "ready") return { name: current.task.spaceName, color: current.task.spaceColor };
+    return current.item ? { name: current.item.spaceName, color: current.item.spaceColor ?? undefined } : undefined;
   };
 
   return (
@@ -136,6 +134,11 @@ export default function SpacesPwa(props: Props) {
               selected={selection()?.shortId}
               taskHref={(item, current) => taskHref(item.spaceShortId, item.shortId, current)}
               listHref={listHref}
+              view={view()}
+              viewHref={(next) => {
+                const current = selection();
+                return current ? taskHref(current.spaceShortId, current.shortId, next) : listHref(next);
+              }}
               onOpen={open}
               onViewChange={setView}
               onCompletedChange={completedChange}

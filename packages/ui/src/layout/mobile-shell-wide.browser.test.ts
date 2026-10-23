@@ -77,6 +77,34 @@ render(
     }),
   document.getElementById("root"),
 );
+// A workspace outside the shell, as a portalled panel would be: the app's level rules must not reach it.
+if (new URLSearchParams(location.search).has("sibling")) {
+  const host = document.createElement("div");
+  host.id = "sibling";
+  host.style.cssText = "position:fixed;inset:0;z-index:5;background:white";
+  document.body.append(host);
+  render(
+    () =>
+      createComponent(AppWorkspace, {
+        get children() {
+          return createComponent(AppWorkspace.Content, {
+            get children() {
+              return createComponent(AppWorkspace.Main, {
+                level: "task",
+                get children() {
+                  return [
+                    createComponent(AppWorkspace.MainPane, { id: "list", label: "Outside list", href: "?", get children() { return rows(3); } }),
+                    createComponent(AppWorkspace.MainPane, { id: "task", label: "Outside task", get children() { return rows(1); } }),
+                  ];
+                },
+              });
+            },
+          });
+        },
+      }),
+    host,
+  );
+}
 `;
 const build = await Bun.build({
   entrypoints: [entry],
@@ -96,7 +124,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width: number, height: number, levels?: "list" | "task"): Promise<Page> => {
+const open = async (width: number, height: number, levels?: "list" | "task", sibling = false): Promise<Page> => {
   const context = await browser.newContext({ viewport: { width, height }, hasTouch: true });
   const page = await context.newPage();
   await page.route("https://app.test/**", (route) =>
@@ -105,7 +133,7 @@ const open = async (width: number, height: number, levels?: "list" | "task"): Pr
       body: `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style></head><body class="k2b-ui"><div id="root"></div><script>${script}</script></body></html>`,
     }),
   );
-  await page.goto(`https://app.test/${levels ? `?levels=${levels}` : ""}`);
+  await page.goto(`https://app.test/?${levels ? `levels=${levels}` : ""}${sibling ? "&sibling" : ""}`);
   await page.locator(".k2b-mobile-shell").waitFor();
   return page;
 };
@@ -235,6 +263,19 @@ describe("AppWorkspace levels in a MobileShell", () => {
       } finally {
         await page.context().close();
       }
+    }
+  }, 30_000);
+
+  test("a workspace outside the shell keeps its own level rules", async () => {
+    const page = await open(900, 1024, "task", true);
+    try {
+      const shown = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("#sibling [data-workspace-level]")].map((level) => level.getClientRects().length > 0),
+      );
+      // Its own rule shows two levels from 48rem; the app's rule would leave one below 64rem.
+      expect(shown).toEqual([true, true]);
+    } finally {
+      await page.context().close();
     }
   }, 30_000);
 });

@@ -119,6 +119,18 @@ test("a checked item shows at once with a spinner at its place, and the count fo
   expect(root.querySelector(".spaces-pwa-task__slot i.k2b-spin")).toBeNull();
 });
 
+test("an item that is saving takes no second tap, so the box always shows what is saved", async () => {
+  const root = mount({ kind: "ready", task });
+  boxes(root)[1]!.click();
+  expect(boxes(root)[1]!.disabled).toBe(true);
+  boxes(root)[1]!.click();
+  expect(calls.length).toBe(1);
+  pending!(Response.json({ id: "Chk002", completed: true }));
+  await waitFor(() => aside(root).textContent === "2 of 2", "the saved count");
+  expect(boxes(root)[1]!.checked).toBe(true);
+  expect(boxes(root)[1]!.disabled).toBe(false);
+});
+
 test("a change that fails springs back, says so above the list, and Retry at its row saves it again", async () => {
   const root = mount({ kind: "ready", task });
   answers.push("offline");
