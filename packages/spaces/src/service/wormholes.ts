@@ -21,6 +21,7 @@ import { publishSpaceChange, spacesLive } from "./live";
 import { rank } from "./rank";
 import * as spaces from "./spaces";
 import * as taskWork from "./task-work";
+import { reconcileAssignees } from "./time-blocks";
 
 export type WormholeActor = {
   subject: AccessSubject;
@@ -476,6 +477,7 @@ export const transfer = async (params: {
       RETURNING id
     `;
     if (!updated) return null;
+    await reconcileAssignees(tx, params.itemId);
     await taskWork.finish(params.itemId, undefined, undefined, workActor, tx);
     // The previous holder had access to the source Space, so the take-over is recorded there.
     if (claim.data)

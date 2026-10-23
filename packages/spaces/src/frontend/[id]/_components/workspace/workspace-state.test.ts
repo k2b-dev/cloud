@@ -142,6 +142,17 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
     },
   }));
 
+  mock.module("@/service/time-block-views", () => ({
+    calendarTimeBlocks: async () => {
+      calls.push("timeBlocks.calendar");
+      return [];
+    },
+    taskTimeBlocks: async () => {
+      calls.push("timeBlocks.task");
+      return [];
+    },
+  }));
+
   mock.module("@/service/public-resources", () => ({
     spacesPublicResources: {
       resolvePublicId: async (table: string, shortId: string) => (table === "items" && shortId === ITEM_SHORT_ID ? ITEM_ID : null),
@@ -551,6 +562,8 @@ if (process.env.SPACES_WORKSPACE_STATE_CHILD !== "1") {
       expect(state.kind).toBe("accessDenied");
       expect(calls).not.toContain("cursor");
       expect(calls).not.toContain("space.getDetail");
+      expect(calls).not.toContain("timeBlocks.calendar");
+      expect(calls).not.toContain("timeBlocks.task");
     });
 
     test("detail loading rejects missing access and cross-space item ids before comments", async () => {

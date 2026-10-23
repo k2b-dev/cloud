@@ -6,7 +6,7 @@ description: Erstelle Einträge, beginne mit Vorlagen, strukturiere Aufgaben und
 order: 120
 ---
 
-Spaces funktioniert am besten, wenn jeder Eintrag einen klaren nächsten Schritt hat. Halte Titel kurz und ergänze den Kontext in den Notizen. Zeige den Arbeitsstand mit Status oder Datumsangaben. Nutze Termine, wenn die Arbeit hauptsächlich im Kalender geplant wird.
+Spaces funktioniert am besten, wenn jeder Eintrag einen klaren nächsten Schritt hat. Halte Titel kurz und ergänze den Kontext in den Notizen. Zeige den Arbeitsstand mit Status oder Datumsangaben. Nutze Termine für geplante Ereignisse wie Besprechungen. Reserviere Arbeitszeit für eine Aufgabe mit einem Zeitblock.
 
 ## Eintrag erstellen {icon="square-plus"}
 
@@ -150,3 +150,31 @@ Du brauchst Zugriff zum Bearbeiten des Termins und ein geeignetes Postfach.
 3. Wähle das sendende Postfach und die Empfänger.
 4. Prüfe und versende den Entwurf anschließend in Mail.
 :::
+
+## Zeit für eine Aufgabe blocken {icon="clock"}
+
+Ein Zeitblock reserviert einen Teil deines Tages für eine Aufgabe. Die Aufgabe
+bleibt eine Aufgabe: Status, Frist, Checkliste und Zeitschätzung bleiben davon
+getrennt. Für eine Aufgabe kannst du mehrere Zeitblöcke haben. Jeder beginnt
+mit dem Aufgabentitel. Änderst du später den Titel eines Zeitblocks, bleiben
+die Aufgabe und ihre anderen Zeitblöcke unverändert.
+
+Alle, die die Aufgabe lesen können, sehen ihre Zeitblöcke. Nur die zugewiesene
+Person, der ein Zeitblock gehört, ändert ihn. Auch Agenten und Dienstkonten
+können zugewiesen sein und Zeitblöcke besitzen. Zeitblöcke bleiben erhalten,
+wenn du die Aufgabe erledigst oder löschst. Nach dem Löschen kannst du deinen
+Zeitblock weiterhin entfernen. Wird der bisherige Besitzer entfernt und bleibt
+genau eine Zuweisung, gehen die Blöcke an dieses Konto; beide erhalten eine
+Cloud-Benachrichtigung. Ohne eindeutigen Nachfolger bleiben sie beim bisherigen
+Besitzer. Dieser wird benachrichtigt und darf sie nur noch löschen, auch ohne
+Zugriff auf die Aufgabe. Zeitblöcke erscheinen
+nicht als zusätzliche Einträge in Liste oder Kanban und werden nicht über
+iCal oder CalDAV ausgegeben.
+
+Im CLI listet `cld spaces blocks ls <aufgabe>` die Zeitblöcke einer Aufgabe.
+Mit `blocks add`, `blocks show`, `blocks set` und `blocks rm` legst du einen
+Zeitblock an, liest, änderst oder entfernst ihn. `cld spaces blocks --help`
+erklärt Beginn und Ende. Beim Anlegen ist eine UUID mit `--id` erforderlich.
+Verwende nach einem Netzwerkfehler oder einer verlorenen Antwort dieselbe
+UUID, Aufgabe und denselben Zeitraum. Die Aufgabenliste akzeptiert `--page`
+und `--per-page` (bis 100); lade weitere Seiten, bis das Array leer ist.

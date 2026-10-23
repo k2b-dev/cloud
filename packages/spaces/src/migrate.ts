@@ -764,6 +764,71 @@ export const migrate = async (): Promise<void> => {
     ON spaces.item_reactions(item_id, emoji, created_at)`.simple();
 
   await sql`
+    CREATE TABLE IF NOT EXISTS spaces.time_blocks (
+      id UUID PRIMARY KEY,
+      item_id UUID REFERENCES spaces.items(id) ON DELETE SET NULL,
+      space_id UUID REFERENCES spaces.spaces(id) ON DELETE SET NULL,
+      owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+      owner_service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      assignment_detached BOOLEAN NOT NULL DEFAULT false,
+      title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
+      starts_at TIMESTAMPTZ NOT NULL,
+      ends_at TIMESTAMPTZ NOT NULL CHECK (ends_at > starts_at),
+      creation_item_id UUID NOT NULL,
+      creation_owner_id UUID NOT NULL,
+      creation_owner_kind TEXT NOT NULL DEFAULT 'user' CHECK (creation_owner_kind IN ('user', 'service_account')),
+      creation_starts_at TIMESTAMPTZ NOT NULL,
+      creation_ends_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS time_blocks_item ON spaces.time_blocks(item_id);
+    CREATE INDEX IF NOT EXISTS time_blocks_space_range ON spaces.time_blocks(space_id, starts_at);
+    CREATE INDEX IF NOT EXISTS time_blocks_owner_range ON spaces.time_blocks(owner_id, starts_at);
+    CREATE TABLE IF NOT EXISTS spaces.time_block_notifications (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      seq BIGINT GENERATED ALWAYS AS IDENTITY,
+      recipient_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+      recipient_service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE,
+      direction TEXT NOT NULL CONSTRAINT time_block_notifications_direction_v2_check CHECK (direction IN ('received', 'released', 'retained')),
+      attempts INT NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      claimed_until TIMESTAMPTZ,
+      last_error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS time_block_notifications_seq ON spaces.time_block_notifications(seq);
+    CREATE INDEX IF NOT EXISTS time_block_notifications_busy ON spaces.time_block_notifications(recipient_id)
+      WHERE claimed_until IS NOT NULL OR attempts > 0
+  `.simple();
+
+  await sql`
+    ALTER TABLE spaces.time_blocks ALTER COLUMN owner_id DROP NOT NULL;
+    ALTER TABLE spaces.time_blocks ADD COLUMN IF NOT EXISTS owner_service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE;
+    ALTER TABLE spaces.time_blocks ADD COLUMN IF NOT EXISTS assignment_detached BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE spaces.time_blocks ADD COLUMN IF NOT EXISTS creation_owner_kind TEXT NOT NULL DEFAULT 'user' CHECK (creation_owner_kind IN ('user', 'service_account'));
+    CREATE INDEX IF NOT EXISTS time_blocks_account_range ON spaces.time_blocks(owner_service_account_id, starts_at);
+    ALTER TABLE spaces.time_block_notifications ALTER COLUMN recipient_id DROP NOT NULL;
+    ALTER TABLE spaces.time_block_notifications ADD COLUMN IF NOT EXISTS recipient_resource_id TEXT;
+    ALTER TABLE spaces.time_block_notifications ADD COLUMN IF NOT EXISTS recipient_service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE CASCADE;
+    ALTER TABLE spaces.time_block_notifications ADD COLUMN IF NOT EXISTS recipient_key TEXT
+      GENERATED ALWAYS AS (COALESCE('user:' || recipient_id::text, 'service_account:' || recipient_service_account_id::text)) STORED;
+    ALTER TABLE spaces.time_block_notifications DROP CONSTRAINT IF EXISTS time_block_notifications_direction_check;
+
+    CREATE INDEX IF NOT EXISTS time_block_notifications_principal_busy ON spaces.time_block_notifications(recipient_key)
+      WHERE claimed_until IS NOT NULL OR attempts > 0;
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'spaces.time_block_notifications'::regclass AND conname = 'time_block_notifications_direction_v2_check') THEN
+        ALTER TABLE spaces.time_block_notifications ADD CONSTRAINT time_block_notifications_direction_v2_check CHECK (direction IN ('received', 'released', 'retained'));
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'spaces.time_blocks'::regclass AND conname = 'time_blocks_one_owner') THEN
+        ALTER TABLE spaces.time_blocks ADD CONSTRAINT time_blocks_one_owner CHECK (num_nonnulls(owner_id, owner_service_account_id) = 1);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'spaces.time_block_notifications'::regclass AND conname = 'time_block_notifications_one_recipient') THEN
+        ALTER TABLE spaces.time_block_notifications ADD CONSTRAINT time_block_notifications_one_recipient CHECK (num_nonnulls(recipient_id, recipient_service_account_id) = 1);
+      END IF;
+    END $$
+  `.simple();
+
+  await sql`
     CREATE OR REPLACE FUNCTION spaces.check_overlap(
       p_start TIMESTAMPTZ,
       p_end TIMESTAMPTZ,

@@ -7,7 +7,7 @@ order: 120
 kind: task
 ---
 
-Spaces works best when each item has a clear next action. Keep item titles short, and put context in the notes. Use status or dates to make queues obvious. Use events when the work is mainly planned in the calendar.
+Spaces works best when each item has a clear next action. Keep item titles short, and put context in the notes. Use status or dates to make queues obvious. Use events for scheduled occurrences such as meetings. Reserve working time for a task with a time block.
 
 ## Create an item {icon="square-plus"}
 
@@ -151,3 +151,27 @@ You need access to edit the event and an eligible mailbox.
 3. Choose the sending mailbox and the recipients.
 4. Continue in Mail to review and send the draft.
 :::
+
+## Reserve time for a task {icon="clock"}
+
+A time block reserves part of your day for a task. It keeps the task as a task:
+status, deadline, checklist and estimate stay separate. You can have several
+blocks for one task. Each starts with the task title; changing a block's title
+later leaves the task and its other blocks unchanged.
+
+Everyone who can read the task sees its blocks. Only the assigned person who
+owns a block changes it. Agents and service accounts can also be assigned and
+own blocks. Blocks stay in your planning when the task is done or
+deleted; after deletion you can still remove your block. Replacing one owner
+with exactly one remaining assignee moves the blocks to that assignee and
+notifies both in Cloud. With no assignee or several possible successors, the
+blocks stay with their previous owner, who is notified and can only delete
+them. You can delete your own blocks even after losing access to the task. Blocks do not become extra list or Kanban items and are not included
+in iCal or CalDAV.
+
+From the CLI, list a task's blocks with `cld spaces blocks ls <task>`. Use
+`blocks add`, `blocks show`, `blocks set` and `blocks rm` to create, read,
+change or remove a block. `cld spaces blocks --help` explains the required
+start/end times. Creation requires a UUID in `--id`; reuse the same UUID, task
+and interval after a network error or lost response. Task listing accepts
+`--page` and `--per-page` (up to 100); request pages until the array is empty.

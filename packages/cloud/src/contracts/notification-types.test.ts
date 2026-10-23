@@ -60,6 +60,25 @@ const app = defineApp({
   notifications: NOTIFICATIONS,
 });
 
+const principalApp = defineApp({
+  id: "principal-type-test",
+  name: "Principal type test",
+  icon: "ti ti-bell",
+  description: "Principal notification typing.",
+  baseUrl: "http://principal-type-test:3000",
+  routes: ["/principal-type-test"],
+  notifications: {
+    changed: notification({
+      recipient: "principal",
+      label: "Changed",
+      description: "An assignment changed.",
+      data: z.object({ revision: z.number() }),
+      delivery: { recommended: ["browser", "email", "inbox"] },
+      render: () => ({ title: "Changed" }),
+    }),
+  },
+});
+
 const acceptsSend = <D extends AnyBoundNotificationDefinition>(_definition: D, _input: NotificationSendInput<D>) => undefined;
 
 acceptsSend(app.notifications.turnCompleted, {
@@ -84,6 +103,37 @@ acceptsSend(app.notifications.turnCompleted, {
 
 // @ts-expect-error Payload fields retain their schema-inferred types across defineApp.
 acceptsSend(app.notifications.turnCompleted, { recipient: { userId: "u" }, data: { conversationId: 42 }, idempotencyKey: "x" });
+
+acceptsSend(principalApp.notifications.changed, { recipient: { userId: "person" }, data: { revision: 1 }, idempotencyKey: "change" });
+acceptsSend(principalApp.notifications.changed, {
+  recipient: { serviceAccountId: "agent" },
+  data: { revision: 1 },
+  idempotencyKey: "change",
+});
+acceptsSend(principalApp.notifications.changed, {
+  // @ts-expect-error A principal has exactly one identity.
+  recipient: { userId: "person", serviceAccountId: "agent" },
+  data: { revision: 1 },
+  idempotencyKey: "change",
+});
+acceptsSend(principalApp.notifications.changed, {
+  // @ts-expect-error Direct email is not a principal.
+  recipient: { email: "reader@example.test" },
+  data: { revision: 1 },
+  idempotencyKey: "change",
+});
+acceptsSend(app.notifications.turnCompleted, {
+  // @ts-expect-error Existing user definitions cannot accept service accounts.
+  recipient: { serviceAccountId: "agent" },
+  data: { conversationId: "c" },
+  idempotencyKey: "change",
+});
+acceptsSend(app.notifications.magicLink, {
+  // @ts-expect-error Existing email definitions cannot accept service accounts.
+  recipient: { serviceAccountId: "agent" },
+  data: { token: "t" },
+  idempotencyKey: "change",
+});
 
 describe("notification definitions", () => {
   test("bind stable app-qualified ids", () => {

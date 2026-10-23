@@ -6,6 +6,7 @@ import { logger } from "../logging";
 import { escapeLikePattern } from "../postgres";
 import { notificationMailOutcome, sendNotificationMail } from "./email-mail";
 import "./browser";
+import { notificationInbox } from "./inbox";
 import { notificationObservability } from "./observability";
 import { sendTypedNotification, type TypedNotificationSendResult } from "./platform";
 import { userNotifications } from "./user";
@@ -624,6 +625,7 @@ export const notifications = {
   getSearchSummary,
   observability: notificationObservability,
   user: userNotifications,
+  inbox: notificationInbox,
 };
 
 export type {

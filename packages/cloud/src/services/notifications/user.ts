@@ -57,10 +57,10 @@ const definitionPresentation = (
 ): { label: string; description: string } => resolveNotificationDefinitionPresentation(row, locale);
 
 const mapPreference = (row: PreferenceRow, locale?: string): UserNotificationPreference => {
-  const requiredChannels = unique(row.required_channels);
+  const requiredChannels = unique(row.required_channels).filter((channel) => channel !== "inbox");
   const required = new Set(requiredChannels);
   const selectedChannels = unique(row.customized ? (row.channels ?? []) : row.recommended_channels).filter(
-    (channel) => !required.has(channel),
+    (channel) => channel !== "inbox" && !required.has(channel),
   );
   const presentation = definitionPresentation(row, locale);
   return {
@@ -69,7 +69,7 @@ const mapPreference = (row: PreferenceRow, locale?: string): UserNotificationPre
     kind: row.kind,
     label: presentation.label,
     description: presentation.description,
-    recommendedChannels: unique(row.recommended_channels),
+    recommendedChannels: unique(row.recommended_channels).filter((channel) => channel !== "inbox"),
     requiredChannels,
     selectedChannels,
     effectiveChannels: unique([...requiredChannels, ...selectedChannels]),
@@ -85,7 +85,7 @@ const listPreferences = async (userId: string, locale?: string): Promise<UserNot
     FROM notifications.definitions d
     LEFT JOIN notifications.preferences p
       ON p.definition_id = d.id AND p.user_id = ${userId}::uuid
-    WHERE d.active = true AND d.recipient_kind = 'user'
+    WHERE d.active = true AND d.recipient_kind IN ('user', 'principal')
     ORDER BY d.app_id, d.id
   `;
   const definitions = rows
@@ -96,7 +96,7 @@ const listPreferences = async (userId: string, locale?: string): Promise<UserNot
         left.label.localeCompare(right.label, normalizeLocale(locale)) ||
         left.id.localeCompare(right.id),
     );
-  return { availableChannels: listNotificationChannels(), definitions };
+  return { availableChannels: listNotificationChannels().filter((channel) => channel !== "inbox"), definitions };
 };
 
 const findPreference = async (userId: string, definitionId: string, locale?: string): Promise<UserNotificationPreference | null> => {
@@ -113,15 +113,17 @@ const setPreference = async (config: {
   const rows = await sql<{ required_channels: string[] }[]>`
     SELECT required_channels
     FROM notifications.definitions
-    WHERE id = ${config.definitionId} AND active = true AND recipient_kind = 'user'
+    WHERE id = ${config.definitionId} AND active = true AND recipient_kind IN ('user', 'principal')
     LIMIT 1
   `;
   const definition = rows[0];
   if (!definition) return { ok: false, error: "Notification preference not found", status: 404 };
 
   const required = new Set(definition.required_channels);
-  const channels = unique(config.channels.map((channel) => channel.trim()).filter(Boolean)).filter((channel) => !required.has(channel));
-  const available = new Set(listNotificationChannels());
+  const channels = unique(config.channels.map((channel) => channel.trim()).filter(Boolean)).filter(
+    (channel) => channel === "inbox" || !required.has(channel),
+  );
+  const available = new Set(listNotificationChannels().filter((channel) => channel !== "inbox"));
   const unavailable = channels.filter((channel) => !available.has(channel));
   if (unavailable.length > 0) {
     return { ok: false, error: `Unavailable notification channel: ${unavailable.join(", ")}`, status: 400 };

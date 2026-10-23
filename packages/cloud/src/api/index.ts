@@ -43,6 +43,7 @@ import geoRoutes from "./geo";
 import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";
 import meRoutes from "./me";
+import { notificationRoutes } from "./notifications";
 import { createPwaRoutes } from "./pwa";
 import { createSearchRoutes } from "./search";
 import { createSyncOpsProxyRoutes } from "./sync-ops";
@@ -80,6 +81,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/auth/pwa/v1", createPwaRoutes())
     .route("/auth", createAuthRoutes(options.notifications))
     .route("/me", meRoutes)
+    .route("/notifications", notificationRoutes)
     .route("/accounts", accountsEntitiesRoutes)
     .route("/geo", geoRoutes)
     .route("/apps", appDiscoveryRoutes)

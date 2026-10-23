@@ -19,6 +19,7 @@ import {
   SpaceWormholeSchema,
 } from "@/contracts";
 import { SpaceUserSettingsSchema } from "@/settings-context";
+import { SpaceTimeBlockSchema } from "../../../../time-block-contracts";
 import { TaskWorkSchema } from "../../../../work-contracts";
 import { type CalendarFilter, CalendarFilterSchema, writeCalendarFilter } from "../calendar/filter";
 import { TASK_TRAY_SIZE } from "../calendar/tray";
@@ -81,6 +82,7 @@ export const SpaceItemRecurringContextSchema = z.object({
 
 export const SpaceItemDetailSchema = z.object({
   work: TaskWorkSchema.optional(),
+  timeBlocks: z.array(SpaceTimeBlockSchema).optional(),
   item: SpaceItemSchema,
   comments: SpaceCommentPageSchema,
   commentTarget: z.object({
@@ -107,6 +109,7 @@ export const SpacesViewSnapshotSchema = z.discriminatedUnion("kind", [
     filter: CalendarFilterSchema,
     range: CalendarRangeSchema,
     items: z.array(CalendarItemSchema),
+    timeBlocks: z.array(SpaceTimeBlockSchema).optional(),
     weather: z.record(z.string(), DayWeatherSchema),
     tray: CalendarTraySchema,
   }),
@@ -138,6 +141,7 @@ const SpacesWorkspaceStateSchema = z.discriminatedUnion("kind", [
     calendarFilter: CalendarFilterSchema,
     calendarRange: CalendarRangeSchema,
     calendarItems: z.array(CalendarItemSchema),
+    calendarTimeBlocks: z.array(SpaceTimeBlockSchema).optional(),
     calendarWeather: z.record(z.string(), DayWeatherSchema),
     calendarTray: CalendarTraySchema,
     selectedItemDetail: SpaceItemDetailSchema.nullable(),

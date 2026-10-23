@@ -19,6 +19,12 @@ describe("Spaces detail navigation classification", () => {
     expect(isDetailOnlySpacesNavigation(`${list}&item=item-1`, list, ORIGIN)).toBe(true);
   });
 
+  test("selecting another block of the same task stays in the detail route", () => {
+    const base = "/app/spaces/one?view=calendar&item=item-1";
+    expect(isDetailOnlySpacesNavigation(`${base}&block=first`, `${base}&block=second`, ORIGIN)).toBe(true);
+    expect(isDetailOnlySpacesNavigation(`${base}&block=first`, "/app/spaces/one?view=calendar", ORIGIN)).toBe(true);
+  });
+
   test("leaves view, filter, path, and origin changes to document navigation", () => {
     const current = "/app/spaces/one?view=list&status=active&item=item-1";
     expect(isDetailOnlySpacesNavigation(current, "/app/spaces/one?view=kanban", ORIGIN)).toBe(false);

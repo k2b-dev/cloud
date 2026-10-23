@@ -4,8 +4,8 @@ navTitle: Notifications
 section: Platform services
 order: 530
 description: Define, send, and inspect typed notifications.
-tags: [notifications, email, browser, do not disturb, quiet hours]
-updated: 2026-10-20
+tags: [notifications, email, browser, inbox, agents, do not disturb, quiet hours]
+updated: 2026-10-23
 ---
 
 # Notifications
@@ -96,7 +96,7 @@ data at runtime.
 
 | Option | Required | Contract |
 | --- | --- | --- |
-| `recipient` | Yes | `"user"` or `"email"`; fixes the address shape used by `send()` |
+| `recipient` | Yes | `"user"`, `"email"`, or `"principal"`; fixes the address shape used by `send()` |
 | `label` | Yes | Non-empty name used by preference and operations surfaces |
 | `description` | Yes | Non-empty explanation of when the application emits the event |
 | `presentation` | No | Localized overlays for `label` and `description` |
@@ -201,6 +201,7 @@ The recipient determines the address accepted by `send()`.
 | --- | --- | --- |
 | `user` | `{ userId }` | Product notifications for an existing Cloud user |
 | `email` | `{ email }` | Invitations or messages for someone without a Cloud account |
+| `principal` | `{ userId }` or `{ serviceAccountId }` | The same domain notice for people and service accounts |
 
 A user recipient must exist in Cloud. Cloud resolves the user's registered
 email address and browser endpoints when the event is sent.
@@ -210,6 +211,122 @@ event.
 
 Email recipients must require the `email` channel. They have no Cloud account
 with notification preferences.
+
+### Notify a person or a service account
+
+Use `recipient: "principal"` when the same domain event can address a person
+or a service account. Its send input accepts exactly one of
+`{ userId }` and `{ serviceAccountId }`.
+
+```ts
+import { notification } from "@k2b/cloud";
+import { z } from "zod";
+
+export const assignmentChanged = notification({
+  recipient: "principal",
+  label: "Assignment changed",
+  description: "An assignment was changed or removed.",
+  data: z.object({ taskName: z.string() }),
+  delivery: { recommended: ["browser", "email", "inbox"] },
+  render: ({ taskName }) => ({ title: "Assignment changed", body: taskName }),
+});
+```
+
+Add the definition to `defineApp({ notifications: { assignmentChanged } })`,
+then send its bound definition:
+
+```ts
+import { notifications } from "@k2b/cloud/services";
+import { app } from "./config";
+
+await notifications.send(app.notifications.assignmentChanged, {
+  recipient: { serviceAccountId: assignedAgentId },
+  data: { taskName },
+  idempotencyKey: committedTransitionId,
+  locale,
+});
+```
+
+For a person, Cloud applies their existing preferences and browser/email
+routing. The inbox channel is excluded from human preferences and recommended
+deliveries. For an active independent `agent` or `standalone` service account,
+recommended routing selects only the declared `inbox` channel. Cloud does not
+resolve its creator's email or redirect the notice to a delegated user.
+Required channels retain their declared policy; an incompatible required
+channel has no destination and reports an error as usual.
+
+A resource-bound account can receive a notice only for its exact app, resource
+type, and ID. Pass `resource: { type: "inventory.item", id: itemId }` in the send
+input. The resource type must belong to the notification definition's app and
+match the account's binding (for example app `inventory`, type `item`).
+Persist this authorization boundary with the domain event so removal notices
+can still name the original resource after access changes.
+
+User-delegated service-account IDs are rejected. Address a human explicitly with
+`{ userId }` when the human is the intended recipient. Existing `"user"` and
+`"email"` definitions keep their recipient contracts.
+
+For an existing inactive service account, Cloud persists a suppressed event
+with `recipient_inactive` and makes no delivery attempt. Repeating its
+idempotency key returns that same suppressed event, including after the account
+is reactivated. A later domain event uses a new key and can deliver normally.
+This lets application outboxes finish processing an inactive recipient.
+
+With no selected or required channels, Cloud records a suppressed delivery
+with `no_preferred_channel`. A human's empty preference records
+`disabled_by_user`. Declaring a principal alone does not enable inbox delivery;
+include `inbox` in the delivery policy.
+
+### Read an agent's inbox
+
+Authenticate to Core as the receiving service account, then request:
+
+```http
+GET /api/notifications/inbox?page=1&perPage=20
+Authorization: Bearer <service-account-credential>
+```
+
+The response contains `items`, `total`, `page`, `perPage`, and `totalPages`.
+Each item contains `id` (delivery ID), `eventId`, `definitionId`, `appId`,
+`title`, nullable `body` and `targetHref`, `createdAt`, and `deliveredAt`.
+Only delivered inbox content is returned, newest first. Pagination defaults
+to page 1 and 20 items; `perPage` accepts 1–100. Unknown query fields, including
+a requested recipient ID, are rejected. Reading does not acknowledge or delete
+a notice. Consumers can persist `eventId` to avoid acting on it twice.
+
+Only a non-delegated service-account actor with its matching service-account
+access subject may read this endpoint. A resource-bound account sees only
+notices whose persisted app, resource type, and ID match its current binding.
+Changing a binding does not expose notices for the preceding resource. People,
+user-delegated accounts, and cross-app invocation credentials cannot read it.
+API-key and OAuth credentials must explicitly include `read` or `admin` in
+both the actor's scopes and the request authority. Empty scopes grant no inbox
+access. These scopes permit only the account's own inbox.
+A notification link still requires the application's ordinary authorization.
+
+Server code uses the same checked service through
+`notifications.inbox.list({ authority, page, perPage })`, where `authority`
+is the request's complete `auth.getAuthority(c)` result. Never construct an
+authority from a requested recipient ID or a human delegate.
+
+Cloud keeps the inbox body encrypted in the existing delivery record, including
+after delivery. Self-read checks identity before decrypting it and returns no
+encrypted payload, destination secrets, or browser preview. Delivery means the
+notice is available for the agent to read. It does not mean the agent has read
+or acted on it. Inbox delivery uses the existing idempotency, retry, and
+interrupted-worker recovery mechanisms. Inbox payloads remain encrypted until
+the notification event or receiving account is deleted. Cloud does not
+currently prune notification events or inbox content automatically.
+
+### Roll out principal notifications
+
+Operators must run the updated Core migration before applications register or
+send principal notifications. It expands the recipient catalog and event
+foreign key, and preserves encrypted payloads for delivered inbox entries.
+The migration is repeatable and preserves existing user/email events and
+preferences. Older Core workers do not retain inbox content, so update Core
+workers before enabling the new channel. No new environment variables or
+external delivery provider are needed.
 
 ## Choose delivery channels
 
@@ -271,7 +388,7 @@ through the browser vendor's push service encrypted for the subscription
 timing and size, but not the text. Cloud keeps the preview only inside the
 encrypted delivery payload until the attempt succeeds or fails permanently,
 never on the event or in history. Only the browser channel receives `preview`;
-email and deployment channels never see it.
+email, inbox, and deployment channels never see it.
 
 The preview is fixed when `send()` runs. Cloud does not check access again
 before a queued, retried, or fallback browser delivery. After the push service
@@ -525,10 +642,11 @@ const result = await notifications.send(app.notifications.stockLow, {
 
 | Option | Required | Meaning |
 | --- | --- | --- |
-| `recipient` | Yes | `{ userId }` or `{ email }`, fixed by the definition |
+| `recipient` | Yes | `{ userId }`, `{ serviceAccountId }`, or `{ email }`, fixed by the definition |
 | `data` | Yes | Payload parsed with the definition's Zod schema |
 | `idempotencyKey` | Yes | Stable identity for this logical event |
 | `sentBy` | No | Cloud user ID attributed as the sender |
+| `resource` | Required for resource-bound recipients | App-owned `CloudResourceRef` (`{ type, id }`) that matches the recipient binding |
 | `locale` | No | Intended locale for `render` and `email`; canonicalized and defaults to `en` |
 
 Omit `sentBy` for a system-generated notification. When present, it must be the
@@ -577,6 +695,9 @@ failures before event creation include:
 - an error from `render()`;
 - an empty or overlong title, overlong body, unsafe `targetHref`, invalid `group`, or invalid `badge`;
 - a user ID that does not exist;
+- a service-account ID that is missing or user-delegated;
+- a resource-bound recipient without the matching app, resource type, and ID;
+- a recipient shape that does not match the definition or identifies more than one recipient;
 - an invalid direct email address.
 
 Storage and catalog failures also reject the call.
@@ -664,6 +785,7 @@ platform codes include:
 | Code | Meaning |
 | --- | --- |
 | `disabled_by_user` | The user disabled every recommended channel |
+| `recipient_inactive` | The receiving service account is inactive; this event will not deliver after reactivation |
 | `no_preferred_channel` | No recommended channel or user preference exists |
 | `channel_unavailable` | No driver is registered for the selected channel |
 | `no_endpoint` | The recipient has no usable destination for the channel |

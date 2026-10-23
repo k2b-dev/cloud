@@ -193,6 +193,7 @@ export default function SpacesWorkspace(props: {
                   filter: state.calendarFilter,
                   range: state.calendarRange,
                   items: state.calendarItems,
+                  timeBlocks: state.calendarTimeBlocks,
                   weather: state.calendarWeather,
                   tray: state.calendarTray,
                 }}

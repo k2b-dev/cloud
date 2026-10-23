@@ -40,6 +40,7 @@ import {
   ownerDateConfig,
   parseDate,
   placeCalendarPopover,
+  startCalendarEventGesture,
   textWidth,
   validDate,
 } from "./calendar-shared";
@@ -59,6 +60,8 @@ export type CalendarEvent = {
   colorHex?: string;
   href?: string;
   dataSpaceItemId?: string;
+  /** False disables moving and resizing this event; opening it remains available. Defaults to true. */
+  editable?: boolean;
   meta?: string;
   description?: string;
   /**
@@ -1047,7 +1050,7 @@ const MonthPickerView = (props: {
     return dayKey ? calendar.parseCalendarDate(dayKey, dateConfig()) : null;
   };
   const startMove = (pointerEvent: PointerEvent, event: NormalizedEvent, markDragged: () => void) => {
-    if (!props.owner.onEventDrop) return;
+    if (!props.owner.onEventDrop || event.editable === false) return;
     cancelInteraction?.();
     cancelInteraction = startCalendarPointerSession({
       event: pointerEvent,
@@ -2323,8 +2326,8 @@ const MonthView = (props: {
     setMovingEventId("");
   };
   const startMove = (pointerEvent: PointerEvent, item: MonthItem, markDragged: () => void) => {
-    if (!props.owner.onEventDrop) return;
     const event = item.event;
+    if (!props.owner.onEventDrop || event.editable === false) return;
     const grabbed = dayKeyAtPoint(pointerEvent.clientX, pointerEvent.clientY) ?? item.firstKey;
     const firstDay = startOfDay(event.sourceStartDate, dateConfig());
     cancelInteraction?.();
@@ -2932,7 +2935,7 @@ const TimeGridView = (props: {
     cancelInteraction = startCalendarPointerSession(options);
   };
   const startTimedMove = (pointerEvent: PointerEvent, event: NormalizedEvent, markDragged: () => void) => {
-    if (!props.owner.onEventDrop) return;
+    if (!props.owner.onEventDrop || event.editable === false) return;
     const pointerStart = timeAtPoint(pointerEvent.clientX, pointerEvent.clientY) ?? event.sourceStartDate;
     const duration = Math.max(15 * 60_000, event.sourceEndDate.getTime() - event.sourceStartDate.getTime());
     const offsetMinutes = Math.max(
@@ -2962,7 +2965,7 @@ const TimeGridView = (props: {
     });
   };
   const startAllDayMove = (pointerEvent: PointerEvent, event: NormalizedEvent, markDragged: () => void) => {
-    if (!props.owner.onEventDrop) return;
+    if (!props.owner.onEventDrop || event.editable === false) return;
     beginInteraction({
       event: pointerEvent,
       resolve: (clientX, clientY) => {
@@ -3275,8 +3278,16 @@ const TimeGridView = (props: {
                       const event = layoutItem.event;
                       const layout = eventLayout(event);
                       const position = laneStyle(layoutItem);
+                      let cancelResizeTouch: (() => void) | undefined;
+                      onCleanup(() => cancelResizeTouch?.());
                       const resizeStart = (pointerEvent: PointerEvent) => {
-                        if (!props.owner.onEventResize) return;
+                        if (event.editable === false) return;
+                        pointerEvent.stopPropagation();
+                        cancelResizeTouch?.();
+                        cancelResizeTouch = startCalendarEventGesture(pointerEvent, () => beginResize(pointerEvent));
+                      };
+                      const beginResize = (pointerEvent: PointerEvent) => {
+                        if (!props.owner.onEventResize || event.editable === false) return;
                         pointerEvent.preventDefault();
                         pointerEvent.stopPropagation();
                         beginInteraction({
@@ -3326,7 +3337,7 @@ const TimeGridView = (props: {
                                   : undefined
                               }
                             />
-                            <Show when={props.owner.onEventResize}>
+                            <Show when={props.owner.onEventResize && event.editable !== false}>
                               <button
                                 type="button"
                                 aria-label={calendarMessages().resizeEvent}
@@ -3672,6 +3683,36 @@ const CalendarRoot = <V extends string = never>(props: CalendarProps<V>): JSX.El
   // The arrow keys page like J and K while the keyboard is in the calendar or nowhere, unless something there uses
   // them, such as the grid of the week or the month.
   let root: HTMLElement | undefined;
+  // Hosts replace event objects optimistically and again after saving. Preserve the focused entry across both.
+  let eventFocus: { id: string; element: HTMLElement } | undefined;
+  createComputed(
+    on(
+      () => props.events,
+      () => {
+        const active = typeof document === "undefined" ? null : document.activeElement;
+        eventFocus =
+          active && active instanceof HTMLElement && root?.contains(active) && active.dataset.calendarEventId
+            ? { id: active.dataset.calendarEventId, element: active }
+            : undefined;
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      () => props.events,
+      () => {
+        const previous = eventFocus;
+        queueMicrotask(() => {
+          if (!previous || previous.element.isConnected || document.activeElement !== document.body) return;
+          [...(root?.querySelectorAll<HTMLElement>("[data-calendar-event-id]") ?? [])]
+            .find((chip) => chip.dataset.calendarEventId === previous.id)
+            ?.focus({ preventScroll: true });
+        });
+      },
+      { defer: true },
+    ),
+  );
   onMount(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
