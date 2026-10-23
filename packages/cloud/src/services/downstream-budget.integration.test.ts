@@ -27,7 +27,7 @@ suiteFor("valkey")("shared downstream admission across processes", () => {
             "--no-env-file",
             "--preload",
             new URL("../../../../scripts/fixtures/test-infra.ts", import.meta.url).pathname,
-            new URL("./downstream-budget.test-fixture.ts", import.meta.url).pathname,
+            new URL("../../test/integration/downstream-budget/probe.ts", import.meta.url).pathname,
             downstream,
             namespace,
           ],
