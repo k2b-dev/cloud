@@ -180,7 +180,6 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const remember = (emoji: string) => setRecent((current) => rememberEmoji(current, emoji));
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: `r` answers the message whose article has focus; the menu offers the same.
     <section
       ref={frame}
       class="chat-conversation"
