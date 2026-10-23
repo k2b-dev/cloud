@@ -969,7 +969,7 @@ describe("Files history in the workspace", () => {
     const restore = items.find((item) => item.textContent?.startsWith("Restore this version"))!;
     expect(restore.disabled).toBe(true);
     expect(restore.textContent).toContain("Restore as a new file to avoid replacing newer content.");
-    expect(items.find((item) => item.textContent?.startsWith("Restore as a new file"))!.disabled).toBe(false);
+    expect(items.find((item) => item.textContent?.startsWith("Restore as new file"))!.disabled).toBe(false);
     restore.click();
     await flush();
     expect(apiRequests.some((item) => item.kind === "version-restore")).toBe(false);
