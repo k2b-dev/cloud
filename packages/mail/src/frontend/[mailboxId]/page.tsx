@@ -1,4 +1,5 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { appAccessAuthority } from "@k2b/cloud/services";
 import { readThemePreferenceFromCookieHeader } from "@k2b/cloud/shared";
 import { Layout, requestPath } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
@@ -37,7 +38,7 @@ export default ssr<AuthContext>(async (c) => {
   // The sidebar's mailboxes load beside the mailbox, so the page waits for neither one after the other.
   const [internalData, spacesIntegration, sidebar] = await Promise.all([
     loadMailboxPageData({ context, mailboxId, ...request, listMode: workspacePreferences.listMode, locale }),
-    getSpacesMailIntegrationAvailability(),
+    getSpacesMailIntegrationAvailability(appAccessAuthority(c)),
     loadMailSidebarData(context),
   ]);
   if (!internalData.ok) return ssr.error(c, internalData.error.status);

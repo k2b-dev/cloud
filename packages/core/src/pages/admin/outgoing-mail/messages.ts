@@ -4,6 +4,12 @@ export const outgoingMailMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      unreadableTitle: "Stored settings cannot be read",
+      unreadableDetail:
+        "The displayed values are fallbacks. Other applications may still read the stored values. Select only the settings you intend to replace, or ask the operator to restore access.",
+      replaceStored: "Replace stored value",
+      recoveryFailed: "Saved settings could not be refreshed. Retry saving to refresh them; your draft is kept.",
+
       title: "Outgoing mail",
       description: "Sender profiles Cloud uses for system email and for apps that send mail.",
       profiles: "Sender profiles",
@@ -207,6 +213,13 @@ export const outgoingMailMessages = i18n.define({
       close: "Close",
     },
     de: {
+      unreadableTitle: "Gespeicherte Einstellungen sind nicht lesbar",
+      unreadableDetail:
+        "Die angezeigten Werte sind Ersatzwerte. Andere Anwendungen können die gespeicherten Werte möglicherweise noch lesen. Wähle nur Einstellungen aus, die du ersetzen möchtest, oder bitte den Betreiber, den Zugriff wiederherzustellen.",
+      replaceStored: "Gespeicherten Wert ersetzen",
+      recoveryFailed:
+        "Die gespeicherten Einstellungen konnten nicht neu geladen werden. Erneut speichern lädt sie neu; der Entwurf bleibt erhalten.",
+
       log: "Sendeprotokoll",
       logDescription: ({ contentDays, recordDays }) =>
         `Mails, die Apps an Cloud übergeben haben. Der Text bleibt ${contentDays} Tage, der Eintrag ${recordDays} Tage erhalten. Anhänge werden hier nie gespeichert.`,

@@ -6,7 +6,7 @@ import { generateKeyPair } from "jose";
 import { z } from "zod";
 import { compileCapabilities } from "../_internal/capabilities";
 import { defineCapabilities, UniversalSearchDataSchema, UniversalSearchInputSchema } from "../contracts/capabilities";
-import type { CapabilityRegistryEntry } from "../contracts/registry";
+import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import type { AuthContext } from "../server";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
 import type { signInvocationToken } from "../services/identity/invocation-token";
@@ -105,8 +105,31 @@ const withActiveSigner: typeof withActiveIdentitySigner = async (_purpose, callb
   );
 };
 
-const createSearchRoutes = (dependencies: Parameters<typeof buildSearchRoutes>[0] = {}) =>
-  buildSearchRoutes({ withActiveSigner, signInvocation: async (params) => fakeInvocation(params), ...dependencies });
+const createSearchRoutes = (dependencies: Parameters<typeof buildSearchRoutes>[0] = {}) => {
+  let entries: CapabilityRegistryEntry[] = [];
+  return buildSearchRoutes({
+    withActiveSigner,
+    signInvocation: async (params) => fakeInvocation(params),
+    ...dependencies,
+    listCapabilities: async () => {
+      entries = (await dependencies.listCapabilities?.()) ?? [];
+      return entries;
+    },
+    listApps:
+      dependencies.listApps ??
+      (async () =>
+        entries.map(
+          (entry): AppRegistryEntry => ({
+            id: entry.appId,
+            name: entry.appName,
+            description: entry.appDescription,
+            icon: entry.appIcon,
+            routes: [],
+            baseUrl: "http://test.invalid",
+          }),
+        )),
+  });
+};
 
 describe("global capability search", () => {
   test.each(["invalid data", "unknown field", "invalid reference", "too many items", "invalid presentation"])(
@@ -1189,4 +1212,36 @@ describe("streamed search", () => {
       });
     }
   });
+});
+
+test("app access hides search provider names, tags and content before fanout", async () => {
+  let calls = 0;
+  const hidden = provider(1);
+  const routes = createSearchRoutes({
+    authenticate,
+    listCapabilities: async () => [hidden],
+    listApps: async () => [
+      {
+        id: hidden.appId,
+        name: "Secret app",
+        description: "Secret",
+        icon: hidden.appIcon,
+        baseUrl: "http://secret.invalid",
+        routes: [],
+        access: { kind: "roles", roles: ["admin"] },
+      },
+    ],
+    fetch: async () => {
+      calls++;
+      return Response.json({ data: [] });
+    },
+  });
+  for (const accept of ["application/json", "application/x-ndjson"]) {
+    const response = await routes.request("/search?q=secret", { headers: { accept } });
+    expect(response.status).toBe(200);
+    const text = await response.text();
+    expect(text).not.toContain(hidden.appId);
+    expect(text).not.toContain("Secret app");
+  }
+  expect(calls).toBe(0);
 });

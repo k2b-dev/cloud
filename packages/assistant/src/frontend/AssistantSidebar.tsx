@@ -6,11 +6,14 @@ import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { navigate, navigateTo } from "@k2b/ssr/nav";
 import {
   AppWorkspace,
+  Button,
   createNavigation,
   Dropdown,
   dialogCore,
   IconButton,
+  IconButtonLink,
   type IntentTone,
+  Navigation,
   type NavigationItem,
   PanelDialog,
   Placeholder,
@@ -28,7 +31,7 @@ import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { openAssistantPrefsModal } from "./AssistantPrefsModals";
 import type { AssistantLiveHub } from "./assistant-live";
-import { ASSISTANT_APPROVALS_HREF, assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
+import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
 import { assistantProjectSearchOptions, assistantProjectsSearchOptions, assistantSearchOptions } from "./assistant-search";
 import { ConversationSidebarPreview } from "./ConversationSidebarPreview";
 import {
@@ -50,6 +53,10 @@ const navigationTone = {
 } as const satisfies Record<ConversationStatusTone, IntentTone>;
 
 type AssistantSidebarProps = {
+  fullViewConversationId?: string;
+  basePath?: string;
+  embedded?: boolean;
+  panelReady?: boolean;
   conversations: Accessor<AiConversation[]>;
   /** The viewer's time zone from the request, so the server and the browser put chats in the same day sections. */
   timeZone: string;
@@ -116,6 +123,7 @@ function AssistantSearchButton(props: {
 type DonePhase = "saving" | "confirmed" | "leaving";
 
 function ConversationSidebarItem(props: {
+  basePath?: string;
   conversation: AiConversation;
   active: boolean;
   open?: (conversation: AiConversation) => Promise<boolean>;
@@ -131,7 +139,7 @@ function ConversationSidebarItem(props: {
   const saving = () => props.donePhase !== undefined;
   const busy = () => ["queued", "running", "needs_attention", "waiting_for_browser"].includes(props.conversation.runStatus);
   const toggleDone = () => props.toggleDone(props.conversation);
-  const href = () => assistantConversationHref("/app/assistant", props.conversation.id);
+  const href = () => assistantConversationHref(props.basePath ?? "/app/assistant", props.conversation.id);
   const handleClick = (event: MouseEvent) => {
     // Keep modified clicks native. Plain clicks must not put the network request
     // inside Link's view transition, which freezes rendering until it resolves.
@@ -319,7 +327,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     })[group];
   const openProject = async (project: AiProject) => {
     if (activeProjectId() === project.id) return;
-    const href = assistantProjectHref("/app/assistant", project.id);
+    const href = assistantProjectHref(props.basePath ?? "/app/assistant", project.id);
     if (!props.onOpenProject) {
       navigateTo(href);
       return;
@@ -358,7 +366,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       <AppWorkspace.SidebarItem
         icon="ti ti-shield-check"
         title={text("Approvals")}
-        href={ASSISTANT_APPROVALS_HREF}
+        href={`${props.basePath ?? "/app/assistant"}?approvals=1`}
         active={approvalsActive()}
         onClick={openApprovals}
         meta={<ApprovalsNavStatus app="assistant" initial={props.pendingApprovals ?? 0} />}
@@ -431,7 +439,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
 
   const openConversationFromCommand = async (conversation: AiConversation) => {
     if (conversation.id === activeConversationId()) return;
-    const href = assistantConversationHref("/app/assistant", conversation.id);
+    const href = assistantConversationHref(props.basePath ?? "/app/assistant", conversation.id);
     if (props.onOpenConversation) {
       if (await props.onOpenConversation(conversation.id)) navigate(href, { scroll: "manual" });
       return;
@@ -454,7 +462,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       async (conversation) => {
         if (conversation.id === activeConversationId()) return "unchanged";
         if (!props.onOpenConversation) {
-          navigateTo(assistantConversationHref("/app/assistant", conversation.id));
+          navigateTo(assistantConversationHref(props.basePath ?? "/app/assistant", conversation.id));
           return "stale";
         }
         return (await props.onOpenConversation(conversation.id)) ? "opened" : "stale";
@@ -462,6 +470,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       props.live,
       () => props.projects ?? [],
       done ? "done" : "all",
+      props.basePath,
     );
   const DoneSection = () => (
     <AppWorkspace.SidebarSection
@@ -474,6 +483,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       <For each={doneConversations()}>
         {(conversation) => (
           <ConversationSidebarItem
+            basePath={props.basePath}
             conversation={conversation}
             donePhase={doneFeedback().get(conversation.id)?.phase}
             toggleDone={toggleDone}
@@ -515,7 +525,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
     return {
       id: `chat:${conversation.id}`,
       label: conversation.title,
-      href: assistantConversationHref("/app/assistant", conversation.id),
+      href: assistantConversationHref(props.basePath ?? "/app/assistant", conversation.id),
       action: `chat:${conversation.id}`,
       active,
       status: marker ? { icon: marker.icon, label: marker.label, tone: navigationTone[marker.tone] } : null,
@@ -590,7 +600,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
             {
               id: "approvals",
               action: "approvals",
-              href: ASSISTANT_APPROVALS_HREF,
+              href: `${props.basePath ?? "/app/assistant"}?approvals=1`,
               label: text("Approvals"),
               icon: "ti ti-shield-check",
               badge: approvalNavCount("assistant", props.pendingApprovals ?? 0),
@@ -617,7 +627,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
           ...(props.projects ?? []).map((project) => ({
             id: `project:${project.id}`,
             action: `project:${project.id}`,
-            href: assistantProjectHref("/app/assistant", project.id),
+            href: assistantProjectHref(props.basePath ?? "/app/assistant", project.id),
             label: project.name,
             icon: project.icon || "ti ti-folder",
             active: activeProjectId() === project.id,
@@ -642,7 +652,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
       }
       if (action === "approvals") {
         if (props.onOpenApprovals) props.onOpenApprovals();
-        else navigateTo(ASSISTANT_APPROVALS_HREF);
+        else navigateTo(`${props.basePath ?? "/app/assistant"}?approvals=1`);
         return;
       }
       if (action === "search-projects") {
@@ -677,7 +687,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
         try {
           await openConversationFromCommand(conversation);
         } catch {
-          navigateTo(assistantConversationHref("/app/assistant", conversation.id));
+          navigateTo(assistantConversationHref(props.basePath ?? "/app/assistant", conversation.id));
         }
       } else if (kind === "details") {
         await dialogCore.open<void>(
@@ -710,6 +720,54 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   return (
     <>
       <WorkspaceNavigationProvider navigation={mobileNavigation} label={t().assistant} />
+      <Show when={props.embedded}>
+        <AppWorkspace.Head
+          actions={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  void dialogCore.open<void>(
+                    (close) => (
+                      <PanelDialog>
+                        <PanelDialog.Header title={t().assistant} close={() => close()} />
+                        <PanelDialog.Body>
+                          <Navigation
+                            navigation={mobileNavigation}
+                            label={t().assistant}
+                            beforeSelect={() => {
+                              close();
+                            }}
+                          />
+                        </PanelDialog.Body>
+                      </PanelDialog>
+                    ),
+                    panelDialogOptions,
+                  );
+                }}
+              >
+                <i class="ti ti-messages" aria-hidden="true" />
+                {t().recentAllChats}
+              </Button>
+              <IconButtonLink
+                href={
+                  props.fullViewConversationId
+                    ? assistantConversationHref("/app/assistant", props.fullViewConversationId)
+                    : activeProjectId()
+                      ? assistantProjectHref("/app/assistant", activeProjectId()!)
+                      : approvalsActive()
+                        ? "/app/assistant?approvals=1"
+                        : assistantConversationHref("/app/assistant", activeConversationId())
+                }
+                label={t().openFullView}
+                target={props.panelReady ? undefined : "_top"}
+              >
+                <i class="ti ti-arrows-maximize" aria-hidden="true" />
+              </IconButtonLink>
+            </>
+          }
+        />
+      </Show>
       <AppWorkspace.Sidebar collapsible>
         <AppWorkspace.SidebarDesktop>
           <AppWorkspace.SidebarIconGrid columns={2} sidebarMode="expanded">
@@ -761,6 +819,7 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
                     <For each={chatGroups().find((entry) => entry.group === group)?.conversations ?? []}>
                       {(conversation) => (
                         <ConversationSidebarItem
+                          basePath={props.basePath}
                           conversation={conversation}
                           donePhase={doneFeedback().get(conversation.id)?.phase}
                           toggleDone={toggleDone}

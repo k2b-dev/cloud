@@ -24,7 +24,7 @@ test("task access review distinguishes unrestricted inputs, exact restrictions a
       "**note\\.update** · notebooks  \nFestgelegt: noteId: abc123\\. Andere Eingaben darf die Routine selbst wählen\\.",
     );
     expect(review.value).not.toContain('"fixedInput"');
-    expect(lookup).toHaveBeenCalledWith("spaces", "de");
+    expect(lookup).toHaveBeenCalledWith("spaces", "de", null);
   } finally {
     lookup.mockRestore();
   }

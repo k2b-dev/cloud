@@ -96,7 +96,6 @@ export const backfillClaimAssignees = async (db = sql): Promise<number> => {
 };
 
 export const migrate = async (): Promise<void> => {
-  await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`.simple();
   await sql`CREATE EXTENSION IF NOT EXISTS btree_gist`.simple();
 
   await sql`CREATE SCHEMA IF NOT EXISTS spaces`.simple();

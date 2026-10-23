@@ -620,7 +620,12 @@ const markdownToPlainText = (source: string): Result<string> => {
   const complexity = validateMarkdownSourceComplexity(source);
   if (!complexity.ok) return complexity;
   try {
-    return ok(convert(mailMarkdownHtml(source), { wordwrap: false }).trimEnd());
+    return ok(
+      convert(mailMarkdownHtml(source), {
+        wordwrap: false,
+        selectors: [{ selector: "table", format: "dataTable", options: { uppercaseHeaderCells: false } }],
+      }).trimEnd(),
+    );
   } catch {
     return fail(err.badInput("Compose template could not be converted to plain text"));
   }
@@ -844,6 +849,7 @@ export const renderComposeContent = (params: {
     const text = convert(html, {
       wordwrap: false,
       selectors: [
+        { selector: "table", format: "dataTable", options: { uppercaseHeaderCells: false } },
         { selector: "a", options: { hideLinkHrefIfSameAsText: true } },
         { selector: `p.${BLANK_LINE_CLASS}`, format: "mailBlankLine" },
       ],

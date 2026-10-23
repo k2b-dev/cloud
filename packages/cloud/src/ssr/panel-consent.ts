@@ -3,13 +3,13 @@ import { readPanelCookie } from "../_internal/panel-cookie";
 import { getLocale } from "../server/locale";
 import { panelContextConsent } from "../services/panel-context-consent";
 import { visiblePanelProviders } from "./app-navigation";
-import { getRuntimeContext } from "./runtime";
+import { getDisplayRuntimeContext } from "./runtime";
 
 /** One read, only for a host page with the slot open on a consent provider. Fail closed when the store is unavailable. */
 export async function preloadPanelConsent(c: Context): Promise<void> {
   const user = c.get("user");
   if (!user || !c.get("runtime")) return;
-  const providers = visiblePanelProviders(getRuntimeContext(c).apps, user, getLocale(c));
+  const providers = visiblePanelProviders(getDisplayRuntimeContext(c).apps, user, getLocale(c));
   const state = readPanelCookie(
     c.req.header("Cookie"),
     providers.map((provider) => provider.id),

@@ -102,6 +102,8 @@ const request = () => {
       c.set("user", person);
       c.set("actor", { kind: "user", user: person });
       c.set("accessSubject", { type: "user", userId: user.id });
+      c.set("credentialKind", "oauth");
+      c.set("credentialScopes", ["mail:read"]);
       c.set("runtime", {
         apps: [
           {
@@ -153,3 +155,17 @@ for (const kind of ["notFound", "accessDenied"] as const)
     expect(response.status).toBe(kind === "notFound" ? 404 : 403);
     expect(await response.text()).not.toContain('"type":"spaces.space"');
   });
+
+test("the Space page passes the same capped authority to discovery and reference readers", async () => {
+  const load = spyOn(workspaceState, "loadSpacesWorkspaceState").mockResolvedValue(state);
+  spies.push(load);
+  expect((await request()).status).toBe(200);
+  const authority = load.mock.calls[0]?.[0].authority;
+  expect(authority).toMatchObject({
+    actor: { kind: "user", user: { id: user.id } },
+    accessSubject: { type: "user", userId: user.id },
+    credentialKind: "oauth",
+    scopes: ["mail:read"],
+  });
+  expect(mailIntegration.isMailInvitationIntegrationAvailable).toHaveBeenCalledWith(authority);
+});

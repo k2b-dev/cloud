@@ -1,13 +1,17 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, setSystemTime, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
 import { createConfig } from "@k2b/ssr";
 
 import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import type { MailSearchExpression } from "../contracts";
+import { resolveMailSearchRoute } from "../search-state";
 import { mailTagSearch } from "../search-url";
+import { readMailHeadFilters } from "./_components/mail-head-filters";
 
 setDefaultTimeout(20_000);
 
@@ -46,9 +50,14 @@ const measurements = [
   ".mail-sidebar-mailbox",
   ".mail-focus-row",
   ".mail-list-entry",
+  ".mail-draft-row",
+  ".mail-draft-row__subject",
+  "[data-mail-queue-count]",
   ".k2b-app-workspace__main-pane",
   ".k2b-app-workspace__main-primary",
   ".mail-reader-toolbar",
+  "[data-mail-details-trigger]",
+  "[data-app-workspace-detail-toggle]",
   ".mail-reading-column",
   ".k2b-app-workspace__detail",
 ].join(",");
@@ -101,7 +110,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
     }),
   );
   // As in Cloud, the page owns the one workspace controller (its body marker), so workspaces do not install their own.
-  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0">${shell(url, html)}${url.searchParams.has("navigation") ? '<button id="mailbox-navigation-test" style="position:fixed;bottom:12px;left:12px;z-index:12">Open mailbox navigation</button>' : ""}<script>${controller}</script><script type="module">
+  return `<!doctype html><html lang="${locale}" class="${theme}" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/ui/plex.css"><link rel="stylesheet" href="/ui/tabler.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style><style>/* Like the Cloud shell on phones: the primary action is the round button beside the bottom bar, out of the head row. */@media not all and (min-width:48rem){.k2b-app-workspace__head-primary{position:fixed;z-index:11;right:12px;bottom:12px}}</style></head><body class="k2b-ui app-accent-scope" data-theme="${theme}" data-k2b-app-workspace-controller="global" style="margin:0;${appAccentStyle("#0f766e")}">${shell(url, html)}${url.searchParams.has("navigation") ? '<button id="mailbox-navigation-test" style="position:fixed;bottom:12px;left:12px;z-index:12">Open mailbox navigation</button>' : ""}<script>${controller}</script><script type="module">
     const geometry=${geometrySource};
     const strip=${stripSource};
     const step=(name)=>{document.documentElement.dataset.mailShellStep=name;performance.mark('mail-shell:'+name)};
@@ -109,6 +118,7 @@ const pageHtml = (url: URL, cookieHeader: string | null = null) => {
     await document.fonts.ready;
     step('first frame');
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    step('server geometry');
     document.documentElement.dataset.serverGeometry=JSON.stringify(geometry());
     document.documentElement.dataset.serverStrip=JSON.stringify(strip());
     document.documentElement.dataset.serverCurrent=document.querySelector('${tabsSelector} [aria-current="page"]')?.getAttribute('href')??'';
@@ -222,7 +232,10 @@ const pinPageClock = (at: number) => {
 };
 const ready = async (page: Page) => {
   try {
-    await page.waitForFunction(() => document.documentElement.dataset.mailShellReady === "true");
+    // The page sets this only after its required SSR/hydrated frames and measurements.
+    // Cold WebKit takes about eight seconds to prepare its first styled/hydrated page.
+    // Bootstrap shares the existing 20s functional-test budget; actions still have their 6s deadline.
+    await page.locator('html[data-mail-shell-ready="true"]').waitFor({ state: "attached", timeout: 20_000 });
   } catch (error) {
     const evidence = await page
       .evaluate(() => ({
@@ -347,16 +360,499 @@ const clickTab = async (page: Page, href: string) => {
 /** The shell tests. `screenshots` is a directory for optional synthetic review screenshots. */
 export const defineMailShellTests = (screenshots: string | undefined) =>
   describe(`Mail SSR and hydration shell in ${browserName}`, () => {
+    for (const locale of ["en", "de"] as const)
+      for (const width of [1440, 834])
+        test(`compact tag action ${locale} ${width}: icon order, selection, reload and clear`, async () => {
+          const page = await open(`${boxPath}?locale=${locale}`, width);
+          const actions = page.locator(".k2b-app-workspace__head-actions");
+          const tag = actions.locator(".mail-head-tag");
+          const query = () => {
+            const url = new URL(page.url());
+            return readMailHeadFilters(url, resolveMailSearchRoute(url), mailboxData(url).folderId);
+          };
+          try {
+            expect(await tag.getAttribute("aria-label")).toBe("Tag");
+            expect(await tag.getAttribute("data-icon-only")).toBe("true");
+            expect((await tag.textContent())?.trim()).toBe("");
+            const search = (await actions.locator("[data-mail-search-trigger]").boundingBox())!;
+            const box = (await tag.boundingBox())!;
+            const select = (await actions.locator("[data-mail-selection-trigger]").boundingBox())!;
+            expect(box.x).toBeGreaterThanOrEqual(search.x + search.width);
+            expect(box.x + box.width).toBeLessThanOrEqual(select.x);
+            expect(Math.abs(box.y - search.y)).toBeLessThanOrEqual(1);
+            expect(await page.locator(".k2b-app-workspace__head-filters").isVisible()).toBe(false);
+            await tag.focus();
+            await page.keyboard.press("Enter");
+            await page.getByRole("menu").waitFor({ state: "visible" });
+            const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+            await page.getByRole("menuitemradio", { name: "Priority", exact: true }).click();
+            await response;
+            await ready(page);
+            expect(query()?.tagId).toBe("Tag001");
+            expect(await tag.getAttribute("aria-label")).toBe("Tag: Priority");
+            await page.keyboard.press("Escape");
+            await page.getByRole("menu").waitFor({ state: "hidden" });
+            expect(await tag.evaluate((element) => document.activeElement === element)).toBe(true);
+            await page.reload();
+            await ready(page);
+            expect(await tag.getAttribute("data-active")).toBe("true");
+            await tag.click();
+            await page.getByRole("menuitemradio", { name: "Priority", exact: true }).waitFor({ state: "visible" });
+            expect(await page.getByRole("menuitemradio", { name: "Priority", exact: true }).getAttribute("aria-checked")).toBe("true");
+            const cleared = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+            await page.getByRole("menuitem", { name: locale === "de" ? "Leeren" : "Clear", exact: true }).click();
+            await cleared;
+            await ready(page);
+            expect(query()?.tagId).toBeNull();
+            expect(await tag.getAttribute("data-active")).toBeNull();
+          } finally {
+            await close(page);
+          }
+        });
+
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390])
+        test(`compact reader short subject ${theme} ${width}: count beside the title, hidden on phones`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv01&theme=${theme}`, width, 900);
+          try {
+            const title = page.locator(".mail-reader-title");
+            const count = page.locator(".mail-reader-count");
+            await title.waitFor({ state: "visible" });
+            const titleBox = (await title.boundingBox())!;
+            const marksBox = (await page.locator(".mail-reader-marks").boundingBox())!;
+            if (width >= 768) {
+              const countBox = (await count.boundingBox())!;
+              expect(countBox.x - (marksBox.x + marksBox.width)).toBeGreaterThanOrEqual(0);
+              expect(countBox.x - (marksBox.x + marksBox.width)).toBeLessThanOrEqual(8.5);
+            } else {
+              expect(await count.isVisible()).toBe(false);
+              const back = (await page.locator(".mail-reader-back").boundingBox())!;
+              const details = (await page.locator("[data-mail-details-trigger]").boundingBox())!;
+              const middle = (box: { y: number; height: number }) => box.y + box.height / 2;
+              expect(Math.abs(middle(titleBox) - middle(back))).toBeLessThanOrEqual(1);
+              expect(Math.abs(middle(marksBox) - middle(details))).toBeLessThanOrEqual(1);
+            }
+            if (screenshots) {
+              mkdirSync(join(screenshots, browserName), { recursive: true });
+              await page.screenshot({ path: join(screenshots, browserName, `reader-short-${theme}-${width}.png`) });
+            }
+          } finally {
+            await close(page);
+          }
+        });
+
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390])
+        test(`compact reader ${theme} ${width}: fixed subject, count and list toggle`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv02&long-subject=1&theme=${theme}`, width, 900);
+          try {
+            const toolbar = page.locator("[data-mail-reader-toolbar]");
+            const heading = toolbar.locator("[data-mail-reader-heading]");
+            await heading.waitFor({ state: "visible" });
+            expect(await toolbar.locator(".mail-reader-count").isVisible()).toBe(width >= 768);
+            expect(await page.locator(".mail-reader-scroll [data-mail-reader-heading]").count()).toBe(0);
+            const metrics = await heading.evaluate((element) => {
+              const css = getComputedStyle(element);
+              return {
+                font: css.fontSize,
+                lines: css.webkitLineClamp,
+                height: element.getBoundingClientRect().height,
+                line: parseFloat(css.lineHeight),
+              };
+            });
+            expect(metrics.font).toBe("17px");
+            expect(metrics.lines).toBe(width < 768 ? "3" : "2");
+            expect(metrics.height).toBeLessThanOrEqual(metrics.line * (width < 768 ? 3 : 2) + 0.5);
+            if (width < 768) {
+              const titleBox = await heading.boundingBox();
+              const back = (await toolbar.locator(".mail-reader-back").boundingBox())!;
+              expect(Math.abs(titleBox!.y + metrics.line / 2 - (back.y + back.height / 2))).toBeLessThanOrEqual(1);
+            }
+            const before = await toolbar.boundingBox();
+            await page.locator(".mail-reader-scroll").evaluate((element) => {
+              element.scrollTop = 300;
+            });
+            await settled(page);
+            expect(await page.locator(".mail-reader-scroll").evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+            expect(await toolbar.boundingBox()).toEqual(before);
+            expect(await page.locator(".mail-workspace > .k2b-app-workspace__head").isVisible()).toBe(width >= 768);
+            expect(await toolbar.locator("[data-mail-details-trigger]").isVisible()).toBe(width < 768);
+            expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible()).toBe(width >= 768);
+            if (screenshots) {
+              mkdirSync(join(screenshots, browserName), { recursive: true });
+              await page.screenshot({ path: join(screenshots, browserName, `compact-reader-${theme}-${width}.png`) });
+            }
+            if (width >= 768) {
+              await toolbar.getByRole("button", { name: "Hide conversation list", exact: true }).click();
+              await toolbar.getByRole("button", { name: "Show conversation list", exact: true }).waitFor({ state: "visible" });
+              expect(await page.locator("[data-mail-conversation-list]").isVisible()).toBe(false);
+              await toolbar.getByRole("button", { name: "Show conversation list", exact: true }).click();
+              await page.locator("[data-mail-conversation-list]").waitFor({ state: "visible" });
+            }
+          } finally {
+            await close(page);
+          }
+        });
+
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390])
+        test(`compact folder filters ${theme} ${width}: scoped toggles, dates and tags`, async () => {
+          const captureStarted = performance.now();
+          const captureStep = (step: string) => {
+            if (screenshots)
+              console.info(`Mail chips ${browserName} ${theme} ${width} ${step}: ${Math.round(performance.now() - captureStarted)}ms`);
+          };
+          const page = await open(`${boxPath}?folder=Filed1&theme=${theme}&history=1`, width);
+          captureStep("ready");
+          const head = page.locator(".k2b-app-workspace__head-filters");
+          const filters = () => {
+            const url = new URL(page.url());
+            return readMailHeadFilters(url, resolveMailSearchRoute(url), mailboxData(url).folderId);
+          };
+          const activate = async (control: Locator) => {
+            const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+            await control.click();
+            await response;
+            await ready(page);
+          };
+          try {
+            // The same public controls exist in the SSR frame and after hydration.
+            expect(await head.getByRole("button", { name: /Unread/ }).getAttribute("aria-pressed")).toBe("false");
+            if (screenshots) {
+              mkdirSync(join(screenshots, browserName), { recursive: true });
+              captureStep("before initial screenshot");
+              await page.screenshot({ path: join(screenshots, browserName, `folder-filters-${theme}-${width}.png`) });
+              captureStep("after initial screenshot");
+            }
+            await head.getByRole("button", { name: /Unread/ }).focus();
+            const unreadResponse = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+            await page.keyboard.press("Enter");
+            await unreadResponse;
+            await ready(page);
+            expect(filters()?.folderId).toBe("Filed1");
+            expect(filters()?.unread).toBe(true);
+            await activate(head.getByRole("button", { name: "Flagged", exact: true }));
+            await activate(head.getByRole("button", { name: "With attachment", exact: true }));
+            expect(filters()?.flagged).toBe(true);
+            expect(filters()?.attachment).toBe(true);
+            await head.getByRole("button", { name: "Date range", exact: true }).click();
+            await activate(page.getByRole("menuitemradio", { name: "Last 7 days", exact: true }));
+            expect(filters()?.dates.length).toBe(2);
+            await page.locator(".k2b-app-workspace__head-actions").getByRole("button", { name: "Tag", exact: true }).click();
+            await activate(page.getByRole("menuitemradio", { name: "Priority", exact: true }));
+            // FilterChip intentionally stays open; close it before testing the next route.
+            await page.keyboard.press("Escape");
+            const taggedUrl = page.url();
+            expect(filters()?.tagId).toBe("Tag001");
+            expect(filters()?.folderId).toBe("Filed1");
+            expect(filters()?.unread).toBe(true);
+            expect(new URL(taggedUrl).searchParams.has("folder")).toBe(false);
+            expect(await currentHref(page)).toBe(boxPath);
+            expect(await head.locator("[data-mail-filter-folder]").textContent()).toBe("Only in Filed");
+            if (screenshots) {
+              captureStep("before tag screenshot");
+              await page.screenshot({ path: join(screenshots, browserName, `folder-tag-${theme}-${width}.png`) });
+              captureStep("after tag screenshot");
+            }
+            await activate(head.locator(".k2b-app-workspace__head-reset"));
+            expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+            expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+            captureStep("assertions complete");
+          } finally {
+            captureStep("before close");
+            await page.context().close();
+            captureStep("after close");
+          }
+        });
+
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390] as const)
+        test(`compact search head ${theme} ${width}: replaces the lead and returns focus without moving the list`, async () => {
+          const page = await open(`${boxPath}?folder=Filed1&theme=${theme}`, width);
+          try {
+            const head = page.locator(".k2b-app-workspace__head");
+            await settled(page);
+            const before = await head.boundingBox();
+            await page.locator("[data-mail-search-trigger]").click();
+            await settled(page);
+            const input = page.locator('input[name="q"]');
+            expect(await input.count()).toBe(1);
+            expect(await page.locator("[data-mail-conversation-list] input").count()).toBe(0);
+            expect(await input.evaluate((element) => document.activeElement === element)).toBe(true);
+            const during = await head.boundingBox();
+            expect(during?.height).toBe(before?.height);
+            expect(await page.getByRole("button", { name: "Options for Example support", exact: true }).isVisible()).toBe(width !== 390);
+            expect(await page.getByRole("button", { name: "Cancel", exact: true }).isVisible()).toBe(true);
+            if (screenshots) {
+              const directory = join(screenshots, browserName);
+              mkdirSync(directory, { recursive: true });
+              await page.screenshot({ path: join(directory, `search-head-${theme}-${width}.png`) });
+            }
+            const fields = page.getByRole("button", { name: "Search in: Everything", exact: true });
+            await fields.focus();
+            await fields.press("/");
+            expect(await input.evaluate((element) => document.activeElement === element)).toBe(true);
+            await fields.click();
+            await page.getByRole("menu").waitFor({ state: "visible" });
+            await page.keyboard.press("Escape");
+            await page.getByRole("menu").waitFor({ state: "hidden" });
+            expect(await input.count()).toBe(1);
+            await fields.focus();
+            await fields.press("Escape");
+            await settled(page);
+            expect(await input.count()).toBe(0);
+            expect((await head.boundingBox())?.height).toBe(before?.height);
+            expect(await page.locator("[data-mail-search-trigger]").evaluate((element) => document.activeElement === element)).toBe(true);
+            expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+          } finally {
+            await close(page);
+          }
+        });
+
+    test("compact search head: Escape from a result returns to the source folder and magnifier", async () => {
+      const page = await open(`${boxPath}?folder=Filed1`);
+      try {
+        await page.locator("[data-mail-search-trigger]").click();
+        await page.locator('input[name="q"]').fill("invoice");
+        await page.waitForURL((url) => url.searchParams.get("q") === "invoice");
+        const row = page.locator("[data-mail-conversation-list] [data-conversation-id] > a").first();
+        await row.focus();
+        await row.press("Escape");
+        await page.waitForURL((url) => !url.searchParams.has("q") && url.searchParams.get("folder") === "Filed1");
+        expect(await page.locator('input[name="q"]').count()).toBe(0);
+        expect(await page.locator("[data-mail-search-trigger]").evaluate((element) => document.activeElement === element)).toBe(true);
+      } finally {
+        await close(page);
+      }
+    });
+
+    test("compact search head: a narrow desktop app area keeps desktop controls and a reachable input", async () => {
+      const page = await open(`${boxPath}?folder=Filed1&shell=1&panel=560`, 1280);
+      try {
+        await page.locator("[data-mail-search-trigger]").click();
+        const input = page.locator('input[name="q"]');
+        await settled(page);
+        expect(await page.locator(".mail-head-search-close-phone").isVisible()).toBe(false);
+        expect(await page.locator(".mail-head-search-close-desktop").isVisible()).toBe(true);
+        expect(
+          await input.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === element;
+          }),
+        ).toBe(true);
+        await input.press("Escape");
+        expect(await input.count()).toBe(0);
+      } finally {
+        await close(page);
+      }
+    });
+
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390] as const)
+        test(`compact selection head ${theme} ${width}: count, exit and labeled actions keep their order`, async () => {
+          const page = await open(`${boxPath}?folder=Filed1&theme=${theme}`, width);
+          try {
+            const head = page.locator(".k2b-app-workspace__head");
+            await settled(page);
+            const beforeHeight = (await head.boundingBox())!.height;
+            const entry = page.getByRole("button", { name: "Select conversations", exact: true });
+            await entry.focus();
+            await entry.press("Enter");
+            expect(await page.locator("[data-mail-selection-exit]").evaluate((element) => document.activeElement === element)).toBe(true);
+            await page.getByRole("checkbox", { name: "Select Example request 1", exact: true }).check();
+            const toolbar = page.getByRole("toolbar", { name: "Selected conversation actions", exact: true });
+            await toolbar.waitFor({ state: "visible" });
+            await settled(page);
+            expect(await toolbar.locator("button").allTextContents()).toContain("Archive");
+            expect((await head.boundingBox())!.height).toBe(beforeHeight);
+            const summary = await page.locator(".mail-bulk-summary").boundingBox();
+            const actions = await page.locator(".mail-bulk-actions").boundingBox();
+            expect(
+              Boolean(
+                summary && actions && (width === 390 ? actions.y >= summary.y + summary.height : actions.y < summary.y + summary.height),
+              ),
+            ).toBe(true);
+            expect(await page.getByRole("button", { name: "Options for Example support", exact: true }).isVisible()).toBe(width !== 390);
+            if (screenshots) {
+              const directory = join(screenshots, browserName);
+              mkdirSync(directory, { recursive: true });
+              await page.screenshot({ path: join(directory, `selection-head-${theme}-${width}.png`) });
+            }
+            await page.getByRole("button", { name: "More selected conversation actions", exact: true }).click();
+            await page.getByRole("menu").waitFor({ state: "visible" });
+            expect(await page.getByRole("menuitem", { name: "Move to Trash", exact: true }).isVisible()).toBe(true);
+            await page.keyboard.press("Escape");
+            await page.getByRole("button", { name: "Exit selection", exact: true }).click();
+            expect(await page.getByRole("checkbox").count()).toBe(0);
+            expect(await page.locator("[data-mail-search-trigger]").isVisible()).toBe(true);
+            const selectionTrigger = page.locator("[data-mail-selection-trigger]");
+            expect(await selectionTrigger.evaluate((element) => document.activeElement === element)).toBe(true);
+            await selectionTrigger.click();
+            const checkbox = page.getByRole("checkbox", { name: "Select Example request 1", exact: true });
+            await checkbox.focus();
+            await checkbox.press("Escape");
+            expect(await page.getByRole("checkbox").count()).toBe(0);
+            expect(await selectionTrigger.evaluate((element) => document.activeElement === element)).toBe(true);
+          } finally {
+            await close(page);
+          }
+        });
+
+    test("compact folder filters: reload and traversal preserve the same scoped search", async () => {
+      const expression: MailSearchExpression = {
+        type: "and",
+        expressions: [
+          { type: "folder_id", folderId: "Filed1" },
+          { type: "unread", folderId: "Filed1" },
+          { type: "local_tag_id", tagId: "Tag001" },
+          { type: "date", field: "internal_date", operator: "on_or_after", value: "2026-10-07T10:00:00.000Z" },
+          { type: "date", field: "internal_date", operator: "before", value: MAIL_SHELL_NOW },
+        ],
+      };
+      const route = `${boxPath}?${new URLSearchParams({ history: "1", searchFrom: "folder=Filed1", search: JSON.stringify({ expression, sort: "newest" }) })}`;
+      const page = await open(route);
+      const assertSearch = async () => {
+        const url = new URL(page.url());
+        expect(resolveMailSearchRoute(url).expression).toEqual(expression);
+        expect(await currentHref(page)).toBe(boxPath);
+        expect(await page.locator("[data-mail-filter-folder]").textContent()).toBe("Only in Filed");
+      };
+      try {
+        await assertSearch();
+        const initial = page.url();
+        await page.reload();
+        await ready(page);
+        await assertSearch();
+        const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+        await page.locator(".k2b-app-workspace__head-reset").click();
+        await response;
+        await ready(page);
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+        await page.goBack();
+        await ready(page);
+        expect(page.url()).toBe(initial);
+        await assertSearch();
+        await page.goForward();
+        await ready(page);
+        expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test("compact folder filters: custom range uses the existing editor and Sent keeps its subset", async () => {
+      const page = await open(`${boxPath}?folder=Filed1`);
+      const head = page.locator(".k2b-app-workspace__head-filters");
+      try {
+        await page.route("**/api/mail/mailboxes/Box001/folders", (route) =>
+          route.fulfill({ json: { folders: mailboxData(new URL(page.url())).folders } }),
+        );
+        await head.getByRole("button", { name: "Date range", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Custom date range…", exact: true }).click();
+        const dialog = page.getByRole("dialog");
+        await dialog.waitFor({ state: "visible" });
+        expect(await dialog.getByText(/on or after/i, { exact: true }).count()).toBeGreaterThan(0);
+        await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+        await dialog.waitFor({ state: "hidden" });
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+        // Sent retains the approved attachment/date/tag subset, without unread or flagged buttons.
+        await page.goto(new URL(`${boxPath}?folder=Sent1`, server.url).href);
+        await ready(page);
+        expect(await head.getByRole("button", { name: /Unread|Flagged/ }).count()).toBe(0);
+        expect(await head.getByRole("button", { name: "With attachment", exact: true }).isVisible()).toBe(true);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test("compact folder filters: custom Apply on a direct link keeps a clean return target", async () => {
+      const expression = {
+        type: "and",
+        expressions: [
+          { type: "folder_id", folderId: "Filed1" },
+          { type: "unread", folderId: "Filed1" },
+        ],
+      };
+      const direct = `${boxPath}?${new URLSearchParams({ folder: "Filed1", search: JSON.stringify({ expression, sort: "newest" }) })}`;
+      const page = await open(direct);
+      const head = page.locator(".k2b-app-workspace__head-filters");
+      try {
+        await page.route("**/api/mail/mailboxes/Box001/folders", (route) =>
+          route.fulfill({ json: { folders: mailboxData(new URL(page.url())).folders } }),
+        );
+        await head.getByRole("button", { name: "Date range", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Custom date range…", exact: true }).click();
+        const dialog = page.getByRole("dialog");
+        await dialog.waitFor({ state: "visible" });
+        const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+        await dialog.getByRole("button", { name: "Search", exact: true }).click();
+        await response;
+        await ready(page);
+        const url = new URL(page.url());
+        const starting = new URLSearchParams(url.searchParams.get("searchFrom") ?? "");
+        expect(starting.has("search")).toBe(false);
+        expect(starting.get("folder")).toBe("Filed1");
+        expect(await head.locator("[data-mail-filter-folder]").textContent()).toBe("Only in Filed");
+        await head.getByRole("button", { name: "Last 7 days", exact: true }).click();
+        const clearDate = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+        await page.getByRole("menuitem", { name: "Clear date range", exact: true }).click();
+        await clearDate;
+        await ready(page);
+        const clearUnread = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+        await head.getByRole("button", { name: /Unread/ }).click();
+        await clearUnread;
+        await ready(page);
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+        expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+      } finally {
+        await page.context().close();
+      }
+    });
+
+    test("compact folder filters: direct links clear sequentially and mixed routes keep the service precedence", async () => {
+      const expression = {
+        type: "and",
+        expressions: [
+          { type: "folder_id", folderId: "Filed1" },
+          { type: "unread", folderId: "Filed1" },
+          { type: "flagged", folderId: "Filed1" },
+        ],
+      };
+      const direct = `${boxPath}?${new URLSearchParams({ folder: "Filed1", search: JSON.stringify({ expression, sort: "newest" }) })}`;
+      const page = await open(direct);
+      const head = page.locator(".k2b-app-workspace__head-filters");
+      try {
+        for (const name of ["Flagged", /Unread/]) {
+          const response = page.waitForResponse((response) => response.url().includes("/workspace-list"));
+          await head.getByRole("button", { name }).click();
+          await response;
+          await ready(page);
+        }
+        expect(new URL(page.url()).searchParams.has("search")).toBe(false);
+        expect(new URL(page.url()).searchParams.get("folder")).toBe("Filed1");
+        await page.goto(new URL(`${boxPath}?view=mine&folder=Filed1`, server.url).href);
+        await ready(page);
+        expect(await currentHref(page)).toBe(`${boxPath}?view=mine`);
+        expect(await head.getByRole("button", { name: /Unread/ }).count()).toBe(0);
+        await page.goto(new URL(`${boxPath}?view=unknown&folder=Filed1`, server.url).href);
+        await ready(page);
+        expect(await head.getByRole("button", { name: /Unread/ }).isVisible()).toBe(true);
+      } finally {
+        await page.context().close();
+      }
+    });
+
     for (const theme of ["light", "dark"] as const)
       for (const width of [1440, 390])
         test(`mailbox context contrast ${theme} ${width}: folder selection and keyboard switch stay independent`, async () => {
-          const page = await open(`${boxPath}?folder=Inbox1&navigation=1&theme=${theme}`, width);
+          const page = await open(`${boxPath}?folder=Inbox1&navigation=1&theme=${theme}&locale=${theme === "light" ? "de" : "en"}`, width);
           const appearance = (locator: Locator) =>
             locator.evaluate((element) => {
               const style = getComputedStyle(element);
               const probe = document.createElement("span");
-              probe.style.color = "var(--k2b-text-muted)";
-              probe.style.backgroundColor = "var(--k2b-surface-muted)";
+              probe.style.color = element.closest(".mail-sidebar") ? "var(--mail-other-mailbox-ink)" : "var(--k2b-text-muted)";
+              probe.style.backgroundColor = "var(--k2b-surface)";
               element.append(probe);
               const muted = getComputedStyle(probe).color;
               const background = getComputedStyle(probe).backgroundColor;
@@ -397,12 +893,64 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             };
             const ink = luminance(otherInk.color);
             const background = luminance(otherInk.background);
-            // The shared muted-text contract retains 7:1 contrast even on the darker muted surface.
-            expect((Math.max(ink, background) + 0.05) / (Math.min(ink, background) + 0.05)).toBeGreaterThanOrEqual(7);
+            // Other mailboxes stay readable and selectable even with their quieter app-owned presentation.
+            expect((Math.max(ink, background) + 0.05) / (Math.min(ink, background) + 0.05)).toBeGreaterThanOrEqual(phone ? 7 : 4.5);
             expect(await current.getAttribute("aria-current")).toBeNull();
             expect(await other.getAttribute("aria-disabled")).toBeNull();
             const folder = navigation.locator(`a[href="${boxPath}?folder=Inbox1"]`);
             expect(await folder.getAttribute("aria-current")).toBe("page");
+            if (!phone) {
+              const group = navigation.locator(".mail-sidebar-mailbox-group.is-open");
+              expect(await group.count()).toBe(1);
+              expect(await group.locator('[data-mailbox="Box001"]').count()).toBe(1);
+              expect(await group.locator(".mail-sidebar-folders").count()).toBe(1);
+              expect(await group.locator('[data-mailbox="Box002"]').count()).toBe(0);
+              const colors = await group.evaluate((element) => {
+                const probe = document.createElement("span");
+                probe.style.background = "var(--ui-app-selected)";
+                element.append(probe);
+                const fill = getComputedStyle(element).backgroundColor;
+                const expected = getComputedStyle(probe).backgroundColor;
+                probe.remove();
+                return { fill, expected };
+              });
+              expect(colors.fill).toBe(colors.expected);
+            }
+            // The real Cloud appearance scope supplies the approved 10% navigation fill.
+            const selectedColors = await folder.evaluate((element) => {
+              const row = element.closest(".k2b-app-workspace__sidebar-item") ?? element;
+              const probe = document.createElement("span");
+              probe.style.background = "var(--ui-app-selected-nav)";
+              row.append(probe);
+              const expected = getComputedStyle(probe).backgroundColor;
+              probe.remove();
+              return { fill: getComputedStyle(row).backgroundColor, ink: getComputedStyle(element).color, expected };
+            });
+            expect(selectedColors.fill).toBe(selectedColors.expected);
+            if (theme === "light") expect(selectedColors.fill).toBe("rgb(231, 241, 241)");
+            const fg = luminance(selectedColors.ink);
+            const bg = luminance(selectedColors.fill);
+            expect((Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05)).toBeGreaterThanOrEqual(4.5);
+            if (!phone) {
+              await folder.hover();
+              await folder.focus();
+            }
+            await settled(page);
+            if (!phone) {
+              expect(await folder.evaluate((element) => document.activeElement === element)).toBe(true);
+              expect(
+                await folder.evaluate((element) => getComputedStyle(element.closest(".k2b-app-workspace__sidebar-item")!).backgroundColor),
+              ).toBe(selectedColors.fill);
+            }
+            const compose = page.locator("[data-workspace-primary]");
+            const composeColors = await compose.evaluate((element) => {
+              const style = getComputedStyle(element);
+              return { ink: style.color, fill: style.backgroundColor };
+            });
+            expect(composeColors.fill).toBe("rgb(15, 118, 110)");
+            const composeInk = luminance(composeColors.ink);
+            const composeFill = luminance(composeColors.fill);
+            expect((Math.max(composeInk, composeFill) + 0.05) / (Math.min(composeInk, composeFill) + 0.05)).toBeGreaterThanOrEqual(4.5);
             if (phone) {
               expect(await current.locator("..").getAttribute("data-context")).toBe("true");
               expect(await other.locator("..").getAttribute("data-context")).toBe("false");
@@ -419,6 +967,8 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
                   {
                     currentInk,
                     otherInk,
+                    selectedColors,
+                    composeColors,
                     phases: await page.evaluate(() =>
                       performance
                         .getEntriesByType("mark")
@@ -684,6 +1234,77 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
       });
     }
 
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390])
+        test(`compact draft queue ${theme} ${width}: count stays in the head and draft links retain context`, async () => {
+          const page = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&theme=${theme}`, width);
+          try {
+            const serverFrame = await recordedFrame(page, "server");
+            assertFrame(serverFrame, await recordedFrame(page, "hydrated"), "draft queue hydrated");
+            assertFrame(serverFrame, await geometry(page), "draft queue settled");
+            expect(await page.locator(".k2b-app-workspace__head [data-mail-queue-count]").textContent()).toBe("2 drafts");
+            expect(await page.locator(".mail-drafts-list header").count()).toBe(0);
+            expect(await page.locator(".mail-draft-row").count()).toBe(2);
+            const draft = page.locator("a.mail-draft-row").first();
+            const subject = await draft.locator(".mail-draft-row__subject").boundingBox();
+            const recipients = await draft.locator(".mail-draft-row__recipients").boundingBox();
+            expect(subject).not.toBeNull();
+            expect(recipients!.y).toBeGreaterThanOrEqual(subject!.y + subject!.height);
+            expect(await draft.getAttribute("href")).toContain("/compose/Draft1?return=");
+            expect(await draft.getAttribute("href")).toContain("folder%3DDrafts1");
+            const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+            expect(overflow).toBe(false);
+            if (screenshots) {
+              mkdirSync(screenshots, { recursive: true });
+              await page.screenshot({ path: join(screenshots, `compact-drafts-${theme}-${width}.png`) });
+            }
+            await draft.focus();
+            expect(await draft.evaluate((element) => document.activeElement === element)).toBe(true);
+            if (screenshots && width === 390 && theme === "light")
+              await page.screenshot({ path: join(screenshots, `compact-drafts-focus-${theme}-${width}.png`) });
+            await page.reload();
+            await ready(page);
+            expect(await page.locator("[data-mail-queue-count]").textContent()).toBe("2 drafts");
+            expect(await page.locator(".mail-draft-row").count()).toBe(2);
+          } finally {
+            await close(page);
+          }
+          const readOnly = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&permission=read&theme=${theme}`, width);
+          try {
+            expect(await readOnly.locator("article.mail-draft-row").count()).toBe(2);
+            expect(await readOnly.locator("a.mail-draft-row").count()).toBe(0);
+          } finally {
+            await close(readOnly);
+          }
+          const scheduled = await open(`${boxPath}?scheduled=1&theme=${theme}`, width);
+          try {
+            expect(await scheduled.locator(".k2b-app-workspace__head [data-mail-queue-count]").count()).toBe(1);
+            expect(await scheduled.locator(".k2b-app-workspace__main h1.sr-only").textContent()).toBe("Scheduled");
+          } finally {
+            await close(scheduled);
+          }
+        });
+
+    test("compact draft pagination stays centered and retains the folder", async () => {
+      for (const width of [1440, 390]) {
+        const page = await open(`${boxPath}?folder=Drafts1&drafts-fixture=1&drafts-cursor=1`, width);
+        try {
+          const list = page.locator(".mail-drafts-list");
+          const next = list.getByRole("link", { name: "Load more", exact: true });
+          const bounds = await list.boundingBox();
+          const button = await next.boundingBox();
+          expect(bounds).not.toBeNull();
+          expect(button).not.toBeNull();
+          expect(Math.abs(button!.x + button!.width / 2 - bounds!.x - bounds!.width / 2)).toBeLessThanOrEqual(0.5);
+          const href = new URL((await next.getAttribute("href"))!, page.url());
+          expect(href.searchParams.get("folder")).toBe("Drafts1");
+          expect(href.searchParams.get("cursor")).toBe("next");
+        } finally {
+          await close(page);
+        }
+      }
+    });
+
     const tag = mailTagSearch("Tag001");
     if (!tag.ok) throw new Error("Invalid synthetic tag ID");
     const routes = [
@@ -705,9 +1326,9 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           if (route.query.startsWith("folder="))
             expect(await sidebar(page).locator('a[href$="folder=Filed1"]').getAttribute("aria-current")).toBe("page");
           if (route.query.startsWith("search=")) {
-            const chip = page.locator(".k2b-app-workspace__head-filters .k2b-filter-chip");
-            expect(await chip.textContent()).toContain("Tag");
-            expect(await chip.textContent()).toContain("Priority");
+            const tag = page.locator(".k2b-app-workspace__head-actions .mail-head-tag");
+            expect(await tag.getAttribute("aria-label")).toBe("Tag: Priority");
+            expect(await tag.getAttribute("data-active")).toBe("true");
           }
           if (route.query === "view=snoozed") {
             expect(await tabs(page).getByRole("button", { name: /More/ }).isVisible()).toBe(true);
@@ -791,13 +1412,12 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
                   "Settings",
                   ...(permission === "admin" ? ["Sync mailbox", "Mailbox health", "Shared links"] : []),
                 ];
-          if (permission === "assigned-only") {
-            expect(await head.count()).toBe(0);
-            expect(await page.getByRole("link", { name: "Compose", exact: true }).count()).toBe(0);
-          } else expect(await head.count()).toBe(1);
+          expect(await head.count()).toBe(1);
+          if (permission === "assigned-only") expect(await page.getByRole("link", { name: "Compose", exact: true }).count()).toBe(0);
+          expect(await page.getByRole("button", { name: "Select conversations", exact: true }).count()).toBe(permission === "read" ? 0 : 1);
           expect(await row.count()).toBe(1);
           for (const [trigger, items] of [
-            ...(permission === "assigned-only" ? [] : [[head, expected] as const]),
+            [head, ["Conversation view", "Message view", ...expected]] as const,
             [row, [...expected, ...rowOnly]] as const,
           ]) {
             await trigger.click();
@@ -1004,7 +1624,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
       test(`${width}: a folder is named where the person sees it`, async () => {
         const page = await open(`${boxPath}?folder=Filed1`, width);
         try {
-          const heading = page.locator("[data-mail-list-heading]");
+          const heading = page.locator("[data-mail-head-title]");
           expect(await heading.textContent()).toBe("Filed");
           const box = await heading.boundingBox();
           if (width === 1440) {
@@ -1026,7 +1646,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
       const page = await open(`${boxPath}?folder=Quiet1`, 1440);
       try {
         expect(await sidebar(page).locator('a[href$="folder=Quiet1"]').count()).toBe(0);
-        const heading = page.locator("[data-mail-list-heading]");
+        const heading = page.locator("[data-mail-head-title]");
         expect(await heading.textContent()).toBe("Quiet");
         expect((await heading.boundingBox())?.width ?? 0).toBeGreaterThan(20);
         expect(await heading.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
@@ -1038,7 +1658,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
     test("1440: collapsing the open folder's parent leaves its name in the list heading", async () => {
       const page = await open(`${boxPath}?folder=Child1`, 1440);
       try {
-        const heading = page.locator("[data-mail-list-heading]");
+        const heading = page.locator("[data-mail-head-title]");
         const childRow = sidebar(page).locator('a[href$="folder=Child1"]');
         const toggle = sidebar(page).locator(
           '[role="treeitem"][data-k2b-nav-tree-id="Filed1"] > .k2b-app-workspace__nav-tree-row [data-k2b-nav-tree-toggle]',
@@ -1221,11 +1841,14 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
               expect(frame.detail, `${label}: Detail`).toBe(row.detail);
               expect(frame.headDetails, `${label}: head Details`).toBe(true);
               if (row.detail === "column") expect(Math.abs(frame.detailWidth - 480), `${label}: Detail width`).toBeLessThanOrEqual(0.5);
-              // At most 760 px, centred in the reader; the toolbar stays as wide as the reader.
+              // At most 760 px, centred in the reader; the toolbar is centred at at most 800 px.
               expect(frame.column!.width, `${label}: reading column`).toBeLessThanOrEqual(760.5);
               const readerCentre = frame.reader!.x + frame.reader!.width / 2;
               expect(Math.abs(frame.column!.x + frame.column!.width / 2 - readerCentre), `${label}: column centre`).toBeLessThanOrEqual(1);
-              sameBox({ ...frame.toolbar!, y: 0, height: 0 }, { ...frame.reader!, y: 0, height: 0 }, `${label}: toolbar`);
+              expect(frame.toolbar!.width, `${label}: toolbar width`).toBeLessThanOrEqual(800.5);
+              expect(Math.abs(frame.toolbar!.x + frame.toolbar!.width / 2 - readerCentre), `${label}: toolbar centre`).toBeLessThanOrEqual(
+                0.5,
+              );
               // Opening the conversation marks it read after hydration; that changes no geometry.
               const read = (parts: Frame) => parts.map((part) => ({ ...part, part: part.part.replace(" mail-list-entry-unread", "") }));
               const server = read(await recordedFrame(page, "server"));
@@ -1262,7 +1885,11 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           const page = await open(widePath(), width, height);
           try {
             expect((await wide(page)).detail).toBe("waiting");
-            await page.getByRole("button", { name: "Hide conversation list" }).click();
+            await page
+              .locator(".k2b-app-workspace__head")
+              .getByRole("button", { name: "Options for Example support", exact: true })
+              .click();
+            await page.getByRole("menuitem", { name: "Hide conversation list" }).click();
             await settled(page);
             const frame = await wide(page);
             expect(frame.pane).toBeNull();
@@ -1298,9 +1925,9 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
           }
         });
 
-      test("reader toolbar: labels from 720 px, icons below, and Reply all and Forward move into … below 520 px", async () => {
+      test("reader toolbar: optional replies are icons and move into overflow below 576 px", async () => {
         const cases = [
-          { path: widePath(), width: 2560, height: 1080, labels: true, shown: true },
+          { path: widePath(), width: 2560, height: 1080, labels: false, shown: true },
           { path: widePath(), width: 1920, height: 1080, labels: false, shown: true },
           { path: `${boxPath}?conversation=Conv01`, width: 834, height: 1194, labels: false, shown: false },
         ] as const;
@@ -1315,7 +1942,10 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
               if (item.shown)
                 expect(await button.locator(".mail-reader-respond-label").isVisible(), `${label}: ${id} label`).toBe(item.labels);
             }
-            expect(await page.locator(".mail-reader-toolbar [data-mail-details-trigger]").isVisible(), `${label}: Details`).toBe(true);
+            expect(await page.locator(".mail-reader-toolbar [data-mail-details-trigger]").isVisible(), `${label}: reader Details`).toBe(
+              false,
+            );
+            expect(await page.locator("[data-app-workspace-detail-toggle]").isVisible(), `${label}: shared Details`).toBe(true);
             // Nothing in the bar spills out of the reader.
             const bar = await page.locator(".mail-reader-toolbar").evaluate((element) => element.scrollWidth - element.clientWidth);
             expect(bar, `${label}: toolbar overflow`).toBeLessThanOrEqual(0);
@@ -1333,12 +1963,12 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       }, 60_000);
 
-      test("reader toolbar: the largest own toolbar fits every reader width, in English and German", async () => {
-        // Eight actions is the most a person can choose: all three answers plus five icons, or Reply plus seven.
-        const misfits: string[] = [];
-        const readers: number[] = [];
-        for (const toolbar of ["reply,reply_all,forward,archive,spam,trash,move,read", "reply,archive,spam,trash,move,read,flag,tags"])
-          for (const locale of ["en", "de"] as const) {
+      // Independent locale/configuration cases keep each engine run bounded without dropping any width.
+      for (const toolbar of ["reply,reply_all,forward,archive,spam,trash,move,read", "reply,archive,spam,trash,move,read,flag,tags"])
+        for (const locale of ["en", "de"] as const)
+          test(`reader toolbar: largest own toolbar ${toolbar} ${locale} fits every reader width`, async () => {
+            const misfits: string[] = [];
+            const readers: number[] = [];
             for (const [extra, widths] of [
               ["", [768, 800, 834, 900, 980, 1024, 1100, 1194, 1280, 1366, 1440]],
               ["&list=hidden", [834, 900]],
@@ -1361,8 +1991,11 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
                         return box.left < reader.left - 0.5 || box.right > reader.right + 0.5;
                       })
                       .map((element) => element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "?");
-                    const details = bar.querySelector<HTMLElement>("[data-mail-details-trigger]")!.getClientRects().length > 0;
-                    return { reader: Math.round(reader.width), outside, details };
+                    const details = [
+                      ...document.querySelectorAll<HTMLElement>("[data-mail-details-trigger], [data-app-workspace-detail-toggle]"),
+                    ].filter((element) => element.getClientRects().length > 0);
+                    const soleSharedDetails = details.length === 1 && details[0]!.hasAttribute("data-app-workspace-detail-toggle");
+                    return { reader: Math.round(reader.width), outside, details: soleSharedDetails };
                   });
                   readers.push(result.reader);
                   if (result.outside.length || !result.details)
@@ -1374,22 +2007,21 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
                 await close(page);
               }
             }
-          }
-        expect(misfits).toEqual([]);
-        // The sweep covers every tier: under 380, 380–440, 440–480, 480–520, 520–720 and from 720 px of reader.
-        for (const [from, to] of [
-          [0, 380],
-          [380, 440],
-          [440, 480],
-          [480, 520],
-          [520, 720],
-          [720, 2000],
-        ] as const)
-          expect(
-            readers.some((width) => width >= from && width < to),
-            `a reader width in ${from}–${to} (${[...new Set(readers)].join(", ")})`,
-          ).toBe(true);
-      }, 90_000);
+            expect(misfits).toEqual([]);
+            // The sweep covers every tier: under 380, 380–440, 440–480, 480–520, 520–720 and from 720 px of reader.
+            for (const [from, to] of [
+              [0, 380],
+              [380, 440],
+              [440, 480],
+              [480, 520],
+              [520, 720],
+              [720, 2000],
+            ] as const)
+              expect(
+                readers.some((width) => width >= from && width < to),
+                `a reader width in ${from}–${to} (${[...new Set(readers)].join(", ")})`,
+              ).toBe(true);
+          }, 90_000);
 
       test("reader toolbar: a person's own actions stay, and those that do not fit are in …", async () => {
         const toolbar = "reply,forward,archive,trash,move,read,flag,tags";
@@ -1416,6 +2048,54 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
 
+      test("Details access transfers focus across the phone breakpoint", async () => {
+        const page = await open(`${boxPath}?conversation=Conv01`, 767, 900);
+        try {
+          const reader = page.locator("[data-mail-details-trigger]");
+          const shared = page.locator("[data-app-workspace-detail-toggle]");
+          await reader.focus();
+          await page.setViewportSize({ width: 768, height: 900 });
+          await settled(page);
+          expect(await shared.evaluate((element) => document.activeElement === element)).toBe(true);
+          await page.setViewportSize({ width: 767, height: 900 });
+          await settled(page);
+          expect(await reader.evaluate((element) => document.activeElement === element)).toBe(true);
+        } finally {
+          await close(page);
+        }
+      });
+
+      for (const width of [767, 768]) {
+        test(`one Details access: SSR, hydration and keyboard at ${width}`, async () => {
+          const page = await open(`${boxPath}?conversation=Conv01`, width, 900);
+          try {
+            const reader = page.locator("[data-mail-details-trigger]");
+            const shared = page.locator("[data-app-workspace-detail-toggle]");
+            for (const phase of ["server", "hydrated"]) {
+              const frame: Frame = JSON.parse((await page.locator("html").getAttribute(`data-${phase}-geometry`))!);
+              expect(frame.find((part) => part.part.includes("mail-reader-details"))!.height > 0).toBe(width < 768);
+              expect(frame.find((part) => part.part.includes("k2b-app-workspace__detail-toggle"))!.height > 0).toBe(width >= 768);
+            }
+            expect(await reader.isVisible()).toBe(width < 768);
+            expect(await shared.isVisible()).toBe(width >= 768);
+            const button = width < 768 ? reader : shared;
+            await button.focus();
+            await page.keyboard.press("Enter");
+            await settled(page);
+            expect(await page.locator("[data-mail-details-heading]").isVisible()).toBe(true);
+            await page.keyboard.press("Escape");
+            await settled(page);
+            expect(await button.evaluate((element) => document.activeElement === element)).toBe(true);
+            expect(await button.getAttribute("aria-expanded")).toBe("false");
+            await page.getByRole("button", { name: "More conversation actions", exact: true }).focus();
+            await page.keyboard.press("Tab");
+            expect(await reader.evaluate((element) => document.activeElement === element)).toBe(width < 768);
+          } finally {
+            await close(page);
+          }
+        });
+      }
+
       for (const width of [1920, 1440, 834]) {
         test(`persistent Details: default, close, resize and reload at ${width}`, async () => {
           const page = await open(`${boxPath}?conversation=Conv01&shell=1&persist-details=1`, width, 900);
@@ -1439,7 +2119,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
               expect(await button.getAttribute("aria-expanded")).toBe("true");
               expect(await page.evaluate(() => document.activeElement?.matches("[data-app-workspace-detail-toggle]"))).toBe(true);
             }
-            // Wide Mail deliberately puts its X in the reader; Escape closes its column.
+            // Escape closes the wide column; the shared head control remains the way back.
             if (width >= 1024) await page.keyboard.press("Escape");
             else await aside.getByRole("button", { name: "Close conversation details", exact: true }).click();
             await settled(page);
@@ -1562,8 +2242,8 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             await page.waitForFunction(() => !new URL(location.href).searchParams.has("conversation"));
             await settled(page);
             expect(await head.isVisible()).toBe(true);
-            expect(await shared.isVisible()).toBe(true);
-            expect(await shared.isDisabled()).toBe(true);
+            // The phone list head carries no Details; the reader owns that control.
+            expect(await shared.isVisible()).toBe(false);
             if (shots) await page.screenshot({ path: resolve(shots, browserName, `f6-list-${theme}-390.png`) });
             const backRoute = "**/api/mail/mailboxes/Box001/workspace-route?*";
             await page.route(
@@ -1592,6 +2272,11 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
             await settled(page);
             expect(await head.isVisible()).toBe(true);
             expect(await shared.isVisible()).toBe(true);
+            expect(await reader.isVisible()).toBe(false);
+            await page.setViewportSize({ width: 390, height: 844 });
+            await settled(page);
+            expect(await shared.isVisible()).toBe(false);
+            expect(await reader.isVisible()).toBe(true);
           } finally {
             releaseBack.resolve();
             try {
@@ -1639,10 +2324,11 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         }
       });
 
-      test("#1467: while the details wait, one click on the reader's details button opens and parks the drawer", async () => {
+      test("#1467: while the details wait, the sole shared Details button opens and parks the drawer", async () => {
         const page = await open(widePath(), 1440, 900);
         try {
-          const button = page.locator(".mail-reader-toolbar [data-mail-details-trigger]");
+          const button = page.locator("[data-app-workspace-detail-toggle]");
+          expect(await page.locator("[data-mail-details-trigger]").isVisible()).toBe(false);
           expect((await wide(page)).detail).toBe("waiting");
           await button.click();
           await settled(page);
@@ -1819,7 +2505,7 @@ export const defineMailShellTests = (screenshots: string | undefined) =>
         try {
           const before = await wide(column);
           expect(before.detail).toBe("column");
-          await column.locator(".mail-reader-toolbar [data-mail-details-trigger]").click();
+          await column.locator("[data-app-workspace-detail-toggle]").click();
           await settled(column);
           const after = await wide(column);
           expect(after.detail).toBe("closed");

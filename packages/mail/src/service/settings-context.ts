@@ -1,3 +1,4 @@
+import type { RequestAuthority } from "@k2b/cloud/server";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import type { SenderIdentity } from "../contracts";
 import type { MailboxSettingsContext } from "../settings-context";
@@ -16,6 +17,7 @@ import * as senderIdentities from "./sender-identities";
 export const loadMailboxSettingsContext = async (
   context: MailRequestContext,
   mailboxId: string,
+  authority: RequestAuthority | null,
 ): Promise<Result<MailboxSettingsContext>> => {
   const permission = await mailboxAccess.getMailboxPermission(context, mailboxId);
   if (permission === "none") return fail(err.forbidden("Access denied"));
@@ -25,7 +27,7 @@ export const loadMailboxSettingsContext = async (
   const [savedViewResult, localTagResult, spacesIntegration] = await Promise.all([
     savedViews.listSavedConversationViews({ context, mailboxId }),
     localTags.listLocalTags(context, mailboxId),
-    getSpacesMailIntegrationAvailability(),
+    getSpacesMailIntegrationAvailability(authority),
   ]);
   if (!savedViewResult.ok) return fail(savedViewResult.error);
   if (!localTagResult.ok) return fail(localTagResult.error);
