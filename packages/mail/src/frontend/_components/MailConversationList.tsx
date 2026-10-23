@@ -1,38 +1,25 @@
-import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { timed } from "@k2b/stdlib/solid";
 import {
   Button,
   ButtonLink,
   createHoverPreview,
-  FilterChip,
   HoverPreview,
   IconButton,
   NoticeCard,
   Placeholder,
   PullToRefresh,
   ScrollArea,
-  TextInput,
   Tooltip,
   useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Mailbox } from "../../contracts";
-import {
-  DEFAULT_MAIL_QUICK_SEARCH_FIELDS,
-  MAIL_QUICK_SEARCH_FIELDS,
-  MAIL_QUICK_SEARCH_FIELDS_PARAMETER,
-  MAIL_SEARCH_PARAMETER,
-  type MailQuickSearchField,
-  parseMailQuickSearchFields,
-  type ResolvedMailSearchRoute,
-} from "../../search-url";
+import type { ResolvedMailSearchRoute } from "../../search-url";
 import type { LocalTag } from "../../service/local-tags";
 import type { MailFolderView } from "../../service/messages";
 import type { SavedConversationView } from "../../service/saved-views";
 import type { MailListError, MailListMode } from "../../service/workspace";
-import MailBulkActionBar from "./MailBulkActionBar";
 import MailConversationQuickLook from "./MailConversationQuickLook";
 import MailConversationRow from "./MailConversationRow";
 import { type MailActionId, spamActionForConversation } from "./mail-actions";
@@ -40,21 +27,8 @@ import { mailConversationListMessages } from "./mail-conversation-list-messages"
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
 import { mailListRowKey } from "./mail-list-projection";
-import {
-  buildMailListHref,
-  buildMailSearchClearHref,
-  buildMailSearchHref,
-  buildMailSelectionHref,
-  type MailListItem,
-  mailRouteUrl,
-} from "./mail-navigation";
+import { buildMailListHref, buildMailSearchClearHref, buildMailSelectionHref, type MailListItem, mailRouteUrl } from "./mail-navigation";
 import { createMailQuickLookLoader, mailQuickLookKey } from "./mail-quick-look";
-import { summarizeMailSearchExpression } from "./mail-search-builder-model";
-
-const selectedQuickSearchFields = (url: URL): MailQuickSearchField[] => {
-  const fields = parseMailQuickSearchFields(url);
-  return fields.length > 0 ? fields : [...DEFAULT_MAIL_QUICK_SEARCH_FIELDS];
-};
 
 /** Width of the fixed quick look card, which opens 8px beside the list and keeps 8px to the frame edge. */
 const QUICK_LOOK_WIDTH_REM = 22;
@@ -62,10 +36,6 @@ const QUICK_LOOK_GAP_PX = 8;
 /** A resting mouse opens the card after this many milliseconds and starts its request after the shorter rest. */
 const QUICK_LOOK_OPEN_DELAY = 200;
 const QUICK_LOOK_PREFETCH_DELAY = 80;
-
-const DEFAULT_QUICK_SEARCH_FIELD_SET = new Set<MailQuickSearchField>(DEFAULT_MAIL_QUICK_SEARCH_FIELDS);
-const isDefaultQuickSearch = (fields: MailQuickSearchField[]): boolean =>
-  fields.length === DEFAULT_MAIL_QUICK_SEARCH_FIELDS.length && fields.every((field) => DEFAULT_QUICK_SEARCH_FIELD_SET.has(field));
 
 export default function MailConversationList(props: {
   mailbox: Mailbox;
@@ -116,23 +86,12 @@ export default function MailConversationList(props: {
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
   /** A new search intent can supersede a pending mailbox switch before its debounce fires. */
   onNavigationStart?: () => void;
-  onSearchControls?: (controls: { cancelPending: () => void }) => void;
+  searchDiscoveryHint?: () => void;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
   onRefresh: () => Promise<void>;
 }) {
   const locale = useLocale();
   const messages = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
-  const quickSearchFieldOptions = createMemo(
-    () =>
-      [
-        { value: "any", label: messages().everything, icon: "ti ti-search" },
-        { value: "from", label: messages().sender, icon: "ti ti-user-up" },
-        { value: "recipients", label: messages().recipients, icon: "ti ti-user-down" },
-        { value: "subject", label: messages().subject, icon: "ti ti-letter-case" },
-        { value: "body", label: messages().messageBody, icon: "ti ti-align-left" },
-        { value: "attachment_name", label: messages().attachmentNames, icon: "ti ti-paperclip" },
-      ] satisfies Array<{ value: MailQuickSearchField; label: string; icon: string }>,
-  );
   const rowMessages = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const spamAction = (item: MailListItem) =>
     spamActionForConversation({ viewFolderId: props.viewFolderId, activeFolderIds: item.activeFolderIds, folders: props.folders });
@@ -201,137 +160,13 @@ export default function MailConversationList(props: {
     quickLook.close();
     void props.onNavigateItem(buildMailSelectionHref(requestUrl(), item), item, "pointer");
   };
-  const [searchValue, setSearchValue] = createSignal(props.query);
-  let quickSearchPending = false;
-  const [searchFields, setSearchFields] = createSignal<MailQuickSearchField[]>(selectedQuickSearchFields(requestUrl()));
   const [loadMoreElement, setLoadMoreElement] = createSignal<HTMLDivElement>();
   const [failedLoadHref, setFailedLoadHref] = createSignal<string | null>(null);
   let listScrollElement: HTMLDivElement | undefined;
   let requestedLoadHref: string | null = null;
   const listHref = () => buildMailListHref(requestUrl());
-  const activeSavedView = createMemo(() => props.savedViews.find((view) => view.id === props.activeSavedViewId) ?? null);
-  const currentSearchState = createMemo(() => {
-    const resolved = props.search;
-    const parsed =
-      requestUrl().searchParams.has(MAIL_SEARCH_PARAMETER) && resolved.expression
-        ? { expression: resolved.expression, sort: resolved.sort }
-        : null;
-    if (parsed) return parsed;
-    const saved = activeSavedView()?.filter;
-    if (saved) return saved;
-    return resolved.expression ? { expression: resolved.expression, sort: resolved.sort } : null;
-  });
-  const structuredSummary = createMemo(() => {
-    const state = currentSearchState();
-    return state ? summarizeMailSearchExpression(state.expression, locale(), { folders: props.folders, tags: props.localTags }) : null;
-  });
+  const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has("search") || props.activeSavedViewId);
   const healthPresentation = createMemo(() => mailboxHealthPresentation(props.mailbox, locale()));
-  const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has(MAIL_SEARCH_PARAMETER) || props.activeSavedViewId);
-
-  const clearSearch = () => {
-    quickSearch.cancel();
-    setSearchValue("");
-    const currentUrl = requestUrl();
-    if (currentUrl.searchParams.has("q")) {
-      // A new history entry, so Back after clearing returns to the search instead of repeating the starting view.
-      void props.onOpenHref(buildMailSearchClearHref(currentUrl));
-    } else if (quickSearchPending) {
-      // Supersede the pending search before it can put the cleared text back.
-      void props.onOpenHref(`${currentUrl.pathname}${currentUrl.search}`, true);
-    }
-  };
-
-  const applyQuickSearch = (query: string, fields: MailQuickSearchField[], replace: boolean) => {
-    const currentUrl = requestUrl();
-    const normalizedQuery = query.trim();
-    if (!normalizedQuery) {
-      clearSearch();
-      return;
-    }
-    const search: Record<string, string> = { q: normalizedQuery };
-    if (!isDefaultQuickSearch(fields)) search[MAIL_QUICK_SEARCH_FIELDS_PARAMETER] = fields.join(",");
-    const href = buildMailSearchHref(currentUrl, search);
-    if (href === `${currentUrl.pathname}${currentUrl.search}`) return;
-    quickSearchPending = true;
-    void props.onOpenHref(href, replace);
-  };
-
-  const quickSearch = timed.debounce(
-    (query: string, fields: MailQuickSearchField[], replace: boolean) => applyQuickSearch(query, fields, replace),
-    300,
-  );
-  props.onSearchControls?.({
-    cancelPending: () => {
-      quickSearch.cancel();
-      quickSearchPending = false;
-      setSearchValue(props.query);
-    },
-  });
-
-  createEffect(() => {
-    quickSearch.cancel();
-    quickSearchPending = false;
-    setSearchValue(props.query);
-    setSearchFields(selectedQuickSearchFields(requestUrl()));
-  });
-
-  const replaceLiveSearchRoute = () => requestUrl().searchParams.has("q");
-
-  const updateSearchValue = (next: string) => {
-    if (next.trim() !== props.query.trim()) props.onNavigationStart?.();
-    setSearchValue(next);
-    if (!next.trim()) {
-      quickSearch.trigger("", searchFields(), replaceLiveSearchRoute());
-      return;
-    }
-    quickSearch.debouncedFn(next, searchFields(), replaceLiveSearchRoute());
-  };
-
-  const submitSearch = (event: SubmitEvent) => {
-    event.preventDefault();
-    quickSearch.trigger(searchValue(), searchFields(), replaceLiveSearchRoute());
-  };
-
-  const updateSearchFields = (next: string[]) => {
-    const allowed = new Set<string>(MAIL_QUICK_SEARCH_FIELDS);
-    const selected = next.filter((field): field is MailQuickSearchField => allowed.has(field));
-    const normalized = selected.length > 0 ? selected : [...DEFAULT_MAIL_QUICK_SEARCH_FIELDS];
-    if (searchValue().trim() && normalized.join(",") !== searchFields().join(",")) props.onNavigationStart?.();
-    setSearchFields(normalized);
-    if (searchValue().trim()) quickSearch.trigger(searchValue(), normalized, replaceLiveSearchRoute());
-    else quickSearch.cancel();
-  };
-  const searchFieldsLabel = () =>
-    quickSearchFieldOptions()
-      .filter((option) => searchFields().includes(option.value))
-      .map((option) => option.label)
-      .join(", ");
-
-  const [searchBuilderLoading, setSearchBuilderLoading] = createSignal(false);
-  const openAdvancedSearch = async () => {
-    // The builder loads on first use; until its modal opens, a second activation must not open another one.
-    if (searchBuilderLoading()) return;
-    setSearchBuilderLoading(true);
-    const builder = await importOnDemand(() => import("./MailSearchBuilder"));
-    setSearchBuilderLoading(false);
-    if (!builder) return;
-    const result = await builder.openMailSearchBuilder({
-      mailboxId: props.mailboxId,
-      initialState: currentSearchState(),
-      initialQuery: props.query,
-      initialSavedView: activeSavedView(),
-      canWrite: props.canWrite,
-    });
-    if (!result) return;
-    const currentUrl = requestUrl();
-    const href =
-      result.action === "apply"
-        ? buildMailSearchHref(currentUrl, { search: result.serialized })
-        : result.action === "saved"
-          ? buildMailSearchHref(currentUrl, { savedView: result.view.id })
-          : buildMailSearchClearHref(currentUrl);
-    void props.onOpenHref(href);
-  };
 
   const nextHref = () => {
     if (!props.nextCursor) return null;
@@ -374,192 +209,93 @@ export default function MailConversationList(props: {
       class="flex h-full min-h-0 flex-col bg-[var(--ui-surface)]"
       data-mail-conversation-list
     >
-      <header class="flex shrink-0 flex-col gap-2 p-3">
-        <Show
-          when={props.canWrite && props.selectionMode}
-          fallback={
-            <div class="flex min-w-0 items-center gap-2">
-              <div class="min-w-0 flex-1">
-                {/* Hide the heading only where tabs or a sidebar row already name the list. */}
-                <h1
-                  data-mail-list-heading
-                  ref={listHeading}
-                  tabIndex={-1}
-                  class={
-                    props.namedBy === "tabs"
-                      ? "sr-only"
-                      : props.namedBy === "sidebar"
-                        ? "mail-list-heading truncate text-base font-semibold text-primary"
-                        : "truncate text-base font-semibold text-primary"
-                  }
-                >
-                  {props.title}
-                </h1>
-                <p class="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-dimmed">
-                  <span class="shrink-0 whitespace-nowrap">{messages().shown({ count: props.items.length })}</span>
-                  <Show when={props.loading}>
-                    <i class="ti ti-loader-2 shrink-0 animate-spin" aria-hidden="true" />
-                    <span class="sr-only">{messages().loadingView}</span>
-                  </Show>
-                  <Show when={props.liveDegraded}>
-                    <span class="inline-flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap" title={messages().updatesPaused}>
-                      <i class="ti ti-cloud-off shrink-0" aria-hidden="true" />
-                      <span class="truncate">{messages().updatesPaused}</span>
-                    </span>
-                  </Show>
-                </p>
-              </div>
-              <Show when={props.canWrite && props.listMode === "conversations"}>
-                <Tooltip.Anchor content={messages().selectConversations}>
-                  <IconButton
-                    type="button"
-                    label={messages().selectConversations}
-                    aria-pressed="false"
-                    onClick={props.onToggleSelectionMode}
-                  >
-                    <i class="ti ti-checkbox" aria-hidden="true" />
-                  </IconButton>
-                </Tooltip.Anchor>
-              </Show>
-              <Tooltip.Anchor content={messages().searchFilters}>
+      <h1 data-mail-list-heading ref={listHeading} tabIndex={-1} class="sr-only">
+        {props.title}
+      </h1>
+      <Show when={props.loading}>
+        <span class="sr-only" role="status">
+          {messages().loadingView}
+        </span>
+      </Show>
+      <Show when={healthPresentation() || props.folderOnlyHint || props.searchDiscoveryHint}>
+        <header class="flex shrink-0 flex-col gap-2 p-3">
+          <Show when={props.searchDiscoveryHint}>
+            {(dismiss) => (
+              <div class="flex items-center gap-2 text-xs text-muted" data-mail-search-hint>
+                <span class="min-w-0 flex-1">{messages().searchMoved}</span>
                 <IconButton
                   type="button"
-                  class={structuredSummary() ? "app-accent-text" : undefined}
-                  label={messages().searchFilters}
-                  aria-pressed={Boolean(structuredSummary())}
-                  aria-busy={searchBuilderLoading() ? "true" : undefined}
-                  onClick={openAdvancedSearch}
-                >
-                  <i class={searchBuilderLoading() ? "ti ti-loader-2 animate-spin" : "ti ti-adjustments-search"} aria-hidden="true" />
-                </IconButton>
-              </Tooltip.Anchor>
-              <Show when={props.selectedConversationId || props.selectedMessageId}>
-                <Tooltip.Anchor content={messages().hideList}>
-                  <IconButton
-                    type="button"
-                    class="hidden @min-[64rem]/k2b-app-area:inline-flex"
-                    label={messages().hideList}
-                    onClick={props.onCollapse}
-                  >
-                    <i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true" />
-                  </IconButton>
-                </Tooltip.Anchor>
-              </Show>
-            </div>
-          }
-        >
-          <MailBulkActionBar
-            selectedCount={props.selectedConversationIds.size}
-            selectedInJunk={
-              props.selectedConversationIds.size > 0 &&
-              props.items
-                .filter((item) => item.conversationId && props.selectedConversationIds.has(item.conversationId))
-                .every((item) => spamAction(item) === "not_spam")
-            }
-            busy={props.loading}
-            onClear={props.onClearSelection}
-            onAddTags={props.onAddTags}
-            onAssign={props.onAssign}
-            onAction={props.onBulkAction}
-          />
-        </Show>
-        <form
-          class="flex min-w-0 items-center gap-2"
-          role="search"
-          onSubmit={submitSearch}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && event.target instanceof Element && event.target.matches('input[name="q"]') && searchValue()) {
-              // Prevent the native search input from clearing again after the view returns.
-              event.preventDefault();
-              clearSearch();
-            }
-          }}
-        >
-          <div class="min-w-0 flex-1">
-            <TextInput
-              type="search"
-              name="q"
-              aria-label={messages().searchMailboxName({ name: props.mailbox.name })}
-              placeholder={messages().searchMailbox}
-              icon="ti ti-search"
-              activeIcon="ti ti-search"
-              value={searchValue}
-              onValueChange={updateSearchValue}
-              clearable
-              onClear={clearSearch}
-              maxLength={500}
-            />
-          </div>
-          <FilterChip
-            label={messages().searchInValue({ value: searchFieldsLabel() })}
-            icon="ti ti-filter-search"
-            options={[{ label: messages().searchIn, options: quickSearchFieldOptions(), multiple: true }]}
-            value={searchFields()}
-            defaultValue={[...DEFAULT_MAIL_QUICK_SEARCH_FIELDS]}
-            isActive={!isDefaultQuickSearch(searchFields())}
-            onValueChange={updateSearchFields}
-            position="bottom-right"
-            iconOnly
-          />
-        </form>
-        <Show when={healthPresentation()}>
-          {(health) => (
-            <NoticeCard
-              tone={health().tone}
-              role="status"
-              data-mailbox-health={props.mailbox.health}
-              title={health().title}
-              detail={health().message}
-            >
-              <Show when={props.canAdmin && health().action && health().actionLabel}>
-                <Button
-                  type="button"
-                  variant="subtle"
                   size="xs"
-                  aria-label={health().actionLabel ?? undefined}
-                  title={health().actionLabel ?? undefined}
-                  onClick={() => (health().action === "delivery" ? props.onOpenDeliverySettings() : props.onOpenHealth())}
+                  label={messages().dismissHint}
+                  onClick={() => {
+                    dismiss()();
+                    listHeading?.focus({ preventScroll: true });
+                  }}
                 >
-                  <i class="ti ti-activity" aria-hidden="true" />
-                  <span>{health().action === "health" ? messages().status : health().actionLabel}</span>
-                </Button>
-              </Show>
-            </NoticeCard>
-          )}
-        </Show>
-        <Show when={props.folderOnlyHint}>
-          {(hint) => (
-            <NoticeCard tone="neutral" data-mail-folder-only-hint>
-              <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
-                {/* 13rem keeps the semibold folder action beside the text in a desktop list column. */}
-                <p class="min-w-0 flex-[1_1_13rem]">
-                  <strong class="font-semibold text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
-                  {messages().folderOnlyHintDetail}
-                </p>
-                <div class="flex shrink-0 items-center gap-1">
-                  <Show when={hint().folder.selectable}>
-                    <ButtonLink
-                      href={`/app/mail/${props.mailboxId}?folder=${hint().folder.id}`}
-                      variant="ghost"
-                      size="xs"
-                      navigation="enhanced"
-                      onNavigate={props.onNavigate}
-                      scroll="preserve"
-                    >
-                      {messages().openFolder({ name: hint().folder.name })}
-                    </ButtonLink>
-                  </Show>
-                  <Tooltip.Anchor content={messages().dismissHint}>
-                    <IconButton type="button" size="xs" label={messages().dismissHint} onClick={() => dismissFolderOnlyHint(hint())}>
-                      <i class="ti ti-x" aria-hidden="true" />
-                    </IconButton>
-                  </Tooltip.Anchor>
-                </div>
+                  <i class="ti ti-x" aria-hidden="true" />
+                </IconButton>
               </div>
-            </NoticeCard>
-          )}
-        </Show>
-      </header>
+            )}
+          </Show>
+          <Show when={healthPresentation()}>
+            {(health) => (
+              <NoticeCard
+                tone={health().tone}
+                role="status"
+                data-mailbox-health={props.mailbox.health}
+                title={health().title}
+                detail={health().message}
+              >
+                <Show when={props.canAdmin && health().action && health().actionLabel}>
+                  <Button
+                    type="button"
+                    variant="subtle"
+                    size="xs"
+                    aria-label={health().actionLabel ?? undefined}
+                    title={health().actionLabel ?? undefined}
+                    onClick={() => (health().action === "delivery" ? props.onOpenDeliverySettings() : props.onOpenHealth())}
+                  >
+                    <i class="ti ti-activity" aria-hidden="true" />
+                    <span>{health().action === "health" ? messages().status : health().actionLabel}</span>
+                  </Button>
+                </Show>
+              </NoticeCard>
+            )}
+          </Show>
+          <Show when={props.folderOnlyHint}>
+            {(hint) => (
+              <NoticeCard tone="neutral" data-mail-folder-only-hint>
+                <div class="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1">
+                  {/* 13rem keeps the semibold folder action beside the text in a desktop list column. */}
+                  <p class="min-w-0 flex-[1_1_13rem]">
+                    <strong class="font-semibold text-primary">{messages().folderOnlyHintTitle({ name: hint().folder.name })}</strong>{" "}
+                    {messages().folderOnlyHintDetail}
+                  </p>
+                  <div class="flex shrink-0 items-center gap-1">
+                    <Show when={hint().folder.selectable}>
+                      <ButtonLink
+                        href={`/app/mail/${props.mailboxId}?folder=${hint().folder.id}`}
+                        variant="ghost"
+                        size="xs"
+                        navigation="enhanced"
+                        onNavigate={props.onNavigate}
+                        scroll="preserve"
+                      >
+                        {messages().openFolder({ name: hint().folder.name })}
+                      </ButtonLink>
+                    </Show>
+                    <Tooltip.Anchor content={messages().dismissHint}>
+                      <IconButton type="button" size="xs" label={messages().dismissHint} onClick={() => dismissFolderOnlyHint(hint())}>
+                        <i class="ti ti-x" aria-hidden="true" />
+                      </IconButton>
+                    </Tooltip.Anchor>
+                  </div>
+                </div>
+              </NoticeCard>
+            )}
+          </Show>
+        </header>
+      </Show>
 
       <PullToRefresh class="flex-1" onRefresh={props.onRefresh} disabled={props.loading} label={messages().refreshingList}>
         <ScrollArea
@@ -630,6 +366,7 @@ export default function MailConversationList(props: {
           ) : (
             <div
               class="flex flex-col gap-0.5"
+              style={{ opacity: props.loading ? 0.5 : undefined }}
               role="list"
               aria-label={
                 props.listMode === "conversations"
@@ -695,6 +432,9 @@ export default function MailConversationList(props: {
               </For>
             </div>
           )}
+          <p class="px-2 py-3 text-xs text-muted" data-mail-list-count>
+            {messages().shown({ count: props.items.length })}
+          </p>
           <Show when={nextHref()}>
             {(href) => (
               <div ref={(element) => setLoadMoreElement(element)} class="flex min-h-14 items-center justify-center py-3">

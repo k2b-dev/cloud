@@ -99,3 +99,9 @@ test("question locations replace a message, survive in their chat and do not lea
   expect(assistantConversationHref(atQuestion, "Chat02")).toBe("/app/assistant?conversation=Chat02");
   expect(assistantProjectHref(atQuestion, "Proj01")).toBe("/app/assistant?project=Proj01");
 });
+
+test("conversation and project changes preserve the provider subtree without carrying an old message", () => {
+  const current = "/app/assistant/panel?conversation=old&message=2&artifact=report.md";
+  expect(assistantConversationHref(current, "next")).toBe("/app/assistant/panel?conversation=next");
+  expect(assistantProjectHref(current, "project1")).toBe("/app/assistant/panel?project=project1");
+});

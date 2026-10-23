@@ -11,7 +11,7 @@ import {
   CapabilityActionReviewSchema,
   defineCapabilities,
 } from "../contracts/capabilities";
-import type { CapabilityRegistryEntry } from "../contracts/registry";
+import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { parseMandatePolicy } from "../services/mandates/policy";
 import { aiChatAccessSubject } from "./assistant-models";
@@ -22,10 +22,10 @@ import {
   buildAiCapabilityAppCatalog,
   buildAiCapabilityCatalog,
   buildAiToolCatalog,
+  createAiToolResolver as buildAiToolResolver,
   createAiHelpTools,
   createAiResourceReaderTool,
   createAiToolMetaTools,
-  createAiToolResolver,
   createLoadedAiCapabilityTools,
   createRunToolStore,
   listAiCapabilityApps,
@@ -39,6 +39,34 @@ import { aiModelAccess } from "./model-access";
 import * as settings from "./settings";
 import { prepareAiTools } from "./tools";
 import type { AiModelProfile } from "./types";
+
+const createAiToolResolver = (input: Parameters<typeof buildAiToolResolver>[0]) => {
+  let entries: CapabilityRegistryEntry[] = [];
+  return buildAiToolResolver({
+    ...input,
+    ...(input.listRegistry
+      ? {
+          listRegistry: async () => {
+            entries = await input.listRegistry!();
+            return entries;
+          },
+        }
+      : {}),
+    listApps:
+      input.listApps ??
+      (async () =>
+        entries.map(
+          (entry): AppRegistryEntry => ({
+            id: entry.appId,
+            name: entry.appName,
+            description: entry.appDescription,
+            icon: entry.appIcon,
+            routes: [],
+            baseUrl: "http://test.invalid",
+          }),
+        )),
+  });
+};
 
 afterEach(() => mock.restore());
 
@@ -2204,5 +2232,60 @@ describe("background mandate tool scope", () => {
       loaded: [],
       unavailable: [{ name: "spaces.space.list", reason: "not_allowed" }],
     });
+  });
+});
+
+test("app access removes Assistant schemas, app names and loaded tools from discovery", async () => {
+  const hidden = capabilityApp("secret", "Hidden app");
+  let granted = true;
+  const resolver = createAiToolResolver({
+    conversationId: "conversation",
+    actor,
+    staticTools: [],
+    execute: async () => ({ data: [] }),
+    authority: { actor, accessSubject: aiChatAccessSubject(actor)!, credentialKind: "session", scopes: [] },
+    listRegistry: async () => [hidden],
+    listApps: async () => [
+      {
+        id: hidden.appId,
+        name: hidden.appName,
+        description: hidden.appDescription,
+        icon: hidden.appIcon,
+        routes: [],
+        baseUrl: "http://secret.invalid",
+        access: granted ? { kind: "signedIn" } : { kind: "roles", roles: ["admin"] },
+      },
+    ],
+    store: { getLoadedTools: async () => ["secret.list"], loadTools: async () => ({ loaded: [], alreadyLoaded: [], evicted: [] }) },
+  });
+  const context = {
+    signal: AbortSignal.timeout(1000),
+    requestApproval: async () => false,
+    requestClientTool: async <T>() => undefined as T,
+  };
+  expect((await resolver()).some((tool) => tool.def.name.startsWith("secret__"))).toBe(true);
+  granted = false;
+  const tools = await resolver();
+  expect(tools.some((tool) => tool.def.name.startsWith("secret__"))).toBe(false);
+  expect(tools.map((tool) => tool.def.description).join(" ")).not.toContain("secret.list");
+  const list = tools.find((tool) => tool.def.name === "list_apps");
+  if (!list || list.kind !== "server") throw new Error("list_apps is missing");
+  const result = await list.execute(
+    {},
+    { signal: AbortSignal.timeout(1000), requestApproval: async () => false, requestClientTool: async <T>() => undefined as T },
+  );
+  expect(JSON.stringify(result)).not.toContain("Hidden app");
+  const search = tools.find((tool) => tool.def.name === "search_tools");
+  const load = tools.find((tool) => tool.def.name === "load_tools");
+  if (!search || !load) throw new Error("discovery tools are missing");
+  expect(await search.execute({ query: "secret" }, context)).toMatchObject({ tools: [] });
+  expect(await load.execute({ names: ["secret.list", "secret__query__list", "missing.list"] }, context)).toMatchObject({
+    loaded: [],
+    alreadyLoaded: [],
+    unavailable: [
+      { name: "secret.list", reason: "unknown" },
+      { name: "secret__query__list", reason: "unknown" },
+      { name: "missing.list", reason: "unknown" },
+    ],
   });
 });

@@ -201,7 +201,7 @@ export const app = defineApp({
     },
   },
   openapi: "/api/pulse/openapi.json",
-  routes: ["/api/pulse", "/app/pulse", "/admin/pulse"],
+  routes: ["/api/pulse", "/app/pulse", "/admin/pulse", "/public/pulse"],
 });
 
 export const { ssr, plugin } = app;

@@ -187,7 +187,7 @@ const resolveConversationScope = async (mailboxShortId: string, conversationShor
 const requirePublicId = publicResources.requirePublicId;
 
 const resolveSearchExpression = async (mailboxId: string, expression: MailSearchExpression): Promise<Result<MailSearchExpression>> => {
-  if (expression.type === "folder_id") {
+  if ("folderId" in expression && expression.folderId) {
     const folder = await resolveMailboxResource("folders", mailboxId, expression.folderId);
     return folder.ok ? ok({ ...expression, folderId: folder.data }) : folder;
   }
@@ -4388,6 +4388,7 @@ const actionDefinitions = {
       const subscriptionName = subscription.data.name;
       return mapResult(
         await listSubscriptions.requestUnsubscribe({
+          signal: context.signal,
           context: requestContext(context),
           mailboxId: scope.data.id,
           input: { listKey: input.listKey, href: input.href },

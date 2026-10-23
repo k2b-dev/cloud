@@ -3719,7 +3719,9 @@ test("admin contact-directory commands show, validate through the server, reset,
     if (request.method === "PUT") {
       const body = await request.json();
       puts.push(body);
-      return body.resolve === "customer.nope" ? api(invalid, { status: 400 }) : api(body);
+      return body.resolve === "customer.nope"
+        ? api(invalid, { status: 400 })
+        : api({ ...(body.appId === "contacts" ? contactsDefaults : crmMapping), ...body });
     }
     return api({ message: "unexpected" }, { status: 500 });
   });
@@ -3736,6 +3738,7 @@ test("admin contact-directory commands show, validate through the server, reset,
     usesDefaults: true,
     catalogAvailable: true,
     issues: [],
+    unreadable: {},
   });
   expect(shownText.exitCode, shownText.stderr).toBe(0);
   expect(shownText.stdout).toContain("App: Contacts (contacts); defaults");
@@ -3789,7 +3792,7 @@ test("admin contact-directory commands show, validate through the server, reset,
     crmMapping,
     { ...crmMapping, resolve: "customer.nope" },
     { ...crmMapping, resolve: "customer.nope" },
-    { ...contactsDefaults, listWritableBooks: "", create: "" },
+    { appId: "contacts", listWritableBooks: "", create: "" },
     contactsDefaults,
   ]);
 }, 60_000);
