@@ -4,7 +4,7 @@ import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { type AccessSubject, type AuthContext, auth, type RequestActor, type RequestAuthority, requireInvocation } from "@k2b/cloud/server";
 import { accounts, coreSettings, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { Filegate } from "@k2b/filegate";
-import { sql } from "bun";
+import { redis, sql } from "bun";
 import { Hono } from "hono";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
@@ -42,6 +42,15 @@ suite("Files machine storage through actual API tokens", () => {
   const originalJwksOrigin = process.env.CLOUD_OAUTH_JWKS_ORIGIN;
   const prefix = `machine-access-${Bun.randomUUIDv7()}`;
   const call = () => testCall(admin);
+  const publicIpPrefix = `2001:db8:${crypto.randomUUID().replaceAll("-", "").slice(0, 4)}:${crypto.randomUUID().replaceAll("-", "").slice(0, 4)}::`;
+  let publicClient = 0;
+  // These are independent transfer clients, not a rate-limit load test. Avoid sharing
+  // the synthetic "unknown" client with every other test using the real Valkey.
+  const publicRequest = (path: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set("x-real-ip", `${publicIpPrefix}${(++publicClient).toString(16)}`);
+    return publicApi.request(path, { ...init, headers });
+  };
   async function token(id: string, scopes: string[]) {
     const result = await serviceAccountCredentials.createStandaloneApiToken({
       serviceAccountId: id,
@@ -91,7 +100,7 @@ suite("Files machine storage through actual API tokens", () => {
       idempotencyKey: Bun.randomUUIDv7(),
     });
     const racingPath = new URL(racingUpload.url!).pathname.replace("/share/filesv2", "");
-    expect((await publicApi.request(`${racingPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
+    expect((await publicRequest(`${racingPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
     const reservation = await uploads.getForShare(racingUpload.id, share.id);
     if (!reservation?.filegate_session_id) throw new Error("Missing Filegate session receipt");
     const sessionId = reservation.filegate_session_id;
@@ -136,7 +145,7 @@ suite("Files machine storage through actual API tokens", () => {
   beforeAll(async () => {
     await assertPrivateDatabase();
     // Use real Core schemas and public services; no stand-in authentication or grant resolver.
-    for (const name of ["auth", "settings", "audit", "logging"]) {
+    for (const name of ["auth", "rail-preferences", "rail-shortcuts", "settings", "audit", "logging"]) {
       const path = `../../../core/src/migrate/core/${name}.ts`;
       const module = await import(path);
       await module.migrate();
@@ -195,6 +204,8 @@ suite("Files machine storage through actual API tokens", () => {
         .root("cloud")
         .remove(prefix, true)
         .catch(() => undefined);
+    const rateKeys = await redis.send("KEYS", [`cloud:rate-limit:*:ip:${publicIpPrefix}*`]);
+    if (Array.isArray(rateKeys)) for (const key of rateKeys) if (typeof key === "string") await redis.del(key);
     setSystemTime();
     if (originalJwksOrigin === undefined) delete process.env.CLOUD_OAUTH_JWKS_ORIGIN;
     else process.env.CLOUD_OAUTH_JWKS_ORIGIN = originalJwksOrigin;
@@ -246,12 +257,12 @@ suite("Files machine storage through actual API tokens", () => {
       );
       expect(Boolean(opened.url?.includes("/share/filesv2/transfer/"))).toBe(true);
       const ticket = new URL(opened.url!).pathname.replace("/share/filesv2", "");
-      const segment = await publicApi.request(`${ticket}?segment=0`, { method: "PUT", body: "abc" });
+      const segment = await publicRequest(`${ticket}?segment=0`, { method: "PUT", body: "abc" });
       expect(segment.ok).toBe(true);
       await data(await request(credential.token, `${base}/uploads/${opened.id}/commit`, "POST", {}));
       const download = await data<{ url: string }>(await request(credential.token, `${base}/download`, "POST", { path: "note.txt" }));
       const downloadPath = new URL(download.url).pathname.replace("/share/filesv2", "");
-      const bytes = await publicApi.request(downloadPath);
+      const bytes = await publicRequest(downloadPath);
       expect(bytes.status).toBe(200);
       expect(await bytes.text()).toBe("abc");
       const otherCreated = await serviceAccounts.createStandalone({ name: `Other ${kind}`, kind, createdBy: admin.user.id });
@@ -322,17 +333,17 @@ suite("Files machine storage through actual API tokens", () => {
       const shareToken = new URL(share.url).pathname.split("/").at(-1)!;
       const publicLease = await service.publicShareDownload(shareToken, "note.txt");
       const publicPath = new URL(publicLease.url).pathname.replace("/share/filesv2", "");
-      const publicBytes = await publicApi.request(publicPath);
+      const publicBytes = await publicRequest(publicPath);
       expect(publicBytes.status).toBe(200);
       expect(await publicBytes.text()).toBe("abc");
       const archive = await service.publicShareArchive(shareToken);
       const archivePath = new URL(archive.url).pathname.replace("/share/filesv2", "");
-      const archived = await publicApi.request(archivePath, { method: "POST", body: new URLSearchParams({ manifest: archive.manifest }) });
+      const archived = await publicRequest(archivePath, { method: "POST", body: new URLSearchParams({ manifest: archive.manifest }) });
       expect(archived.status).toBe(200);
       await archived.arrayBuffer();
       await service.revokeShare(machineCall, { id: share.id });
-      await denied(await publicApi.request(publicPath));
-      await denied(await publicApi.request(archivePath, { method: "POST" }));
+      await denied(await publicRequest(publicPath));
+      await denied(await publicRequest(archivePath, { method: "POST" }));
       const inbox = await service.createShare(machineCall, {
         baseId: storage.baseId,
         kind: "inbox",
@@ -343,9 +354,9 @@ suite("Files machine storage through actual API tokens", () => {
       const inboxToken = new URL(inbox.url).pathname.split("/").at(-1)!;
       const inboxUpload = await service.publicInboxUpload(inboxToken, { name: "visitor.txt", size: 3, idempotencyKey: Bun.randomUUIDv7() });
       const inboxPath = new URL(inboxUpload.url!).pathname.replace("/share/filesv2", "");
-      expect((await publicApi.request(`${inboxPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
+      expect((await publicRequest(`${inboxPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
       await service.revokeShare(machineCall, { id: inbox.id });
-      await denied(await publicApi.request(`${inboxPath}?segment=0`, { method: "PUT", body: "abc" }));
+      await denied(await publicRequest(`${inboxPath}?segment=0`, { method: "PUT", body: "abc" }));
       await expect(service.publicInboxLease(inboxToken, inboxUpload.id)).rejects.toMatchObject({ status: 404 });
       await expect(service.publicInboxCommit(inboxToken, inboxUpload.id)).rejects.toMatchObject({ status: 404 });
       const racingInbox = await data<{ id: string; url: string }>(
@@ -368,7 +379,7 @@ suite("Files machine storage through actual API tokens", () => {
         }),
       );
       const pendingPath = new URL(pending.url).pathname.replace("/share/filesv2", "");
-      expect((await publicApi.request(`${pendingPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
+      expect((await publicRequest(`${pendingPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
       const c = await capabilityContext(credential.token);
       const providers = await fileQueries["provider.list"].run({ limit: 50 }, c);
       if (!providers.ok) throw new Error("Provider listing failed");
@@ -417,21 +428,21 @@ suite("Files machine storage through actual API tokens", () => {
       const revokeLease = await data<{ url: string }>(await request(revokedKey.token, `${base}/download`, "POST", { path: "note.txt" }));
       const revoked = await serviceAccountCredentials.revoke({ credentialId: revokedKey.credential.id, actor: admin.user });
       expect(revoked.ok).toBe(true);
-      await denied(await publicApi.request(new URL(revokeLease.url).pathname.replace("/share/filesv2", "")));
+      await denied(await publicRequest(new URL(revokeLease.url).pathname.replace("/share/filesv2", "")));
       const expiringKey = await token(account.id, ["read"]);
       const expiryLease = await data<{ url: string }>(await request(expiringKey.token, `${base}/download`, "POST", { path: "note.txt" }));
       await sql`UPDATE auth.service_account_credentials SET expires_at='2000-01-01T00:00:00Z' WHERE id=${expiringKey.credential.id}::uuid`;
-      await denied(await publicApi.request(new URL(expiryLease.url).pathname.replace("/share/filesv2", "")));
+      await denied(await publicRequest(new URL(expiryLease.url).pathname.replace("/share/filesv2", "")));
       await service.revokeStorage(call(), storage.id, adminGrant.id);
       await denied(await request(credential.token, `${base}/entries`));
-      await denied(await publicApi.request(downloadPath));
+      await denied(await publicRequest(downloadPath));
       await expect(service.editorFileInfo(editorToken, editorRef, "machine-editor-fixture")).rejects.toMatchObject({ status: 404 });
-      await denied(await publicApi.request(pendingPath));
-      await denied(await publicApi.request(`${pendingPath}?segment=0`, { method: "PUT", body: "abc" }));
+      await denied(await publicRequest(pendingPath));
+      await denied(await publicRequest(`${pendingPath}?segment=0`, { method: "PUT", body: "abc" }));
       await denied(await request(credential.token, `${base}/uploads/${pending.id}/lease`, "POST", {}));
       await denied(await request(credential.token, `${base}/uploads/${pending.id}/commit`, "POST", {}));
       await expect(fileQueries["content.read"].stream.read(reading.data.stream, c)).rejects.toMatchObject({ status: 404 });
-      await denied(await publicApi.request(`${ticket}?segment=0`, { method: "PUT", body: "abc" }));
+      await denied(await publicRequest(`${ticket}?segment=0`, { method: "PUT", body: "abc" }));
       await denied(await request(credential.token, `${base}/uploads/${opened.id}/commit`, "POST", {}));
       const exact = await service.grantStorage(call(), storage.id, { path: "note.txt", principal, permission: "read" });
       await data(await request(credential.token, `${base}/download`, "POST", { path: "note.txt" }));
@@ -464,7 +475,7 @@ suite("Files machine storage through actual API tokens", () => {
         }),
       );
       expect(
-        (await publicApi.request(`${new URL(leaf.url).pathname.replace("/share/filesv2", "")}?segment=0`, { method: "PUT", body: "abc" }))
+        (await publicRequest(`${new URL(leaf.url).pathname.replace("/share/filesv2", "")}?segment=0`, { method: "PUT", body: "abc" }))
           .status,
       ).toBe(200);
       await data(await request(credential.token, `${base}/uploads/${leaf.id}/commit`, "POST", {}));
@@ -495,7 +506,7 @@ suite("Files machine storage through actual API tokens", () => {
       // Linux identity provisioning stays disabled: a human grant also uses the storage's service identity.
       expect((await service.bases(call())).items.some((item) => item.id === storage.baseId)).toBe(true);
       const humanLease = await service.download(call(), { baseId: storage.baseId, path: "note.txt" });
-      const humanBytes = await publicApi.request(new URL(humanLease.url).pathname.replace("/share/filesv2", ""));
+      const humanBytes = await publicRequest(new URL(humanLease.url).pathname.replace("/share/filesv2", ""));
       expect(await humanBytes.text()).toBe("abc");
       const delegated = await serviceAccounts.createUserDelegated({ name: "Personal Files fixture", delegatedUserId: admin.user.id });
       if (!delegated.ok) throw new Error("Delegated fixture account failed");
@@ -508,7 +519,7 @@ suite("Files machine storage through actual API tokens", () => {
       const personalLease = await data<{ url: string }>(
         await request(personalKey.data.token, `${base}/download`, "POST", { path: "note.txt" }),
       );
-      const personalBytes = await publicApi.request(new URL(personalLease.url).pathname.replace("/share/filesv2", ""));
+      const personalBytes = await publicRequest(new URL(personalLease.url).pathname.replace("/share/filesv2", ""));
       expect(await personalBytes.text()).toBe("abc");
       const humanTemplateGrant = await service.grantStorage(call(), storage.id, {
         path: "template.odt",
@@ -523,15 +534,15 @@ suite("Files machine storage through actual API tokens", () => {
       expect(personalInfo.UserCanWrite).toBe(false);
       expect(personalInfo.UserId).toBe(admin.user.id);
       expect((await serviceAccountCredentials.revoke({ credentialId: personalKey.data.credential.id, actor: admin.user })).ok).toBe(true);
-      await denied(await publicApi.request(new URL(personalLease.url).pathname.replace("/share/filesv2", "")));
+      await denied(await publicRequest(new URL(personalLease.url).pathname.replace("/share/filesv2", "")));
       await expect(service.editorFileInfo(personalEditor.token, editorRef)).rejects.toMatchObject({ status: 403 });
       await service.revokeStorage(call(), storage.id, humanTemplateGrant.id);
       await service.revokeStorage(call(), storage.id, humanGrant.id);
-      await denied(await publicApi.request(new URL(humanLease.url).pathname.replace("/share/filesv2", "")));
+      await denied(await publicRequest(new URL(humanLease.url).pathname.replace("/share/filesv2", "")));
       await sql`UPDATE auth.service_accounts SET status='disabled' WHERE id=${account.id}::uuid`;
       await denied(await request(credential.token, `${base}/entries`));
-      await denied(await publicApi.request(new URL(liveLease.url).pathname.replace("/share/filesv2", "")));
-      await denied(await publicApi.request(new URL(livePublicLease.url).pathname.replace("/share/filesv2", "")));
+      await denied(await publicRequest(new URL(liveLease.url).pathname.replace("/share/filesv2", "")));
+      await denied(await publicRequest(new URL(livePublicLease.url).pathname.replace("/share/filesv2", "")));
       await expect(service.publicShareDownload(liveShareToken, "note.txt")).rejects.toMatchObject({ status: 404 });
       await expect(service.download(machineCall, { baseId: storage.baseId, path: "note.txt" })).rejects.toMatchObject({ status: 403 });
       await expect(service.editorFileInfo(editorToken, editorRef, "machine-editor-fixture")).rejects.toMatchObject({ status: 403 });
@@ -554,7 +565,7 @@ suite("Files machine storage through actual API tokens", () => {
       const retained = (await service.machineStorage(call())).items.find((item) => item.id === storage.id);
       expect(retained?.owner).toEqual({ id: account.id, name: account.name, kind });
       expect((await service.listShares(call(), { admin: true })).items.find((item) => item.id === liveShare.id)?.createdByKind).toBe(kind);
-      await denied(await publicApi.request(new URL(liveLease.url).pathname.replace("/share/filesv2", "")));
+      await denied(await publicRequest(new URL(liveLease.url).pathname.replace("/share/filesv2", "")));
       await expect(service.createMachineStorage(call(), { ownerId: otherCreated.data.id, area: "freeipa" })).rejects.toMatchObject({
         code: "identity_incomplete",
       });
@@ -562,7 +573,11 @@ suite("Files machine storage through actual API tokens", () => {
   }
   for (const delegated of [false, true]) {
     test(`${delegated ? "personal delegated" : "human"}: publication guard and owner cleanup survive storage grant removal`, async () => {
-      const owner = await serviceAccounts.createStandalone({ name: "Human share storage", kind: "standalone", createdBy: admin.user.id });
+      const owner = await serviceAccounts.createStandalone({
+        name: `${delegated ? "Delegated" : "Human"} share storage`,
+        kind: "standalone",
+        createdBy: admin.user.id,
+      });
       if (!owner.ok) throw new Error(owner.error.code);
       const storage = await service.createMachineStorage(call(), { ownerId: owner.data.id, area: "cloud" });
       const grant = await service.grantStorage(call(), storage.id, {
@@ -606,7 +621,7 @@ suite("Files machine storage through actual API tokens", () => {
       const principal = { type: "service_account" as const, serviceAccountId: account.id };
       const grant = await service.grantStorage(call(), storage.id, { path: "", principal, permission: "admin" });
       const clientId = `files-oauth-${Bun.randomUUIDv7()}`;
-      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,service_account_id,scopes) VALUES('Files fixture',${clientId},ARRAY[]::text[],${account.id}::uuid,ARRAY['read','write','admin'])`;
+      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,service_account_id,scopes) VALUES(${`Files ${kind} fixture`},${clientId},ARRAY[]::text[],${account.id}::uuid,ARRAY['read','write','admin'])`;
       const sign = (scope: string, expires: number) =>
         new SignJWT({
           token_use: "access",
@@ -637,11 +652,11 @@ suite("Files machine storage through actual API tokens", () => {
         }),
       );
       const uploadPath = new URL(upload.url).pathname.replace("/share/filesv2", "");
-      expect((await publicApi.request(`${uploadPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
+      expect((await publicRequest(`${uploadPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
       await data(await request(bearer, `${base}/uploads/${upload.id}/commit`, "POST", {}));
       const download = await data<{ url: string }>(await request(bearer, `${base}/download`, "POST", { path: "oauth.odt" }));
       const transferPath = new URL(download.url).pathname.replace("/share/filesv2", "");
-      expect(await (await publicApi.request(transferPath)).text()).toBe("abc");
+      expect(await (await publicRequest(transferPath)).text()).toBe("abc");
       const editor = await data<OfficeEditorLaunch>(await request(bearer, `${base}/editor`, "POST", { path: "oauth.odt" }));
       const ref = new URL(new URL(editor.action).searchParams.get("WOPISrc")!).pathname.split("/").at(-1)!;
       expect(verifyEditorToken(editor.token)?.machine).toMatchObject({
@@ -666,7 +681,7 @@ suite("Files machine storage through actual API tokens", () => {
       const shortEditor = await data<OfficeEditorLaunch>(await request(shortBearer, `${base}/editor`, "POST", { path: "oauth.odt" }));
       try {
         setSystemTime(originalTime + 2000);
-        await denied(await publicApi.request(new URL(shortTransfer.url).pathname.replace("/share/filesv2", "")));
+        await denied(await publicRequest(new URL(shortTransfer.url).pathname.replace("/share/filesv2", "")));
         await expect(service.editorFileInfo(shortEditor.token, ref)).rejects.toMatchObject({ status: 403 });
       } finally {
         setSystemTime(originalTime);
@@ -698,7 +713,7 @@ suite("Files machine storage through actual API tokens", () => {
       const invocationCall = testCall(transported.actor);
       const invocationDownload = await service.download(invocationCall, { baseId: storage.baseId, path: "oauth.odt" });
       const invocationPath = new URL(invocationDownload.url).pathname.replace("/share/filesv2", "");
-      expect(await (await publicApi.request(invocationPath)).text()).toBe("abc");
+      expect(await (await publicRequest(invocationPath)).text()).toBe("abc");
       const invocationEditor = await service.editor(invocationCall, { baseId: storage.baseId, path: "oauth.odt" });
       if (invocationEditor.kind === "markdown") throw new Error("Expected office editor");
       expect((await service.editorFileInfo(invocationEditor.token, ref)).UserCanWrite).toBe(true);
@@ -717,11 +732,11 @@ suite("Files machine storage through actual API tokens", () => {
       expect((await service.storageGrants(call(), storage.id)).items.some((item) => item.id === grant.id)).toBe(true);
       await expect(issueInvocationToken(invocationInput)).rejects.toMatchObject({ code: "app_access_denied" });
       await denied(await invoke());
-      await denied(await publicApi.request(invocationPath));
+      await denied(await publicRequest(invocationPath));
       await expect(service.editorFileInfo(invocationEditor.token, ref)).rejects.toMatchObject({ status: 403 });
       await denied(await request(bearer, `${base}/entries`));
-      await denied(await publicApi.request(transferPath));
-      await denied(await publicApi.request(`${uploadPath}?segment=0`, { method: "PUT", body: "abc" }));
+      await denied(await publicRequest(transferPath));
+      await denied(await publicRequest(`${uploadPath}?segment=0`, { method: "PUT", body: "abc" }));
       await expect(service.editorFileInfo(editor.token, ref)).rejects.toMatchObject({ status: 403 });
       await expect(service.editorContent(editor.token, ref)).rejects.toMatchObject({ status: 403 });
       await expect(

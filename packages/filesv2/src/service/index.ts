@@ -635,7 +635,7 @@ export function createFilesService(
     const current = await authorized(actor, baseId, path, false);
     const extension = editableExtension(current.relative.split("/").at(-1)!);
     if (!extension) throw new FilesError("editor_unsupported", 400);
-    let canWrite = await canWriteDirectory(current);
+    let canWrite = current.inspection.candidate.storage ? await canWriteDirectory(current) : true;
     if (current.inspection.candidate.area === "freeipa") {
       const parentTarget = joinPath(current.inspection.candidate.path, current.relative.split("/").slice(0, -1).join("/"));
       try {

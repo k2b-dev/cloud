@@ -108,74 +108,100 @@ describe("Machine storage settings", () => {
       await context.close();
     }
   });
-  test("choose machine ownership, create, grant a path, and revoke it", async () => {
-    let created = false;
-    let createAttempts = 0,
-      grantAttempts = 0;
-    const creating = Promise.withResolvers<void>();
-    let grants: {
-      id: string;
-      principal: { type: "service_account"; serviceAccountId: string };
-      permission: string;
-      path: string;
-      displayName: string;
-      serviceAccountKind: "agent";
-    }[] = [];
-    const { context, tab } = await open(phone, "dark", "en", async (route) => {
-      const path = new URL(route.request().url()).pathname,
-        method = route.request().method();
-      if (path === "/api/accounts/entities") return json(route, entities);
-      if (path.endsWith("/grants") && method === "POST") {
-        if (++grantAttempts === 1) return json(route, { code: "unavailable", message: "Grant fixture unavailable" }, 503);
-        const input = route.request().postDataJSON();
-        expect(input).toEqual({ principal: { type: "service_account", serviceAccountId: owner.id }, path: "reports", permission: "read" });
-        grants = [{ ...input, id: "30000000-0000-4000-8000-000000000001", displayName: owner.name, serviceAccountKind: "agent" }];
-        return json(route, grants[0]);
-      }
-      if (method === "DELETE") {
-        grants = [];
-        return json(route, { deleted: true });
-      }
-      if (path.endsWith("/grants")) return json(route, { items: grants, next: null });
-      if (method === "POST") {
-        if (++createAttempts === 1) {
-          await creating.promise;
-          return json(route, { code: "unavailable", message: "Create fixture unavailable" }, 503);
+  for (const action of ["create", "grant", "revoke"] as const) {
+    test(`machine storage ${action} keeps its own pending, failure and success state`, async () => {
+      let created = action !== "create";
+      let createAttempts = 0,
+        grantAttempts = 0;
+      const creating = Promise.withResolvers<void>();
+      let grants: {
+        id: string;
+        principal: { type: "service_account"; serviceAccountId: string };
+        permission: string;
+        path: string;
+        displayName: string;
+        serviceAccountKind: "agent";
+      }[] =
+        action === "revoke"
+          ? [
+              {
+                id: "30000000-0000-4000-8000-000000000001",
+                principal: { type: "service_account", serviceAccountId: owner.id },
+                permission: "read",
+                path: "reports",
+                displayName: owner.name,
+                serviceAccountKind: "agent",
+              },
+            ]
+          : [];
+      const { context, tab } = await open(phone, "dark", "en", async (route) => {
+        const path = new URL(route.request().url()).pathname,
+          method = route.request().method();
+        if (path === "/api/accounts/entities") return json(route, entities);
+        if (path.endsWith("/grants") && method === "POST") {
+          if (++grantAttempts === 1) return json(route, { code: "unavailable", message: "Grant fixture unavailable" }, 503);
+          const input = route.request().postDataJSON();
+          expect(input).toEqual({
+            principal: { type: "service_account", serviceAccountId: owner.id },
+            path: "reports",
+            permission: "read",
+          });
+          grants = [{ ...input, id: "30000000-0000-4000-8000-000000000001", displayName: owner.name, serviceAccountKind: "agent" }];
+          return json(route, grants[0]);
         }
-        expect(route.request().postDataJSON()).toEqual({ ownerId: owner.id, area: "cloud" });
-        created = true;
-        return json(route, storage);
+        if (method === "DELETE") {
+          grants = [];
+          return json(route, { deleted: true });
+        }
+        if (path.endsWith("/grants")) return json(route, { items: grants, next: null });
+        if (method === "POST") {
+          if (++createAttempts === 1) {
+            await creating.promise;
+            return json(route, { code: "unavailable", message: "Create fixture unavailable" }, 503);
+          }
+          expect(route.request().postDataJSON()).toEqual({ ownerId: owner.id, area: "cloud" });
+          created = true;
+          return json(route, storage);
+        }
+        return json(route, { items: created ? [storage] : [], next: null });
+      });
+      try {
+        if (action === "create") {
+          await tab.getByText("No machine storage", { exact: true }).waitFor();
+          await tab.getByRole("combobox").first().fill("Atlas");
+          await tab.getByRole("option").filter({ hasText: owner.name }).click();
+          await tab.getByRole("button", { name: "Create storage", exact: true }).click();
+          await tab.locator('button[aria-busy="true"]').waitFor();
+          expect(await tab.getByRole("combobox").first().isDisabled()).toBe(true);
+          creating.resolve();
+          await tab.getByRole("alert").filter({ hasText: "Create fixture unavailable" }).waitFor();
+          await tab.getByRole("button", { name: "Create storage", exact: true }).click();
+          await tab.getByText("Storage created. Add an explicit grant below.", { exact: true }).waitFor();
+          return;
+        }
+        await tab.locator("summary").filter({ hasText: owner.name }).click();
+        if (action === "grant") {
+          await tab.getByText("No access granted", { exact: true }).waitFor();
+          await tab.getByRole("textbox", { name: "Relative path", exact: true }).fill("reports");
+          await tab.getByRole("combobox").last().fill("Atlas");
+          await tab.getByRole("option").filter({ hasText: owner.name }).click();
+          await tab.getByRole("alert").filter({ hasText: "Grant fixture unavailable" }).waitFor();
+          expect(await tab.getByRole("textbox", { name: "Relative path", exact: true }).inputValue()).toBe("reports");
+          await tab.getByRole("combobox").last().fill("Atlas");
+          await tab.getByRole("option").filter({ hasText: owner.name }).click();
+          await tab.getByRole("button", { name: "Revoke", exact: true }).waitFor();
+          expect(grantAttempts).toBe(2);
+          return;
+        }
+        await tab.getByRole("button", { name: "Revoke", exact: true }).waitFor();
+        await tab.getByRole("button", { name: "Revoke", exact: true }).click();
+        await tab.getByText("No access granted", { exact: true }).waitFor();
+      } finally {
+        creating.resolve();
+        await context.close();
       }
-      return json(route, { items: created ? [storage] : [], next: null });
     });
-    try {
-      await tab.getByText("No machine storage", { exact: true }).waitFor();
-      await tab.getByRole("combobox").first().fill("Atlas");
-      await tab.getByRole("option").filter({ hasText: owner.name }).click();
-      await tab.getByRole("button", { name: "Create storage", exact: true }).click();
-      await tab.locator('button[aria-busy="true"]').waitFor();
-      expect(await tab.getByRole("combobox").first().isDisabled()).toBe(true);
-      creating.resolve();
-      await tab.getByRole("alert").filter({ hasText: "Create fixture unavailable" }).waitFor();
-      await tab.getByRole("button", { name: "Create storage", exact: true }).click();
-      await tab.getByText("Storage created. Add an explicit grant below.", { exact: true }).waitFor();
-      await tab.locator("summary").filter({ hasText: owner.name }).click();
-      await tab.getByText("No access granted", { exact: true }).waitFor();
-      await tab.getByRole("textbox", { name: "Relative path", exact: true }).fill("reports");
-      await tab.getByRole("combobox").last().fill("Atlas");
-      await tab.getByRole("option").filter({ hasText: owner.name }).click();
-      await tab.getByRole("alert").filter({ hasText: "Grant fixture unavailable" }).waitFor();
-      expect(await tab.getByRole("textbox", { name: "Relative path", exact: true }).inputValue()).toBe("reports");
-      await tab.getByRole("combobox").last().fill("Atlas");
-      await tab.getByRole("option").filter({ hasText: owner.name }).click();
-      await tab.getByRole("button", { name: "Revoke", exact: true }).waitFor();
-      await tab.getByRole("button", { name: "Revoke", exact: true }).click();
-      await tab.getByText("No access granted", { exact: true }).waitFor();
-    } finally {
-      creating.resolve();
-      await context.close();
-    }
-  });
+  }
   test("ownership and grant states fit desktop, tablet and phone in both themes", async () => {
     for (const [device, options] of [
       ["desktop", desktop],

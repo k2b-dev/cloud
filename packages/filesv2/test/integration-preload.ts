@@ -17,4 +17,9 @@ if (testInfra.database) {
     await sql.close().catch(() => undefined);
     await database.drop();
   });
+  // Real effects also record audit and logging data in this isolated database.
+  const { migrate: migrateAudit } = await import("../../core/src/migrate/core/audit");
+  const { migrate: migrateLogging } = await import("../../core/src/migrate/core/logging");
+  await migrateAudit();
+  await migrateLogging();
 }
