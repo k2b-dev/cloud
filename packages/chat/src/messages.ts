@@ -4,6 +4,14 @@ export const chatMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      openFullView: "Open full view",
+      draftChangedElsewhere: "Another view changed this draft",
+      draftChangedElsewhereDescription:
+        "Your text is still in the composer. Compare it with the saved text below and choose which to keep.",
+      useSavedDraft: "Use saved text",
+      keepLocalDraft: "Keep my text",
+      draftNotSaved: "Draft could not be kept in this tab",
+      draftNotSavedDescription: "Keep this view open and copy your text before leaving. You can try saving again.",
       newChat: "New chat",
       people: "People",
       guestPickerDescription: "You can add people you already share a chat with.",
@@ -12,6 +20,7 @@ export const chatMessages = i18n.define({
       optionalName: "Optional. Without a name, the chat shows the names of its members.",
       selfChatHint: "Without other people, the chat is just for you, for example for notes across your devices.",
       cancel: "Cancel",
+      close: "Close",
       startChat: "Start chat",
       existingChat: "You already have a chat with these people.",
       existingChats: "You already have chats with these people.",
@@ -73,6 +82,8 @@ export const chatMessages = i18n.define({
 
       createIntentChanged: "This create request was already used with different chat details.",
       createRecovery: "Try again to open this chat. Your choices stay unchanged. Cancel to start over; the chat may already exist.",
+      createContactConflict:
+        "An earlier chat attempt is unresolved. Close this dialog and open “New chat” in Chat to retry or cancel it. Then contact this person again. The earlier chat may already exist.",
       requestFailed: "The chat request failed. Try again.",
       today: "Today",
       yesterday: "Yesterday",
@@ -141,6 +152,7 @@ export const chatMessages = i18n.define({
       liveStopped: "New messages do not arrive at the moment. Reload the page.",
       openFailed: "The chat could not be opened. Try again.",
       messageNotSent: "Your message was not sent.",
+      sendPreparing: "Your message is being prepared. Wait before switching chats.",
       messageTooLong: ({ limit }: { limit: string }) => `Shorten to at most ${limit} characters.`,
       messageInvalidCharacters: "Remove the unsupported character.",
       messagesWaiting: "Later messages wait for the one that was not sent.",
@@ -177,6 +189,15 @@ export const chatMessages = i18n.define({
       logs: "Logs",
     },
     de: {
+      openFullView: "In Vollansicht öffnen",
+      draftChangedElsewhere: "Eine andere Ansicht hat diesen Entwurf geändert",
+      draftChangedElsewhereDescription:
+        "Dein Text steht weiter im Eingabefeld. Vergleiche ihn mit dem gespeicherten Text unten und wähle, welchen du behalten möchtest.",
+      useSavedDraft: "Gespeicherten Text verwenden",
+      keepLocalDraft: "Meinen Text behalten",
+      draftNotSaved: "Entwurf konnte in diesem Tab nicht gesichert werden",
+      draftNotSavedDescription:
+        "Lass diese Ansicht geöffnet und kopiere deinen Text vor dem Verlassen. Du kannst das Sichern erneut versuchen.",
       newChat: "Neuer Chat",
       people: "Personen",
       guestPickerDescription: "Du kannst Personen hinzufügen, mit denen du schon einen Chat teilst.",
@@ -185,6 +206,7 @@ export const chatMessages = i18n.define({
       optionalName: "Optional. Ohne Namen zeigt der Chat die Namen seiner Mitglieder.",
       selfChatHint: "Ohne andere Personen ist der Chat nur für dich, zum Beispiel für Notizen auf deinen Geräten.",
       cancel: "Abbrechen",
+      close: "Schließen",
       startChat: "Chat starten",
       existingChat: "Du hast schon einen Chat mit diesen Personen.",
       existingChats: "Du hast schon Chats mit diesen Personen.",
@@ -248,6 +270,8 @@ export const chatMessages = i18n.define({
       createIntentChanged: "Diese Erstellanfrage wurde bereits mit anderen Chatdetails verwendet.",
       createRecovery:
         "Erneut versuchen, um diesen Chat zu öffnen. Die Auswahl bleibt gleich. Zum Neustart abbrechen; der Chat kann bereits bestehen.",
+      createContactConflict:
+        "Ein früherer Chat-Versuch ist noch ungeklärt. Schließe diesen Dialog und öffne in Chat „Neuer Chat“, um ihn erneut zu versuchen oder abzubrechen. Kontaktiere danach diese Person erneut. Der frühere Chat kann bereits bestehen.",
       requestFailed: "Die Chat-Anfrage ist fehlgeschlagen. Versuche es erneut.",
       today: "Heute",
       yesterday: "Gestern",
@@ -318,6 +342,7 @@ export const chatMessages = i18n.define({
       liveStopped: "Neue Nachrichten kommen gerade nicht an. Lade die Seite neu.",
       openFailed: "Der Chat konnte nicht geöffnet werden. Versuche es erneut.",
       messageNotSent: "Deine Nachricht wurde nicht gesendet.",
+      sendPreparing: "Deine Nachricht wird vorbereitet. Warte vor dem Wechsel der Unterhaltung.",
       messageTooLong: ({ limit }: { limit: string }) => `Kürze auf höchstens ${limit} Zeichen.`,
       messageInvalidCharacters: "Entferne das nicht unterstützte Zeichen.",
       messagesWaiting: "Spätere Nachrichten warten auf die nicht gesendete.",

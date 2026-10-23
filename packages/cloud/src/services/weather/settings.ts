@@ -47,20 +47,4 @@ export const WEATHER_SETTINGS = {
       },
     },
   },
-  "weather.geo_url": {
-    kind: "url",
-    label: "Geo API URL",
-    default: "",
-    description: "Geocoding API URL for the location search feature",
-    placeholder: "e.g. https://geocoding.example.com/search",
-    presentation: {
-      translations: {
-        de: {
-          label: "Geo-API-URL",
-          description: "Geocoding-API-URL für die Ortssuche",
-          placeholder: "z. B. https://geocoding.example.com/search",
-        },
-      },
-    },
-  },
 } as const;
