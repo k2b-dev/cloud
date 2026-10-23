@@ -10,7 +10,7 @@ import { MarkdownEditor } from "./markdown/MarkdownEditor";
 
 export type TextInputProps = Omit<
   JSX.InputHTMLAttributes<HTMLInputElement>,
-  "onChange" | "onInput" | "prefix" | "suffix" | "type" | "value" | keyof ValueFieldProps<string>
+  "onChange" | "onInput" | "onKeyDown" | "prefix" | "suffix" | "type" | "value" | keyof ValueFieldProps<string>
 > &
   ValueFieldProps<string> & {
     minLength?: number;
@@ -32,6 +32,7 @@ export type TextInputProps = Omit<
     password?: boolean;
     markdown?: boolean;
     onSubmit?: () => void;
+    onKeyDown?: JSX.EventHandlerUnion<HTMLInputElement | HTMLTextAreaElement, KeyboardEvent>;
     lines?: number;
     abbreviations?: Record<string, string>;
     completions?: readonly Completion[];
@@ -63,6 +64,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
     "onClear",
     "onValueCommit",
     "onSubmit",
+    "onKeyDown",
     "onValueChange",
     "password",
     "prefix",
@@ -101,6 +103,15 @@ export function TextInput(props: TextInputProps): JSX.Element {
     local.password || local.type === "email" || local.type === "url" || /\b(username|email|url)\b/.test(String(rest.autocomplete ?? ""));
   const input = (next: string) => local.onValueChange?.(next);
   const commit = (next: string) => local.onValueCommit?.(next);
+  const keyDown: JSX.EventHandler<HTMLInputElement | HTMLTextAreaElement, KeyboardEvent> = (event) => {
+    const handler = local.onKeyDown;
+    if (typeof handler === "function") handler(event);
+    else if (Array.isArray(handler)) handler[0](handler[1], event);
+    if (!event.defaultPrevented && local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
+      event.preventDefault();
+      local.onSubmit();
+    }
+  };
   const clear = () => {
     if (local.onClear) {
       local.onClear();
@@ -161,12 +172,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
                     input(event.currentTarget.value);
                   }}
                   onChange={(event) => commit(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
-                      event.preventDefault();
-                      local.onSubmit();
-                    }
-                  }}
+                  onKeyDown={keyDown}
                 />
               }
             >
@@ -184,12 +190,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
                   input(event.currentTarget.value);
                 }}
                 onChange={(event) => commit(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (local.onSubmit && event.key === "Enter" && !event.shiftKey && !event.metaKey) {
-                    event.preventDefault();
-                    local.onSubmit();
-                  }
-                }}
+                onKeyDown={keyDown}
               >
                 {/* HTML consumes one leading newline in textarea content. */}
                 {isServer ? `\n${value()}` : undefined}

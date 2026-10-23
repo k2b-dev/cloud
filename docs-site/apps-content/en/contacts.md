@@ -5,7 +5,7 @@ section: Work
 order: 105
 description: Shared contact books with structured records, tags, notes, hierarchy, and access control.
 tags: [contacts, address-books, cli]
-updated: 2026-10-17
+updated: 2026-10-22
 ---
 
 # Contacts
@@ -28,6 +28,25 @@ addresses, work and personal data, notes, tags, and hierarchy links.
 
 The read-only system book projects contacts from the IPA directory. Manual
 books contain records created and maintained by Cloud users.
+
+## Enter addresses and plan routes
+
+Choose **Edit** beside an address to change it within the contact workspace.
+The contact list stays in place on larger screens; the form fills the workspace
+on a phone. **Save** and **Cancel** return to the selected contact with the
+same search and filters. Reloading opens the selected address with its saved
+values; it does not preserve unsaved input.
+
+Type at least three characters in **Street and number** for suggestions.
+Choosing one fills the street, postal code, city and country. You can still
+change every field or keep your own entry. When you save a changed address,
+Cloud looks up its location again. A small map shows the location below the
+address, and **Plan route** opens your device's maps app.
+
+If another person changes the contact before you save, the form retains your
+input and asks you to reload. Copy any changes you want to keep before
+reloading, then apply them to the current contact. When maps are unavailable,
+you can still save the address and plan a route using its text.
 
 ## Understand the Contacts model
 

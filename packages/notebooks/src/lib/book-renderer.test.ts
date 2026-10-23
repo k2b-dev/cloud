@@ -49,6 +49,17 @@ describe("documented Book image forms", () => {
         expect(print.omissions).toEqual([]);
         if (markdown.startsWith("#")) expect(print.headings[0]).toMatchObject({ id: "heading-floor-plan", text: fixture.alt });
       }
+      const browserPrint = renderNotebookBook({
+        markdown: fixture.markdown,
+        notebookId: "ABC123",
+        locale: "en",
+        print: true,
+        browserImages: true,
+      });
+      expect(browserPrint.images).toEqual([]);
+      expect(browserPrint.html).not.toContain("NOTEBOOKBOOKSLOT");
+      expect(browserPrint.html).toContain(`src="${src}"`);
+      expect(browserPrint.html).toContain(`alt="${fixture.alt}"`);
       expect(render(fixture.markdown).images).toEqual([]);
     });
   }

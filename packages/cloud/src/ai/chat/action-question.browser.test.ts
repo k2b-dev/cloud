@@ -34,7 +34,8 @@ const buildHarness = async (): Promise<string> => {
   const build = await Bun.build({
     entrypoints: [resolve(import.meta.dir, "action-question.browser-harness.tsx")],
     target: "browser",
-    format: "iife",
+    // MapView's lazy worker uses import.meta; keep the shared chat harness a module.
+    format: "esm",
     conditions: ["browser"],
     plugins: [
       {
@@ -85,7 +86,7 @@ beforeAll(async () => {
       return new Response(
         `<!doctype html><html lang="de" class="${theme}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
           `<link rel="stylesheet" href="/tabler.css"><style>${css}</style></head>` +
-          `<body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}" style="margin: 0"><script src="/harness.js"></script></body></html>`,
+          `<body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}" style="margin: 0"><script type="module" src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },

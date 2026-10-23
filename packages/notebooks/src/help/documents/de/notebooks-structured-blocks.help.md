@@ -195,3 +195,15 @@ Die Buchansicht rendert dieselben Blöcke auf dem Server, ohne Editor. Ist JavaS
 Normale Tabellen, Listen, Kontrollkästchen und benannte Abschnitte bleiben Markdown. Verwende Tabellenformeln für Berechnungen in einer Tabelle. Abfragen indexieren nur benannte `:::data`-Eigenschaften und die oben genannten Systemfelder.
 
 Die Buchansicht berechnet dieselben Tabellenformeln wie der Editor, auch berechnete Spalten, Summen und Fortschrittsbalken. Ein Formelfehler bleibt in seiner Zelle sichtbar. Tabellenüberschriften und normale Zellen unterstützen außerdem Formatierungen, Links, Bilder und LaTeX. Formelergebnisse bleiben reine Werte.
+
+## Orte auf einer Karte verknüpfen {icon="map-2"}
+
+Tippe `/map` in einer bearbeitbaren Notiz, um einen Kartenblock einzufügen. Suche über der Karte einen Ort, wähle einen Treffer und verknüpfe den Pin mit einer Notiz, einer Überschrift oder einer Website. **Abbrechen** schließt die Verknüpfungsauswahl, ohne einen Pin hinzuzufügen. Eine Karte enthält bis zu 20 Pins.
+
+Wähle einen Pin in der Liste oder auf der Karte. In der Liste wechseln die Pfeiltasten sowie Pos1 und Ende die Auswahl. Im Menü **Kartenaktionen** ändert **Verknüpfung ändern** das Ziel; **Pin entfernen** entfernt ihn aus dieser Karte. Schreibgeschützte und gesperrte Notizen zeigen die gespeicherte Karte ohne Bearbeitungsaktionen.
+
+Wähle ab zwei Pins unter **Kartenaktionen** die Aktion **Route durch die Pins speichern**, wähle das Verkehrsmittel und bestätige. Die Route folgt der Listenreihenfolge und bleibt mit Strecke, geschätzter Zeit und Berechnungsdatum gespeichert. Beim Lesen wird sie nicht neu berechnet. Eine gespeicherte Route kann auch vom Assistant kommen.
+
+Ohne eingerichtete Karten oder bei aufgebrauchtem Budget bleiben Pins und Routen als Listen mit Quellen lesbar. Der Budgethinweis zeigt, wann neue Anfragen möglich sind. Bei einem fehlgeschlagenen Kartenaufruf bleiben die Pins erhalten; **Erneut versuchen** lädt die Karte neu. **Als Liste** zeigt die Verknüpfungen ohne Karte.
+
+Öffne **PDF herunterladen**, um die Vorschau mit Karten- und Routenbildern und ihren Quellen vorzubereiten. Drucken und PDF warten, bis alle Bilder bereit sind. Schlägt ein Bild fehl, versuche es erneut oder wähle **Mit Quellenlisten fortfahren**. Schließen bricht die Vorbereitung ab. Beim direkten Browserdruck und bei Exporten ohne Browserbilder stehen Pins und Route als verknüpfte Listen; ausgelassene Kartenbilder werden gemeldet.

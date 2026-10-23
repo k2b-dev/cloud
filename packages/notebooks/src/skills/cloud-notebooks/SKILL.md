@@ -16,6 +16,7 @@ Use these defaults unless the user asks otherwise or a more specific loaded Skil
 
 ## Edit the smallest necessary part
 
+- For exact source chunks, only `append` accepts `separator: "none"`; omit it to keep paragraph separators. Keep each fragment within 10,000 UTF-16 characters, at most 20 structural operations, and the JSON-escaped request within 256 KiB. Use `ifContentHash`; `note.edit` rejects idempotency keys. Reconcile a lost append with `note.read` and its whole-source hash. Continue only at the expected after-hash; the old hash alone does not prove a delayed append cannot still finish. Never repeat an uncertain `note.create` without recovering its note ID.
 - Read the exact note before editing. Prefer the smallest structural `notebooks.note.edit` operation and pass its returned timestamp or content hash. Set blockLimit to 0 when the response does not need block handles.
 - Replace complete Markdown only when the whole note should change and the complete source is available. Never replace a complete note with a partial window. On conflict, read again and reconcile rather than overwriting newer work.
 - Block selectors use name, type and hash; retain the handle unless the user intends to change it. The optional index disambiguates repeated names and is zero-based within that selector.

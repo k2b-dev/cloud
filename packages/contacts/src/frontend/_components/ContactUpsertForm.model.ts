@@ -1,3 +1,4 @@
+import type { GeoAddress, GeoPoint, GeoProvenance } from "@k2b/cloud/contracts/geo";
 import type { Contact, ContactRef, CreateContactInput } from "../../service";
 import { isSafeWebsiteUrl } from "../../shared";
 
@@ -12,6 +13,11 @@ export type EditableBankAccount = {
   bankName: string;
   note: string;
 };
+/**
+ * Where the row's location stands while editing: `picked` carries a suggestion's point, `changed` dropped a known
+ * location, `own` keeps the typed text on purpose. `idle` rows are looked up after saving, like `changed` and `own`.
+ */
+export type AddressGeoState = "idle" | "known" | "picked" | "changed" | "own";
 export type EditableAddress = {
   label: string;
   recipientName: string;
@@ -22,7 +28,40 @@ export type EditableAddress = {
   city: string;
   stateRegion: string;
   countryCode: string;
+  geo: AddressGeoState;
+  /** Point of the chosen suggestion; dropped by any change to a location field. */
+  location: { point: GeoPoint; provenance: GeoProvenance } | null;
 };
+
+type AddressLocationField = "line1" | "postalCode" | "city" | "stateRegion" | "countryCode";
+
+/** A typed change to a location field drops a picked or known point; label, recipient and second line keep it. */
+const LOCATION_FIELDS: readonly string[] = ["line1", "postalCode", "city", "stateRegion", "countryCode"] satisfies AddressLocationField[];
+export const editAddressField = (
+  row: EditableAddress,
+  field: Exclude<keyof EditableAddress, "geo" | "location">,
+  value: string,
+): EditableAddress => {
+  if (!LOCATION_FIELDS.includes(field)) return { ...row, [field]: value };
+  if (row[field] === value) return row;
+  const geo = row.geo === "picked" || row.geo === "known" || row.geo === "changed" ? "changed" : row.geo;
+  return { ...row, [field]: value, geo, location: null };
+};
+
+/**
+ * A chosen suggestion replaces every location field, also with an empty value, so its point never sits beside a
+ * postal code or region of the previous address. Every field stays editable.
+ */
+export const pickAddressSuggestion = (row: EditableAddress, address: GeoAddress): EditableAddress => ({
+  ...row,
+  line1: address.line1,
+  postalCode: address.postalCode,
+  city: address.city,
+  stateRegion: address.stateRegion,
+  countryCode: address.countryCode,
+  geo: "picked",
+  location: { point: address.point, provenance: address.provenance },
+});
 
 export type ContactUpsertDraft = {
   label: string;
@@ -152,6 +191,8 @@ export const emptyAddressRow = (rowLabels: ContactRowLabels): EditableAddress =>
   city: "",
   stateRegion: "",
   countryCode: "DE",
+  geo: "idle",
+  location: null,
 });
 
 export const initialEmailRows = (contact: Contact | null, rowLabels: ContactRowLabels): EditableEmail[] => {
@@ -197,6 +238,8 @@ export const initialAddressRows = (contact: Contact | null, rowLabels: ContactRo
         city: address.city,
         stateRegion: address.stateRegion ?? "",
         countryCode: address.countryCode,
+        geo: address.location ? ("known" as const) : ("idle" as const),
+        location: null,
       }))
     : [emptyAddressRow(rowLabels)];
 };
@@ -280,6 +323,8 @@ const normalizeAddresses = (rows: EditableAddress[]) =>
       city: address.city.trim(),
       stateRegion: cleanText(address.stateRegion),
       countryCode: address.countryCode.trim().toUpperCase(),
+      // Unchanged addresses keep their stored location on the server; only a fresh pick travels.
+      ...(address.location ? { location: address.location } : {}),
     }))
     .filter(
       (address) =>
@@ -324,6 +369,13 @@ const normalizeBirthday = (value: string): string | null => {
     throw new ContactFormValidationError("birthdayFormat", "Birthday must use format YYYY-MM-DD");
   }
   return birthday || null;
+};
+
+/** Validate address-only edits without involving unrelated contact fields. */
+export const buildAddressPayload = (rows: EditableAddress[]) => {
+  const addresses = normalizeAddresses(rows);
+  validateAddresses(addresses);
+  return addresses;
 };
 
 export const buildContactPayload = (draft: ContactUpsertDraft): CreateContactInput => {

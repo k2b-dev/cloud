@@ -1,7 +1,9 @@
+import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { type BookReferences, renderNotebookBook } from "../lib/book-renderer";
 import { bookRendererMessages, notebookBlockDiagnosticMessage } from "../lib/book-renderer-messages";
 import { parseNotebookQueryBlocks } from "../lib/query-blocks";
 import * as attachments from "./attachments";
+import { notebookMapState } from "./maps";
 import { type NoteQueryResult, resolveNoteQuery } from "./note-query";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
@@ -14,6 +16,7 @@ export const loadBookNote = async (params: {
   userId: string;
   locale: string;
   bypassAccess?: boolean;
+  geoCaller?: CapabilityCaller;
 }) => {
   if (!params.bypassAccess && !(await notebooks.canAccess({ notebookId: params.notebookId, userId: params.userId, requiredLevel: "read" })))
     return null;
@@ -86,9 +89,14 @@ const renderBookDocument = async (params: {
   markdown: string;
   linkMode?: "write" | "readonly";
   bypassAccess?: boolean;
+  geoCaller?: CapabilityCaller;
 }) => {
   const { markdown } = params;
-  const [queryResults, references] = await Promise.all([resolveBookQueries(params), resolveBookReferences(params)]);
+  const [queryResults, references, mapState] = await Promise.all([
+    resolveBookQueries(params),
+    resolveBookReferences(params),
+    notebookMapState(params.markdown, params.geoCaller, params.bypassAccess),
+  ]);
   const document = renderNotebookBook({
     markdown,
     notebookId: params.notebookShortId,
@@ -96,6 +104,7 @@ const renderBookDocument = async (params: {
     locale: params.locale,
     queryResults,
     references,
+    mapState,
     linkMode: params.linkMode,
   });
   const t = bookRendererMessages.resolve([params.locale]).t;
@@ -114,6 +123,7 @@ export const loadBookBlockPreview = async (params: {
   locale: string;
   markdown?: string;
   bypassAccess?: boolean;
+  geoCaller?: CapabilityCaller;
 }) => {
   const requiredLevel = params.markdown === undefined ? "read" : "write";
   if (!params.bypassAccess && !(await notebooks.canAccess({ notebookId: params.notebookId, userId: params.userId, requiredLevel }))) {

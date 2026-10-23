@@ -4,7 +4,7 @@ import { isIndentedCodeLine, openingCodeFence } from "./markdown-fences";
 
 export const NOTEBOOK_DIRECTIVE_START = /^ {0,3}:::/;
 
-const NOTEBOOK_DIRECTIVE = /^ {0,3}:::(?:query|toc|data|chart)[ \t]*$/;
+const NOTEBOOK_DIRECTIVE = /^ {0,3}:::(?:query|toc|data|chart|map)[ \t]*$/;
 const lineEnd = (source: string, from: number): number => {
   const end = source.indexOf("\n", from);
   return end < 0 ? source.length : end;

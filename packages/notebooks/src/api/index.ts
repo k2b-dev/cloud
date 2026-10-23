@@ -13,6 +13,7 @@ import {
   ServiceAccountCredentialSchema,
   UpdateAccessSchema,
 } from "@k2b/cloud/contracts";
+import { GEO_SNAPSHOT_MAX_BYTES, GEO_SNAPSHOT_MAX_METADATA_BYTES } from "@k2b/cloud/contracts/geo-snapshot";
 import {
   type AuthContext,
   auth,
@@ -31,6 +32,7 @@ import {
 import { isStandaloneServiceAccountKind, settings, settingsService } from "@k2b/cloud/services";
 import { ImageMetadataError } from "@k2b/cloud/services/image-metadata";
 import {
+  GeoMapSnapshotAssetError,
   type GotenbergConfig,
   GotenbergRenderError,
   getGotenbergConfig,
@@ -207,7 +209,7 @@ const NoteEditBlockFields = {
 
 const NoteEditOperationSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("set-content"), content: z.string() }),
-  z.object({ kind: z.literal("append"), content: z.string() }),
+  z.object({ kind: z.literal("append"), content: z.string(), separator: z.literal("none").optional() }),
   z.object({ kind: z.literal("prepend"), content: z.string() }),
   z.object({ kind: z.literal("insert-before-line"), line: z.number().int().positive(), content: z.string() }),
   z.object({ kind: z.literal("insert-after-line"), line: z.number().int().positive(), content: z.string() }),
@@ -943,6 +945,7 @@ const notePdfDisposition = (filename: string): string => {
 
 const notePdfError = (error: unknown, locale?: string): { message: string; status: 413 | 422 | 502 | 503 | 504 } => {
   const { t } = notebookApiMessages.resolve(locale ? [locale] : []);
+  if (error instanceof GeoMapSnapshotAssetError) return { message: t.pdfFailed, status: error.code === "too_large" ? 413 : 422 };
   if (error instanceof MarkdownPdfError) {
     const message =
       error.reason === "css_too_large"
@@ -998,6 +1001,69 @@ const notePdfAdmissions = new WeakMap<
   Context,
   { notebook: Notebook; note: Note; raw: Request; config: GotenbergConfig; maxAttachmentBytes: number }
 >();
+
+const renderNotePdfResponse = async (c: Context<AuthContext>, input: z.infer<typeof NotePdfRequestSchema>, mapSnapshots?: FormData) => {
+  const { notebook, note, raw, config, maxAttachmentBytes } = notePdfAdmissions.get(c)!;
+  const notebookId = notebook.id;
+
+  if (byteLength(input.markdown) > MARKDOWN_PDF_MAX_MARKDOWN_BYTES) {
+    return respond(c, { ok: false, error: messages(c).markdownTooLarge, status: 413 });
+  }
+  if (input.customCss && byteLength(input.customCss) > MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES) {
+    return respond(c, { ok: false, error: messages(c).cssTooLarge, status: 413 });
+  }
+  if (activeNotePdfConversions >= NOTE_PDF_MAX_ACTIVE_CONVERSIONS) {
+    return respond(c, { ok: false, error: messages(c).pdfBusy, status: 503 });
+  }
+
+  activeNotePdfConversions += 1;
+  // The body was read under the default idle timeout, so a slow upload cannot keep the socket open longer.
+  // Preparation and rendering each get one phase, plus 10 s for assembly and cleanup.
+  c.req.raw = raw;
+  try {
+    setRequestTimeout(c, Math.min(REQUEST_IDLE_TIMEOUT_MAX_SECONDS, Math.ceil((2 * notePdfPhaseMs(config) + 10_000) / 1000)));
+    const filename = notePdfFilename(note.title);
+    // Query blocks resolve for the same access subject checkNotebookAccess authorized.
+    const subject = getNotebookAccessSubject(c);
+    const rendered = await renderNotePdf(
+      {
+        markdown: input.markdown,
+        publicOrigin: publicCloudOrigin(await settings.get<string>("app.url")),
+        title: note.title.trim() || filename.slice(0, -".pdf".length),
+        templateId: input.templateId,
+        customCss: input.customCss,
+        notebookId,
+        notebookShortId: notebook.shortId,
+        noteId: note.id,
+        noteShortId: note.shortId,
+        userId: subject.userId,
+        serviceAccountId: subject.serviceAccountId,
+        // checkNotebookAccess admitted a resource-bound account only for this notebook.
+        boundNotebookId: subject.serviceAccount?.kind === "resource_bound" ? notebookId : null,
+        bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
+        locale: getLocale(c),
+      },
+      { config, maxAttachmentBytes, signal: raw.signal, mapSnapshots },
+    );
+    const omissionsHeader = encodeNotePdfOmissions(rendered.omissions);
+    const buffer = new Uint8Array(rendered.pdf);
+    return new Response(new Blob([buffer], { type: "application/pdf" }), {
+      headers: {
+        "Cache-Control": "private, no-store",
+        "Content-Disposition": notePdfDisposition(filename),
+        "Content-Type": "application/pdf",
+        "X-Content-Type-Options": "nosniff",
+        ...(omissionsHeader ? { [NOTE_PDF_OMISSIONS_HEADER]: omissionsHeader } : {}),
+      },
+    });
+  } catch (cause) {
+    const projected = notePdfError(cause, getLocale(c));
+    return respond(c, { ok: false, error: projected.message, status: projected.status });
+  } finally {
+    activeNotePdfConversions -= 1;
+    setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+  }
+};
 
 const app = new Hono<AuthContext>()
   .use("/", middleware.noTransform())
@@ -1433,6 +1499,12 @@ const app = new Hono<AuthContext>()
         locale: getLocale(c),
         origin: new URL(c.req.url).origin,
         href: c.req.valid("query").href,
+        geoCaller: {
+          cookie: c.req.header("Cookie"),
+          authorization: c.req.header("Authorization"),
+          locale: getLocale(c),
+          signal: c.req.raw.signal,
+        },
       });
       c.header("Cache-Control", "private, no-store");
       if (result.kind === "denied") return respond(c, fail(err.forbidden(messages(c).accessDenied)));
@@ -1472,6 +1544,12 @@ const app = new Hono<AuthContext>()
         bypassAccess: hasRole(actor.data, "admin"),
         locale: getLocale(c),
         ...(markdown === undefined ? {} : { markdown }),
+        geoCaller: {
+          cookie: c.req.header("Cookie"),
+          authorization: c.req.header("Authorization"),
+          locale: getLocale(c),
+          signal: c.req.raw.signal,
+        },
       });
       c.header("Cache-Control", "private, no-store");
       if (result.kind === "denied") return respond(c, fail(err.forbidden(messages(c).accessDenied)));
@@ -2008,7 +2086,7 @@ const app = new Hono<AuthContext>()
             [NOTE_PDF_OMISSIONS_HEADER]: {
               required: false,
               description:
-                "Optional base64url (no padding) of UTF-8 JSON {items:[{code,kind,label}],more}, at most 2048 bytes. Items list what the PDF could not include; each is also marked in place in the PDF. The more count is the number of items that did not fit in the header. Absent when nothing is omitted.",
+                "Optional base64url (no padding) of UTF-8 JSON {items:[{code,kind,label}],more}, at most 2048 bytes. Items list what the PDF could not include. Map images fall back to linked, attributed pin and route lists; other omitted content is marked in place. The more count is the number of items that did not fit in the header. Absent when nothing is omitted.",
               schema: { type: "string", maxLength: NOTE_PDF_OMISSIONS_HEADER_MAX_BYTES, pattern: "^[A-Za-z0-9_-]+$" },
             },
           },
@@ -2047,67 +2125,89 @@ const app = new Hono<AuthContext>()
     }),
     v("json", NotePdfRequestSchema),
     async (c) => {
-      const { notebook, note, raw, config, maxAttachmentBytes } = notePdfAdmissions.get(c)!;
-      const notebookId = notebook.id;
-      const input = c.req.valid("json");
+      return renderNotePdfResponse(c, c.req.valid("json"));
+    },
+  )
 
-      if (byteLength(input.markdown) > MARKDOWN_PDF_MAX_MARKDOWN_BYTES) {
-        return respond(c, { ok: false, error: messages(c).markdownTooLarge, status: 413 });
-      }
-      if (input.customCss && byteLength(input.customCss) > MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES) {
-        return respond(c, { ok: false, error: messages(c).cssTooLarge, status: 413 });
-      }
-      if (activeNotePdfConversions >= NOTE_PDF_MAX_ACTIVE_CONVERSIONS) {
-        return respond(c, { ok: false, error: messages(c).pdfBusy, status: 503 });
-      }
-
-      activeNotePdfConversions += 1;
-      // The body was read under the default idle timeout, so a slow upload cannot keep the socket open longer.
-      // Preparation and rendering each get one phase, plus 10 s for assembly and cleanup.
-      c.req.raw = raw;
+  .post(
+    "/:id/notes/:noteId/pdf/maps",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "Download note PDF with browser map images",
+      requestBody: {
+        required: true,
+        content: {
+          "multipart/form-data": {
+            schema: {
+              type: "object",
+              required: ["input", "mapSnapshots"],
+              properties: {
+                input: {
+                  type: "string",
+                  description: "JSON PDF input: markdown, optional templateId and customCss. Exports the current caller snapshot.",
+                },
+                mapSnapshots: {
+                  type: "string",
+                  description: "JSON manifest bound to the Markdown revision and each complete GeoDocument fingerprint.",
+                },
+              },
+              additionalProperties: {
+                type: "string",
+                format: "binary",
+                description: "PNG part named map-snapshot-line-N for each validated map block.",
+              },
+            },
+          },
+        },
+      },
+      ...requiresAuth,
+      description:
+        "Export the caller's current Markdown snapshot with validated binary map images. Images are presentation input for this caller only and are never stored. The same note read permission and PDF conversion limits apply.",
+      responses: {
+        200: { description: "Generated PDF", content: { "application/pdf": { schema: { type: "string", format: "binary" } } } },
+        400: jsonResponse(ErrorResponseSchema, "Invalid map upload"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        413: jsonResponse(ErrorResponseSchema, "Input too large"),
+      },
+    }),
+    // Admit the caller before reading the body. The conversion slot is taken only after parsing,
+    // so a slowly streamed body cannot hold a slot that no conversion uses.
+    async (c, next) => {
+      const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!);
+      if (error) return error;
+      const note = await requireNoteInNotebook(notebook!.id, c.req.param("noteId")!, getLocale(c));
+      if (!note.ok) return respond(c, note);
+      const [config, maxAttachmentBytes] = await Promise.all([getGotenbergConfig(), getMaxAttachmentSizeBytes()]);
+      // bodyLimit replaces c.req.raw for a chunked body. Bun's idle timer and the client's abort signal
+      // belong to the original, socket-backed request, so the handler uses it for both.
+      notePdfAdmissions.set(c, { notebook: notebook!, note: note.data, raw: c.req.raw, config, maxAttachmentBytes });
       try {
-        setRequestTimeout(c, Math.min(REQUEST_IDLE_TIMEOUT_MAX_SECONDS, Math.ceil((2 * notePdfPhaseMs(config) + 10_000) / 1000)));
-        const filename = notePdfFilename(note.title);
-        // Query blocks resolve for the same access subject checkNotebookAccess authorized.
-        const subject = getNotebookAccessSubject(c);
-        const rendered = await renderNotePdf(
-          {
-            markdown: input.markdown,
-            publicOrigin: publicCloudOrigin(await settings.get<string>("app.url")),
-            title: note.title.trim() || filename.slice(0, -".pdf".length),
-            templateId: input.templateId,
-            customCss: input.customCss,
-            notebookId,
-            notebookShortId: notebook.shortId,
-            noteId: note.id,
-            noteShortId: note.shortId,
-            userId: subject.userId,
-            serviceAccountId: subject.serviceAccountId,
-            // checkNotebookAccess admitted a resource-bound account only for this notebook.
-            boundNotebookId: subject.serviceAccount?.kind === "resource_bound" ? notebookId : null,
-            bypassAccess: subject.user ? hasRole(subject.user, "admin") : false,
-            locale: getLocale(c),
-          },
-          { config, maxAttachmentBytes, signal: raw.signal },
-        );
-        const omissionsHeader = encodeNotePdfOmissions(rendered.omissions);
-        const buffer = new Uint8Array(rendered.pdf);
-        return new Response(new Blob([buffer], { type: "application/pdf" }), {
-          headers: {
-            "Cache-Control": "private, no-store",
-            "Content-Disposition": notePdfDisposition(filename),
-            "Content-Type": "application/pdf",
-            "X-Content-Type-Options": "nosniff",
-            ...(omissionsHeader ? { [NOTE_PDF_OMISSIONS_HEADER]: omissionsHeader } : {}),
-          },
-        });
-      } catch (cause) {
-        const projected = notePdfError(cause, getLocale(c));
-        return respond(c, { ok: false, error: projected.message, status: projected.status });
+        await next();
       } finally {
-        activeNotePdfConversions -= 1;
-        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+        notePdfAdmissions.delete(c);
       }
+    },
+    bodyLimit({
+      maxSize: GEO_SNAPSHOT_MAX_BYTES + NOTE_PDF_MAX_REQUEST_BYTES + GEO_SNAPSHOT_MAX_METADATA_BYTES,
+      onError: (c) => respond(c, { ok: false, error: messages(c).requestTooLarge, status: 413 }),
+    }),
+    async (c) => {
+      let form: FormData;
+      try {
+        form = await c.req.raw.formData();
+      } catch {
+        return respond(c, { ok: false, error: messages(c).pdfMarkdownInvalid, status: 400 });
+      }
+      const fields = form.getAll("input");
+      if (fields.length !== 1 || typeof fields[0] !== "string" || byteLength(fields[0]) > NOTE_PDF_MAX_REQUEST_BYTES)
+        return respond(c, { ok: false, error: messages(c).pdfMarkdownInvalid, status: 400 });
+      let input: z.infer<typeof NotePdfRequestSchema>;
+      try {
+        input = NotePdfRequestSchema.parse(JSON.parse(fields[0]));
+      } catch {
+        return respond(c, { ok: false, error: messages(c).pdfMarkdownInvalid, status: 400 });
+      }
+      return renderNotePdfResponse(c, input, form);
     },
   )
 

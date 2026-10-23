@@ -112,7 +112,7 @@ export default function ContactsList(props: Props) {
     >
       <ul
         ref={listRef}
-        class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5"
+        class="contacts-list flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5"
         aria-label={t().contactsListLabel}
         onKeyDown={moveFocus}
       >
@@ -130,7 +130,7 @@ export default function ContactsList(props: Props) {
             return (
               <li class="group/contact relative">
                 <Show when={props.selectionMode}>
-                  <span class="absolute left-3 top-1/2 z-10 flex -translate-y-1/2 items-center">
+                  <span class="contacts-list__selection absolute left-3 top-1/2 z-10 flex -translate-y-1/2 items-center">
                     <Checkbox
                       value={isChecked()}
                       aria-label={t().selectContact({ name: name() })}
@@ -140,7 +140,7 @@ export default function ContactsList(props: Props) {
                 </Show>
                 <a
                   href={buildContactDetailHref(props.detailBaseHref, contact.id, contact.bookId)}
-                  class="flex w-full min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] py-2.5 pl-3 pr-[3rem] text-left focus-visible:outline-[length:var(--k2b-focus-width)] focus-visible:outline-solid focus-visible:outline-[var(--k2b-focus-ring)] focus-visible:outline-offset-[var(--k2b-focus-offset)] [@media(min-width:640px)]:pr-[7rem]"
+                  class="contacts-list__row flex w-full min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] py-2.5 pl-3 pr-[3rem] text-left focus-visible:outline-[length:var(--k2b-focus-width)] focus-visible:outline-solid focus-visible:outline-[var(--k2b-focus-ring)] focus-visible:outline-offset-[var(--k2b-focus-offset)] [@media(min-width:640px)]:pr-[7rem]"
                   classList={{ "pl-10": props.selectionMode, "bg-[var(--ui-app-selected)]": isSelected() }}
                   aria-label={t().openContact({ name: name() })}
                   aria-current={isSelected() ? "true" : undefined}
@@ -167,20 +167,23 @@ export default function ContactsList(props: Props) {
                         {name()}
                       </span>
                       <Show when={props.showBookNames && props.bookNames?.[contact.bookId]}>
-                        <span class="hidden max-w-36 shrink-0 truncate rounded-full bg-[var(--ui-surface-muted)] px-1.5 py-0.5 text-[11px] text-dimmed md:inline-flex">
+                        <span class="contacts-list__book hidden max-w-36 shrink-0 truncate rounded-full bg-[var(--ui-surface-muted)] px-1.5 py-0.5 text-[11px] text-dimmed md:inline-flex">
                           {props.bookNames?.[contact.bookId]}
                         </span>
                       </Show>
                     </span>
 
-                    <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-dimmed">
+                    <span class="contacts-list__context mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-dimmed">
                       <Show when={context()}>
-                        <span class="truncate">{context()}</span>
+                        <span class="contacts-list__normal-context truncate">{context()}</span>
+                      </Show>
+                      <Show when={contact.jobTitle || contact.companyName}>
+                        <span class="contacts-list__compact-context">{contact.jobTitle || contact.companyName}</span>
                       </Show>
                       <Show when={contact.parent}>
                         {(parent) => (
                           <span
-                            class="inline-flex min-w-0 items-center gap-1 truncate"
+                            class="contacts-list__parent inline-flex min-w-0 items-center gap-1 truncate"
                             title={t().partOf({ name: resolveContactName(parent(), t().unnamedContact) })}
                           >
                             <i class="ti ti-corner-down-right shrink-0 text-[11px]" />
@@ -190,18 +193,18 @@ export default function ContactsList(props: Props) {
                       </Show>
                       <For each={visibleTags()}>
                         {(tag) => (
-                          <Tag color={tag.color} icon="ti ti-point">
+                          <Tag class="contacts-list__tag" color={tag.color} icon="ti ti-point">
                             {tag.name}
                           </Tag>
                         )}
                       </For>
                       <Show when={hiddenTagCount() > 0}>
-                        <span class="text-[11px] tabular-nums">+{hiddenTagCount()}</span>
+                        <span class="contacts-list__tag text-[11px] tabular-nums">+{hiddenTagCount()}</span>
                       </Show>
                     </span>
                   </span>
 
-                  <span class="hidden w-52 shrink-0 flex-col items-end gap-0.5 text-xs text-dimmed xl:flex">
+                  <span class="contacts-list__contact-points hidden w-52 shrink-0 flex-col items-end gap-0.5 text-xs text-dimmed xl:flex">
                     <Show when={email()}>
                       <span class="max-w-full truncate" title={email() ?? undefined}>
                         {email()}
@@ -215,7 +218,7 @@ export default function ContactsList(props: Props) {
                   </span>
                 </a>
 
-                <span class="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 sm:right-4">
+                <span class="contacts-list__actions absolute right-3 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 sm:right-4">
                   <Show when={phone()}>
                     {(number) => (
                       <IconButtonLink href={`tel:${number()}`} size="sm" class="max-sm:!hidden" label={t().callContact({ name: name() })}>

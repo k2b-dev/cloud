@@ -11,3 +11,357 @@
   background: var(--ui-app-selected-nav);
   color: var(--ui-app-accent-text);
 }
+
+/* The focused address form takes the contact's place beside the existing list. */
+.k2b-app-workspace:has(.contacts-address-editor, .contacts-address-editor-unavailable) {
+  --k2b-workspace-detail-contacts-detail-panel-width: 760px;
+}
+
+.k2b-app-workspace:has(.contacts-address-editor, .contacts-address-editor-unavailable) .contacts-list__contact-points {
+  display: none;
+}
+
+.contacts-address-editor {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 760px;
+  flex-direction: column;
+  gap: 22px;
+  overflow-y: auto;
+  padding: 18px 28px 60px;
+}
+
+.contacts-address-editor__heading h2 {
+  margin-bottom: 4px;
+  color: var(--k2b-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.contacts-address-editor__heading h2:focus {
+  outline: none;
+}
+
+.contacts-address-editor__heading p {
+  margin-bottom: 12px;
+}
+
+.k2b-ui .contacts-address-editor .contacts-address-editor__phone-back {
+  display: none;
+}
+
+.contacts-address-editor__street > p {
+  min-height: 18px;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.contacts-address-editor__street:has(.contacts-address-editor__empty-hint) .k2b-text-input__icon {
+  display: none;
+}
+
+.k2b-ui .contacts-address-editor .k2b-input-shell,
+.k2b-ui .contacts-address-editor .k2b-combobox__input {
+  min-height: 38px;
+}
+
+.k2b-ui .contacts-address-editor .k2b-button {
+  min-height: 36px;
+}
+
+.contacts-address-editor__fields {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 22px 14px;
+}
+
+.contacts-address-editor__wide {
+  grid-column: 1 / -1;
+}
+
+@container k2b-app-area (max-width: 47.999rem) {
+  .contacts-address-editor {
+    padding: 18px 16px 120px;
+  }
+
+  .contacts-address-editor__titlebar {
+    display: flex;
+    min-height: 58px;
+    align-items: center;
+    gap: 10px;
+    margin: -18px -16px 18px;
+    padding-inline: 16px;
+  }
+
+  .contacts-address-editor__titlebar h2 {
+    margin: 0;
+    font-size: 20px;
+  }
+
+  .k2b-ui .contacts-address-editor .contacts-address-editor__phone-back {
+    display: inline-flex;
+    width: 32px;
+    padding-inline: 0;
+  }
+
+  .contacts-address-editor__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .contacts-address-editor__street > p:not(.contacts-address-editor__empty-hint) {
+    min-height: 36px;
+  }
+}
+
+.k2b-ui .k2b-app-workspace__detail[data-workspace-detail-phone]:has(.contacts-address-editor, .contacts-address-editor-unavailable) {
+  gap: 0;
+  padding-inline: 0;
+}
+
+/* Keep SSR address deep links visible in a narrow desktop host (including
+   beside Cloud's panel), before the client adds its retained-contact marker. */
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-app-workspace:has(.contacts-address-editor, .contacts-address-editor-unavailable, [data-contacts-address-context]) {
+    --k2b-workspace-detail-column: clamp(0px, 100% - 20rem, var(--k2b-workspace-detail-track));
+  }
+}
+
+@media (min-width: 48rem) {
+ @container k2b-workspace (width < 50.5rem) {
+  .k2b-ui .k2b-app-workspace__detail[data-width="lg"]:not([hidden]):is(:has(.contacts-address-editor, .contacts-address-editor-unavailable), [data-contacts-address-context]) {
+    --k2b-workspace-detail-waiting: 0;
+    display: flex;
+    top: var(--k2b-workspace-detail-inset);
+    right: var(--k2b-workspace-detail-inset);
+    bottom: calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
+    left: auto;
+    width: calc(100% - var(--k2b-workspace-detail-inset));
+    grid-area: detail;
+    background: var(--k2b-surface);
+  }
+
+  .contacts-address-editor__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+ }
+}
+
+/* Focused editing keeps the real book navigation in the shared overlay.
+   Only the list owns a fixed track; the inline editor uses the remaining
+   room and its existing 760px maximum, starting directly after the list.
+   The sidebar id scopes this composition to the Contacts workspace. */
+@container k2b-app-area (min-width: 48rem) {
+  .k2b-ui .k2b-app-workspace:has(> #contacts-book-navigation):has(.contacts-address-editor, .contacts-address-editor-unavailable) {
+    --k2b-workspace-sidebar-form: overlay;
+    --k2b-workspace-detail-column: calc(100% - 330px);
+    padding-inline-end: 0;
+    grid-template-areas:
+      "head detail"
+      "content detail"
+      "drawer detail";
+    grid-template-columns: 330px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+
+    & > .k2b-app-workspace__head {
+      position: static;
+      display: flex;
+      width: auto;
+      height: auto;
+      min-height: 2.875rem;
+      margin: 0;
+      padding: 0.25rem 0.5rem;
+      overflow: visible;
+      clip-path: none;
+      white-space: normal;
+    }
+
+    & .k2b-app-workspace__head-toggle {
+      display: inline-flex;
+    }
+
+    & > #contacts-book-navigation {
+      --k2b-workspace-sidebar-form: overlay;
+      position: absolute;
+      z-index: 30;
+      inset: 0 auto 0 0;
+      display: flex;
+      width: min(17.5rem, calc(100% - 3rem));
+      grid-area: 1 / 1 / -1 / -1;
+      visibility: hidden;
+      background: var(--k2b-surface-elevated);
+      box-shadow: var(--k2b-shadow-float);
+      transform: none;
+      transition: none;
+    }
+
+    &[data-sidebar-overlay="open"] > #contacts-book-navigation {
+      visibility: visible;
+    }
+
+    /* A saved collapsed rail must not hide book names or settings in the
+       focused overlay. Leave that preference intact for the return view. */
+    & > #contacts-book-navigation [data-sidebar-mode="collapsed"] {
+      display: none;
+    }
+
+    &[data-sidebar-collapsed="true"] > #contacts-book-navigation [data-sidebar-mode="expanded"] {
+      display: block;
+    }
+
+    &[data-sidebar-collapsed="true"] > #contacts-book-navigation :is(
+      .k2b-app-workspace__sidebar-section-header,
+      .k2b-app-workspace__sidebar-item-copy,
+      .k2b-app-workspace__sidebar-item-label,
+      .k2b-app-workspace__sidebar-item-actions
+    ) {
+      display: flex !important;
+    }
+
+    &[data-sidebar-collapsed="true"] > #contacts-book-navigation :is(
+      .k2b-app-workspace__sidebar-item:not(.has-action),
+      .k2b-app-workspace__sidebar-item-main
+    ) {
+      justify-content: flex-start;
+      padding-inline: 0.5625rem;
+    }
+
+    &[data-sidebar-collapsed="true"] > #contacts-book-navigation .k2b-app-workspace__sidebar-item.has-action {
+      justify-content: flex-start;
+      padding-inline: 0;
+    }
+
+    & .k2b-app-workspace__resize:is([data-app-workspace-resize="sidebar"], [data-app-workspace-resize="detail"]),
+    & .k2b-app-workspace__detail-toggle {
+      display: none;
+    }
+
+    & .k2b-app-workspace__detail[data-width="lg"]:not([hidden]) {
+      --k2b-workspace-detail-waiting: 0;
+      display: flex;
+      inset: var(--k2b-workspace-detail-inset) 0 calc(var(--k2b-workspace-detail-inset) + var(--k2b-workspace-inset-bottom));
+      width: 100%;
+      min-width: 0;
+      grid-area: detail;
+      background: transparent;
+    }
+  }
+}
+
+/* At tablet widths the editor still sits beside the list; stack its fields
+   instead of squeezing three controls into the narrower remaining column. */
+@container k2b-app-area (48rem <= width < 68.125rem) {
+  .contacts-address-editor__fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The focused editor has its own compact list chrome. CSS follows the actual
+   editor in SSR and after hydration, so leaving it restores all normal tools. */
+.contacts-results__compact-heading,
+.contacts-list__compact-context {
+  display: none;
+}
+
+@container k2b-app-area (min-width: 48rem) {
+  .k2b-ui .k2b-app-workspace:has(> #contacts-book-navigation):has(.contacts-address-editor, .contacts-address-editor-unavailable) {
+    & .contacts-workspace__normal-heading,
+    & .contacts-results__normal-controls,
+    & .contacts-list__actions,
+    & .contacts-list__selection,
+    & .contacts-list__book,
+    & .contacts-list__normal-context,
+    & .contacts-list__parent,
+    & .contacts-list__tag {
+      display: none;
+    }
+
+    /* Keep the shared book-navigation toggle beside the search affordance,
+       without reserving an otherwise empty header row above the list. */
+    & > .k2b-app-workspace__head {
+      position: absolute;
+      z-index: 10;
+      inset: 16px auto auto 288px;
+      width: 32px;
+      min-height: 32px;
+      padding: 0;
+      grid-area: auto;
+    }
+
+    & .contacts-results__compact-heading {
+      position: relative;
+      display: block;
+      flex-shrink: 0;
+      padding: 16px 84px 12px 20px;
+    }
+
+    & .contacts-results__compact-search {
+      overflow: visible;
+      padding: 0;
+      background: transparent;
+    }
+
+    & .contacts-results__compact-search > summary {
+      position: absolute;
+      top: 16px;
+      right: 44px;
+      width: 32px;
+      min-height: 32px;
+      justify-content: center;
+      gap: 0;
+      padding: 0;
+      font-size: 18px;
+    }
+
+    & .contacts-results__compact-search .k2b-disclosure__chevron {
+      display: none;
+    }
+
+    & .contacts-results__compact-search .k2b-disclosure__content {
+      margin-right: -64px;
+      padding: 8px 0 0;
+    }
+
+    & .contacts-results__scroll {
+      padding: 0 10px 16px;
+    }
+
+    & .contacts-list {
+      gap: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 0;
+    }
+
+    & .contacts-list__row {
+      min-height: 54px;
+      gap: 12px;
+      padding: 8px 10px;
+    }
+
+    & .contacts-list .contact-avatar {
+      width: 32px;
+      height: 32px;
+      color: var(--k2b-text-secondary);
+      background: var(--ui-surface-muted);
+      font-size: 11px;
+    }
+
+    & .contacts-list__compact-context {
+      display: inline;
+    }
+
+    & .contacts-list__context {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}

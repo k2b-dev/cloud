@@ -4,6 +4,7 @@ import type { z } from "zod";
 import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import { aiToolNeedsApproval } from "./approvals";
+import { resolveAiToolResultMaxChars } from "./tool-result-budget";
 import type {
   AiApprovalTarget,
   AiDataBoundary,
@@ -64,6 +65,8 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           timeZone?: string;
           /** Localized short status; never include payloads or secrets. */
           reportProgress?: (message: string) => Promise<void>;
+          /** A validated result snapshot while a server tool is still running. */
+          reportResult?: (result: z.infer<TOutput>) => Promise<void>;
           /** Asks like `requestApproval`, and lets the person remember the approval of `target`. */
           requestApprovalFor?: (message: string, target: AiApprovalTarget, review?: CapabilityActionCallReview) => Promise<boolean>;
           /** Relays a decision for an effect another platform component consumes and executes. */
@@ -117,6 +120,8 @@ export type AiToolPreparationContext = {
   locale?: string;
   timeZone?: string;
   reportToolProgress?: (callId: string, message: string) => Promise<void>;
+  reportToolResult?: (callId: string, result: unknown) => Promise<void>;
+  maxToolResultChars?: number;
   /** Uses the approved snapshot immediately before the tool executes its effect. */
   consumeApproval?: (approvalCallId: string, input: unknown) => Promise<AiApprovalUse>;
   /** Links a relayed decision to the record the effect owner will consume. */
@@ -241,6 +246,15 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
           locale: input.locale,
           timeZone: input.timeZone,
           reportProgress: callId && report ? (message) => report(callId, message) : undefined,
+          reportResult:
+            callId && input.reportToolResult
+              ? async (result) => {
+                  const validated = tool.def.outputSchema.parse(result);
+                  const maximum = input.maxToolResultChars ?? resolveAiToolResultMaxChars({ configuredMaxChars: Number.MAX_SAFE_INTEGER });
+                  if (JSON.stringify(validated).length > maximum) throw new Error("AI_TOOL_INTERIM_RESULT_TOO_LARGE");
+                  await input.reportToolResult!(callId, validated);
+                }
+              : undefined,
           reportWebsiteReceipts:
             callId && input.reportWebsiteReceipts ? (receipts) => input.reportWebsiteReceipts!(callId, receipts) : undefined,
         });

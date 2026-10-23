@@ -327,6 +327,7 @@ export const displayToolName = (name: string, locale: string) => {
 
 const BUILT_IN_TOOL_ICONS = new Map<string, string>([
   ["card", "ti ti-layout-cards"],
+  ["map", "ti ti-map-search"],
   ["cloud_card", "ti ti-layout-cards"],
   ["chart", "ti ti-chart-bar"],
   ["survey", "ti ti-forms"],

@@ -826,6 +826,14 @@ localized status in the active tool row. Report phase changes rather than every
 poll. This status is presentation only: do not include payloads or secrets, and
 continue to return the authoritative result from the tool.
 
+A server tool may also await `context.reportResult?.(result)` to show a durable
+intermediate result in that same tool block while it continues. Cloud validates
+it against the declared output schema and the turn's tool-result character
+budget. The callback updates presentation; the tool must still return its final
+result. Persist recoverable state before reporting it. The native map tool uses
+this for a saved loading snapshot, then returns a compact reference to the
+completed map.
+
 ## Maintain a chat working plan
 
 `todo_write` is an immediately available server tool for multi-step work. It

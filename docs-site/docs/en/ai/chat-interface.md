@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-10-21
+updated: 2026-10-23
 ---
 
 # Chat interface
@@ -612,6 +612,89 @@ Action cards span the message column. The sentence wraps and keeps its typed
 chips; the preview and two decision buttons stay within that width on phones.
 Every value needed to decide belongs in the review. Technical arguments, when
 available, are secondary to the reviewed consequence.
+
+## Explore places and routes
+
+The built-in `map` tool presents verified places, routes, and tours directly in
+chat. The shared turn renderer places the first map below the tool activity and
+above the answer. Pins come from Core's Geo results. Web descriptions can cite
+only sources already read in that conversation; they cannot supply pin locations.
+Opening hours can be unknown. Stored provider times and attribution remain with
+the results.
+
+Select a pin or a list row to show its information. Arrow keys, Home, and End move
+through the list. On phones and in the Assistant panel, four rows appear first;
+**All places** expands the list in the conversation. The information card keeps
+its height, including when an opening schedule or description is missing.
+
+Follow-up searches reuse `mapId` and the current revision. A second group uses
+letters and a second color on the original map; later searches replace that
+secondary group. Earlier questions and answers remain. The follow-up answer
+includes **Jump to map**. Reloading resolves that original result from the saved
+map rather than restoring the old search.
+
+**Route here** accepts a starting address or a location the person explicitly
+shares with their browser. Denying location access leaves the address option
+available. Route stops have letters, and each leg shows distance and duration.
+An ambiguous address shows up to five server candidates before route calculation
+continues.
+
+Inserting or moving a stop, optimizing the order, and changing travel options
+produce a calculated proposal. The map keeps the original route until the person
+accepts it. **Discard** preserves the route; an accepted change has a timestamp
+and **Undo**. Options can apply to the entire tour or one leg. Along-route place
+searches use the saved route and an explicit kilometer window. The search form
+accepts an optional place name alongside the category controls; the provider
+searches for that name within the selected category and route corridor. Navigation
+opens the destination in an external navigation app; Cloud does not provide live
+turn-by-turn navigation.
+
+**Save as Notebook** asks for a writable notebook. Each place group becomes a
+shared `:::map` block, and the complete accepted route is kept in a route block.
+Large maps are saved in parts without shortening geometry or changing the
+source. Saving does not call the geographic provider. The export omits `savedAt`
+because the map has no durable save timestamp: opening-hours reads refresh the
+viewing time, which must not change a resumable export. Notebook labels the
+provenance date as the calculation date.
+
+Confirmed progress and a link to any known partial note stay visible. **Cancel**
+stops further requests and keeps saved parts. **Resume save** checks the note
+before continuing; **Check save outcome** reconciles an uncertain append.
+If the last part is still unresolved, check again later; it is never sent twice.
+A changed map source or edited note stops the save and exposes recovery links.
+An uncertain create cannot be repeated, even after 24 hours: open the selected
+notebook to find the possible note. A receipt left by an earlier save flow also
+opens Notebook recovery instead of creating another note.
+
+Progress survives reload in this browser, separately for each signed-in owner,
+conversation, map and revision. Completed receipts are retained to prevent a
+second save of that source. Browser local storage and Web Locks support are
+required; unavailable storage or another tab saving the same source produces
+visible feedback before another write. Clearing browser data also removes
+these receipts, so check the notebook before starting over.
+
+A missing Geo configuration or exhausted allowance shows a short explanation
+without starting a map or provider query. Budget messages include their reset
+time. Only administrators receive settings links. Other failures retain the
+conversation and saved results with a retry action. `GEO_COST_OVERRUN` records
+actual usage and stops later paid work. The map shows charged and unresolved
+credits; only an explicit click on **Continue calculation** can resume that map.
+The model cannot retry it or start further paid map work in that turn. A later
+user turn may request another map. Core reserves the whole chain using straight-line
+distance times 2; there is no selectable kilometre allowance. This estimate is
+not a guaranteed ceiling on the provider invoice. Budget refusals show required,
+available and missing credits when the service supplies them. If unresolved
+addresses make the reservation too large, **Change stop** offers address
+suggestions. Selecting one keeps its coordinates even if the next calculation
+still needs a smaller reservation. Resolve the remaining stops the same way;
+editing a selected address clears its old coordinates. Suggestions consume the
+same Core budget, so recovery requires credits to remain available.
+
+Map reads, exports, and changes check the conversation's current owner. Writes
+also check the saved revision before provider work. A conflict offers the current
+state instead of overwriting it. A fork receives independent copies of the maps
+in its copied history. The server and browser use the same saved snapshot;
+tool/model transport uses compact references without route geometry.
 
 ## Handle frontend tools
 

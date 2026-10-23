@@ -96,7 +96,9 @@ describe("the note PDF dialog", () => {
       expect(report?.getAttribute("data-tone")).toBe("warning");
       expect(report?.textContent).toContain("3 items are not in the PDF.");
       // The data notice keeps sharing the summary's cell, so the summary takes no new room.
-      expect(report?.parentElement?.querySelector('[aria-hidden="true"].invisible')?.textContent).toContain("processed in memory");
+      const dataNotice = report?.parentElement?.querySelector<HTMLElement>('[aria-hidden="true"].k2b-inline-guidance');
+      expect(dataNotice?.style.visibility).toBe("hidden");
+      expect(dataNotice?.textContent).toContain("processed in memory");
       const details = page.button("Details")!;
       expect(details.getAttribute("aria-expanded")).toBe("false");
       expect(page.list()).toEqual([]);

@@ -189,3 +189,38 @@ test.each([false, true])("external errors update without replacing the native co
     dom.cleanup();
   }
 });
+
+for (const multiline of [false, true]) {
+  test(`TextInput forwards keyboard handlers before submit for ${multiline ? "textarea" : "input"}`, () => {
+    const dom = createDomTestHarness();
+    const keys: string[] = [];
+    let submitted = 0;
+    const dispose = render(
+      () => (
+        <TextInput
+          multiline={multiline}
+          value="Spatz"
+          onSubmit={() => submitted++}
+          onKeyDown={[
+            (_data, event) => {
+              keys.push(event.key);
+              if (event.key === "Enter") event.preventDefault();
+            },
+            null,
+          ]}
+        />
+      ),
+      dom.root,
+    );
+    try {
+      const input = dom.root.querySelector("input,textarea")!;
+      for (const key of ["Escape", "ArrowDown", "Enter"])
+        input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+      expect(keys).toEqual(["Escape", "ArrowDown", "Enter"]);
+      expect(submitted).toBe(0);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+}

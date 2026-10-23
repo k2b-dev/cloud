@@ -1102,6 +1102,38 @@ const ComboboxDemo = () => (
   </DemoCard>
 );
 
+const streets = ["Frauenstraße 28", "Frauenstraße 2", "Frauengraben 28", "Münsterplatz 1"];
+const FreeTextComboboxDemo = () => {
+  const [street, setStreet] = createSignal("");
+  return (
+    <DemoCard
+      id="combobox-free-text"
+      chip={{ kind: "component", name: "Combobox", from: "@k2b/ui" }}
+      description="Free text: the query is the field's value. Results start after 3 characters, the first is active, Escape keeps the typed text, and a source line sits under the list."
+      code={`<Combobox freeText minQueryLength={3} autoHighlight={0} query={street} onQueryChange={setStreet} footer="Source" fetchData={searchStreets} onSelect={(o) => setStreet(o.label)} />`}
+    >
+      <Combobox
+        label="Street and number"
+        placeholder="Type a street…"
+        freeText
+        minQueryLength={3}
+        autoHighlight={0}
+        debounceMs={250}
+        query={street}
+        onQueryChange={setStreet}
+        empty="No matching street. Your own text is kept."
+        footer={<span>Example data</span>}
+        fetchData={async (query) =>
+          streets
+            .filter((name) => name.toLowerCase().includes(query.trim().toLowerCase()))
+            .map((name) => ({ id: name, label: name, description: "89073 Ulm", icon: "ti-map-pin" }))
+        }
+        onSelect={(option) => setStreet(option.label)}
+      />
+    </DemoCard>
+  );
+};
+
 const TagEditorDemo = () => {
   const [items, setItems] = createSignal<TagEditorItem[]>([
     { id: "platform", name: "Platform", color: "#0891b2" },
@@ -1693,6 +1725,7 @@ const demos: DemoSection = {
   combobox: () => (
     <DemoGrid columns="one">
       <ComboboxDemo />
+      <FreeTextComboboxDemo />
     </DemoGrid>
   ),
   color: () => (

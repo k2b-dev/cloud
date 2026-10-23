@@ -20,7 +20,9 @@ Core `address.autocomplete` with `type: "city"` and `countryCode: "DE"`.
 Autocomplete takes at least three characters and returns at most five
 suggestions. Choose a suggestion and pass its coordinates to Weather for a forecast.
 
-Operators configure the secret `geo.api_key` and credit budgets in Core.
+The [operations replacement table](/en/docs/operations/runtime-configuration#replace-the-legacy-weather-geo-configuration)
+lists each removed API and setting. Operators configure the secret `geo.api_key`
+and credit budgets in Core.
 `weather.geo_url`, `GEO_ALLOWED_TARGETS`, and the development `geo` container
 are removed. Existing saved locations and their coordinates remain valid.
 Remove the old URL and allowlist from deployment configuration; stored legacy

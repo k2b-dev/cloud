@@ -114,16 +114,20 @@ export type {
 export { MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
 export { type MapPaletteColors, type MapTheme, mapPalette } from "./map-palette";
 export { type MapStyleOptions, mapAttribution, mapStyle } from "./map-style";
+export { MAP_SNAPSHOT_MAX_PIXELS, MapSnapshotError, type MapSnapshotErrorCode } from "./map-view-snapshot";
 export type {
   MapViewArea,
   MapViewFit,
   MapViewFrameProps,
+  MapViewHandle,
   MapViewLine,
   MapViewLineTone,
   MapViewMarker,
   MapViewOwnLocation,
   MapViewPoint,
   MapViewProps,
+  MapViewSnapshot,
+  MapViewSnapshotOptions,
   MapViewStyle,
   MapViewStyleSource,
   MapViewTone,

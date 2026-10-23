@@ -694,6 +694,7 @@
         "@tabler/icons-webfont": "3.48.0",
         "maplibre-gl": "6.14.0",
         "marked": "18.0.14",
+        "pbf": "5.1.2",
         "qr-scanner": "1.4.2",
       },
       "devDependencies": {

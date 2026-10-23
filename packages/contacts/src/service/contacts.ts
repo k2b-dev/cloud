@@ -4,6 +4,14 @@ import { err, fail, ok, type PageParams, type Paginated, paginate, type Result }
 import { sql } from "bun";
 import { newShortId, withShortIdRetry } from "../lib/short-id";
 import { resolveContactName, resolveStoredContactLabel } from "../shared";
+import {
+  type AddressGeoColumns,
+  addressGeoColumns,
+  addressLocation,
+  geoProvenanceJson,
+  loadPreviousAddressGeo,
+  lockContactAddressGeo,
+} from "./address-location";
 import { contactsLive, publishContactChange } from "./live";
 import { emptyToNull, isUuid, type SqlExecutor, toDateOnly, toPgUuidArray } from "./shared";
 import * as tags from "./tags";
@@ -88,7 +96,7 @@ type DbPhone = {
   updated_at: Date;
 };
 
-type DbAddress = {
+type DbAddress = AddressGeoColumns & {
   id: string;
   contact_id: string;
   label: string | null;
@@ -234,6 +242,10 @@ const mapAddress = (row: DbAddress): ContactAddress => ({
   city: row.city,
   stateRegion: row.state_region,
   countryCode: row.country_code,
+  location: addressLocation(
+    { line1: row.line1, postalCode: row.postal_code, city: row.city, stateRegion: row.state_region, countryCode: row.country_code },
+    row,
+  ),
   position: row.position,
   createdAt: row.created_at.toISOString(),
   updatedAt: row.updated_at.toISOString(),
@@ -322,6 +334,11 @@ const loadAddresses = async (contactIds: string[]): Promise<Map<string, ContactA
       city,
       state_region,
       country_code,
+      geo_hash,
+      geo_lat,
+      geo_lon,
+      geo_provenance,
+      geo_checked_at,
       position,
       created_at,
       updated_at
@@ -541,13 +558,18 @@ const replacePhones = async (contactId: string, phones: ContactPhoneInput[], db:
   }
 };
 
-const replaceAddresses = async (contactId: string, addresses: ContactAddressInput[], db: SqlExecutor = sql): Promise<void> => {
+const replaceAddresses = async (contactId: string, addresses: ContactAddressInput[], db: SqlExecutor): Promise<void> => {
+  // Every caller supplies its transaction. Lock before the snapshot so lookup writes cannot be lost by replacement.
+  await lockContactAddressGeo(contactId, db);
+  // Rows are replaced as a set; an unchanged address keeps its location, a changed one waits for a new lookup.
+  const previousGeo = await loadPreviousAddressGeo(contactId, db);
   await db`
     DELETE FROM contacts.contact_addresses
     WHERE contact_id = ${contactId}::uuid
   `;
 
   for (const [index, address] of addresses.entries()) {
+    const geo = addressGeoColumns(address, previousGeo);
     await db`
       INSERT INTO contacts.contact_addresses (
         contact_id,
@@ -560,6 +582,13 @@ const replaceAddresses = async (contactId: string, addresses: ContactAddressInpu
         city,
         state_region,
         country_code,
+        geo_hash,
+        geo_lat,
+        geo_lon,
+        geo_provenance,
+        geo_checked_at,
+        geo_lookup_at,
+        geo_lookup_hash,
         position
       ) VALUES (
         ${contactId}::uuid,
@@ -572,6 +601,13 @@ const replaceAddresses = async (contactId: string, addresses: ContactAddressInpu
         ${address.city.trim()},
         ${emptyToNull(address.stateRegion) ?? null},
         ${address.countryCode.trim().toUpperCase()},
+        ${geo?.geo_hash ?? null},
+        ${geo?.geo_lat ?? null},
+        ${geo?.geo_lon ?? null},
+        (${geoProvenanceJson(geo?.geo_provenance)}::text)::jsonb,
+        ${geo?.geo_checked_at ?? null},
+        ${geo?.geo_lookup_at ?? null},
+        ${geo?.geo_lookup_hash ?? null},
         ${index}
       )
     `;
@@ -1809,7 +1845,7 @@ export const mergeDuplicate = async (config: {
   }));
   const addresses = uniqueBy([...keep.addresses, ...duplicate.addresses], (item) =>
     [item.line1, item.line2, item.postalCode, item.city, item.countryCode].map((value) => value?.trim().toLowerCase() ?? "").join("|"),
-  ).map(({ label, recipientName, companyName, line1, line2, postalCode, city, stateRegion, countryCode }) => ({
+  ).map(({ label, recipientName, companyName, line1, line2, postalCode, city, stateRegion, countryCode, location }) => ({
     label,
     recipientName,
     companyName,
@@ -1819,6 +1855,8 @@ export const mergeDuplicate = async (config: {
     city,
     stateRegion,
     countryCode,
+    // A found point moves with its address; the duplicate's row is deleted with it.
+    location: location?.status === "found" ? { point: location.point, provenance: location.provenance } : null,
   }));
   const bankAccounts = uniqueBy([...keep.bankAccounts, ...duplicate.bankAccounts], (item) =>
     item.iban.replaceAll(" ", "").toUpperCase(),

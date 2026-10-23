@@ -1,15 +1,18 @@
+import { geoMapSnapshotFingerprint } from "@k2b/cloud/contracts/geo-snapshot";
 import {
   buildPresetPdfHtml,
   type GotenbergConfig,
   GotenbergRenderError,
   MarkdownPdfError,
   type MarkdownPdfTemplateId,
+  prepareGeoMapSnapshotAssets,
   type RenderHtmlToPdfResult,
   renderHtmlToPdfWithConfig,
 } from "@k2b/cloud/services/pdf";
 import katexCss from "katex/dist/katex.min.css" with { type: "text" };
 import { type BookImagePlacement, type BookReferences, renderNotebookBook } from "../lib/book-renderer";
 import { LIGATURE_CLASS, LIGATURES } from "../lib/ligatures";
+import { type NotebookMapImage, notebookMapRevision, parseNotebookMapBlocks } from "../lib/map-blocks";
 import type { NotePdfOmission } from "../lib/pdf-omissions";
 import * as attachments from "./attachments";
 import { resolveBookQueries, resolveBookReferences } from "./book";
@@ -36,6 +39,15 @@ const SYMBOL_LIGATURE_CSS = `:where(${LIGATURES.filter(({ symbol }) => /[←-⋿
  * Notices are Markdown info blocks; the shared PDF presets style them.
  */
 const NOTE_PRINT_CSS = `
+.notebook-map__image { display: block; width: 100%; height: auto; }
+.notebook-map { margin: 0 0 1em; break-inside: avoid; }
+.notebook-map__header { display: flex; align-items: baseline; flex-wrap: wrap; gap: .75em; font-weight: 600; }
+.notebook-map__pins { margin: .4em 0; padding-left: 1.5em; }
+.notebook-map__pin { margin: .3em 0; }
+.notebook-map__number { display: none; }
+.notebook-map__name { margin-right: .5em; }
+.notebook-map__source, .notebook-map__summary { font-size: .85em; color: #475569; }
+
 .md-block-handle { display: inline-block; margin: .5em 0 .25em; padding: .05em .4em; border-radius: 3px; background: #eff6ff; color: #1d4ed8; font: 600 .75em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .md-data-block { margin: 0 0 1em; break-inside: avoid; }
 .md-data-grid { display: grid; grid-template-columns: minmax(7em, max-content) minmax(0, 1fr); margin: 0; border: 1px solid #cbd5e1; border-radius: 4px; }
@@ -101,6 +113,7 @@ export type NotePdfHtmlInput = {
   customCss?: string;
   queryResults?: ReadonlyMap<number, NoteQueryResult>;
   references?: BookReferences;
+  mapImages?: ReadonlyMap<number, NotebookMapImage>;
 };
 
 /** The reader's Book rendering of a note inside the chosen print preset. */
@@ -118,6 +131,7 @@ export const buildNotePdfHtml = (
     queryResults: input.queryResults,
     references: input.references,
     print: true,
+    mapImages: input.mapImages,
     publicOrigin: input.publicOrigin,
   });
   const css = html.includes("notebook-book-math") ? `${NOTE_PRINT_CSS}\n${KATEX_PRINT_CSS}` : NOTE_PRINT_CSS;
@@ -167,6 +181,7 @@ export const renderNotePdf = async (
     /** `notebooks.max_attachment_size_mb` in bytes: larger attachments are not loaded. */
     maxAttachmentBytes: number;
     imageDependencies?: Partial<NotePdfImageDependencies>;
+    mapSnapshots?: FormData;
   },
 ): Promise<RenderHtmlToPdfResult & { omissions: NotePdfOmission[] }> => {
   const { config, maxAttachmentBytes } = options;
@@ -195,12 +210,32 @@ export const renderNotePdf = async (
     closed();
     const references = await resolveBookReferences(params, attachmentMetadata);
     closed();
-    const built = buildNotePdfHtml({ ...params, queryResults, references });
+    const mapBlocks = parseNotebookMapBlocks(params.markdown).blocks;
+    // Like the existing PDF route, this exports an authorized caller's current, potentially unsaved text.
+    // Bind uploads to that exact export snapshot; never store client pixels or reuse them for another actor.
+    const mapAssets = options.mapSnapshots
+      ? await prepareGeoMapSnapshotAssets(
+          options.mapSnapshots,
+          {
+            revision: await notebookMapRevision(params.markdown),
+            maps: await Promise.all(
+              mapBlocks.map(async (block) => ({ id: `line-${block.line}`, fingerprint: await geoMapSnapshotFingerprint(block.document) })),
+            ),
+            maxBytes: config.maxHtmlBytes,
+          },
+          { signal, timeoutMs: Math.max(1, deadline - Date.now()) },
+        )
+      : [];
+    const mapImages = new Map<number, NotebookMapImage>(
+      mapAssets.map((asset) => [Number(asset.id.slice(5)), { src: asset.name, width: asset.width, height: asset.height }]),
+    );
+    const built = buildNotePdfHtml({ ...params, queryResults, references, mapImages });
+    const mapBytes = mapAssets.reduce((sum, asset) => sum + asset.data.size, 0);
     const prepared = await prepareNotePdfImages(
       {
         ...built,
         notebookId: params.notebookId,
-        maxHtmlBytes: config.maxHtmlBytes,
+        maxHtmlBytes: config.maxHtmlBytes - mapBytes,
         maxAttachmentBytes,
         deadline,
         signal,
@@ -219,7 +254,7 @@ export const renderNotePdf = async (
     clearTimeout(timer);
     return {
       ...(await renderHtmlToPdfWithConfig(
-        { html: prepared.html, title: params.title, assets: prepared.assets },
+        { html: prepared.html, title: params.title, assets: [...prepared.assets, ...mapAssets.map(({ name, data }) => ({ name, data }))] },
         { ...config, timeoutMs: phaseMs },
         { signal: options.signal },
       )),

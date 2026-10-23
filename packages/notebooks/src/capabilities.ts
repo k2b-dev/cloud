@@ -290,7 +290,7 @@ const noteEditOperationReview = (operation: NoteEditOperation, locale?: string):
       effect = t.replaceCompleteNote;
       break;
     case "append":
-      effect = t.appendToNote;
+      effect = operation.separator === "none" ? t.appendExactlyToNote : t.appendToNote;
       break;
     case "prepend":
       effect = t.prependToNote;

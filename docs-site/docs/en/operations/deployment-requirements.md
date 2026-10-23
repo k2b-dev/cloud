@@ -97,12 +97,15 @@ before storing it as the secret `geo.api_key`. There is no endpoint setting or
 new environment variable.
 Choose `geo.plan`, then review the monthly and per-person daily credit limits.
 Core creates its durable geo ledger during startup migrations.
-Routing now shares these settings and counters. Its full provider chain is
-reserved against a caller-selected reference-distance allowance (default
-500 km per leg). Known distance overruns are debited even beyond the original
-reservation, and stop subsequent paid steps; later reservations see the
-exhausted counters. This reference budget is not a guaranteed provider-invoice
-ceiling. Review [routing accounting](/en/docs/platform/places-and-maps#set-a-reference-distance-allowance)
+Routing shares these settings and counters. Core atomically reserves its full
+provider chain using straight-line distance times a fixed detour factor of 2.0.
+Unknown address coordinates need a maximum-distance reservation; choosing
+coordinates from autocomplete first reduces that estimate. Known cost overruns
+are debited beyond the reservation and stop later paid steps without automatic
+retry. The administration page and audit log expose overruns.
+This is a **technical refinement of the hard budget limit**: Cloud reserves
+conservatively before every call; Geoapify does not guarantee a cap on its side.
+Review [routing accounting](/en/docs/platform/places-and-maps#reserve-estimated-routing-costs)
 before selecting budgets for long routes or optimized tours.
 
 Search text, addresses, coordinates, categories, and route corridor geometry
@@ -1534,6 +1537,15 @@ Application authors remove calls to `syncOps.registerDeadLetters()` and
 Custom administration clients must include `queue`, `job`, or `topic` in dead-letter
 mutation paths, between `/dead-letters/` and the resource name.
 
+## Exact Notebook source appends
+
+Clients that save source in chunks require a Notebooks deployment whose
+`note.edit` capability accepts `separator: "none"` on append operations.
+Upgrade Notebooks before enabling those clients. Existing append calls retain
+their paragraph behavior; capability request limits, permissions, and revision
+checks are unchanged. See [Notebooks](/en/apps/notebooks) for chunk limits and
+recovery after a lost response.
+
 ## Optional BM25 search ranking
 
 Help publication and native full-text search require the Core-managed Postgres
@@ -1772,3 +1784,33 @@ apply, and each user holds at most 16 disposable check copies at a time. Disposa
 scopes left by crashed hosts and queues unreachable database namespaces for deletion.
 See [HTML app checks](/en/docs/ai/chat-interface#check-an-html-app-before-showing-it)
 for data-copy and output limits. No new configuration is required.
+
+
+### Browser map images in PDF
+
+Map image exports reuse the browser's existing Cloud map and the isolated
+print-image decoder. They require no new service, provider key, network access
+for Gotenberg or credential forwarding. The application must bound its multipart
+request before parsing, authorize the saved document and bind uploaded images to
+its current revision. Headless exports without a browser capture retain an
+explicit map-image omission or fail when images are required. See
+[Upload browser map snapshots](/en/docs/platform/pdf-and-templates#upload-browser-map-snapshots).
+### Assistant saved maps
+
+AI Core's existing migration creates `ai.maps` in its PostgreSQL database.
+Conversation deletion removes its maps. Map changes require the current owner
+and an unchanged revision; concurrent edits are rejected before provider work.
+No new service, environment variable, or browser credential is required. Configure
+Geo in Core to enable provider queries; without configuration, Assistant keeps
+the conversation and shows the unavailable state without requesting map assets.
+Core reserves estimated routing costs from straight-line distance × 2.0.
+Actual overruns are recorded and stop further paid steps until the person
+explicitly continues. Geoapify does not guarantee a cap on its side.
+
+### Named place searches
+
+Core's `place.search` accepts an optional `name` filter within its required
+categories and geographic controls. Assistant route searches expose this filter.
+Existing category-only callers continue to work. There is no new configuration,
+migration, or service requirement; searches use the existing Geoapify key and
+credit budget. See [Places and maps](/en/docs/platform/places-and-maps).

@@ -30,6 +30,12 @@ export const GeoAddressSchema = z
     point: GeoPointSchema.describe("Resolved geographic point."),
     formatted: z.string().max(600).describe("Formatted provider address."),
     confidence: z.number().min(0).max(1).nullable().describe("Provider match confidence, or null when unavailable."),
+    buildingConfidence: z
+      .number()
+      .min(0)
+      .max(1)
+      .nullable()
+      .describe("Provider certainty that this point is the requested building; null without a house-number match."),
     provenance: GeoProvenanceSchema.describe("Provider source and required attribution."),
   })
   .strict();
@@ -128,6 +134,13 @@ export const GEO_MAX_POLYLINE_CHARS = 102_400;
 export const GeoPlaceSearchInputSchema = z
   .object({
     categories: z.array(GeoCategorySchema).describe("1–5 Cloud categories."),
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(300)
+      .optional()
+      .describe("Optional provider place-name filter, 1–300 characters after trimming; categories still apply."),
     near: GeoPointSchema.optional().describe("Rank by distance to this point; choose near, area, or along."),
     area: GeoAreaSchema.optional().describe("Optional geographic filter."),
     along: z
@@ -188,12 +201,24 @@ export const GeoErrorDetailsSchema = z.discriminatedUnion("code", [
   z
     .object({
       code: z.literal("GEO_COST_OVERRUN"),
-      distanceAllowanceMeters: z.number().positive(),
+      adminHint: z.string().optional(),
+      estimatedDistanceMeters: z.number().nonnegative(),
+      reservedCredits: z.number().nonnegative(),
+      actualCredits: z.number().nonnegative(),
       actualDistanceMeters: z.number().nonnegative(),
       costs: GeoCostsSchema,
     })
     .strict(),
-  z.object({ code: z.literal("GEO_BUDGET_EXHAUSTED"), scope: z.enum(["person", "cloud"]), resetsAt: z.iso.datetime() }).strict(),
+  z
+    .object({
+      code: z.literal("GEO_BUDGET_EXHAUSTED"),
+      scope: z.enum(["person", "cloud"]),
+      resetsAt: z.iso.datetime(),
+      requiredCredits: z.number().nonnegative().optional(),
+      availableCredits: z.number().optional(),
+      shortfallCredits: z.number().nonnegative().optional(),
+    })
+    .strict(),
   z.object({ code: z.literal("GEO_BUSY"), retryAfterSeconds: z.number().positive(), costs: GeoCostsSchema.optional() }).strict(),
   z
     .object({
@@ -237,6 +262,7 @@ export type GeoAutocompleteInput = z.infer<typeof GeoAutocompleteInputSchema>;
 export type GeoGeocodeInput = z.infer<typeof GeoGeocodeInputSchema>;
 export type GeoReverseInput = z.infer<typeof GeoReverseInputSchema>;
 export type GeoPlaceSearchInput = z.infer<typeof GeoPlaceSearchInputSchema>;
+export type GeoAvailabilityData = z.infer<typeof GeoAvailabilityDataSchema>;
 export type GeoErrorCode = z.infer<typeof GeoErrorDetailsSchema>["code"];
 export type GeoFunction = "autocomplete" | "geocode" | "reverse" | "places" | "route";
 export const geoContract = {

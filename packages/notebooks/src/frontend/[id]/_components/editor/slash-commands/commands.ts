@@ -1,5 +1,7 @@
 import { startCompletion } from "@codemirror/autocomplete";
+import { serializeGeoDocument } from "@k2b/cloud/geo/document";
 import { crypto as stdCrypto } from "@k2b/stdlib";
+import { notebookMapMessages } from "../../../../../lib/map-messages";
 import { setListKind } from "../../../../lib/editor/list-commands";
 import { openNoteSearchPrompt } from "../../search/openNoteSearchPrompt";
 import { openAttachmentPicker } from "../AttachmentPicker";
@@ -75,6 +77,21 @@ const formatDateTime = (d: Date): string => `${formatDate(d)} ${formatTime(d)}`;
  *      where possible so the toolbar and slash command stay in lockstep.
  */
 export const slashCommands: SlashCommand[] = [
+  {
+    name: "map",
+    label: "Map",
+    icon: "ti-map-2",
+    section: "Insert",
+    aliases: ["karte"],
+    description: "Add linked places and a saved route",
+    run: (view, context) => {
+      if (view.state.readOnly) return;
+      const title = notebookMapMessages.resolve(context.locale ? [context.locale] : []).t.map;
+      const insert = `${serializeGeoDocument({ version: 1, title, pins: [] })}\n\n`;
+      const from = view.state.selection.main.from;
+      view.dispatch({ changes: { from, to: view.state.selection.main.to, insert }, selection: { anchor: from + insert.length } });
+    },
+  },
   // ── Formatting ───────────────────────────────────────────
   //
   // Headings 1-6. Each entry is registered separately so all six

@@ -67,6 +67,7 @@ import {
 } from "./http";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema } from "./local-tool-contracts";
 import { aiMaintenanceJobs } from "./maintenance";
+import { aiMapRoutes } from "./map-routes";
 import { AI_MEMORY_CONTENT_MAX_CHARS, aiMemories } from "./memories";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { createCloudAiMemoryTool } from "./memory-tool";
@@ -336,6 +337,7 @@ export const aiRoutes = (() => {
       .use("*", noTransform())
       .use(rateLimit())
       .use("*", auth.requireRole("authenticated"))
+      .route("/conversations", aiMapRoutes)
       .get("/status", async (c) => {
         const [status, enabled] = await Promise.all([
           assistantAiSettingsState(c.get("accessSubject")),

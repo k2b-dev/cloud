@@ -73,6 +73,7 @@ const contact: Contact = {
       city: "London",
       stateRegion: null,
       countryCode: "GB",
+      location: null,
       position: 0,
       createdAt: now,
       updatedAt: now,
@@ -175,6 +176,7 @@ describe("Contact birthday calendar dates (#1232)", () => {
           currentUserId="user-1"
           showEmpty={false}
           initialFavoriteKeys={[]}
+          timeZone="UTC"
         />
       </LocaleProvider>
     ));
@@ -212,6 +214,7 @@ describe("Contacts detail panels", () => {
         currentUserId="user-1"
         showEmpty={false}
         initialFavoriteKeys={[]}
+        timeZone="UTC"
       />
     ));
 
@@ -222,7 +225,8 @@ describe("Contacts detail panels", () => {
     expect(html).toContain('class="k2b-detail-panel__summary"');
     expect(html).toContain('aria-label="Contact information"');
     expect(html).toContain('aria-label="Additional details"');
-    expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="true"/g)).toHaveLength(2);
+    // Personal, work, and addresses (whose map belongs in view) start open.
+    expect(html.match(/<section class="k2b-detail-panel__section"[^>]*data-open="true"/g)).toHaveLength(3);
     expect(html).toContain('aria-label="Organization context"');
     expect(html).toContain('class="k2b-detail-panel__section-icon" data-tone="accent"');
     expect(html).toContain('data-scroll-preserve="contacts-detail"');
@@ -282,6 +286,7 @@ describe("Contacts detail panels", () => {
         currentUserId="user-1"
         showEmpty={false}
         initialFavoriteKeys={[]}
+        timeZone="UTC"
       />
     ));
 
@@ -352,5 +357,48 @@ describe("Contacts detail panels", () => {
     expect(html).toMatch(/<ul\b[^>]*>[\s\S]*<ul\b[^>]*>[\s\S]*<ul\b[^>]*>[\s\S]*<\/ul>[\s\S]*<\/ul>[\s\S]*<\/ul>/);
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
     for (const className of legacyDetailClasses) expect(html).not.toContain(className);
+  });
+});
+
+describe("Focused address workspace SSR", () => {
+  const render = (initialAddressId: string, writable = true) =>
+    renderToString(() => (
+      <LocaleProvider locale="de">
+        <ContactDetailPanel
+          initialContact={contact}
+          initialContactId={contact.id}
+          initialBookId={contact.bookId}
+          initialAddressId={initialAddressId}
+          initialNotesPage={{ items: [], page: 1, perPage: 30, total: 0, hasNext: false }}
+          contacts={[contact]}
+          bookNames={{ team: "Team contacts" }}
+          writableBooks={writable ? [{ id: "team", name: "Team contacts" }] : []}
+          adminBookIds={[]}
+          currentUserId="user-1"
+          initialFavoriteKeys={[]}
+          timeZone="UTC"
+          geoAvailability={{ configured: false, person: { exhausted: false, resetsAt: now }, cloud: { exhausted: false, resetsAt: now } }}
+        />
+      </LocaleProvider>
+    ));
+  test("renders the selected address editor in the first server response without a dialog", () => {
+    const html = render("address-1");
+    expect(html).toContain('class="contacts-address-editor"');
+    expect(html).toContain("Adresse bearbeiten");
+    expect(html).toContain("Office · Ada Lovelace");
+    expect(html).toContain('value="1 Engine Way"');
+    expect(html).toContain("Adresszusatz");
+    expect(html).toContain("PLZ");
+    expect(html).toContain("Land");
+    expect(html).not.toContain('role="dialog"');
+    expect(html).not.toContain("k2b-panel-dialog");
+  });
+  test("does not render inputs for a removed address or a readonly contact", () => {
+    for (const html of [render("removed"), render("address-1", false)]) {
+      expect(html).toContain("Adresse nicht verfügbar");
+      expect(html).toContain("Zurück zum Kontakt");
+      expect(html).not.toContain('class="contacts-address-editor"');
+      expect(html).not.toContain("<input");
+    }
   });
 });

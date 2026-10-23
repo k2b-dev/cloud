@@ -23,10 +23,15 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
-| Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
-| A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
+| Oversized fixtures consume behavioral test deadlines | A correctness test uses far more points than needed to cross a provider limit, spending its deadline on unrelated extra work. | Tests: Geo corridor service cases use 2,101 points to retain the 16 m simplification across the 2,000-point limit, with the original corridor, filtering, truncation and accounting assertions. |
+| Replacing child rows loses asynchronous state | An unchanged address save carries a stale geocode claim while a concurrent lookup completes. | Test: Contacts `address-location.integration.test.ts` pauses replacement before child-row locks and verifies one paid lookup, retained coordinates, released failed claims and fresh claim timestamps. |
+| A resumable export changes on read, or its browser receipt disappears | Saving a large map must preserve exact bytes at one revision. A refreshed viewing clock changes its digest; missing persistence or simultaneous tabs can create duplicate notes. | Tests: Cloud `map-notebook.test.ts` freezes export bytes across viewing times; `map-widget.browser.test.ts` exercises bounded create/append, stored checkpoints, cancellation, reconciliation, completed receipts, storage failures and same-source tab exclusion. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
+| Driver-specific collection serialization at a database boundary | Array or serialized JSON parameters reach PostgreSQL with the wrong representation, breaking history queries and forks. | Test: Cloud `ai/map-store.integration.test.ts` reloads and forks native maps, recovers interrupted calls, and asserts object-shaped JSONB. Writes cast serialized JSON through text; array queries use the existing PostgreSQL helper. |
+| Saved presentation bypasses live validation | Stored map JSON reaches renderers without complete geometry validation, or export preparation loses ordinary document content. | Tests: Cloud `geo-document.test.ts`, Notebook `map-blocks.test.ts` and `notebook-maps.browser.test.ts` cover geometry, provider IDs, image readiness, internal links and print cancellation. |
+| Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
+| A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | App CSS overrides shared control sizing | An app stretches a compact action or overrides its size, so adjacent controls no longer match. | Test: Notebooks `detail-panel.browser.test.ts` measures AI and View height, padding, font size, intrinsic width, hover, keyboard focus, and offline dimensions in both themes at phone, tablet, and desktop widths. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | A source location is valid but no longer names its evidence | A ranking accepts an in-range line number even when the line is blank or different code now occupies it. | Test: Mail `scripts/perf-baseline/browser-model.test.ts` rejects blank, changed and moved source lines and missing or multiline anchors; ranking requires the complete source line ([#1472](https://github.com/k2b-dev/cloud/issues/1472)). |
@@ -974,6 +979,77 @@ convention still needs a check or a test.
 - **Error class:** Checking direct dependency versions instead of every resolved copy and its upstream range.
 - **Guard:** The existing nightly `bun audit --audit-level=high` checks the resolved graph. Verify upstream advisories and consumer paths before updating: Fibel still needs a supported SDK release, and the disputed cache advisory has no confirmed behavior fix in 4.3.0. Keep those findings visible rather than adding overrides or weakening the audit.
 
+### Map readiness did not guarantee complete label resources
+
+- **What happened:** A failed glyph download or missing vector tile could still reach MapLibre's idle state with substituted labels or an incomplete basemap.
+- **Root cause:** MapLibre 6 catches glyph transport and PBF decoding failures inside its glyph manager and suppresses HTTP 404 tile errors, without a map error event.
+- **Error class:** Renderer fallback mistaken for complete export resources.
+- **Guard:** MapView's per-map resource protocol validates glyph PBFs and reports failed glyph and tile downloads explicitly. Synthetic vector browser tests require failed glyph requests and HTTP 404/500 tiles to reject capture, retain retry, and recover before a real raster succeeds.
+
+
+## Preserve exact source when chunking Notebook saves
+
+- **What happened:** Saved map Markdown can exceed both the 200,000-character
+  create limit and the 256 KiB request limit after JSON escaping.
+- **Root cause:** Splitting content through ordinary append inserts paragraph
+  separators, which can corrupt JSON strings inside a document.
+- **Guard:** `note-edit.test.ts` covers exact append and unchanged defaults;
+  `map-notebook-save.test.ts` covers serialized byte limits, surrogate
+  boundaries, hash reconciliation, cancellation, and unknown creates. Chunked
+  saves use explicit `separator: "none"` and full-source hash preconditions.
+
+### Saved map blocks validate geometry and provider identifiers
+
+- **What happened:** Source review found that saved map JSON could bypass live route validation; a map-only export mode also bypassed ordinary image readiness and link handling.
+- **Root cause:** Presentation code treated stored geometry as trusted and reused only part of the document renderer's print behavior. A separate pin-ID limit also rejected valid provider IDs.
+- **Error class:** Saved presentation bypasses live validation.
+- **Guard:** Cloud `geo-document.test.ts` and Notebook `map-blocks.test.ts` cover complete coordinate pairs, public provider IDs, images and internal links. `notebook-maps.browser.test.ts` holds an ordinary image pending, requires all images before printing, and checks cancellation cleanup. Snapshot uploads remain bound to the caller's export text and complete map fingerprints, with bounded PNG decoding and explicit source-list recovery.
+
+### Assistant map history rejected collection parameters
+
+- **What happened:** The new map persistence integration suite failed to reload or fork a conversation containing a native map with PostgreSQL error `22P02`.
+- **Root cause:** The projection passed JavaScript arrays directly to Bun SQL parameters cast to PostgreSQL arrays. That binding did not produce PostgreSQL array literals. JSON strings also lacked the explicit text cast used by the existing message store, allowing JSONB strings instead of objects.
+- **Error class:** Driver-specific collection serialization at a database boundary.
+- **Guard:** `map-store.integration.test.ts` exercises persisted history, independent forks, interrupted tool recovery, owner isolation, and stale writes against PostgreSQL. The projection uses the existing `toPgTextArray` helper for every array parameter. Snapshot and fork writes cast serialized JSON through text, and the integration suite asserts `jsonb_typeof(snapshot)` is `object`.
+
+### Browser print received offline PDF image slots
+
+- **What happened:** Printing a map note showed internal image markers instead of ordinary attachment images.
+- **Root cause:** Browser Print used the offline PDF renderer mode without the server image preparation step.
+- **Error class:** A rendering mode crossed from server export to browser preview without resolving its assets.
+- **Guard:** The Book renderer explicitly retains authorized browser image URLs for Print and preview. Image-form tests preserve the offline default; browser tests verify decoded map and attachment images, cancellation during decoding, and temporary-document cleanup.
+
+### TextInput swallowed its caller's keyboard actions
+
+- **What happened:** Escape did not close Notebook map suggestions, and arrow keys could not select them.
+- **Root cause:** The native input's internal submit handler replaced the caller's `onKeyDown` prop.
+- **Error class:** An internal event handler overwrites a supported consumer handler.
+- **Guard:** TextInput invokes function and bound-data keyboard handlers before its default submit behavior, respecting `defaultPrevented`. Native input/textarea behavior tests and the Notebook map browser flow cover the regression.
+
+### AiMap searches use one spatial selector
+
+- **What happened:** AiMap place searches supplied both a circle and its center
+  as `near`, which Core rejects before provider work.
+- **Root cause:** Synthetic Geo fixtures accepted inputs without the public
+  service's mutually exclusive spatial-selector rule.
+- **Error class:** Consumer input violates a shared service invariant.
+- **Guard:** AiMap service tests require a circle without `near`; named search
+  tests trace the filter through the browser, service, GET/POST, and cache.
+
+### Address replacement and lookup share a stable lock
+
+- **Symptom:** Saving unchanged addresses could discard a completed lookup or retain a failed claim, causing another paid lookup or delaying recovery.
+- **Root cause:** Replacement read asynchronous state before locking the rows that completion would update. PostgreSQL transaction-start timestamps could also backdate a claim after waiting for a lock.
+- **Error class:** Replacing child rows loses asynchronous state.
+- **Guard:** Replacement, claim, completion and release lock the parent contact before reading or writing address state; provider calls run outside these transactions. Claims use statement time. `address-location.integration.test.ts` uses deterministic barriers before child-row locking and checks success, failure and lock-wait timestamps.
+
+### Measure map documents and their export frame
+
+- **What happened:** Saved-map notes used the ordinary book type scale, and the shared workspace-dialog width overrode the intended PDF preview width.
+- **Root cause:** Application composition inherited larger typography and a more specific shared frame selector; the export sheet also needed to grow with long content.
+- **Error class:** Shared presentation rules override a scoped document composition.
+- **Guard:** Notebook map browser tests measure typography, spacing, map/list dimensions, the 640px export frame, and full white-sheet containment on phones. They also check editor map widgets retain zero padding and ordinary notes retain their existing typography and export controls.
+
 ### The notebook AI action stretched beside View
 
 - **What happened:** “Edit with AI” filled the remaining row and stood taller than “View”.
@@ -988,6 +1064,20 @@ convention still needs a check or a test.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
 
+### Reservation recovery must accept resolved addresses
+
+- **What happened:** A route with three unresolved addresses needed more than the default credit limit, but Assistant recovery could only resubmit text.
+- **Root cause:** The new conservative reservation assumed unknown coordinates while the consumer offered no way to retain a selected address point.
+- **Error class:** Admission guidance names a recovery path the consumer cannot perform.
+- **Guard:** Assistant uses the shared address autocomplete for stop repair, persists selected points through another refusal, clears them on edits, and permits recovery when credits remain. Service and desktop/phone browser tests cover consecutive refusals, selection, reload, and completion.
+
+### Merged browser fixtures need separate resource routes
+
+- **What happened:** A missing-glyph regression no longer reached its failing handler after two map fixtures were combined.
+- **Root cause:** Both the successful snapshot fixture and the failure fixture used the same glyph URL prefix; the first handler always returned a valid font.
+- **Error class:** Fixture route shadowing removes the intended failure condition.
+- **Guard:** Success and failure glyph routes have distinct prefixes; the regression asserts a failing request occurred and the map offers a visible retry.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its
@@ -997,6 +1087,10 @@ with "Suspected:"; the fix pull request replaces it with the confirmed cause.
 When the guard does not exist yet, write "Pending in #n" with the issue that
 tracks it, or "None, because …". A pull request that adds a guard for a class
 updates that class's row in the table.
+
+### Keep map history links inside the active Assistant host
+
+A shared map result can render in full Assistant or its panel. Hardcoding the full app path in a follow-up link escapes the panel when the original map is outside loaded history. Preserve the host-relative link when fetching the current history anchor. Browser cases cover full and panel paths at desktop and phone widths.
 
 ## Wait for the confirmation after browser history traversal (#1765)
 

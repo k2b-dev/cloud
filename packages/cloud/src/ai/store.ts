@@ -7,12 +7,14 @@ import { type CapabilityActionReviewPresentation, CapabilityActionReviewPresenta
 import { logger } from "../services/logging";
 import { toPgTextArray } from "../services/postgres";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
+import { AiMapSchema } from "./map-contracts";
 
 export { AI_TOOL_CHECK_STALE_MS };
 
 import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { projectSettledAiToolChecks } from "./capability-result";
 import { aiTurnErrorText } from "./chat/turn-error";
+import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
 import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
@@ -1506,6 +1508,17 @@ export const aiConversations: AiConversationService = {
         SELECT ${target.id}::uuid, path, bytes, media_type, size, origin, dictation_recorded_at, updated_at, version
         FROM ai.files WHERE conversation_id = ${input.sourceConversationId}::uuid
       `;
+      // A fork owns independent snapshots. Rewrite only copied map references, never the source conversation.
+      const mapRows = await tx<
+        { id: string; snapshot: unknown; retry: unknown }[]
+      >`SELECT id,snapshot,retry FROM ai.maps WHERE conversation_id=${input.sourceConversationId}::uuid AND (id IN (SELECT (message->'result'->'map'->>'id')::uuid FROM ai.messages WHERE conversation_id=${target.id}::uuid AND role='tool_result' AND message->>'name'='map') OR snapshot->>'originCallId' IN (SELECT block->>'id' FROM ai.messages CROSS JOIN LATERAL jsonb_array_elements(message->'content') block WHERE conversation_id=${target.id}::uuid AND role='assistant' AND block->>'type'='tool_call' AND block->>'name'='map'))`;
+      for (const saved of mapRows) {
+        const id = crypto.randomUUID();
+        const snapshot = AiMapSchema.parse(typeof saved.snapshot === "string" ? JSON.parse(saved.snapshot) : saved.snapshot);
+        const next = { ...snapshot, id, conversationId: target.short_id };
+        await tx`INSERT INTO ai.maps(id,conversation_id,revision,snapshot,retry) VALUES(${id}::uuid,${target.id}::uuid,${snapshot.revision},${JSON.stringify(next)}::text::jsonb,${saved.retry ? JSON.stringify(saved.retry) : null}::text::jsonb)`;
+        await tx`UPDATE ai.messages SET message=jsonb_set(message,'{result,map}',${JSON.stringify({ ...next })}::text::jsonb) WHERE conversation_id=${target.id}::uuid AND role='tool_result' AND message->>'name'='map' AND message->'result'->'map'->>'id'=${saved.id}`;
+      }
       return rowToConversation(target);
     });
   },
@@ -2556,7 +2569,7 @@ export const aiConversations: AiConversationService = {
         AND NOT (kind = 'summary' AND compacted_at IS NOT NULL)
       ORDER BY seq ASC, (kind = 'summary')::int ASC
     `;
-    return rows.map(rowToMessage);
+    return projectAiMaps(rows.map(rowToMessage));
   },
 
   listMessagesPage: async (input) => {
@@ -2585,7 +2598,7 @@ export const aiConversations: AiConversationService = {
         AND NOT (kind = 'summary' AND compacted_at IS NOT NULL)
       ORDER BY seq ASC, (kind = 'summary')::int ASC
     `;
-    const messages = rows.map(rowToMessage);
+    const messages = await projectAiMaps(rows.map(rowToMessage));
     const oldestSeq = messages[0]?.seq;
     if (oldestSeq === undefined) return { messages, hasMore: false };
     const older = await sql<{ exists: boolean }[]>`
@@ -2626,7 +2639,7 @@ export const aiConversations: AiConversationService = {
     `;
     const page = rows.filter((row) => Number(row.page_rank) <= limit);
     return {
-      messages: page.map(rowToMessage),
+      messages: await projectAiMaps(page.map(rowToMessage)),
       ...(rows.some((row) => Number(row.page_rank) > limit) && page.at(-1) ? { nextCursor: String(page.at(-1)!.seq) } : {}),
     };
   },
@@ -2743,7 +2756,7 @@ export const aiConversations: AiConversationService = {
         AND compacted_at IS NULL
       ORDER BY seq ASC
     `;
-    return rows.map(rowToMessage);
+    return projectAiMaps(rows.map(rowToMessage));
   },
 
   listTurnMessages: async (input) => {
@@ -2758,7 +2771,7 @@ export const aiConversations: AiConversationService = {
         AND (${input.includeCompacted ?? false} OR compacted_at IS NULL)
       ORDER BY seq ASC
     `;
-    return rows.map(rowToMessage);
+    return projectAiMaps(rows.map(rowToMessage));
   },
 
   setMessageFeedback: async (input) => {
@@ -3946,7 +3959,7 @@ export const aiConversations: AiConversationService = {
           ).map(rowToMessage)
         : await aiConversations.listContextMessages({ conversationId: input.conversationId });
       return projectSettledAiToolChecks(
-        rows.map((row) => ({
+        (await projectAiMaps(rows, true)).map((row) => ({
           seq: row.seq,
           kind: row.kind,
           meta: row.meta,

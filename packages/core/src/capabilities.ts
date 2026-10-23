@@ -712,7 +712,7 @@ export const aiCapabilities = defineCapabilities({
     "route.calculate": {
       title: "Calculate a route",
       description:
-        "Calculate 2–26 stops by car, bike or on foot, with avoid preferences and per-leg options. Start/destination stay fixed when optimizing. Returns meters, seconds, polyline6 and provenance. Ambiguous addresses require a choice. Reserves the full chain against a reference-distance allowance (default 500 km per leg); an overrun is charged and stops the chain. This allowance is not a provider invoice ceiling. Keep attribution.",
+        "Calculate 2–26 stops by car, bike or on foot, with avoid preferences and per-leg options. Start/destination stay fixed when optimizing. Returns meters, seconds, polyline6 and provenance. Ambiguous addresses require a choice. Reserves the full chain from straight-line distance times 2; unknown coordinates need a larger reserve. Actual cost overruns are charged and stop the chain. Geoapify does not guarantee a cap on its side. Keep attribution.",
       input: geoRouteContract.calculateRoute.input,
       data: geoRouteContract.calculateRoute.data,
       openWorld: true,
@@ -757,7 +757,7 @@ export const aiCapabilities = defineCapabilities({
     "place.search": {
       title: "Search places",
       description:
-        "Return up to 20 places in 1–5 categories near a point, in a bbox/circle, or along polyline6. Along: at most 200 km per window, buffer 100–5,000 m (default 1,000). If truncated is true, narrow the distance window; an empty result then does not rule out matches. Includes available raw OSM opening hours, route position and straight-line distance. Results carry provenance; keep attribution. Costs credits within the operator budget; cache hits are free.",
+        "Return up to 20 places in 1–5 categories near a point, in a bbox/circle, or along polyline6. Optional name filters provider results within those categories (1–300 characters after trimming). Along: at most 200 km per window, buffer 100–5,000 m (default 1,000). If truncated is true, narrow the distance window; an empty result then does not rule out matches. Includes available raw OSM opening hours, route position and straight-line distance. Results carry provenance; keep attribution. Costs credits within the operator budget; cache hits are free.",
       input: geoContract.searchPlaces.input,
       data: geoContract.searchPlaces.data,
       openWorld: true,

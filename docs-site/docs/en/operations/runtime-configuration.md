@@ -5,7 +5,7 @@ section: Operations
 order: 1140
 description: Configure application containers, platform connections, and environment-specific values.
 tags: [configuration, environment, settings]
-updated: 2026-10-22
+updated: 2026-10-23
 ---
 
 # Runtime configuration
@@ -18,6 +18,29 @@ For the services and optional integrations needed by each app, start with
 
 Cloud validates settings when it reads them. Values stored in Postgres are
 encrypted with `APP_SECRET`.
+
+## Replace the legacy Weather geo configuration
+
+Upgrade Core and configure its secret `geo.api_key` and credit budgets before
+using Weather city search. Remove the old geo container and deployment values.
+
+| Removed | Replacement |
+| --- | --- |
+| `geoService` (including `geo`, `services.geo` and legacy server types) | `geoClient` from `@k2b/cloud/server`, or Core address capabilities, with current request credentials. |
+| `weather.geo_url` | Core owns the Geoapify EU endpoint; configure `geo.api_key` in Core instead of a Weather geo URL. |
+| `GEO_ALLOWED_TARGETS` | No replacement allowlist is needed: the Core geo service uses the fixed Geoapify EU endpoint. Remove the variable. |
+| `weather.city.search` | Core `address.autocomplete` with `type: "city"` and `countryCode: "DE"`; pass the selected coordinates to Weather. |
+
+Agents and the Weather UI use the same Core capability path. Interactive
+credentials go only to Core, which applies the caller's geo budget; applications
+do not forward invocation tokens or bypass dispatch with an in-process call.
+The city HTTP endpoints require authentication. Coordinate forecasts remain
+anonymous, and the public display uses weather-station names without paid
+reverse geocoding.
+
+Saved coordinates remain valid. Follow the
+[Weather migration instructions](/en/docs/reference/deprecations-and-migrations#weather-city-search-uses-core-geo)
+for schema order and server caller changes.
 
 ## Outbound request budgets
 

@@ -12,9 +12,11 @@ import {
   ServiceAccountCredentialSchema,
   UpdateAccessSchema,
 } from "@k2b/cloud/contracts";
+import { GeoPointSchema, GeoProvenanceSchema } from "@k2b/cloud/contracts/geo";
 import {
   type AuthContext,
   auth,
+  geoClient,
   getLocale,
   jsonResponse,
   middleware,
@@ -29,8 +31,10 @@ import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ResourceShortIdSchema } from "../capability-contracts";
+import { geoCaller } from "../geo-caller";
 import { contactsService } from "../service";
 import { readableBookScope } from "../service/access";
+import { geocodeOutcome } from "../service/address-location";
 import { contactsLive } from "../service/live";
 import { contactsLiveChannels } from "../service/live-channels";
 import { contactsApiErrorMessage, contactsMessages, notFoundError } from "../service/messages";
@@ -186,6 +190,18 @@ const ContactBankAccountInputSchema = z.object({
   note: z.string().max(500).nullable().optional(),
 });
 
+const ContactAddressLocationSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("found"), point: GeoPointSchema, provenance: GeoProvenanceSchema }),
+  z.object({ status: z.literal("not_found"), checkedAt: z.string() }),
+]);
+
+const ContactAddressLocateResultSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("located"), location: ContactAddressLocationSchema }),
+  z.object({ state: z.literal("not_configured") }),
+  z.object({ state: z.literal("budget_exhausted"), scope: z.enum(["person", "cloud"]), resetsAt: z.string() }),
+  z.object({ state: z.literal("failed") }),
+]);
+
 const ContactAddressSchema = z.object({
   id: z.string(),
   contactId: ResourceShortIdSchema,
@@ -198,6 +214,7 @@ const ContactAddressSchema = z.object({
   city: z.string(),
   stateRegion: z.string().nullable(),
   countryCode: z.string().length(2),
+  location: ContactAddressLocationSchema.nullable().describe("Where the address lies; null while the lookup is pending."),
   position: z.number().int().nonnegative(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -338,6 +355,11 @@ const ContactAddressInputSchema = z.object({
   city: z.string().min(1).max(120),
   stateRegion: z.string().max(120).nullable().optional(),
   countryCode: z.string().length(2),
+  location: z
+    .object({ point: GeoPointSchema, provenance: GeoProvenanceSchema })
+    .nullable()
+    .optional()
+    .describe("Point of a chosen address suggestion for exactly these fields. Unchanged addresses keep their location without it."),
 });
 
 const CreateBookSchema = z.object({
@@ -448,6 +470,10 @@ const UpdateContactSchema = z.object({
   addresses: z.array(ContactAddressInputSchema).optional(),
   websites: z.array(ContactWebsiteInputSchema).optional(),
   bankAccounts: z.array(ContactBankAccountInputSchema).optional(),
+  expectedUpdatedAt: z.iso
+    .datetime()
+    .optional()
+    .describe("The contact's updatedAt as read; a newer change answers 409 instead of being overwritten."),
 });
 
 const MoveContactSchema = z.object({
@@ -1615,6 +1641,42 @@ const app = new Hono<AuthContext>()
     },
   )
 
+  .post(
+    "/books/:bookId/contacts/:contactId/addresses/:addressId/locate",
+    documentRoute({
+      tags: ["Contacts"],
+      summary: "Locate a contact address",
+      description:
+        "Looks up a pending address once through Cloud's geo service on the caller's budget and stores the answer with the address. An address that already has a stored answer returns it without a new lookup; only a changed address searches again.",
+      ...requiresAuth,
+      responses: {
+        ...bookScopedResponses,
+        200: jsonResponse(ContactAddressLocateResultSchema, "Stored location or why it is unavailable"),
+        404: jsonResponse(ErrorResponseSchema, "Book, contact, or address not found"),
+      },
+    }),
+    async (c) => {
+      const bookId = c.req.param("bookId") ?? "";
+      const contactId = c.req.param("contactId") ?? "";
+      const internalBookId = await resolvePublicId("books", bookId);
+      if (!internalBookId) return respond(c, fail(err.notFound("Book")));
+      const [internalContactId] = (await resolveBookPublicIds("contacts", internalBookId, [contactId])) ?? [];
+      if (!internalContactId) return failAfterBookAccess(c, [{ bookId: internalBookId, level: "read" }], err.notFound("Contact"));
+      return respond(
+        c,
+        await contactsService.contact.locateAddress({
+          actor: c.get("actor"),
+          accessSubject: c.get("accessSubject"),
+          bookId: internalBookId,
+          contactId: internalContactId,
+          addressId: c.req.param("addressId") ?? "",
+          geocode: async (input) => geocodeOutcome(await geoClient.geocode(input, geoCaller(c))),
+          signal: c.req.raw.signal,
+        }),
+      );
+    },
+  )
+
   .get(
     "/books/:bookId/contacts/:contactId/tree",
     documentRoute({
@@ -1703,7 +1765,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const bookId = c.req.param("bookId") ?? "";
       const contactId = c.req.param("contactId") ?? "";
-      const data = c.req.valid("json");
+      const { expectedUpdatedAt, ...data } = c.req.valid("json");
 
       const internalBookId = await resolvePublicId("books", bookId);
       if (!internalBookId) return respond(c, fail(err.notFound("Book")));
@@ -1717,6 +1779,7 @@ const app = new Hono<AuthContext>()
         bookId: internalBookId!,
         id: ids[0]!,
         data: internalData,
+        expectedUpdatedAt,
       });
       return respond(c, result.ok ? ok((await projectContacts([result.data]))[0]!) : result);
     },

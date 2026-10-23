@@ -1,7 +1,12 @@
 import { beforeAll, expect, test } from "bun:test";
-import { type GotenbergConfig, renderHtmlToPdfWithConfig } from "@k2b/cloud/services/pdf";
-import { pdfFonts, pdfLigatures, pdfText, pdfTitle } from "../../../../scripts/fixtures/pdf-info";
+import { geoMapSnapshotFingerprint, geoMapSnapshotPart } from "@k2b/cloud/contracts/geo-snapshot";
+import { serializeGeoDocument } from "@k2b/cloud/geo/document";
+import { type GotenbergConfig, prepareGeoMapSnapshotAssets, renderHtmlToPdfWithConfig } from "@k2b/cloud/services/pdf";
+import sharp from "sharp";
+import { pdfFonts, pdfImages, pdfLigatures, pdfText, pdfTitle } from "../../../../scripts/fixtures/pdf-info";
 import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { fictionalMap, fictionalRouteMap } from "../lib/map.test-fixture";
+import { notebookMapRevision, parseNotebookMapBlocks } from "../lib/map-blocks";
 import { buildNotePdfHtml } from "./note-pdf";
 
 const NOTICES = ["note", "info", "success", "warning", "danger"] as const;
@@ -12,6 +17,73 @@ suiteFor("gotenberg", "valkey")("note PDF export in Gotenberg", () => {
   beforeAll(() => {
     config = { url: requireInfraUrl("gotenberg"), timeoutMs: 30_000, maxHtmlBytes: 5 * 1024 * 1024, maxPdfBytes: 32 * 1024 * 1024 };
   });
+
+  test("validated map and route PNGs survive the Notebook offline PDF pipeline with all source links", async () => {
+    // Browser tests prove complete CloudMap captures. This checks the Notebook assembly and real decoder/PDF seam.
+    const markdown = `${serializeGeoDocument(fictionalMap())}\n\n${serializeGeoDocument(fictionalRouteMap())}`;
+    const blocks = parseNotebookMapBlocks(markdown).blocks;
+    const form = new FormData();
+    const images = await Promise.all(
+      blocks.map(async (block, index) => {
+        const data = await sharp({
+          create: { width: 520, height: index ? 150 : 186, channels: 3, background: index ? "#cbd5e1" : "#b4d5e0" },
+        })
+          .png()
+          .toBuffer();
+        const id = `line-${block.line}`;
+        form.set(geoMapSnapshotPart(id), new Blob([data], { type: "image/png" }));
+        return { id, fingerprint: await geoMapSnapshotFingerprint(block.document), width: 520, height: index ? 150 : 186 };
+      }),
+    );
+    const revision = await notebookMapRevision(markdown);
+    form.set("mapSnapshots", JSON.stringify({ version: 1, revision, images }));
+    const assets = await prepareGeoMapSnapshotAssets(form, { revision, maps: images, maxBytes: config.maxHtmlBytes });
+    const { html, omissions } = buildNotePdfHtml({
+      markdown,
+      notebookShortId: "Book01",
+      locale: "en",
+      publicOrigin: "https://cloud.example.test",
+      mapImages: new Map(assets.map((asset) => [Number(asset.id.slice(5)), { src: asset.name, width: asset.width, height: asset.height }])),
+    });
+    expect(omissions).toEqual([]);
+    const { pdf } = await renderHtmlToPdfWithConfig({ html, assets }, config);
+    expect((await pdfImages(pdf)).filter((image) => image.type === "image").map(({ width, height }) => [width, height])).toEqual([
+      [520, 186],
+      [520, 150],
+    ]);
+    expect(await pdfText(pdf)).toContain("OpenMapTiles");
+    const raw = Buffer.from(pdf).toString("latin1");
+    expect(raw).toContain("https://www.openstreetmap.org/copyright");
+    expect(raw).toContain("https://example.org/museum");
+  }, 60_000);
+
+  test("unavailable map images export linked pin and route lists with visible sources", async () => {
+    const { html, omissions } = buildNotePdfHtml({
+      markdown: `${serializeGeoDocument(fictionalMap())}\n\n${serializeGeoDocument(fictionalRouteMap())}`,
+      notebookShortId: "Book01",
+      locale: "en",
+      publicOrigin: "https://cloud.example.test",
+    });
+    expect(omissions.filter((omission) => omission.kind === "map")).toHaveLength(2);
+    const { pdf } = await renderHtmlToPdfWithConfig({ html, title: "Fictional map plan" }, config);
+    const text = await pdfText(pdf);
+    for (const content of [
+      "Münster",
+      "Fischerviertel",
+      "Museum Ulm",
+      "Glacis-Park",
+      "Geoapify",
+      "OpenStreetMap",
+      "Ulm Hbf",
+      "Stuttgart Hbf",
+      "95 km",
+    ])
+      expect(text).toContain(content);
+    expect(text).not.toContain(":::map");
+    const raw = Buffer.from(pdf).toString("latin1");
+    expect(raw).toContain("https://example.org/museum");
+    expect(raw).toContain("https://cloud.example.test/app/notebooks/Book01/notes/Note01?mode=book");
+  }, 60_000);
 
   test("PDF links use the public Cloud origin while own headings stay PDF destinations", async () => {
     const markdown = [

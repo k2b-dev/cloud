@@ -51,7 +51,7 @@ describe("Contacts search route state", () => {
     expect(readContactsQueryOptions(href)).toEqual({ sort: "created", email: "yes", phone: "all", favorites: true });
   });
   test("never carries a completed mutation outcome into reusable navigation", () => {
-    const href = "/app/contacts/book-1?contact=one&contactBook=book-1&contactOutcome=created";
+    const href = "/app/contacts/book-1?contact=one&contactBook=book-1&contactOutcome=created&address=old-address";
     for (const result of [
       contactsResultHref(href),
       buildContactsSearchHref(href, "Ada"),
@@ -59,7 +59,9 @@ describe("Contacts search route state", () => {
       buildContactsPaginationBaseHref(href),
       buildContactsQueryHref(href, { sort: "created" }),
       buildContactDetailHref(href, "other", "book-1"),
-    ])
+    ]) {
       expect(result).not.toContain("contactOutcome");
+      expect(result).not.toContain("address=");
+    }
   });
 });

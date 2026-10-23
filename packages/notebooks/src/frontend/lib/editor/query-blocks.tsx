@@ -1,14 +1,18 @@
+import { isolateHistory } from "@codemirror/commands";
 import { setDiagnostics } from "@codemirror/lint";
 import { type EditorState, type Extension, type Range, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
+import { type GeoDocument, serializeGeoDocument } from "@k2b/cloud/geo/document";
 import { query, timed } from "@k2b/stdlib/solid";
 import { Button } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 import { chartBlockFrame, notebookChartFrameHtml } from "../../../lib/chart-blocks";
+import { parseNotebookMapBlocks, renderNotebookMapFigure } from "../../../lib/map-blocks";
 import { extractNotebookDirectiveRanges } from "../../../lib/query-blocks";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../../[id]/_components/sidebar/workspace-events";
 import { enhanceNotebookCharts } from "../notebook-charts";
+import { enhanceNotebookMaps } from "../notebook-maps";
 import {
   blockWidgetLineNavigationExtension,
   holdsDecorations,
@@ -38,6 +42,8 @@ const previewEffect = StateEffect.define<PreviewSnapshot>();
 class QueryBlockWidget extends WidgetType {
   private dispose?: () => void;
   private restoreCharts?: () => void;
+  private restoreMaps?: () => void;
+  private destroyed = false;
 
   constructor(
     private block: BlockRange,
@@ -47,6 +53,9 @@ class QueryBlockWidget extends WidgetType {
     private staleReadOnly = false,
     /** A chart's title and kind from its source: the frame stands while its drawing loads or fails. */
     private chart: ChartFrame | null = null,
+    private map: GeoDocument | null = null,
+    private notebookId = "",
+    private mapSource = "",
   ) {
     super();
   }
@@ -63,6 +72,7 @@ class QueryBlockWidget extends WidgetType {
       other.chart?.area === this.chart?.area &&
       other.chart?.title === this.chart?.title &&
       other.chart?.subtitle === this.chart?.subtitle &&
+      other.mapSource === this.mapSource &&
       other.snapshot.failed === this.snapshot.failed &&
       other.snapshot.locale === this.snapshot.locale &&
       other.snapshot.result?.headings === this.snapshot.result?.headings
@@ -84,6 +94,47 @@ class QueryBlockWidget extends WidgetType {
       content.innerHTML = this.html;
       // A drawn chart gets the same tooltips, table and Copy data as in Book.
       this.restoreCharts = enhanceNotebookCharts(content, this.snapshot.locale);
+      let currentSource = view.state.sliceDoc(this.block.from, this.block.to);
+      // MapView reads theme ancestors on mount, after CodeMirror attaches the widget.
+      queueMicrotask(() => {
+        if (this.destroyed || !content.isConnected) return;
+        this.restoreMaps = enhanceNotebookMaps(
+          content,
+          this.snapshot.locale,
+          view.state.readOnly
+            ? undefined
+            : (_previous, next) => {
+                if (view.state.readOnly) return false;
+                // A changed or moved block gets a new widget; never replace a different block with identical source.
+                const matches = extractNotebookDirectiveRanges(view.state.doc.toString()).filter(
+                  (block) =>
+                    block.type === "map" && block.from === this.block.from && view.state.sliceDoc(block.from, block.to) === currentSource,
+                );
+                if (matches.length !== 1) return false;
+                const block = matches[0]!;
+                const insert = serializeGeoDocument(next);
+                view.dispatch({
+                  changes: { from: block.from, to: block.to, insert },
+                  annotations: isolateHistory.of("full"),
+                  userEvent: "input.map",
+                });
+                currentSource = insert;
+                return true;
+              },
+        );
+      });
+    } else if (this.map) {
+      // Source-owned geometry and links reserve the map/list box while the canonical preview is pending.
+      // No map requests or editing controls mount before that authorized response arrives.
+      content.innerHTML = renderNotebookMapFigure(this.map, { locale: this.snapshot.locale, notebookId: this.notebookId });
+      if (!view.state.readOnly && (!this.map.route || this.map.pins.length)) {
+        const search = document.createElement("div");
+        search.className = "notebook-map__search-placeholder";
+        search.setAttribute("aria-hidden", "true");
+        content.querySelector(".notebook-map__body")?.prepend(search);
+      }
+      const status = content.querySelector<HTMLElement>(".notebook-map__placeholder");
+      if (status) status.textContent = this.snapshot.failed ? t.failed : this.staleReadOnly ? t.savedChanged : t.loading;
     } else if (this.chart) {
       // The frame keeps the drawn chart's height, so loading, a failure or a reload message never moves the note.
       const status = document.createElement("p");
@@ -148,8 +199,10 @@ class QueryBlockWidget extends WidgetType {
   }
 
   override destroy() {
+    this.destroyed = true;
     this.dispose?.();
     this.restoreCharts?.();
+    this.restoreMaps?.();
   }
   override ignoreEvent() {
     return true;
@@ -157,6 +210,7 @@ class QueryBlockWidget extends WidgetType {
   override get estimatedHeight() {
     // Widget margins, border, padding and controls (66px), the title row beside the chart's 28px controls and the
     // kind's fixed frame (app.css).
+    if (this.map) return this.map.route && !this.map.pins.length ? 66 + 30 + 10 + 240 : 66 + 30 + 10 + 36 + 10 + 320 + 10 + 176;
     if (this.chart) return 66 + (this.chart.subtitle ? 44 : 28) + 8 + (this.chart.kind === "stat" ? 160 : 288);
     // Query tables have 14px / 21px text, 16px cell padding and row dividers;
     // controls, widget padding/border and table spacing add 65px.
@@ -225,6 +279,7 @@ export function createQueryBlockPreviews(options: {
       if (selectionIntersectsRange(state.selection.main, block.from, block.to)) continue;
       const source = block.type === "chart" ? document.slice(block.from, block.to) : "";
       const html = result?.blocks.find((entry) => entry.line === block.line)?.html ?? (source ? drawnCharts.get(source) : undefined);
+      const map = block.type === "map" ? (parseNotebookMapBlocks(document.slice(block.from, block.to)).blocks[0]?.document ?? null) : null;
       const chart = block.type === "chart" ? chartBlockFrame(source.split("\n").slice(1, block.closed ? -1 : undefined)) : null;
       const diagnostic = result?.diagnostics
         .filter((entry) => entry.line >= block.line && entry.line <= state.doc.lineAt(block.to).number)
@@ -239,6 +294,9 @@ export function createQueryBlockPreviews(options: {
             diagnostic || undefined,
             options.readOnly && !!next.result && !result,
             chart,
+            map,
+            options.notebookId,
+            map ? document.slice(block.from, block.to) : "",
           ),
           block: true,
         }).range(block.from, block.to),

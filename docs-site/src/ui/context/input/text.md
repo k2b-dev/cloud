@@ -21,6 +21,10 @@ Pass `value` directly or as a Solid accessor. `onValueChange` receives every
 edit. `onValueCommit` receives the committed string, normally when the field
 loses focus.
 
+`onKeyDown` reaches native inputs and plain textareas before the built-in Enter
+submission. Call `event.preventDefault()` to handle Enter yourself without also
+calling `onSubmit`. Escape and arrow keys remain available to the caller.
+
 `clearable` adds a clear button to a single-line field. Without `onClear`,
 clearing emits an empty string through both value callbacks.
 
