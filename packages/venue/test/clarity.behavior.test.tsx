@@ -131,7 +131,7 @@ describe("Venue clarity behavior", () => {
   }
 
   // The UTC slot fixtures expect Berlin's summer offset, independent of the day this suite runs.
-  beforeEach(() => setSystemTime(new Date("2026-09-16T10:00:00.000Z")));
+  beforeEach(() => setSystemTime(new Date("2026-09-16T10:07:12.345Z")));
   afterEach(() => setSystemTime());
 
   test("the sign-up dialog lists every shift of its window and loads the next one on request", async () => {
@@ -359,7 +359,7 @@ describe("Venue clarity behavior", () => {
       add.click();
       await flush();
       const [body] = bodies;
-      expect(new Date(body!.startsAt).getTime() % (15 * 60_000)).toBe(0);
+      expect(new Date(body!.startsAt).toISOString()).toBe("2026-09-16T10:15:00.000Z");
       expect(new Date(body!.endsAt).getTime() - new Date(body!.startsAt).getTime()).toBe(2 * 60 * 60_000);
       expect(closes).toEqual([true]);
     } finally {
