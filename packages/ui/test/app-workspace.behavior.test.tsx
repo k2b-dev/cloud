@@ -130,16 +130,13 @@ describe("@k2b/ui AppWorkspace behavior", () => {
       const body = dom.root.firstElementChild as HTMLElement;
       Object.defineProperties(body, { scrollHeight: { configurable: true, value: 500 }, clientHeight: { value: 200 } });
       body.dispatchEvent(new Event("scroll"));
-      await new Promise<void>((done) => requestAnimationFrame(() => done()));
       expect(body.dataset.scrollFade).toBe("bottom");
       body.scrollTop = 300;
       body.dispatchEvent(new Event("scroll"));
-      await new Promise<void>((done) => requestAnimationFrame(() => done()));
       expect(body.dataset.scrollFade).toBe("top");
       body.scrollTop = 0;
       Object.defineProperty(body, "scrollHeight", { value: 200 });
       body.dispatchEvent(new Event("scroll"));
-      await new Promise<void>((done) => requestAnimationFrame(() => done()));
       expect(body.dataset.scrollFade).toBeUndefined();
     } finally {
       dispose();

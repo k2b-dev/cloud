@@ -16,41 +16,26 @@ export function scrollFadeEdges(body: HTMLElement): "top" | "bottom" | "both" | 
   return top && bottom ? "both" : top ? "top" : bottom ? "bottom" : undefined;
 }
 
-const pending = new Set<HTMLElement>();
-let frame: number | undefined;
-
-function applyScrollFade(body: HTMLElement, edges: ReturnType<typeof scrollFadeEdges>) {
-  if (edges) {
-    if (body.getAttribute("data-scroll-fade") !== edges) body.setAttribute("data-scroll-fade", edges);
-  } else if (body.hasAttribute("data-scroll-fade")) body.removeAttribute("data-scroll-fade");
-}
-
-function scheduleScrollFade(body: HTMLElement) {
-  pending.add(body);
-  frame ??= requestAnimationFrame(() => {
-    frame = undefined;
-    const bodies = [...pending];
-    pending.clear();
-    // Every port reads the same layout before any fade attribute changes it.
-    const edges = bodies.map(scrollFadeEdges);
-    for (const [index, body] of bodies.entries()) applyScrollFade(body, edges[index]);
-  });
-}
-
 /** Shared by hydrated components and the workspace's server-rendered scrollports. */
 function observeScrollFade(body: HTMLElement) {
   let entry = active.get(body);
   if (!entry) {
-    const update = () => scheduleScrollFade(body);
+    const update = () => {
+      const edges = scrollFadeEdges(body);
+      if (edges) {
+        if (body.getAttribute("data-scroll-fade") !== edges) body.setAttribute("data-scroll-fade", edges);
+      } else if (body.hasAttribute("data-scroll-fade")) body.removeAttribute("data-scroll-fade");
+    };
     const resize = new ResizeObserver(update);
     const observe = () => {
       resize.disconnect();
       resize.observe(body);
       for (const child of Array.from(body.children)) resize.observe(child);
+      update();
     };
     const mutations = new MutationObserver((records) => {
       if (records.some((record) => record.type === "childList" && record.target === body)) observe();
-      update();
+      else update();
     });
     mutations.observe(body, {
       childList: true,
@@ -61,16 +46,9 @@ function observeScrollFade(body: HTMLElement) {
     });
     body.addEventListener("scroll", update, { passive: true });
     observe();
-    // Preserve the initial SSR/hydrated fade; later invalidations share one frame.
-    applyScrollFade(body, scrollFadeEdges(body));
     entry = {
       users: 0,
       stop: () => {
-        pending.delete(body);
-        if (pending.size === 0 && frame !== undefined) {
-          cancelAnimationFrame(frame);
-          frame = undefined;
-        }
         resize.disconnect();
         mutations.disconnect();
         body.removeEventListener("scroll", update);

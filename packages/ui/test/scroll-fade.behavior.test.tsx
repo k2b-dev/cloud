@@ -3,8 +3,6 @@ import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
-const nextFrame = () => new Promise<void>((done) => requestAnimationFrame(() => done()));
-
 if (isServer) test.skip("requires browser conditions", () => {});
 else
   test("shared scroll fade follows both edges, content changes and reactive opt-out", async () => {
@@ -28,27 +26,25 @@ else
         );
         const body = dom.root.firstElementChild as HTMLElement;
         Object.defineProperties(body, { scrollHeight: { configurable: true, value: 500 }, clientHeight: { value: 200 } });
-        const scroll = async (top: number) => {
+        const scroll = (top: number) => {
           body.scrollTop = top;
           body.dispatchEvent(new Event("scroll"));
-          await nextFrame();
         };
-        await scroll(0);
+        scroll(0);
         expect(body.dataset.scrollFade).toBe("bottom");
         setEnabled(true);
-        await scroll(100);
+        scroll(100);
         expect(body.dataset.scrollFade).toBe("both");
-        await scroll(300);
+        scroll(300);
         expect(body.dataset.scrollFade).toBe("top");
         setEnabled(false);
-        await scroll(100);
+        scroll(100);
         expect(body.dataset.scrollFade).toBeUndefined();
         setEnabled(true);
         expect(body.dataset.scrollFade).toBe("both");
         Object.defineProperty(body, "scrollHeight", { value: 200 });
         body.textContent = "Short content";
-        await Promise.resolve();
-        await nextFrame();
+        await new Promise((resolve) => setTimeout(resolve, 10));
         expect(body.dataset.scrollFade).toBeUndefined();
         dispose();
       }
@@ -71,14 +67,12 @@ if (!isServer)
       first();
       port.scrollTop = 100;
       port.dispatchEvent(new Event("scroll"));
-      await nextFrame();
       expect(port.dataset.scrollFade).toBe("both");
       const next = dom.document.createElement("div");
       next.setAttribute("data-scroll-fade-mode", "bottom");
       Object.defineProperties(next, { scrollHeight: { value: 500 }, clientHeight: { value: 100 } });
       dom.root.append(next);
-      await Promise.resolve();
-      await nextFrame();
+      await new Promise((resolve) => setTimeout(resolve, 10));
       expect(next.getAttribute("data-scroll-fade")).toBe("bottom");
       expect(dom.root.querySelector(".unmanaged")?.hasAttribute("data-scroll-fade")).toBe(false);
       second();
@@ -131,36 +125,32 @@ if (!isServer)
         scrollHeight: { value: 200 },
         clientHeight: { value: 200 },
       });
-      const scroll = async (left: number) => {
+      const scroll = (left: number) => {
         body.scrollLeft = left;
         body.dispatchEvent(new Event("scroll"));
-        await nextFrame();
       };
-      await scroll(0);
+      scroll(0);
       expect(body.dataset.scrollFade, "initial horizontal").toBe("bottom");
-      await scroll(120);
+      scroll(120);
       expect(body.dataset.scrollFade).toBe("both");
-      await scroll(300);
+      scroll(300);
       expect(body.dataset.scrollFade).toBe("top");
       body.style.direction = "rtl";
-      await scroll(0);
+      scroll(0);
       expect(body.dataset.scrollFade).toBe("top");
-      await scroll(-120);
+      scroll(-120);
       expect(body.dataset.scrollFade).toBe("both");
-      await scroll(-300);
+      scroll(-300);
       expect(body.dataset.scrollFade, "rtl end").toBe("bottom");
       setOrientation("vertical");
       await Promise.resolve();
-      await nextFrame();
       expect(body.dataset.scrollFade).toBeUndefined();
       setOrientation("horizontal");
       await Promise.resolve();
-      await nextFrame();
       expect(body.dataset.scrollFade, "after axis restored").toBe("bottom");
       Object.defineProperty(body, "scrollWidth", { value: 200 });
       body.textContent = "Short";
       await Promise.resolve();
-      await nextFrame();
       expect(body.dataset.scrollFade).toBeUndefined();
     } finally {
       dispose();
@@ -192,7 +182,6 @@ if (!isServer)
       const list = dom.root.querySelector<HTMLElement>('[role="tablist"]')!;
       Object.defineProperties(list, { scrollWidth: { value: 500 }, clientWidth: { value: 100 } });
       list.dispatchEvent(new Event("scroll"));
-      await nextFrame();
       expect(list.dataset.scrollFade).toBe("bottom");
       expect(dom.root.querySelectorAll("[data-scroll-fade-mode]").length).toBe(1);
       setOrientation("vertical");
@@ -248,7 +237,6 @@ if (!isServer)
       expect(body.dataset.scrollFade).toBe("bottom");
       body.scrollTop = 300;
       body.dispatchEvent(new Event("scroll"));
-      await nextFrame();
       expect(body.dataset.scrollFade).toBe("top");
     } finally {
       stop();
