@@ -23,3 +23,31 @@ test("Help follows the app's declared visibility and always needs a user", () =>
   expect(visible({ href: "", section: "hidden", requiresRoles: ["admin"] })).toEqual([false, false, false, true]);
   expect(visible({ href: "", section: "hidden", adminHref: "/admin/x" })).toEqual([false, false, false, true]);
 });
+
+test("Help hides a denied app before loading its manifest, content, or search results", async () => {
+  const { createHelpReader } = await import("./index");
+  const app = {
+    id: "secret",
+    name: "Secret",
+    description: "Secret",
+    icon: "ti ti-lock",
+    routes: [],
+    baseUrl: "http://secret.invalid",
+    access: { kind: "roles" as const, roles: ["admin" as const] },
+    help: { manifestHash: "a".repeat(64), pageBase: "/help/apps/secret", baseLocale: "en" },
+  };
+  const reader = createHelpReader("en", user, {
+    authority: {
+      actor: user,
+      accessSubject: { type: "user", userId: user.kind === "user" ? user.user.id : "" },
+      credentialKind: "session",
+      scopes: [],
+    },
+    getApp: async () => app,
+    listApps: async () => [app],
+  });
+  expect(await reader.manifest("secret")).toBeNull();
+  expect(await reader.read({ appId: "secret", documentId: "secret" })).toBeNull();
+  expect(await reader.list()).toEqual([]);
+  expect(await reader.search({ query: "secret" })).toEqual([]);
+});

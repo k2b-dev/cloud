@@ -3,6 +3,7 @@ import { type RequestOptions as HttpsRequestOptions, request as httpsRequest } f
 import { z } from "zod";
 import { DOCUMENT_EXTRACTION_MAX_INPUT_BYTES, DOCUMENT_EXTRACTION_MAX_OUTPUT_BYTES } from "../services/document-extraction";
 import { type PublicNetworkAddress, resolvePublicNetworkAddresses } from "../services/network-security";
+import { awaitNetworkOperation, readNetworkResponse, withNetworkDeadline } from "../services/network-transport";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, guessAiMediaType, normalizeAiFilePath } from "./files-store";
 import { authorizeWebRead } from "./firecrawl-tools";
 import { htmlToReadableMarkdown } from "./readable-html";
@@ -21,10 +22,11 @@ type PublicFileResponse = {
 type FetchFileDependencies = {
   resolve?: (hostname: string) => Promise<PublicNetworkAddress[]>;
   request?: RequestFactory;
+  timeoutMs?: number;
   requestPublicFile?: (
     url: URL,
     addresses: PublicNetworkAddress[],
-    options: { maxBytes: number; signal?: AbortSignal },
+    options: { maxBytes: number; signal: AbortSignal },
   ) => Promise<PublicFileResponse>;
 };
 
@@ -72,7 +74,6 @@ export const buildPinnedFetchFileRequestOptions = (url: URL, addresses: PublicNe
     },
     servername: url.hostname,
     rejectUnauthorized: true,
-    timeout: FETCH_FILE_REQUEST_TIMEOUT_MS,
   }));
 };
 
@@ -103,52 +104,40 @@ const httpFileError = (statusCode: number): Error => {
 const requestOneAddress = (
   request: RequestFactory,
   options: HttpsRequestOptions,
-  input: { maxBytes: number; signal?: AbortSignal },
-): Promise<PublicFileResponse> =>
-  new Promise((resolve, reject) => {
-    let settled = false;
-    let responseReceived = false;
-    let outgoing: ClientRequest;
-    const abort = () => outgoing.destroy(new Error("File download was cancelled."));
-    const finish = (result: { value?: PublicFileResponse; error?: Error }) => {
-      if (settled) return;
-      settled = true;
-      input.signal?.removeEventListener("abort", abort);
-      if (result.error) reject(responseReceived ? Object.assign(result.error, { responseReceived: true }) : result.error);
-      else resolve(result.value!);
-    };
-    outgoing = request(options, (incoming) => {
+  input: { maxBytes: number; signal: AbortSignal },
+): Promise<PublicFileResponse> => {
+  let responseReceived = false;
+  return readNetworkResponse<PublicFileResponse>({
+    request,
+    options,
+    signal: input.signal,
+    read: (incoming, resolve, reject) => {
       responseReceived = true;
       const statusCode = incoming.statusCode ?? 0;
       if (statusCode >= 300 && statusCode < 400) {
-        incoming.resume();
-        finish({ value: { statusCode, headers: incoming.headers, bytes: new Uint8Array() } });
+        resolve({ statusCode, headers: incoming.headers, bytes: new Uint8Array() });
         return;
       }
       if (statusCode < 200 || statusCode >= 300) {
-        incoming.resume();
-        finish({ error: httpFileError(statusCode) });
+        reject(httpFileError(statusCode));
         return;
       }
       const contentEncoding = String(incoming.headers["content-encoding"] ?? "identity")
         .trim()
         .toLowerCase();
       if (contentEncoding !== "" && contentEncoding !== "identity") {
-        incoming.destroy();
-        finish({ error: responseError("Unsupported file response — The server compressed the download unexpectedly.") });
+        reject(responseError("Unsupported file response — The server compressed the download unexpectedly."));
         return;
       }
       let declared: number | null;
       try {
         declared = declaredContentLength(incoming.headers);
       } catch (error) {
-        incoming.destroy();
-        finish({ error: responseError(error instanceof Error ? error.message : "File response length is invalid.") });
+        reject(responseError(error instanceof Error ? error.message : "File response length is invalid."));
         return;
       }
       if (declared !== null && declared > input.maxBytes) {
-        incoming.destroy();
-        finish({ error: responseError(`File is too large — The download exceeds the ${fileLimitLabel(input.maxBytes)} limit.`) });
+        reject(responseError(`File is too large — The download exceeds the ${fileLimitLabel(input.maxBytes)} limit.`));
         return;
       }
 
@@ -158,36 +147,29 @@ const requestOneAddress = (
         const bytes = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
         size += bytes.byteLength;
         if (size > input.maxBytes) {
-          incoming.destroy();
-          finish({ error: responseError(`File is too large — The download exceeds the ${fileLimitLabel(input.maxBytes)} limit.`) });
+          reject(responseError(`File is too large — The download exceeds the ${fileLimitLabel(input.maxBytes)} limit.`));
           return;
         }
         chunks.push(bytes);
       });
       incoming.on("end", () => {
         if (declared !== null && size !== declared) {
-          finish({ error: responseError("Incomplete file download — The received size did not match the server response.") });
+          reject(responseError("Incomplete file download — The received size did not match the server response."));
           return;
         }
         const body = Buffer.concat(chunks, size);
-        finish({ value: { statusCode, headers: incoming.headers, bytes: new Uint8Array(body) } });
+        resolve({ statusCode, headers: incoming.headers, bytes: new Uint8Array(body) });
       });
-      incoming.on("error", (error) => finish({ error }));
-    });
-    outgoing.on("timeout", () => outgoing.destroy(new Error("File server did not respond — Try again later.")));
-    outgoing.on("error", (error) => finish({ error }));
-    if (input.signal?.aborted) {
-      abort();
-      return;
-    }
-    input.signal?.addEventListener("abort", abort, { once: true });
-    outgoing.end();
+    },
+  }).catch((error) => {
+    throw responseReceived ? Object.assign(error, { responseReceived: true }) : error;
   });
+};
 
 const requestPublicFile = async (
   url: URL,
   addresses: PublicNetworkAddress[],
-  options: { maxBytes: number; signal?: AbortSignal },
+  options: { maxBytes: number; signal: AbortSignal },
   request: RequestFactory = httpsRequest,
 ): Promise<PublicFileResponse> => {
   let lastError: unknown;
@@ -235,42 +217,51 @@ type WebsiteApprovedDownload = { origin: string; onRequest: (url: URL, hop: numb
 export const downloadPublicFile = async (
   rawUrl: string,
   options: FetchFileDependencies & { maxBytes?: number; signal?: AbortSignal; approvedWebsite?: WebsiteApprovedDownload } = {},
-): Promise<{ bytes: Uint8Array; headers: IncomingHttpHeaders; url: URL }> => {
-  const resolve = options.resolve ?? resolvePublicNetworkAddresses;
-  const perform =
-    options.requestPublicFile ??
-    ((url: URL, addresses: PublicNetworkAddress[], input: { maxBytes: number; signal?: AbortSignal }) =>
-      requestPublicFile(url, addresses, input, options.request));
-  const maxBytes = options.maxBytes ?? AI_FILES_MAX_FILE_BYTES_DEFAULT;
-  let url = publicHttpsUrl(rawUrl);
+): Promise<{ bytes: Uint8Array; headers: IncomingHttpHeaders; url: URL }> =>
+  withNetworkDeadline(
+    options.timeoutMs ?? FETCH_FILE_REQUEST_TIMEOUT_MS,
+    options.signal,
+    new Error("File server did not respond — Try again later."),
+    async (signal) => {
+      const resolve = options.resolve ?? resolvePublicNetworkAddresses;
+      const perform =
+        options.requestPublicFile ??
+        ((url: URL, addresses: PublicNetworkAddress[], input: { maxBytes: number; signal: AbortSignal }) =>
+          requestPublicFile(url, addresses, input, options.request));
+      const maxBytes = options.maxBytes ?? AI_FILES_MAX_FILE_BYTES_DEFAULT;
+      let url = publicHttpsUrl(rawUrl);
 
-  for (let redirects = 0; redirects <= FETCH_FILE_MAX_REDIRECTS; redirects++) {
-    if (options.approvedWebsite) {
-      // A website approval covers its own origin only; an open redirect must not carry the address to another one.
-      if (url.origin !== options.approvedWebsite.origin)
-        throw new Error(
-          `Redirect to another website — The file moved to ${url.toString()}, which this chat has not allowed. Download that address directly so the person can decide.`,
-        );
-      await options.approvedWebsite.onRequest(url, redirects);
-    }
-    const addresses = await resolveFileAddresses(resolve, url.hostname);
-    const response = await perform(url, addresses, { maxBytes, signal: options.signal });
-    if (response.statusCode >= 300 && response.statusCode < 400) {
-      const location = responseLocation(response.headers);
-      if (!location) throw new Error("Invalid file redirect — The server did not provide a destination.");
-      if (redirects === FETCH_FILE_MAX_REDIRECTS) throw new Error("Too many file redirects — Use the final file URL instead.");
-      try {
-        url = publicHttpsUrl(new URL(location, url).toString());
-      } catch (error) {
-        if (error instanceof Error && error.message.includes(" — ")) throw error;
-        throw new Error("Invalid file redirect — The server provided an invalid destination.");
+      for (let redirects = 0; redirects <= FETCH_FILE_MAX_REDIRECTS; redirects++) {
+        signal.throwIfAborted();
+        if (options.approvedWebsite) {
+          // A website approval covers its own origin only; an open redirect must not carry the address to another one.
+          if (url.origin !== options.approvedWebsite.origin)
+            throw new Error(
+              `Redirect to another website — The file moved to ${url.toString()}, which this chat has not allowed. Download that address directly so the person can decide.`,
+            );
+          await awaitNetworkOperation(options.approvedWebsite.onRequest(url, redirects), signal);
+        }
+        signal.throwIfAborted();
+        const addresses = await awaitNetworkOperation(resolveFileAddresses(resolve, url.hostname), signal);
+        signal.throwIfAborted();
+        const response = await awaitNetworkOperation(perform(url, addresses, { maxBytes, signal }), signal);
+        if (response.statusCode >= 300 && response.statusCode < 400) {
+          const location = responseLocation(response.headers);
+          if (!location) throw new Error("Invalid file redirect — The server did not provide a destination.");
+          if (redirects === FETCH_FILE_MAX_REDIRECTS) throw new Error("Too many file redirects — Use the final file URL instead.");
+          try {
+            url = publicHttpsUrl(new URL(location, url).toString());
+          } catch (error) {
+            if (error instanceof Error && error.message.includes(" — ")) throw error;
+            throw new Error("Invalid file redirect — The server provided an invalid destination.");
+          }
+          continue;
+        }
+        return { bytes: response.bytes, headers: response.headers, url };
       }
-      continue;
-    }
-    return { bytes: response.bytes, headers: response.headers, url };
-  }
-  throw new Error("Too many file redirects — Use the final file URL instead.");
-};
+      throw new Error("Too many file redirects — Use the final file URL instead.");
+    },
+  );
 
 const safeFilename = (requested: string | undefined, url: URL): string => {
   let basename = requested;

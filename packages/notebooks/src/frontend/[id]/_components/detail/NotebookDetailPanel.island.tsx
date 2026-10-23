@@ -793,14 +793,7 @@ export default function NotebookDetailPanel(props: Props) {
                     }
                   >
                     <Tooltip.Anchor content={t().needsConnection} class="notebook-detail-actions__ai">
-                      <Button
-                        size="sm"
-                        variant="ai"
-                        type="button"
-                        class="w-full"
-                        disabled
-                        aria-label={`${t().editWithAi}: ${t().needsConnection}`}
-                      >
+                      <Button size="sm" variant="ai" type="button" disabled aria-label={`${t().editWithAi}: ${t().needsConnection}`}>
                         <i class="ti ti-sparkles" aria-hidden="true" /> {t().editWithAi}
                       </Button>
                     </Tooltip.Anchor>

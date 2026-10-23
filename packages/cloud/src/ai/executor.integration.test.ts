@@ -16,6 +16,7 @@ import { type CapabilityActionReviewData, defineCapabilities } from "../contract
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
+import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import { type CapabilityGrant, mandates } from "../services/mandates";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { normalizeLocale } from "../shared/locale";
@@ -276,8 +277,10 @@ const installAppSkill = async (definition: AppSkillDefinition) => {
     icon: "ti ti-sparkles",
     baseUrl: "http://assistant:3000",
     routes: [],
+    access: { kind: "signedIn" },
     skills: { manifestHash },
   };
+  await registry.appRegistry().upsert({ key: `apps/${entry.id}`, value: entry });
   await registerAppSkills(entry.id, [definition], manifestHash);
   await reconcileAppSkills([entry]);
   return {
@@ -286,6 +289,7 @@ const installAppSkill = async (definition: AppSkillDefinition) => {
       if (row?.skill_id) await aiSkills.admin.delete(row.skill_id);
       await sql`DELETE FROM ai.app_skills WHERE app_id = ${entry.id}`;
       await sql`DELETE FROM ai.app_skill_catalogs WHERE app_id = ${entry.id}`;
+      await registry.appRegistry().delete({ key: `apps/${entry.id}` });
     },
   };
 };
@@ -414,6 +418,10 @@ const createExecutor = (
   });
 
 suite("AI executor integration", () => {
+  // Capability discovery and mandate issuance need the owning app's live access declaration.
+  useRegisteredTestApp("core", { kind: "signedIn" });
+  useRegisteredTestApp("demo", { kind: "signedIn" });
+  useRegisteredTestApp("spaces", { kind: "signedIn" });
   const resumeModes = ["unchanged", "changed", "revoked", "used", "rejected_empty", "approved_empty", "failed_empty"] as const;
   test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();
@@ -1020,13 +1028,19 @@ suite("AI executor integration", () => {
   test("offers to keep recurring work as a Skill only in chats a person follows with skill-creator", async () => {
     const userId = await insertUser();
     const owner = { type: "user" as const, userId };
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+    const authority = await capabilityExecution.resolveAiCapabilityActor({
+      conversationId: conversation.id,
+      persistedActor: { kind: "user", user: actorUser(userId) },
+      store: aiConversations,
+    });
     // Assistant ships skill-creator as an app Skill; install it the same way through the registry catalog.
     const creatorApp = await installAppSkill(
       appSkill({
         markdown: "---\nname: skill-creator\ndescription: Create and improve reusable Assistant Skills.\n---\n\nDraft the Skill.\n",
       }),
     );
-    const creator = (await aiSkills.list(owner)).find((candidate) => candidate.name === "skill-creator");
+    const creator = (await aiSkills.list(owner, { authority })).find((candidate) => candidate.name === "skill-creator");
     if (!creator?.enabled) throw new Error("Expected the app's skill-creator to be enabled for a new user");
     const skill = await aiSkills.create({
       subject: owner,
@@ -1034,7 +1048,6 @@ suite("AI executor integration", () => {
       description: "Write the weekly sales report.",
       instructions: "Summarize the week.",
     });
-    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
     const prompts = new Map<string, string>();
     const runTurn = async (label: string, turnId: string) => {
       const claim = await aiConversations.claimTurn({
@@ -1110,7 +1123,7 @@ suite("AI executor integration", () => {
       expect(background).not.toContain("Offer once at the end");
 
       // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
-      expect(await aiSkills.setEnabled(creator.id, owner, false)).toBeFalse();
+      expect(await aiSkills.setEnabled(creator.id, owner, false, authority)).toBeFalse();
       const { turn: withoutCreator } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
         modelProfileId: MODEL_ID,
@@ -4037,6 +4050,7 @@ suiteFor(
   "nats",
   "valkey",
 )("stored Assistant Action outcomes", () => {
+  useRegisteredTestApp("demo", { kind: "signedIn" });
   beforeAll(async () => {
     await migrateCloudAi();
   });

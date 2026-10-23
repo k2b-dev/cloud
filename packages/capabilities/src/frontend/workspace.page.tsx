@@ -1,4 +1,5 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { appAccessAuthority } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { SearchBar } from "@k2b/cloud/ssr/islands";
 import { AppWorkspace, DataTable, type DataTableColumn, IconButtonLink, Pagination, Placeholder, StatusBadge } from "@k2b/ui";
@@ -203,7 +204,7 @@ export default ssr<AuthContext>(async (c) => {
   const appId = c.req.param("appId");
   if (!appId) return ssr.error(c, 404);
 
-  const workspace = await loadCapabilityWorkspace(appId, {}, getLocale(c));
+  const workspace = await loadCapabilityWorkspace(appId, {}, getLocale(c), appAccessAuthority(c));
   const loaded = workspace.selected;
   if (loaded.kind === "not-found") return ssr.error(c, 404);
 

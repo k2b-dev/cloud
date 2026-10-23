@@ -819,6 +819,20 @@ export const migrate = async (): Promise<void> => {
   console.log("  ✓ auth.access table");
 
   await sql`
+    CREATE TABLE IF NOT EXISTS auth.app_access_state (
+      app_id TEXT PRIMARY KEY,
+      configured_at TIMESTAMPTZ
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS auth.app_access (
+      app_id TEXT NOT NULL REFERENCES auth.app_access_state(app_id) ON DELETE CASCADE,
+      access_id UUID NOT NULL UNIQUE REFERENCES auth.access(id) ON DELETE CASCADE,
+      PRIMARY KEY (app_id, access_id)
+    )
+  `.simple();
+
+  await sql`
     CREATE TABLE IF NOT EXISTS auth.deleted_accounts (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       deleted_user_id UUID NOT NULL,

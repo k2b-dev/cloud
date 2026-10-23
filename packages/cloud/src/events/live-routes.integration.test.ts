@@ -6,6 +6,7 @@ import { SignJWT } from "jose";
 import { z } from "zod";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
 import { prepareIdentitySigner } from "../services/identity/key-ring";
 import { getIdentityRuntimeConfig } from "../services/identity/runtime-config";
@@ -430,4 +431,5 @@ suite("live routes", () => {
       again.socket.close();
     }
   });
+  useRegisteredTestApp("livetest");
 });
