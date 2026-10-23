@@ -1033,6 +1033,13 @@ convention still needs a check or a test.
 - **Error class:** Admission guidance names a recovery path the consumer cannot perform.
 - **Guard:** Assistant uses the shared address autocomplete for stop repair, persists selected points through another refusal, clears them on edits, and permits recovery when credits remain. Service and desktop/phone browser tests cover consecutive refusals, selection, reload, and completion.
 
+### Merged browser fixtures need separate resource routes
+
+- **What happened:** A missing-glyph regression no longer reached its failing handler after two map fixtures were combined.
+- **Root cause:** Both the successful snapshot fixture and the failure fixture used the same glyph URL prefix; the first handler always returned a valid font.
+- **Error class:** Fixture route shadowing removes the intended failure condition.
+- **Guard:** Success and failure glyph routes have distinct prefixes; the regression asserts a failing request occurred and the map offers a visible retry.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

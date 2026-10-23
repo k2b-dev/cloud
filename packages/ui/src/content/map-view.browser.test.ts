@@ -382,7 +382,7 @@ const server = Bun.serve({
     if (url.pathname === "/glyphs.json") {
       return Response.json({
         version: 8,
-        glyphs: `${url.origin}/glyphs/{fontstack}/{range}.pbf`,
+        glyphs: `${url.origin}/missing-glyphs/{fontstack}/{range}.pbf`,
         sources: {
           label: { type: "geojson", data: { type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [9.991, 48.401] } } },
         },
@@ -392,7 +392,7 @@ const server = Bun.serve({
         ],
       });
     }
-    if (url.pathname.startsWith("/glyphs/")) {
+    if (url.pathname.startsWith("/missing-glyphs/")) {
       failedGlyphRequests++;
       return new Response("Glyph unavailable", { status: 500 });
     }

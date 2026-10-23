@@ -514,11 +514,13 @@ describe.each([1440, 390])("route reservation address recovery at %i", (width) =
     await page.getByRole("option", { name: new RegExp(`^${mark} ·`) }).click();
     const field = page.getByRole("combobox", { name: "Startort", exact: true });
     await field.fill("Beispielgasse");
-    await page.getByRole("option", { name: /1 Beispielgasse/ }).waitFor();
+    const index = mark.charCodeAt(0) - 65;
+    const suggestion = page.getByRole("option", { name: new RegExp(`${index + 1} Beispielgasse`) });
+    await suggestion.waitFor();
     if (mark === "C" && process.env.MAP_RECOVERY_EVIDENCE_DIR)
       await page.screenshot({ path: `${process.env.MAP_RECOVERY_EVIDENCE_DIR}/02-suggestions-light-${width}.png`, fullPage: true });
-    await page.getByRole("option", { name: /1 Beispielgasse/ }).click();
-    expect(await field.inputValue()).toBe(mapAddress().formatted);
+    await suggestion.click();
+    expect(await field.inputValue()).toBe(mapAddress(index).formatted);
     return field;
   };
   test("editing a chosen suggestion clears its coordinates before retry", async () => {
@@ -539,14 +541,15 @@ describe.each([1440, 390])("route reservation address recovery at %i", (width) =
     await page.getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
     await response;
     const saved = fixture.get(name).map;
-    expect(saved.plan?.stops.find((stop) => stop.id === mark.toLowerCase())?.point).toEqual(mapAddress().point);
+    expect(saved.plan?.stops.find((stop) => stop.id === mark.toLowerCase())?.point).toEqual(mapAddress(mark.charCodeAt(0) - 65).point);
     if (mark !== "A") {
       expect(saved.issue?.code).toBe("GEO_BUDGET_EXHAUSTED");
       await page.reload();
       await page.getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
     } else {
       expect(saved.issue).toBeUndefined();
-      expect(saved.route).toBeDefined();
+      expect(saved.route?.stops.map((stop) => stop.id)).toEqual(["a", "b", "c"]);
+      expect(saved.route?.stops.map((stop) => stop.point)).toEqual([0, 1, 2].map((index) => mapAddress(index).point));
       await page.getByRole("button", { name: "Optionen", exact: true }).waitFor();
       if (process.env.MAP_RECOVERY_EVIDENCE_DIR)
         await page.screenshot({ path: `${process.env.MAP_RECOVERY_EVIDENCE_DIR}/03-route-light-${width}.png`, fullPage: true });

@@ -6,8 +6,12 @@ import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import { z } from "zod";
 import type { GeoPlaceSearchInput } from "../contracts/geo";
+import { GeoRouteResolvedStopSchema } from "../contracts/geo-route";
+import { GeoapifyAdapter } from "../services/geo/geoapify";
+import { syntheticRouteResponse } from "../services/geo/route.test-fixture";
 import { geoRouteReferenceCost } from "../services/geo/route-costs";
 import { estimateRouteDistance } from "../services/geo/route-estimate";
+import { assembleRoute } from "../services/geo/route-plan";
 import { mapAddress, mapFixture, mapGeoFixture, mapSuccess, mapTime } from "./map.test-fixture";
 import { AiMapActionSchema, AiMapCommandSchema, type AiMapToolResult, aiMapToolResult } from "./map-contracts";
 import { type AiMapContext, applyAiMap } from "./map-service";
@@ -160,6 +164,13 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
                 },
               },
             };
+          const stops = input.plan.stops.map((stop) => GeoRouteResolvedStopSchema.parse(stop));
+          const options = { mode: input.plan.options?.mode ?? "car", avoid: input.plan.options?.avoid ?? [] };
+          const result = await new GeoapifyAdapter({
+            now: () => new Date(mapTime),
+            fetch: async (url) => Response.json(syntheticRouteResponse(url)),
+          }).route(stops, options, false, "synthetic-fixture-key", caller.locale ?? "de");
+          return mapSuccess({ route: assembleRoute(result.stops, options, result.legs, new Date(mapTime)) });
         }
         return geo.geo.calculateRoute(input, caller);
       },
