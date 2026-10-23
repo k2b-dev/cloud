@@ -481,7 +481,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     sidebarWork = work.catch(() => {});
     return work;
   };
-  const reloadSidebar = async (nextArchived = archived, nextUnread = unread) => {
+  const reloadSidebar = async (nextArchived = archived, nextUnread = unread, retainedIds: readonly string[] = []) => {
     const same = nextArchived === archived && nextUnread === unread;
     const depth = same ? rows.length : 0;
     let page = await api.conversations(undefined, nextArchived, nextUnread);
@@ -492,8 +492,11 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     }
     // Read rows remain visible for this visit to Unread, also after a live resync.
     const retained: Conversation[] = [];
-    if (same && unread) {
-      const missing = rows.filter((previous) => !loaded.some((row) => row.id === previous.id)).map((row) => row.id);
+    if (nextUnread) {
+      // The visible visit can outlive a superseded mode request; its owner supplies those retained IDs on recovery.
+      const candidates = new Set([...retainedIds, ...(same ? rows.map((row) => row.id) : [])]);
+      const loadedIds = new Set(loaded.map((row) => row.id));
+      const missing = [...candidates].filter((id) => !loadedIds.has(id));
       for (let offset = 0; offset < missing.length; offset += CONVERSATION_PAGE_SIZE) {
         const page = await api.conversations(undefined, nextArchived, false, missing.slice(offset, offset + CONVERSATION_PAGE_SIZE));
         retained.push(...page.items);
@@ -662,7 +665,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       await sidebar(reloadSidebar);
       return result;
     },
-    showArchive: (next: boolean, nextUnread = unread) => sidebar(() => reloadSidebar(next, nextUnread)),
+    showArchive: (next: boolean, nextUnread = unread, retainedIds: readonly string[] = []) =>
+      sidebar(() => reloadSidebar(next, nextUnread, retainedIds)),
     // A change the reader made shows at once: its chat's row is read again instead of waiting for the live event.
     // Refresh failures leave committed changes successful; live updates and resync repair the row.
     // A chat the reader left answers 404, which removes the row and ends an open view in "No access".

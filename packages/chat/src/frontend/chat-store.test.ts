@@ -1567,3 +1567,28 @@ test("a failed pin-target refresh preserves the definitive 400", async () => {
     store.dispose();
   }
 });
+
+test("retry restores retained read rows from the visible Unread visit after a superseded mode load", async () => {
+  let accessible = true;
+  const idsRead: string[][] = [];
+  const { store } = fixture(
+    {
+      conversations: async (_cursor, _archived, unread, ids) => {
+        if (ids) idsRead.push([...ids]);
+        return { items: ids ? (accessible ? [conversation] : []) : unread ? [] : [conversation], nextCursor: null };
+      },
+    },
+    { unread: true },
+  );
+  try {
+    await store.showArchive(false, false);
+    await store.showArchive(false, true, [conversation.id]);
+    expect(idsRead).toEqual([[conversation.id]]);
+    expect(store.sidebar.map((row) => row.id)).toEqual([conversation.id]);
+    accessible = false;
+    await store.showArchive(false, true, [conversation.id]);
+    expect(store.sidebar).toEqual([]);
+  } finally {
+    store.dispose();
+  }
+});

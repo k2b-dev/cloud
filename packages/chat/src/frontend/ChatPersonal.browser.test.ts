@@ -347,7 +347,7 @@ test("Back supersedes a pending filter switch and leaves URL and list in the arc
     });
     await page.route("**/api/chat/conversations?**", async (route) => {
       const url = new URL(route.request().url());
-      if (url.searchParams.get("archived") === "false" && url.searchParams.get("unread") === "false") {
+      if (!url.searchParams.has("ids") && url.searchParams.get("archived") === "false" && url.searchParams.get("unread") === "false") {
         intercepted?.();
         await pending;
       }
@@ -392,13 +392,28 @@ test("active filters add no duplicate history and the archive unread chip toggle
   }
 }, 30_000);
 
-for (const failRefresh of [false, true])
+for (const failRefresh of [false, true, "position"] as const)
   test(`choosing an existing chat supersedes a pending list without stuck loading (refresh failure=${failRefresh})`, async () => {
     const existing = add("Existing design", 2);
     const other = harness.addChat({ name: "Another unread", members: [viewer, nora, tobias], count: 4, end: harness.now(), unread: 2 });
+    const retained = harness.addChat({
+      name: "Read during visit",
+      members: [viewer, nora, tobias],
+      count: 4,
+      end: harness.now(),
+      unread: 2,
+    });
     const { page, context, errors } = await start(false, "en", "/app/chat?filter=unread");
     let release: (() => void) | undefined;
     try {
+      const deadline = performance.now() + 5_000;
+      while (!harness.subscribed() && performance.now() < deadline) await Bun.sleep(10);
+      expect(harness.subscribed()).toBe(true);
+      harness.readElsewhere(retained, 4);
+      await visible(page)
+        .locator(".k2b-app-workspace__sidebar-item", { has: page.getByText("Read during visit", { exact: true }) })
+        .locator("[data-unread]")
+        .waitFor({ state: "hidden" });
       const held = new Promise<void>((resolve) => {
         release = resolve;
       });
@@ -411,7 +426,7 @@ for (const failRefresh of [false, true])
       await page.route("**/api/chat/conversations?**", async (route) => {
         const url = new URL(route.request().url());
         if (url.searchParams.get("unread") === "true") unreadReads++;
-        if (url.searchParams.get("archived") === "false" && url.searchParams.get("unread") === "false") {
+        if (!url.searchParams.has("ids") && url.searchParams.get("archived") === "false" && url.searchParams.get("unread") === "false") {
           allReads++;
           if (allReads === 1) {
             intercepted?.();
@@ -437,11 +452,20 @@ for (const failRefresh of [false, true])
         await visible(page).getByRole("alert").waitFor();
         await visible(page).getByText("Another unread", { exact: true }).click();
         await page.waitForURL(`**/app/chat/c/${other}?filter=unread`);
+        if (failRefresh === "position") {
+          await page.route("**/api/chat/conversations/*/personal", (route) =>
+            route.fulfill({ status: 400, json: { message: "Invalid position" } }),
+          );
+          await actions(page, "Another unread", "en");
+          await page.getByRole("menuitem", { name: "Pin chat", exact: true }).click();
+          await visible(page).getByRole("alert").filter({ hasText: "Invalid position" }).waitFor();
+        }
         const entries = await page.evaluate(() => history.length);
         const readsBeforeRetry = unreadReads;
         const allBeforeRetry = allReads;
         await visible(page).getByRole("button", { name: "Try again", exact: true }).click();
         await visible(page).getByRole("alert").waitFor({ state: "hidden" });
+        expect(await visible(page).getByText("Read during visit", { exact: true }).count()).toBe(1);
         expect(unreadReads).toBe(readsBeforeRetry + 1);
         expect(allReads).toBe(allBeforeRetry);
         expect(await page.evaluate(() => history.length)).toBe(entries);

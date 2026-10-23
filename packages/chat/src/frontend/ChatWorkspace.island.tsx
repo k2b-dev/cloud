@@ -366,13 +366,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const nextArchived = url.pathname === "/app/chat/archive" || url.searchParams.get("list") === "archive";
       const nextFilter = url.searchParams.get("filter") === "unread" ? "unread" : "all";
       // A newer intent must also undo a pending request whose target has not reached the signals yet.
-      const reload = refresh || pendingListIntent !== null || nextArchived !== archived() || nextFilter !== filter();
+      const changed = nextArchived !== archived() || nextFilter !== filter();
+      const reload = refresh || pendingListIntent !== null || changed;
       pendingListIntent = token;
       try {
-        if (reload) await store?.showArchive(nextArchived, nextFilter === "unread");
+        if (reload) await store?.showArchive(nextArchived, nextFilter === "unread", !changed ? [...retainedUnread] : []);
         if (token !== listIntent) return null;
         if (reload) {
-          retainedUnread.clear();
+          if (changed) retainedUnread.clear();
           setArchived(nextArchived);
           sortRows();
         }
@@ -417,7 +418,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     try {
       if (path) {
         if ((await applyListUrl(new URL(path, location.href), true)) === null) return;
-      } else await loadList(() => live.showArchive(archived(), filter() === "unread"));
+      } else await loadList(() => live.showArchive(archived(), filter() === "unread", [...retainedUnread]));
       sortRows();
       setListError(null);
       setListRetry(null);
