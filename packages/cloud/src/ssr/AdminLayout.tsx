@@ -8,7 +8,7 @@ import type { LayoutAnnouncementsState } from "../server/middleware/settings";
 import AdminSidebar from "./AdminSidebar";
 import Layout from "./Layout";
 import { platformMessages } from "./platform-messages";
-import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
+import { getDisplayRuntimeContext, type RuntimeContext } from "./runtime";
 
 type Breadcrumb = { title: string; href?: string };
 type AdminLayoutContext = {
@@ -36,7 +36,7 @@ export default function AdminLayout(props: Props) {
   const t = platformMessages.resolve([locale]).t;
   const url = new URL(c.req.raw.url);
   const currentPath = `${url.pathname}${url.search}`;
-  const runtime = getLocalizedRuntimeContext(c);
+  const runtime = getDisplayRuntimeContext(c);
   // Admin is the area's root, as an app's root is: the rail and the admin sidebar lead there. So it is no level
   // above an admin page, and every admin page shows its title alone, whichever app owns it.
   const overview = title === "Overview" || title === t.overview;

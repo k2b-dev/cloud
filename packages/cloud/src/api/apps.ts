@@ -3,6 +3,8 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ErrorResponseSchema } from "../contracts";
 import { type AuthContext, auth, jsonResponse, requiresAuth, v } from "../server";
+import { appAccessAuthority } from "../services/app-access";
+import { discoverableApps } from "../services/app-discovery";
 import { visibleNavigationApps } from "../ssr/app-navigation";
 import { getLocalizedRuntimeContext } from "../ssr/runtime";
 
@@ -35,9 +37,9 @@ export const appDiscoveryRoutes = new Hono<AuthContext>().use(auth.requireRole("
     },
   }),
   v("query", AppListQuerySchema),
-  (c) => {
+  async (c) => {
     const search = c.req.valid("query").search?.toLowerCase();
-    const items = visibleNavigationApps(getLocalizedRuntimeContext(c).apps, c.get("user"))
+    const items = visibleNavigationApps(await discoverableApps(appAccessAuthority(c), getLocalizedRuntimeContext(c).apps), c.get("user"))
       .map((app) => ({
         id: app.id,
         name: app.name,

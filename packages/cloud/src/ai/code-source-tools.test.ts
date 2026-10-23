@@ -1,8 +1,10 @@
-import { afterEach, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import * as registry from "../_internal/registry";
 import * as claims from "../capabilities/claims";
 import type { User } from "../contracts/shared";
+import { signInvocationToken } from "../services/identity/invocation-token";
+import * as issuer from "../services/identity/issue-invocation";
 import * as identity from "../services/identity/key-ring";
 import * as execution from "./capability-execution";
 import { aiChatTasks } from "./chat-tasks";
@@ -10,6 +12,11 @@ import * as codeExecution from "./code-execution";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
 import { createCodeSourceTool } from "./code-source-tools";
 import { aiConversations } from "./store";
+
+// Broker authorization is covered at its own seam; these tests exercise host protocol and retries.
+beforeEach(() => {
+  spyOn(issuer, "issueInvocationToken").mockImplementation(signInvocationToken);
+});
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -35,8 +42,13 @@ afterEach(() => mock.restore());
 for (const name of ["code_access_change", "code_import"] as const)
   for (const approved of [false, true])
     test(`${name} ${approved ? "approval" : "denial"} gates the actual write`, async () => {
-      const actor = { kind: "user" as const, user };
-      spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({ actor, accessSubject: { type: "user", userId: user.id } });
+      const actor = { kind: "user" as const, user, sessionKind: "app" as const };
+      spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
+        actor,
+        accessSubject: { type: "user", userId: user.id },
+        credentialKind: "session",
+        scopes: [],
+      });
       spyOn(registry, "getApp").mockResolvedValue({
         id: "assistant",
         name: "Assistant",
@@ -120,11 +132,19 @@ for (const name of ["code_access_change", "code_import"] as const)
         expect(claim).not.toHaveBeenCalled();
         expect(complete).not.toHaveBeenCalled();
       }
+      const calls = spyOn(issuer, "issueInvocationToken").mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      for (const [params] of calls) expect(params.authority).toMatchObject({ session_kind: "app", scopes: [] });
     });
 
 test("code_write sends one write without a preview or approval", async () => {
   const actor = { kind: "user" as const, user };
-  spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({ actor, accessSubject: { type: "user", userId: user.id } });
+  spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
+    actor,
+    accessSubject: { type: "user", userId: user.id },
+    credentialKind: "session",
+    scopes: [],
+  });
   spyOn(registry, "getApp").mockResolvedValue({
     id: "assistant",
     name: "Assistant",
@@ -224,7 +244,12 @@ test("code_write tells the model to wait for each revision instead of sending wr
 for (const name of ["code_sql", "code_database_read", "code_database_export", "code_database_clear", "code_database_reset"] as const) {
   test(`${name} cannot bypass revoked background authority`, async () => {
     const actor = { kind: "user" as const, user };
-    spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({ actor, accessSubject: { type: "user", userId: user.id } });
+    spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
+      actor,
+      accessSubject: { type: "user", userId: user.id },
+      credentialKind: "session",
+      scopes: [],
+    });
     spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({
       kind: "chat",
       input: "Run",
@@ -273,7 +298,12 @@ for (const input of [
 ])
   test(`background ${input.operation} forwards its table to authorization`, async () => {
     const actor = { kind: "user" as const, user };
-    spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({ actor, accessSubject: { type: "user", userId: user.id } });
+    spyOn(execution, "resolveAiCapabilityActor").mockResolvedValue({
+      actor,
+      accessSubject: { type: "user", userId: user.id },
+      credentialKind: "session",
+      scopes: [],
+    });
     const config = {
       kind: "chat" as const,
       input: "Run",

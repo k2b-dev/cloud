@@ -640,7 +640,15 @@ cld assistant studio-admin storage-settings --json
 cld assistant studio-admin storage-configure --input-file limits.json
 ```
 
-The administrator input is `{"fileMiB":50,"totalMiB":250}`. Those are also the
+The administrator input is `{"fileMiB":50,"totalMiB":250}`. Omit fields you do
+not intend to change. Reads also report `unreadable` by setting name. Replacing
+an unreadable value requires its name in `replaceUnreadable`, for example
+`{"fileMiB":50,"replaceUnreadable":["assistant.storage_file_mib"]}`. Database
+configuration accepts the same replacement list for `assistant.rsql_url` and
+`assistant.rsql_api_token`; omitted values stay untouched. Ordinary writes over
+unreadable values return HTTP 409 `setting_unreadable`.
+
+Those are also the
 default byte budgets in MiB. There is no shared file count limit. File size can
 be configured up to 64 MiB, total storage up to 1 TiB per resource. Shared KV
 retains its separate 16 MiB/1,000-entry budget. Lists use `after`/`limit` pages.

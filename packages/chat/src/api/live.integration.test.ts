@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { LIVE_LIMITS, startLiveOutbox } from "@k2b/cloud/events/testing";
 import { type AuthContext, createAccess } from "@k2b/cloud/server";
 import { get as getSetting } from "@k2b/cloud/services";
+import { useRegisteredTestApp } from "@k2b/cloud/services/identity/application.test-fixture";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -217,4 +218,5 @@ suite("Chat live delivery on two replicas", () => {
     a.socket.close();
     b.socket.close();
   }, 15_000);
+  useRegisteredTestApp("chat");
 });
