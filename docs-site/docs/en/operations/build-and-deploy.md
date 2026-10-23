@@ -328,15 +328,18 @@ It returns up to 50 channels in name order as `{ items, nextCursor }`.
 Conversation responses include `channel` and `member`, so clients can show
 whether a channel is already subscribed. `POST /api/chat/conversations/:conversation/join`
 subscribes with the audience's permission. The existing `leave` operation
-unsubscribes. Joining and leaving publish membership hints without adding
+unsubscribes; its response adds `canRejoin`, which says whether the channel's
+audience still lets the person subscribe again. Joining and leaving publish membership hints without adding
 subscription messages to the timeline.
 Leaving with a successor requires effective `admin` permission, including the
 credential's scope limit.
 
 Managers read and replace the audience through `GET` and `PUT`
 `/api/chat/conversations/:conversation/discovery`. A replacement accepts
-`{ entries, name?, purpose? }`; changing entries writes a `discovery_changed`
-system message. Empty entries remove discovery while keeping members.
+`{ entries, name?, purpose?, revision? }`; changing entries writes a `discovery_changed`
+system message. `revision` comes from the `GET` response; when the stored
+audience changed since then, the replacement answers `DISCOVERY_CHANGED`
+(HTTP 409) and changes nothing. Send only `name` or `purpose` when they change. Empty entries remove discovery while keeping members.
 Channels require a nonempty name and purpose. Channels cannot create threads,
 and chats with existing threads cannot become channels (`THREADS_UNAVAILABLE`).
 
