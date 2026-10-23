@@ -6,7 +6,9 @@ import { type AuthContext, auth, v } from "../server";
 import { PosixError, posix } from "../services/accounts/posix";
 
 const Id = z.object({ id: z.uuid() });
-const Configure = z.object({ config: LinuxIdentityConfigurationSchema, rangeReserved: z.boolean() }).strict();
+const Configure = z
+  .object({ config: LinuxIdentityConfigurationSchema, rangeReserved: z.boolean(), replaceUnreadable: z.boolean().optional() })
+  .strict();
 
 export const createAdminLinuxIdentityRoutes = (
   authenticate: MiddlewareHandler<AuthContext> = auth.requireRole("admin"),
@@ -32,12 +34,13 @@ export const createAdminLinuxIdentityRoutes = (
       describeRoute({
         tags: ["Linux identities"],
         summary: "Configure automatic local Linux identity assignment; does not enable computer login",
+        description: "Unreadable stored configuration returns 409 setting_unreadable unless replaceUnreadable is explicitly true.",
       }),
       v("json", Configure),
       async (c) => {
-        const { config, rangeReserved } = c.req.valid("json");
+        const { config, rangeReserved, replaceUnreadable } = c.req.valid("json");
         if (config.enabled && !rangeReserved) throw new PosixError("range_confirmation_required", 400);
-        return c.json(await service.configure(c.get("user"), config));
+        return c.json(await service.configure(c.get("user"), config, { replaceUnreadable }));
       },
     )
     .get(

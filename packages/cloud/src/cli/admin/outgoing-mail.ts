@@ -35,13 +35,25 @@ export const outgoingMailCommands = [
     flags: {
       contentDays: flag.string({ required: true, description: "Content retention in days" }),
       recordDays: flag.string({ required: true, description: "Record retention in days (at least content retention)" }),
+      replaceContent: flag.boolean({ name: "replace-unreadable-content", description: "Explicitly replace unreadable content retention" }),
+      replaceRecords: flag.boolean({ name: "replace-unreadable-records", description: "Explicitly replace unreadable record retention" }),
       yes: confirmFlag("Confirm changing outgoing mail retention"),
     },
     async run({ ctx, flags }) {
       confirmed(flags.yes);
       const retention = MailRetentionSchema.parse({ contentDays: Number(flags.contentDays), recordDays: Number(flags.recordDays) });
       if (retention.recordDays < retention.contentDays) throw new Error("Record retention must be at least content retention.");
-      const result = await apiJson<MailRetention>(ctx, "PUT", `${root}/retention`, retention);
+      const result = await apiJson<MailRetention>(ctx, "PUT", `${root}/retention`, {
+        ...retention,
+        ...(flags.replaceContent || flags.replaceRecords
+          ? {
+              replaceUnreadable: [
+                ...(flags.replaceContent ? ["outgoing_mail.content_retention_days"] : []),
+                ...(flags.replaceRecords ? ["outgoing_mail.record_retention_days"] : []),
+              ],
+            }
+          : {}),
+      });
       if (!printStructured(ctx, result)) print(ctx, result);
     },
   }),

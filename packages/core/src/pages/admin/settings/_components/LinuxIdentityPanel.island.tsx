@@ -30,6 +30,7 @@ type Overview = Awaited<ReturnType<typeof linuxIdentities.overview>>;
 
 import DocumentationLink from "./DocumentationLink";
 
+const editableConfig = ({ unreadable: _unreadable, ...value }: LinuxIdentityConfiguration & { unreadable?: boolean }) => value;
 const api = coreClient.admin.core["linux-identities"];
 const responseError = async (response: Pick<Response, "json">): Promise<Error> => {
   const body: unknown = await response.json().catch(() => null);
@@ -46,7 +47,8 @@ export default function LinuxIdentityPanel(props: {
   const locale = useLocale();
   const t = () => linuxMessages.resolve([locale()]).t;
   const after = () => props.after ?? null;
-  const [draft, setDraft] = createSignal({ ...props.initial.config });
+  const [draft, setDraft] = createSignal(editableConfig(props.initial.config));
+  const [replace, setReplace] = createSignal(false);
   const [editing, setEditing] = createSignal(props.initial.config.enabled);
   const [reserved, setReserved] = createSignal(false);
   const [selected, setSelected] = createSignal<string[]>([]);
@@ -76,7 +78,7 @@ export default function LinuxIdentityPanel(props: {
     },
   });
   const config = () => overview.data()?.config ?? props.initial.config;
-  const dirty = () => JSON.stringify(draft()) !== JSON.stringify(config());
+  const dirty = () => replace() || JSON.stringify(draft()) !== JSON.stringify(editableConfig(config()));
   const valid = createMemo(() => LinuxIdentityConfigurationSchema.safeParse(draft()).success);
   const change = <K extends keyof LinuxIdentityConfiguration>(key: K, value: LinuxIdentityConfiguration[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -85,11 +87,18 @@ export default function LinuxIdentityPanel(props: {
   };
   const save = mutation.create<void, void>({
     mutation: async () => {
-      const response = await api.configuration.$put({ json: { config: draft(), rangeReserved: reserved() } });
-      if (!response.ok) throw await responseError(response);
+      const response = await api.configuration.$put({
+        json: { config: draft(), rangeReserved: reserved(), replaceUnreadable: config().unreadable === true && replace() },
+      });
+      if (!response.ok) {
+        const error = await responseError(response);
+        if (error.message === "setting_unreadable") await overview.invalidate();
+        throw error;
+      }
       const saved = await response.json();
       await overview.invalidate();
       setDraft(saved);
+      setReplace(false);
       setEditing(saved.enabled);
       setReserved(false);
       setSelected([]);
@@ -173,6 +182,19 @@ export default function LinuxIdentityPanel(props: {
         </NoticeCard>
       </Show>
       <SettingsSection title={t().setup}>
+        <Show when={config().unreadable}>
+          <NoticeCard tone="warning" title={t().unreadableTitle} detail={t().unreadableDetail}>
+            <Checkbox
+              label={`${t().replaceStored}: ${t().setup}`}
+              value={replace()}
+              onValueChange={(value) => {
+                setReplace(value);
+                if (value) setEditing(true);
+              }}
+              disabled={busy()}
+            />
+          </NoticeCard>
+        </Show>
         <Show
           when={editing()}
           fallback={
@@ -251,7 +273,7 @@ export default function LinuxIdentityPanel(props: {
             <Show when={dirty()}>
               <div class="flex flex-wrap gap-2">
                 <Button
-                  disabled={busy() || !valid() || (draft().enabled && !reserved())}
+                  disabled={busy() || (config().unreadable === true && !replace()) || !valid() || (draft().enabled && !reserved())}
                   loading={save.loading()}
                   onClick={() => void save.mutate()}
                 >
@@ -261,7 +283,8 @@ export default function LinuxIdentityPanel(props: {
                   variant="secondary"
                   disabled={busy()}
                   onClick={() => {
-                    setDraft({ ...config() });
+                    setDraft(editableConfig(config()));
+                    setReplace(false);
                     setEditing(config().enabled);
                     setReserved(false);
                   }}
