@@ -10,6 +10,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       used bigint NOT NULL DEFAULT 0 CHECK (used >= 0),
       PRIMARY KEY (scope, subject, period)
     )`.simple();
+    // The administration reads one local day across all people.
+    await tx`CREATE INDEX IF NOT EXISTS geo_usage_scope_period ON geo.usage (scope, period)`.simple();
     await tx`CREATE TABLE IF NOT EXISTS geo.shares (
       scope text NOT NULL, subject text NOT NULL, period text NOT NULL,
       function_group text NOT NULL, used bigint NOT NULL DEFAULT 0 CHECK (used >= 0),

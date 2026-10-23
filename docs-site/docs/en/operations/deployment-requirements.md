@@ -91,11 +91,19 @@ release. See [Action contract migration](/en/docs/platform/capabilities#migrate-
 ## Enable addresses and places
 
 Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
-`api-eu.geoapify.com`. Store the Geoapify key as the secret `geo.api_key` in
-**Administration → Settings → Places and addresses**. There is no endpoint
-setting or new environment variable.
+`api-eu.geoapify.com`. Enter the Geoapify key in
+**Administration → Places and maps**. Core checks it with one provider lookup
+before storing it as the secret `geo.api_key`. There is no endpoint setting or
+new environment variable.
 Choose `geo.plan`, then review the monthly and per-person daily credit limits.
 Core creates its durable geo ledger during startup migrations.
+Routing now shares these settings and counters. Its full provider chain is
+reserved against a caller-selected reference-distance allowance (default
+500 km per leg). Known distance overruns are debited even beyond the original
+reservation, and stop subsequent paid steps; later reservations see the
+exhausted counters. This reference budget is not a guaranteed provider-invoice
+ceiling. Review [routing accounting](/en/docs/platform/places-and-maps#set-a-reference-distance-allowance)
+before selecting budgets for long routes or optimized tours.
 
 Search text, addresses, coordinates, categories, and route corridor geometry
 leave the installation for Geoapify when a cache miss is admitted. In the

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GEO_PLAN_IDS } from "../../contracts/geo-admin";
 import { readStates } from "../settings/store";
 
 export const GEO_PLANS = {
@@ -12,7 +13,7 @@ export const GEO_PLANS = {
 const ConfigSchema = z.object({
   apiKey: z.string(),
   timezone: z.string(),
-  plan: z.enum(["free", "api10", "api25", "api50", "api100", "api250", "custom"]),
+  plan: z.enum(GEO_PLAN_IDS),
   customRps: z.number().int().positive(),
   customDailyCredits: z.number().int().positive(),
   monthlyCredits: z.number().int().nonnegative(),

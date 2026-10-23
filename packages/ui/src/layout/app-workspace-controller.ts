@@ -81,7 +81,7 @@ const parkDetailDrawer = (aside: HTMLElement, focus = false) => {
   detailDrawerContent(aside)?.style.removeProperty("--k2b-detail-space");
   const toggle = detailToggle(aside);
   toggle?.setAttribute("aria-expanded", "false");
-  if (focus) toggle?.focus({ preventScroll: true });
+  if (focus) detailReturnControl(aside)?.focus({ preventScroll: true });
 };
 
 /** Parks open waiting-detail drawers; focus follows only when it was inside one. */
@@ -151,6 +151,23 @@ const previewSidebarHidden = (root: HTMLElement, hidden: boolean) => {
 };
 const isVisible = (element: HTMLElement | null): element is HTMLElement =>
   Boolean(element && !element.hidden && getComputedStyle(element).display !== "none");
+// A pane-bound head can be absent on a phone. The visible control in Main
+// that names this same detail remains its return target, within the same root.
+const detailReturnControl = (aside: HTMLElement) => {
+  const root = workspaceRoot(aside);
+  if (!root) return undefined;
+  const shared = detailToggle(aside);
+  if (isVisible(shared ?? null) && shared && !shared.matches(":disabled")) return shared;
+  return rootElements(root, DETAIL_REQUEST_CONTROL_SELECTOR).find(
+    (control) =>
+      control.matches(FOCUSABLE_SELECTOR) &&
+      !aside.contains(control) &&
+      !control.matches(":disabled, [inert]") &&
+      !control.closest("[inert]") &&
+      control.getAttribute("aria-controls")?.split(/\s+/).includes(aside.id) &&
+      control.getClientRects().length > 0,
+  );
+};
 const elementSize = (element: HTMLElement | null, kind: AppWorkspaceResizeKind) => {
   if (!isVisible(element)) return 0;
   const rect = element.getBoundingClientRect();
@@ -706,7 +723,71 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     if (args[2] === "sidebar") scheduleHostSync();
     return size;
   };
+  // A responsive application control and the shared control can name the same
+  // Detail. Remember actual focus, not an old selection, before CSS hides it.
+  let detailControlFocus: { control: HTMLElement; aside: HTMLElement; root: HTMLElement } | null = null;
+  const controlledDetail = (control: HTMLElement) => {
+    if (!control.matches(FOCUSABLE_SELECTOR) || control.matches(HANDLE_SELECTOR) || !eventRoot.contains(control)) return null;
+    const root = workspaceRoot(control);
+    if (!root) return null;
+    const ids = control.getAttribute("aria-controls")?.split(/\s+/);
+    const aside = rootElements(root, detailSelector).find((aside) => ids?.includes(aside.id));
+    return aside ? { control, aside, root } : null;
+  };
+  const detailControlVisible = (control: HTMLElement) =>
+    control.isConnected && control.getClientRects().length > 0 && getComputedStyle(control).visibility === "visible";
+  const detailControlUsable = (control: HTMLElement) =>
+    detailControlVisible(control) &&
+    !control.matches(":disabled, [aria-disabled='true']") &&
+    !control.closest("[inert], [hidden], [aria-hidden='true']");
+  const onDetailControlFocusOut = () => {
+    // Explicit blur of a visible control is not a responsive focus loss.
+    if (detailControlFocus && detailControlVisible(detailControlFocus.control)) detailControlFocus = null;
+  };
+  const rescueDetailControlFocus = () => {
+    const previous = detailControlFocus;
+    if (!previous) return;
+    const { control, aside, root } = previous;
+    const active = ownerDocument.activeElement;
+    if (
+      !control.isConnected ||
+      !aside.isConnected ||
+      workspaceRoot(control) !== root ||
+      workspaceRoot(aside) !== root ||
+      (active !== ownerDocument.body && !control.contains(active))
+    ) {
+      detailControlFocus = null;
+      return;
+    }
+    const shared = detailToggle(aside);
+    if (
+      shared?.dataset.workspaceDetailReopen === "true" &&
+      phone?.matches &&
+      phonePage(aside) &&
+      !aside.hidden &&
+      !aside.contains(control)
+    ) {
+      // WebKit can update matchMedia after resize has already focused the now
+      // visible application control. Move into the page before Main becomes inert.
+      detailControlFocus = null;
+      requestTitle(aside);
+      return;
+    }
+    if (detailControlVisible(control)) return;
+    detailControlFocus = null;
+    if (shared?.dataset.workspaceDetailReopen !== "true") {
+      // Selection-only details keep their existing returning-column title target.
+      if (control === shared && !aside.hidden && !detailWaiting(aside)) requestTitle(aside);
+      return;
+    }
+    const candidates = shared ? [shared, ...rootElements(root, "[aria-controls]")] : rootElements(root, "[aria-controls]");
+    const replacement = candidates.find(
+      (candidate) => candidate !== control && detailControlUsable(candidate) && controlledDetail(candidate)?.aside === aside,
+    );
+    replacement?.focus({ preventScroll: true });
+  };
   const syncHostState = () => {
+    rescueDetailControlFocus();
     if (pendingDetail && !canOpenPendingDetail(pendingDetail.aside)) cancelPendingDetail();
     if (overlay && sidebarForm(overlay.root) !== "overlay") closeOverlay("none");
     for (const root of allRoots()) {
@@ -731,7 +812,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
           parkDetailDrawer(aside);
           if (toggle && toggleFocused && !isVisible(toggle)) focusTitle(aside);
         } else if (detailDrawer(aside)) syncDetailDrawerSpace(aside);
-        else if (before !== true && aside.contains(ownerDocument.activeElement)) detailToggle(aside)?.focus({ preventScroll: true });
+        else if (before !== true && aside.contains(ownerDocument.activeElement)) detailReturnControl(aside)?.focus({ preventScroll: true });
       }
     }
     syncDetailRequestControls();
@@ -881,6 +962,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     const root = target?.closest<HTMLElement>(ROOT_SELECTOR);
     if (!target || !root || !observedRoots.has(root)) return;
     lastFocus.set(root, target);
+    const control = target.closest<HTMLElement>("[aria-controls]");
+    detailControlFocus = control ? controlledDetail(control) : null;
     const previous = remembered.get(root);
     // Pointer focus follows pointerdown; keeping that snapshot also keeps the
     // interaction that opened the panel rather than treating focus as a new one.
@@ -925,6 +1008,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   // that opens later than that does not take the drawer or the focus.
   let lastChosen: RememberedItem | null = null;
   const cancelTitleOnInteraction = (event: Event) => {
+    if (detailControlFocus && !(event.target instanceof Node && detailControlFocus.control.contains(event.target)))
+      detailControlFocus = null;
     if (event.type === "pointerdown" || event.type === "keydown") clearActivation();
     if (lastChosen && !(event.target instanceof Node && lastChosen.item.contains(event.target))) {
       lastChosen.chosen = false;
@@ -1198,12 +1283,13 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
       } else anchorItem(root, aside, snapshot);
       const focused = ownerDocument.activeElement;
       const toggle = detailToggle(aside);
+      const returnControl = detailReturnControl(aside);
       if (
         toggle?.dataset.workspaceDetailReopen === "true" &&
-        isVisible(toggle) &&
+        returnControl &&
         (aside.contains(focused) || (focused === ownerDocument.body && aside.contains(lastFocus.get(root) ?? null)))
       ) {
-        toggle.focus({ preventScroll: true });
+        returnControl.focus({ preventScroll: true });
       } else if (
         snapshot?.item.isConnected &&
         (aside.contains(lastFocus.get(root) ?? null) || aside.contains(focused) || focused === ownerDocument.body)
@@ -2057,6 +2143,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   ownerDocument.addEventListener("keydown", onOverlayKeyDown);
   ownerWindow.addEventListener("keydown", onDetailKeyDown);
   ownerDocument.addEventListener("focusin", cancelTitleOnInteraction, true);
+  ownerDocument.addEventListener("focusout", onDetailControlFocusOut, true);
   ownerDocument.addEventListener("pointerdown", cancelTitleOnInteraction, true);
   ownerDocument.addEventListener("keydown", cancelTitleOnInteraction, true);
   ownerDocument.addEventListener("click", onDetailRequestClick, true);
@@ -2124,6 +2211,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     titleTabIndices.forEach((title) => title.removeAttribute("tabindex"));
     ownerWindow.removeEventListener("keydown", onDetailKeyDown);
     ownerDocument.removeEventListener("focusin", cancelTitleOnInteraction, true);
+    ownerDocument.removeEventListener("focusout", onDetailControlFocusOut, true);
+    detailControlFocus = null;
     ownerDocument.removeEventListener("pointerdown", cancelTitleOnInteraction, true);
     ownerDocument.removeEventListener("keydown", cancelTitleOnInteraction, true);
     clearActivation();
