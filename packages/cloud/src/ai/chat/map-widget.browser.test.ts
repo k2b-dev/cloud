@@ -447,3 +447,40 @@ test("a follow-up cannot display an old receipt as saving the new map revision",
     await context.close();
   }
 });
+
+test.each([390, 1440])("routing overrun shows charged costs and waits for an explicit resume at %i", async (width) => {
+  const scenario = `route-overrun-${width}`;
+  const before = fixture.commands.length;
+  const { page, context } = await open(scenario, width);
+  try {
+    await page.getByText("Letzter Versuch: 20 Credits gebucht. Mit unklarem Ergebnis reserviert: 2.", { exact: true }).waitFor();
+    expect(fixture.commands.length).toBe(before);
+    expect(await page.getByRole("spinbutton").count()).toBe(0);
+    expect(await page.locator(".ai-map__state").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.getByRole("button", { name: "Berechnung fortsetzen", exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector(".ai-map__state"));
+    expect(fixture.commands.slice(before)).toEqual([{ type: "retry" }]);
+    expect(fixture.get(scenario).map.preview).toBeDefined();
+    expect(fixture.get(scenario).map.issue).toBeUndefined();
+  } finally {
+    await context.close();
+  }
+});
+
+test("ambiguous address recovery after an overrun explains further costs before accepting a candidate", async () => {
+  const scenario = "route-overrun-ambiguous";
+  const { page, context } = await open(scenario, 390);
+  try {
+    await page
+      .getByText("Die Route war teurer als geschätzt. Die Berechnung wurde gestoppt. Beim Fortsetzen können weitere Kosten entstehen.", {
+        exact: true,
+      })
+      .waitFor();
+    await page.getByRole("button", { name: / · Als Stopp übernehmen$/, exact: false }).click();
+    await page.getByRole("listbox", { name: "Welcher Ort ist gemeint?" }).waitFor({ state: "detached" });
+    expect(fixture.get(scenario).map.issue).toBeUndefined();
+    expect(fixture.get(scenario).map.route).toBeDefined();
+  } finally {
+    await context.close();
+  }
+});

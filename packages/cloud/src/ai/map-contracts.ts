@@ -67,6 +67,7 @@ export const AiMapSchema = z
     candidates: z.array(GeoAddressSchema).max(5).optional(),
     ambiguousStopId: z.string().optional(),
     picker: z.array(GeoPlaceSchema).max(5).optional(),
+    retryInsertStopId: z.uuid().optional(),
     issue: z
       .object({
         code: z.string(),
@@ -74,7 +75,11 @@ export const AiMapSchema = z
         resetsAt: z.string().optional(),
         retryAfterSeconds: z.number().optional(),
         costs: GeoCostsSchema.optional(),
-        distanceAllowanceMeters: z.number().positive().optional(),
+        requiredCredits: z.number().nonnegative().optional(),
+        availableCredits: z.number().optional(),
+        turnId: z.uuid().optional(),
+        requiresCostConfirmation: z.literal(true).optional(),
+        shortfallCredits: z.number().nonnegative().optional(),
       })
       .strict()
       .optional(),
@@ -117,7 +122,6 @@ export const AiMapCommandSchema = z.discriminatedUnion("type", [
         .max(26)
         .refine((stops) => new Set(stops.map((s) => s.id)).size === stops.length, "Stop IDs must be unique"),
       options: GeoRouteOptionsSchema.optional(),
-      distanceAllowanceMeters: GeoRoutePlanSchema.shape.distanceAllowanceMeters,
       title: label,
     })
     .strict(),
@@ -138,14 +142,13 @@ export const AiMapCommandSchema = z.discriminatedUnion("type", [
           })
           .strict(),
       ]),
-      distanceAllowanceMeters: GeoRoutePlanSchema.shape.distanceAllowanceMeters,
     })
     .strict(),
   z.object({ type: z.literal("choose"), index: z.number().int().min(0).max(4) }).strict(),
   z.object({ type: z.literal("accept") }).strict(),
   z.object({ type: z.literal("discard") }).strict(),
   z.object({ type: z.literal("undo") }).strict(),
-  z.object({ type: z.literal("retry"), distanceAllowanceMeters: GeoRoutePlanSchema.shape.distanceAllowanceMeters }).strict(),
+  z.object({ type: z.literal("retry") }).strict(),
 ]);
 export const AiMapBrowserCommandSchema = z.union([
   AiMapCommandSchema,

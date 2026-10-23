@@ -660,8 +660,13 @@ A missing Geo configuration or exhausted allowance shows a short explanation
 without starting a map or provider query. Budget messages include their reset
 time. Only administrators receive settings links. Other failures retain the
 conversation and saved results with a retry action. `GEO_COST_OVERRUN` records
-actual usage and requires a consciously chosen larger reference allowance;
-it is not a guaranteed ceiling on the provider invoice.
+actual usage and stops later paid work. The map shows charged and unresolved
+credits; only an explicit click on **Continue calculation** can resume that map.
+The model cannot retry it or start further paid map work in that turn. A later
+user turn may request another map. Core reserves the whole chain using straight-line
+distance times 2; there is no selectable kilometre allowance. This estimate is
+not a guaranteed ceiling on the provider invoice. Budget refusals show required,
+available and missing credits when the service supplies them.
 
 Map reads, exports, and changes check the conversation's current owner. Writes
 also check the saved revision before provider work. A conflict offers the current

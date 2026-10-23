@@ -22,6 +22,13 @@ export const migrateAiMaps = async () => {
 const decode = (value: unknown): unknown => (typeof value === "string" ? JSON.parse(value) : value);
 const referenceId = z.object({ map: z.object({ id: z.uuid() }) });
 export const aiMaps = {
+  /** A model turn stops paid map work after an overrun, including a request for a new map. */
+  async hasCostOverrunInTurn(conversationId: string, turnId: string): Promise<boolean> {
+    const [row] = await sql<{ found: boolean }[]>`SELECT EXISTS(SELECT 1 FROM ai.maps
+      WHERE conversation_id=${conversationId}::uuid AND (snapshot->'issue'->>'code'='GEO_COST_OVERRUN' OR snapshot->'issue'->>'requiresCostConfirmation'='true')
+      AND snapshot->'issue'->>'turnId'=${turnId}) AS found`;
+    return row?.found === true;
+  },
   async read(conversationId: string, id: string): Promise<AiMapStored | null> {
     const [row] = await sql<
       { snapshot: unknown; retry: AiMapCommand | null; anchor_seq: number | null }[]

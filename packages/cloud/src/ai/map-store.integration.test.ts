@@ -46,6 +46,45 @@ suite("Assistant durable map isolation", () => {
     await migrateEvents();
     await migrateCloudAi();
   });
+  test("an overrun stops further paid maps in its turn until browser recovery clears it", async () => {
+    const f = await fixture();
+    const other = await fixture();
+    const turnId = "3f9833b3-130d-4bf9-8cbd-bb584f9d50b9";
+    try {
+      expect(await aiMaps.hasCostOverrunInTurn(f.conversation.id, turnId)).toBe(false);
+      const failed = {
+        ...f.map,
+        revision: 2,
+        issue: { code: "GEO_COST_OVERRUN", turnId, costs: { settledCredits: 20, unknownCredits: 0 } },
+      };
+      await aiMaps.save(f.conversation.id, f.owner, { map: failed }, 1);
+      expect(await aiMaps.hasCostOverrunInTurn(f.conversation.id, turnId)).toBe(true);
+      expect(await aiMaps.hasCostOverrunInTurn(other.conversation.id, turnId)).toBe(false);
+      expect(await aiMaps.hasCostOverrunInTurn(f.conversation.id, "34a91e4c-cb10-4c3e-8a42-1d3c478c63ac")).toBe(false);
+      await aiMaps.save(
+        f.conversation.id,
+        f.owner,
+        {
+          map: {
+            ...failed,
+            revision: 3,
+            issue: {
+              code: "GEO_BUSY",
+              turnId,
+              requiresCostConfirmation: true,
+            },
+          },
+        },
+        2,
+      );
+      expect(await aiMaps.hasCostOverrunInTurn(f.conversation.id, turnId)).toBe(true);
+      await aiMaps.save(f.conversation.id, f.owner, { map: { ...f.map, revision: 4 } }, 3);
+      expect(await aiMaps.hasCostOverrunInTurn(f.conversation.id, turnId)).toBe(false);
+    } finally {
+      await f.cleanup();
+      await other.cleanup();
+    }
+  });
   test("same-map message projection survives follow-ups, leaves text, and forks independent snapshots", async () => {
     const f = await fixture();
     try {

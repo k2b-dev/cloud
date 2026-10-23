@@ -151,14 +151,11 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
   const [avoid, setAvoid] = createSignal<NonNullable<GeoRouteOptions["avoid"]>>([]);
   const [repairStop, setRepairStop] = createSignal("");
   const [scope, setScope] = createSignal("all");
-  const [allowance, setAllowance] = createSignal<number>();
   const [navigationPlatform, setNavigationPlatform] = createSignal<ReturnType<typeof geoNavigationPlatform>>("desktop");
   const candidateIndex = () => {
     const index = Number(/^candidate-(\d)$/.exec(selection())?.[1] ?? 0);
     return index < (map().candidates?.length ?? 0) ? index : 0;
   };
-  const allowanceMeters = () =>
-    map().issue?.distanceAllowanceMeters ?? map().route?.distanceAllowanceMeters ?? map().plan?.distanceAllowanceMeters ?? 500000;
   const waiting = () => busy() || (map().pending && props.loading);
   const candidateRows = () => (
     <div
@@ -187,6 +184,9 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
       aria-activedescendant={`${mapAnchor(map().id)}-candidate-${candidateIndex()}`}
     >
       <p>{t().choose}</p>
+      <Show when={costConfirmationRequired()}>
+        <p role="status">{t().cost}</p>
+      </Show>
       <For each={map().candidates}>
         {(candidate, index) => (
           <Button
@@ -471,12 +471,14 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
     });
   };
   const changedRoute = () => map().preview?.result.route ?? map().route;
+  const costConfirmationRequired = () => map().issue?.requiresCostConfirmation || map().issue?.code === "GEO_COST_OVERRUN";
   const issueText = () => {
     const issue = map().issue;
     if (!map().availability.configured || issue?.code === "GEO_NOT_CONFIGURED") return t().off;
     if (issue?.code === "GEO_BUDGET_EXHAUSTED")
       return `${issue.scope === "person" ? t().person : t().cloud}: ${t().budget}. ${t().reset}: ${issue.resetsAt ? new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: map().timeZone ?? "UTC" }).format(new Date(issue.resetsAt)) : ""}`;
-    if (issue?.code === "GEO_COST_OVERRUN") return `${t().cost} ${number(allowanceMeters() / 1000)} km / ${t().stops}.`;
+    if (issue?.code === "GEO_COST_OVERRUN") return t().cost;
+    if (issue?.code === "GEO_LIMIT_EXCEEDED" && issue.requiredCredits !== undefined) return t().routeLimit;
     if (issue?.code === "GEO_NO_ROUTE") return t().noRoute;
     if (issue?.code === "GEO_BUSY") return `${t().failed} (${issue.retryAfterSeconds ?? 1} s)`;
     return t().failed;
@@ -484,28 +486,40 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
   const recovery = () => (
     <div class="ai-map__state" role="status">
       <p>{issueText()}</p>
-      <Show when={map().issue?.code !== "GEO_COST_OVERRUN"}>
+      <Show when={!costConfirmationRequired()}>
         <Button variant="ghost" size="sm" disabled={busy()} onClick={() => void run({ type: "retry" })}>
           {t().retry}
         </Button>
       </Show>
-      <Show when={map().issue?.code === "GEO_COST_OVERRUN"}>
-        <NumberInput
-          label={t().newAllowance}
-          value={allowance() ?? null}
-          min={allowanceMeters() / 1000 + 1}
-          onValueChange={(v) => setAllowance(v ?? undefined)}
-        />
+      <Show when={map().issue?.requiredCredits !== undefined}>
+        <p>
+          {t().budgetNumbers({
+            required: number(map().issue!.requiredCredits!),
+            available: number(map().issue!.availableCredits ?? 0),
+            missing: number(map().issue!.shortfallCredits ?? 0),
+          })}
+        </p>
+      </Show>
+      <Show when={costConfirmationRequired()}>
+        <Show when={map().issue?.code !== "GEO_COST_OVERRUN"}>
+          <p>{t().cost}</p>
+        </Show>
+        <Show when={map().issue?.costs}>
+          {(costs) => (
+            <p>
+              {t().recordedCosts({
+                settled: number(costs().settledCredits),
+                unknown: number(costs().unknownCredits),
+              })}
+            </p>
+          )}
+        </Show>
         <p>{t().noInvoiceCap}</p>
-        <Button
-          size="sm"
-          disabled={busy() || !allowance() || allowance()! * 1000 <= allowanceMeters()}
-          onClick={() => void run({ type: "retry", distanceAllowanceMeters: allowance()! * 1000 })}
-        >
-          {t().calculate}
+        <Button size="sm" disabled={busy()} onClick={() => void run({ type: "retry" })}>
+          {t().resumeRoute}
         </Button>
       </Show>
-      <Show when={map().plan && !map().route && map().issue?.code !== "GEO_COST_OVERRUN" && !blocked()}>
+      <Show when={map().plan && !map().route && !costConfirmationRequired() && !blocked()}>
         <Button
           variant="ghost"
           size="sm"
@@ -518,7 +532,7 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
           {t().changeStop}
         </Button>
       </Show>
-      <Show when={canAdmin() && blocked()}>
+      <Show when={canAdmin() && (blocked() || map().issue?.requiredCredits !== undefined)}>
         <ButtonLink href="/admin/settings?tab=places" variant="ghost" size="sm">
           {map().availability.configured ? t().limits : t().configure}
         </ButtonLink>

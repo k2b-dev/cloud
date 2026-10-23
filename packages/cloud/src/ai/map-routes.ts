@@ -75,6 +75,7 @@ export const aiMapRoutes = new Hono<AuthContext>()
     const next = await withCapabilityRequestTimeout(c, "query", () =>
       executeStoredAiMap(conversation.id, ctx.ownerUserId, before, input.command, {
         caller,
+        allowCostOverrunRetry: ctx.signedInSession,
         verifyWeb: (url) => mapWebSourceWasRead(conversation.id, url),
       }),
     );

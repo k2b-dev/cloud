@@ -23,6 +23,8 @@ export type AiMapGeo = Pick<typeof geoClient, "availability" | "geocode" | "sear
 export type AiMapContext = {
   caller: CapabilityCaller;
   geo?: AiMapGeo;
+  /** Set only by the authenticated browser action, never by the model tool. */
+  allowCostOverrunRetry?: boolean;
   timeZone?: string;
   placeReferences?: "marks";
   turnId?: string;
@@ -118,25 +120,18 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
   const geo = ctx.geo ?? geoClient;
   let map = structuredClone(stored.map);
   if (increment) map.revision++;
-  let command = input.type === "retry" ? stored.retry : input;
-  if (stored.map.issue?.code === "GEO_COST_OVERRUN" && !["accept", "discard", "undo", "describe"].includes(input.type)) {
-    const allowance =
-      input.type === "retry" || input.type === "preview" || input.type === "route" ? input.distanceAllowanceMeters : undefined;
-    if (
-      !allowance ||
-      allowance <=
-        (stored.map.issue?.distanceAllowanceMeters ??
-          stored.map.route?.distanceAllowanceMeters ??
-          stored.map.plan?.distanceAllowanceMeters ??
-          500000)
-    )
-      throw new Error("MAP_NEW_ALLOWANCE_REQUIRED");
-  }
-  if (input.type === "retry" && input.distanceAllowanceMeters && command && (command.type === "preview" || command.type === "route"))
-    command = { ...command, distanceAllowanceMeters: input.distanceAllowanceMeters };
+  const command = input.type === "retry" ? stored.retry : input;
+  const requiresCostConfirmation = stored.map.issue?.requiresCostConfirmation || stored.map.issue?.code === "GEO_COST_OVERRUN";
+  if (
+    requiresCostConfirmation &&
+    !["accept", "discard", "undo", "describe"].includes(input.type) &&
+    !(["retry", "choose", "repair"].includes(input.type) && ctx.allowCostOverrunRetry)
+  )
+    throw new Error("MAP_CONFIRM_RETRY_REQUIRED");
   if (!command || command.type === "retry") throw new Error("MAP_NOTHING_TO_RETRY");
   const retry = command;
-  if (stored.map.issue?.code !== "GEO_COST_OVERRUN" || !["accept", "discard", "undo", "describe"].includes(command.type)) delete map.issue;
+  if (!requiresCostConfirmation || !["accept", "discard", "undo", "describe"].includes(command.type)) delete map.issue;
+  if (input.type !== "retry" && !["accept", "discard", "undo", "describe"].includes(input.type)) delete map.retryInsertStopId;
   delete map.pending;
   delete map.pendingTurnId;
   try {
@@ -192,7 +187,6 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
           return { id: stop.id, label: stop.label ?? stop.address, address: { text: stop.address } };
         }),
         options: command.options,
-        distanceAllowanceMeters: command.distanceAllowanceMeters,
       };
       map.plan = plan;
       map.kind = "route";
@@ -224,15 +218,15 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
       let changes: GeoRouteChanges;
       if (command.change.type === "insert") {
         const p = placeById(map, command.change.placeId, ctx);
+        // Reuse the exact paid request on explicit retry, including its cache-key stop ID.
+        map.retryInsertStopId ??= crypto.randomUUID();
         changes = {
           type: "insert",
-          stop: { id: crypto.randomUUID(), label: p.name, point: p.point },
+          stop: { id: map.retryInsertStopId, label: p.name, point: p.point },
           afterStopId: command.change.afterStopId,
         };
       } else changes = command.change;
-      const result = data(
-        await geo.updateRoute({ route: map.route, changes, distanceAllowanceMeters: command.distanceAllowanceMeters }, ctx.caller),
-      );
+      const result = data(await geo.updateRoute({ route: map.route, changes }, ctx.caller));
       map.preview = { result, changes, title: titleOfChange(changes, ctx).slice(0, 160) };
       delete map.picker;
     } else if (command.type === "accept") {
@@ -254,7 +248,10 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
         at: (ctx.now?.() ?? new Date()).toISOString(),
       };
     } else if (command.type === "describe") map.web = await readWeb(map, command.web, ctx);
-    if (!map.issue) delete map.retryUsesMarks;
+    if (!map.issue) {
+      delete map.retryUsesMarks;
+      delete map.retryInsertStopId;
+    }
     return { map: AiMapSchema.parse(map), ...(map.issue ? { retry: stored.retry } : {}) };
   } catch (cause) {
     if (!(cause instanceof AiMapGeoError)) throw cause;
@@ -267,13 +264,17 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
     }
     map.issue = AiMapSchema.shape.issue.unwrap().parse({
       code: cause.code,
-      ...(cause.code === "GEO_COST_OVERRUN"
-        ? {
-            distanceAllowanceMeters:
-              command.type === "preview" || command.type === "route"
-                ? (command.distanceAllowanceMeters ?? map.route?.distanceAllowanceMeters ?? map.plan?.distanceAllowanceMeters ?? 500000)
-                : (map.route?.distanceAllowanceMeters ?? map.plan?.distanceAllowanceMeters ?? 500000),
-          }
+      ...(requiresCostConfirmation || cause.code === "GEO_COST_OVERRUN"
+        ? { requiresCostConfirmation: true, turnId: ctx.turnId ?? stored.map.issue?.turnId }
+        : {}),
+      ...(typeof d.requiredCredits === "number" ? { requiredCredits: d.requiredCredits } : {}),
+      ...(typeof d.availableCredits === "number" ? { availableCredits: d.availableCredits } : {}),
+      ...(typeof d.shortfallCredits === "number" ? { shortfallCredits: d.shortfallCredits } : {}),
+      ...(cause.code === "GEO_LIMIT_EXCEEDED" &&
+      d.limit === "reservationCredits" &&
+      typeof d.actual === "number" &&
+      typeof d.max === "number"
+        ? { requiredCredits: d.actual, availableCredits: d.max, shortfallCredits: d.actual - d.max }
         : {}),
       ...(d.scope === "person" || d.scope === "cloud" ? { scope: d.scope } : {}),
       ...(typeof d.resetsAt === "string" ? { resetsAt: d.resetsAt } : {}),

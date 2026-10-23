@@ -99,7 +99,7 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
         ],
       };
     }
-    if (name.includes("overrun")) map.issue = { code: "GEO_COST_OVERRUN", distanceAllowanceMeters: 500000 };
+    if (name.includes("overrun")) map.issue = { code: "GEO_COST_OVERRUN", costs: { settledCredits: 20, unknownCredits: 2 } };
     if (name.includes("ambiguous")) {
       delete map.route;
       map.candidates = [mapAddress(), mapAddress(1), mapAddress(2)];
@@ -110,7 +110,7 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
           { id: "b", address: { text: "Blaubeuren" } },
         ],
       };
-      map.issue = { code: "GEO_ADDRESS_AMBIGUOUS" };
+      map.issue = { code: "GEO_ADDRESS_AMBIGUOUS", ...(name.includes("overrun") ? { requiresCostConfirmation: true as const } : {}) };
     }
     saved = {
       map,
@@ -126,6 +126,7 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
             }
           : { type: "places", search: { title: map.title, categories: ["museum"], near: "Ulm" } },
     };
+    if (name.includes("overrun")) saved.retry = { type: "preview", change: { type: "optimize" } };
     states.set(name, saved);
     return saved;
   };
@@ -234,7 +235,7 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
           const input = AiMapActionSchema.parse(await request.json());
           commands.push(input.command);
           if (input.revision !== before.map.revision) return Response.json({ code: "MAP_REVISION_CONFLICT" }, { status: 409 });
-          const next = await applyAiMap(before, input.command, contextFor(name));
+          const next = await applyAiMap(before, input.command, { ...contextFor(name), allowCostOverrunRetry: true });
           states.set(name, next);
           return Response.json({ map: next.map });
         }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mapAddress, mapAvailability, mapFixture, mapGeoFixture, mapPlaces, mapSuccess, mapTime } from "./map.test-fixture";
-import { AiMapToolInputSchema, aiMapToolResult } from "./map-contracts";
+import { AiMapSchema, AiMapToolInputSchema, aiMapToolResult } from "./map-contracts";
 import { aiMapNotebookContent } from "./map-notebook";
 import { applyAiMap, createAiMap } from "./map-service";
 
@@ -220,20 +220,112 @@ describe("native Assistant map transitions", () => {
     const result = await applyAiMap({ map: original }, { type: "preview", change: { type: "optimize" } }, f.ctx);
     expect(result.map.route).toEqual(original.route);
     expect(result.map.issue?.code).toBe("GEO_COST_OVERRUN");
+    expect(result.map.issue?.costs).toEqual({ settledCredits: 20, unknownCredits: 0 });
     expect(result.retry?.type).toBe("preview");
     const calls = f.calls.length;
-    await expect(applyAiMap(result, { type: "retry" }, f.ctx)).rejects.toThrow("MAP_NEW_ALLOWANCE_REQUIRED");
-    await expect(applyAiMap(result, { type: "retry", distanceAllowanceMeters: 500000 }, f.ctx)).rejects.toThrow(
-      "MAP_NEW_ALLOWANCE_REQUIRED",
-    );
+    await expect(applyAiMap(result, { type: "retry" }, f.ctx)).rejects.toThrow("MAP_CONFIRM_RETRY_REQUIRED");
+    expect(
+      AiMapToolInputSchema.safeParse({ mapId: original.id, revision: 1, command: { type: "retry", distanceAllowanceMeters: 600000 } })
+        .success,
+    ).toBe(false);
     expect(f.calls.length).toBe(calls);
     const local = await applyAiMap(result, { type: "discard" }, f.ctx);
     expect(local.map.issue?.code).toBe("GEO_COST_OVERRUN");
-    await expect(applyAiMap(local, { type: "preview", change: { type: "optimize" } }, f.ctx)).rejects.toThrow("MAP_NEW_ALLOWANCE_REQUIRED");
+    await expect(applyAiMap(local, { type: "preview", change: { type: "optimize" } }, f.ctx)).rejects.toThrow("MAP_CONFIRM_RETRY_REQUIRED");
     const described = await applyAiMap(local, { type: "describe", web: [] }, f.ctx);
     await expect(applyAiMap(described, { type: "retry" }, f.ctx)).rejects.toThrow();
-    const retried = await applyAiMap(result, { type: "retry", distanceAllowanceMeters: 600000 }, f.ctx);
+    const retried = await applyAiMap(result, { type: "retry" }, { ...f.ctx, allowCostOverrunRetry: true });
     expect(retried.map.issue?.code).toBe("GEO_COST_OVERRUN");
+  });
+  test.each([
+    { code: "GEO_BUDGET_EXHAUSTED", details: { requiredCredits: 40, availableCredits: 12, shortfallCredits: 28 } },
+    { code: "GEO_LIMIT_EXCEEDED", details: { limit: "reservationCredits", actual: 40, max: 12 } },
+  ])("route budget refusal preserves its numeric shortfall: $code", async ({ code, details }) => {
+    const f = context();
+    f.geo.updateRoute = async () => ({ ok: false, error: { code, status: 429, message: "budget", details } });
+    const result = await applyAiMap({ map: mapFixture("route") }, { type: "preview", change: { type: "optimize" } }, f.ctx);
+    expect(result.map.issue).toMatchObject({ code, requiredCredits: 40, availableCredits: 12, shortfallCredits: 28 });
+  });
+  test("an overdrawn concurrent budget keeps its signed balance and shortfall", async () => {
+    const f = context();
+    f.geo.updateRoute = async () => ({
+      ok: false,
+      error: {
+        code: "GEO_BUDGET_EXHAUSTED",
+        status: 429,
+        message: "budget",
+        details: { requiredCredits: 40, availableCredits: -4, shortfallCredits: 44 },
+      },
+    });
+    const result = await applyAiMap({ map: mapFixture("route") }, { type: "preview", change: { type: "optimize" } }, f.ctx);
+    expect(result.map.issue).toMatchObject({ requiredCredits: 40, availableCredits: -4, shortfallCredits: 44 });
+  });
+  test("insertion retry reuses its paid request ID after the failed snapshot is restored", async () => {
+    const f = context();
+    const original = mapFixture("route");
+    original.groups = mapFixture().groups;
+    const requests: unknown[] = [];
+    f.geo.updateRoute = async (input) => {
+      requests.push(structuredClone(input));
+      return {
+        ok: false,
+        error: { code: "GEO_COST_OVERRUN", status: 429, message: "overrun", details: { costs: { settledCredits: 20, unknownCredits: 0 } } },
+      };
+    };
+    const turnId = "3f9833b3-130d-4bf9-8cbd-bb584f9d50b9";
+    const result = await applyAiMap(
+      { map: original },
+      { type: "preview", change: { type: "insert", placeId: original.groups[0]!.places[0]!.id } },
+      { ...f.ctx, turnId },
+    );
+    expect(result.map.issue?.turnId).toBe(turnId);
+    const restored = { ...result, map: AiMapSchema.parse(JSON.parse(JSON.stringify(result.map))) };
+    await applyAiMap(restored, { type: "retry" }, { ...f.ctx, allowCostOverrunRetry: true });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toEqual(requests[0]);
+  });
+  test.each(["GEO_BUSY", "GEO_PROVIDER_FAILED", "GEO_BUDGET_EXHAUSTED"])(
+    "failed browser recovery keeps confirmation required after %s",
+    async (code) => {
+      const f = context();
+      const turnId = "3f9833b3-130d-4bf9-8cbd-bb584f9d50b9";
+      const map = { ...mapFixture("route"), issue: { code: "GEO_COST_OVERRUN", turnId } };
+      f.geo.updateRoute = async () => ({ ok: false, error: { code, status: 429, message: "failed" } });
+      const retry = { type: "preview", change: { type: "optimize" } } as const;
+      const next = await applyAiMap({ map, retry }, { type: "retry" }, { ...f.ctx, allowCostOverrunRetry: true });
+      expect(next.map.issue).toMatchObject({ code, turnId, requiresCostConfirmation: true });
+      await expect(applyAiMap(next, { type: "retry" }, f.ctx)).rejects.toThrow("MAP_CONFIRM_RETRY_REQUIRED");
+      const local = await applyAiMap(next, { type: "discard" }, f.ctx);
+      expect(local.map.issue).toEqual(next.map.issue);
+    },
+  );
+  test("browser recovery can resolve an ambiguous stop without releasing the model guard", async () => {
+    const f = context();
+    const map = { ...mapFixture("route"), issue: { code: "GEO_COST_OVERRUN" } };
+    delete map.route;
+    const retry = {
+      type: "route",
+      stops: [
+        { id: "a", address: "Ulm" },
+        { id: "b", address: "Blaubeuren" },
+      ],
+      title: "Tour",
+    } as const;
+    f.geo.calculateRoute = async () => ({
+      ok: false,
+      error: { code: "GEO_ADDRESS_AMBIGUOUS", status: 409, message: "choose", details: { candidates: [mapAddress()], stopId: "b" } },
+    });
+    const next = await applyAiMap(
+      { map, retry: { ...retry, stops: [...retry.stops] } },
+      { type: "retry" },
+      { ...f.ctx, allowCostOverrunRetry: true },
+    );
+    expect(next.map.issue).toMatchObject({ code: "GEO_ADDRESS_AMBIGUOUS", requiresCostConfirmation: true });
+    await expect(applyAiMap(next, { type: "choose", index: 0 }, f.ctx)).rejects.toThrow("MAP_CONFIRM_RETRY_REQUIRED");
+    f.geo.calculateRoute = async () => mapSuccess({ route: mapFixture("route").route! });
+    const chosen = await applyAiMap(next, { type: "choose", index: 0 }, { ...f.ctx, allowCostOverrunRetry: true });
+    expect(chosen.map.issue).toBeUndefined();
+    expect(chosen.map.plan?.stops[1]?.point).toEqual(mapAddress().point);
   });
   test("tool transport omits route geometry and undo snapshots", () => {
     const map = mapFixture("route");
