@@ -185,6 +185,106 @@ test("a waiting detail's Details button stays in the first row when the filters 
   }
 });
 
+test("the Plex head keeps Details close to its actions", async () => {
+  const page = await load({ head: { items: 4, detail: "sm" } }, 1440, 620);
+  try {
+    // Match the public presets used by Cloud. The default system font and an
+    // unloaded icon font have different metrics on the browser runner hosts.
+    await page.route("http://workspace.test/ui/**", (route) =>
+      route.fulfill({ path: resolve(workspaceDist, new URL(route.request().url()).pathname.slice(4)) }),
+    );
+    await page.addStyleTag({ url: "http://workspace.test/ui/plex.css" });
+    await page.addStyleTag({ url: "http://workspace.test/ui/tabler.css" });
+    await page.evaluate(() => document.fonts.ready);
+    await settled(page);
+    const toggle = await rect(page, "[data-app-workspace-detail-toggle]");
+    const primary = await rect(page, "[data-workspace-primary]");
+    const gap = toggle.x - primary.x - primary.width;
+    console.info(`Plex Details gap: ${gap}px; button width: ${toggle.width}px`);
+    expect(gap).toBeGreaterThanOrEqual(4);
+    expect(gap).toBeLessThanOrEqual(12);
+    expect(Math.abs(center(toggle) - center(primary))).toBeLessThanOrEqual(2);
+  } finally {
+    await page.close();
+  }
+});
+
+test("the Plex Details glyph aligns with its label and keeps keyboard focus", async () => {
+  const page = await load({ head: { items: 4, detail: "sm" } }, 1440, 620, true);
+  try {
+    await page.route("http://workspace.test/ui/**", (route) =>
+      route.fulfill({ path: resolve(workspaceDist, new URL(route.request().url()).pathname.slice(4)) }),
+    );
+    await page.addStyleTag({ url: "http://workspace.test/ui/plex.css" });
+    await page.addStyleTag({ url: "http://workspace.test/ui/tabler.css" });
+    await settled(page);
+    const toggle = page.locator("[data-app-workspace-detail-toggle]");
+    const boxes = await toggle.evaluate((button) => {
+      const label = button.querySelector(".k2b-button__label")!;
+      const icon = label.querySelector("i")!;
+      const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT);
+      if (!walker.nextNode()) throw new Error("Details label missing");
+      const range = document.createRange();
+      range.selectNodeContents(walker.currentNode);
+      const rect = (element: Element | Range) => {
+        const r = element.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      return { button: rect(button), label: rect(label), icon: rect(icon), text: rect(range) };
+    });
+    const clip = {
+      x: Math.floor(boxes.label.x),
+      y: Math.floor(boxes.label.y),
+      width: Math.ceil(boxes.label.width) + 1,
+      height: Math.ceil(boxes.label.height) + 1,
+    };
+    const png = await page.screenshot({ clip });
+    const inkOffset = await page.evaluate(
+      async ({ src, clip, boxes }) => {
+        const image = new Image();
+        image.src = src;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        const center = (box: typeof boxes.icon) => {
+          let top = image.height;
+          let bottom = -1;
+          for (let x = Math.floor(box.x - clip.x); x < Math.ceil(box.x + box.width - clip.x); x++) {
+            for (let y = Math.floor(box.y - clip.y); y < Math.ceil(box.y + box.height - clip.y); y++) {
+              const [r, g, b] = context.getImageData(x, y, 1, 1).data;
+              if (Math.max(r!, g!, b!) < 180) {
+                top = Math.min(top, y);
+                bottom = Math.max(bottom, y);
+              }
+            }
+          }
+          if (bottom < top) throw new Error("Details ink missing");
+          return (top + bottom + 1) / 2;
+        };
+        return center(boxes.icon) - center(boxes.text);
+      },
+      { src: `data:image/png;base64,${png.toString("base64")}`, clip, boxes },
+    );
+    console.info(`Plex Details ink offset: ${inkOffset}px`);
+    expect(Math.abs(inkOffset)).toBeLessThanOrEqual(0.5);
+    expect(boxes.button.height).toBe(32);
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await settled(page);
+    expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+    await page.keyboard.press("Escape");
+    await settled(page);
+    expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(await toggle.evaluate((button) => document.activeElement === button)).toBe(true);
+    expect(await toggle.boundingBox()).toEqual(boxes.button);
+  } finally {
+    await page.close();
+  }
+});
+
 test("More lists exactly the CSS-hidden views at each level and always keeps the current view in the strip", async () => {
   const page = await load({ head: { items: 8, current: "7" } }, 1440, 1440, true);
   try {

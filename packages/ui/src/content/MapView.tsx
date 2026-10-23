@@ -43,6 +43,7 @@ export function MapView(props: MapViewProps): JSX.Element {
   const notice = children(() => props.notice);
   const empty = children(() => props.empty);
   const [state, setState] = createSignal<MapState>("static");
+  createEffect(() => props.onStateChange?.(state()));
   const [dark, setDark] = createSignal(false);
   const [boxStyle, setBoxStyle] = createSignal<JSX.CSSProperties>();
   const [liveScale, setLiveScale] = createSignal<MapScale>();
@@ -165,37 +166,39 @@ export function MapView(props: MapViewProps): JSX.Element {
       if (!f) return;
       currentStyle = resolvedStyle();
       const t = messages();
-      const instance = createMap({
-        container: live,
-        style: currentStyle,
-        ...fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING),
-        attributionControl: false,
-        cooperativeGestures: true,
-        dragRotate: false,
-        // Shift-drag box zoom needs MapLibre's own stylesheet for its rectangle and starts without an input event.
-        boxZoom: false,
-        pitchWithRotate: false,
-        touchPitch: false,
-        maxPitch: 0,
-        bearing: 0,
-        pitch: 0,
-        keyboard: true,
-        trackResize: false,
-        // MapLibre's own gestures (keyboard and double-click zoom, inertia) follow the same choice as our buttons.
-        // The value is read when the map starts; MapLibre keeps one setting for all maps on the page.
-        reduceMotion: prefersReducedMotion(),
-        locale: {
-          "Map.Title": t.canvasTitle,
-          "CooperativeGesturesHandler.WindowsHelpText": t.gestureWindows,
-          "CooperativeGesturesHandler.MacHelpText": t.gestureMac,
-          "CooperativeGesturesHandler.MobileHelpText": t.gestureMobile,
+      const instance = createMap(
+        {
+          container: live,
+          style: currentStyle,
+          ...fitCamera(f, root.clientWidth, props.padding ?? DEFAULT_PADDING),
+          attributionControl: false,
+          cooperativeGestures: true,
+          dragRotate: false,
+          // Shift-drag box zoom needs MapLibre's own stylesheet for its rectangle and starts without an input event.
+          boxZoom: false,
+          pitchWithRotate: false,
+          touchPitch: false,
+          maxPitch: 0,
+          bearing: 0,
+          pitch: 0,
+          keyboard: true,
+          trackResize: false,
+          // MapLibre's own gestures (keyboard and double-click zoom, inertia) follow the same choice as our buttons.
+          // The value is read when the map starts; MapLibre keeps one setting for all maps on the page.
+          reduceMotion: prefersReducedMotion(),
+          locale: {
+            "Map.Title": t.canvasTitle,
+            "CooperativeGesturesHandler.WindowsHelpText": t.gestureWindows,
+            "CooperativeGesturesHandler.MacHelpText": t.gestureMac,
+            "CooperativeGesturesHandler.MobileHelpText": t.gestureMobile,
+          },
         },
-      });
+        fail,
+      );
       map = instance;
       instance.on("error", (event) => {
-        // Tile and source errors name their source and leave the map usable; a style that does not load does not.
-        const styleFailed = !("sourceId" in event) && !("tile" in event);
-        if (styleFailed && (state() === "loading" || replacingStyle)) fail();
+        // A missing paid resource must remain visible and recoverable, including failures after initial load.
+        if ("sourceId" in event || "tile" in event || state() === "loading" || replacingStyle) fail();
       });
       instance.on("style.load", () => {
         replacingStyle = false;

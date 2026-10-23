@@ -16,6 +16,7 @@ import {
   installFixtureStore,
 } from "../store/base-store.test-fixture";
 import { clickhouseQuery } from "../store/client";
+import { MaintenanceBusy } from "../store/maintenance-query";
 import { quoteIdentifier as q } from "../store/validation";
 import { requireBaseActive, requireBaseWritable } from "./access-control";
 import { createBaseLifecycle } from "./base-lifecycle";
@@ -52,6 +53,25 @@ const sourceKeyFixture = async () => {
 };
 suite("Pulse per-base store lifecycle", () => {
   beforeAll(installFixtureStore, 30_000);
+  test("maintenance contention preserves lifecycle attempts and asks for delayed resubmission", async () => {
+    const base = await fixtureBase(),
+      store = fixtureStore();
+    const run = createBaseLifecycle({
+      ...store,
+      prepare: async () => async () => {
+        throw new MaintenanceBusy();
+      },
+    });
+    try {
+      for (let attempt = 0; attempt < 6; attempt++) expect(await run(base.id)).toEqual({ done: false, retryAfterMs: 5000 });
+      const row = await loadStoreRow(base.id);
+      expect(row?.state).toBe("provisioning");
+      const [attempt] = await sql<{ attempts: number }[]>`SELECT attempts FROM pulse.base_stores WHERE base_id=${base.id}::uuid`;
+      expect(attempt?.attempts).toBe(0);
+    } finally {
+      await cleanupFixtureBase(base);
+    }
+  });
   test("source key creation and removal exceed a two-connection pool without nested reservations", async () => {
     const f = await sourceKeyFixture();
     const database = new SQL({ max: 2 });
