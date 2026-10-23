@@ -56,7 +56,7 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
     setStatus: async () => ok(),
   },
   credentials: {
-    createStandaloneApiToken: async ({ serviceAccountId, name, scopes, expiresAt, actor }) =>
+    createStandaloneApiToken: async ({ serviceAccountId, name, scopes, expiresAt, actor, access }) =>
       ok({
         credential: {
           id: CREDENTIAL_ID,
@@ -65,7 +65,7 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
           kind: "api_token",
           status: "active",
           tokenPrefix: "cld_standalone_preview",
-          scopes: scopes ?? [],
+          scopes: access === "models" ? ["ai:inference"] : (scopes ?? []),
           expiresAt: expiresAt ?? null,
           lastUsedAt: null,
           createdBy: actor.id,
@@ -120,6 +120,18 @@ describe("identity key administration", () => {
       body: JSON.stringify({ name: "forbidden", scopes: ["ai:inference"] }),
     });
     expect(response.status).toBe(400);
+  });
+  test("models purpose uses the administrator creation boundary and refuses mixed scopes", async () => {
+    const routes = createAdminIdentityRoutes(authenticateAdmin, dependencies());
+    for (const scopes of [[], ["files:read"]]) {
+      const response = await routes.request(`/service-accounts/${STANDALONE_ID}/api-keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Model worker", access: "models", scopes }),
+      });
+      expect(response.status).toBe(scopes.length ? 400 : 201);
+      if (!scopes.length) expect(await response.json()).toMatchObject({ credential: { scopes: ["ai:inference"] } });
+    }
   });
   test("requires an administrator by default", async () => {
     expect((await createAdminIdentityRoutes().request("/keys")).status).toBe(401);

@@ -3,6 +3,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
   accountsAppService as accountsService,
+  coreSettings,
   type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
 } from "@k2b/cloud/services";
@@ -14,6 +15,7 @@ import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
 import AccountsWorkspace from "../AccountsWorkspace";
 import { accountsMessages } from "../messages";
+import CreateMachineKey from "./CreateMachineKey.island";
 import ServiceAccountCredentialActions from "./ServiceAccountCredentialActions.island";
 import ServiceAccountsFilters from "./ServiceAccountsFilters.island";
 
@@ -40,6 +42,7 @@ export default ssr<AuthContext>(async (c) => {
     kind === "user_delegated" ? t.userBound : kind === "standalone" ? t.standalone : kind === "agent" ? t.agent : t.resourceBound;
   const formatNullableDate = (value: string | null) => (value ? dates.formatDateTime(value, { locale }) : "-");
   const user = expectUserBackedActor(c);
+  const modelsAvailable = await coreSettings.get<boolean>("ai.openai_api_enabled");
   const page = parsePage(c.req.query("page"));
   const perPage = 100;
   const search = (c.req.query("search") ?? "").trim();
@@ -94,9 +97,12 @@ export default ssr<AuthContext>(async (c) => {
         scrollPreserveKey="accounts-service-accounts"
       >
         <div class="flex flex-col gap-2">
-          <div class="min-w-0" style="view-transition-name: accounts-service-accounts-title">
-            <h1 class="text-base font-semibold text-primary">{t.serviceAccounts}</h1>
-            <p class="mt-1 text-xs text-dimmed">{t.serviceAccountSummary({ count: credentialsPage.total })}</p>
+          <div class="flex flex-wrap items-start justify-between gap-3" style="view-transition-name: accounts-service-accounts-title">
+            <div class="min-w-0">
+              <h1 class="text-base font-semibold text-primary">{t.serviceAccounts}</h1>
+              <p class="mt-1 text-xs text-dimmed">{t.serviceAccountSummary({ count: credentialsPage.total })}</p>
+            </div>
+            <CreateMachineKey modelsAvailable={modelsAvailable} />
           </div>
 
           <div style="view-transition-name: accounts-service-accounts-search">
