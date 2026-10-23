@@ -2,7 +2,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
-import { listCapabilities } from "../_internal/registry";
+import { type listApps, listCapabilities } from "../_internal/registry";
 import type { CapabilityRegistryEntry } from "../contracts";
 import {
   CAPABILITY_FRAMEWORK_ERROR_CODES,
@@ -14,9 +14,12 @@ import {
 import { type AuthContext, auth, expectUserBackedActor, jsonResponse, preferredLocale, requiresAuth, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
 import { logger } from "../services";
+import { appAccessAuthority } from "../services/app-access";
+import { discoverableAppEntries } from "../services/app-discovery";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { searchInvocationOperation } from "../services/identity/invocation-operations";
-import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
+import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { LOCALE_HEADER } from "../shared/locale";
 import { ndjsonLine, ndjsonStream, ndjsonStreamHeaders, startBounded, waitWithin } from "./fanout";
@@ -83,6 +86,7 @@ type SearchRouteDependencies = {
   listCapabilities?: () => Promise<CapabilityRegistryEntry[]>;
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   authenticate?: MiddlewareHandler<AuthContext>;
+  listApps?: typeof listApps;
   signInvocation?: typeof signInvocationToken;
   withActiveSigner?: typeof withActiveIdentitySigner;
 };
@@ -137,7 +141,7 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
       const invocationAuthority = invocationAuthorityFromRequest(auth.getAuthority(c));
       let entries: CapabilityRegistryEntry[];
       try {
-        entries = await registry();
+        entries = await discoverableAppEntries(appAccessAuthority(c), await registry(), dependencies.listApps);
       } catch (error) {
         log.warn("Search capability registry unavailable", { error: error instanceof Error ? error.message : String(error) });
         return c.json(
@@ -237,22 +241,25 @@ export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) =
           signedInvocations = await waitWithin(
             (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
               "invocation",
-              (signer) =>
+              (signer, db) =>
                 Promise.all(
                   startBounded(
                     active,
                     PROVIDER_CONCURRENCY,
                     (provider) =>
-                      (dependencies.signInvocation ?? signInvocationToken)({
-                        targetAppId: provider.appId,
-                        callingAppId: "core",
-                        operation: searchInvocationOperation,
-                        schemaHash: provider.schemaHash,
-                        authority: invocationAuthority,
-                        requestId,
-                        signer,
-                        issuer: signer.issuer,
-                      }),
+                      (dependencies.signInvocation ?? signInvocationToken)(
+                        {
+                          targetAppId: provider.appId,
+                          callingAppId: "core",
+                          operation: searchInvocationOperation,
+                          schemaHash: provider.schemaHash,
+                          authority: invocationAuthority,
+                          requestId,
+                          signer,
+                          issuer: signer.issuer,
+                        },
+                        { db, groupsAdmin: signer.groupsAdmin },
+                      ),
                     fanoutSignal,
                   ),
                 ),

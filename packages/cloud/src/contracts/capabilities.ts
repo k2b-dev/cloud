@@ -8,6 +8,7 @@ import {
 export * from "./capability-streams";
 
 import { z } from "zod";
+import type { RequestAuthority } from "../server/middleware/auth";
 import { CommandPathSchema } from "./commands";
 import type { AccessSubject, RequestActor, User } from "./shared";
 
@@ -762,6 +763,12 @@ export const UniversalSearchDataSchema = z.array(CloudResourceViewSchema).max(10
 export type UniversalSearchData = z.infer<typeof UniversalSearchDataSchema>;
 
 export type CapabilityExecutionContext = {
+  /**
+   * Resolved request authority, supplied by the framework for execution, review
+   * and streams. Optional for existing in-process callers; authority-aware
+   * services fail closed when it is absent. Preserve its credential limits.
+   */
+  authority?: RequestAuthority;
   actor: RequestActor;
   accessSubject: AccessSubject;
   user: User | null;

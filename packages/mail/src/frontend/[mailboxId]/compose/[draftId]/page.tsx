@@ -1,4 +1,5 @@
 import { type AuthContext, getDateConfig, getLocale, loadPendingApprovals } from "@k2b/cloud/server";
+import { appAccessAuthority } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../../config";
 import {
@@ -46,7 +47,7 @@ export default ssr<AuthContext>(async (c) => {
       senderIdentities.listSenderIdentities(context, mailboxId),
       drafts.getDraft(context, mailboxId, draftId),
       draftUploads.listUnfinishedDraftAttachmentUploads({ context, mailboxId, draftId }),
-      calendarInvitations.composerIntegrationAvailable(),
+      calendarInvitations.composerIntegrationAvailable(appAccessAuthority(c)),
       loadPendingApprovals(c, { app: "mail", link: draftLink }),
       composeTemplates.listComposeTemplates(context, mailboxId),
       composeTemplates.listComposeSignatureDefaults(context, mailboxId),

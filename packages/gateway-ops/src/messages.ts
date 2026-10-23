@@ -4,6 +4,12 @@ export const gatewayOpsMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      unreadableTitle: "Stored settings cannot be read",
+      unreadableDetail:
+        "The displayed values are fallbacks. Other applications may still read the stored values. Select only the settings you intend to replace, or ask the operator to restore access.",
+      replaceStored: "Replace stored value",
+      recoveryFailed: "Saved settings could not be refreshed. Retry saving to refresh them; your draft is kept.",
+
       apiInvalidRequest: "The Gateway request is invalid",
       apiAccessDenied: "You do not have permission to perform this Gateway operation",
       apiResourceNotFound: "The requested Gateway resource was not found",
@@ -883,6 +889,13 @@ export const gatewayOpsMessages = i18n.define({
       syncRunAccepted: ({ scheduleId, runId }: { scheduleId: string; runId: string }) => `Run accepted for ${scheduleId} (${runId})`,
     },
     de: {
+      unreadableTitle: "Gespeicherte Einstellungen sind nicht lesbar",
+      unreadableDetail:
+        "Die angezeigten Werte sind Ersatzwerte. Andere Anwendungen können die gespeicherten Werte möglicherweise noch lesen. Wähle nur Einstellungen aus, die du ersetzen möchtest, oder bitte den Betreiber, den Zugriff wiederherzustellen.",
+      replaceStored: "Gespeicherten Wert ersetzen",
+      recoveryFailed:
+        "Die gespeicherten Einstellungen konnten nicht neu geladen werden. Erneut speichern lädt sie neu; der Entwurf bleibt erhalten.",
+
       apiInvalidRequest: "Die Gateway-Anfrage ist ungültig",
       apiAccessDenied: "Du hast keine Berechtigung für diesen Gateway-Vorgang",
       apiResourceNotFound: "Die angeforderte Gateway-Ressource wurde nicht gefunden",

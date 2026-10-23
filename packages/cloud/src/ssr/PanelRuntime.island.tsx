@@ -1,6 +1,7 @@
 import { installAppWorkspaceController, installInputModeController, keyboardPlatform } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { installPanelContextReceiver } from "../browser/panel-context-receiver";
+import { hasPanelLeaveGuard, panelLinkDestination } from "../browser/panel-leave";
 import { syncTimezoneCookie } from "./timezone-cookie";
 
 export default function PanelRuntime(props: { provider?: string; scope?: string }) {
@@ -24,15 +25,18 @@ export default function PanelRuntime(props: { provider?: string; scope?: string 
     };
     const close = () => window.parent.postMessage({ type: "cloud.panel.close" }, location.origin);
     const click = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-      const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
-      if (!anchor || (anchor.target && anchor.target !== "_self") || anchor.hasAttribute("download")) return;
-      const url = new URL(anchor.getAttribute("href")!, document.baseURI);
-      if (url.origin !== location.origin) return;
+      const url = panelLinkDestination(event);
+      if (!url) return;
       const scope = props.scope?.replace(/\/$/, "");
-      if (scope !== undefined && (url.pathname === scope || url.pathname.startsWith(`${scope}/`))) return;
+      const internal = scope !== undefined && (url.pathname === scope || url.pathname.startsWith(`${scope}/`));
+      if (!hasPanelLeaveGuard()) {
+        if (internal) return;
+        event.preventDefault();
+        window.parent.location.assign(url.href);
+        return;
+      }
       event.preventDefault();
-      window.parent.location.assign(url.href);
+      window.parent.postMessage({ type: "cloud.panel.navigate", v: 1, href: url.href }, location.origin);
     };
     const key = (event: KeyboardEvent) => {
       if (event.isComposing || event.defaultPrevented || event.altKey || event.shiftKey) return;

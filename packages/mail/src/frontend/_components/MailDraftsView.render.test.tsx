@@ -49,7 +49,8 @@ describe("MailDraftsView", () => {
       nextCursor: "next",
       total: 3,
     });
-    expect(html).toContain("3 drafts");
+    expect(html).toContain('<h1 class="sr-only">Drafts</h1>');
+    expect(html).not.toContain("<header");
     expect(html).toContain('href="/app/mail/Box001/compose/Drf001?return=%2Fapp%2Fmail%2FBox001%3Ffolder%3DFld001"');
     expect(html).toContain("Quarterly figures");
     expect(html).toContain("Ada Example and 1 more");
@@ -88,6 +89,6 @@ describe("MailDraftsView", () => {
   test("explains an empty Drafts folder", () => {
     const html = render({ items: [], nextCursor: null, total: 0 });
     expect(html).toContain("No drafts");
-    expect(html).toContain("0 drafts");
+    expect(html).toContain('<h1 class="sr-only">Drafts</h1>');
   });
 });
