@@ -55,6 +55,7 @@ const log = logger("ai:runtime");
 
 const AI_WORKER_ID = `worker-${crypto.randomUUID()}`;
 const AI_TURN_HEARTBEAT_MS = 3_000;
+// Local turn orchestration (tools and approval waits included), not a model-provider quota.
 const AI_TURN_WORKER_CONCURRENCY = 8;
 const AI_TURN_MAX_ATTEMPTS = 5;
 

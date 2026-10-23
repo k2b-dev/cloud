@@ -573,3 +573,14 @@ email send path; IMAP credentials only in Core's bounce poller.
 Keep the same `APP_SECRET` across applications and upgrades.
 Application grants are platform policy, not isolation: applications share the
 database and `APP_SECRET`, so only install application code you trust.
+
+## Shared SMTP capacity
+
+Immediate delivery, bulk delivery, and profile test sends share eight SMTP
+places across all replicas of the installation. Worker concurrency still
+bounds each process. Admission makes one attempt within the existing
+60-second attempt deadline; a full budget or unavailable Valkey leaves queued
+mail retryable with a visible busy message. Profile test sends return HTTP 503.
+The transport closes before its place is released. See
+[Scaling and shutdown](/en/docs/operations/scaling-and-shutdown) for slot expiry
+and rollout behavior.

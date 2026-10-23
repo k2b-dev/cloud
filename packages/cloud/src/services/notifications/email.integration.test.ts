@@ -23,7 +23,11 @@ import { prepareNotificationEmail } from "./email-frame";
 import { notifications } from "./index";
 import { notificationObservability } from "./observability";
 
-suiteFor("database", "nats")("notification email through outgoing mail", () => {
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("notification email through outgoing mail", () => {
   let originalTargets: string | undefined;
   beforeEach(() => {
     originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
