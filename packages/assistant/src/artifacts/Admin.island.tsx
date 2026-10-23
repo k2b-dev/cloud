@@ -1,6 +1,7 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, DataTable, NoticeCard, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
+import { DatabaseSettingsForm, StorageSettingsForm } from "./AdminSettings";
 import type { artifactAdmin } from "./admin";
 import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
@@ -27,107 +28,10 @@ export default function Admin(props: { initial: Awaited<ReturnType<typeof artifa
   const settings = () =>
     act(async () => {
       const current = await artifactClient.admin.settings();
-      await prompts.dialog<void>(
-        (close) => {
-          const [url, setUrl] = createSignal(current.url),
-            [token, setToken] = createSignal(""),
-            [saving, setSaving] = createSignal<"test" | "save" | "clear" | null>(null),
-            [failure, setFailure] = createSignal(""),
-            [tested, setTested] = createSignal(false);
-          return (
-            <div class="flex flex-col gap-4">
-              <TextInput
-                label={t().serverUrl}
-                value={url()}
-                onValueChange={(value) => {
-                  setUrl(value);
-                  setTested(false);
-                }}
-              />
-              <TextInput
-                label={t().token}
-                password
-                value={token()}
-                onValueChange={(value) => {
-                  setToken(value);
-                  setTested(false);
-                }}
-                placeholder={current.tokenSet ? "••••••••" : ""}
-              />
-              <p class="text-sm text-muted">{t().tokenHint}</p>
-              <Show when={failure()}>
-                <NoticeCard tone="danger" title={failure()} />
-              </Show>
-              <Show when={tested()}>
-                <NoticeCard tone="success" title={t().connectionReady} />
-              </Show>
-              <div class="flex flex-wrap gap-2">
-                <Button
-                  variant="secondary"
-                  loading={saving() === "test"}
-                  disabled={Boolean(saving())}
-                  onClick={async () => {
-                    setSaving("test");
-                    setFailure("");
-                    setTested(false);
-                    try {
-                      await artifactClient.admin.test({ url: url(), ...(token() ? { token: token() } : {}) });
-                      setTested(true);
-                    } catch (error) {
-                      setFailure(error instanceof Error ? error.message : t().REQUEST_FAILED);
-                    } finally {
-                      setSaving(null);
-                    }
-                  }}
-                >
-                  {t().testConnection}
-                </Button>
-                <Button
-                  loading={saving() === "save"}
-                  disabled={Boolean(saving())}
-                  onClick={async () => {
-                    setSaving("save");
-                    setFailure("");
-                    try {
-                      await artifactClient.admin.configure({ url: url(), ...(token() ? { token: token() } : {}) });
-                      close();
-                    } catch (error) {
-                      setFailure(error instanceof Error ? error.message : t().REQUEST_FAILED);
-                    } finally {
-                      setSaving(null);
-                    }
-                  }}
-                >
-                  {t().save}
-                </Button>
-                <Show when={current.url || current.tokenSet}>
-                  <Button
-                    variant="subtle"
-                    loading={saving() === "clear"}
-                    disabled={Boolean(saving())}
-                    onClick={async () => {
-                      setSaving("clear");
-                      setFailure("");
-                      setTested(false);
-                      try {
-                        await artifactClient.admin.configure({ url: "", token: "" });
-                        close();
-                      } catch (error) {
-                        setFailure(error instanceof Error ? error.message : t().REQUEST_FAILED);
-                      } finally {
-                        setSaving(null);
-                      }
-                    }}
-                  >
-                    {t().clearSettings}
-                  </Button>
-                </Show>
-              </div>
-            </div>
-          );
-        },
-        { title: t().settings, size: "medium" },
-      );
+      await prompts.dialog<void>((close) => <DatabaseSettingsForm current={current} close={close} />, {
+        title: t().settings,
+        size: "medium",
+      });
     });
   const permissions = (id: string) =>
     act(async () => {
@@ -154,6 +58,21 @@ export default function Admin(props: { initial: Awaited<ReturnType<typeof artifa
         </Button>
       </div>
       <NoticeCard tone="info" title={t().files + " / KV"} detail={t().storageHelp} />
+      <Button
+        variant="secondary"
+        disabled={busy()}
+        onClick={() =>
+          act(async () => {
+            const current = await artifactClient.admin.storageSettings();
+            await prompts.dialog<void>((close) => <StorageSettingsForm current={current} close={close} />, {
+              title: t().storageLimits,
+              size: "medium",
+            });
+          })
+        }
+      >
+        {t().storageLimits}
+      </Button>
       <form
         onSubmit={(event) => {
           event.preventDefault();

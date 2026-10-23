@@ -14,7 +14,7 @@ export default function MailAdminContactDirectory(props: { view: ContactDirector
 
   const configure = async () => {
     const saved = await openMailContactDirectoryDialog(view(), locale());
-    if (saved) setView((current) => ({ ...current, config: saved, issues: [] }));
+    if (saved) setView((current) => ({ ...current, ...saved, issues: [] }));
   };
 
   return (
@@ -28,7 +28,7 @@ export default function MailAdminContactDirectory(props: { view: ContactDirector
           {appName()} · {usesContactDirectoryDefaults(view().config) ? t().defaults : t().custom}
         </p>
       </div>
-      <Show when={view().issues.length > 0}>
+      <Show when={view().issues.length > 0 || Object.values(view().unreadable ?? {}).some(Boolean)}>
         <StatusBadge tone="warning" label={t().needsAttention} />
       </Show>
       <Button variant="secondary" size="sm" type="button" onClick={() => void configure()}>

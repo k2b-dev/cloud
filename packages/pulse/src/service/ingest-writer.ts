@@ -30,6 +30,7 @@ import {
 } from "./ingest-bulk";
 import { type IngestQuota, ingestQuota, type QuotaError } from "./ingest-quota";
 import { MetricSeriesLimitError } from "./metric-cardinality";
+import { type OwnedIngestIdentity, requireOwnedIngestSource } from "./owned-ingest";
 import { PULSE_INGEST_SCOPE, resolveIngestSourceForServiceAccount } from "./source-management";
 import { recordStoreOutage } from "./store-health";
 
@@ -175,6 +176,7 @@ export type IngestParams = {
   baseId: string;
   sourceId: string;
   batch: PulseIngestBatch;
+  ownedSource?: OwnedIngestIdentity;
   idempotencyKey?: string | null;
   requestBytes?: number;
   locale?: string;
@@ -207,12 +209,16 @@ export const createIngestWriter = ({
     let reserved = false,
       writing = false;
     try {
-      const connectedStore = { ...store, query: await store.prepare() };
+      const connectedStore = { ...store, query: await store.prepare("ingest") };
       // T1 is deliberately a separate, committed transaction.
       const preflight = await database.begin(async (tx) => {
         await tx`SET LOCAL statement_timeout='30s'`.simple();
         await tx`SET LOCAL lock_timeout='30s'`.simple();
         const base = await lockIngestScope(params.baseId, params.sourceId, tx);
+        if (params.ownedSource) {
+          const owned = await requireOwnedIngestSource(params.baseId, params.sourceId, params.ownedSource, tx);
+          if (!owned.ok) throw new IngestTransactionFailure(owned.error);
+        }
         await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`pulse.ingest:${params.baseId}`},0))`;
         let acceptedAt = new Date(Math.max(now.getTime(), base.lastAcceptedAt ? base.lastAcceptedAt.getTime() + 1 : now.getTime()));
         let plannedStates: PlannedStates | null = null;
@@ -286,6 +292,10 @@ export const createIngestWriter = ({
         await tx`SET LOCAL statement_timeout='30s'`.simple();
         await tx`SET LOCAL lock_timeout='30s'`.simple();
         const base = await lockIngestScope(params.baseId, params.sourceId, tx);
+        if (params.ownedSource) {
+          const owned = await requireOwnedIngestSource(params.baseId, params.sourceId, params.ownedSource, tx);
+          if (!owned.ok) throw new IngestTransactionFailure(owned.error);
+        }
         // Source locks serialize this source; lifecycle SHARE locks protect all inserts.
         if (base.reset_generation !== preflight.base.reset_generation)
           throw new IngestTransactionFailure({ code: "CONFLICT", status: 409, message: "Base data was reset during ingest" });

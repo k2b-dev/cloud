@@ -1,4 +1,5 @@
 import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPanel, AppPresentationCatalog, AppSearchLink } from "./app";
+import type { AppAccessRule } from "./app-access";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "./capabilities";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { Role } from "./shared";
@@ -77,6 +78,7 @@ export type AppRuntimeMetadata = {
 };
 
 export type AppRegistryEntry = {
+  access?: AppAccessRule;
   platformPermissions?: readonly PlatformPermission[];
   id: string;
   name: string;

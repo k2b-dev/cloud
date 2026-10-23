@@ -60,7 +60,14 @@ export const simpleMailSearchExpression = (
   return expressions.length === 1 ? expressions[0]! : { type: "or", expressions };
 };
 
-export type MailSearchReference = Extract<MailSearchExpression, { type: "folder_id" | "local_tag_id" }>;
+export type MailSearchReference =
+  | Extract<MailSearchExpression, { type: "folder_id" | "local_tag_id" }>
+  | (Extract<MailSearchExpression, { type: "unread" | "flagged" }> & { folderId: string });
+
+const isMailSearchReference = (expression: MailSearchExpression): expression is MailSearchReference =>
+  expression.type === "folder_id" ||
+  expression.type === "local_tag_id" ||
+  ((expression.type === "unread" || expression.type === "flagged") && typeof expression.folderId === "string");
 
 /** Stands in for a folder or tag condition whose folder or tag no longer exists: it matches nothing. */
 export const MAIL_SEARCH_MATCHES_NOTHING: MailSearchExpression = { type: "not", expression: { type: "all" } };
@@ -69,7 +76,7 @@ export const MAIL_SEARCH_MATCHES_NOTHING: MailSearchExpression = { type: "not", 
 export const mailSearchReferences = (expression: MailSearchExpression): MailSearchReference[] => {
   if (expression.type === "and" || expression.type === "or") return expression.expressions.flatMap(mailSearchReferences);
   if (expression.type === "not") return mailSearchReferences(expression.expression);
-  return expression.type === "folder_id" || expression.type === "local_tag_id" ? [expression] : [];
+  return isMailSearchReference(expression) ? [expression] : [];
 };
 
 /** Replaces every folder and tag condition of an expression and keeps all other conditions. */
@@ -81,7 +88,7 @@ export const replaceMailSearchReferences = (
     return { ...expression, expressions: expression.expressions.map((child) => replaceMailSearchReferences(child, replace)) };
   }
   if (expression.type === "not") return { ...expression, expression: replaceMailSearchReferences(expression.expression, replace) };
-  return expression.type === "folder_id" || expression.type === "local_tag_id" ? replace(expression) : expression;
+  return isMailSearchReference(expression) ? replace(expression) : expression;
 };
 
 const serializeBuiltMailSearch = (state: MailSearchState): SerializedMailSearchState => {

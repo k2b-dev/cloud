@@ -5,7 +5,7 @@ section: Operations
 order: 1125
 description: Choose Cloud applications and identify their infrastructure, secrets, feature dependencies, startup order, and verification checks.
 tags: [deployment, dependencies, infrastructure, configuration, bootstrap]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Deployment requirements
@@ -91,11 +91,19 @@ release. See [Action contract migration](/en/docs/platform/capabilities#migrate-
 ## Enable addresses and places
 
 Core's [geo Queries](/en/docs/platform/places-and-maps) need outbound HTTPS to
-`api-eu.geoapify.com`. Store the Geoapify key as the secret `geo.api_key` in
-**Administration → Settings → Places and addresses**. There is no endpoint
-setting or new environment variable.
+`api-eu.geoapify.com`. Enter the Geoapify key in
+**Administration → Places and maps**. Core checks it with one provider lookup
+before storing it as the secret `geo.api_key`. There is no endpoint setting or
+new environment variable.
 Choose `geo.plan`, then review the monthly and per-person daily credit limits.
 Core creates its durable geo ledger during startup migrations.
+Routing now shares these settings and counters. Its full provider chain is
+reserved against a caller-selected reference-distance allowance (default
+500 km per leg). Known distance overruns are debited even beyond the original
+reservation, and stop subsequent paid steps; later reservations see the
+exhausted counters. This reference budget is not a guaranteed provider-invoice
+ceiling. Review [routing accounting](/en/docs/platform/places-and-maps#set-a-reference-distance-allowance)
+before selecting budgets for long routes or optimized tours.
 
 Search text, addresses, coordinates, categories, and route corridor geometry
 leave the installation for Geoapify when a cache miss is admitted. In the
@@ -447,7 +455,7 @@ or mutate real data without approval.
 | [Assistant](/en/apps/assistant) (`assistant`) | Baseline; can serve its UI with AI disabled | Core owns AI execution. Configure AI profiles and access, then optional Firecrawl/PDF tools. Studio PDF generation/embedding needs Gotenberg with Factur-X and request-directory isolation support (development uses 8.36.0); local Finance APIs and PDF text extraction need no Gotenberg. Resource databases additionally need `assistant.rsql_url` and the secret `assistant.rsql_api_token`, configured in Studio administration. Cross-app tools require their provider apps and current user permissions; the Assistant container does not need the OAuth broker secret. | Send a short test prompt, observe streamed output and durable history; test one permitted read-only tool. Run a database-free script. If databases are configured, explicitly connect a test resource and query it. |
 | [Tools](/en/apps/tools) (`tools`) | Baseline | Browser utilities need no extra backend. Markdown-to-PDF needs Gotenberg. Document extraction uses the native dependency bundled in the app image, not a separate Gotenberg conversion service. Speed tests need sufficient proxy/body/streaming limits; webhook delivery needs approved egress. | Open `/tools`; check a browser utility and, if enabled, convert a small document or Markdown PDF. |
 | [Quotes](/en/apps/quotes) (`quotes`) | Baseline | Fresh quotes require outbound HTTPS to `zenquotes.io`; no provider-key setting. This app has API/widget routes, not an `/app/quotes` page. | Read `/api/quotes` or its Dashboard widget and verify quote data. |
-| [Weather](/en/apps/weather) (`weather`) | Baseline; Core owns the weather schema migration | Forecasts need outbound HTTPS to `api.brightsky.dev`. City search additionally needs `weather.geo_url`; optional `weather.default_lat` / `weather.default_lon` select a default location. | Search a German city and load its forecast; verify forecast and city-search dependencies separately. |
+| [Weather](/en/apps/weather) (`weather`) | Baseline; Core owns the weather schema migration | Forecasts need outbound HTTPS to `api.brightsky.dev`. City search additionally needs Core’s secret `geo.api_key` and available geo budget; optional `weather.default_lat` / `weather.default_lon` select a default location. | Search a German city and load its forecast; verify forecast and city-search dependencies separately. |
 
 ## Configure optional services before testing their features
 
@@ -463,7 +471,7 @@ egress is needed from Core, while Mail needs access to its mailbox providers.
 | AI web tools | `ai.firecrawl_api_key` and provider egress | Test the selected web tool; this is not required for basic chat. |
 | HTML/Markdown PDF | `gotenberg.url`, optional `gotenberg.username` / `gotenberg.password`, and configured limits/timeouts; [keep Gotenberg offline](#keep-gotenberg-offline) | Follow [PDF and templates](/en/docs/platform/pdf-and-templates). `GOTENBERG_URL` can bootstrap `gotenberg.url`; Dev Compose sets it to `http://gotenberg:3000`. A saved setting wins. Without a URL, Grids tells users that an administrator must configure PDF rendering. |
 | Browser push | `notifications.web_push_public_key`, `notifications.web_push_private_key`, browser subscription/permission and outbound push-service access | Test native notification delivery to an opted-in browser with Cloud visible and with no open Cloud tab. Notification history does not depend on browser push. |
-| City search | `weather.geo_url` pointing to the supported Geo API | `GEO_ALLOWED_TARGETS` defaults to `geo`; an explicit allowlist replaces that default. Dev supplies a Geo container (`http://geo:4000` internally), but an administrator must still set the Geo API URL in Weather settings. An empty URL returns `WEATHER_CITY_SEARCH_NOT_CONFIGURED` (500); Geo service failures return `WEATHER_CITY_SEARCH_UNAVAILABLE` (500). Capability errors point to `weather.forecast.current` / `weather.forecast.get` with `source.kind = "coordinates"`; forecast access is a separate dependency. |
+| City search | Core’s Geoapify EU service (`geo.api_key`) | Sign-in required. Core `address.autocomplete` suggests up to five German cities for at least three characters and charges the caller’s geo budget. `GEO_NOT_CONFIGURED` means an administrator must configure Core. `GEO_BUDGET_EXHAUSTED` includes its scope and reset time. Forecasts for known coordinates remain independent. |
 
 For S3 snapshots, enter credentials in the individual notebook's snapshot
 configuration, not invented global S3 credential environment keys. Snapshots upload
@@ -482,7 +490,7 @@ server.
 
 Operators can allow internal administrator-configured endpoints with
 `GATEWAY_OPS_WEBHOOK_ALLOWED_TARGETS` in `app-gateway-ops` (default empty,
-public targets only), `GEO_ALLOWED_TARGETS` in `app-weather` (default `geo`),
+public targets only),
 `ASSISTANT_RSQL_ALLOWED_TARGETS` in `app-assistant` (default `rsql`), and
 `OUTGOING_MAIL_ALLOWED_TARGETS` in `app-core` (default empty, covering both SMTP
 and bounce IMAP). Each accepts exact host names, IP addresses and CIDRs.
@@ -500,11 +508,10 @@ authentication first. Both SMTP and IMAP preserve the original host name for TLS
 certificate verification.
 
 **After this update:** Existing installations whose health webhooks, outgoing
-mail SMTP/IMAP profiles, Geo URL, or rsql URL point at internal hosts other than
+mail SMTP/IMAP profiles or rsql URL point at internal hosts other than
 the defaults fail with a clear reason until the operator sets the corresponding
-variable. Stored configuration stays. Geo reports city search as unavailable
-and logs `GEO_ALLOWED_TARGETS`; mail delivery policy refusals remain retryable
-until the message deadline. Use narrow entries and retain `geo` or `rsql` in an
+variable. Stored configuration stays. Mail delivery policy refusals remain retryable
+until the message deadline. Use narrow entries and retain `rsql` in an
 explicit list if the shipped containers must stay reachable.
 
 Cloud admins release internal metrics targets per Pulse base under
@@ -715,6 +722,18 @@ During the rollout to this release, a replica of the previous version takes no
 setup lock. Restart old and new replicas of one app one at a time until all
 run this release. Keep Core first: it creates the shared schemas other
 applications need.
+
+### Pulse agent telemetry actions
+
+Pulse adds `base.create`, `base.clear_data`, `base.delete`, and `ingest.write`
+to its capability catalog. The existing base creation policy and base grants
+apply. Creation and ingest support remembered approval; clearing and deletion
+ask every time. Source creation and update keep their existing approval rules.
+The schema update records the creating access subject on new sources. Existing
+source tokens and API writes continue working; sources without a recorded
+creator need a new source for `ingest.write`. No data backfill is required.
+Website collectors keep tokens in their backend secret store and send through
+the existing HTTP ingest endpoint. See [Pulse](/en/apps/pulse#track-a-website-from-its-backend).
 
 ### Prepare Pulse's new data store
 

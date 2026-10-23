@@ -2,9 +2,11 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { appAccess } from "@k2b/cloud";
 import type { CapabilityExecutionContext, CloudRuntime } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, userFromActor } from "@k2b/cloud/server";
 import { get as getSetting, serviceAccountCredentials } from "@k2b/cloud/services";
+import { useRegisteredTestApp } from "@k2b/cloud/services/identity/application.test-fixture";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { sql } from "bun";
@@ -192,6 +194,7 @@ const expectAgreement = async (subject: Subject, target: Book, read: boolean, wr
 };
 
 suite("Contacts book grants on every application surface (#1234 option B)", () => {
+  useRegisteredTestApp("contacts", appAccess.signedIn());
   let owner: Awaited<ReturnType<typeof person>>;
   let admin: Subject;
   let delegatedAdmin: Subject;
@@ -230,7 +233,8 @@ suite("Contacts book grants on every application surface (#1234 option B)", () =
     const agent = await account("agent");
     await grant(b.id, { serviceAccountId: agent });
     agentReader = await apiToken(agent, ["read"]);
-    agentUnscoped = await apiToken(agent, ["openid"]);
+    // App entry is allowed; no resource read/write scope is granted.
+    agentUnscoped = await apiToken(agent, ["openid", "contacts:read"]);
     const sync = await account("standalone");
     await grant(b.id, { serviceAccountId: sync });
     standalone = await apiToken(sync, ["read"]);

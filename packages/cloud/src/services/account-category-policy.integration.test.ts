@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { redis, type Server, sql } from "bun";
 import { Hono } from "hono";
+import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import adminSettings from "../api/admin-core-settings";
@@ -44,6 +45,7 @@ const sender: AuthNotificationSender = {
 };
 
 suite("isolated account category policy", () => {
+  useTestAppRegistry(["mail", "spaces"]);
   let server: Server<unknown>;
   const user = async (provider = "local", profile = "user") => {
     const uid = `category-${crypto.randomUUID()}`;

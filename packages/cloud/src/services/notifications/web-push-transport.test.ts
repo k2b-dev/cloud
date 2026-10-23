@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import type { ClientRequest, IncomingMessage } from "node:http";
 import type { RequestOptions } from "node:https";
 import type { RequestDetails } from "web-push";
+import { networkTransportFixture } from "../../../../../scripts/fixtures/network-transport";
 import { buildPinnedWebPushRequests, sendPinnedWebPush } from "./web-push-transport";
 
 const subscription = {
@@ -113,4 +114,95 @@ describe("pinned Web Push transport", () => {
 
     expect(attemptedHosts).toEqual(["1.1.1.1", "8.8.8.8"]);
   });
+});
+
+for (const mode of ["deadline", "caller"] as const)
+  test(`Web Push ${mode} covers DNS without starting a request after a late answer`, async () => {
+    const lookup = Promise.withResolvers<Array<{ address: string; family: 4 }>>();
+    const caller = new AbortController();
+    let sent = false;
+    const pending = sendPinnedWebPush(
+      subscription,
+      "payload",
+      { timeout: mode === "deadline" ? 10 : 15_000 },
+      {
+        signal: caller.signal,
+        resolve: () => lookup.promise,
+        generateRequestDetails: requestDetails,
+        request: () => {
+          sent = true;
+          throw new Error("unexpected");
+        },
+      },
+    );
+    if (mode === "caller") caller.abort(new Error("cancelled"));
+    await expect(pending).rejects.toThrow(mode === "deadline" ? "timed out" : "cancelled");
+    lookup.resolve([{ address: "1.1.1.1", family: 4 }]);
+    await Bun.sleep(0);
+    expect(sent).toBe(false);
+  });
+
+for (const mode of ["deadline", "caller"] as const)
+  test(`Web Push ${mode} closes a slowly streaming provider response`, async () => {
+    const fixture = await networkTransportFixture((_req, res) => {
+      res.writeHead(201);
+      res.write("x");
+      const timer = setInterval(() => res.write("x"), 5);
+      res.once("close", () => clearInterval(timer));
+    });
+    const caller = new AbortController();
+    try {
+      const pending = sendPinnedWebPush(
+        subscription,
+        "payload",
+        { timeout: mode === "deadline" ? 80 : 15_000 },
+        {
+          signal: caller.signal,
+          resolve: async () => [{ address: "1.1.1.1", family: 4 }],
+          generateRequestDetails: requestDetails,
+          request: fixture.request,
+        },
+      );
+      await fixture.firstResponse;
+      if (mode === "caller") caller.abort(new Error("cancelled"));
+      await expect(pending).rejects.toThrow(mode === "deadline" ? "timed out" : "cancelled");
+      expect(fixture.requests[0]!.destroyed).toBe(true);
+      await fixture.disconnected();
+      expect(fixture.responses[0]!.destroyed).toBe(true);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+test("Web Push address attempts retain one total deadline", async () => {
+  const attempted: string[] = [];
+  const fixture = await networkTransportFixture(() => {});
+  try {
+    await expect(
+      sendPinnedWebPush(
+        subscription,
+        "payload",
+        { timeout: 80 },
+        {
+          resolve: async () => [
+            { address: "1.1.1.1", family: 4 },
+            { address: "8.8.8.8", family: 4 },
+            { address: "9.9.9.9", family: 4 },
+          ],
+          generateRequestDetails: requestDetails,
+          request: (options, callback) => {
+            attempted.push(String(options.hostname));
+            const outgoing = fixture.request(options, callback);
+            if (attempted.length === 1) queueMicrotask(() => outgoing.destroy(new Error("connect failed")));
+            return outgoing;
+          },
+        },
+      ),
+    ).rejects.toThrow("timed out");
+    expect(attempted).toEqual(["1.1.1.1", "8.8.8.8"]);
+    expect(fixture.requests.every((request) => request.destroyed)).toBe(true);
+    await fixture.disconnected();
+  } finally {
+    await fixture.close();
+  }
 });

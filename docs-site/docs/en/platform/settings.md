@@ -108,10 +108,11 @@ Writes over unreadable rows fail with HTTP 409 `setting_unreadable` by default.
 `SettingUnreadableError`, `SettingRead`, and `StoredSettingState` are exported
 from `@k2b/cloud/services`. To replace a whole value with explicit input, pass
 `{ replaceUnreadable: true }` as the third argument to `app.settings.set()`.
-Never build that replacement by merging over a fallback. An endpoint that
-writes a complete value from explicit administrator input may pass
-`replaceUnreadable: true`; anything that derives the new value from a read must
-not. Per-key admin routes built on `settingsService.entry.update` accept
+Never build that replacement by merging over a fallback. An endpoint must carry
+the administrator's explicit replacement intent for that key; receiving a complete form is not evidence of that intent. Report
+unreadable state per key, omit unchanged fields from the submission, and send
+replacement intent only for the unreadable keys the administrator selected.
+Never opt every save into replacement. Per-key admin routes built on `settingsService.entry.update` accept
 `replaceUnreadable: true` alongside `value` for explicit replacement.
 
 To change part of a value, read with `read()` and refuse an unreadable state:
@@ -132,8 +133,17 @@ The store checks again inside the write transaction, so a concurrent unreadable
 row also refuses the write. `coreSettings.read<T>(key)` and
 `coreSettings.set(key, value, options?)` offer the same behavior for platform
 services. The lower-level `settings.set(key, value, db?, options?)` accepts the
-replacement option after an optional transaction; transaction callers invalidate
-the settings cache after commit.
+replacement option after an optional transaction. For a submission changing
+several keys, pass the same transaction to every write so a late conflict rolls
+back the whole submission. `settings.read(key, db?)` and
+`settings.readStates(keys, db?)` also accept that transaction. Lock related
+values before reading and validating constraints across them. Transaction
+callers invalidate the settings cache only after commit, using
+`invalidateSettingsCache(keys)` from `@k2b/cloud/services/settings`.
+
+If a save returns `setting_unreadable`, refresh per-key stored-state metadata
+while retaining the draft and replacement selections. Expose replacement
+controls for newly unreadable keys; never silently retry with replacement enabled.
 
 `remove()` deletes the stored override. The next read uses the fallback or
 default.
