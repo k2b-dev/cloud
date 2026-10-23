@@ -1,23 +1,28 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { type ProcessSync, startProcessSync } from "@k2b/cloud";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
-import { type AccessSubject, type AuthContext, auth, type RequestActor } from "@k2b/cloud/server";
+import { type AccessSubject, type AuthContext, auth, type RequestActor, type RequestAuthority, requireInvocation } from "@k2b/cloud/server";
 import { accounts, coreSettings, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { Filegate } from "@k2b/filegate";
 import { sql } from "bun";
 import { Hono } from "hono";
+import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { invocationAuthorityFromRequest } from "../../../cloud/src/services/identity/invocation-authority";
+import { signInvocationToken } from "../../../cloud/src/services/identity/invocation-token";
 import { activityFilegate } from "../../test/activity-filegate";
 import { testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
 import api from "../api";
 import type { OfficeEditorLaunch } from "../contracts";
 import { entryRef } from "../data/references";
+import { uploads } from "../data/uploads";
 import { fileActions, fileQueries } from "../file-capabilities";
 import { migrate } from "../migrate";
 import { publicApi } from "../public";
 import { filesService as service } from ".";
 import { verifyEditorToken } from "./collabora";
+import { FilesRoot } from "./filegate-facade";
 import { templateService } from "./templates";
 
 const suite = suiteFor("database", "nats", "valkey");
@@ -27,6 +32,11 @@ suite("Files machine storage through actual API tokens", () => {
   let admin: Extract<RequestActor, { kind: "user" }>;
   let client: Filegate;
   let office: ReturnType<typeof Bun.serve> | undefined;
+  let oauthPrivateKey: CryptoKey;
+  let oauthPublicKey: Awaited<ReturnType<typeof exportJWK>>;
+  const oauthKid = "files-fixture-oauth";
+  const originalIdentityOrigin = process.env.CLOUD_IDENTITY_JWKS_ORIGIN;
+  const originalJwksOrigin = process.env.CLOUD_OAUTH_JWKS_ORIGIN;
   const prefix = `machine-access-${Bun.randomUUIDv7()}`;
   const call = () => testCall(admin);
   async function token(id: string, scopes: string[]) {
@@ -54,7 +64,7 @@ suite("Files machine storage through actual API tokens", () => {
   }
   const capture = new Hono<AuthContext>()
     .use(auth.requireRole("authenticated"))
-    .get("/", (c) => c.json({ actor: c.get("actor"), subject: c.get("accessSubject") }));
+    .get("/", (c) => c.json({ actor: c.get("actor"), subject: c.get("accessSubject"), authority: auth.getAuthority(c) }));
   async function capabilityContext(key: string): Promise<CapabilityExecutionContext> {
     const identity = await data<{ actor: RequestActor; subject: AccessSubject }>(
       await capture.request("/", { headers: { authorization: `Bearer ${key}` } }),
@@ -73,12 +83,19 @@ suite("Files machine storage through actual API tokens", () => {
   beforeAll(async () => {
     await assertPrivateDatabase();
     // Use real Core schemas and public services; no stand-in authentication or grant resolver.
-    for (const name of ["auth", "settings", "audit"]) {
+    for (const name of ["auth", "settings", "audit", "logging"]) {
       const path = `../../../core/src/migrate/core/${name}.ts`;
       const module = await import(path);
       await module.migrate();
     }
+    const { migrate: migrateOAuth } = await import("../../../oauth/src/migrate");
+    await migrateOAuth();
     await migrate();
+    const [clock] = await sql<{ now: Date }[]>`SELECT now() AS now`;
+    setSystemTime(clock!.now);
+    const pair = await generateKeyPair("RS256", { extractable: true });
+    oauthPrivateKey = pair.privateKey;
+    oauthPublicKey = await exportJWK(pair.publicKey);
     const adminId = Bun.randomUUIDv7();
     await sql`INSERT INTO auth.users(id,uid,provider,profile,admin,display_name) VALUES(${adminId}::uuid,'files-machine-admin','local','user',true,'Fixture administrator')`;
     const user = await accounts.users.get({ id: adminId });
@@ -92,11 +109,15 @@ suite("Files machine storage through actual API tokens", () => {
     office = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
-      fetch: () =>
-        new Response(
-          `<wopi-discovery><net-zone name="external-http"><app name="writer"><action ext="odt" name="edit" urlsrc="https://office.example.test/browser/editor?"/><action ext="odt" name="view" urlsrc="https://office.example.test/browser/editor?"/></app></net-zone></wopi-discovery>`,
-        ),
+      fetch: (req) =>
+        new URL(req.url).pathname.startsWith("/.well-known/")
+          ? Response.json({ keys: [{ ...oauthPublicKey, kid: oauthKid, alg: "RS256", use: "sig" }] })
+          : new Response(
+              `<wopi-discovery><net-zone name="external-http"><app name="writer"><action ext="odt" name="edit" urlsrc="https://office.example.test/browser/editor?"/><action ext="odt" name="view" urlsrc="https://office.example.test/browser/editor?"/></app></net-zone></wopi-discovery>`,
+            ),
     });
+    process.env.CLOUD_OAUTH_JWKS_ORIGIN = office.url.origin;
+    process.env.CLOUD_IDENTITY_JWKS_ORIGIN = office.url.origin;
     await service.saveConfiguration(call(), {
       url: gateway.url,
       token: gateway.token,
@@ -121,6 +142,11 @@ suite("Files machine storage through actual API tokens", () => {
         .root("cloud")
         .remove(prefix, true)
         .catch(() => undefined);
+    setSystemTime();
+    if (originalJwksOrigin === undefined) delete process.env.CLOUD_OAUTH_JWKS_ORIGIN;
+    else process.env.CLOUD_OAUTH_JWKS_ORIGIN = originalJwksOrigin;
+    if (originalIdentityOrigin === undefined) delete process.env.CLOUD_IDENTITY_JWKS_ORIGIN;
+    else process.env.CLOUD_IDENTITY_JWKS_ORIGIN = originalIdentityOrigin;
     office?.stop(true);
     await gateway?.stop();
     await runtime?.stop();
@@ -200,6 +226,16 @@ suite("Files machine storage through actual API tokens", () => {
         credentialId: credential.credential.id,
       };
       const machineCall = testCall(actor);
+      const cleanupShare = await data<{ id: string }>(
+        await request(credential.token, `${base}/shares`, "POST", {
+          kind: "download",
+          title: "Scope fixture",
+          paths: ["note.txt"],
+          expiresIn: "1d",
+        }),
+      );
+      await denied(await request(readOnly.token, `/shares/${cleanupShare.id}/revoke`, "POST", {}));
+      await data(await request(credential.token, `/shares/${cleanupShare.id}/revoke`, "POST", {}));
       const share = await service.createShare(machineCall, {
         baseId: storage.baseId,
         kind: "download",
@@ -236,6 +272,62 @@ suite("Files machine storage through actual API tokens", () => {
       await denied(await publicApi.request(`${inboxPath}?segment=0`, { method: "PUT", body: "abc" }));
       await expect(service.publicInboxLease(inboxToken, inboxUpload.id)).rejects.toMatchObject({ status: 404 });
       await expect(service.publicInboxCommit(inboxToken, inboxUpload.id)).rejects.toMatchObject({ status: 404 });
+      const racingInbox = await data<{ id: string; url: string }>(
+        await request(credential.token, `${base}/shares`, "POST", {
+          kind: "inbox",
+          title: "Publication fixture",
+          folder: "allowed",
+          expiresIn: "1d",
+        }),
+      );
+      const racingToken = new URL(racingInbox.url).pathname.split("/").at(-1)!;
+      const racingUpload = await service.publicInboxUpload(racingToken, {
+        name: "revoked-publication.txt",
+        size: 3,
+        idempotencyKey: Bun.randomUUIDv7(),
+      });
+      const racingPath = new URL(racingUpload.url!).pathname.replace("/share/filesv2", "");
+      expect((await publicApi.request(`${racingPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
+      const reservation = await uploads.getForShare(racingUpload.id, racingInbox.id);
+      let inspected = 0;
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const originalSession = FilesRoot.prototype.session;
+      const inspection = spyOn(FilesRoot.prototype, "session").mockImplementation(async function (this: FilesRoot, ...args) {
+        const session = await originalSession.apply(this, args);
+        // First inspection reconciles the receipt; the second precedes publication.
+        if (args[0] === reservation!.filegate_session_id && ++inspected === 2) {
+          entered.resolve();
+          await release.promise;
+        }
+        return session;
+      });
+      const committing = service.publicInboxCommit(racingToken, racingUpload.id).then(
+        (value) => ({ value, error: null }),
+        (error) => ({ value: null, error }),
+      );
+      try {
+        await Promise.race([
+          entered.promise,
+          committing.then(() => {
+            throw new Error("Commit finished before the inspection barrier");
+          }),
+        ]);
+        await data(await request(credential.token, `/shares/${racingInbox.id}/revoke`, "POST", {}));
+        release.resolve();
+        expect((await committing).error).toMatchObject({ status: 404 });
+        expect((await uploads.getForShare(racingUpload.id, racingInbox.id))?.state).toBe("open");
+        await expect(service.publicInboxCommit(racingToken, racingUpload.id)).rejects.toMatchObject({ status: 404 });
+        await expect(
+          client.root("cloud").stat(`${prefix}/users/machine-${account.id}/allowed/revoked-publication.txt`),
+        ).rejects.toMatchObject({
+          status: 404,
+        });
+      } finally {
+        release.resolve();
+        await committing;
+        inspection.mockRestore();
+      }
       const pending = await data<{ id: string; url: string }>(
         await request(credential.token, `${base}/uploads`, "POST", {
           idempotencyKey: Bun.randomUUIDv7(),
@@ -328,6 +420,8 @@ suite("Files machine storage through actual API tokens", () => {
       expect((await service.publicShare(fileShareToken, "download")).items.map((item) => item.name)).toEqual(["note.txt"]);
       await service.publicShareDownload(fileShareToken, "note.txt");
       await service.revokeStorage(call(), storage.id, fileAdmin.id);
+      await denied(await request(readOnly.token, `/shares/${fileShare.id}/revoke`, "POST", {}));
+      await data(await request(credential.token, `/shares/${fileShare.id}/revoke`, "POST", {}));
       await expect(service.publicShareDownload(fileShareToken, "note.txt")).rejects.toMatchObject({ status: 404 });
       const leafWrite = await service.grantStorage(call(), storage.id, { path: "leaf.txt", principal, permission: "write" });
       const leaf = await data<{ id: string; url: string }>(
@@ -433,6 +527,106 @@ suite("Files machine storage through actual API tokens", () => {
       await expect(service.createMachineStorage(call(), { ownerId: otherCreated.data.id, area: "freeipa" })).rejects.toMatchObject({
         code: "identity_incomplete",
       });
+    }, 60000);
+  }
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`${kind}: signed OAuth authority survives in transfers and editors only while its client is live`, async () => {
+      const created = await serviceAccounts.createStandalone({ name: `OAuth Files ${kind}`, kind, createdBy: admin.user.id });
+      if (!created.ok) throw new Error(created.error.code);
+      const account = created.data;
+      const storage = await service.createMachineStorage(call(), { ownerId: account.id, area: "cloud" });
+      const principal = { type: "service_account" as const, serviceAccountId: account.id };
+      const grant = await service.grantStorage(call(), storage.id, { path: "", principal, permission: "admin" });
+      const clientId = `files-oauth-${Bun.randomUUIDv7()}`;
+      await sql`INSERT INTO oauth.clients(name,client_id,redirect_uris,service_account_id,scopes) VALUES('Files fixture',${clientId},ARRAY[]::text[],${account.id}::uuid,ARRAY['read','write','admin'])`;
+      const sign = (scope: string, expires: number) =>
+        new SignJWT({
+          token_use: "access",
+          client_id: clientId,
+          service_account_id: account.id,
+          scope,
+        })
+          .setProtectedHeader({ alg: "RS256", kid: oauthKid })
+          .setIssuer("http://files-machine.test")
+          .setSubject(account.id)
+          .setAudience("cloud")
+          .setIssuedAt(Math.floor(Date.now() / 1000))
+          .setExpirationTime(expires)
+          .sign(oauthPrivateKey);
+      const expiry = Math.floor(Date.now() / 1000) + 3600;
+      const bearer = await sign("admin", expiry);
+      const readBearer = await sign("read", expiry);
+      const base = `/bases/${storage.baseId}`;
+      const captureResponse = await capture.request("/", { headers: { authorization: `Bearer ${bearer}` } });
+      const identity = await data<{ actor: RequestActor; authority: RequestAuthority }>(captureResponse);
+      expect(identity.actor).toMatchObject({ kind: "service_account", credentialId: null, oauthClientId: clientId });
+      const upload = await data<{ id: string; url: string }>(
+        await request(bearer, `${base}/uploads`, "POST", {
+          idempotencyKey: Bun.randomUUIDv7(),
+          path: "oauth.odt",
+          size: 3,
+          onConflict: "error",
+        }),
+      );
+      const uploadPath = new URL(upload.url).pathname.replace("/share/filesv2", "");
+      expect((await publicApi.request(`${uploadPath}?segment=0`, { method: "PUT", body: "abc" })).status).toBe(200);
+      await data(await request(bearer, `${base}/uploads/${upload.id}/commit`, "POST", {}));
+      const download = await data<{ url: string }>(await request(bearer, `${base}/download`, "POST", { path: "oauth.odt" }));
+      const transferPath = new URL(download.url).pathname.replace("/share/filesv2", "");
+      expect(await (await publicApi.request(transferPath)).text()).toBe("abc");
+      const editor = await data<OfficeEditorLaunch>(await request(bearer, `${base}/editor`, "POST", { path: "oauth.odt" }));
+      const ref = new URL(new URL(editor.action).searchParams.get("WOPISrc")!).pathname.split("/").at(-1)!;
+      expect(verifyEditorToken(editor.token)?.machine).toMatchObject({
+        oauthClientId: clientId,
+        credentialExpiresAt: new Date(expiry * 1000).toISOString(),
+        scopes: ["admin"],
+      });
+      expect((await service.editorFileInfo(editor.token, ref)).UserCanWrite).toBe(true);
+      const readEditor = await data<OfficeEditorLaunch>(await request(readBearer, `${base}/editor`, "POST", { path: "oauth.odt" }));
+      expect((await service.editorFileInfo(readEditor.token, ref)).UserCanWrite).toBe(false);
+      await denied(await request(readBearer, `${base}/directories`, "POST", { path: "scope-denied" }));
+      await denied(await request(await sign("admin", Math.floor(Date.now() / 1000) - 1), `${base}/entries`));
+      // Only safe identity references are retained; upstream lease material stays encrypted.
+      const [ticket] = await sql<
+        { oauth_client_id: string; payload: string; scopes: string[] }[]
+      >`SELECT oauth_client_id,payload,scopes FROM filesv2.transfer_tickets WHERE base_id=${storage.id}::uuid AND permission='read' ORDER BY expires_at DESC LIMIT 1`;
+      expect(ticket?.oauth_client_id).toBe(clientId);
+      expect(ticket?.scopes).toEqual(["admin"]);
+      expect(JSON.stringify(ticket)).not.toContain(bearer);
+      expect(Buffer.from(editor.token.split(".")[0]!, "base64url").toString()).not.toContain(bearer);
+      const signedInvocation = await signInvocationToken({
+        issuer: "http://files-machine.test",
+        callingAppId: "core",
+        targetAppId: "filesv2",
+        operation: "capability.query:content.read",
+        schemaHash: null,
+        authority: invocationAuthorityFromRequest(identity.authority),
+        signer: { key: oauthPrivateKey, kid: oauthKid, signUntil: new Date(expiry * 1000) },
+      });
+      const invocationEndpoint = new Hono<AuthContext>()
+        .use(requireInvocation(() => ({ targetAppId: "filesv2", operation: "capability.query:content.read", schemaHash: null })))
+        .get("/", (c) => c.json({ actor: c.get("actor") }));
+      const invoke = () => invocationEndpoint.request("/", { headers: { authorization: `Bearer ${signedInvocation.token}` } });
+      const transported = await data<{ actor: RequestActor }>(await invoke());
+      expect(transported.actor).toMatchObject({ oauthClientId: clientId, scopes: ["admin"] });
+      const invocationCall = testCall(transported.actor);
+      const invocationDownload = await service.download(invocationCall, { baseId: storage.baseId, path: "oauth.odt" });
+      const invocationPath = new URL(invocationDownload.url).pathname.replace("/share/filesv2", "");
+      expect(await (await publicApi.request(invocationPath)).text()).toBe("abc");
+      const invocationEditor = await service.editor(invocationCall, { baseId: storage.baseId, path: "oauth.odt" });
+      if (invocationEditor.kind === "markdown") throw new Error("Expected office editor");
+      expect((await service.editorFileInfo(invocationEditor.token, ref)).UserCanWrite).toBe(true);
+      await sql`DELETE FROM oauth.clients WHERE client_id=${clientId}`;
+      expect((await serviceAccounts.get({ id: account.id }))?.status).toBe("active");
+      expect((await service.storageGrants(call(), storage.id)).items.some((item) => item.id === grant.id)).toBe(true);
+      await denied(await invoke());
+      await denied(await publicApi.request(invocationPath));
+      await expect(service.editorFileInfo(invocationEditor.token, ref)).rejects.toMatchObject({ status: 403 });
+      await denied(await request(bearer, `${base}/entries`));
+      await denied(await publicApi.request(transferPath));
+      await denied(await publicApi.request(`${uploadPath}?segment=0`, { method: "PUT", body: "abc" }));
+      await expect(service.editorFileInfo(editor.token, ref)).rejects.toMatchObject({ status: 403 });
+      await expect(service.editorFileInfo(readEditor.token, ref)).rejects.toMatchObject({ status: 403 });
     }, 60000);
   }
 });

@@ -103,7 +103,7 @@ export type {
   ServiceAccountCredentialOwner,
   ServiceAccountCredentialStatus,
 } from "./service-account-credentials";
-export { oauthTokens } from "./oauth-tokens";
+export { isServiceAccountOAuthAuthorityCurrent, oauthTokens } from "./oauth-tokens";
 export type { AuthenticatedOAuthToken } from "./oauth-tokens";
 export { webauthn } from "./webauthn";
 export type { WebAuthnRp } from "./webauthn";

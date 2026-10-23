@@ -34,6 +34,7 @@ describe("editor tokens", () => {
       scopes: ["filesv2:read"],
       credentialId: "7f0f2a4e-6d0d-4b3e-9d0e-3f1a8c1f0a11",
       credentialExpiresAt: "2026-10-23T13:00:00Z",
+      oauthClientId: "editor-oauth-client",
     };
     const token = signEditorToken({ ...payload, machine });
     expect(verifyEditorToken(token, now)).toEqual({ ...payload, machine });

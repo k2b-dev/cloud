@@ -106,6 +106,7 @@ type RequestActor =
       delegatedUser: User | null;
       scopes: string[];
       credentialId?: string | null;
+      oauthClientId?: string | null;
       credentialExpiresAt?: string | null;
     };
 ```
@@ -138,6 +139,23 @@ service-account grants.
 A standalone service account has no user and no resource binding. Read
 `serviceAccount.kind` before treating a userless actor as resource-bound; see
 [Standalone service accounts and agents](/en/docs/identity/service-accounts).
+
+## Retain service-account authority
+
+An application that issues its own transfer or editor capability can retain
+`credentialId` for an API key, or `oauthClientId` for OAuth, together with
+`credentialExpiresAt`, the service-account ID and the captured scopes. These
+identifiers contain no bearer secret. Protect their provenance in server-side
+storage or an application-signed payload; never retain the original credential.
+Cloud forwards these references through internal invocations too.
+
+For an OAuth reference, call `isServiceAccountOAuthAuthorityCurrent` from
+`@k2b/cloud/services` with `{ serviceAccountId, clientId, expiresAt }` before
+each authorized operation. It checks expiry and the same live client, account
+and delegated-user policy as OAuth authentication. It grants no domain access:
+reload resource permissions and keep the captured scopes as an upper bound.
+For an API key, also check the current credential's status, account binding,
+expiry and scope cap through `serviceAccountCredentials.getOverview`.
 
 ## Get a user only when required
 

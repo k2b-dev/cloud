@@ -17,6 +17,7 @@ export async function migrateMachineStorage() {
     path text NOT NULL, permission text NOT NULL CHECK(permission IN ('read','write')),
     share_id uuid, payload text NOT NULL, expires_at timestamptz NOT NULL
   )`.simple();
+  await sql`ALTER TABLE filesv2.transfer_tickets ADD COLUMN IF NOT EXISTS oauth_client_id text`.simple();
   await sql`CREATE INDEX IF NOT EXISTS filesv2_transfer_expiry ON filesv2.transfer_tickets(expires_at)`.simple();
   await sql`ALTER TABLE filesv2.activity DROP CONSTRAINT IF EXISTS activity_actor_kind_check,
     ADD CONSTRAINT activity_actor_kind_check CHECK(actor_kind IN ('user','service_account','visitor','system','observed'))`.simple();

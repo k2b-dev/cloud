@@ -21,7 +21,7 @@ import { type UserFilesCall, uploadAction, visitorCall } from "./activity";
 import type { readConfiguration } from "./configuration";
 import { FilesError } from "./errors";
 import type { FilesFilegate, FilesRoot } from "./filegate-facade";
-import { filesAuditActor, machineOwner, principalMetadata } from "./machine-access";
+import { filesAuditActor, filesScope, machineActor, machineOwner, principalMetadata } from "./machine-access";
 import { joinPath, relativePath, userPath } from "./paths";
 import type { UnixIdentity } from "./posix";
 import { hashSharePassword, requireSharePassword, unlockSharePassword } from "./share-password";
@@ -270,6 +270,10 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         throw new FilesError("not_found", 404);
       await activeRow(row);
       if (row.kind === "download" ? !contains(row, path) : parentPath(path) !== row.scope) throw new FilesError("forbidden", 403);
+      // Creator and storage resolution above can await remote inspection. Read the
+      // share again last, immediately before the guarded effect is admitted.
+      const live = await shares.get(id);
+      if (!live || shareState(live) !== "active") throw new FilesError("not_found", 404);
     },
     async unlockShare(token: string, kind: "download" | "inbox", password: string) {
       if (password.length < 1 || password.length > 256) throw new FilesError("share_password_invalid", 403);
@@ -360,6 +364,9 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
     },
     async revokeShare(call: UserFilesCall, input: { id: string; admin?: boolean }): Promise<ShareView> {
       const actor = call.actor;
+      // Revocation is owner cleanup: it needs no remaining storage grant.
+      // Machine credentials still need the same administration scope as creation.
+      if (machineActor(actor) && filesScope(actor) !== "admin") throw new FilesError("forbidden", 403);
       const { row, userId, binding } = await management(actor, input.id, input.admin);
       await shares.revoke(row.id, userId);
       await audit.record({
@@ -463,6 +470,7 @@ export function createSharingService<T extends SharingAccess>(deps: SharingDepen
         row.items.map((relative) => ({ root: row.root, path: joinPath(row.base_path, relative), archivePath: relative })),
         300,
       );
+      await activeShare(token, "download", access);
       await shares.touch(row.id);
       return {
         url: deps.archiveTicket ? await deps.archiveTicket(actor, current, row.id, lease) : lease.url,

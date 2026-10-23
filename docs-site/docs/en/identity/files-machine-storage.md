@@ -98,3 +98,8 @@ FreeIPA access.
 Files records the acting machine, storage binding and request ID for changes.
 Authorization audit entries use a path hash and depth. File contents and transfer
 bearer URLs do not belong in audit metadata.
+
+Share owners can revoke their own links after their storage grant is removed.
+For a standalone service account or agent, revocation still requires an
+administration-scoped credential. A read or write credential cannot administer
+links. Human and personal delegated callers keep their owner cleanup access.

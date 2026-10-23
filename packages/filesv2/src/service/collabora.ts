@@ -18,6 +18,7 @@ const TokenPayloadSchema = z
       .object({
         scopes: z.array(z.string()).max(100),
         credentialId: z.string().uuid().nullable(),
+        oauthClientId: z.string().min(1).max(200).nullable().optional(),
         credentialExpiresAt: z.string().nullable(),
         delegatedUserId: z.string().uuid().nullable().optional(),
       })
@@ -29,7 +30,13 @@ export type EditorTokenPayload = {
   baseId: string;
   path: string;
   expiresAt: number;
-  machine?: { scopes: string[]; credentialId: string | null; credentialExpiresAt: string | null; delegatedUserId?: string | null };
+  machine?: {
+    scopes: string[];
+    credentialId: string | null;
+    oauthClientId?: string | null;
+    credentialExpiresAt: string | null;
+    delegatedUserId?: string | null;
+  };
 };
 const encode = (value: string) => Buffer.from(value).toString("base64url");
 const sign = (body: string) => createHmac("sha256", env.APP_SECRET).update(`filesv2.editor:${body}`).digest("base64url");

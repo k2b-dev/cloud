@@ -3,6 +3,7 @@ import type { RequestActor } from "../../server/middleware/auth";
 import type { AccessSubject } from "../../server/services/access";
 import { isAccountCategoryAllowed } from "../account-category-policy";
 import { isAccountExpired } from "../account-model";
+import { isServiceAccountOAuthAuthorityCurrent } from "../oauth-tokens";
 import type { ServiceAccount } from "../service-accounts";
 import { buildProjectedUser, loadCurrentUser, userProjectionJoin, userProjectionSql, withoutAdminRole } from "../session/user";
 import type { CloudInvocationClaims } from "./invocation-token";
@@ -113,9 +114,21 @@ export const resolveInvocationAuthority = async (
     delegatedUser,
     scopes: [...claims.scopes],
     credentialId: claims.credential_id ?? null,
-    credentialExpiresAt: new Date(claims.exp * 1_000).toISOString(),
+    oauthClientId: claims.oauth_client_id ?? null,
+    credentialExpiresAt: new Date(
+      Math.min(claims.exp * 1_000, claims.credential_expires_at ? Date.parse(claims.credential_expires_at) : Infinity),
+    ).toISOString(),
     delegation,
   };
+  if (
+    claims.oauth_client_id &&
+    !(await isServiceAccountOAuthAuthorityCurrent({
+      serviceAccountId: serviceAccount.id,
+      clientId: claims.oauth_client_id,
+      expiresAt: actor.credentialExpiresAt,
+    }))
+  )
+    return null;
   const accessSubject: AccessSubject = delegatedUser
     ? { type: "user", userId: delegatedUser.id, delegatedByServiceAccountId: serviceAccount.id }
     : { type: "service_account", serviceAccountId: serviceAccount.id };

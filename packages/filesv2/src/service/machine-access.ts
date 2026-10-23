@@ -12,7 +12,15 @@ import {
   resolveDisplayNames,
   updateAccess,
 } from "@k2b/cloud/server";
-import { accounts, audit, secrets, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
+import {
+  accounts,
+  audit,
+  isServiceAccountOAuthAuthorityCurrent,
+  secrets,
+  serviceAccountCredentials,
+  serviceAccounts,
+  toPgTextArray,
+} from "@k2b/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import type { Binding } from "../data/bases";
@@ -60,6 +68,15 @@ export async function currentCredential(actor: Extract<RequestActor, { kind: "se
   if (account.kind === "user_delegated" && (!actor.delegatedUser || account.delegatedUserId !== actor.delegatedUser.id))
     throw new FilesError("forbidden", 403);
   if (actor.credentialExpiresAt && Date.parse(actor.credentialExpiresAt) <= Date.now()) throw new FilesError("forbidden", 403);
+  if (
+    actor.oauthClientId &&
+    !(await isServiceAccountOAuthAuthorityCurrent({
+      serviceAccountId: account.id,
+      clientId: actor.oauthClientId,
+      expiresAt: actor.credentialExpiresAt,
+    }))
+  )
+    throw new FilesError("forbidden", 403);
   if (actor.credentialId) {
     const credential = await serviceAccountCredentials.getOverview({ id: actor.credentialId });
     if (
@@ -253,6 +270,7 @@ type Ticket = {
   principal_kind: "user" | "service_account";
   delegated_user_id: string | null;
   credential_id: string | null;
+  oauth_client_id: string | null;
   credential_expires_at: Date | null;
   scopes: string[];
   path: string;
@@ -274,8 +292,8 @@ export async function transferTicket(
   const token = randomBytes(32).toString("base64url");
   await sql`DELETE FROM filesv2.transfer_tickets WHERE digest IN (SELECT digest FROM filesv2.transfer_tickets WHERE expires_at<=now() LIMIT 100)`;
   const encrypted = await secrets.encrypt(payload);
-  await sql`INSERT INTO filesv2.transfer_tickets(digest,base_id,principal_id,principal_kind,delegated_user_id,credential_id,credential_expires_at,scopes,path,permission,share_id,payload,expires_at)
-    VALUES(${digest(token)},${binding.id}::uuid,${actor.kind === "user" ? actor.user.id : actor.serviceAccount.id}::uuid,${actor.kind},${actor.kind === "service_account" ? (actor.delegatedUser?.id ?? null) : null}::uuid,${actor.kind === "service_account" ? (actor.credentialId ?? null) : null}::uuid,${actor.kind === "service_account" ? (actor.credentialExpiresAt ?? null) : null}::timestamptz,${actor.kind === "service_account" ? actor.scopes : []},${path},${payload.kind === "upload" ? "write" : "read"},${shareId ?? null}::uuid,${encrypted},${expires}::timestamptz)`;
+  await sql`INSERT INTO filesv2.transfer_tickets(digest,base_id,principal_id,principal_kind,delegated_user_id,credential_id,oauth_client_id,credential_expires_at,scopes,path,permission,share_id,payload,expires_at)
+    VALUES(${digest(token)},${binding.id}::uuid,${actor.kind === "user" ? actor.user.id : actor.serviceAccount.id}::uuid,${actor.kind},${actor.kind === "service_account" ? (actor.delegatedUser?.id ?? null) : null}::uuid,${actor.kind === "service_account" ? (actor.credentialId ?? null) : null}::uuid,${actor.kind === "service_account" ? (actor.oauthClientId ?? null) : null},${actor.kind === "service_account" ? (actor.credentialExpiresAt ?? null) : null}::timestamptz,${toPgTextArray(actor.kind === "service_account" ? actor.scopes : [])}::text[],${path},${payload.kind === "upload" ? "write" : "read"},${shareId ?? null}::uuid,${encrypted},${expires}::timestamptz)`;
   return `/share/filesv2/transfer/${token}`;
 }
 export async function readTransferTicket(token: string) {
@@ -302,6 +320,7 @@ export async function readTransferTicket(token: string) {
       delegatedUser,
       scopes: ticket.scopes,
       credentialId: ticket.credential_id,
+      oauthClientId: ticket.oauth_client_id,
       credentialExpiresAt: ticket.credential_expires_at?.toISOString() ?? null,
     };
     await currentCredential(machine);

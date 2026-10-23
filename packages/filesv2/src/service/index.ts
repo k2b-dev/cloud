@@ -340,8 +340,9 @@ export function createFilesService(
     config: Config,
     shareId?: string,
     trashAccess = false,
+    shareBinding?: Binding,
   ): FilesRoot {
-    const binding = item.storage;
+    const binding = item.storage ?? shareBinding;
     if (!binding) return root;
     const relative = async (path: string, session = false) => {
       if (session) {
@@ -366,7 +367,8 @@ export function createFilesService(
           if (!fresh.candidates.some((candidate) => candidate.storage?.id === binding.id)) throw new FilesError("forbidden", 403);
           return;
         }
-        await checkStorage(actor, live, selected, permission);
+        if (item.storage) await checkStorage(actor, live, selected, permission);
+        if (shareId) await sharing.authorizeTransfer(shareId, actor, selected);
       },
       target: async (targetRoot, path) => {
         const state = await context(actor);
@@ -387,6 +389,8 @@ export function createFilesService(
           );
       },
       lease: async (kind, path, lease, session) => {
+        if (shareId) await sharing.authorizeTransfer(shareId, actor, await relative(path, session));
+        if (!item.storage) return lease;
         return {
           ...lease,
           url: `${await deps.publicOrigin()}${await transferTicket(
@@ -1154,7 +1158,15 @@ export function createFilesService(
     },
     guardShare: (current, actor, shareId) => ({
       ...current,
-      root: guardedRoot(current.root, actor, current.inspection.candidate, current.state.config, shareId),
+      root: guardedRoot(
+        current.root,
+        actor,
+        current.inspection.candidate,
+        current.state.config,
+        shareId,
+        false,
+        current.inspection.binding ?? undefined,
+      ),
     }),
     creatorActor: async (id, kind) => {
       const account = kind === "service_account" ? await serviceAccounts.get({ id }) : null;
@@ -1988,6 +2000,7 @@ export function createFilesService(
                 machine: {
                   scopes: actor.scopes,
                   credentialId: actor.credentialId ?? null,
+                  oauthClientId: actor.oauthClientId ?? null,
                   credentialExpiresAt: actor.credentialExpiresAt ?? null,
                   delegatedUserId: actor.delegatedUser?.id ?? null,
                 },

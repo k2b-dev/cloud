@@ -31,8 +31,10 @@ restoring the database. A gateway or path change does not silently rebind a
 machine's storage. Restore the recorded configuration before retrying a pending
 operation, and reconcile a migration explicitly.
 
-Machine transfers pass through Cloud so each new request can check account and
-grant state. Keep the normal gateway request cancellation and upload streaming
+Machine transfers pass through Cloud so each new request can check account,
+credential and grant state. API keys and OAuth client credentials keep their
+captured expiry and scopes; retained transfer and editor capabilities also
+check the live API key or OAuth client. Keep the normal gateway request cancellation and upload streaming
 configuration. Filegate's existing transfer and session budgets still apply;
 this feature adds no alternate storage quota policy. Already admitted streams
 can finish after revocation; subsequent requests and upload publication are

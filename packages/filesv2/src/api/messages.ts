@@ -90,8 +90,8 @@ const messages: Record<string, [string, string]> = {
   ],
 
   local_linux_disabled: [
-    "Enable local Linux identities before enabling Cloud files.",
-    "Aktiviere lokale Linux-Identitäten, bevor du Cloud-Dateien aktivierst.",
+    "Enable local Linux identities to use personal and group Cloud storage.",
+    "Aktiviere lokale Linux-Identitäten für persönliche Cloud-Ablagen und Gruppenablagen.",
   ],
   freeipa_disabled: ["Enable FreeIPA before enabling FreeIPA files.", "Aktiviere FreeIPA, bevor du FreeIPA-Dateien aktivierst."],
   invalid_configuration: ["Check the Filegate URL and storage configuration.", "Prüfe Filegate-URL und Ablagenkonfiguration."],
