@@ -501,6 +501,8 @@ describe.each([1440, 390])("route reservation address recovery at %i", (width) =
     };
     stored.map.issue = { code: "GEO_LIMIT_EXCEEDED", requiredCredits: 325, availableCredits: 300, shortfallCredits: 25 };
     opened = await open(name, width);
+    if (process.env.MAP_RECOVERY_EVIDENCE_DIR)
+      await opened.page.screenshot({ path: `${process.env.MAP_RECOVERY_EVIDENCE_DIR}/01-reservation-light-${width}.png`, fullPage: true });
   });
   afterAll(async () => {
     await opened?.context.close();
@@ -512,6 +514,9 @@ describe.each([1440, 390])("route reservation address recovery at %i", (width) =
     await page.getByRole("option", { name: new RegExp(`^${mark} ·`) }).click();
     const field = page.getByRole("combobox", { name: "Startort", exact: true });
     await field.fill("Beispielgasse");
+    await page.getByRole("option", { name: /1 Beispielgasse/ }).waitFor();
+    if (mark === "C" && process.env.MAP_RECOVERY_EVIDENCE_DIR)
+      await page.screenshot({ path: `${process.env.MAP_RECOVERY_EVIDENCE_DIR}/02-suggestions-light-${width}.png`, fullPage: true });
     await page.getByRole("option", { name: /1 Beispielgasse/ }).click();
     expect(await field.inputValue()).toBe(mapAddress().formatted);
     return field;
@@ -543,6 +548,8 @@ describe.each([1440, 390])("route reservation address recovery at %i", (width) =
       expect(saved.issue).toBeUndefined();
       expect(saved.route).toBeDefined();
       await page.getByRole("button", { name: "Optionen", exact: true }).waitFor();
+      if (process.env.MAP_RECOVERY_EVIDENCE_DIR)
+        await page.screenshot({ path: `${process.env.MAP_RECOVERY_EVIDENCE_DIR}/03-route-light-${width}.png`, fullPage: true });
     }
   });
 });
