@@ -339,7 +339,8 @@ test("along uses window on full-route distance and filters/orders corridor hits"
   expect(result.places.every((p) => p.distanceToRouteMeters! < 1)).toBeTrue();
 });
 test("along widens the provider corridor for simplification and filters against the original route", async () => {
-  const route = Array.from({ length: 3001 }, (_, i) => ({ lat: (i % 2) * 0.0001, lon: i * 0.000005 }));
+  // 2,101 points force the 16 m simplification; 2,001 merely drops two points and retains the tested peak.
+  const route = Array.from({ length: 2101 }, (_, i) => ({ lat: (i % 2) * 0.0001, lon: i * 0.000005 }));
   const along = { polyline6: encodeGeoTestLine(route), fromKm: 0, toKm: 100, bufferMeters: 100 };
   const cut = cutGeoWindow(decodePolyline6(along.polyline6), 0, 100000);
   const features = [92, 108].map((distance) => ({
@@ -388,7 +389,8 @@ test("along widens the provider corridor for simplification and filters against 
 test.each([true, false])(
   "along filters before limiting and reports a bounded incomplete search (valid candidate: %s)",
   async (hasValid) => {
-    const route = Array.from({ length: 3001 }, (_, i) => ({ lat: (i % 2) * 0.0001, lon: i * 0.000005 }));
+    // 2,101 points force the 16 m simplification; 2,001 merely drops two points and retains the tested peak.
+    const route = Array.from({ length: 2101 }, (_, i) => ({ lat: (i % 2) * 0.0001, lon: i * 0.000005 }));
     const features = Array.from({ length: 20 }, (_, i) => ({
       ...places.features[0]!,
       properties: {
