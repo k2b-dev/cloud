@@ -26,6 +26,7 @@ import adminAiQuotaRoutes from "./admin-ai-quotas";
 import adminAiSkillsRoutes from "./admin-ai-skills";
 import adminAiUsageRoutes from "./admin-ai-usage";
 import adminCoreSettingsRoutes from "./admin-core-settings";
+import adminGeoRoutes from "./admin-geo";
 import adminGeoIpRoutes from "./admin-geoip";
 import adminIdentityRoutes from "./admin-identity";
 import adminLifecycleRoutes from "./admin-lifecycle";
@@ -38,6 +39,7 @@ import { approvalRoutes } from "./approvals";
 import { appDiscoveryRoutes } from "./apps";
 import { createAuthRoutes } from "./auth";
 import { createCapabilityRoutes } from "./capabilities";
+import geoRoutes from "./geo";
 import { createHelpRoutes } from "./help";
 import { createMcpRoutes } from "./mcp";
 import meRoutes from "./me";
@@ -79,6 +81,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/auth", createAuthRoutes(options.notifications))
     .route("/me", meRoutes)
     .route("/accounts", accountsEntitiesRoutes)
+    .route("/geo", geoRoutes)
     .route("/apps", appDiscoveryRoutes)
     .route("/approvals", approvalRoutes)
     .route("/announcements", announcementRoutes)
@@ -92,6 +95,7 @@ const buildCoreApi = (options: CoreApiOptions) => {
     .route("/admin/core/rail", adminRailRoutes)
     .route("/admin/core/linux-identities", adminLinuxIdentityRoutes)
     .route("/admin/core/geoip", adminGeoIpRoutes)
+    .route("/admin/core/geo", adminGeoRoutes)
     .route("/admin/identity", adminIdentityRoutes)
     .route("/admin/sync", createSyncOpsProxyRoutes())
     .route("/admin/lifecycle", adminLifecycleRoutes)
