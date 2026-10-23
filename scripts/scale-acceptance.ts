@@ -81,7 +81,6 @@ export const composeEnvironment = (imageTag: string, run: string): Record<string
   ASSISTANT_RSQL_ALLOWED_TARGETS: "",
   NOTEBOOKS_SNAPSHOT_ALLOWED_TARGETS: "",
   PULSE_SCRAPE_ALLOWED_TARGETS: "",
-  GEO_ALLOWED_TARGETS: "",
 });
 export const envFileContents = (env: Record<string, string>): string =>
   Object.entries(env)
