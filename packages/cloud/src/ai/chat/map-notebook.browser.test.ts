@@ -280,46 +280,56 @@ test.each(["storage", "locks"])("unavailable %s fails visibly before any save mu
   }
 });
 
-test("known partial note resumes after cancellation and a refreshed opening-hours clock", async () => {
+describe("known partial note resumes after cancellation and a refreshed opening-hours clock", () => {
   const scenario = "route-known-partial-save";
-  const expected = largeSource(scenario);
-  const { page, context } = await open(scenario);
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
+  let opened: Awaited<ReturnType<typeof open>>;
+  let expected: string;
+  beforeAll(async () => {
+    expected = largeSource(scenario);
+    opened = await open(scenario);
   });
-  let entered!: () => void;
-  const dispatched = new Promise<void>((resolve) => {
-    entered = resolve;
+  afterAll(async () => {
+    await opened?.context.close();
   });
-  let first = true;
-  await page.route("**/queries/notebooks/note.read", async (route) => {
-    if (first) {
-      first = false;
-      entered();
-      await held;
-      await route.abort();
-    } else await route.continue();
+  test("preserves the save and recovery boundary", async () => {
+    const { page, context } = opened;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const dispatched = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let first = true;
+    await page.route("**/queries/notebooks/note.read", async (route) => {
+      if (first) {
+        first = false;
+        entered();
+        await held;
+        await route.abort();
+      } else await route.continue();
+    });
+    try {
+      await beginSave(page);
+      await dispatched;
+      await page.getByRole("button", { name: "Abbrechen", exact: true }).click();
+      release();
+      await page.getByRole("button", { name: "Speichern fortsetzen", exact: true }).waitFor();
+      expect(await page.getByRole("alert").innerText()).toContain("Speichern gestoppt");
+      expect(fixture.notes.get(scenario)).toBe(expected.slice(0, 200_000));
+      fixture.get(scenario).map.viewedAt = "2026-10-23T01:00:00.000Z";
+      await reopenSave(page);
+      await page.getByRole("link", { name: "Teilweise gespeicherte Notiz öffnen" }).waitFor();
+      expect(await page.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(String(Math.round((200_000 / expected.length) * 100)));
+      await page.getByRole("button", { name: "Speichern fortsetzen", exact: true }).click();
+      await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
+      expect(fixture.notes.get(scenario)).toBe(expected);
+    } finally {
+      release();
+      await context.close();
+    }
   });
-  try {
-    await beginSave(page);
-    await dispatched;
-    await page.getByRole("button", { name: "Abbrechen", exact: true }).click();
-    release();
-    await page.getByRole("button", { name: "Speichern fortsetzen", exact: true }).waitFor();
-    expect(await page.getByRole("alert").innerText()).toContain("Speichern gestoppt");
-    expect(fixture.notes.get(scenario)).toBe(expected.slice(0, 200_000));
-    fixture.get(scenario).map.viewedAt = "2026-10-23T01:00:00.000Z";
-    await reopenSave(page);
-    await page.getByRole("link", { name: "Teilweise gespeicherte Notiz öffnen" }).waitFor();
-    expect(await page.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(String(Math.round((200_000 / expected.length) * 100)));
-    await page.getByRole("button", { name: "Speichern fortsetzen", exact: true }).click();
-    await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    expect(fixture.notes.get(scenario)).toBe(expected);
-  } finally {
-    release();
-    await context.close();
-  }
 });
 
 describe.each(["source", "note"])("partial save with changed %s", (changed) => {
@@ -422,78 +432,107 @@ describe.each(["owner", "conversation", "revision"] as const)("retained checkpoi
   });
 });
 
-test("a signed-in owner change between selection and save cannot reuse the previous owner's receipt", async () => {
-  const { page, context } = await open("places-owner-changed");
-  let requests = 0;
-  await page.route("**/export", async (route) => {
-    const response = await route.fetch();
-    await route.fulfill({ response, json: { ...(await response.json()), ownerUserId: ++requests === 1 ? "owner-one" : "owner-two" } });
+describe("a signed-in owner change between selection and save cannot reuse the previous owner's receipt", () => {
+  const scenario = "places-owner-changed";
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    opened = await open(scenario);
   });
-  try {
-    const start = fixture.commands.length;
-    await beginSave(page);
-    await page.getByText(/Das angemeldete Konto hat sich geändert/).waitFor();
-    expect(fixture.commands.length).toBe(start);
-  } finally {
-    await context.close();
-  }
-});
-
-test("persistence failure after a create keeps its known note and safely resumes without creating twice", async () => {
-  const scenario = "route-receipt-storage-recovery";
-  const expected = largeSource(scenario);
-  const { page, context } = await open(scenario);
-  let creates = 0;
-  await page.route("**/actions/notebooks/note.create", async (route) => {
-    creates++;
-    await route.continue();
+  afterAll(async () => {
+    await opened?.context.close();
   });
-  try {
-    await page.evaluate(() => {
-      const original = Storage.prototype.setItem;
-      let failed = false;
-      Storage.prototype.setItem = function (key, value) {
-        original.call(this, key, value);
-        if (!key.startsWith("cloud.ai.map-save:v1:")) return;
-        const stored = JSON.parse(value);
-        if (!failed && stored.checkpoint?.noteId) {
-          failed = true;
-          throw new DOMException("Full", "QuotaExceededError");
-        }
-      };
+  test("preserves the save and recovery boundary", async () => {
+    const { page, context } = opened;
+    let requests = 0;
+    await page.route("**/export", async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, json: { ...(await response.json()), ownerUserId: ++requests === 1 ? "owner-one" : "owner-two" } });
     });
-    await beginSave(page);
-    await page.getByText(/Der Fortschritt konnte in diesem Browser nicht gespeichert werden/).waitFor();
-    await page.getByRole("link", { name: "Teilweise gespeicherte Notiz öffnen" }).waitFor();
-    expect(creates).toBe(1);
-    await reopenSave(page);
-    await page.getByRole("button", { name: "Speichern fortsetzen", exact: true }).click();
-    await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    expect(fixture.notes.get(scenario)).toBe(expected);
-    expect(creates).toBe(1);
-  } finally {
-    await context.close();
-  }
+    try {
+      const start = fixture.commands.length;
+      await beginSave(page);
+      await page.getByText(/Das angemeldete Konto hat sich geändert/).waitFor();
+      expect(fixture.commands.length).toBe(start);
+    } finally {
+      await context.close();
+    }
+  });
 });
 
-test.each(["pending", "unknown", "saved"])("legacy %s receipt cannot silently create another note", async (status) => {
+describe("persistence failure after a create keeps its known note and safely resumes without creating twice", () => {
+  const scenario = "route-receipt-storage-recovery";
+  let opened: Awaited<ReturnType<typeof open>>;
+  let expected: string;
+  beforeAll(async () => {
+    expected = largeSource(scenario);
+    opened = await open(scenario);
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("preserves the save and recovery boundary", async () => {
+    const { page, context } = opened;
+    let creates = 0;
+    await page.route("**/actions/notebooks/note.create", async (route) => {
+      creates++;
+      await route.continue();
+    });
+    try {
+      await page.evaluate(() => {
+        const original = Storage.prototype.setItem;
+        let failed = false;
+        Storage.prototype.setItem = function (key, value) {
+          original.call(this, key, value);
+          if (!key.startsWith("cloud.ai.map-save:v1:")) return;
+          const stored = JSON.parse(value);
+          if (!failed && stored.checkpoint?.noteId) {
+            failed = true;
+            throw new DOMException("Full", "QuotaExceededError");
+          }
+        };
+      });
+      await beginSave(page);
+      await page.getByText(/Der Fortschritt konnte in diesem Browser nicht gespeichert werden/).waitFor();
+      await page.getByRole("link", { name: "Teilweise gespeicherte Notiz öffnen" }).waitFor();
+      expect(creates).toBe(1);
+      await reopenSave(page);
+      await page.getByRole("button", { name: "Speichern fortsetzen", exact: true }).click();
+      await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
+      expect(fixture.notes.get(scenario)).toBe(expected);
+      expect(creates).toBe(1);
+    } finally {
+      await context.close();
+    }
+  });
+});
+
+describe.each(["pending", "unknown", "saved"])("legacy %s receipt", (status) => {
   const scenario = `places-legacy-${status}`;
-  const { page, context } = await open(scenario);
-  try {
-    await page.evaluate(
-      ({ status, map }) =>
-        sessionStorage.setItem(`cloud.ai.map-save:${map.id}:${map.revision}`, JSON.stringify({ status, notebookId: "Book01" })),
-      { status, map: fixture.get(scenario).map },
-    );
-    const start = fixture.commands.length;
-    await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).click();
-    await page.getByText(/Für diese Karte liegt ein früherer Speicherbeleg vor/).waitFor();
-    await page.getByRole("link", { name: "Notebook prüfen", exact: true }).waitFor();
-    expect(await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).isDisabled()).toBe(true);
-    expect(fixture.commands.length).toBe(start);
-  } finally {
-    await context.close();
-  }
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    opened = await open(scenario);
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("cannot silently create another note", async () => {
+    const { page, context } = opened;
+    try {
+      await page.evaluate(
+        ({ status, map }) =>
+          sessionStorage.setItem(`cloud.ai.map-save:${map.id}:${map.revision}`, JSON.stringify({ status, notebookId: "Book01" })),
+        { status, map: fixture.get(scenario).map },
+      );
+      const start = fixture.commands.length;
+      await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).click();
+      await page.getByText(/Für diese Karte liegt ein früherer Speicherbeleg vor/).waitFor();
+      await page.getByRole("link", { name: "Notebook prüfen", exact: true }).waitFor();
+      expect(await page.getByRole("button", { name: "Als Notebook speichern", exact: true }).isDisabled()).toBe(true);
+      expect(fixture.commands.length).toBe(start);
+    } finally {
+      await context.close();
+    }
+  });
 });
 
 test("a storage-failed tab adopts a newer completed receipt without replacing it", async () => {
