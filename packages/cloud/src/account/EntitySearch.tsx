@@ -5,6 +5,7 @@ import { createSignal, For, Show } from "solid-js";
 import { accessMessages } from "../access/messages";
 import { principalLabel } from "../access/principal-label";
 import { serviceAccountKindDisplay } from "../access/service-account-kind";
+import type { ServiceAccountKind, ServiceAccountStatus } from "../contracts/shared";
 import { groupDisplayName } from "../shared/account-display";
 import { CloudAvatar } from "./Avatar";
 
@@ -52,6 +53,10 @@ type EntitySearchProps = {
   includeGroups?: boolean;
   /** Surface service accounts in the result list. Off by default. */
   includeServiceAccounts?: boolean;
+  /** Restrict service-account kinds before pagination. Omitted or empty allows all kinds. */
+  serviceAccountKinds?: ServiceAccountKind[];
+  /** Restrict service-account status before pagination. Omitted allows both statuses. */
+  serviceAccountStatus?: ServiceAccountStatus;
   /** Inject a synthetic "All authenticated users" row at the top. */
   includeAuthenticated?: boolean;
   /** Inject a synthetic "Public" row at the top. */
@@ -170,6 +175,12 @@ const EntitySearch = (props: EntitySearchProps) => {
       }
       if (props.excludeServiceAccountIds?.length) {
         url.searchParams.set("exclude_service_account_ids", props.excludeServiceAccountIds.join(","));
+      }
+      if (props.includeServiceAccounts && props.serviceAccountKinds?.length) {
+        url.searchParams.set("service_account_kinds", props.serviceAccountKinds.join(","));
+      }
+      if (props.includeServiceAccounts && props.serviceAccountStatus) {
+        url.searchParams.set("service_account_status", props.serviceAccountStatus);
       }
       if (props.onlyMembersOf?.length) {
         url.searchParams.set("user_member_of_group_ids", props.onlyMembersOf.join(","));

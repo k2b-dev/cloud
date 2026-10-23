@@ -120,13 +120,13 @@ export const get = async (params: { id: string }): Promise<BaseGroup | null> => 
 export const getMembers = async (params: {
   id: string;
   provider?: UserProvider;
-  type?: "user" | "group";
+  type?: GroupMember["type"];
   recursive?: boolean;
 }): Promise<GroupMember[]> => {
   const provider = params.provider ?? (await getGroup(params.id))?.provider;
   if (provider === "local") return localGroups.getMembers(params);
-  if (!provider) return [];
-  return providers.ipa.groups.getMembers(params);
+  if (!provider || params.type === "service_account") return [];
+  return providers.ipa.groups.getMembers({ ...params, type: params.type });
 };
 
 export const getManagers = async (params: {
@@ -223,9 +223,13 @@ export const addMember = async (params: {
   provider?: UserProvider;
   user?: string;
   group?: string;
+  serviceAccount?: string;
 }): Promise<MutationResult<void>> => {
-  const provider = params.provider ?? (await getGroup(params.id))?.provider;
-  if (provider === "local") return localGroups.addMember({ id: params.id, user: params.user, group: params.group });
+  const provider = (await getGroup(params.id))?.provider;
+  if (provider === "local")
+    return localGroups.addMember({ id: params.id, user: params.user, group: params.group, serviceAccount: params.serviceAccount });
+  if (params.serviceAccount)
+    return { ok: false, error: "Service accounts can only join local Cloud groups, not directory groups", status: 400 };
   const serviceSession = await getServiceIpaSession();
   if (!serviceSession.ok) return serviceSession;
   return providers.ipa.groups.addMember({
@@ -241,9 +245,13 @@ export const removeMember = async (params: {
   provider?: UserProvider;
   user?: string;
   group?: string;
+  serviceAccount?: string;
 }): Promise<MutationResult<void>> => {
-  const provider = params.provider ?? (await getGroup(params.id))?.provider;
-  if (provider === "local") return localGroups.removeMember({ id: params.id, user: params.user, group: params.group });
+  const provider = (await getGroup(params.id))?.provider;
+  if (provider === "local")
+    return localGroups.removeMember({ id: params.id, user: params.user, group: params.group, serviceAccount: params.serviceAccount });
+  if (params.serviceAccount)
+    return { ok: false, error: "Service accounts can only join local Cloud groups, not directory groups", status: 400 };
   const serviceSession = await getServiceIpaSession();
   if (!serviceSession.ok) return serviceSession;
   return providers.ipa.groups.removeMember({
