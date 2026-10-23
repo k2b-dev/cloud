@@ -948,8 +948,31 @@ work and closed-menu construction; inclusive sampled costs overlap.
 
 A further repeat stopped during fixture seeding: PostgreSQL reported
 `No space left on device`. It produced no browser samples and is excluded.
-Its runtime was removed. The recorded results above remain valid; no later
-repeat establishes that the desktop target has been met.
+Its runtime was removed. The recorded results above remain valid.
+
+After the reboot, merged head `fb3ab2052` was measured once, followed by a
+lazy row menu candidate. Both used the same command and completed
+20 server scenarios and 20 browser samples without reported errors; each
+run's four trace samples are excluded. Both mailbox fixture digests match
+across runs. Both runs reported 32 logical CPUs. Harness one-minute load
+averages were 62.71 → 57.20 for merged head and 31.02 → 59.81 for the
+candidate; a periodic observation during its phone mailbox samples reached 153.28.
+
+| Stage | Desktop, ms | Ratio | Phone, ms | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| Current merged head | 815.5 / 573.9 | 1.42 | 2,338.9 / 1,895.3 | 1.23 |
+| Lazy row menus, discarded | 727.6 / 471.1 | 1.54 | 2,645.7 / 1,586.7 | 1.67 |
+
+The candidate preserved the trigger's exact SSR HTML and passed focused
+keyboard opening, focus return and layout guards. It was discarded because
+the phone mailbox median increased 13.1%, despite a 10.8% desktop reduction.
+Neither ratio meets 1.20. The differing host load prevents isolating the menu cost;
+these observations do not establish that laziness caused the phone regression.
+The full Mail check reported two Chromium SSR shell timeout failures despite
+passing the focused menu checks.
+Outputs: `.local/mail-perf/mail-switch-current-20261023` and
+`.local/mail-perf/mail-switch-lazy-menus-20261023`; the latter also preserves
+the discarded candidate for a future controlled comparison.
 
 ### Rank bottlenecks
 
