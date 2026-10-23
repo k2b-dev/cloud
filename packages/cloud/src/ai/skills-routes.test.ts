@@ -131,10 +131,10 @@ describe("AI Skill routes", () => {
         const response = await routes.request(`/api/ai/skills${suffix}`);
         expect(response.status).toBe(200);
       }
-      expect(list).toHaveBeenCalledWith(resolved.accessSubject, { authority: resolved });
-      expect(list).toHaveBeenCalledWith(resolved.accessSubject, { name: "weekly-status", authority: resolved });
-      expect(search).toHaveBeenCalledWith(resolved.accessSubject, "weekly", 30, { authority: resolved });
-      expect(get).toHaveBeenCalledWith(skillShortId, resolved.accessSubject, "read", resolved);
+      expect(list).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, { authority: resolved });
+      expect(list).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, { name: "weekly-status", authority: resolved });
+      expect(search).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, "weekly", 30, { authority: resolved });
+      expect(get).toHaveBeenCalledWith(skillShortId, { actor: resolved.actor, accessSubject: resolved.accessSubject }, "read", resolved);
     }
     // Broker reads rely on the owning-app/resource decision, not Core's registry entry.
     expect(registry.getApp).not.toHaveBeenCalled();
@@ -147,8 +147,8 @@ describe("AI Skill routes", () => {
     const routes = broker(resolved);
     expect(await (await routes.request("/api/ai/skills")).json()).toEqual({ skills: [] });
     expect((await routes.request(`/api/ai/skills/${skillShortId}`)).status).toBe(404);
-    expect(list).toHaveBeenCalledWith(resolved.accessSubject, { authority: resolved });
-    expect(get).toHaveBeenCalledWith(skillShortId, resolved.accessSubject, "read", resolved);
+    expect(list).toHaveBeenCalledWith({ actor: resolved.actor, accessSubject: resolved.accessSubject }, { authority: resolved });
+    expect(get).toHaveBeenCalledWith(skillShortId, { actor: resolved.actor, accessSubject: resolved.accessSubject }, "read", resolved);
   });
 
   test("every management route retains Core entry even when its path is exempt at the outer gate", async () => {

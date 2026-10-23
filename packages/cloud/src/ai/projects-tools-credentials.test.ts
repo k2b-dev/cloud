@@ -46,12 +46,12 @@ for (const kind of ["standalone", "agent"] as const) {
     const searchTool = createCloudAiSearchSkillsTool(context);
     if (searchTool.location !== "server") throw new Error("Expected server tool");
     expect(await searchTool.run({ query: "rules", limit: 10 }, execution)).toEqual({ skills: [], more: false });
-    expect(search).toHaveBeenCalledWith(context, "rules", 10, { modelInvocableOnly: true });
+    expect(search).toHaveBeenCalledWith(context, "rules", 10, { modelInvocableOnly: true, authority: null });
     const load = spyOn(aiSkills, "loadForTurn").mockResolvedValue(null);
     await expect(loadSelectedAiSkills(["Sk2345"], "turn", context, true)).rejects.toThrow("revoked");
     const loadTool = createCloudAiLoadSkillTool(context);
     if (loadTool.location !== "server") throw new Error("Expected server tool");
     await expect(loadTool.run({ id: "Sk2345" }, execution)).rejects.toThrow("revoked");
-    expect(load).toHaveBeenCalledWith("turn", { id: "Sk2345" }, context);
+    expect(load).toHaveBeenCalledWith("turn", { id: "Sk2345" }, context, null);
   });
 }

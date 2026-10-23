@@ -539,7 +539,7 @@ describe("Core AI capabilities", () => {
         scopedContext,
       ),
     ];
-    expect(list).toHaveBeenCalledWith(context.accessSubject, { authority: restricted });
+    expect(list).toHaveBeenCalledWith(scopedContext, { authority: restricted });
     for (const call of get.mock.calls) expect(call[3]).toBe(restricted);
     expect(JSON.stringify(results)).not.toContain(skill.name);
     expect(JSON.stringify(results)).not.toContain(skill.instructions);
@@ -1200,15 +1200,22 @@ for (const kind of ["standalone", "agent"] as const) {
       },
       accessSubject: { type: "service_account", serviceAccountId: "22222222-2222-4222-8222-222222222222" },
     };
+    const machineAuthority: RequestAuthority = {
+      actor: machine.actor,
+      accessSubject: machine.accessSubject,
+      credentialKind: "api_key",
+      scopes: ["read"],
+    };
+    machine.authority = machineAuthority;
     const list = spyOn(aiSkills, "list").mockResolvedValue([]);
     const get = spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
     await aiCapabilities.queries["ai.skills.list"].run({ query: "", enabled: true, limit: 20 }, machine);
     await aiCapabilities.queries["ai.skill.read"].run({ id: skill.shortId }, machine);
-    expect(list).toHaveBeenCalledWith(machine);
-    expect(get).toHaveBeenCalledWith(skill.shortId, machine, "read");
+    expect(list).toHaveBeenCalledWith(machine, { authority: machineAuthority });
+    expect(get).toHaveBeenCalledWith(skill.shortId, machine, "read", machineAuthority);
     const create = spyOn(aiSkills, "create").mockRejectedValue(new AiResourceCredentialError());
     const input = { name: "machine-skill", description: "Rules", instructions: "Read rules" };
     expect(await aiCapabilities.actions["ai.skill.create"].run(input, machine)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
-    expect(create).toHaveBeenCalledWith({ subject: machine, ...input });
+    expect(create).toHaveBeenCalledWith({ subject: machine, ...input }, machineAuthority);
   });
 }

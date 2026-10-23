@@ -2442,7 +2442,9 @@ Project and Skill services and their AI tool factories now require
 with `{ actor, accessSubject }` from the authenticated request or capability
 context. Pass that same context as `subject` when creating a resource. Keep the
 original machine actor, including its scopes; do not construct a user actor to
-represent a machine credential. Anonymous read paths may pass `null`.
+represent a machine credential. Keep the resolved `RequestAuthority` argument
+or list option on Skill calls so app-entry checks retain the credential's scope
+and effective roles. Anonymous read paths may pass `null`.
 
 Standalone and agent credentials use their own grants within their credential
 scopes. Resource-bound credentials are unsupported for Projects and Skills.

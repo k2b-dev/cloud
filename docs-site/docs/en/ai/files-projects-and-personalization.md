@@ -228,7 +228,9 @@ it. The final admin grant cannot be removed.
 
 Project and Skill services require an `AiResourceContext` from `@k2b/cloud/ai`:
 pass `{ actor, accessSubject }` from the authenticated request or capability
-context to every service call, including creation. Standalone and agent accounts
+context to every service call, including creation. Skill calls also retain their
+resolved `RequestAuthority` argument (or `authority` list option) for app-entry
+checks; missing authority denies Skills whose app declares an access rule. Standalone and agent accounts
 use their own grants; their credential's `read`, `write`, or `admin` scope caps
 the granted permission. Creating a Project or Skill needs `write` or `admin`.
 Scopes alone grant no resource access. Resource-bound credentials are unsupported
@@ -268,9 +270,14 @@ cld assistant skills access revoke weekly-status --access-id <grant-id> --yes
 ```
 
 Use `--user`, `--group`, `--service-account`, or `--authenticated` to choose
-one recipient. Names require directory access; a userless caller must use the
-recipient's UUID. `access search-principals <query>` uses the same directory
-policy. `set` creates or updates a direct grant. Revoking needs `--yes`.
+one recipient. Names require directory access; use the recipient's UUID when
+that access is unavailable. `access search-principals <query>` uses the same
+directory policy. `set` creates or updates a direct grant. Revoking needs `--yes`.
+
+Skill HTTP management, including these CLI writes, requires a user-backed actor
+and Core app access. The list and read routes broker access through the Skill's
+grant and its owning app. Machine callers use the supported service or capability
+contract for Skill mutations; their credential scopes still cap each operation.
 
 With `disable-model-invocation: true`, a Skill starts only when a person
 selects it with `/`. It stays out of the model catalog and `search_skills`,

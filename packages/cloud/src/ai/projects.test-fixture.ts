@@ -2,14 +2,17 @@ import type { AccessSubject } from "../server";
 import type { AiResourceContext } from "./projects-authorization";
 
 /** Complete user actor for service fixtures; machine fixtures must supply their actual credential. */
-export const userResourceContext = (subject: Extract<AccessSubject, { type: "user" }>): AiResourceContext => ({
+export const userResourceContext = (
+  subject: Extract<AccessSubject, { type: "user" }>,
+  roles: string[] = ["user"],
+): AiResourceContext => ({
   accessSubject: subject,
   actor: {
     kind: "user",
     user: {
       id: subject.userId,
       uid: subject.userId,
-      roles: ["user"],
+      roles,
       provider: "local",
       profile: "user",
       givenname: "Test",

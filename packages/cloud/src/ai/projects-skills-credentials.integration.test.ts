@@ -6,6 +6,7 @@ import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
 import type { AuthContext } from "../server";
+import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import { type ServiceAccountKind, serviceAccounts } from "../services/service-accounts";
 import { createTestSession } from "../services/session/session.test-fixture";
@@ -51,6 +52,7 @@ const readResource = async (response: Response) => {
 };
 
 suite("Project and Skill credential limits and manager eligibility", () => {
+  useRegisteredTestApp("core", { kind: "signedIn" });
   const users: string[] = [];
   const accounts: string[] = [];
   const resources: { resource: Resource; id: string }[] = [];
@@ -78,7 +80,15 @@ suite("Project and Skill credential limits and manager eligibility", () => {
       if (!result.ok) throw new Error(result.error.message);
       return { authorization: `Bearer ${result.data.token}` };
     };
-    return { id: row.id, name, token };
+    const context = async (scopes: string[]) => {
+      const serviceAccount = await serviceAccounts.get({ id: row.id });
+      if (!serviceAccount) throw new Error("Missing machine account");
+      return {
+        actor: { kind: "service_account" as const, serviceAccount, delegatedUser: null, scopes },
+        accessSubject: { type: "service_account" as const, serviceAccountId: row.id },
+      };
+    };
+    return { id: row.id, name, token, context };
   };
   const create = async (resource: Resource, headers: Record<string, string>) => {
     const input = fields(resource);
@@ -153,7 +163,7 @@ suite("Project and Skill credential limits and manager eligibility", () => {
         expect((await request(admin, fixture.path)).status).toBe(404);
         const access = await grant(person.headers, fixture.path, machine.id);
         expect(access).toMatchObject({ displayName: machine.name, serviceAccountKind: kind });
-        const listed = await request(admin, `${fixture.path}/access`);
+        const listed = await request(resource === "skills" ? person.headers : admin, `${fixture.path}/access`);
         expect(listed.status).toBe(200);
         expect(await listed.json()).toMatchObject({
           access: expect.arrayContaining([expect.objectContaining({ id: access.id, displayName: machine.name, serviceAccountKind: kind })]),
@@ -174,6 +184,33 @@ suite("Project and Skill credential limits and manager eligibility", () => {
         }
         expect((await request(noAccess, fixture.path)).status).toBe(404);
         expect(await (await request(noAccess, `/${resource}`)).json()).toMatchObject({ [resource]: [] });
+        if (resource === "skills") {
+          // HTTP management remains user-backed; machine service calls retain the credential cap.
+          for (const headers of [read, write, admin]) {
+            expect((await mutate(resource, fixture, headers, "Machine HTTP write")).status).toBe(403);
+            expect((await request(headers, `${fixture.path}/access`)).status).toBe(403);
+            expect((await request(headers, `${fixture.path}/access/${access.id}`, "DELETE")).status).toBe(403);
+            expect((await request(headers, fixture.path, "DELETE")).status).toBe(403);
+            expect((await request(headers, "/skills", "POST", fields(resource))).status).toBe(403);
+          }
+          const skill = await aiSkills.admin.getByShortId(fixture.id);
+          if (!skill) throw new Error("Missing Skill");
+          const content = { ...skill, description: "Machine service update", expectedRevision: skill.revision };
+          expect(await aiSkills.update(skill.id, await machine.context(["read"]), content)).toBeNull();
+          const updated = await aiSkills.update(skill.id, await machine.context(["write"]), content);
+          expect(updated).toMatchObject({ description: content.description, permission: "write", revision: skill.revision + 1 });
+          expect(await aiSkills.update(skill.id, await machine.context(["admin"]), { ...content, expectedRevision: updated!.revision })).not.toBeNull();
+          for (const permission of ["write", "admin"] as const) {
+            const created = await aiSkills.create({ subject: await machine.context([permission]), ...fields("skills") });
+            resources.push({ resource: "skills", id: created.shortId });
+            expect(created.permission).toBe(permission);
+          }
+          expect((await request(person.headers, `${fixture.path}/access/${access.id}`, "DELETE")).status).toBe(200);
+          expect((await request(admin, fixture.path)).status).toBe(404);
+          expect(await aiSkills.get(skill.id, await machine.context(["admin"]))).toBeNull();
+          expect(await aiSkills.update(skill.id, await machine.context(["admin"]), content)).toBeNull();
+          return;
+        }
         expect((await mutate(resource, fixture, read, "Read must not write")).status).toBe(404);
         expect((await mutate(resource, fixture, write, "Write succeeds")).status).toBe(200);
         expect((await mutate(resource, fixture, admin, "Admin succeeds")).status).toBe(200);
@@ -242,7 +279,7 @@ suite("Project and Skill credential limits and manager eligibility", () => {
       await grant(person.headers, fixture.path, machine.id);
       expect((await request(headers, fixture.path)).status).toBe(404);
       expect(await (await request(headers, `/${resource}`)).json()).toMatchObject({ [resource]: [] });
-      expect((await request(headers, `${fixture.path}/access`)).status).toBe(404);
+      expect((await request(headers, `${fixture.path}/access`)).status).toBe(resource === "skills" ? 403 : 404);
       expect((await request(headers, `/${resource}`, "POST", fields(resource))).status).toBe(403);
     });
 
@@ -266,6 +303,18 @@ suite("Project and Skill credential limits and manager eligibility", () => {
         const eligible = kind === "standalone" || kind === "agent";
         const status = eligible ? 200 : 409;
         expect((await request(person.headers, `${fixture.path}/access/${ownerId}`, "PATCH", { permission: "read" })).status).toBe(status);
+        if (eligible && resource === "skills") {
+          const skill = await aiSkills.admin.getByShortId(fixture.id);
+          if (!skill) throw new Error("Missing Skill");
+          const identity = await machine.context(["admin"]);
+          expect((await request(headers, `${fixture.path}/access`)).status).toBe(403);
+          expect(await aiSkills.updateAccess(skill.id, ownerId, identity, "admin")).toBe(true);
+          expect((await request(person.headers, `${fixture.path}/access/${ownerId}`, "DELETE")).status).toBe(200);
+          expect(await aiSkills.listAccess(skill.id, identity)).not.toBeNull();
+          await expect(aiSkills.updateAccess(skill.id, machineAccess.id, identity, "read")).rejects.toBeInstanceOf(AiSkillLastAdminError);
+          await expect(aiSkills.revokeAccess(skill.id, machineAccess.id, identity)).rejects.toBeInstanceOf(AiSkillLastAdminError);
+          return;
+        }
         if (eligible) {
           // The remaining machine manager can restore the person and then revoke that grant.
           expect((await request(headers, `${fixture.path}/access/${ownerId}`, "PATCH", { permission: "admin" })).status).toBe(200);
