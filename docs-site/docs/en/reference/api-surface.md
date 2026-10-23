@@ -335,7 +335,8 @@ for execution, model access, and usage accounting.
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
 | `@k2b/cloud/shared-text` | Supported, server-only | Retained collaborative text logs and application-owned snapshot writes | [Shared text documents](/en/docs/data/shared-text-documents) |
-| `@k2b/cloud/browser/shared-text` | Supported, browser | Capture and resolve surviving Yjs character identities for structural actions | [Shared text documents](/en/docs/data/shared-text-documents#target-a-surviving-character) |
+| `@k2b/cloud/browser/shared-text` | Supported, browser | Shared provider, offline storage, action history and anchored table transport | [Shared text documents](/en/docs/data/shared-text-documents) |
+| `@k2b/cloud/browser/session` | Supported, browser | Sign out with cross-tab offline-document cleanup | [Offline documents](/en/docs/data/shared-text-documents#keep-unconfirmed-input-on-the-device) |
 | `@k2b/cloud/ai/browser` | Supported, client | Launch Assistant drafts; use SSE parsing, attachment helpers, and client-tool input and output schemas in browser or CLI clients | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/solid` | Supported, browser | AI chat controller over the conversation SSE stream | [Chat interface](/en/docs/ai/chat-interface) |
 | `@k2b/cloud/ai/tools` | Advanced, server-only | Mount Cloud's standard agent-tool factories, including document-aware `read_file` and conversation-file `markdown_to_pdf` and `html_to_pdf` | [Files and Projects](/en/docs/ai/files-projects-and-personalization) |

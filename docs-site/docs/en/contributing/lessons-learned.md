@@ -1019,6 +1019,13 @@ convention still needs a check or a test.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
 
+### Replacing text moved a peer's insertion inside the replacement
+
+- **What happened:** The Mail model regression produced `P peerROJECT notes` when a peer added text after `Project` and another writer changed it to `PROJECT`.
+- **Root cause:** Deleting the original range before inserting its replacement discarded the replacement's right-edge anchor and let writer ordering decide where the peer text appeared.
+- **Error class:** A collaborative replacement loses its original insertion boundary.
+- **Guard:** Replacement inserts before deleting the original range. Model tests cover revision and local subject edits with fixed peer identities on either side of the writer's ordering.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

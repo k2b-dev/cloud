@@ -8,7 +8,7 @@ if (!host) throw new Error("Missing harness root");
 render(
   () => (
     <LocaleProvider locale={document.documentElement.lang || "en"}>
-      <ProfileSettings provider="ipa" profile="user" freeIpaEnabled />
+      <ProfileSettings userId="fixture-user" provider="ipa" profile="user" freeIpaEnabled />
     </LocaleProvider>
   ),
   host,

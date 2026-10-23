@@ -1,6 +1,8 @@
 import { Readable } from "node:stream";
+import { decodeTableActionIntent, decodeTableFocus } from "@k2b/cloud/browser/shared-text";
 import { CloudResourceRefSchema, ErrorResponseSchema } from "@k2b/cloud/contracts";
 import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@k2b/cloud/server";
+import { fromBase64, toBase64 } from "@k2b/cloud/shared-text";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type Context, Hono, type Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -111,6 +113,18 @@ import {
   updateSenderIdentityInputSchema,
   updateSenderIdentityTransportInputSchema,
 } from "../contracts";
+import {
+  draftDocumentAdmissionSchema,
+  draftDocumentRestSchema,
+  draftDocumentSaveSchema,
+  draftDocumentSessionSchema,
+  draftDocumentUpdateSchema,
+  draftGenerationSchema,
+  draftTableActionRequestSchema,
+  draftTableActionResponseSchema,
+  MAX_DRAFT_DOCUMENT_PAYLOAD,
+} from "../lib/draft-document-contract";
+import { requireDraftDocumentAccount } from "../lib/draft-document-identity";
 import { MAX_MAIL_WORKSPACE_HREF_LENGTH } from "../search-url";
 import {
   createMailProtectedIdentityInputSchema,
@@ -168,6 +182,8 @@ import {
 } from "../service";
 import { resolveByteRange } from "../service/byte-range";
 import { requestContactDirectory } from "../service/contact-directory";
+import { acceptDraftDocumentUpdate, readDraftDocument } from "../service/draft-documents";
+import { applyDraftTableAction } from "../service/draft-table-actions";
 import { localizeMailError } from "../service/error-messages";
 import { mailLive } from "../service/live";
 import { mailLiveChannels } from "../service/live-channels";
@@ -177,6 +193,7 @@ import { loadMailboxConversationDetail, loadMailboxListView, loadMailboxPageData
 import legacyLiveRoutes from "../ws";
 import { projectActivityResult } from "./activity-public";
 import contactDirectoryRoutes from "./contact-directory";
+import { upgradeMailDraftDocumentSocket } from "./draft-document-socket";
 import {
   internalInput,
   internalMailboxId,
@@ -345,7 +362,7 @@ const draftRevisionSchema = z.object({
   expectedRevision: z.coerce.number().int().positive(),
 });
 const draftRecoveryRestoreSchema = draftRevisionSchema.extend({
-  leaseToken: z.string().uuid(),
+  leaseToken: z.string().uuid().optional(),
 });
 const attachmentUploadQuerySchema = draftRevisionSchema.extend({
   filename: z.string().trim().min(1).max(255),
@@ -774,6 +791,8 @@ const resolveComposeTemplateParam = resolveMailboxResourceParam("composeTemplate
 const resolveScheduledSendParam = resolveMailboxResourceParam("deliveries", "scheduledSendId", "Scheduled send");
 
 const mailOperationsApi = new Hono<MailApiContext>()
+  .use("/mailboxes/:mailboxId/drafts/:draftId/document", requireDraftDocumentAccount)
+  .use("/mailboxes/:mailboxId/drafts/:draftId/document/*", requireDraftDocumentAccount)
   .use("/mailboxes/:mailboxId", resolveMailboxParam)
   .use("/mailboxes/:mailboxId/*", resolveMailboxParam)
   .use("/mailboxes/:mailboxId/folders/:folderId", resolveFolderParam)
@@ -2704,6 +2723,154 @@ const mailOperationsApi = new Hono<MailApiContext>()
     };
     return respondDrafts(c, drafts.getDraft(requestContext(c), params.mailboxId, params.draftId));
   })
+  .get(
+    "/mailboxes/:mailboxId/drafts/:draftId/document/socket",
+    v("param", mailboxAndIdParamSchema("draftId")),
+    upgradeMailDraftDocumentSocket,
+  )
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/document/table-action",
+    describeRoute({
+      tags: ["Mail"],
+      summary: "Apply an anchored draft table action",
+      description:
+        "Requires the current generation and synchronized input. An accepted or unknown publication must be reconciled before another action; never automatically resubmit it.",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(draftTableActionResponseSchema, "Publication and persistence outcome") },
+    }),
+    bodyLimit({ maxSize: MAX_DRAFT_DOCUMENT_PAYLOAD }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    v("json", draftTableActionRequestSchema),
+    async (c) => {
+      const input = c.req.valid("json");
+      return respondPublic(
+        c,
+        applyDraftTableAction({
+          context: requestContext(c),
+          ...internalParams(c, c.req.valid("param") as { mailboxId: string; draftId: string }),
+          generation: input.generation,
+          actionId: input.actionId,
+          intent: decodeTableActionIntent(input.intent),
+          focus: input.focus ? decodeTableFocus(input.focus) : undefined,
+          caret: input.caret,
+          signal: c.req.raw.signal,
+        }),
+      );
+    },
+  )
+  .get(
+    "/mailboxes/:mailboxId/drafts/:draftId/document",
+    describeRoute({
+      tags: ["Mail"],
+      summary: "Read a shared draft session",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(draftDocumentSessionSchema, "Fresh replay and separately committed snapshot") },
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    async (c) => {
+      const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; draftId: string };
+      const result = await readDraftDocument({ context: requestContext(c), ...params, signal: c.req.raw.signal });
+      if (!result.ok) return respond(c, result);
+      const value = result.data;
+      return c.json({
+        ...value,
+        fresh: { ...value.fresh, state: toBase64(value.fresh.state) },
+        durable: { ...value.durable, state: toBase64(value.durable.state) },
+        frozen: value.frozen ? { ...value.frozen, state: toBase64(value.frozen.state) } : null,
+      });
+    },
+  )
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/document/updates",
+    describeRoute({
+      tags: ["Mail"],
+      summary: "Publish a shared draft update",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(draftDocumentAdmissionSchema, "Admission and durable persistence outcome") },
+    }),
+    bodyLimit({
+      maxSize: MAX_DRAFT_DOCUMENT_PAYLOAD + 4096,
+      onError: (c) => respond(c, fail(err.badInput("Draft document update is too large"))),
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    v("json", draftDocumentUpdateSchema),
+    async (c) => {
+      const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; draftId: string };
+      const input = c.req.valid("json");
+      let update: Uint8Array;
+      try {
+        update = fromBase64(input.payload);
+      } catch {
+        return respond(c, fail(err.badInput("Invalid draft document update")));
+      }
+      const result = await acceptDraftDocumentUpdate({ context: requestContext(c), ...params, ...input, update, signal: c.req.raw.signal });
+      if (!result.ok) return respond(c, result);
+      const value = result.data;
+      return c.json(
+        value.status === "accepted" ? { ...value, durable: { ...value.durable, state: toBase64(value.durable.state) } } : value,
+      );
+    },
+  )
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/document/rest",
+    describeRoute({
+      tags: ["Mail"],
+      summary: "Recover a device document after its send boundary",
+      description:
+        "Preserves the full device text including deletions. Repeat with the same generation, clientId and state after a lost answer.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.union([
+            z.object({ status: z.literal("unchanged"), durableSourceState: z.string() }),
+            z.object({ status: z.literal("recovered"), draft: draftSchema, durableSourceState: z.string() }),
+          ]),
+          "Unchanged or recovered whole draft",
+        ),
+      },
+    }),
+    bodyLimit({
+      maxSize: MAX_DRAFT_DOCUMENT_PAYLOAD + 4096,
+      onError: (c) => respond(c, fail(err.badInput("Draft recovery is too large"))),
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    v("json", draftDocumentRestSchema),
+    async (c) => {
+      const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; draftId: string };
+      const input = c.req.valid("json");
+      let state: Uint8Array;
+      try {
+        state = fromBase64(input.state);
+      } catch {
+        return respond(c, fail(err.badInput("Invalid recovery state")));
+      }
+      const recovered = await drafts.recoverDraftDocumentRest({ context: requestContext(c), ...params, ...input, state });
+      if (!recovered.ok) return respondPublic(c, recovered);
+      return respondPublic(c, ok({ ...recovered.data, durableSourceState: toBase64(recovered.data.durableSourceState) }));
+    },
+  )
+  .post(
+    "/mailboxes/:mailboxId/drafts/:draftId/document/snapshot",
+    describeRoute({
+      tags: ["Mail"],
+      summary: "Persist a shared draft projection",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(draftDocumentSaveSchema, "Committed snapshot and matching revision and generation") },
+    }),
+    v("param", mailboxAndIdParamSchema("draftId")),
+    v("json", z.object({ generation: draftGenerationSchema }).strict()),
+    async (c) => {
+      const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; draftId: string };
+      const saved = await drafts.persistDraftDocument({
+        context: requestContext(c),
+        ...params,
+        generation: c.req.valid("json").generation,
+        signal: c.req.raw.signal,
+      });
+      if (!saved.ok) return respond(c, saved);
+      return c.json({ ...saved.data, durable: { ...saved.data.durable, state: toBase64(saved.data.durable.state) } });
+    },
+  )
   .post("/mailboxes/:mailboxId/draft-seeds", v("param", mailboxParamSchema), v("json", prepareDraftSeedInputSchema), async (c) =>
     respondPublic(
       c,

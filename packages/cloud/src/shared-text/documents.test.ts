@@ -34,6 +34,10 @@ const fixture = () => {
   const documents = bindDocuments(
     {
       topic: () => handle,
+      async *events(_docId, after, until) {
+        const start = after === until ? Number(until.split(".").at(-1)) - 1 : after ? Number(after.split(".").at(-1)) : 0;
+        yield* events.slice(start, Number(until.split(".").at(-1)));
+      },
       replay: async ({ docId, after, until, doc, restoreRevision, signal }) => {
         docs.push(doc);
         replays.push({ after, until, signal });
@@ -80,6 +84,158 @@ const fixture = () => {
     },
   };
 };
+
+test("freeze returns full state at its ordered marker without saving or including later edits", async () => {
+  const f = fixture();
+  const initial = new Y.Doc();
+  initial.clientID = 101;
+  initial.getText(SHARED_TEXT_NAME).insert(0, "body");
+  initial.getText("subject").insert(0, "Shared subject");
+  initial.getMap("headers").set("sender", "sender-1");
+  f.setStored({ state: Y.encodeStateAsUpdate(initial), text: "body", cursor: null, restoreRevision: "g1" });
+  initial.destroy();
+  await f.append("before");
+  const expected = (await f.documents.read("doc"))!.text;
+  const frozen = await f.documents.freeze("doc", {
+    actor: { kind: "user", id: "sender" },
+    restoreRevision: "g1",
+    validate: async (state) => {
+      state.fill(0);
+    },
+  });
+  expect(frozen?.text).toBe(expected!);
+  expect(frozen?.cursor).toBe("s6t.fixture.2");
+  expect(f.publications.at(-1)).toMatchObject({
+    tenantId: "doc",
+    expectedAfter: "s6t.fixture.1",
+    data: { kind: "freeze", restoreRevision: "g1" },
+  });
+  expect(f.saves).toHaveLength(0);
+  await f.append("after");
+  expect((await f.documents.read("doc"))?.text).toContain("after");
+  const copy = new Y.Doc();
+  try {
+    Y.applyUpdate(copy, frozen!.state);
+    expect(copy.getText(SHARED_TEXT_NAME).toString()).toBe(expected!);
+    expect(copy.getText(SHARED_TEXT_NAME).toString()).not.toContain("after");
+    expect(copy.getText("subject").toString()).toBe("Shared subject");
+    expect(copy.getMap("headers").get("sender")).toBe("sender-1");
+  } finally {
+    copy.destroy();
+  }
+});
+
+test("an unreferenced freeze marker does not reject a pending edit from before the marker", async () => {
+  const f = fixture();
+  const doc = new Y.Doc();
+  doc.clientID = 108;
+  doc.getText(SHARED_TEXT_NAME).insert(0, "Draft");
+  const initial = Y.encodeStateAsUpdate(doc);
+  f.setStored({ state: initial, text: "Draft", cursor: null, restoreRevision: "g1" });
+  const actor = { kind: "user" as const, id: "author" };
+  await f.documents.freeze("doc", { actor, restoreRevision: "g1", validate: async () => {} });
+  const vector = Y.encodeStateVector(doc);
+  doc.getText(SHARED_TEXT_NAME).insert(5, " later");
+  const admitted = await f.documents.accept("doc", {
+    actor,
+    update: Y.encodeStateAsUpdate(doc, vector),
+    baseCursor: null,
+    restoreRevision: "g1",
+    originNodeId: "fixture",
+    originPeerId: "peer",
+  });
+  expect(admitted.status).toBe("accepted");
+  expect((await f.documents.read("doc"))?.text).toBe("Draft later");
+  doc.destroy();
+});
+
+test("freeze refuses a changed head rather than assigning a stale state to a newer marker", async () => {
+  const f = fixture();
+  await f.append("before");
+  await expect(
+    f.documents.freeze("doc", {
+      actor: { kind: "user", id: "sender" },
+      restoreRevision: "revision",
+      validate: async () => {
+        await f.append("racing peer");
+      },
+    }),
+  ).rejects.toBeInstanceOf(ConflictError);
+  expect(f.events.every((event) => event.data.kind === "sync")).toBe(true);
+  expect(f.docs.every((doc) => doc.isDestroyed)).toBe(true);
+});
+
+test("freeze rejects incomplete state, changed generation, denied validation and cancellation before publication", async () => {
+  const actor = { kind: "user" as const, id: "sender" };
+  const f = fixture();
+  await expect(f.documents.freeze("doc", { actor, restoreRevision: "other", validate: async () => {} })).rejects.toThrow("generation");
+  await expect(
+    f.documents.freeze("doc", {
+      actor,
+      restoreRevision: "revision",
+      validate: async () => {
+        throw new Error("denied");
+      },
+    }),
+  ).rejects.toThrow("denied");
+  const controller = new AbortController();
+  await expect(
+    f.documents.freeze("doc", {
+      actor,
+      restoreRevision: "revision",
+      signal: controller.signal,
+      validate: async () => {
+        controller.abort(new Error("cancelled"));
+      },
+    }),
+  ).rejects.toThrow("cancelled");
+  const source = new Y.Doc();
+  source.clientID = 201;
+  source.getText(SHARED_TEXT_NAME).insert(0, "A");
+  const vector = Y.encodeStateVector(source);
+  source.getText(SHARED_TEXT_NAME).insert(1, "B");
+  f.setStored({ state: Y.encodeStateAsUpdate(source, vector), text: null, cursor: null, restoreRevision: "revision" });
+  source.destroy();
+  await expect(f.documents.freeze("doc", { actor, restoreRevision: "revision", validate: async () => {} })).rejects.toThrow("unresolved");
+  expect(f.publications).toHaveLength(0);
+  f.setStored(null);
+  expect(await f.documents.freeze("doc", { actor, restoreRevision: "revision", validate: async () => {} })).toBeNull();
+});
+
+test("admission validates application headers in the merged state before confirming input", async () => {
+  const f = createStructuralFixture("body");
+  try {
+    const vector = Y.encodeStateVector(f.own.doc);
+    f.own.doc.getMap("headers").set("sender", "unavailable");
+    const update = Y.encodeStateAsUpdate(f.own.doc, vector);
+    let inspected = false;
+    const result = await f.documents().accept("fixture", {
+      actor: f.own.actor,
+      update,
+      baseCursor: f.own.cursor,
+      restoreRevision: "0",
+      originNodeId: "fixture",
+      originPeerId: null,
+      validateState: (state) => {
+        const merged = new Y.Doc();
+        try {
+          Y.applyUpdate(merged, state);
+          expect(merged.getText(SHARED_TEXT_NAME).toString()).toBe("body");
+          expect(merged.getMap("headers").get("sender")).toBe("unavailable");
+          inspected = true;
+          return false;
+        } finally {
+          merged.destroy();
+        }
+      },
+    });
+    expect(inspected).toBe(true);
+    expect(result.status).toBe("recoveryRequired");
+    expect(f.events).toHaveLength(0);
+  } finally {
+    f.destroy();
+  }
+});
 
 test("read preserves nullable snapshots and replays only newer log events", async () => {
   const f = fixture();

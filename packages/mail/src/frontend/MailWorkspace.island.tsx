@@ -107,6 +107,7 @@ import { createMailPresenceSession } from "./_components/mail-presence-session";
 import { emptyMailSelection, mailRowOlderThanDetail, pickMailSelection } from "./_components/mail-selection-detail";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./_components/mail-sender-preference";
 import { mailSidebarMessages } from "./_components/mail-sidebar-messages";
+import { openMailUserDraftStorage } from "./_components/mail-user-draft-storage";
 import type { MailUserPreferences } from "./_components/mail-user-preferences";
 import { mailboxCurrentTab, mailboxViewTabs } from "./_components/mail-view-tabs";
 import {
@@ -200,6 +201,16 @@ function MailboxWorkspace(
   },
 ) {
   const locale = useLocale();
+  let seedStorage: Storage | undefined;
+  onMount(() => {
+    if (props.currentUserId) {
+      try {
+        seedStorage = openMailUserDraftStorage(localStorage, props.currentUserId);
+      } catch {
+        /* Starting a draft reports storage failure. */
+      }
+    }
+  });
   const t = createMemo(() => mailWorkspaceMessages.resolve([locale()]).t);
   const conversationText = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   // A store keeps shell, list, and detail consumers granular even though the
@@ -978,7 +989,8 @@ function MailboxWorkspace(
     if (!store) return endComposeStart();
     writeMailSenderPreference(localStorage, seed.mailboxId, identity.id);
     try {
-      store.storeMailDraftSeed(localStorage, seed);
+      if (!seedStorage) throw new Error(t().localMessageFailed);
+      store.storeMailDraftSeed(seedStorage, seed);
     } catch {
       endComposeStart();
       void prompts.error(t().localMessageFailed, { title: t().startMessageFailed });
@@ -2692,6 +2704,7 @@ function MailboxWorkspace(
                   />
                 </AppWorkspace.MainPane>
                 <MailConversationReader
+                  currentUserId={props.currentUserId}
                   mailboxId={data.mailbox.id}
                   requestUrl={requestPath()}
                   canWrite={canWrite()}

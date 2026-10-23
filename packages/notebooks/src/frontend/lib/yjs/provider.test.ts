@@ -1512,3 +1512,52 @@ describe("trusted awareness transport", () => {
     }
   });
 });
+
+test("the shared provider adapter retains exact Notebook request packets and server error messages", () => {
+  const doc = new Y.Doc();
+  doc.clientID = 101;
+  const awareness = new Awareness(doc);
+  const errors: unknown[] = [];
+  const provider = createYjsProvider({
+    doc,
+    awareness,
+    noteId: NOTE_ID,
+    appUrl: "https://example.invalid/notebooks/Note01",
+    initialRestoreRevision: "7",
+    initialCursor: "s6t.fixture.1",
+    workspace: { notebookId: NOTEBOOK_ID, initialCursor: "s6t.workspace.1", onEvent: () => undefined },
+    onError: (error) => errors.push(error),
+  });
+  try {
+    provider.connect();
+    const socket = FakeWebSocket.instances.at(-1)!;
+    socket.open();
+    expect(socket.url).toBe("wss://example.invalid/api/notebooks/ws");
+    expect(socket.sent.map((value) => JSON.parse(value))).toEqual([
+      { type: "notes.workspace.subscribe", payload: { notebookId: NOTEBOOK_ID, fromCursor: "s6t.workspace.1" } },
+      { type: "notes.yjs.replay.request", payload: { noteId: NOTE_ID, fromCursor: "s6t.fixture.1", restoreRevision: "7" } },
+    ]);
+    socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "7" } });
+    const awarenessPacket = JSON.parse(socket.sent.at(-1)!);
+    expect(awarenessPacket.type).toBe("notes.yjs.awareness.publish");
+    expect(Object.keys(awarenessPacket.payload).sort()).toEqual(["noteId", "payload"]);
+    doc.getText("codemirror").insert(0, "local");
+    const syncPacket = JSON.parse(socket.sent.at(-1)!);
+    expect(syncPacket.type).toBe("notes.yjs.sync.publish");
+    expect(syncPacket.payload).toEqual({
+      noteId: NOTE_ID,
+      payload: syncPacket.payload.payload,
+      restoreRevision: "7",
+      baseCursor: "s6t.fixture.1",
+    });
+    socket.message({
+      type: notebooksYjs.wsType.error,
+      payload: { code: "INTERNAL_ERROR", message: "The document changed.", noteId: NOTE_ID },
+    });
+    expect(errors).toEqual([{ code: "INTERNAL_ERROR", message: "The document changed.", noteId: NOTE_ID }]);
+  } finally {
+    provider.dispose();
+    awareness.destroy();
+    doc.destroy();
+  }
+});

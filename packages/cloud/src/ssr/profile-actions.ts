@@ -5,7 +5,7 @@ import type { CloudThemePreference } from "../shared/theme";
 import { createPreferenceController } from "./preference-controller";
 
 /** `appHref` is set while the installation offers the mobile app; the item then leads to `/me/app`. */
-export function createProfileActions(initialTheme: CloudThemePreference, appHref?: string) {
+export function createProfileActions(initialTheme: CloudThemePreference, appHref?: string, userId?: string) {
   const locale = useLocale();
   const preferences = createPreferenceController(initialTheme, locale);
   const [signingOut, setSigningOut] = createSignal(false);
@@ -13,16 +13,13 @@ export function createProfileActions(initialTheme: CloudThemePreference, appHref
     if (signingOut()) return;
     setSigningOut(true);
     // The API client and the push client load with the first sign-out, not with every page.
-    const loaded = await importOnDemand(() => Promise.all([import("../browser/notifications"), import("../clients/core")]));
+    const loaded = await importOnDemand(() => import("../browser/session"));
     if (!loaded) {
       setSigningOut(false);
       return;
     }
-    const [{ browserNotificationClient }, { apiClient }] = loaded;
     try {
-      await browserNotificationClient.disable().catch(() => undefined);
-      const response = await apiClient.auth.logout.$post();
-      if (!response.ok) throw new Error(preferences.messages().signOutFailed);
+      await loaded.signOutBrowserSession(userId, preferences.messages().signOutFailed);
       window.location.href = "/auth/login";
     } catch {
       toast.error(preferences.messages().signOutFailed);

@@ -1,6 +1,7 @@
 import { stopRuntimeResources } from "@k2b/cloud/services";
 import { websocket } from "hono/bun";
 import apiRoutes from "./api";
+import { stopMailDraftConnections } from "./api/draft-document-socket";
 import { mailCapabilities } from "./capabilities";
 import { app } from "./config";
 import { mailHelp } from "./help";
@@ -13,6 +14,7 @@ const mailNotifications = createMailNotificationService(app.notifications);
 
 const stopMailRuntimes = (): Promise<void> =>
   stopRuntimeResources([
+    stopMailDraftConnections,
     () => mailRuntime.stop(),
     () => workflowRuntime.stop(),
     () => commandRuntime.stop(),

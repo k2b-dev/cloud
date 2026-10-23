@@ -634,11 +634,20 @@ export const session = {
 
   revoke: revokeToken,
 
-  /** Signs out the web session (or an explicit bearer session). The mobile app's session is unaffected. */
-  delete: async (c: Context): Promise<void> => {
+  /** Signs out the web session (or an explicit bearer). False when an expected account no longer owns the request's credential. */
+  delete: async (c: Context, expectedUserId?: string | null): Promise<boolean> => {
+    // Capture once: another tab may replace the browser cookie while this
+    // request runs, but both the comparison and revocation concern this token.
     const token = getWebOrBearerToken(c);
+    if (token && expectedUserId !== undefined) {
+      const claims = await verifySessionToken(token);
+      if (claims && claims.sub !== expectedUserId) return false;
+    }
     if (token) await revokeToken(token, c.req.header("x-request-id"));
-    deleteCookie(c, "session_token", { path: "/" });
+    // Bound browser logout revokes the captured family without mutating the
+    // shared cookie: its response may arrive after another tab signs in.
+    if (expectedUserId === undefined) deleteCookie(c, "session_token", { path: "/" });
+    return true;
   },
 
   issueInTransaction,

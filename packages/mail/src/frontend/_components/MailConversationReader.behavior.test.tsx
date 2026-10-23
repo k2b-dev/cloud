@@ -99,6 +99,7 @@ const waitFor = async (condition: () => boolean) => {
 };
 
 const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
+  currentUserId: "Usr001",
   mailboxId: "Box001",
   requestUrl: "/app/mail/Box001?conversation=Conv01",
   canWrite: true,

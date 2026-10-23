@@ -331,7 +331,7 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
     expect(navigation.assign).not.toHaveBeenCalled();
     expect(navigation.replace).not.toHaveBeenCalled();
     expect(`${window.location.pathname}${window.location.search}`).toBe(path);
-    expect(JSON.parse(localStorage.getItem(`cloud:mail:draft-seed:Box001:${seed.id}`)!)).toEqual(seed);
+    expect(JSON.parse(localStorage.getItem(`cloud:user:user-1:mail:cloud:mail:draft-seed:Box001:${seed.id}`)!)).toEqual(seed);
     expect(localStorage.getItem(preferenceKey)).toBe(sender);
   };
   const dialog = () => dom.document.querySelector('dialog[open][aria-label="Could not start message"]');
@@ -512,7 +512,7 @@ describe.skipIf(isServer)("mailbox compose opens one document", () => {
       await expectFailure("The browser could not keep this message locally. Free some site storage and try again.");
       expect(storing).toHaveBeenCalledTimes(1);
       expect(posts()).toHaveLength(1);
-      expect(localStorage.getItem(`cloud:mail:draft-seed:Box001:${seed.id}`)).toBeNull();
+      expect(localStorage.getItem(`cloud:user:user-1:mail:cloud:mail:draft-seed:Box001:${seed.id}`)).toBeNull();
     } finally {
       storing.mockRestore();
     }

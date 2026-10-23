@@ -3314,6 +3314,13 @@ export const draftSchema = z.object({
   lastEditedByDisplayName: z.string().min(1),
   recoveryCopyCount: z.number().int().nonnegative(),
   revision: z.number().int().positive(),
+  /** Optional while release N accepts responses from older lock-only pods. */
+  editMode: z.enum(["lock", "shared"]).optional(),
+  restSourceDraftId: ResourceShortIdSchema.nullable().optional(),
+  generation: z
+    .string()
+    .regex(/^[1-9]\d*$/)
+    .optional(),
   state: z.enum(["draft", "scheduled", "sending", "sent", "discarded"]),
   deliveryClass: draftDeliveryClassSchema,
   signatureTemplateId: ResourceShortIdSchema.nullable(),

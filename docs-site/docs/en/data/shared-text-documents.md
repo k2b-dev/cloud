@@ -328,6 +328,68 @@ empty target. Snapshot text alone cannot establish that the target is empty.
 Transports and replacement writers must both follow this ordering before it
 can be relied on during a rollout.
 
+## Connect a browser editor
+
+Import `createSharedTextProvider` and its `SharedTextProviderOptions`,
+`SharedTextProviderTransport`, and `SharedTextProvider` types from
+`@k2b/cloud/browser/shared-text`. The provider connects one Y.Doc and awareness
+instance to an application-owned WebSocket transport. Use the `codemirror`
+Y.Text root and retain the same document and awareness instances on reconnect.
+
+Pass `doc`, `awareness`, `docId`, `transport`, `maxSyncPayloadLength`,
+`terminalErrorCodes`, and `reconnectDelayMs`. The payload limit is the
+transport's existing base64 string limit. The pending queue uses twice that
+budget; exceeding it stops publication and preserves recovery input.
+A populated document or `initialCursor` also requires `initialGeneration`,
+the opaque token belonging to that snapshot, including historical deletes.
+
+The transport supplies an absolute WebSocket `url`, `encode(request)`,
+`decode(packet)`, and `closeError(code, reason)`. Encoding maps normalized
+`replayRequest`, `syncPublish`, `awarenessPublish`, and optional event-stream
+`subscribe` requests to the application's protocol. Decoding validates unknown
+JSON and maps it to `SharedTextProviderMessage`, or returns null to ignore it.
+Validate document IDs and preserve generation metadata on sync, awareness,
+and presence packets. The provider rejects unversioned updates by default.
+`allowUnversionedUpdates` preserves existing Notebook packets only; new
+transports must version every update.
+Only label a push `snapshot: true` when its bytes come from the durable store.
+
+Call `connect()` after creating the provider. Replay completes before pending
+input and local awareness are sent. `onReady` runs at that boundary;
+`onConnectionChange` reports the socket connection. `onError` reports errors,
+and `onFatal` means the session has stopped. A generation mismatch retains
+recovery input and requires a fresh editor; `resume()` cannot revive it.
+`isEarlierGeneration` is only for ordered revisions whose retired events
+must advance the replay cursor without applying their bytes.
+
+The returned handle provides `reconnectNow()` for dropped connections,
+`resume()` for recoverable terminal sessions, `hasUnsentChanges()`,
+`recoveryInput()`, and `generation()`. With an `undoManager`, route editor
+history through `undo`, `redo`, `canUndo`, and `canRedo`; use `canStructure`,
+`beginAction`, and `setInverseHandler` for server action receipts. Optional
+`events` callbacks process application invalidations in order and advance
+their independent cursor only after `onEvent` completes. Call `dispose()` on
+close; the application still owns destruction of the document and awareness.
+
+### Retain local input until a durable snapshot covers it
+
+Use `onLocalUpdate(pending)` to persist `SharedTextProviderPendingState` before
+publication. It includes document ID, generation, full binary state, readable
+text, original pending payloads and their base cursors. `pendingState()` exports
+the same shape for recovery. Hydrate it with `initialPending` before connecting;
+its document and generation must match the authorized initial snapshot.
+Hydration preserves original bases and waits for replay before resending.
+Keep incompatible stored input available for recovery outside the new editor.
+
+`onUnsentChange` and `hasUnsentChanges()` describe transport acknowledgements.
+An echo does not prove that a database snapshot covers local input. Do not
+delete durable local storage on echo or overwrite its original base with a
+newer replay cursor. `onSnapshot({ docId, generation, state, cursor })` reports
+only validated server snapshot bytes, excluding unsnapshotted local edits.
+Compare those bytes with stored input before clearing covered storage. The
+provider does not read or delete IndexedDB records. Storage callbacks own
+visible error reporting and recovery if persistence fails.
+
 ## Snapshots
 
 Use `sharedText.snapshots({ log, job, store, input?, logger?, repair? })` to persist
@@ -573,3 +635,84 @@ Do not recreate the topic while clients from its previous lifetime can return.
 If that client retirement cannot be enforced, preserve the existing broker
 state and postpone recreation. This transport does not provide a topic-epoch
 handshake that retires existing clients automatically.
+
+## Keep unconfirmed input on the device
+
+`openAuthorizedSharedTextOffline(identity, authorize, signal?)` from
+`@k2b/cloud/browser/shared-text` opens IndexedDB for one
+`{ userId, draftId, generation }`. It captures the user's local logout epoch
+before calling `authorize`. That callback must freshly authenticate the
+person, authorize this document and verify its generation on the server.
+The helper returns `{ session, authorization, state }` only after checking
+that the epoch still matches. Do not display stored draft bytes before this
+check succeeds. Bind each browser request, including reconnects, to the
+account whose offline namespace the page opened.
+
+Use `listSharedTextOfflineGenerations({ userId, draftId })` to discover pending
+older generations. It reads only IndexedDB keys, never draft bytes. Select the
+appropriate generation and authorize before loading it. A localStorage marker
+is not an authoritative index: its update cannot be atomic with the bytes.
+
+`session.save(fullState, baseCursor)` transactionally merges complete Yjs state
+from concurrent tabs and retains the earliest original input cursor. Save
+deletions as well as insertions. `loadPending()` reads bytes and their cursor
+atomically; the authorization helper also returns this `baseCursor`. Never
+substitute a newly read server head for the base of older offline input. An
+unknown base remains null and requires conservative history validation. `session.acknowledgeSnapshot({ identity, state, durability:
+"durable" })` removes stored input only when the supplied snapshot covers
+all its structs and deletions. The application must establish that these
+exact bytes were committed to its durable store; a socket echo or completed
+replay does not establish durability.
+
+Observe `session.signal` and expose storage failures with retry and a way to
+copy pending text. Call `close()` on disposal. `forget()` explicitly removes
+this document's record. A memory-only choice bypasses IndexedDB; explain that
+closing the tab then loses input which has not reached the server.
+
+`logoutSharedTextOffline(userId)` advances the user's epoch and erases their
+records in one transaction. It also notifies other tabs. The transaction
+check fences stale writers even if a tab misses that notification. Custom
+sign-out controls use `signOutBrowserSession(userId, errorMessage)` from
+`@k2b/cloud/browser/session`: it fences storage before and after revoking the
+server credential. It binds logout to the rendered account; a changed account
+requires reopening the page before retrying. Keep a visible retry if either
+step fails. App-owned localStorage entries use `cloud:user:<userId>:`. Logout
+removes this namespace and changes `cloud:user-epoch:<userId>`; capture that
+token when opening authenticated storage and check it before every read/write.
+The same page receives `cloud:user-storage-invalidated` with `{ userId }`;
+other tabs receive the native storage event. Keep the epoch tombstone, and do
+not claim or delete legacy entries whose user is unknown.
+
+## Exchange anchored table actions
+
+The browser entry point exports `TextTableActionRequestSchema`,
+`TextTableActionResponseSchema`, `EncodedTableActionIntentSchema`,
+`encodeTableFocus`, `decodeTableFocus` and `decodeTableActionIntent`.
+These share the canonical character-anchor encoding between applications.
+An application may replace the request's `restoreRevision` field with its
+own generation field. It still owns permission checks, lifecycle checks,
+publication outcomes and persistence errors.
+
+## Freeze the exact send boundary
+
+`documents.freeze(docId, { actor, restoreRevision, signal?, validate })`
+replays to the captured log head, rejects unresolved Yjs dependencies,
+validates a copy of the full state and publishes a generation-scoped freeze
+marker with a compare-and-set against that head. It returns the exact
+`{ state, text, cursor, restoreRevision }`, or null for a missing document.
+It does not change the application's lifecycle or save its snapshot.
+
+The application must serialize admission and sending through the same
+persistent document lock. In the send transaction, store the marker,
+complete document, attachment revision and send intent atomically. Only a
+committed reference closes that generation. A marker left by a rolled-back
+transaction is inert during replay; it must not prevent subsequent edits.
+Preserve a device's differing full content as a separate recovery draft,
+including deletions. A state-vector delta alone cannot represent that copy.
+If the device has the same visible content but newer item or deletion identities,
+commit a receipt for its exact source state before acknowledging device cleanup.
+The older send snapshot alone does not cover that state.
+
+This boundary does not change the topic's retention policy. Do not activate
+an application that promises retention until snapshot coverage while its
+installed Sync topic can still expire or evict uncovered updates.
