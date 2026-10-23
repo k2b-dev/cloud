@@ -57,7 +57,7 @@ it, every signed-in person sees the part. The app has no `admin` role, so a part
 limited to administrators never appears.
 
 Do not list `/pwa` paths in `routes`; `defineApp()` throws for them. See
-[Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app).
+[Define an application](/en/docs/build/define-app#add-pages-to-the-cloud-app).
 
 Spaces adds its "My tasks" page this way, as an example of a list with a quick
 action; see [Spaces](/en/apps/spaces#check-off-tasks-in-the-mobile-app).
@@ -79,7 +79,7 @@ A part's application id consists of lowercase letters, digits, and hyphens and
 starts with a letter. The ids `pwa`, `settings`, and `offline` cannot declare a
 part. The gateway skips every other route below `/pwa`, also from applications
 that do not use `defineApp()`. See
-[Route conventions](/en/docs/reference/route-conventions#mobile-app-paths).
+[Route conventions](/en/docs/reference/route-conventions#cloud-app-paths).
 
 ## Serve pages
 

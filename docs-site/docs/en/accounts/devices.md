@@ -203,4 +203,4 @@ From the terminal, administrators use
 
 An administrator cannot do this from the Cloud app: app sessions never carry
 the administrator role. For the HTTP routes, see
-[Account administration API](/en/docs/reference/account-administration#remove-devices-from-the-mobile-app).
+[Account administration API](/en/docs/reference/account-administration#remove-devices-from-the-cloud-app).

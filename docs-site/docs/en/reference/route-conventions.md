@@ -95,7 +95,7 @@ The gateway uses the longest matching segment path. For example,
 Exact duplicate prefixes are skipped and reported as route warnings. The first
 application in the deterministic registry ordering keeps the prefix. Prefixes
 below `/pwa` that the application may not claim are skipped the same way; see
-[Cloud app paths](#mobile-app-paths).
+[Cloud app paths](#cloud-app-paths).
 
 ## Use public IDs in resource routes
 
