@@ -84,13 +84,13 @@ for (const width of [390, 768, 1280])
         const dialog = tab.getByRole("dialog");
         await dialog.getByRole("combobox", { name: "Machine account", exact: true }).click();
         await tab.getByRole("option", { name: /Transcript cleanup robot/ }).click();
-        await dialog.getByLabel("Name", { exact: true }).fill("Transcript cleanup");
+        await dialog.getByRole("textbox", { name: "Name", exact: true }).fill("Transcript cleanup");
         expect(await dialog.getByText("AI models only", { exact: true }).count()).toBeGreaterThan(0);
         if (process.env.SHOTS)
           await tab.screenshot({ path: `${process.env.SHOTS}/machine-key-create-${dark ? "dark" : "light"}-${width}.png`, fullPage: true });
         await dialog.getByRole("button", { name: "Create API key", exact: true }).click();
         await dialog.getByRole("alert").filter({ hasText: "The account is disabled" }).waitFor();
-        expect(await dialog.getByLabel("Name", { exact: true }).inputValue()).toBe("Transcript cleanup");
+        expect(await dialog.getByRole("textbox", { name: "Name", exact: true }).inputValue()).toBe("Transcript cleanup");
         fail = false;
         await dialog.getByRole("button", { name: "Create API key", exact: true }).click();
         await dialog.getByText("fictional-model-key-for-visual-fixture", { exact: true }).waitFor();
