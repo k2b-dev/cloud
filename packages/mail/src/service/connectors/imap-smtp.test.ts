@@ -665,6 +665,7 @@ describe("IMAP reads under throttling", () => {
           imapSmtpConnector.fetchFlagChanges(session, "INBOX", "10", "10", 1, 9),
         );
         expect(changes.map((change) => change.uid)).toEqual(changedUids);
+        expect(fixture.commands.filter((command) => command.startsWith("UID SEARCH "))).toEqual(["UID SEARCH UID 1:9 MODSEQ 11"]);
       } finally {
         fixture.server.stop(true);
       }
