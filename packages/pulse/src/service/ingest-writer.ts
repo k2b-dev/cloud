@@ -209,7 +209,7 @@ export const createIngestWriter = ({
     let reserved = false,
       writing = false;
     try {
-      const connectedStore = { ...store, query: await store.prepare() };
+      const connectedStore = { ...store, query: await store.prepare("ingest") };
       // T1 is deliberately a separate, committed transaction.
       const preflight = await database.begin(async (tx) => {
         await tx`SET LOCAL statement_timeout='30s'`.simple();

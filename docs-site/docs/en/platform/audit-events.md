@@ -5,7 +5,7 @@ section: Platform services
 order: 550
 description: Record security-relevant and administrative actions as durable audit evidence.
 tags: [audit, security, operations]
-updated: 2026-10-17
+updated: 2026-10-22
 ---
 
 # Audit events
@@ -172,3 +172,12 @@ links the event to its capability execution. Metadata contains only the month.
 There is no per-call geo audit event and no address, search text, coordinates,
 provider body, or key in these rows. See
 [Places and maps](/en/docs/platform/places-and-maps) for budgets and recovery.
+
+Administrator changes on **Administration → Places and maps** are recorded as
+`core.geo.key_set` (metadata `replaced`), `core.geo.key_removed`, and
+`core.geo.budget_changed` (the saved plan and limits), all `allowed`, in the
+same transaction as the settings write. The page names a person only when
+the event belongs to the write that produced the stored value; a later write
+without such an event shows the date alone. A refused or unverified key
+records nothing and never appears in an event. Saving a standard plan resets
+unreadable custom-plan values and lists them under `resets`.

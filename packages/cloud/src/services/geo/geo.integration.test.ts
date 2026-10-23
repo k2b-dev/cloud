@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { RedisClient, SQL } from "bun";
 import { createDisposableDatabase, suiteFor, testInfra } from "../../../../../scripts/fixtures/test-infra";
 import { createGeoBucket } from "./bucket";
@@ -7,7 +7,9 @@ import autocomplete from "./fixtures/autocomplete.json";
 import { GEO_TEST_KEY, GEO_TEST_NOW, geoTestConfig, geoTestContext } from "./geo.test-fixture";
 import { GeoapifyAdapter } from "./geoapify";
 import { createGeoLedger } from "./ledger";
+import { createGeoMapService } from "./map";
 import { migrate } from "./migrate";
+import { routeStops, syntheticRouteResponse } from "./route.test-fixture";
 import { createGeoService } from "./service";
 
 suiteFor("database", "valkey")("Core geo durable admission and accounting", () => {
@@ -33,6 +35,9 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
       reason text, error_code text, error_message text, request_id text, metadata jsonb
     )`.simple();
   });
+  beforeEach(async () => {
+    await db`TRUNCATE geo.shares, geo.usage, geo.audit_transitions, audit.events`;
+  });
   afterAll(async () => {
     if (redis) {
       const keys = await redis.keys(`${prefix}*`);
@@ -41,6 +46,32 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
     }
     await db?.close();
     await database?.drop();
+  });
+  test("tiles share durable budgets with geo Queries and use an independent provider bucket", async () => {
+    const instant = new Date("2028-02-12T10:00:00.000Z");
+    const settings = { ...geoTestConfig, monthlyCredits: 1, personDailyCredits: 1 };
+    const bucket = createGeoBucket({ redis: async () => redis, prefix: `${prefix}:tiles` });
+    let sent = 0;
+    const map = createGeoMapService({
+      config: async () => settings,
+      now: () => instant,
+      bucket,
+      ledger: ledger(),
+      fetch: async () => {
+        sent++;
+        return new Response(new Uint8Array([26, 0]), { headers: { "Content-Type": "application/x-protobuf" } });
+      },
+    });
+    const results = await Promise.allSettled(Array.from({ length: 8 }, () => map.tile({ z: 0, x: 0, y: 0 }, geoTestContext)));
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(4);
+    expect(sent).toBe(4);
+    const balances = await ledger().availability(geoTestContext.accessSubject!, settings, instant);
+    expect(balances.person.exhausted).toBe(true);
+    expect(balances.cloud.exhausted).toBe(true);
+    const rows = await db<
+      { used: number }[]
+    >`SELECT used::int AS used FROM geo.shares WHERE period IN ('2028-02', '2028-02-12') AND function_group='tiles'`;
+    expect(rows.map((row) => row.used)).toEqual([1000, 1000]);
   });
   test("parallel reservations admit exactly floor(budget/price) with no partial cloud debit", async () => {
     const settings = { ...geoTestConfig, monthlyCredits: 100, personDailyCredits: 3 };
@@ -222,5 +253,60 @@ suiteFor("database", "valkey")("Core geo durable admission and accounting", () =
     expect(rows).toHaveLength(2);
     expect(JSON.stringify(rows)).not.toContain(GEO_TEST_KEY);
     expect(rows.every((row) => row.actor_uid === "service-account:22222222-2222-4222-8222-222222222222")).toBeTrue();
+  });
+  test("concurrent admitted routing reservations settle actual overruns atomically and refuse further admission", async () => {
+    const instant = new Date("2028-01-12T10:00:00.000Z");
+    const settings = { ...geoTestConfig, monthlyCredits: 3, personDailyCredits: 3 };
+    const results = await Promise.allSettled(Array.from({ length: 12 }, () => ledger().reserve(subject, settings, 1000, "route", instant)));
+    const reservations = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+    expect(reservations).toHaveLength(3);
+    const outcomes = await Promise.allSettled([
+      ...reservations.map((reservation) => ledger().settle(reservation, 2000)),
+      ...Array.from({ length: 12 }, () => ledger().reserve(subject, settings, 1000, "route", instant)),
+    ]);
+    expect(outcomes.slice(0, 3).every((result) => result.status === "fulfilled")).toBeTrue();
+    expect(outcomes.slice(3).every((result) => result.status === "rejected")).toBeTrue();
+    const usage = await db<{ used: number }[]>`SELECT used::int AS used FROM geo.usage WHERE period IN ('2028-01','2028-01-12')`;
+    const shares = await db<
+      { used: number }[]
+    >`SELECT used::int AS used FROM geo.shares WHERE period IN ('2028-01','2028-01-12') AND function_group='route'`;
+    expect(usage.map((row) => row.used)).toEqual([6000, 6000]);
+    expect(shares.map((row) => row.used)).toEqual([6000, 6000]);
+    expect(await ledger().availability(subject, settings, instant)).toMatchObject({
+      person: { exhausted: true },
+      cloud: { exhausted: true },
+    });
+    for (const actual of [-1, NaN, Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1])
+      await expect(ledger().settle(reservations[0]!, actual)).rejects.toThrow("Invalid geo settlement");
+    await expect(ledger().reserve(subject, settings, -1000, "route", instant)).rejects.toThrow("Invalid geo reservation");
+  });
+  test("routing overrun debits real usage and shares beyond reservation and stops later paid legs", async () => {
+    const instant = new Date("2028-02-12T10:00:00.000Z");
+    const settings = { ...geoTestConfig, monthlyCredits: 2, personDailyCredits: 2 };
+    let fetches = 0;
+    const service = createGeoService({
+      config: async () => settings,
+      now: () => instant,
+      ledger: ledger(),
+      bucket: createGeoBucket({ redis: async () => redis, prefix: `${prefix}:routing-overrun` }),
+      cache: { get: async () => null, put: async () => {} },
+      adapter: new GeoapifyAdapter({
+        now: () => instant,
+        fetch: async (url) => {
+          fetches++;
+          return Response.json(syntheticRouteResponse(url, { distances: [1600000] }));
+        },
+      }),
+    });
+    const input = { plan: { stops: routeStops(3), legOptions: [{ fromStopId: "B", toStopId: "C", options: { mode: "walk" as const } }] } };
+    await expect(service.calculateRoute(input, geoTestContext)).rejects.toMatchObject({
+      code: "GEO_COST_OVERRUN",
+      details: { costs: { settledCredits: 4, unknownCredits: 0 } },
+    });
+    expect(fetches).toBe(1);
+    const rows = await db<{ used: number }[]>`SELECT used::int AS used FROM geo.usage WHERE period IN ('2028-02','2028-02-12')`;
+    expect(rows.map((row) => row.used)).toEqual([4000, 4000]);
+    await expect(service.calculateRoute(input, geoTestContext)).rejects.toMatchObject({ code: "GEO_BUDGET_EXHAUSTED" });
+    expect(fetches).toBe(1);
   });
 });

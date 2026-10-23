@@ -35,6 +35,7 @@ const selectionPart = (page: MailboxPageData): MailConversationDetailData => {
     localTags: page.localTags,
     selectedSubject: page.selectedSubject,
     detailMessages: page.detailMessages,
+    conversationRowState: page.conversationRowState,
     conversationSummary: page.conversationSummary,
     conversationDrafts: page.conversationDrafts,
     detailError: page.detailError,
@@ -114,7 +115,11 @@ suite("Mail workspace conversation detail", () => {
     if (!row) throw new Error("Resource fixture was not created");
     return row.id;
   };
-  const createConversation = async (label: string, messageCount: number): Promise<Conversation> => {
+  const createConversation = async (
+    label: string,
+    messageCount: number,
+    uidBase = label === "Visible thread" ? 1 : 100,
+  ): Promise<Conversation> => {
     const shortId = newShortId();
     const [conversation] = await sql<{ id: string }[]>`INSERT INTO mail.conversations
       (short_id, mailbox_id, subject, participant_summary, latest_message_at, summary, created_at, updated_at)
@@ -139,7 +144,7 @@ suite("Mail workspace conversation detail", () => {
         VALUES (${conversation.id}::uuid, ${message.id}::uuid, ${i}, 'headers')`;
       for (const folder of [folderA, folderB]) {
         const [ref] = await sql<{ id: string }[]>`INSERT INTO mail.remote_message_refs (folder_id, message_id, uid_validity, uid)
-          VALUES (${folder.id}::uuid, ${message.id}::uuid, 1, ${label === "Visible thread" ? i + 1 : i + 100}) RETURNING id`;
+          VALUES (${folder.id}::uuid, ${message.id}::uuid, 1, ${uidBase + i}) RETURNING id`;
         if (!ref) throw new Error("Remote reference fixture was not created");
         await sql`INSERT INTO mail.message_placements (remote_message_ref_id, folder_id, message_id, flags)
           VALUES (${ref.id}::uuid, ${folder.id}::uuid, ${message.id}::uuid, ARRAY[]::text[])`;
@@ -245,6 +250,50 @@ suite("Mail workspace conversation detail", () => {
       }
     });
   }
+
+  test("complete row state includes older messages and all live placements beyond the 100-body page", async () => {
+    const long = await createConversation("Long thread", 101, 1000);
+    await sql`INSERT INTO mail.conversation_assignees (conversation_id, user_id, assigned_at)
+      VALUES (${long.id}::uuid, ${reader.id}::uuid, ${anchor})`;
+    await sql`UPDATE mail.message_placements mp SET flags = ARRAY['\\Seen']::text[]
+      FROM mail.conversation_messages cm WHERE cm.message_id = mp.message_id AND cm.conversation_id = ${long.id}::uuid`;
+    const stale = unwrap(await messages.listConversations({ context: contextFor(reader), mailboxId, folderId: folderA.id })).items.find(
+      (item) => item.id === long.id,
+    )!;
+    expect(stale.unread).toBe(false);
+    // No revision or newest body changes: another client changes only the oldest message's placement.
+    await sql`UPDATE mail.message_placements mp SET flags = ARRAY['\\Flagged']::text[]
+      FROM mail.message_contents mc WHERE mc.id = mp.message_id AND mc.short_id = ${long.messageShortIds[0]}
+        AND mp.folder_id = ${folderA.id}::uuid`;
+    const response = await detailRequest(long, folderB, "reader");
+    expect(response.status).toBe(200);
+    const detail: MailConversationDetailData = await response.json();
+    expect(detail.detailMessages).toHaveLength(100);
+    expect(detail.detailMessages.some((message) => message.id === long.messageShortIds[0])).toBe(false);
+    expect(detail.detailMessages.every((message) => message.flags.includes("\\Seen"))).toBe(true);
+    expect(detail.conversationRowState).toMatchObject({
+      revision: stale.revision,
+      messageCount: 101,
+      unreadFolderIds: [folderA.shortId],
+      flaggedFolderIds: [folderA.shortId],
+    });
+    expect(detail.conversationRowState?.activeFolderIds.toSorted()).toEqual([folderA.shortId, folderB.shortId].sort());
+    // Deleting placements removes their state, but does not remove the stored message from the total.
+    await sql`UPDATE mail.message_placements mp SET deleted_at = ${anchor}
+      FROM mail.message_contents mc WHERE mc.id = mp.message_id AND mc.short_id = ${long.messageShortIds[0]}`;
+    const removed: MailConversationDetailData = await (await detailRequest(long, folderB, "reader")).json();
+    expect(removed.conversationRowState).toMatchObject({ messageCount: 101, unreadFolderIds: [], flaggedFolderIds: [] });
+    await sql`DELETE FROM mail.conversation_assignees WHERE conversation_id = ${long.id}::uuid`;
+    expect((await detailRequest(long, folderB, "reader")).status).toBe(404);
+    const denied = await messages.getConversationRowState({ context: contextFor(reader), mailboxId, conversationId: long.id });
+    expect(denied.ok ? null : denied.error.status).toBe(404);
+    const foreign = await messages.getConversationRowState({
+      context: contextFor(owner),
+      mailboxId: mailboxIds[1]!,
+      conversationId: long.id,
+    });
+    expect(foreign.ok ? null : foreign.error.status).toBe(404);
+  });
 
   test("assigned-only readers cannot open an unassigned conversation", async () => {
     expect((await detailRequest(hidden, folderA, "reader")).status).toBe(404);
