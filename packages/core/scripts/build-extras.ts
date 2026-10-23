@@ -34,3 +34,6 @@ if (!css.success) {
 await cp(resolve(root, "packages/cloud/public/logo.svg"), resolve(publicDir, "logo.svg"));
 await buildFontAssets(publicDir);
 await buildTablerIconAssets(publicDir);
+
+// The authenticated map route reads glyphs from server assets in the bundled image.
+await cp(new URL("./map-glyphs/", import.meta.resolve("@k2b/ui/package.json")), resolve(dist, "assets/map-glyphs"), { recursive: true });

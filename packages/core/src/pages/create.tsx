@@ -12,6 +12,7 @@ import announcementsAdminPage from "./admin/announcements/page";
 import appCredentialsPage from "./admin/app-credentials/page";
 import outgoingMailPage from "./admin/outgoing-mail/page";
 import adminPage from "./admin/page";
+import placesAndMapsPage from "./admin/places-and-maps/page";
 import railAdminPage from "./admin/rail/page";
 import settingsPage from "./admin/settings/page";
 import pairDevicePage from "./app-approval/pair.page";
@@ -100,6 +101,7 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/admin/announcements", auth.requireRole("admin", ssr.access), ...announcementsAdminPage)
     .get("/admin/app-credentials", auth.requireRole("admin", ssr.access), ...appCredentialsPage)
     .get("/admin/outgoing-mail", auth.requireRole("admin", ssr.access), ...outgoingMailPage)
+    .get("/admin/places-and-maps", auth.requireRole("admin", ssr.access), ...placesAndMapsPage)
     .get("/admin/settings", auth.requireRole("admin", ssr.access), ...settingsPage)
     // Keep legacy admin entry points useful when their optional UI apps are absent.
     .get("/admin/apps", auth.requireRole("admin", ssr.access), (c) => {
