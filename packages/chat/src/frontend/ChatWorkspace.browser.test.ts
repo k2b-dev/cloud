@@ -649,6 +649,45 @@ describe("ChatWorkspace browser read state", () => {
         }
       }, 30_000);
 
+    test(`Escape resolves an unread gap after a delayed read on ${name}`, async () => {
+      const chat = harness.addChat({ members: [viewer, nora], count: 8, end: harness.now() });
+      const { page, errors } = await load(options, { chat });
+      const requested = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      try {
+        await until(() => harness.subscribed(chat));
+        await page.evaluate(() => { document.hasFocus = () => false; });
+        for (let index = 1; index <= 40; index++) {
+          harness.receive(chat, nora, `Unread arrival ${index}`);
+          if (index % 10 === 0)
+            await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+        }
+        await page.evaluate(() => {
+          document.hasFocus = () => true;
+          window.dispatchEvent(new Event("focus"));
+        });
+        await page.getByRole("button", { name: "New messages", exact: true }).waitFor();
+        await page.route(`**/api/chat/conversations/${chat}/read`, async (route) => {
+          requested.resolve();
+          await release.promise;
+          await route.continue();
+        });
+        await page.locator(".k2b-virtual-feed__viewport").click();
+        await page.keyboard.press("Escape");
+        await requested.promise;
+        // A focus event before the delayed write completes must not resurrect the old gap marker.
+        await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+        release.resolve();
+        await until(() => harness.props({ chat }).open!.conversation.unread === 0);
+        await page.getByRole("button", { name: "New messages", exact: true }).waitFor({ state: "hidden" });
+        await marker(page).waitFor({ state: "hidden" });
+        expect(errors).toEqual([]);
+      } finally {
+        release.resolve();
+        await page.context().close();
+      }
+    }, 30_000);
+
     for (const embedded of [false, true]) test(`an opening marker survives while a later unread gap can reload after resync on ${name} (${embedded ? "panel archive" : "full view"})`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 8, unread: 4, end: harness.now() });
       const openingRead = harness.props({ chat }).open!.conversation.read!;

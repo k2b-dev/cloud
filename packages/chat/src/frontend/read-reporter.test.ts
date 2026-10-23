@@ -280,3 +280,40 @@ test("settled flushes throttled progress before a following unread write", async
   expect(f.posts).toEqual([3, 6, 9]);
   f.reporter.dispose();
 });
+
+test("settled waits for the throttled post it flushes", async () => {
+  const release = Promise.withResolvers<void>();
+  let scheduled: (() => void) | undefined;
+  const posts: number[] = [];
+  const reporter = createReadReporter({
+    start: 0,
+    active: () => true,
+    post: async (seq) => {
+      posts.push(seq);
+      if (seq === 6) await release.promise;
+    },
+    timers: {
+      now: () => 0,
+      setTimeout: (callback) => { scheduled = callback; return 1; },
+      clearTimeout: () => { scheduled = undefined; },
+    },
+  });
+  try {
+    reporter.seen(1, 3);
+    await settle();
+    reporter.seen(4, 6);
+    expect(scheduled).toBeDefined();
+    let finished = false;
+    const waiting = reporter.settled().then(() => { finished = true; });
+    await settle();
+    expect(posts).toEqual([3, 6]);
+    expect(scheduled).toBeUndefined();
+    expect(finished).toBe(false);
+    release.resolve();
+    await waiting;
+    expect(finished).toBe(true);
+  } finally {
+    release.resolve();
+    reporter.dispose();
+  }
+});
