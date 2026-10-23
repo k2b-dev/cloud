@@ -236,7 +236,7 @@ export const createDocumentRenderRoutes = () =>
         if (!pdf.ok) {
           return c.json(
             { message: pdf.error.message, phase: pdf.error.phase, code: pdf.error.code },
-            pdf.error.status === 400 ? 400 : pdf.error.status === 502 ? 502 : 500,
+            pdf.error.status === 400 ? 400 : pdf.error.status === 502 ? 502 : pdf.error.status === 503 ? 503 : 500,
           );
         }
         return pdfResponse(pdf.pdf.pdf, `${loaded.template.name}.pdf`, {}, "inline");

@@ -288,6 +288,13 @@ if (process.env.NOTEBOOKS_BOOK_API_TEST !== "1") {
       );
     });
 
+    test("PDF export reports shared renderer saturation as busy", async () => {
+      renderPdf.mockRejectedValueOnce(new GotenbergRenderError("busy", "busy"));
+      const response = await pdf({ markdown: "hello" });
+      expect(response.status).toBe(503);
+      expect(((await response.json()) as { message: string }).message).toBeTruthy();
+    });
+
     test("PDF export names a note that renders beyond the PDF budget", async () => {
       for (const code of ["html_too_large", "pdf_too_large"] as const) {
         renderPdf.mockRejectedValueOnce(new GotenbergRenderError(code, "Budget exceeded."));
