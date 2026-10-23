@@ -333,7 +333,11 @@ export const workspaceDocumentContent = (document: string) =>
     .onDocument({ doctype: (doctype) => void doctype.remove() })
     .transform(document);
 
-export const buildWorkspaceHarness = async () => {
+let workspaceHarness: ReturnType<typeof compileWorkspaceHarness> | undefined;
+// Every caller supplies its own snapshot; only the immutable client and styles are shared.
+export const buildWorkspaceHarness = () => (workspaceHarness ??= compileWorkspaceHarness());
+
+const compileWorkspaceHarness = async () => {
   await prepareWorkspaceSnapshot();
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
