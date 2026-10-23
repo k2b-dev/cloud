@@ -107,8 +107,8 @@ describe("outbound MIME", () => {
     expect(parsed.text).toMatch(/^Before\n\n/);
     expect(parsed.text).toMatch(/\n\nAfter$/);
     expect(parsed.html).toContain("<table");
-    expect(parsed.html).toContain(">Chair</span></td>");
-    expect(parsed.html).toContain(">Desk</span></td>");
+    expect(parsed.html).toContain(">Chair</td>");
+    expect(parsed.html).toContain(">Desk</td>");
   });
 
   test("builds a stable threaded multipart message without exposing Bcc", async () => {

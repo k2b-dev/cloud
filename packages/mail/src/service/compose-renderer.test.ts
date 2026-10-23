@@ -698,6 +698,24 @@ describe("Markdown blank lines", () => {
 });
 
 describe("compose renderer", () => {
+  test("rejects input beyond the draft body budget before Markdown rendering", () => {
+    const render = spyOn(markdown, "renderSync");
+    try {
+      expect(
+        renderComposeContent({
+          body: "x".repeat(2 * 1024 * 1024 + 1),
+          format: "markdown",
+          customCss: "",
+          context,
+          renderLiquid: false,
+        }),
+      ).toMatchObject({ ok: false, error: { composeRender: { reason: "tooLarge" } } });
+      expect(render).not.toHaveBeenCalled();
+    } finally {
+      render.mockRestore();
+    }
+  });
+
   test("merges preview warnings design first and caps the combined list", () => {
     const design = storedComposeCss(".mail-content { color: #123456; font-family: var(--font); }");
     expect(design.formattingWarnings).toEqual([{ code: "ignored_mailbox_css", property: "font-family" }]);

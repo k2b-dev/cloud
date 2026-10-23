@@ -10,6 +10,7 @@ import sanitizeHtml from "sanitize-html";
 import {
   type ComposeFormattingWarning,
   composeTemplateVariables,
+  draftEditableContentInputSchema,
   MAX_COMPOSE_FORMATTING_WARNINGS,
   mailboxLogoDisplayHeight,
 } from "../contracts";
@@ -724,6 +725,8 @@ export const renderComposeContent = (params: {
   signature?: string | null;
   logo?: { src: string; altText: string; displayWidth: number; pixelWidth: number; pixelHeight: number; byteLength: number } | null;
 }): Result<RenderedComposeContent> => {
+  // Enforce the draft input budget before template parsing, Markdown or CSS work.
+  if (!draftEditableContentInputSchema.shape.body.safeParse(params.body).success) return fail(composeRenderFailure("tooLarge"));
   const logoRandomPart = crypto.randomUUID().replaceAll("-", "").toUpperCase();
   const token = `MAILLOGO${logoRandomPart}`;
   const context = params.context;
