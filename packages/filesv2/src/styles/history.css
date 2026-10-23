@@ -126,8 +126,12 @@
 .filesv2-history-row__lead {
   white-space: nowrap;
 }
-.filesv2-history-row__status {
+.k2b-ui .k2b-status-badge.filesv2-history-row__status {
+  display: inline;
   vertical-align: 1px;
+}
+.filesv2-history-row__status > i {
+  margin-inline-end: 0.25rem;
 }
 /* One look for every "go on" link of the history: an execution, older entries, more networks, reset, retry. Text
    buttons take it too, over the shared text variant. */

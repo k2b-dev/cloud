@@ -43,7 +43,7 @@ export function createActivityVersionLoader(fallback: () => string) {
               { param: { baseId: side.publicBaseId }, query: { path: side.relativePath! } },
               { init: { signal } },
             );
-        if (response.status === 403 || response.status === 404) return null;
+        if (Number(response.status) === 403 || Number(response.status) === 404) return null;
         if (!response.ok) return apiFailure(response, fallback());
         return response.json();
       };
@@ -53,7 +53,7 @@ export function createActivityVersionLoader(fallback: () => string) {
         { param: { baseId: resolved.base.id }, query: { path: resolved.entry.path } },
         { init: { signal } },
       );
-      if (response.status === 403 || response.status === 404) return null;
+      if (Number(response.status) === 403 || Number(response.status) === 404) return null;
       if (!response.ok) return apiFailure(response, fallback());
       const versions = await response.json();
       const value = activityVersion(entry, resolved.entry, versions);
