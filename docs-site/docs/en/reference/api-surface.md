@@ -379,6 +379,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 
 | Surface | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `installable` option and `AppInstallable` from `@k2b/cloud` | Supported | Give one application its own standalone installation | [App-PWA](/en/docs/frontend/app-pwa) |
 | `pwa` option of `defineApp()` from `@k2b/cloud` | Preview | Add the application's pages to the mobile app | [Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app) |
 | `/pwa/<app-id>` part routes | Preview | Paths that `defineApp()` derives for a part; every other `/pwa` path is reserved | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#paths) |
 | `PwaLayout` and `PwaLayoutProps` from `@k2b/cloud/ssr` | Preview, server-only | Frame every page of a part | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#pwalayout) |
