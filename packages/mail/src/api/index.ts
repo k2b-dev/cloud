@@ -1113,7 +1113,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
     },
   )
   .get("/mailboxes/:mailboxId/settings-context", v("param", mailboxParamSchema), async (c) =>
-    respondAggregate(c, settingsContext.loadMailboxSettingsContext(requestContext(c), internalMailboxId(c))),
+    respondAggregate(c, settingsContext.loadMailboxSettingsContext(requestContext(c), internalMailboxId(c), auth.getAuthority(c))),
   )
   .get("/mailboxes/:mailboxId/details", v("param", mailboxParamSchema), async (c) =>
     respondPublic(c, mailboxDetails.getMailboxDetails(requestContext(c), internalMailboxId(c))),

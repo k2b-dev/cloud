@@ -42,8 +42,9 @@ const person: User = {
   ipa: null,
 };
 
-export const apps: RuntimeAppMeta[] = ["spaces", "restricted", "admin-only", "core", "empty"].map((id) => ({
+export const apps: RuntimeAppMeta[] = ["spaces", "restricted", "app-denied", "admin-only", "core", "empty"].map((id) => ({
   id,
+  ...(id === "app-denied" ? { access: { kind: "roles", roles: ["admin"] } as const } : {}),
   name: `${id} fixture app`,
   icon: "ti ti-box",
   description: "Help fixture",
@@ -59,6 +60,8 @@ export const server = new Hono<{ Variables: AuthContext["Variables"] & { runtime
   .use(async (c, next) => {
     c.set("user", person);
     c.set("actor", { kind: "user", user: person });
+    c.set("accessSubject", { type: "user", userId: person.id });
+    c.set("credentialKind", "session");
     c.set("runtime", { apps });
     await next();
   })

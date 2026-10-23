@@ -4,6 +4,7 @@ import { createLocalJWKSet } from "jose";
 import { z } from "zod";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../../packages/cloud/src/_internal/process-identity";
 import type { AuthContext } from "../../../packages/cloud/src/server";
+import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import { testInfra, useFreshDatabase } from "../../../scripts/fixtures/test-infra";
 
 // Run this file alone: `useFreshDatabase` binds Bun's default SQL handle to a
@@ -93,6 +94,9 @@ if (!testInfra.database) {
     );
 
   describe("identity issuance with one real Postgres connection", () => {
+    // Registry metadata must exist before issuance, including discovery of the
+    // ten widget providers. Fixed entry rules keep all SQL on its existing path.
+    useTestAppRegistry(["mail", "spaces", ...Array.from({ length: 10 }, (_, index) => `widget-app-${index}`)]);
     beforeAll(async () => {
       bindProcessApplicationId("core");
       process.env.CLOUD_IDENTITY_KEY_ENCRYPTION_KEY = "31".repeat(32);

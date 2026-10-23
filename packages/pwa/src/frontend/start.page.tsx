@@ -2,7 +2,7 @@ import { PWA_AUTH_PATH, PWA_SCOPE } from "@k2b/cloud/contracts";
 import { type AuthContext, getLocale, getUserBackedActor } from "@k2b/cloud/server";
 import { appIconVersion } from "@k2b/cloud/services/branding/app-icon-source";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
-import { getRuntimeContext, PwaLayout, visiblePwaParts } from "@k2b/cloud/ssr";
+import { getDisplayRuntimeContext, PwaLayout, visiblePwaParts } from "@k2b/cloud/ssr";
 import { createNavigation, IconButtonLink, installationPlatform, Navigation, Placeholder } from "@k2b/ui";
 import { ssr } from "../config";
 import { shellMessages } from "../messages";
@@ -27,7 +27,7 @@ export default ssr<AuthContext>(async (c) => {
   const cloud = c.get("settings")?.app?.name || "Cloud";
 
   if (user) {
-    const parts = visiblePwaParts(getRuntimeContext(c).apps, user, locale);
+    const parts = visiblePwaParts(getDisplayRuntimeContext(c).apps, user, locale);
     const apps = createNavigation({
       items: () =>
         parts.map((part) => ({ id: part.id, label: part.name, description: part.description, icon: part.icon, href: part.pwa.href })),
