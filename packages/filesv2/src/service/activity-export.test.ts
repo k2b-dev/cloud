@@ -36,6 +36,7 @@ const row = (index = 1): ExportRow => ({
 });
 function fixture(size = 1) {
   const events: string[] = [];
+  const closedWithAbort: boolean[] = [];
   let offset = 0;
   let closed = 0;
   let batches = 0;
@@ -57,6 +58,7 @@ function fixture(size = 1) {
     },
     async close() {
       events.push("close");
+      closedWithAbort.push(snapshotSignal?.aborted ?? false);
       closed++;
     },
   };
@@ -85,6 +87,7 @@ function fixture(size = 1) {
     deps,
     snapshot,
     events,
+    closedWithAbort,
     service: () => createActivityExportService(deps),
     get closed() {
       return closed;
@@ -141,6 +144,7 @@ test("100001 rows denies before bytes, batch reads or audit; count snapshot clos
     status: 413,
   });
   expect(f.events).toEqual(["admin", "snapshot", "count", "close"]);
+  expect(f.closedWithAbort).toEqual([false]);
   expect(f.closed).toBe(1);
 });
 test("count failure releases the snapshot without an audit or a stream", async () => {
@@ -370,6 +374,7 @@ test("preview rechecks rights after counting and releases the snapshot without a
   const f = fixture(8412);
   expect(await f.service().preview(call, input, new AbortController().signal)).toEqual({ count: 8412 });
   expect(f.events).toEqual(["admin", "snapshot", "count", "admin", "close"]);
+  expect(f.closedWithAbort).toEqual([false]);
   expect(f.evidence).toBe(0);
   expect(f.batches).toBe(0);
 });
@@ -395,4 +400,39 @@ test("preview cancellation closes a late-arriving snapshot and never reads or au
   expect(f.closed).toBe(1);
   expect(f.evidence).toBe(0);
   expect(f.batches).toBe(0);
+});
+
+test("aborting audit preparation waits for rollback cleanup before rejecting", async () => {
+  const f = fixture();
+  const request = new AbortController();
+  const started = Promise.withResolvers<void>();
+  const rollback = Promise.withResolvers<void>();
+  f.deps.recordStart = async (_call, _input, _count, signal) => {
+    try {
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        started.resolve();
+      });
+    } finally {
+      await rollback.promise;
+    }
+  };
+  const preparing = f.service().export(call, input, request.signal);
+  let settled = false;
+  const outcome = preparing.catch((error: unknown) => {
+    settled = true;
+    return error;
+  });
+  await started.promise;
+  request.abort();
+  try {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(f.closed).toBe(1);
+    expect(f.evidence).toBe(0);
+    expect(f.batches).toBe(0);
+  } finally {
+    rollback.resolve();
+    expect(await outcome).toBeInstanceOf(DOMException);
+  }
 });

@@ -1,12 +1,17 @@
-import { afterEach, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { resolveDisplayNames } from "@k2b/cloud/server";
-import { sql } from "bun";
+import { SQL, sql } from "bun";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testActor, testCall } from "../../test/files-call";
 import { assertPrivateDatabase } from "../../test/private-database";
-import { ACTIVITY_EXPORT_BATCH, type ActivityExportInput } from "../activity-export-contracts";
+import { ACTIVITY_EXPORT_BATCH, type ActivityExportInput, exportWindow } from "../activity-export-contracts";
 import { migrateActivity } from "../data/activity-migration";
-import { type ActivityExportDeps, createActivityExportService, openActivityExportSnapshot } from "./activity-export";
+import {
+  type ActivityExportDeps,
+  type ActivityExportSnapshot,
+  createActivityExportService,
+  openActivityExportSnapshot,
+} from "./activity-export";
 
 // Discovered under src by the existing test:integration script, which supplies the private DB preload.
 // Run only with that preload; no Filegate, NATS, Valkey, or development DB is used.
@@ -30,6 +35,8 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
   });
   const service = (overrides: Partial<ActivityExportDeps> = {}) => createActivityExportService({ ...deps(), ...overrides });
   const requests = new Set<AbortController>();
+  const seeds = new Map<SQL, number | undefined>();
+  let fixtureAbort = new AbortController();
   type ExportResult = Awaited<ReturnType<ReturnType<typeof service>["export"]>>;
   async function withExport(
     exporter: ReturnType<typeof service>,
@@ -66,24 +73,57 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       text += decoder.decode(chunk.value, { stream: true });
     }
   }
-  async function seed(count = 1, options: { time?: Date; action?: string } = {}) {
-    await sql`INSERT INTO filesv2.activity(id,state,action,server_url,root,base_id,base_after_id,directory,name,path_before,path_after,
-      actor_kind,actor_user_id,via,started_at,finished_at,detail,error_code)
-      SELECT ('10000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'done',${options.action ?? "item.move"},'http://private-credential-server','cloud',
-        ${baseId}::uuid,${otherBaseId}::uuid,false,'file-'||i::text,'users/alice/file-'||i::text,'users/bob/file-'||i::text,
-        'user',${userId}::uuid,'web',${options.time ?? now},${options.time ?? now},'{"password":"never-export","error":"opaque"}'::jsonb,'opaque_error'
-      FROM generate_series(1,${count}) AS i`;
+  async function seed(count = 1, options: { time?: Date; action?: string; boundary?: boolean } = {}) {
+    // A timed-out seed belongs to the fixture, not to an export request. Own its connection
+    // so afterEach can stop it before another test truncates or repopulates the same tables.
+    const database = new SQL({ ...sql.options, max: 1 });
+    const signal = fixtureAbort.signal;
+    seeds.set(database, undefined);
+    try {
+      const [backend] = await database<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      if (!backend) throw new Error("Missing seed backend");
+      seeds.set(database, backend.pid);
+      signal.throwIfAborted();
+      const started = performance.now();
+      if (options.boundary) {
+        // Minimal valid history rows keep fixture setup out of the behavior under test.
+        // All production constraints/indexes remain installed; row IDs still differ.
+        await database`INSERT INTO filesv2.activity(id,state,action,server_url,root,directory,name,path_after,actor_kind,via,started_at,finished_at)
+          SELECT ('10000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'failed','file.edit','http://fixture','cloud',false,'a','a','system','system',${now},${now}
+          FROM generate_series(1,${count}) AS i`;
+        // The fresh private database has no autovacuum statistics yet. Without
+        // ANALYZE PostgreSQL estimates 87 rows instead of 100,000 and sorts every page.
+        await database`ANALYZE filesv2.activity`;
+        console.info(`Boundary fixture ${count}: ${Math.round(performance.now() - started)}ms`);
+      } else {
+        await database`INSERT INTO filesv2.activity(id,state,action,server_url,root,base_id,base_after_id,directory,name,path_before,path_after,
+          actor_kind,actor_user_id,via,started_at,finished_at,detail,error_code)
+          SELECT ('10000000-0000-4000-8000-'||lpad(i::text,12,'0'))::uuid,'done',${options.action ?? "item.move"},'http://private-credential-server','cloud',
+            ${baseId}::uuid,${otherBaseId}::uuid,false,'file-'||i::text,'users/alice/file-'||i::text,'users/bob/file-'||i::text,
+            'user',${userId}::uuid,'web',${options.time ?? now},${options.time ?? now},'{"password":"never-export","error":"opaque"}'::jsonb,'opaque_error'
+          FROM generate_series(1,${count}) AS i`;
+      }
+      signal.throwIfAborted();
+    } finally {
+      await database.close({ timeout: 0 });
+      seeds.delete(database);
+    }
   }
   async function auditRows() {
     return sql<{ actor_user_id: string; request_id: string; metadata: Record<string, unknown> }[]>`
       SELECT actor_user_id,request_id,metadata FROM audit.events WHERE action='filesv2.activity.export'`;
   }
-  async function noSnapshots() {
+  async function noSnapshots(excludedPid = 0) {
     // close() is awaited on explicit cancellation/completion; request abort cleanup may still be committing.
-    let remaining: { pid: number; state: string; wait: string | null }[] = [];
+    let remaining: { pid: number; state: string; wait: string | null; phase: string }[] = [];
     for (let attempt = 0; attempt < 20; attempt++) {
-      remaining = await sql<typeof remaining>`SELECT pid,state,wait_event_type AS wait FROM pg_stat_activity
-        WHERE datname=current_database() AND pid<>pg_backend_pid() AND xact_start IS NOT NULL
+      remaining = await sql<typeof remaining>`SELECT pid,state,wait_event_type AS wait,
+        CASE WHEN query LIKE '%generate_series%' THEN 'seed'
+          WHEN query LIKE '%bounded%' THEN 'count'
+          WHEN query LIKE 'SELECT a.id,a.action,a.state%' THEN 'batch'
+          WHEN query LIKE '%INSERT INTO audit.events%' THEN 'audit'
+          ELSE 'other' END AS phase FROM pg_stat_activity
+        WHERE datname=current_database() AND pid<>pg_backend_pid() AND pid<>${excludedPid} AND xact_start IS NOT NULL
           AND backend_type='client backend'`;
       if (remaining.length === 0) return;
       await Bun.sleep(10);
@@ -105,6 +145,7 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
   });
   beforeEach(async () => {
     setSystemTime(now);
+    fixtureAbort = new AbortController();
     allowed = true;
     authorizations = 0;
     await sql`TRUNCATE filesv2.activity,filesv2.bases,audit.events,auth.users CASCADE`;
@@ -114,9 +155,21 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       (${otherBaseId}::uuid,'cloud','users',${otherBaseId}::uuid,'cloud','users/bob')`;
   });
   afterEach(async () => {
+    const unfinishedSeeds = seeds.size;
+    fixtureAbort.abort();
+    await Promise.all(
+      [...seeds].map(async ([database, pid]) => {
+        try {
+          if (pid !== undefined) await sql`SELECT pg_cancel_backend(${pid})`;
+        } finally {
+          await database.close({ timeout: 0 });
+        }
+      }),
+    );
     try {
       // Report a real leak before aborting any unfinished test, including one whose body timed out.
       await noSnapshots();
+      if (unfinishedSeeds) throw new Error("Fixture seed outlived its test; stopped before the next test could mutate its tables");
     } finally {
       for (const request of requests) request.abort();
       try {
@@ -222,27 +275,31 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       expect(await auditRows()).toHaveLength(1);
     });
   });
-  test("100001 rows rejects before any response/audit and returns snapshot connection", async () => {
-    await seed(100001);
-    await expect(withExport(service(), input, new AbortController().signal)).rejects.toMatchObject({
-      code: "activity_export_limit",
-      status: 413,
+  describe("over-limit fixture", () => {
+    beforeEach(() => seed(100001, { boundary: true }));
+    test("100001 rows rejects before any response/audit and returns snapshot connection", async () => {
+      await expect(withExport(service(), input, new AbortController().signal)).rejects.toMatchObject({
+        code: "activity_export_limit",
+        status: 413,
+      });
+      expect(await auditRows()).toHaveLength(0);
     });
-    expect(await auditRows()).toHaveLength(0);
   });
-  test("exactly 100000 rows pass the SQL count and stream in bounded batches", async () => {
-    await seed(100000);
-    await withExport(service(), input, new AbortController().signal, async (result, reader) => {
-      expect(result.count).toBe(100000);
-      let total = 0;
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        const count = new TextDecoder().decode(chunk.value).trim().split("\n").length;
-        expect(count).toBeLessThanOrEqual(ACTIVITY_EXPORT_BATCH);
-        total += count;
-      }
-      expect(total).toBe(100000);
+  describe("maximum-size fixture", () => {
+    beforeEach(() => seed(100000, { boundary: true }));
+    test("exactly 100000 rows pass the SQL count and stream in bounded batches", async () => {
+      await withExport(service(), input, new AbortController().signal, async (result, reader) => {
+        expect(result.count).toBe(100000);
+        let total = 0;
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          const count = new TextDecoder().decode(chunk.value).trim().split("\n").length;
+          expect(count).toBeLessThanOrEqual(ACTIVITY_EXPORT_BATCH);
+          total += count;
+        }
+        expect(total).toBe(100000);
+      });
     });
   });
   test("request abort cancels a blocked SQL count and releases the transaction before any audit", async () => {
@@ -251,6 +308,7 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     const request = new AbortController();
     let pending: Promise<unknown> | undefined;
     try {
+      const [backend] = await blocker<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
       await blocker`BEGIN`;
       await blocker`LOCK filesv2.activity IN ACCESS EXCLUSIVE MODE`;
       pending = withExport(service(), input, request.signal);
@@ -269,16 +327,64 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       expect(blocked).toBe(true);
       request.abort();
       await expect(pending).rejects.toHaveProperty("name", "AbortError");
+      await noSnapshots(backend!.pid).catch((error: unknown) => {
+        throw new Error("Export cancellation did not leave healthy idle connections", { cause: error });
+      });
     } finally {
       request.abort();
       await pending?.catch(() => undefined);
       try {
-        await blocker`ROLLBACK`;
+        await blocker`ROLLBACK`.catch((error: unknown) => {
+          throw new Error("Export fixture blocker rollback failed", { cause: error });
+        });
       } finally {
         blocker.release();
       }
     }
     expect(await auditRows()).toHaveLength(0);
+  });
+  test.each(["request", "close"] as const)("%s cancels a blocked snapshot batch before its table lock is released", async (mode) => {
+    await seed();
+    const blocker = await sql.reserve();
+    const request = new AbortController();
+    let snapshot: ActivityExportSnapshot | undefined;
+    let pending: Promise<unknown> | undefined;
+    try {
+      snapshot = await openActivityExportSnapshot({ ...input, ...exportWindow(input) }, request.signal);
+      const [backend] = await blocker<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      await blocker`BEGIN`;
+      await blocker`LOCK filesv2.activity IN ACCESS EXCLUSIVE MODE`;
+      pending = snapshot.batch(null);
+      void pending.catch(() => undefined);
+      let blocked = false;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const [state] = await sql<{ blocked: boolean }[]>`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+          WHERE datname=current_database() AND ${backend!.pid}=ANY(pg_blocking_pids(pid))) AS blocked`;
+        if (state?.blocked) {
+          blocked = true;
+          break;
+        }
+        await Bun.sleep(10);
+      }
+      expect(blocked).toBe(true);
+      if (mode === "request") request.abort();
+      await snapshot.close();
+      await expect(pending).rejects.toBeInstanceOf(Error);
+      await noSnapshots(backend!.pid).catch((error: unknown) => {
+        throw new Error("Export cancellation did not leave healthy idle connections", { cause: error });
+      });
+    } finally {
+      request.abort();
+      await snapshot?.close();
+      await pending?.catch(() => undefined);
+      try {
+        await blocker`ROLLBACK`.catch((error: unknown) => {
+          throw new Error("Export fixture blocker rollback failed", { cause: error });
+        });
+      } finally {
+        blocker.release();
+      }
+    }
   });
   test("real audit insert rollback denies preparation and leaks no bytes or transaction", async () => {
     await seed();
@@ -296,6 +402,7 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
     const request = new AbortController();
     let pending: Promise<unknown> | undefined;
     try {
+      const [backend] = await blocker<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
       await blocker`BEGIN`;
       await blocker`LOCK audit.events IN ACCESS EXCLUSIVE MODE`;
       pending = withExport(service(), input, request.signal);
@@ -313,11 +420,16 @@ suite("admin history export in a private PostgreSQL snapshot", () => {
       expect(blocked).toBe(true);
       request.abort();
       await expect(pending).rejects.toHaveProperty("name", "AbortError");
+      await noSnapshots(backend!.pid).catch((error: unknown) => {
+        throw new Error("Export cancellation did not leave healthy idle connections", { cause: error });
+      });
     } finally {
       request.abort();
       await pending?.catch(() => undefined);
       try {
-        await blocker`ROLLBACK`;
+        await blocker`ROLLBACK`.catch((error: unknown) => {
+          throw new Error("Export fixture blocker rollback failed", { cause: error });
+        });
       } finally {
         blocker.release();
       }

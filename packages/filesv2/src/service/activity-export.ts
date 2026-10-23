@@ -5,7 +5,7 @@ import {
   type resolveDisplayNames,
 } from "@k2b/cloud/server";
 import { audit, logger } from "@k2b/cloud/services";
-import { type SQL, sql } from "bun";
+import { SQL, sql } from "bun";
 import {
   ACTIVITY_EXPORT_BATCH,
   ACTIVITY_EXPORT_LIMIT,
@@ -18,6 +18,7 @@ import {
   exportWindow,
 } from "../activity-export-contracts";
 import type { UserFilesCall } from "./activity";
+import { withActivityReadBudget } from "./activity-read-budget";
 
 type Filter = ActivityExportInput & ReturnType<typeof exportWindow>;
 type Position = { time: string; id: string };
@@ -35,30 +36,86 @@ export type ActivityExportDeps = {
 };
 const log = logger("filesv2:activity-export");
 
+/** Hold the backend until cancellation finishes; a late cancel must never hit the next pool user. */
+async function reserveExportConnection(database: SQL, signal: AbortSignal) {
+  const connection = await database.reserve({ signal });
+  let backendPid: number | undefined;
+  let cancellation: Promise<void> | undefined;
+  const cancel = () => {
+    cancellation ??= (async () => {
+      try {
+        if (backendPid !== undefined) {
+          // Bun 1.4.2 query.cancel() does not interrupt PostgreSQL. Use a separate connection,
+          // so cancellation cannot queue behind blocked exports in the application pool.
+          const control = new SQL({ ...database.options, max: 1 });
+          try {
+            await withActivityReadBudget(undefined, (budget) =>
+              budget.run(
+                () => control`SELECT pg_cancel_backend(${backendPid})`,
+                () => {
+                  void control.close({ timeout: 0 }).catch(() => undefined);
+                },
+              ),
+            );
+          } finally {
+            await control.close({ timeout: 0 });
+          }
+        }
+      } finally {
+        // Also covers abort during connection initialization and socket/protocol failures.
+        await connection.close({ timeout: 0 });
+      }
+    })().catch(() => log.error("Export SQL cancellation failed", { code: "activity_export_failed" }));
+    return cancellation;
+  };
+  const abort = () => void cancel();
+  signal.addEventListener("abort", abort, { once: true });
+  const close = async () => {
+    signal.removeEventListener("abort", abort);
+    try {
+      await cancellation;
+    } finally {
+      connection.release();
+    }
+  };
+  try {
+    signal.throwIfAborted();
+    const [backend] = await connection<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+    if (!backend) throw new Error("Missing export backend");
+    backendPid = backend.pid;
+    signal.throwIfAborted();
+    return { connection, cancel, close };
+  } catch (error) {
+    await close();
+    throw error;
+  }
+}
+
 /** One callback owns the repeatable-read connection until close; no domain writes occur here. */
 export async function openActivityExportSnapshot(
   filter: Filter,
   signal: AbortSignal,
   database: SQL = sql,
 ): Promise<ActivityExportSnapshot> {
+  const owner = await reserveExportConnection(database, signal);
   const ready = Promise.withResolvers<ActivityExportSnapshot>();
   const release = Promise.withResolvers<void>();
-  let active: { cancel(): unknown; settled: Promise<unknown> } | undefined;
+  let active: Promise<unknown> | undefined;
   let closing = false;
+  let closeTask: Promise<void> | undefined;
   let finished: Promise<unknown>;
   const abort = () => {
-    active?.cancel();
     release.resolve();
     ready.reject(signal.reason);
   };
   signal.addEventListener("abort", abort, { once: true });
   // Bun accepts SQL options as a string, also used by Chat's snapshot readers.
-  finished = database.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (tx) => {
-    async function run<T>(query: Promise<T> & { cancel(): unknown }): Promise<T> {
+  const transaction = owner.connection.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (tx) => {
+    async function run<T>(query: Promise<T>): Promise<T> {
       signal.throwIfAborted();
       if (closing) throw new DOMException("Export closed", "AbortError");
       const settled = Promise.resolve(query);
-      active = { cancel: () => query.cancel(), settled };
+      active = settled;
       try {
         return await settled;
       } finally {
@@ -70,7 +127,10 @@ export async function openActivityExportSnapshot(
       // Server-side protection supplements request cancellation, including a consumer that never reads.
       await run(tx`SELECT set_config('statement_timeout', ${String(REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000)}, true),
         set_config('idle_in_transaction_session_timeout', ${String(REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000)}, true)`);
-      const where = tx`coalesce(a.finished_at,a.started_at)>=${filter.from}::timestamptz
+      // A fragment is never executed by itself. Bun registers tx-tagged fragments as
+      // pending transaction queries and rejects them without a handler on hard close.
+      // Build through the same adapter's pool; count/batch still execute it only on tx.
+      const where = database`coalesce(a.finished_at,a.started_at)>=${filter.from}::timestamptz
         AND coalesce(a.finished_at,a.started_at)<${filter.until}::timestamptz
         AND a.action=ANY(${tx.array(ExportAction.options, "TEXT")})
         AND (${filter.q ?? null}::text IS NULL OR strpos(lower(coalesce(a.path_before,'')),lower(${filter.q ?? null}))>0
@@ -90,6 +150,11 @@ export async function openActivityExportSnapshot(
           return row.count;
         },
         async batch(after) {
+          // A nullable OR prevents generic prepared plans from using the keyset as
+          // an index condition. Keep the first page and subsequent pages distinct.
+          const position = after
+            ? database`(coalesce(a.finished_at,a.started_at),a.id)>(${after.time}::timestamptz,${after.id}::uuid)`
+            : database`TRUE`;
           return run(tx<ExportRow[]>`SELECT a.id,a.action,a.state,coalesce(a.finished_at,a.started_at)::text AS time,
             a.started_at AS "startedAt",a.finished_at AS "finishedAt",a.actor_kind AS "actorKind",a.actor_user_id AS "actorUserId",
             a.via,CASE WHEN metadata.known THEN a.directory END AS directory,a.batch_id AS "batchId",
@@ -103,76 +168,77 @@ export async function openActivityExportSnapshot(
               SELECT NOT (a.detail @> '{"metadata_unknown":true}'::jsonb OR a.detail @> '{"snapshot_unknown":true}'::jsonb
                 OR a.detail @> '{"directory_unknown":true}'::jsonb) AS known
             ) metadata WHERE ${where}
-              AND (${after?.time ?? null}::timestamptz IS NULL OR (coalesce(a.finished_at,a.started_at),a.id)>(${after?.time ?? null}::timestamptz,${after?.id ?? null}::uuid))
+              AND ${position}
             ORDER BY coalesce(a.finished_at,a.started_at),a.id LIMIT ${ACTIVITY_EXPORT_BATCH}`);
         },
         async close() {
-          closing = true;
-          active?.cancel();
-          await active?.settled.catch(() => undefined);
-          release.resolve();
-          await finished;
+          closeTask ??= (async () => {
+            closing = true;
+            const interrupted = active !== undefined;
+            if (interrupted) await owner.cancel();
+            release.resolve();
+            await finished.catch((error: unknown) => {
+              if (!signal.aborted && !interrupted) throw error;
+            });
+          })();
+          await closeTask;
         },
       });
       await release.promise;
-      await active?.settled.catch(() => undefined);
+      await active?.catch(() => undefined);
     } finally {
       signal.removeEventListener("abort", abort);
     }
   });
+  finished = transaction.finally(() => owner.close());
   // Attach immediately: transaction errors must never become unhandled background rejections.
   void finished.catch((error: unknown) => ready.reject(error)).finally(() => signal.removeEventListener("abort", abort));
   if (signal.aborted) abort();
-  return ready.promise;
+  try {
+    return await ready.promise;
+  } catch (error) {
+    await finished.catch(() => undefined);
+    throw error;
+  }
 }
 
 async function recordStart(call: UserFilesCall, input: ActivityExportInput, count: number, signal: AbortSignal): Promise<void> {
   const user = call.actor.kind === "user" ? call.actor.user : call.actor.delegatedUser;
   // The default pool connection is separate from the read-only snapshot. Await its COMMIT before returning a stream.
-  await sql.begin(async (tx) => {
-    signal.throwIfAborted();
-    // audit.record owns the insert. Intercept its real Bun query solely to cancel this request's SQL on abort.
-    const database = new Proxy(tx, {
-      apply(target, receiver, args) {
-        signal.throwIfAborted();
-        const query: unknown = Reflect.apply(target, receiver, args);
-        if (!(query instanceof Promise) || !("cancel" in query) || typeof query.cancel !== "function")
-          throw new Error("Expected cancellable Bun SQL query");
-        const cancel = query.cancel.bind(query);
-        signal.addEventListener("abort", cancel, { once: true });
-        const remove = () => signal.removeEventListener("abort", cancel);
-        void query.then(remove, remove);
-        if (signal.aborted) cancel();
-        return query;
-      },
-    });
-    await database`SELECT set_config('statement_timeout', ${String(REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000)}, true)`;
-    await audit.record(
-      {
-        action: "filesv2.activity.export",
-        outcome: "allowed",
-        actor: user ? { userId: user.id, uid: user.uid, provider: user.provider, roles: user.roles } : null,
-        requestId: call.requestId,
-        metadata: {
-          phase: "authorized_export_start",
-          format: input.format,
-          from: input.from,
-          to: input.to,
-          baseId: input.baseId ?? null,
-          actor: input.actor ?? null,
-          action: input.action ?? null,
-          q: input.q ?? null,
-          count,
-          invocationId: call.invocationId,
-          callingApp: call.callingApp,
-          actorKind: call.actor.kind,
-          serviceAccountId: call.actor.kind === "service_account" ? call.actor.serviceAccount.id : null,
+  const owner = await reserveExportConnection(sql, signal);
+  try {
+    await owner.connection.begin(async (database) => {
+      signal.throwIfAborted();
+      await database`SELECT set_config('statement_timeout', ${String(REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000)}, true)`;
+      await audit.record(
+        {
+          action: "filesv2.activity.export",
+          outcome: "allowed",
+          actor: user ? { userId: user.id, uid: user.uid, provider: user.provider, roles: user.roles } : null,
+          requestId: call.requestId,
+          metadata: {
+            phase: "authorized_export_start",
+            format: input.format,
+            from: input.from,
+            to: input.to,
+            baseId: input.baseId ?? null,
+            actor: input.actor ?? null,
+            action: input.action ?? null,
+            q: input.q ?? null,
+            count,
+            invocationId: call.invocationId,
+            callingApp: call.callingApp,
+            actorKind: call.actor.kind,
+            serviceAccountId: call.actor.kind === "service_account" ? call.actor.serviceAccount.id : null,
+          },
         },
-      },
-      database,
-    );
-    signal.throwIfAborted();
-  });
+        database,
+      );
+      signal.throwIfAborted();
+    });
+  } finally {
+    await owner.close();
+  }
 }
 
 export function createActivityExportService(deps: ActivityExportDeps) {
@@ -216,8 +282,11 @@ export function createActivityExportService(deps: ActivityExportDeps) {
         closed = true;
         clearTimeout(timer);
         signal.removeEventListener("abort", abort);
-        lifetime.abort(new DOMException("Export preview closed", "AbortError"));
-        await snapshot?.close();
+        try {
+          await snapshot?.close();
+        } finally {
+          lifetime.abort(new DOMException("Export preview closed", "AbortError"));
+        }
       }
     },
     async export(
@@ -239,6 +308,7 @@ export function createActivityExportService(deps: ActivityExportDeps) {
       let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
       let closed = false;
       let cleanupTask: Promise<void> | undefined;
+      let auditTask: Promise<void> | undefined;
       let timer: ReturnType<typeof setTimeout> | undefined;
       const cleanup = (): Promise<void> => {
         if (cleanupTask) return cleanupTask;
@@ -281,7 +351,8 @@ export function createActivityExportService(deps: ActivityExportDeps) {
         if (!Number.isSafeInteger(count) || count < 0) throw new ActivityExportError("activity_export_failed", 503);
         if (count > ACTIVITY_EXPORT_LIMIT) throw new ActivityExportError("activity_export_limit", 413);
         await wait(deps.requireAdmin(call.actor));
-        await wait((deps.recordStart ?? recordStart)(call, input, count, lifetime.signal));
+        auditTask = (deps.recordStart ?? recordStart)(call, input, count, lifetime.signal);
+        await wait(auditTask);
         await wait(deps.requireAdmin(call.actor)); // Revocation during count/audit denies the response.
         lifetime.signal.throwIfAborted();
         const current = snapshot;
@@ -363,8 +434,9 @@ export function createActivityExportService(deps: ActivityExportDeps) {
         ); // Never fetch a batch until the consumer asks for it.
         return { stream, count, format: input.format };
       } catch (error) {
-        lifetime.abort(error);
         await cleanup().catch(() => log.error("Export snapshot cleanup failed", { code: "activity_export_failed" }));
+        lifetime.abort(error);
+        await auditTask?.catch(() => undefined);
         throw error;
       }
     },
