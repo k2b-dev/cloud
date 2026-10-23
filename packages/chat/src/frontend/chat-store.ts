@@ -792,9 +792,22 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         } finally {
           state.pending = state.pending.filter((pending) => pending !== change);
           publish();
-          if (!state.pending.length) messages.delete(messageId);
+          if (!state.pending.length) {
+            messages.delete(messageId);
+            void reconcile();
+          }
         }
       });
+      // A write's answer can arrive after newer reactions from elsewhere, so once this message has no pending change,
+      // its reactions are read again from the server instead of trusting the local sum.
+      const reconcile = async () => {
+        const fresh = await api.reactions(id, messageId).catch(() => null);
+        if (!fresh || !active(chat) || messages.has(messageId)) return;
+        const message = chat.messages.get(messageId);
+        if (!message) return;
+        chat.messages.set(messageId, { ...message, reactions: fresh.items.map(({ emoji, count, own }) => ({ emoji, count, own })) });
+        publishMessages(chat);
+      };
       state.tail = request.catch(() => {});
       return request;
     },

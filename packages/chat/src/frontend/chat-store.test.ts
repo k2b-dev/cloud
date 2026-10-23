@@ -1510,6 +1510,19 @@ test("reactions add and remove optimistically, preserve other people and seriali
   store.dispose();
 });
 
+test("a late write answer never outlives newer reactions from elsewhere", async () => {
+  const write = deferred<void>();
+  // The server has the latest state: another tab took the reaction back after this tab's write.
+  const { store, connection } = fixture({ react: () => write.promise, reactions: async () => ({ items: [] }) });
+  const add = store.react(conversation.id, message(1).id, "👍", true);
+  await connection.get("conversation").apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 3 });
+  write.resolve();
+  await add;
+  await Bun.sleep(0);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([]);
+  store.dispose();
+});
+
 test("reaction hint batches coalesce per loaded message and skip old or foreign hints", async () => {
   const calls: string[] = [];
   const { store, connection } = fixture({
