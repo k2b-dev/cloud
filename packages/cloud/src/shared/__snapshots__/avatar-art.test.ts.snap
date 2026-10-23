@@ -1,0 +1,5 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`rendering keeps rendering a stored version 1 config byte for byte 1`] = `"7ac4c8231955f18292bccc1574886dff7fafb1453d6cbaf6d58f02452b65c4ff"`;
+
+exports[`rendering keeps rendering a stored version 1 config byte for byte 2`] = `"f2d19e9d678d902f9e7dcb85e0eb28ee95caaf28bd32e063d7dfd7bf21a7d4a6"`;
