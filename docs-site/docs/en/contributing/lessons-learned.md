@@ -25,6 +25,8 @@ convention still needs a check or a test.
 | --- | --- | --- |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
+
+| A visual rule confuses a control icon with prose | A notice check rejects a legible icon size as if it changed the notice text. | Test: `scripts/checks/notice-cards.test.ts` permits sizes on control icons while retaining checks on text, colours, opacity and nested text ([#1754](https://github.com/k2b-dev/cloud/issues/1754)). |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | App CSS overrides shared control sizing | An app stretches a compact action or overrides its size, so adjacent controls no longer match. | Test: Notebooks `detail-panel.browser.test.ts` measures AI and View height, padding, font size, intrinsic width, hover, keyboard focus, and offline dimensions in both themes at phone, tablet, and desktop widths. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
@@ -963,6 +965,13 @@ convention still needs a check or a test.
 - **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
+### A notice check treated control icons as prose
+
+- **What happened:** The notice check rejected the Close control's icon size ([#1754](https://github.com/k2b-dev/cloud/issues/1754)).
+- **Root cause:** The size matcher ignored the control-icon context that the icon check already recognized.
+- **Error class:** A visual rule confuses a control icon with prose.
+- **Guard:** `notice-cards.test.ts` permits sized control icons but still rejects text sizes, palette colours, arbitrary colours and opacity overrides.
 
 ### A keyboard test read the URL before link navigation
 
