@@ -292,6 +292,8 @@ for (const mode of [
       await dialog.getByText(t.discoveryAudience({ count: 42 }), { exact: true }).waitFor();
       await dialog.getByRole("button", { name: t.newChannel, exact: true }).click();
       await dialog.waitFor({ state: "hidden" });
+      // The new channel's address follows once it opened.
+      await page.waitForURL(/\/app\/chat\/c\/[^/?]+$/);
       const id = new URL(page.url()).pathname.split("/").at(-1)!;
       await page.getByRole("link", { name: t.chatInfo, exact: true }).filter({ visible: true }).click();
       const info = page.locator("#k2b-workspace-detail-chat-info");
