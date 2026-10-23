@@ -42,6 +42,7 @@ import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { panelHref, parseRoute, type Route, threadsPageHref } from "./route";
+import ChatThreadColumn from "./ChatThreadColumn";
 import ChatThreadsPage from "./ChatThreadsPage";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
 import { openThreadDialog } from "./ThreadDialog";
@@ -946,6 +947,26 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
         <AppWorkspace.Main scroll={false} aria-busy={busy()}>
+          {/* From a 1800 px window, a chat with threads shows them in a column of their own; CSS decides, so the server
+              render and the first frame agree, and crossing the width moves nothing in the reading column. */}
+          <Show when={threaded() && !route().threads ? conversation() : null}>
+            {(current) => (
+              <AppWorkspace.MainPane id="chat-threads" label={t().threadsIn({ title: current().title })} class="chat-thread-pane" defaultSize={336} minSize={288} maxSize={480} scroll={false}>
+                <ChatThreadColumn
+                  conversation={current()}
+                  threads={openChat()?.threads ?? null}
+                  status={openChat()?.threadsStatus ?? "loading"}
+                  view={openChat()?.view ?? "all"}
+                  viewerId={props.viewerId}
+                  dateConfig={props.dateConfig}
+                  now={now}
+                  onOpen={(view, navigation) => openView(current().id, view, navigation)}
+                  onCreate={() => void createThread()}
+                  onRetry={() => void store?.refreshThreads()}
+                />
+              </AppWorkspace.MainPane>
+            )}
+          </Show>
           <Switch>
             <Match when={route().threads && openChat()?.id && threaded() ? conversation() : null}>
               {(current) => (
@@ -1004,6 +1025,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                           </span>
                           </>
                         ) : undefined
+                      }
+                      wideTitle={
+                        threaded()
+                          ? {
+                              title: viewTitle(),
+                              subtitle:
+                                openChat()?.view === "all"
+                                  ? `${current().title} · ${t().allThreadsHint}`
+                                  : openChat()?.view === "general"
+                                    ? `${current().title} · ${t().generalHint}`
+                                    : (openThread()?.description ?? current().title),
+                            }
+                          : undefined
                       }
                       backHref={threaded() ? threadsPageHref(current().id) : undefined}
                       draftKey={`${current().id}:${openChat()?.view ?? "all"}`}

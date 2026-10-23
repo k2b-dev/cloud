@@ -74,10 +74,18 @@ export default function ChatList(props: {
                 </Dropdown.Root>
               </AppWorkspace.SidebarItemActions>
             }
+            class={expanded() ? "chat-list__open" : undefined}
             description={
-              <span class="chat-list__preview">
-                {expanded() ? t().members({ count: row.memberCount }) : lastMessageLine(row, props.viewerId, locale())}
-              </span>
+              <>
+                {/* Its rows show below it; from a 1800 px window they move into their own column and the row reads
+                    like any other chat again. */}
+                <Show when={expanded()}>
+                  <span class="chat-list__preview chat-list__members">{t().members({ count: row.memberCount })}</span>
+                </Show>
+                <span class="chat-list__preview" data-collapsed-only={expanded() ? "" : undefined}>
+                  {lastMessageLine(row, props.viewerId, locale())}
+                </span>
+              </>
             }
           >
             <AppWorkspace.SidebarItemIcon icon={row.icon ?? (row.memberCount <= 2 ? "ti ti-user" : "ti ti-users")} />
@@ -106,7 +114,11 @@ export default function ChatList(props: {
             </AppWorkspace.SidebarItemMeta>
           </AppWorkspace.SidebarItem>
           <Show when={expanded() ? props.threads : undefined}>
-            {(threads) => <ThreadRows {...threads()} chatId={row.id} unread={row.unread} />}
+            {(threads) => (
+              <div class="chat-list__threads">
+                <ThreadRows {...threads()} chatId={row.id} unread={row.unread} />
+              </div>
+            )}
           </Show>
           </>
           );

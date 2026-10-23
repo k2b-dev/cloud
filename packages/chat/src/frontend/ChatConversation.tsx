@@ -59,6 +59,11 @@ export type ChatConversationProps = {
   subtitle?: string;
   /** Beside the title, such as the thread picker. */
   titleExtra?: JSX.Element;
+  /**
+   * The head from a 1800 px window, where the threads stand in their own column: the open thread as the title and its
+   * description below, instead of the chat's title and the picker.
+   */
+  wideTitle?: { title: string; subtitle: string };
   /** Where the back button leads below 64 rem; the list by default. */
   backHref?: string;
   /** Each part of a chat keeps its own draft. */
@@ -179,6 +184,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     <section
       ref={frame}
       class="chat-conversation"
+      data-wide-title={props.wideTitle ? "" : undefined}
       aria-label={props.title}
       onKeyDown={(event) => {
         if (event.key !== "r" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) return;
@@ -203,6 +209,14 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         </span>
         <PageTitle trail={{ title: props.title, ancestors: [] }} subtitle={props.subtitle ?? t().members({ count: props.memberCount })} />
         {props.titleExtra}
+        <Show when={props.wideTitle}>
+          {(wide) => (
+            <div class="chat-conversation__wide-title">
+              <h1 class="chat-conversation__wide-name">{wide().title}</h1>
+              <p class="chat-conversation__wide-subtitle">{wide().subtitle}</p>
+            </div>
+          )}
+        </Show>
         <Show when={markerAway()}>
           {(direction) => (
             <Button
