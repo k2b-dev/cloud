@@ -704,7 +704,7 @@ const runSmoke = async (fixture: Fixture) => {
     await page.getByRole("button", { name: "Hide conversation list", exact: true }).click();
     await assertWheelScroll(page, readerScroll, summaryBody, "collapsed-list reader");
     await page.getByRole("button", { name: "Show conversation list", exact: true }).click();
-    const detailsTrigger = page.getByRole("button", { name: "Toggle conversation details", exact: true });
+    const detailsTrigger = page.locator(".mail-workspace [data-app-workspace-detail-toggle]");
     await detailsTrigger.click();
     await assertWheelScroll(page, readerScroll, summaryBody, "reader with conversation details");
     await detailsTrigger.click();

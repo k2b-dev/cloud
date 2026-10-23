@@ -1,4 +1,5 @@
 import { CLOUD_CLI_MODULE_NAME } from "../cli/plugin";
+import { AppAccessRuleSchema } from "../contracts/app-access";
 import { PlatformPermissionSchema } from "../contracts/outgoing-mail";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { isOwnAppPath, SAME_ORIGIN_PATH } from "./app-path";
@@ -28,6 +29,8 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
   if (!isStringArray(value.routes) || value.routes.some((route) => !route.startsWith("/"))) {
     return invalid("routes", "an array of absolute paths");
   }
+  if (value.access !== undefined && !AppAccessRuleSchema.safeParse(value.access).success)
+    return invalid("access", "a declarative app access rule");
   if (value.startedAt !== undefined && !(typeof value.startedAt === "number" && Number.isFinite(value.startedAt))) {
     return invalid("startedAt", "a finite number");
   }

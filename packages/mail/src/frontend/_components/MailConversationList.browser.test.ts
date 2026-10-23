@@ -150,7 +150,7 @@ const server = Bun.serve({
       // Mail's accent, which Cloud's layout sets for the app.
       '<!doctype html><html class="light" style="--app-accent:#0f766e"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
         '<link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" style="margin:0">' +
-        '<div id="root" style="position:fixed;inset:56px 8px 8px 56px;display:flex;flex-direction:column"></div>' +
+        '<div id="root" style="position:fixed;inset:56px 8px 8px 56px;display:flex;flex-direction:column;container-type:inline-size;container-name:k2b-app-area"></div>' +
         '<script src="/harness.js"></script></body></html>',
       { headers: { "Content-Type": "text/html" } },
     );
@@ -176,6 +176,7 @@ const load = async (
     locale?: "en" | "de";
     selectionMode?: boolean;
     sidebarCollapsed?: boolean;
+    listSize?: number;
     folderOnlyHints?: MailFolderView[];
     reader?: boolean;
     requestUrl?: string;
@@ -214,6 +215,7 @@ const load = async (
     selectedConversationId: options.selectedConversationId ?? null,
     selectionMode: options.selectionMode,
     sidebarCollapsed: options.sidebarCollapsed,
+    listSize: options.listSize,
     folderOnlyHints: options.folderOnlyHints,
     reader: options.reader,
     requestUrl: options.requestUrl,
@@ -525,11 +527,18 @@ describe("Mail quick look", () => {
     }
   }, 30_000);
 
-  test("never covers the list: no card without room beside it at 1024 px, but one beside a collapsed sidebar", async () => {
-    const page = await load({ context: { viewport: { width: 1024, height: 768 } } });
+  test("never covers the list: no card without room beside it, but one beside a collapsed sidebar", async () => {
+    // The host is 64px narrower than the viewport. At 1120px it passes the
+    // shared 1024px sidebar breakpoint. A wider resizable list leaves too little
+    // room for a card until the sidebar collapses.
+    const context = { viewport: { width: 1120, height: 768 } };
+    const page = await load({ context, listSize: 520 });
     try {
+      await settle(page);
       const list = (await box(page, "[data-mail-conversation-list]"))!;
       const frame = (await box(page, ".mail-workspace"))!;
+      const sidebar = (await box(page, ".mail-workspace-navigation"))!;
+      expect(sidebar.left).toBeGreaterThanOrEqual(frame.left);
       expect(frame.left + frame.width - (list.left + list.width)).toBeLessThan(22 * 16 + 16);
       await pointAt(page, row("Cv0002"));
       await page.clock.runFor(500);
@@ -540,6 +549,22 @@ describe("Mail quick look", () => {
       expect(await requests(page)).toEqual([]);
     } finally {
       await close(page);
+    }
+    const collapsed = await load({ context, sidebarCollapsed: true, listSize: 520 });
+    try {
+      await settle(collapsed);
+      const list = (await box(collapsed, "[data-mail-conversation-list]"))!;
+      const frame = (await box(collapsed, ".mail-workspace"))!;
+      expect(frame.left + frame.width - (list.left + list.width)).toBeGreaterThanOrEqual(22 * 16 + 16);
+      await pointAt(collapsed, row("Cv0002"));
+      await collapsed.clock.runFor(500);
+      expect(await shown(collapsed)).toBe("Room booking 2");
+      await settle(collapsed);
+      const surface = (await box(collapsed, card))!;
+      expect(surface.left).toBeGreaterThan(list.left + list.width);
+      expect(surface.left + surface.width).toBeLessThanOrEqual(frame.left + frame.width);
+    } finally {
+      await close(collapsed);
     }
   }, 30_000);
 
@@ -1361,9 +1386,18 @@ describe("Mail search returns to the view it started from", () => {
         const page = await load({ context, requestUrl: origin });
         try {
           // The field's frame: the input inside it makes room for the clear button, the frame must not move.
+          await page.getByRole("button", { name: "Search (/)", exact: true }).click();
           const selector = 'form[role="search"] .k2b-input-shell';
           const field = page.locator('input[name="q"]');
+          await field.waitFor({ state: "visible" });
           const before = await box(page, selector);
+          expect(
+            await field.evaluate((element) => {
+              const rect = element.getBoundingClientRect();
+              const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+              return { inputReceivesPointer: hit === element, hit: hit?.tagName, width: rect.width };
+            }),
+          ).toMatchObject({ inputReceivesPointer: true, hit: "INPUT" });
           await field.click();
           await page.keyboard.type("invoice");
           await page.clock.runFor(350);
@@ -1376,8 +1410,15 @@ describe("Mail search returns to the view it started from", () => {
           } else await page.keyboard.press("Escape");
           await page.clock.runFor(350);
           expect(await page.evaluate(() => location.pathname + location.search)).toBe(origin);
-          expect(await field.inputValue()).toBe("");
-          expect(await box(page, selector)).toEqual(before);
+          if (method === "Escape") {
+            expect(await field.count()).toBe(0);
+            expect(
+              await page.getByRole("button", { name: "Search (/)", exact: true }).evaluate((element) => element === document.activeElement),
+            ).toBe(true);
+          } else {
+            expect(await field.inputValue()).toBe("");
+            expect(await box(page, selector)).toEqual(before);
+          }
           expect(page.errors).toEqual([]);
         } finally {
           await close(page);
@@ -1620,3 +1661,129 @@ for (const viewport of [
     }
   }, 30_000);
 }
+
+describe("scoped flag search builder", () => {
+  for (const type of ["unread", "flagged"] as const) {
+    for (const step of ["edit", "clear", "save", "sequence"] as const) {
+      // Cold WebKit setup plus opening, editing and reopening the lazy builder exceeds five seconds.
+      // Use the shell browser suite's bounded budget; keep every transition and payload assertion.
+      test(`${type}: ${step} retains folder scope and negation`, async () => {
+        // Each starting state is the preceding step's asserted persisted output.
+        const expression =
+          step === "edit" || step === "sequence"
+            ? { type, folderId: "Fold01" }
+            : { type: "and", expressions: [{ type: "not", expression: { type, folderId: step === "clear" ? "Fold02" : null } }] };
+        const initial = { expression, sort: "newest" };
+        const currentPage = await load({ requestUrl: `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify(initial) })}` });
+        try {
+          await currentPage.clock.resume();
+          let saved: unknown;
+          await currentPage.route("**/api/mail/mailboxes/Box001/folders", (route) =>
+            route.fulfill({
+              json: [
+                { id: "Fold01", name: "Inbox", parentId: null, selectable: true, role: "inbox" },
+                { id: "Fold02", name: "Archive", parentId: null, selectable: true, role: "archive" },
+              ],
+            }),
+          );
+          await currentPage.route("**/api/mail/mailboxes/Box001/saved-views", async (route) => {
+            saved = route.request().postDataJSON();
+            await route.fulfill({ json: { ...route.request().postDataJSON(), id: "View01", revision: 1 } });
+          });
+          const openBuilder = async (currentPage: Awaited<ReturnType<typeof load>>) => {
+            const trigger = currentPage.getByRole("button", { name: "Search (/)", exact: true });
+            if (await trigger.count()) {
+              await trigger.focus();
+              await trigger.press("Enter");
+              await currentPage.locator('input[name="q"]').waitFor({ state: "visible" });
+            }
+            await currentPage.getByRole("button", { name: "Search filters", exact: true }).click();
+            await currentPage.getByRole("dialog").waitFor({ state: "visible" });
+          };
+          await openBuilder(currentPage);
+          const state = () => JSON.parse(new URL(currentPage.url()).searchParams.get("search")!);
+          const folder = currentPage.getByRole("combobox", { name: "Folder", exact: true });
+          if (step === "edit" || step === "sequence") {
+            await folder.click();
+            await currentPage.getByRole("option", { name: "Archive", exact: true }).click();
+            await currentPage.getByRole("button", { name: "Exclude this condition", exact: true }).click();
+            await currentPage.getByRole("button", { name: "Search", exact: true }).click();
+            await currentPage.getByRole("dialog").waitFor({ state: "hidden" });
+            expect(state()).toEqual({
+              expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: "Fold02" } }] },
+              sort: "newest",
+            });
+            await openBuilder(currentPage);
+            await folder.filter({ hasText: "Archive" }).waitFor({ state: "visible" });
+            expect(await folder.textContent()).toContain("Archive");
+          }
+          if (step === "clear" || step === "sequence") {
+            await folder.filter({ hasText: "Archive" }).waitFor({ state: "visible" });
+            await currentPage.getByRole("button", { name: "Clear selection", exact: true }).click();
+            await currentPage.getByRole("button", { name: "Search", exact: true }).click();
+            await currentPage.getByRole("dialog").waitFor({ state: "hidden" });
+            expect(state()).toEqual({
+              expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: null } }] },
+              sort: "newest",
+            });
+            await openBuilder(currentPage);
+            await folder.waitFor({ state: "visible" });
+            expect(await folder.textContent()).toContain("Any included folder");
+          }
+          if (step === "save" || step === "sequence") {
+            await folder.waitFor({ state: "visible" });
+            expect(await folder.textContent()).toContain("Any included folder");
+            await folder.click();
+            await currentPage.getByRole("option", { name: "Inbox", exact: true }).click();
+            await currentPage.getByRole("button", { name: "Save as view", exact: true }).click();
+            await currentPage.getByRole("textbox", { name: "Name", exact: true }).fill("Flagged in folder");
+            await currentPage.getByRole("button", { name: "Save view", exact: true }).click();
+            await currentPage.waitForURL((url) => url.searchParams.get("savedView") === "View01");
+            expect(saved).toMatchObject({
+              filter: {
+                expression: { type: "and", expressions: [{ type: "not", expression: { type, folderId: "Fold01" } }] },
+                sort: "newest",
+              },
+            });
+          }
+          expect(currentPage.errors).toEqual([]);
+        } finally {
+          await close(currentPage);
+        }
+      }, 20_000);
+    }
+  }
+});
+
+test("scoped flag folder lookup recovers without losing the filter", async () => {
+  const initial = { expression: { type: "unread", folderId: "Fold01" }, sort: "newest" };
+  const page = await load({ requestUrl: `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify(initial) })}` });
+  try {
+    await page.clock.resume();
+    let fail = true;
+    await page.route("**/api/mail/mailboxes/Box001/folders", (route) =>
+      fail
+        ? route.fulfill({ status: 503, json: { error: "Folder lookup temporarily unavailable" } })
+        : route.fulfill({ json: [{ id: "Fold01", name: "Inbox", parentId: null, selectable: true, role: "inbox" }] }),
+    );
+    if (await page.getByRole("button", { name: "Search (/)", exact: true }).count())
+      await page.getByRole("button", { name: "Search (/)", exact: true }).click();
+    await page.getByRole("button", { name: "Search filters", exact: true }).click();
+    await page.getByRole("alert").waitFor({ state: "visible" });
+    expect(await page.getByRole("combobox", { name: "Folder", exact: true }).isDisabled()).toBe(true);
+    fail = false;
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    const folder = page.getByRole("combobox", { name: "Folder", exact: true });
+    await folder.filter({ hasText: "Inbox" }).waitFor({ state: "visible" });
+    expect(await folder.isEnabled()).toBe(true);
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await page.getByRole("dialog").waitFor({ state: "hidden" });
+    expect(JSON.parse(new URL(page.url()).searchParams.get("search")!)).toEqual({
+      expression: { type: "and", expressions: [initial.expression] },
+      sort: "newest",
+    });
+    expect(page.errors).toEqual([]);
+  } finally {
+    await close(page);
+  }
+});

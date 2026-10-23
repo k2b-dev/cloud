@@ -1,4 +1,5 @@
 import type { Sync } from "@k2b/sync";
+import type { AppAccessRule } from "./app-access";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { AppRegistryHelpSummary } from "./registry";
 import type { Role } from "./shared";
@@ -122,6 +123,7 @@ export type AppPanel = {
 };
 
 export type AppMeta = {
+  access?: AppAccessRule;
   platformPermissions?: readonly PlatformPermission[];
   id: string;
   name: string;
