@@ -6,11 +6,15 @@ import {
   ConversationQuerySchema,
   ConversationSchema,
   CreateConversationSchema,
+  ForResourceSchema,
   LeaveSchema,
   MemberPageSchema,
   MemberPreviewSchema,
   MemberQuerySchema,
   PeopleQuerySchema,
+  SystemChatParamSchema,
+  ThreadQuerySchema,
+  ThreadResourceSchema,
   UpdateConversationSchema,
   UpdateMemberSchema,
 } from "./contracts";
@@ -254,4 +258,27 @@ test("thread input is strict, bounded, trimmed and supports explicit read select
   }
   expect(ReadSchema.parse({ seq: 1, thread: "all" })).toEqual({ seq: 1, thread: "all" });
   expect(SnapshotQuerySchema.safeParse({ thread: "all" }).success).toBeFalse();
+});
+
+test("system chat contracts constrain containers, item metadata and paging", () => {
+  for (const resourceType of ["spaces.space", "notebooks.notebook"])
+    expect(SystemChatParamSchema.safeParse({ resourceType, resourceId: "abcdef" }).success).toBeTrue();
+  expect(SystemChatParamSchema.safeParse({ resourceType: "spaces.item", resourceId: "abcdef" }).success).toBeFalse();
+  expect(ForResourceSchema.parse({ ref: { type: "notebooks.note", id: "note01" } })).toEqual({
+    ref: { type: "notebooks.note", id: "note01" },
+  });
+  expect(ThreadQuerySchema.parse({ filter: "unread", q: " task ", cursor: "abcdef" })).toEqual({
+    filter: "unread",
+    q: "task",
+    cursor: "abcdef",
+  });
+  for (const query of [{ filter: "archived" }, { q: "x".repeat(101) }, { cursor: "not-a-cursor" }])
+    expect(ThreadQuerySchema.safeParse(query).success).toBeFalse();
+  expect(
+    ThreadResourceSchema.safeParse({ ref: { type: "spaces.item", id: "item01" }, kind: "task", status: null, done: false, href: "/item" })
+      .success,
+  ).toBeTrue();
+  expect(
+    ThreadResourceSchema.safeParse({ ref: { type: "spaces.item", id: "item01" }, kind: "task", status: null, href: "/item" }).success,
+  ).toBeFalse();
 });

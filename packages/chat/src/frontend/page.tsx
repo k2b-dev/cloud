@@ -2,6 +2,7 @@ import { type AuthContext, getDateConfig, getLocale, getUserBackedActor } from "
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { chatMessages } from "../messages";
+import { chatRequestContext } from "../request-context";
 import { loadChatView } from "../service";
 import ChatWorkspace from "./ChatWorkspace.island";
 
@@ -16,10 +17,11 @@ export default ssr<AuthContext>(async (c) => {
   if (accessSubject.type !== "user") return ssr.error(c, 403);
   const chatId = c.req.param("chat") ?? null;
   const thread = c.req.param("thread") ?? "all";
-  const view = await loadChatView(
-    { actor: c.get("actor"), accessSubject, locale, requestId: c.req.header("x-request-id") },
-    { conversationId: chatId ?? undefined, messageId: c.req.param("message"), thread },
-  );
+  const view = await loadChatView(chatRequestContext(c), {
+    conversationId: chatId ?? undefined,
+    messageId: c.req.param("message"),
+    thread,
+  });
   // Without access the page names neither the chat nor whether it exists.
   const title = chatId ? (view.open?.conversation.title ?? t.noAccessTitle) : undefined;
   return () => (

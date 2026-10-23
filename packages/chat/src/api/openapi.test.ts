@@ -200,3 +200,14 @@ test("shared items document typed filters, opaque cursors, bounds, and errors", 
   expect(response.content["application/json"].schema.required).toEqual(["items", "nextCursor"]);
   expect(response.content["application/json"].schema.properties.items.maxItems).toBe(30);
 });
+
+test("documents system chat discovery, opening, item threads, and paged thread filters", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  expect(spec.paths["/api/chat/system-chats"]?.get?.responses["200"]).toBeDefined();
+  expect(spec.paths["/api/chat/system-chats/{resourceType}/{resourceId}/open"]?.post?.responses["200"]).toBeDefined();
+  expect(spec.paths["/api/chat/conversations/{conversation}/threads/for-resource"]?.post?.requestBody).toBeDefined();
+  const parameters = z
+    .array(z.object({ name: z.string(), in: z.string() }))
+    .parse(spec.paths["/api/chat/conversations/{conversation}/threads"]?.get?.parameters);
+  for (const name of ["filter", "q", "cursor"]) expect(parameters).toContainEqual({ name, in: "query" });
+});

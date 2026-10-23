@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { UserSchema } from "@k2b/cloud/contracts";
-import type { ChatContext } from "./access";
+import type { ChatRequestContext } from "../request-context";
 import { ConversationSchema } from "./contracts";
 import { conversations } from "./conversations";
 import { chatLive } from "./live";
@@ -10,7 +10,9 @@ import { loadChatView } from "./snapshot";
 const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
 
 const userId = "11111111-1111-4111-8111-111111111111";
-const context: ChatContext = {
+const context: ChatRequestContext = {
+  caller: { cookie: "test-session" },
+  credentialPrincipal: `user:${userId}`,
   accessSubject: { type: "user", userId },
   locale: "en",
   actor: {

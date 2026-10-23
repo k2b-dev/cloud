@@ -173,6 +173,11 @@ export const appendMessage = async (
     message.kind === "text" ? messagePreview(message.body) : null,
     affected,
   ))
-    await chatLive.publish(db, row);
+    await chatLive.publish(
+      db,
+      conversation.kind === "system" && projected.thread
+        ? { ...row, key: `${row.key.startsWith("c:") ? "t" : "s"}:${conversation.short_id}:${projected.thread}` }
+        : row,
+    );
   return row;
 };

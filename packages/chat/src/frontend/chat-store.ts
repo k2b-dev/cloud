@@ -199,7 +199,7 @@ export const createChatStoreApi = (): ChatStoreApi => {
         ChatSnapshotSchema,
       ),
     threads: async (id) =>
-      parseResponse(await client.conversations[":conversation"].threads.$get({ param: { conversation: id } }), ThreadListSchema),
+      parseResponse(await client.conversations[":conversation"].threads.$get({ param: { conversation: id }, query: {} }), ThreadListSchema),
     createThread: async (id, input) =>
       requiredResponse(
         await client.conversations[":conversation"].threads.$post({ param: { conversation: id }, json: input }),

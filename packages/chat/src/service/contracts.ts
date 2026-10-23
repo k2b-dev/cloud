@@ -134,7 +134,31 @@ const ThreadReadSchema = z.strictObject({
   unreadFromSeq: z.number().int().min(1).nullable(),
 });
 const LastMessageSchema = z.strictObject({ id: MessageIdSchema, author: AuthorSchema, preview: z.string(), createdAt: z.iso.datetime() });
+export const ThreadResourceSchema = z.strictObject({
+  ref: CloudResourceRefSchema,
+  kind: z.enum(["task", "event", "note"]),
+  status: z.string().nullable(),
+  done: z.boolean(),
+  href: z.string(),
+});
+export const ThreadQuerySchema = z.strictObject({
+  filter: z.enum(["open", "done", "unread"]).optional(),
+  q: z.string().trim().max(100).optional(),
+  cursor: ThreadIdSchema.optional(),
+});
+export const ForResourceSchema = z.strictObject({
+  ref: CloudResourceRefSchema.extend({ type: z.enum(["spaces.item", "notebooks.note"]), id: ShortIdSchema }),
+});
+export const SystemChatParamSchema = z.object({
+  resourceType: z.enum(["spaces.space", "notebooks.notebook"]),
+  resourceId: ShortIdSchema,
+});
+export const SystemChatQuerySchema = z.strictObject({
+  spacesCursor: z.string().min(1).max(256).optional(),
+  notebooksCursor: z.string().min(1).max(256).optional(),
+});
 export const ThreadSchema = z.strictObject({
+  resource: ThreadResourceSchema.nullable().optional(),
   id: ThreadIdSchema,
   name: z.string(),
   description: z.string().nullable(),
@@ -146,6 +170,7 @@ export const ThreadSchema = z.strictObject({
   createdAt: z.iso.datetime(),
 });
 export const ThreadListSchema = z.strictObject({
+  nextCursor: ThreadIdSchema.nullable().optional(),
   general: z.strictObject({ unread: z.number().int().min(0).max(UNREAD_CAP), lastMessage: LastMessageSchema.nullable() }),
   items: z.array(ThreadSchema).max(MAX_THREADS),
 });
@@ -180,7 +205,7 @@ export const ReadUpdateSchema = ReadStateSchema.extend({
   conversationId: ShortIdSchema,
   unread: z.number().int().min(0).max(UNREAD_CAP),
   asOfRev: z.number().int().min(0),
-  threads: z.array(ThreadReadSchema.extend({ id: ThreadIdSchema, unread: z.number().int().min(0).max(UNREAD_CAP) })).max(MAX_THREADS),
+  threads: z.array(ThreadReadSchema.extend({ id: ThreadIdSchema, unread: z.number().int().min(0).max(UNREAD_CAP) })),
 });
 export const ReadSchema = z.strictObject({
   seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
@@ -193,7 +218,9 @@ export const ReadAllOutcomeSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("done"), marked: z.number().int(), more: z.boolean() }),
 ]);
 export const ConversationSchema = z.object({
-  threads: z.number().int().min(0).max(MAX_THREADS),
+  kind: z.enum(["chat", "system"]).optional(),
+  resource: CloudResourceRefSchema.nullable().optional(),
+  threads: z.number().int().min(0),
   unread: z.number().int().min(0).max(UNREAD_CAP),
   read: ReadStateSchema.nullable(),
   id: ShortIdSchema,
@@ -217,6 +244,11 @@ export const CreateOutcomeSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("created"), conversation: ConversationSchema }),
   z.object({ outcome: z.literal("existing"), matches: z.array(ExistingMatchSchema) }),
 ]);
+export const SystemChatPageSchema = z.strictObject({
+  items: z.array(z.strictObject({ ref: CloudResourceRefSchema, name: z.string(), conversation: ConversationSchema.nullable() })).max(200),
+  spacesCursor: z.string().nullable(),
+  notebooksCursor: z.string().nullable(),
+});
 export const ConversationPageSchema = z.object({ items: z.array(ConversationSchema), nextCursor: z.string().nullable() });
 export const MemberSchema = z.object({
   accessId: z.uuid(),

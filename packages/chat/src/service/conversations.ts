@@ -51,12 +51,16 @@ import {
   MemberQuerySchema,
   PEOPLE_PAGE_SIZE,
   PeopleQuerySchema,
+  UNREAD_CAP,
   UpdateConversationSchema,
   UpdateMemberSchema,
 } from "./contracts";
 import { chatLive } from "./live";
 import { appendMessage, deletedPeople, personSnapshots } from "./message-store";
 import { projectRead, type ReadProjection, unreadQuery } from "./read-state";
+import { readerBatch, readResource } from "./resource-access";
+import { visibleMessageCondition, visibleThreadIds } from "./thread-access";
+import { threadStates } from "./thread-state";
 import { deriveTitle, TITLE_NAME_LIMIT } from "./titles";
 
 const creationLimit = ratelimit({ id: "chat.conversation.create", limit: CREATE_LIMIT, windowSecs: CREATE_WINDOW_SECONDS });
@@ -109,6 +113,7 @@ const authorizeManagement = async (
   required: "read" | "admin" = "admin",
 ) => {
   const result = await requireConversation({ ...context, conversationId: id, required }, db);
+  if (result.ok && result.data.kind === "system") return fail(err.forbidden(messages(context).forbidden));
   if (!result.ok && result.error.status === 403)
     await audit.recordResult({
       action,
@@ -263,6 +268,7 @@ const titles = async (rows: ConversationRow[], context: ChatContext, db: typeof 
   );
 };
 const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: typeof sql) => {
+  const visibility = rows.length === 1 && rows[0]!.kind === "system" ? await visibleMessageCondition(db, context, rows[0]!.id) : db`true`;
   const found = rows.length
     ? await db<
         {
@@ -275,16 +281,23 @@ const lastMessages = async (rows: ConversationRow[], context: ChatContext, db: t
           created_at: Date;
           thread_short_id: string | null;
           thread_name: string | null;
+          resource_type: string | null;
+          resource_id: string | null;
         }[]
       >`
-      SELECT c.id AS conversation_id, m.*, t.short_id AS thread_short_id, t.name AS thread_name FROM chat.conversations c
+      SELECT c.id AS conversation_id, m.*, t.short_id AS thread_short_id, t.name AS thread_name, t.resource_type, t.resource_id FROM chat.conversations c
       CROSS JOIN LATERAL (
         SELECT short_id, thread_id, author_type, author_id, author_name,
           left(regexp_replace(body_md, ${"[\\t\\n\\v\\f\\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+"}, ' ', 'g'), 600) AS body, created_at
-        FROM chat.messages WHERE conversation_id = c.id AND kind = 'text' ORDER BY seq DESC LIMIT 1
+        FROM chat.messages WHERE conversation_id = c.id AND kind = 'text' AND ${visibility} ORDER BY seq DESC LIMIT 1
       ) m LEFT JOIN chat.threads t ON t.id = m.thread_id WHERE c.id = ANY(${toPgUuidArray(rows.map((row) => row.id))}::uuid[])
     `
     : [];
+  await readerBatch(found, async (row) => {
+    if (!row.resource_type || !row.resource_id) return;
+    const resource = await readResource(context, { type: row.resource_type, id: row.resource_id });
+    row.thread_name = resource?.name ?? row.thread_name;
+  });
   const deleted = await deletedPeople(
     db,
     found.filter((row) => row.author_type === "user").map((row) => row.author_id),
@@ -333,6 +346,9 @@ const project = (
   state: Pick<z.infer<typeof ConversationSchema>, "read" | "unread" | "threads">,
 ): z.infer<typeof ConversationSchema> => ({
   id: row.short_id,
+  ...(row.kind === "system" && row.resource_type && row.resource_id
+    ? { kind: row.kind, resource: { type: row.resource_type, id: row.resource_id } }
+    : {}),
   name: row.name,
   icon: row.icon,
   purpose: row.purpose,
@@ -496,16 +512,37 @@ const getInSnapshot = async (input: ChatContext & { conversationId: string }, db
   const result = await requireConversation({ ...input, required: "read" }, db);
   if (!result.ok) return result;
   const row = result.data;
+  const visibleIds = await visibleThreadIds(db, input, row.id);
+  const read = projectRead((await db<ReadProjection[]>`${unreadQuery(db, input.accessSubject, [row.id])}`)[0]!);
+  if (visibleIds !== null) {
+    const states = await threadStates(db, input.accessSubject, row.id, visibleIds);
+    read.unread = Math.min(
+      UNREAD_CAP,
+      states.reduce((sum, state) => sum + state.unread, 0),
+    );
+    read.threads = visibleIds.length;
+  }
+  const resource =
+    row.kind === "system" && row.resource_type && row.resource_id
+      ? await readResource(input, { type: row.resource_type, id: row.resource_id })
+      : null;
   const names = await titles([row], input, db);
   const latest = await lastMessages([row], input, db);
   return ok(
     project(
-      row,
+      resource
+        ? {
+            ...row,
+            name: resource.name,
+            purpose: resource.description,
+            last_activity_at: latest.get(row.id) ? new Date(latest.get(row.id)!.createdAt) : row.created_at,
+          }
+        : row,
       row.permission,
-      names.get(row.id)!,
+      resource?.name ?? names.get(row.id)!,
       latest.get(row.id) ?? null,
       (await lifecycleFlags([row], input, db)).get(row.id)!,
-      projectRead((await db<ReadProjection[]>`${unreadQuery(db, input.accessSubject, [row.id])}`)[0]!),
+      read,
     ),
   );
 };
@@ -563,6 +600,7 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
     await lockConversation(db, input.conversationId);
     const allowed = await requireConversation({ ...input, required: "write" }, db);
     if (!allowed.ok) return allowed;
+    if (allowed.data.kind === "system") return fail(err.forbidden(messages(input).forbidden));
     const data = parsed.data;
     const before = allowed.data;
     const changed = {
@@ -621,6 +659,7 @@ const listMembers = async (input: ChatContext & { conversationId: string; query?
     if (!allowed.ok) return allowed;
     const parsed = parse(MemberQuerySchema, input.query ?? {}, input);
     if (!parsed.ok) return parsed;
+    if (allowed.data.kind === "system") return ok({ items: [], nextCursor: null, managers: 0, self: null });
     const { q, cursor } = parsed.data;
     const [caller] =
       input.accessSubject.type === "user"
@@ -721,6 +760,7 @@ const previewMembers = async (input: ChatContext & { conversationId: string; inp
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "admin" }, db);
     if (!allowed.ok) return allowed;
+    if (allowed.data.kind === "system") return fail(err.forbidden(messages(input).forbidden));
     const principals = await newMembers(db, allowed.data.id, parsed.data.members);
     const valid = await validateMembers(principals, input, db, false);
     if (!valid.ok) return valid;

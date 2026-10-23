@@ -1,3 +1,4 @@
+import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import {
   type AccessSubject,
   buildAccessPrincipalCondition,
@@ -11,9 +12,20 @@ import {
 } from "@k2b/cloud/server";
 import { type SQLQuery, sql } from "bun";
 import { chatMessages } from "../messages";
+import { readResource } from "./resource-access";
 
-export type ChatContext = { actor: RequestActor; accessSubject: AccessSubject; locale?: string; requestId?: string };
+export type ChatContext = {
+  actor: RequestActor;
+  accessSubject: AccessSubject;
+  locale?: string;
+  requestId?: string;
+  caller?: CapabilityCaller;
+  credentialPrincipal?: string;
+};
 export type ConversationRow = {
+  kind: "chat" | "system";
+  resource_type: string | null;
+  resource_id: string | null;
   id: string;
   short_id: string;
   name: string | null;
@@ -73,7 +85,7 @@ export const conversationPermission = (conversationId: string, granted: Permissi
 
 /** The member-only sidebar filter, shared by list reads and the live collection. */
 export const readableMemberCondition = (subject: AccessSubject, bound: string | null, db: typeof sql = sql) => db`
-  ca.role = 'member' AND ${principalCondition(subject, db)} AND a.permission IN ('read', 'write', 'admin')
+  c.kind = 'chat' AND ca.role = 'member' AND ${principalCondition(subject, db)} AND a.permission IN ('read', 'write', 'admin')
   AND ${bound ? db`c.short_id = ${bound}` : db`true`}
 `;
 
@@ -93,7 +105,13 @@ export const requireConversation = async (
     ), 0)::int AS permission_rank
     FROM chat.conversations c WHERE c.short_id = ${input.conversationId}
   `;
-  const permission = conversationPermission(input.conversationId, permissionFromRank(row?.permission_rank ?? 0), input.actor);
+  const granted =
+    row?.kind === "system"
+      ? row.resource_type && row.resource_id
+        ? ((await readResource(input, { type: row.resource_type, id: row.resource_id }))?.permission ?? "none")
+        : "none"
+      : permissionFromRank(row?.permission_rank ?? 0);
+  const permission = conversationPermission(input.conversationId, granted, input.actor);
   if (!row || permission === "none") return fail({ code: "NOT_FOUND", message: t.notFound, status: 404 });
   if (!hasPermission(permission, input.required)) return fail(err.forbidden(t.forbidden));
   return ok({ ...row, permission });

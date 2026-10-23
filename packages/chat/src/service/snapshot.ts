@@ -1,10 +1,13 @@
-import type { ChatContext } from "./access";
+import type { ChatRequestContext } from "../request-context";
 import { ShortIdSchema } from "./contracts";
 import { conversations } from "./conversations";
 import { chatLive } from "./live";
 import { messages } from "./messages";
 
-export const loadChatView = async (context: ChatContext, input: { conversationId?: string; messageId?: string; thread?: string }) => {
+export const loadChatView = async (
+  context: ChatRequestContext,
+  input: { conversationId?: string; messageId?: string; thread?: string },
+) => {
   const cursor = await chatLive.cursor();
   const sidebar = await conversations.list(context);
   if (!sidebar.ok) throw new Error(sidebar.error.message);

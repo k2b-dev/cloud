@@ -69,7 +69,6 @@ export const migrate = async (): Promise<void> => {
       created_at timestamptz NOT NULL DEFAULT now(),
       last_activity_at timestamptz NOT NULL DEFAULT now()
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_threads_name ON chat.threads(conversation_id, lower(name));
     CREATE TABLE IF NOT EXISTS chat.thread_create_intents (
       principal_type text NOT NULL CHECK (principal_type IN ('user', 'service_account')),
       principal_id uuid NOT NULL,
@@ -134,6 +133,18 @@ export const migrate = async (): Promise<void> => {
       voice_hint_seen boolean NOT NULL DEFAULT false,
       PRIMARY KEY (principal_type, principal_id)
     )
+  `.simple();
+  await sql`
+    ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'chat' CHECK (kind IN ('chat', 'system'));
+    ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS resource_type text;
+    ALTER TABLE chat.conversations ADD COLUMN IF NOT EXISTS resource_id text;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_system_resource ON chat.conversations(resource_type, resource_id) WHERE kind = 'system';
+    ALTER TABLE chat.threads ADD COLUMN IF NOT EXISTS resource_type text;
+    ALTER TABLE chat.threads ADD COLUMN IF NOT EXISTS resource_id text;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_thread_resource ON chat.threads(conversation_id, resource_type, resource_id) WHERE resource_type IS NOT NULL;
+    -- Item titles need not be unique. Preserve the manual-thread name constraint.
+    DROP INDEX IF EXISTS chat.idx_chat_threads_name;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_threads_manual_name ON chat.threads(conversation_id, lower(name)) WHERE resource_type IS NULL;
   `.simple();
   console.log("  ✓ chat schema");
 };

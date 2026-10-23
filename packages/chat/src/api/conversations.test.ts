@@ -291,3 +291,19 @@ test("people forwards trimmed search and a re-encoded strict cursor to the servi
     expect.objectContaining({ accessSubject: { type: "user", userId }, query: { search: "Lea", cursor } }),
   );
 });
+
+test("passes the authenticated caller credential into system chat discovery", async () => {
+  authenticate();
+  const list = spyOn(chatService.systemChats, "list").mockResolvedValue({
+    ok: true,
+    data: { items: [], spacesCursor: null, notebooksCursor: null },
+  });
+  const response = await chatApi.request("/system-chats?spacesCursor=next", { headers: { authorization: "Bearer test-key" } });
+  expect(response.status).toBe(200);
+  expect(list).toHaveBeenCalledWith(
+    expect.objectContaining({
+      caller: expect.objectContaining({ authorization: "Bearer test-key" }),
+      query: { spacesCursor: "next" },
+    }),
+  );
+});

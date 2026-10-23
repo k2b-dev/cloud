@@ -14,6 +14,7 @@ import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { chatMessages } from "../messages";
+import { chatRequestContext as context } from "../request-context";
 import { ChatHealthSchema, chatService } from "../service";
 import {
   AddMembersSchema,
@@ -28,6 +29,7 @@ import {
   CreateConversationSchema,
   CreateOutcomeSchema,
   CreateThreadSchema,
+  ForResourceSchema,
   LeaveSchema,
   MarkUnreadSchema,
   MemberPageSchema,
@@ -50,8 +52,12 @@ import {
   SharedQuerySchema,
   SnapshotQuerySchema,
   SuccessSchema,
+  SystemChatPageSchema,
+  SystemChatParamSchema,
+  SystemChatQuerySchema,
   ThreadListSchema,
   ThreadParamSchema,
+  ThreadQuerySchema,
   ThreadSchema,
   UpdateConversationSchema,
   UpdateMemberSchema,
@@ -60,7 +66,6 @@ import {
 import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
 
-const context = (c: Context<AuthContext>) => ({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) });
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
 const description = (summary: string, schema: z.ZodType) =>
   describeRoute({
@@ -95,6 +100,37 @@ const app = new Hono<AuthContext>()
         chatService.conversations.people({ ...context(c), query: { search, ...(cursor ? { cursor: JSON.stringify(cursor) } : {}) } }),
       );
     },
+  )
+  .get(
+    "/system-chats",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "List visible Spaces and Notebooks with their system chats",
+      ...requiresAuth,
+      description:
+        "Reads at most 100 containers from each owning application with the caller's credential. Pass spacesCursor and notebooksCursor independently. Includes containers without a conversation as conversation: null. Unavailable or unauthorized resources are omitted. Existing summaries count only visible item threads; exact totals may read multiple bounded thread pages.",
+      responses: { 200: jsonResponse(SystemChatPageSchema, "Visible containers and independent source cursors") },
+    }),
+    validator("query", SystemChatQuerySchema, invalidInput),
+    async (c) => respond(c, chatService.systemChats.list({ ...context(c), query: c.req.valid("query") })),
+  )
+  .post(
+    "/system-chats/:resourceType/:resourceId/open",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Open or create a system chat idempotently",
+      ...requiresAuth,
+      description:
+        "Container reader permission read/write/manage (or admin) maps to Chat read/write/admin, capped by the caller's existing credential scopes. The first open creates a participant at the current message head. Chat does not create or edit container access grants. Access decisions expire in Valkey after 60 seconds.",
+      responses: {
+        200: jsonResponse(ConversationSchema, "Opened system conversation"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Container unavailable or not readable"),
+      },
+    }),
+    validator("param", SystemChatParamSchema, invalidInput),
+    async (c) => respond(c, chatService.systemChats.open({ ...context(c), ...c.req.valid("param") })),
   )
   .use("/conversations", auth.requireRole("authenticated"))
   .use("/conversations/*", auth.requireRole("authenticated"))
@@ -208,9 +244,24 @@ const app = new Hono<AuthContext>()
   )
   .get(
     "/conversations/:conversation/threads",
-    description("List all chat threads, including archived threads", ThreadListSchema),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "List chat threads, including archived threads",
+      ...requiresAuth,
+      description:
+        "System chats inspect at most 100 candidate threads per page, ordered by thread ID. Reader visibility, open/done/unread and q filters apply within that page. Follow nextCursor even when items is empty. Names and descriptions come from the item reader. resource.status is the Space column ID, or null for a note; done follows completedAt. Regular chats retain their activity/archive ordering.",
+      responses: {
+        200: jsonResponse(ThreadListSchema, "Authorized thread page"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Conversation not readable"),
+      },
+    }),
     validator("param", ConversationParamSchema, invalidInput),
-    async (c) => respond(c, chatService.threads.list({ ...context(c), conversationId: c.req.valid("param").conversation })),
+    validator("query", ThreadQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.threads.list({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
+      ),
   )
   .post(
     "/conversations/:conversation/threads",
@@ -237,6 +288,34 @@ const app = new Hono<AuthContext>()
         input: c.req.valid("json"),
       });
       return result.ok ? respond(c, ok(result.data.thread), result.data.created ? 201 : 200) : respond(c, result);
+    },
+  )
+  .post(
+    "/conversations/:conversation/threads/for-resource",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Open an item thread idempotently using its reader",
+      ...requiresAuth,
+      description:
+        "Requires container write access and a successful item reader. The item's reader-provided parent must match this system chat. Repeated calls return the same thread without a thread_created message. Manual create, rename, archive and member edits are refused for system chats.",
+      responses: {
+        200: jsonResponse(ThreadSchema, "Created or existing item thread"),
+        403: jsonResponse(z.object({ code: z.literal("FORBIDDEN"), message: z.string() }), "Container write permission required"),
+        404: jsonResponse(
+          z.object({ code: z.literal("NOT_FOUND"), message: z.string() }),
+          "Container or item not readable, or item belongs elsewhere",
+        ),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", ForResourceSchema, invalidInput),
+    async (c) => {
+      const result = await chatService.threads.forResource({
+        ...context(c),
+        conversationId: c.req.valid("param").conversation,
+        input: c.req.valid("json"),
+      });
+      return result.ok ? respond(c, ok(result.data.thread)) : respond(c, result);
     },
   )
   .patch(

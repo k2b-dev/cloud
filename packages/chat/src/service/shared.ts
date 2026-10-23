@@ -11,6 +11,7 @@ import {
   SharedQuerySchema,
 } from "./contracts";
 import { type MessageRow, messageViews } from "./message-store";
+import { visibleMessageCondition } from "./thread-access";
 import { findThread, threadNotFound } from "./threads";
 
 // A sequence alone would skip items when a page ends inside a message. Positions are stable across kind filters:
@@ -43,10 +44,11 @@ const list = async (
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
-    const thread = query.thread && query.thread !== "general" ? await findThread(db, allowed.data.id, query.thread) : null;
+    const thread = query.thread && query.thread !== "general" ? await findThread(db, allowed.data.id, query.thread, input) : null;
     if (query.thread && query.thread !== "general" && !thread) return threadNotFound(input);
     if (query.kind === "images" || query.kind === "documents") return ok({ items: [], nextCursor: null });
-    const threadFilter = query.thread === undefined ? db`true` : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
+    const visibility = await visibleMessageCondition(db, input, allowed.data.id);
+    const threadFilter = query.thread === undefined ? visibility : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
     const kindFilter =
       query.kind === "elements"
         ? db`refs <> '[]'::jsonb`

@@ -23,7 +23,9 @@ import {
   UNREAD_CAP,
 } from "./contracts";
 import { chatLive } from "./live";
+import { visibleMessageCondition, visibleThreadIds } from "./thread-access";
 import { threadStates } from "./thread-state";
+import { findThread } from "./threads";
 
 // PostgreSQL's largest bigint keeps the optional mark out of the minimum.
 export const readStartSql = (db: typeof sql) =>
@@ -75,9 +77,18 @@ const update = async (
   const [row] = await db<ReadProjection[]>`${unreadQuery(db, context.accessSubject, [id])}`;
   if (!row) throw new Error("Read state has no conversation");
   const state = projectRead(row);
+  const visibleIds = await visibleThreadIds(db, context, id);
+  if (visibleIds !== null) {
+    const states = await threadStates(db, context.accessSubject, id, visibleIds);
+    state.unread = Math.min(
+      UNREAD_CAP,
+      states.reduce((sum, thread) => sum + thread.unread, 0),
+    );
+    state.threads = visibleIds.length;
+  }
   if (!state.read) throw new Error("Read update has no participant");
   const threads = touched.length
-    ? (await threadStates(db, context.accessSubject, id))
+    ? (await threadStates(db, context.accessSubject, id, visibleIds ?? undefined))
         .filter((thread) => thread.id !== null && touched.includes(thread.id))
         .map((thread) => ({
           id: thread.short_id!,
@@ -90,6 +101,9 @@ const update = async (
 };
 const publish = async (db: typeof sql, context: ChatContext, data: z.infer<typeof ReadUpdateSchema>) => {
   if (context.accessSubject.type !== "user") return false;
+  const [conversation] = await db<{ kind: string }[]>`SELECT kind FROM chat.conversations WHERE short_id = ${data.conversationId}`;
+  // Personal channels cannot reauthorize the container or item for each receiver's credential.
+  if (conversation?.kind === "system") return false;
   await chatLive.publish(db, { key: `p:${context.accessSubject.userId}`, data: { type: "read", ...data } });
   return true;
 };
@@ -108,7 +122,7 @@ const lockParticipant = (db: typeof sql, context: ChatContext, id: string) => {
 // Opening creates the row at the head; a first read creates it at the read seq (V5 rule 2).
 const createParticipant = async (db: typeof sql, context: ChatContext, id: string, seq?: number) => {
   const self = subjectPrincipal(context.accessSubject);
-  const position = seq === undefined ? db`seq_head` : db`LEAST(${seq}, seq_head)`;
+  const position = seq === undefined ? db`seq_head` : db`CASE WHEN kind = 'system' THEN seq_head ELSE LEAST(${seq}, seq_head) END`;
   const inserted = await db`INSERT INTO chat.participants (conversation_id, principal_type, principal_id, origin, joined_seq, last_read_seq)
     SELECT id, ${self.type}, ${self.id}::uuid, 'ondemand', ${position}, ${seq === undefined ? db`NULL` : position}
     FROM chat.conversations WHERE id = ${id}::uuid
@@ -128,11 +142,12 @@ const parse = <T>(schema: z.ZodType<T>, input: unknown, context: ChatContext): R
 type Input = ChatContext & { conversationId: string };
 const advanceThreads = async (db: typeof sql, context: ChatContext, id: string, seq: number, thread: string) => {
   const self = subjectPrincipal(context.accessSubject);
+  const ids = await visibleThreadIds(db, context, id);
   return db<
     { thread_id: string }[]
   >`INSERT INTO chat.thread_reads AS tr (principal_type, principal_id, conversation_id, thread_id, last_read_seq)
     SELECT ${self.type}, ${self.id}::uuid, t.conversation_id, t.id, ${seq} FROM chat.threads t
-    WHERE t.conversation_id = ${id}::uuid AND ${thread === "all" ? db`true` : db`t.short_id = ${thread}`}
+    WHERE t.conversation_id = ${id}::uuid AND ${ids ? db`t.id = ANY(${toPgUuidArray(ids)}::uuid[])` : db`true`} AND ${thread === "all" ? db`true` : db`t.short_id = ${thread}`}
     ON CONFLICT (principal_type, principal_id, thread_id) DO UPDATE SET
       last_read_seq = GREATEST(COALESCE(tr.last_read_seq, EXCLUDED.last_read_seq), EXCLUDED.last_read_seq),
       unread_from_seq = CASE WHEN EXCLUDED.last_read_seq >= tr.unread_from_seq THEN
@@ -149,7 +164,7 @@ const read = async (input: Input & { input: unknown }) => {
     if (!allowed.ok) return allowed;
     const selector = parsed.data.thread;
     if (selector !== "general" && selector !== "all") {
-      const [thread] = await db`SELECT id FROM chat.threads WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${selector}`;
+      const thread = await findThread(db, allowed.data.id, selector, input);
       if (!thread) return fail({ code: "NOT_FOUND", status: 404, message: messages(input).threadNotFound });
     }
     const { row, created } = await ensure(db, input, allowed.data.id, parsed.data.seq);
@@ -186,21 +201,24 @@ const markUnread = async (input: Input & { input: unknown }) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
     const self = subjectPrincipal(input.accessSubject);
+    const visibility = await visibleMessageCondition(db, input, allowed.data.id);
     type MarkTarget = { seq: string | bigint; thread_id: string | null };
     const [message] = parsed.data.message
       ? await db<MarkTarget[]>`SELECT seq, thread_id FROM chat.messages
-          WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${parsed.data.message}`
+          WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${parsed.data.message} AND ${visibility}`
       : await db<MarkTarget[]>`SELECT seq, thread_id FROM (
           (SELECT seq, thread_id, 0 AS priority FROM chat.messages
             WHERE conversation_id = ${allowed.data.id}::uuid AND thread_id IS NULL AND kind = 'text'
               AND NOT (author_type = ${self.type} AND author_id = ${self.id}::uuid) ORDER BY seq DESC LIMIT 1)
           UNION ALL
           (SELECT seq, thread_id, 1 AS priority FROM chat.messages
-            WHERE conversation_id = ${allowed.data.id}::uuid AND kind = 'text'
+            WHERE conversation_id = ${allowed.data.id}::uuid AND kind = 'text' AND ${visibility}
               AND NOT (author_type = ${self.type} AND author_id = ${self.id}::uuid) ORDER BY seq DESC LIMIT 1)
         ) latest ORDER BY priority LIMIT 1`;
     if (parsed.data.message && !message) return fail({ code: "NOT_FOUND", status: 404, message: messages(input).messageNotFound });
     const { row, created } = await ensure(db, input, allowed.data.id);
+    if (allowed.data.kind === "system" && Number(message?.seq ?? row.seq_head) <= Number(row.joined_seq))
+      return ok(await update(db, input, allowed.data.id));
     if (message?.thread_id) {
       const [thread] = await db<{ last_read_seq: string | bigint | null; unread_from_seq: string | bigint | null }[]>`
         SELECT last_read_seq, unread_from_seq FROM chat.thread_reads WHERE thread_id = ${message.thread_id}::uuid
@@ -234,7 +252,7 @@ export const openParticipant = async (input: Input) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
     const created = await createParticipant(db, input, allowed.data.id);
-    if (created) published = await publish(db, input, await update(db, input, allowed.data.id));
+    if (created && allowed.data.kind !== "system") published = await publish(db, input, await update(db, input, allowed.data.id));
     return ok();
   });
   if (result.ok && published) chatLive.wake();
@@ -248,13 +266,35 @@ const readAll = async (input: ChatContext & { input: unknown }): Promise<Result<
   if (capPermission("read", input.actor) === "none") return ok({ outcome: "done", marked: 0, more: false });
   const result = await sql.begin(async (db): Promise<Result<z.infer<typeof ReadAllOutcomeSchema>>> => {
     const self = subjectPrincipal(input.accessSubject);
-    const candidates = (limit: number) => db<{ id: string }[]>`SELECT c.id FROM chat.conversations c
-      JOIN chat.participants p ON p.conversation_id = c.id AND p.principal_type = ${self.type} AND p.principal_id = ${self.id}::uuid
-      WHERE EXISTS (SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
-        WHERE ca.conversation_id = c.id AND ${readableMemberCondition(input.accessSubject, bound.data, db)})
-      AND EXISTS (SELECT 1 FROM (${threadStates(db, input.accessSubject, db`c.id`)}) states
-        WHERE states.unread > 0 OR states.unread_from_seq IS NOT NULL)
-      ORDER BY c.last_activity_at DESC, c.short_id DESC LIMIT ${limit}`;
+    const candidates = async (limit: number) => {
+      const visible: { id: string }[] = [];
+      let after: { at: string; id: string } | null = null;
+      for (;;) {
+        input.caller?.signal?.throwIfAborted();
+        const rows: { id: string; short_id: string; kind: string; cursor_at: string }[] = await db`SELECT c.id, c.short_id, c.kind,
+          to_char(c.last_activity_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at FROM chat.conversations c
+          JOIN chat.participants p ON p.conversation_id = c.id AND p.principal_type = ${self.type} AND p.principal_id = ${self.id}::uuid
+          WHERE ${after ? db`(c.last_activity_at, c.short_id) < (${after.at}::timestamptz, ${after.id})` : db`true`} AND ${bound.data ? db`c.short_id = ${bound.data}` : db`true`}
+          AND (c.kind = 'system' OR EXISTS (SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+            WHERE ca.conversation_id = c.id AND ${readableMemberCondition(input.accessSubject, bound.data, db)}))
+          AND EXISTS (SELECT 1 FROM (${threadStates(db, input.accessSubject, db`c.id`)}) states
+            WHERE states.unread > 0 OR states.unread_from_seq IS NOT NULL)
+          ORDER BY c.last_activity_at DESC, c.short_id DESC LIMIT ${READ_ALL_BATCH}`;
+        for (const row of rows) {
+          if (row.kind === "system") {
+            const allowed = await requireConversation({ ...input, conversationId: row.short_id, required: "read" }, db);
+            if (!allowed.ok) continue;
+            const ids = await visibleThreadIds(db, input, row.id);
+            const states = await threadStates(db, input.accessSubject, row.id, ids ?? undefined);
+            if (!states.some((state) => state.unread > 0 || state.unread_from_seq !== null)) continue;
+          }
+          visible.push({ id: row.id });
+          if (visible.length === limit) return visible;
+        }
+        if (rows.length < READ_ALL_BATCH) return visible;
+        after = { at: rows.at(-1)!.cursor_at, id: rows.at(-1)!.short_id };
+      }
+    };
     const batch = await candidates(parsed.data.confirmed ? READ_ALL_BATCH : READ_ALL_CONFIRM_FROM);
     if (!parsed.data.confirmed && batch.length >= READ_ALL_CONFIRM_FROM) return ok({ outcome: "confirm" });
     let marked = 0;

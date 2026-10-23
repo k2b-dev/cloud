@@ -20,14 +20,14 @@ export const reconcile = async (run: { signal: AbortSignal; heartbeat: () => unk
   let cursor: string | null = null;
   while (!run.signal.aborted) {
     const rows: { id: string }[] = await sql<{ id: string }[]>`SELECT id FROM chat.conversations
-      WHERE ${cursor ? sql`id > ${cursor}::uuid` : sql`true`} ORDER BY id LIMIT ${BATCH_SIZE}`;
+      WHERE kind = 'chat' AND ${cursor ? sql`id > ${cursor}::uuid` : sql`true`} ORDER BY id LIMIT ${BATCH_SIZE}`;
     if (!rows.length) break;
     for (const entry of rows) {
       if (run.signal.aborted) break;
       try {
         const changed = await sql.begin(async (db) => {
           const [row] = await db<ConversationRow[]>`SELECT * FROM chat.conversations WHERE id = ${entry.id}::uuid FOR UPDATE`;
-          if (!row) return null;
+          if (!row || row.kind === "system") return null;
           // Deleted direct members stay as markers for Former account in derived titles.
           // Rows may therefore belong to deleted accounts; every chat.participants reader (fan-out, read receipts, counts, notifications) must apply the access condition or join auth.users.
           const removed = await db<

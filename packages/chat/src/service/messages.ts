@@ -22,6 +22,7 @@ import { conversations } from "./conversations";
 import { chatLive } from "./live";
 import { appendMessage, type MessageRow, messageViews } from "./message-store";
 import { openParticipant } from "./read-state";
+import { canReadThread, visibleMessageCondition, visibleThreadIds } from "./thread-access";
 import { threadStates } from "./thread-state";
 import { findThread, threadNotFound, threads } from "./threads";
 
@@ -51,6 +52,7 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
   if (!allowed.ok) return allowed;
   const data = parsed.data;
   const found = await existing(sql, allowed.data.id, input, data.clientId);
+  if (found && !(await canReadThread(sql, input, found.thread_id))) return threadNotFound(input);
   if (found) return ok({ message: (await messageViews(sql, [found], input.conversationId, input.locale))[0]!, created: false });
   const author = subjectPrincipal(input.accessSubject);
   const identifier = `${author.type}:${author.id}`;
@@ -76,6 +78,7 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
     if (!current.ok) return current;
     // A concurrent retry of the same clientId may have committed while this one waited for the lock.
     const retry = await existing(db, current.data.id, input, data.clientId);
+    if (retry && !(await canReadThread(db, input, retry.thread_id))) return threadNotFound(input);
     if (retry) return ok({ message: (await messageViews(db, [retry], input.conversationId, input.locale))[0]!, created: false });
     let threadId: string | null = null;
     let replyToSeq: string | bigint | undefined;
@@ -88,11 +91,12 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
       replyToSeq = original.seq;
     }
     if (data.thread) {
-      const thread = await findThread(db, current.data.id, data.thread);
+      const thread = await findThread(db, current.data.id, data.thread, input);
       if (!thread) return threadNotFound(input);
       if (data.replyTo && thread.id !== threadId) return fail(err.badInput(catalog(input).invalidInput));
       threadId = thread.id;
     }
+    if (!(await canReadThread(db, input, threadId))) return threadNotFound(input);
     if (threadId) {
       const [thread] = await db<
         { archived_at: Date | null }[]
@@ -120,9 +124,10 @@ const list = async (input: Input & { query?: unknown }) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
     const query = parsed.data;
-    const thread = query.thread && query.thread !== "general" ? await findThread(db, allowed.data.id, query.thread) : null;
+    const thread = query.thread && query.thread !== "general" ? await findThread(db, allowed.data.id, query.thread, input) : null;
     if (query.thread && query.thread !== "general" && !thread) return threadNotFound(input);
-    const filter = query.thread === undefined ? db`true` : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
+    const visibility = await visibleMessageCondition(db, input, allowed.data.id);
+    const filter = query.thread === undefined ? visibility : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
     const rows = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid
       AND ${filter}
       AND ${query.before !== undefined ? db`seq < ${query.before}` : query.after !== undefined ? db`seq > ${query.after}` : db`true`}
@@ -153,15 +158,17 @@ const snapshot = async (
     const conversation = await conversations.get(input, db);
     if (!conversation.ok) return conversation;
     const selector = parsed.data.thread;
-    const thread = selector && selector !== "general" ? await findThread(db, allowed.data.id, selector) : null;
+    const thread = selector && selector !== "general" ? await findThread(db, allowed.data.id, selector, input) : null;
     if (selector && selector !== "general" && !thread) return threadNotFound(input);
-    const filter = selector === undefined ? db`true` : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
+    const visibility = await visibleMessageCondition(db, input, allowed.data.id);
+    const filter = selector === undefined ? visibility : thread ? db`thread_id = ${thread.id}::uuid` : db`thread_id IS NULL`;
     const id = MessageIdSchema.safeParse(input.messageId);
     const [target] = id.success
       ? await db<{ short_id: string; seq: bigint | string }[]>`SELECT short_id, seq FROM chat.messages
           WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${id.data} AND ${filter}`
       : [];
-    const states = await threadStates(db, input.accessSubject, allowed.data.id);
+    const visibleIds = await visibleThreadIds(db, input, allowed.data.id);
+    const states = await threadStates(db, input.accessSubject, allowed.data.id, visibleIds ?? undefined);
     const hasThreads = states.some((state) => state.id !== null);
     const starts = states
       .filter((state) => state.unread > 0 && (selector === undefined || state.id === (thread?.id ?? null)))
@@ -191,7 +198,7 @@ const snapshot = async (
       ORDER BY seq DESC LIMIT ${MESSAGE_PAGE_SIZE}`;
     rows.reverse();
     const seqHead = Number(allowed.data.seq_head);
-    const list = await threads.list(input, db);
+    const list = await threads.list({ ...input, selectedThread: thread?.short_id }, db);
     if (!list.ok) return list;
     return ok({
       conversation: conversation.data,
@@ -215,7 +222,7 @@ const get = async (input: Input & { messageId: string }) => {
   const [row] = await sql<
     MessageRow[]
   >`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${parsed.data}`;
-  return row
+  return row && (await canReadThread(sql, input, row.thread_id))
     ? ok((await messageViews(sql, [row], input.conversationId, input.locale))[0]!)
     : fail({ code: "NOT_FOUND", message: catalog(input).messageNotFound, status: 404 });
 };
@@ -225,10 +232,13 @@ const changes = async (input: Input & { query: unknown }) => {
   return sql.begin("ISOLATION LEVEL REPEATABLE READ READ ONLY", async (db) => {
     const allowed = await requireConversation({ ...input, required: "read" }, db);
     if (!allowed.ok) return allowed;
+    const visibility = await visibleMessageCondition(db, input, allowed.data.id);
     const afterRev = parsed.data.afterRev;
     const head = Number(allowed.data.rev);
     if (afterRev > head) return fail({ code: "RESYNC_REQUIRED", status: 409, message: catalog(input).resyncRequired });
-    const rows = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid AND rev > ${afterRev}
+    const rows = await db<
+      MessageRow[]
+    >`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid AND rev > ${afterRev} AND ${visibility}
       ORDER BY rev LIMIT ${CHANGES_PAGE_SIZE}`;
     const conversation = Number(allowed.data.changed_rev) > afterRev ? await conversations.get(input, db) : null;
     if (conversation && !conversation.ok) return conversation;
