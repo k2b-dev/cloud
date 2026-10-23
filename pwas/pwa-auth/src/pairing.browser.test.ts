@@ -1,28 +1,48 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir } from "node:fs/promises";
-import type { Browser, Page } from "playwright";
+import type { Browser, BrowserContext, BrowserContextOptions, Page } from "playwright";
 import { APP_APPROVAL_LIMITS, APP_APPROVAL_PROTOCOL } from "../../../packages/cloud/src/contracts/app-approval";
 import { launchBrowser } from "../../../packages/ui/test/browser";
 import { pairingPage } from "./pairing.browser-harness";
 
 let browser: Browser;
+const contexts = new Map<number, BrowserContext>();
+const viewOptions = (width: number): BrowserContextOptions => ({
+  viewport: { width, height: 900 },
+  hasTouch: true,
+  isMobile: width < 768,
+  colorScheme: "light",
+  // These assertions cover flow state, not entrance animations; use the supported reduced-motion presentation.
+  reducedMotion: "reduce",
+  userAgent:
+    width < 768
+      ? "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Version/18.6 Mobile/15E148 Safari/604.1"
+      : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Gecko/20100101 Firefox/143.0",
+});
 const built = await pairingPage();
 beforeAll(async () => {
   browser = await launchBrowser();
-  // Warm WebKit's first page and native dialog inside the launch hook, as the other PWA browser suites do.
-  const warm = await browser.newPage();
-  try {
-    await warm.route("https://login.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: built.html }));
-    await warm.goto("https://login.example.test/");
-    await warm.clock.install({ time: new Date("2026-10-23T13:00:00.000Z") });
-    await warm.addScriptTag({ content: built.script });
-    await open(warm);
-    await warm.locator("dialog[open]").waitFor();
-  } finally {
-    await warm.close();
+  // Reuse a context per viewport, but a fresh page and in-memory store per test. Warm the first
+  // native dialog in each context here; WebKit's first mobile rendering is part of launch setup.
+  for (const width of [390, 834, 1440]) {
+    const context = await browser.newContext(viewOptions(width));
+    contexts.set(width, context);
+    const warm = await context.newPage();
+    try {
+      await warm.route("https://login.example.test/**", (route) => route.fulfill({ contentType: "text/html", body: built.html }));
+      await warm.goto("https://login.example.test/");
+      await warm.clock.install({ time: new Date("2026-10-23T13:00:00.000Z") });
+      await warm.addScriptTag({ content: built.script });
+      await open(warm);
+      await warm.locator("dialog[open]").waitFor();
+      await warm.waitForFunction(() => document.getAnimations().every((animation) => animation.playState !== "running"));
+    } finally {
+      await warm.close();
+    }
   }
 }, 30_000);
 afterAll(async () => {
+  await Promise.all([...contexts.values()].map((context) => context.close()));
   await browser?.close();
 });
 const open = (page: Page, options: { label?: string; empty?: boolean } = {}) =>
@@ -37,16 +57,7 @@ async function fixture(
     state: { offline: boolean; failClaim: boolean; savedElsewhere: boolean; claims: number; confirmed: boolean },
   ) => Promise<void>,
 ) {
-  const context = await browser.newContext({
-    viewport: { width, height: 900 },
-    hasTouch: true,
-    isMobile: width < 768,
-    colorScheme: "light",
-    userAgent:
-      width < 768
-        ? "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 Version/18.6 Mobile/15E148 Safari/604.1"
-        : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Gecko/20100101 Firefox/143.0",
-  });
+  const context = contexts.get(width)!;
   const page = await context.newPage();
   const state = { offline: false, failClaim: false, savedElsewhere: false, claims: 0, confirmed: false };
   let claimed = false;
@@ -99,7 +110,7 @@ async function fixture(
     expect(errors).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
   } finally {
-    await context.close();
+    await page.close();
   }
 }
 
@@ -143,15 +154,23 @@ test("a claim lost before Cloud receives it resumes with its saved key", async (
   });
 });
 
-test("reopening reports unfinished enrollment and reuses its names and key", async () => {
-  await fixture(390, async (page, state) => {
+test("reopening reports an unfinished enrollment", async () => {
+  await fixture(390, async (page) => {
     await open(page);
-    await page.getByLabel("Bezeichnung", { exact: false }).first().fill("Privat");
     await page.getByRole("button", { name: "Cloud vertrauen und koppeln" }).click();
     await page.locator(".auth-comparison").waitFor();
     await page.getByRole("button", { name: "Schließen", exact: true }).first().click();
     await open(page, { empty: true });
     await page.getByText("Auf diesem Gerät ist eine offene Kopplung gespeichert.", { exact: false }).waitFor();
+  });
+});
+
+test("reopening the same link reuses the saved enrollment instead of claiming again", async () => {
+  await fixture(390, async (page, state) => {
+    await open(page);
+    await page.getByLabel("Bezeichnung", { exact: false }).first().fill("Privat");
+    await page.getByRole("button", { name: "Cloud vertrauen und koppeln" }).click();
+    await page.locator(".auth-comparison").waitFor();
     await page.getByRole("button", { name: "Schließen", exact: true }).first().click();
     await open(page, { label: "Neuer Instanzname" });
     await page.getByRole("button", { name: "Cloud vertrauen und koppeln" }).click();
