@@ -100,8 +100,8 @@ for (const width of [390, 768, 1440])
         expect(await tab.getByText("Manage members", { exact: true }).count()).toBe(1);
         expect(await tab.getByText("No app ID", { exact: true }).count()).toBe(0);
         await tab.getByRole("button", { name: "Add", exact: true }).click();
-        await tab.getByRole("dialog").getByRole("combobox").fill("Release");
-        await tab.getByRole("option", { name: /Release integration/ }).click();
+        await tab.getByRole("dialog").getByPlaceholder("Search members…").fill("Release");
+        await tab.getByRole("button", { name: /Release integration/ }).click();
         await tab.getByText("Release integration", { exact: true }).waitFor();
         expect(writes[0]).toEqual({ method: "POST", body: { type: "service_account", id: "22222222-2222-4222-8222-222222222222" } });
         await tab.getByRole("button", { name: "Remove Nightly helper", exact: true }).click();
