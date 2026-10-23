@@ -502,6 +502,7 @@ else {
 
   test("an old sign-in leads to re-authentication instead of an error", async () => {
     const dom = createDomTestHarness();
+    const navigate = spyOn(dom.window.location, "assign").mockImplementation(() => {});
     const fetch = mockFetch((method, path) =>
       method === "POST" && path === "/api/auth/pwa/v1/pairings"
         ? Response.json({ code: "REAUTHENTICATE", message: "Sign in again to pair a phone." }, { status: 403 })
@@ -512,7 +513,13 @@ else {
       button(dom, "Pair a phone")!.click();
       await waitFor(() => Boolean(button(dom, "Confirm it's you")), "re-authenticate");
       expect(dialogText(dom)).toContain("Pairing a phone needs a recent sign-in.");
+      button(dom, "Confirm it's you")!.click();
+      const url = new URL(String(navigate.mock.calls[0]![0]), "http://localhost");
+      expect(url.pathname).toBe("/auth/login");
+      expect(url.searchParams.has("credential")).toBe(false);
+      expect(url.searchParams.get("redirectTo")).toBe("/me/app?pair=1&reauthenticate=1");
     } finally {
+      navigate.mockRestore();
       modules!.ui.dialogCore.close();
       dispose();
       fetch.restore();

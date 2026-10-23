@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-22
+updated: 2026-10-23
 ---
 
 # Lessons learned
@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A continuation overrides a remembered choice | An identity-confirmation link forces the fallback credential, so the same login page ignores the browser's remembered app choice. | Tests: Core `approval-dialogs.browser.test.ts` follows the real confirmation redirect; `page.browser.test.ts` compares app and email selection on normal and confirmation visits, including alternate-method links. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |

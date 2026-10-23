@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import * as cloud from "@k2b/cloud";
@@ -77,18 +77,21 @@ afterAll(async () => {
 });
 
 /** The server-rendered sign-in document. */
-const serverDocument = async (query: string, locale: string) => {
+const serverDocument = async (query: string, locale: string, cookie = "") => {
   const app = new Hono().get("/auth/login", ...handler);
-  const response = await app.request(`https://cloud.example.test/auth/login${query}`, { headers: { Cookie: `cloud.locale=${locale}` } });
+  const response = await app.request(`https://cloud.example.test/auth/login${query}`, {
+    headers: { Cookie: `cloud.locale=${locale}; ${cookie}` },
+  });
   expect(response.status).toBe(200);
   return await response.text();
 };
 
 /** The server-rendered sign-in page body. */
-const body = async (query: string, locale: string) => /<body[^>]*>([\s\S]*)<\/body>/.exec(await serverDocument(query, locale))![1]!;
+const body = async (query: string, locale: string, cookie?: string) =>
+  /<body[^>]*>([\s\S]*)<\/body>/.exec(await serverDocument(query, locale, cookie))![1]!;
 
 type View = { width: number; height: number; touch: boolean };
-type Options = { locale?: "en" | "de"; dark?: boolean; defaultFontSize?: number };
+type Options = { locale?: "en" | "de"; dark?: boolean; defaultFontSize?: number; cookie?: string };
 /** A tab with the server-rendered page as it arrives, before any page script runs; the caller closes it. */
 const open = async (view: View, query: string, options: Options = {}) => {
   const tab = await browser.newPage({
@@ -104,10 +107,13 @@ const open = async (view: View, query: string, options: Options = {}) => {
     await session.send("Page.setFontSizes", { fontSizes: { standard: options.defaultFontSize } });
   }
   await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
+  await tab.route(`${origin}/branding/logo`, (route) =>
+    route.fulfill({ path: resolve(import.meta.dir, "../../../../cloud/public/logo.svg") }),
+  );
   await tab.setContent(
-    `<!doctype html><html lang="en" class="${options.dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<!doctype html><html lang="en" class="${options.dark ? "dark" : "light"}"><head><base href="${origin}/"><meta name="viewport" content="width=device-width, initial-scale=1">` +
       `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
-      `<body class="k2b-ui">${await body(query, options.locale ?? "en")}</body></html>`,
+      `<body class="k2b-ui">${await body(query, options.locale ?? "en", options.cookie)}</body></html>`,
   );
   await tab.evaluate(() => document.fonts.ready);
   return tab;
@@ -447,3 +453,194 @@ describe("sign-in page in a browser", () => {
     30_000,
   );
 });
+
+test("re-authentication opens the same remembered credential as normal sign-in", async () => {
+  const redirectTo = "/me/security?reauthenticate=1&pairDevice=example-user";
+  const query = `?${new URLSearchParams({ redirectTo })}`;
+  for (const [name, cookie, button] of [
+    ["app", "login_method=ipa; login_freeipa_app=1", "Sign in with app"],
+    ["email", "login_method=guest", "Send sign-in link"],
+    ["login-email", "login_method=login; login_email=1", "Send sign-in link"],
+    ["login-app", "login_method=login", "Sign in with app"],
+  ]) {
+    for (const view of [phone, desktop]) {
+      for (const [state, search] of [
+        ["normal", ""],
+        ["reauth", query],
+      ]) {
+        const tab = await open(view, search!, { cookie });
+        try {
+          expect(await tab.locator("main button[type=submit]").textContent(), `${name} ${state}`).toContain(button!);
+          expect(await tab.locator(".auth-passkey button").count()).toBe(1);
+          expect(await tab.locator(".auth-passkey").textContent()).toContain("Use passkey");
+          const alternative = tab.locator(".auth-login-alternative");
+          expect(await alternative.count()).toBe(1);
+          const href = new URL((await alternative.getAttribute("href"))!, origin);
+          expect(href.searchParams.get("credential")).toBe(button === "Sign in with app" ? "legacy" : "app");
+          expect(href.searchParams.get("redirectTo")).toBe(state === "reauth" ? redirectTo : null);
+          if (state === "reauth") expect(await tab.getByRole("heading", { name: "Confirm identity" }).count()).toBe(1);
+          const shots = process.env.CLOUD_REAUTH_SHOTS;
+          if (shots && state === "reauth" && (name === "login-app" || name === "email")) {
+            const file = `${name === "login-app" ? "app" : name}-reauth-light-${view.width}.png`;
+            mkdirSync(join(shots, "after"), { recursive: true });
+            mkdirSync(join(shots, "before"), { recursive: true });
+            await tab.screenshot({ path: join(shots, "after", file), fullPage: true });
+            // The old confirmation URL forced the still-supported legacy alternative.
+            const previous = await open(view, `${query}&credential=legacy`, { cookie });
+            try {
+              await previous.screenshot({ path: join(shots, "before", file), fullPage: true });
+            } finally {
+              await previous.close();
+            }
+          }
+        } finally {
+          await tab.close();
+        }
+      }
+    }
+  }
+}, 60_000);
+
+test("email-link completion remembers email and a later app approval remembers the app", async () => {
+  const ui = resolve(import.meta.dir, "../../../../ui");
+  const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
+  const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
+  const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
+  const built = await Bun.build({
+    entrypoints: [resolve(import.meta.dir, "remembered-credential.browser-harness.tsx")],
+    target: "browser",
+    format: "iife",
+    conditions: ["browser"],
+    plugins: [
+      {
+        name: "remembered-credential",
+        setup(builder) {
+          builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
+            const result = await transformAsync(await Bun.file(path).text(), {
+              filename: path,
+              babelrc: false,
+              configFile: false,
+              presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
+            });
+            return { contents: result.code, loader: "js" };
+          });
+        },
+      },
+    ],
+  });
+  if (!built.success) throw new AggregateError(built.logs, "Could not build sign-in fixture");
+  const script = await built.outputs[0]!.text();
+  const context = await browser.newContext();
+  const tab = await context.newPage();
+  const browserErrors: string[] = [];
+  tab.on("pageerror", (error) => browserErrors.push(error.message));
+  await tab.clock.install({ time: new Date("2026-10-23T12:00:00Z") });
+  const redirectTo = "/me/security?reauthenticate=1";
+  const query = new URLSearchParams({ redirectTo });
+  const verified: string[] = [];
+  let rejectAppCompletion = true;
+  let rejectEmail = true;
+  let started = 0;
+  const consumedProofs = new Set<string>();
+  try {
+    await tab.route(`${origin}/**`, async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/auth/login")
+        return route.fulfill({
+          contentType: "text/html; charset=utf-8",
+          body: await serverDocument(new URL(route.request().url()).search, "en", route.request().headers().cookie),
+        });
+      if (path === "/fixture")
+        return route.fulfill({
+          contentType: "text/html",
+          body: `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>`,
+        });
+      if (path === "/fixture.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: script });
+      if (path.endsWith("/verify-token") || path.endsWith("/login/complete")) {
+        verified.push(path);
+        const submitted: unknown = route.request().postDataJSON();
+        const proof =
+          submitted && typeof submitted === "object"
+            ? "token" in submitted
+              ? submitted.token
+              : "requestId" in submitted
+                ? submitted.requestId
+                : undefined
+            : undefined;
+        if (typeof proof !== "string") throw new Error("Missing fixture proof");
+        expect(consumedProofs.has(proof)).toBe(false);
+        consumedProofs.add(proof);
+        expect(route.request().headers()["x-cloud-reauthenticate"]).toBe("1");
+        if (path.endsWith("/verify-token") && rejectEmail)
+          return route.fulfill({ status: 403, json: { code: "ACCOUNT_MISMATCH", message: "Use the original account." } });
+        if (path.endsWith("/login/complete") && rejectAppCompletion)
+          return route.fulfill({ status: 403, json: { code: "ACCOUNT_MISMATCH" } });
+        return path.endsWith("/verify-token")
+          ? route.fulfill({ json: { user: { id: "fixture-user", provider: "local", profile: "user" } } })
+          : route.fulfill({ status: 204 });
+      }
+      if (path.endsWith("/login/start"))
+        return route.fulfill({
+          json: {
+            requestId: `00000000-0000-4000-8000-${String(++started).padStart(12, "0")}`,
+            browserSecret: "a".repeat(42) + "A",
+            comparison: "123456",
+            expiresAt: "2026-10-23T12:05:00Z",
+            pollAfterSeconds: 5,
+          },
+        });
+      if (path.endsWith("/login/status")) return route.fulfill({ json: { state: "approved", pollAfterSeconds: 5 } });
+      return route.fulfill({ contentType: "text/html", body: "Continued" });
+    });
+    // A clicked email link has no category prop: the verified user supplies it.
+    await tab.goto(`${origin}/fixture?${query}`);
+    await tab.getByRole("link", { name: "Back to sign in", exact: true }).click();
+    await tab.waitForURL("**/auth/login?**");
+    const restarted = new URL(tab.url());
+    expect(restarted.searchParams.get("redirectTo")).toBe(redirectTo);
+    expect(restarted.searchParams.has("token")).toBe(false);
+    expect(await tab.locator(".auth-passkey button").count()).toBe(1);
+    rejectEmail = false;
+    // A newly requested proof for the original account, never reuse the rejected link.
+    await tab.goto(`${origin}/fixture?${query}&token=fixture-new-mail-token`);
+    await tab.waitForURL("**/auth/continue?**").catch(async (error) => {
+      throw new Error(
+        `${error}\nBrowser errors: ${browserErrors.join("; ")}\nPage: ${await tab.locator("body").innerText()}\nCalls: ${verified}`,
+      );
+    });
+    const cookies = async () => (await context.cookies()).map(({ name, value }) => `${name}=${value}`).join("; ");
+    expect(await cookies()).toContain("login_email=1");
+    expect(await cookies()).toContain("login_method=login");
+    const emailPage = await open(phone, `?${query}`, { cookie: await cookies() });
+    try {
+      expect(await emailPage.locator("main button[type=submit]").textContent()).toContain("Send sign-in link");
+    } finally {
+      await emailPage.close();
+    }
+
+    await tab.goto(`${origin}/fixture?${query}&credential=app`);
+    await tab.getByRole("textbox").fill("mira");
+    await tab.getByRole("button", { name: "Sign in with app", exact: true }).click();
+    await tab.getByText("Sign in with the account already open in this browser.", { exact: false }).waitFor();
+    expect(new URL(tab.url()).pathname).toBe("/fixture");
+    expect(await cookies()).toContain("login_email=1");
+    rejectAppCompletion = false;
+    await tab.getByRole("button", { name: "Sign in with app", exact: true }).click();
+    await tab.waitForURL("**/auth/continue?**");
+    expect(await cookies()).not.toContain("login_email=1");
+    const appPage = await open(phone, `?${query}`, { cookie: await cookies() });
+    try {
+      expect(await appPage.getByRole("button", { name: "Sign in with app", exact: true }).count()).toBe(1);
+    } finally {
+      await appPage.close();
+    }
+    expect(verified).toEqual([
+      "/api/auth/verify-token",
+      "/api/auth/verify-token",
+      "/api/auth/app-approval/v1/login/complete",
+      "/api/auth/app-approval/v1/login/complete",
+    ]);
+  } finally {
+    await context.close();
+  }
+}, 60_000);

@@ -45,3 +45,10 @@ test("without configured app sign-in no account type offers the app", () => {
     expect(choose(category, "app", usedApp, false)).toBe(false);
   }
 });
+
+test("Login remembers email only until the app succeeds, and explicit alternatives remain reachable", () => {
+  expect(choose("login", null, "login_email=1")).toBe(false);
+  expect(choose("login", "app", "login_email=1")).toBe(true);
+  expect(choose("login", null, "login_email=0")).toBe(true);
+  expect(choose("freeipa", null, `${usedApp}; login_email=1`)).toBe(true);
+});

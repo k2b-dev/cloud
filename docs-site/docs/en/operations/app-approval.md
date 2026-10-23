@@ -5,7 +5,7 @@ section: Reference
 order: 1277
 description: Pair per-account device keys and approve browser-bound Cloud sign-ins from a separate, multi-cloud authenticator.
 tags: [authentication, accounts, security, api]
-updated: 2026-10-20
+updated: 2026-10-23
 ---
 
 # Integrate an authenticator website
@@ -320,11 +320,23 @@ method: the default follows the selected category, an explicit
 `credential=app` or `credential=legacy` link, and for FreeIPA the
 `login_freeipa_app` cookie. A completed FreeIPA app sign-in sets that cookie in
 the browser and a FreeIPA password sign-in removes it; it names no account.
+For Login, `login_email=1` remembers a successful email link or code instead;
+a later Login app sign-in removes it. Email-link completion derives the category
+from the verified account, including when the link opens in a new tab.
 The category switch remains unchanged. Local accounts retain **Use an email
 link instead**. When FreeIPA opens with the app, the password alternative
 stays available. Passkeys and email-link verification still work. An unpaired
 or unknown account does not get a distinct error: use another existing sign-in
 method if no paired app receives the request.
+
+Identity confirmation uses this same selection, without forcing a credential.
+Its verification requests send `X-Cloud-Reauthenticate: 1`. The header only
+constrains issuance: a valid web session and fresh proof for that same account
+are required. Otherwise completion answers `403 ACCOUNT_MISMATCH` and leaves
+the current session unchanged. Email-link failures offer **Back to sign in**
+with the original destination. Password recovery and emergency admin sign-in
+run outside confirmation; flagged requests answer
+`403 CONFIRMATION_METHOD_UNAVAILABLE` before changing credentials.
 
 The waiting Cloud page displays the comparison code. Open the paired app and
 approve only a request you started whose code matches. The page continues as

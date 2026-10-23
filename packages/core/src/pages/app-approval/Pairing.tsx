@@ -297,7 +297,7 @@ export default function Pairing(props: {
     const target = new URL(returnTo, window.location.origin);
     target.searchParams.set("pairDevice", props.userId);
     target.searchParams.set("reauthenticate", "1");
-    window.location.assign(`/auth/login?${new URLSearchParams({ redirectTo: target.pathname + target.search, credential: "legacy" })}`);
+    window.location.assign(`/auth/login?${new URLSearchParams({ redirectTo: target.pathname + target.search })}`);
   };
   const installStep = () => (
     <>
