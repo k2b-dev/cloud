@@ -32,7 +32,7 @@ const readPdf = async (pdf: Uint8Array) => {
   }
 };
 
-suiteFor("gotenberg")("offline HTML in Gotenberg", () => {
+suiteFor("gotenberg", "valkey")("offline HTML in Gotenberg", () => {
   let trap: GotenbergTrap;
   let config: GotenbergConfig;
 

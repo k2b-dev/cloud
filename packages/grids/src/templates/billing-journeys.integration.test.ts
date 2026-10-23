@@ -168,7 +168,7 @@ const succeeded = (run: { state: unknown; error: unknown }) => expect(run.state,
 
 const pdftotext = Bun.which(process.env.PDFTOTEXT ?? "pdftotext");
 const realPdfJourneyTest =
-  testInfra.database && testInfra.gotenberg && pdftotext
+  testInfra.database && testInfra.gotenberg && testInfra.valkey && pdftotext
     ? journeyTest
     : (name: string, run: () => Promise<void>) => test.skip(name, run, journeyBudget);
 const pdfSkipReason = pdftotext ? "" : " (skipped: Poppler pdftotext is not on PATH; install Poppler or set PDFTOTEXT)";
