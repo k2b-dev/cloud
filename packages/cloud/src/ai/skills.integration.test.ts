@@ -4,6 +4,7 @@ import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { accessRevision } from "../server/services/access-revision";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
+import { userResourceContext } from "./projects.test-fixture";
 import { AiSkillInputError, AiSkillRevisionConflictError, aiSkills } from "./skills";
 import { aiConversations } from "./store";
 
@@ -27,7 +28,7 @@ databaseSuite()("aiSkills (integration)", () => {
     const name = `manual-${crypto.randomUUID()}`;
     const instructions = "Read [Rules](references/rules.md).";
     const skill = await aiSkills.create({
-      subject,
+      subject: userResourceContext(subject),
       name,
       description: "Manual workflow.",
       instructions,
@@ -35,7 +36,7 @@ databaseSuite()("aiSkills (integration)", () => {
       references: [{ path: "references/rules.md", content: "Rules" }],
     });
     const automatic = await aiSkills.create({
-      subject,
+      subject: userResourceContext(subject),
       name: `auto-${crypto.randomUUID()}`,
       description: "Automatic workflow.",
       instructions: "Do work.",
@@ -46,31 +47,35 @@ databaseSuite()("aiSkills (integration)", () => {
       VALUES(${`manual-${crypto.randomUUID()}`},${conversation.id}::uuid,'queued') RETURNING id`;
     try {
       expect(skill.manualOnly).toBe(true);
-      expect((await aiSkills.list(subject)).find((entry) => entry.id === skill.id)?.manualOnly).toBe(true);
-      expect((await aiSkills.list(subject)).find((entry) => entry.id === automatic.id)?.manualOnly).toBe(false);
-      const invocableIds = (await aiSkills.list(subject, { modelInvocableOnly: true })).map((entry) => entry.id);
+      expect((await aiSkills.list(userResourceContext(subject))).find((entry) => entry.id === skill.id)?.manualOnly).toBe(true);
+      expect((await aiSkills.list(userResourceContext(subject))).find((entry) => entry.id === automatic.id)?.manualOnly).toBe(false);
+      const invocableIds = (await aiSkills.list(userResourceContext(subject), { modelInvocableOnly: true })).map((entry) => entry.id);
       expect(invocableIds).toContain(automatic.id);
       expect(invocableIds).not.toContain(skill.id);
-      expect((await aiSkills.search(subject, name)).skills.map((entry) => entry.id)).toContain(skill.id);
-      expect((await aiSkills.search(subject, name, 30, { modelInvocableOnly: true })).skills.map((entry) => entry.id)).not.toContain(
-        skill.id,
+      expect((await aiSkills.search(userResourceContext(subject), name)).skills.map((entry) => entry.id)).toContain(skill.id);
+      expect(
+        (await aiSkills.search(userResourceContext(subject), name, 30, { modelInvocableOnly: true })).skills.map((entry) => entry.id),
+      ).not.toContain(skill.id);
+      await expect(aiSkills.loadForTurn(turn!.id, name, userResourceContext(subject))).rejects.toBeInstanceOf(AiSkillInputError);
+      await expect(aiSkills.loadForTurn(turn!.id, name, userResourceContext(subject))).rejects.toThrow(
+        `Skill "${name}" starts only when the user selects it.`,
       );
-      await expect(aiSkills.loadForTurn(turn!.id, name, subject)).rejects.toBeInstanceOf(AiSkillInputError);
-      await expect(aiSkills.loadForTurn(turn!.id, name, subject)).rejects.toThrow(`Skill "${name}" starts only when the user selects it.`);
       expect(await sql`SELECT * FROM ai.turn_skill_snapshots WHERE turn_id=${turn!.id}::uuid`).toHaveLength(0);
-      const loaded = await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, subject);
+      const loaded = await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, userResourceContext(subject));
       expect(loaded?.instructions).toBe(`Read [Rules](/skills/${name}/references/rules.md).`);
-      expect((await aiSkills.get(skill.id, subject))?.instructions).toBe(instructions);
+      expect((await aiSkills.get(skill.id, userResourceContext(subject)))?.instructions).toBe(instructions);
       const [stored] = await sql<
         { instructions: string }[]
       >`SELECT instructions FROM ai.turn_skill_snapshots WHERE turn_id=${turn!.id}::uuid`;
       expect(stored?.instructions).toBe(instructions);
       expect(loaded?.files.find((file) => file.path.endsWith("/SKILL.md"))?.content).toContain("[Rules](references/rules.md)");
-      expect((await aiSkills.readTurnFile(turn!.id, `${name}/SKILL.md`, subject))?.bytes).toEqual(
+      expect((await aiSkills.readTurnFile(turn!.id, `${name}/SKILL.md`, userResourceContext(subject)))?.bytes).toEqual(
         new TextEncoder().encode(loaded!.files[0]!.content),
       );
-      await expect(aiSkills.loadForTurn(turn!.id, name, subject)).rejects.toThrow("starts only when the user selects it");
-      expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, subject)).toEqual(loaded);
+      await expect(aiSkills.loadForTurn(turn!.id, name, userResourceContext(subject))).rejects.toThrow(
+        "starts only when the user selects it",
+      );
+      expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, userResourceContext(subject))).toEqual(loaded);
     } finally {
       await aiSkills.admin.delete(skill.id);
       await aiSkills.admin.delete(automatic.id);
@@ -83,20 +88,20 @@ databaseSuite()("aiSkills (integration)", () => {
     const userId = await insertUser("authenticated-only");
     const owner = { type: "user" as const, userId };
     const skill = await aiSkills.create({
-      subject: owner,
+      subject: userResourceContext(owner),
       name: `auth-only-${crypto.randomUUID()}`,
       description: "Private skill.",
       instructions: "Private instructions.",
     });
-    const project = await aiProjects.create({ subject: owner, name: "Authenticated project" });
+    const project = await aiProjects.create({ subject: userResourceContext(owner), name: "Authenticated project" });
     const grants = await sql<
       { id: string }[]
     >`INSERT INTO auth.access (permission, authenticated_only) VALUES ('read', false), ('write', false), ('read', false) RETURNING id`;
     try {
       await sql`INSERT INTO ai.skill_access(skill_id, access_id, short_id) VALUES (${skill.id}::uuid, ${grants[0]!.id}::uuid, 'Aut234')`;
       await sql`INSERT INTO ai.project_access(project_id, access_id, short_id) VALUES (${project.id}::uuid, ${grants[1]!.id}::uuid, 'Aut234')`;
-      await aiProjects.createKnowledge(project.id, owner, { title: "Private", content: "Private knowledge" });
-      await aiProjects.writeFile(project.id, owner, {
+      await aiProjects.createKnowledge(project.id, userResourceContext(owner), { title: "Private", content: "Private knowledge" });
+      await aiProjects.writeFile(project.id, userResourceContext(owner), {
         path: "private.txt",
         mediaType: "text/plain",
         bytes: new TextEncoder().encode("Private file"),
@@ -110,7 +115,9 @@ databaseSuite()("aiSkills (integration)", () => {
       expect(await aiProjects.listFiles(project.id, null)).toEqual([]);
       expect(await aiProjects.readFileByPath(project.id, "private.txt", null)).toBeNull();
       expect(await aiProjects.createKnowledge(project.id, null, { title: "Bad", content: "Anonymous" })).toBeNull();
-      await expect(aiSkills.grantAccess(skill.id, owner, { principal: { type: "public" }, permission: "read" })).rejects.toThrow();
+      await expect(
+        aiSkills.grantAccess(skill.id, userResourceContext(owner), { principal: { type: "public" }, permission: "read" }),
+      ).rejects.toThrow();
       await expect(aiSkills.admin.grantAccess(skill.id, { principal: { type: "public" }, permission: "read" })).rejects.toThrow();
       for (let run = 0; run < 2; run++) {
         await migrateCloudAi();
@@ -121,10 +128,14 @@ databaseSuite()("aiSkills (integration)", () => {
         expect(rows.find((row) => row.id === grants[1]!.id)).toMatchObject({ authenticated_only: true, permission: "write" });
         expect(rows.find((row) => row.id === grants[2]!.id)).toMatchObject({ authenticated_only: false, permission: "read" });
       }
-      expect((await aiSkills.listAccess(skill.id, owner))?.find((entry) => entry.shortId === "Aut234")?.principal).toEqual({
+      expect(
+        (await aiSkills.listAccess(skill.id, userResourceContext(owner)))?.find((entry) => entry.shortId === "Aut234")?.principal,
+      ).toEqual({
         type: "authenticated",
       });
-      expect((await aiProjects.listAccess(project.id, owner))?.find((entry) => entry.shortId === "Aut234")?.principal).toEqual({
+      expect(
+        (await aiProjects.listAccess(project.id, userResourceContext(owner)))?.find((entry) => entry.shortId === "Aut234")?.principal,
+      ).toEqual({
         type: "authenticated",
       });
       expect(await aiSkills.get(skill.id, null)).toBeNull();
@@ -145,67 +156,90 @@ databaseSuite()("aiSkills (integration)", () => {
       member = { type: "user" as const, userId: memberId },
       successor = { type: "user" as const, userId: successorId };
     const skill = await aiSkills.create({
-      subject: owner,
+      subject: userResourceContext(owner),
       name: `project-skill-${crypto.randomUUID()}`,
       description: "A reconciliation workflow.",
       instructions: "Reconcile statements.",
     });
-    const project = await aiProjects.create({ subject: owner, name: "Linked skills" });
+    const project = await aiProjects.create({ subject: userResourceContext(owner), name: "Linked skills" });
     const conversation = await aiConversations.createConversation({ ownerUserId: memberId });
     const [turn] = await sql<
       { id: string }[]
     >`INSERT INTO ai.turns(short_id,conversation_id,status) VALUES(${`skill-${crypto.randomUUID()}`},${conversation.id}::uuid,'queued') RETURNING id`;
     try {
-      await aiProjects.grantAccess(project.id, owner, { principal: { type: "user", userId: memberId }, permission: "read" });
-      expect(await aiSkills.linkProject(skill.id, project.id, true, member)).toBe(false);
+      await aiProjects.grantAccess(project.id, userResourceContext(owner), {
+        principal: { type: "user", userId: memberId },
+        permission: "read",
+      });
+      expect(await aiSkills.linkProject(skill.id, project.id, true, userResourceContext(member))).toBe(false);
       expect(
-        (await aiSkills.projectSkills(project.id, owner, { available: true, query: "reconciliation" }))?.items.map((item) => item.id),
+        (await aiSkills.projectSkills(project.id, userResourceContext(owner), { available: true, query: "reconciliation" }))?.items.map(
+          (item) => item.id,
+        ),
       ).toContain(skill.id);
-      expect(await aiSkills.projectSkills(project.id, member, { available: true })).toBeNull();
-      expect(await aiSkills.linkProject(skill.id, project.id, true, owner)).toBe(true);
-      expect((await aiSkills.projectSkills(project.id, owner, { available: true }))?.items).toEqual([]);
-      expect((await aiSkills.projectSkills(project.id, member))?.items).toMatchObject([{ id: skill.id, permission: "read" }]);
-      expect((await aiSkills.get(skill.id, member))?.permission).toBe("read");
-      expect(await aiSkills.get(skill.id, member, "write")).toBeNull();
-      expect(await aiSkills.listAccess(skill.id, member)).toBeNull();
-      expect((await aiSkills.search(member, "reconciliation")).skills.map((item) => item.id)).toContain(skill.id);
+      expect(await aiSkills.projectSkills(project.id, userResourceContext(member), { available: true })).toBeNull();
+      expect(await aiSkills.linkProject(skill.id, project.id, true, userResourceContext(owner))).toBe(true);
+      expect((await aiSkills.projectSkills(project.id, userResourceContext(owner), { available: true }))?.items).toEqual([]);
+      expect((await aiSkills.projectSkills(project.id, userResourceContext(member)))?.items).toMatchObject([
+        { id: skill.id, permission: "read" },
+      ]);
+      expect((await aiSkills.get(skill.id, userResourceContext(member)))?.permission).toBe("read");
+      expect(await aiSkills.get(skill.id, userResourceContext(member), "write")).toBeNull();
+      expect(await aiSkills.listAccess(skill.id, userResourceContext(member))).toBeNull();
+      expect((await aiSkills.search(userResourceContext(member), "reconciliation")).skills.map((item) => item.id)).toContain(skill.id);
       expect(await aiSkills.get(skill.id, null)).toBeNull();
-      expect(await aiSkills.loadForTurn(turn!.id, skill.name, member)).toMatchObject({ instructions: "Reconcile statements." });
-      expect(await aiSkills.listTurnFiles(turn!.id, member)).toHaveLength(1);
-      await aiSkills.setEnabled(skill.id, member, false);
-      expect((await aiSkills.search(member, "reconciliation")).skills.map((item) => item.id)).not.toContain(skill.id);
-      expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).toBeNull();
-      await aiSkills.setEnabled(skill.id, member, true);
-      expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).not.toBeNull();
+      expect(await aiSkills.loadForTurn(turn!.id, skill.name, userResourceContext(member))).toMatchObject({
+        instructions: "Reconcile statements.",
+      });
+      expect(await aiSkills.listTurnFiles(turn!.id, userResourceContext(member))).toHaveLength(1);
+      await aiSkills.setEnabled(skill.id, userResourceContext(member), false);
+      expect((await aiSkills.search(userResourceContext(member), "reconciliation")).skills.map((item) => item.id)).not.toContain(skill.id);
+      expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, userResourceContext(member))).toBeNull();
+      await aiSkills.setEnabled(skill.id, userResourceContext(member), true);
+      expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, userResourceContext(member))).not.toBeNull();
       // A link has no dependency on its creator's later grants or membership.
-      await aiSkills.grantAccess(skill.id, owner, { principal: { type: "user", userId: successorId }, permission: "admin" });
-      const ownSkillGrant = (await aiSkills.listAccess(skill.id, owner))!.find(
+      await aiSkills.grantAccess(skill.id, userResourceContext(owner), {
+        principal: { type: "user", userId: successorId },
+        permission: "admin",
+      });
+      const ownSkillGrant = (await aiSkills.listAccess(skill.id, userResourceContext(owner)))!.find(
         (entry) => entry.principal.type === "user" && entry.principal.userId === ownerId,
       )!;
-      await aiSkills.revokeAccess(skill.id, ownSkillGrant.id, successor);
-      expect((await aiSkills.get(skill.id, member))?.permission).toBe("read");
-      expect(await aiSkills.linkedProjects(skill.id, successor)).toEqual([{ projectId: project.id, shortId: null, name: null }]);
-      await aiProjects.grantAccess(project.id, owner, { principal: { type: "user", userId: successorId }, permission: "admin" });
-      const ownProjectGrant = (await aiProjects.listAccess(project.id, owner))!.find(
+      await aiSkills.revokeAccess(skill.id, ownSkillGrant.id, userResourceContext(successor));
+      expect((await aiSkills.get(skill.id, userResourceContext(member)))?.permission).toBe("read");
+      expect(await aiSkills.linkedProjects(skill.id, userResourceContext(successor))).toEqual([
+        { projectId: project.id, shortId: null, name: null },
+      ]);
+      await aiProjects.grantAccess(project.id, userResourceContext(owner), {
+        principal: { type: "user", userId: successorId },
+        permission: "admin",
+      });
+      const ownProjectGrant = (await aiProjects.listAccess(project.id, userResourceContext(owner)))!.find(
         (entry) => entry.principal.type === "user" && entry.principal.userId === ownerId,
       )!;
-      await aiProjects.revokeAccess(project.id, ownProjectGrant.id, successor);
-      expect(await aiSkills.get(skill.id, owner)).toBeNull();
-      expect((await aiSkills.get(skill.id, member))?.permission).toBe("read");
-      const memberGrant = (await aiProjects.listAccess(project.id, successor))!.find(
+      await aiProjects.revokeAccess(project.id, ownProjectGrant.id, userResourceContext(successor));
+      expect(await aiSkills.get(skill.id, userResourceContext(owner))).toBeNull();
+      expect((await aiSkills.get(skill.id, userResourceContext(member)))?.permission).toBe("read");
+      const memberGrant = (await aiProjects.listAccess(project.id, userResourceContext(successor)))!.find(
         (entry) => entry.principal.type === "user" && entry.principal.userId === memberId,
       )!;
-      await aiProjects.revokeAccess(project.id, memberGrant.id, successor);
-      expect(await aiSkills.get(skill.id, member)).toBeNull();
-      expect(await aiSkills.listTurnFiles(turn!.id, member)).toEqual([]);
-      expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).toBeNull();
-      await aiProjects.grantAccess(project.id, successor, { principal: { type: "user", userId: memberId }, permission: "read" });
-      await aiSkills.linkProject(skill.id, project.id, false, successor);
-      expect(await aiSkills.get(skill.id, member)).toBeNull();
-      await aiSkills.grantAccess(skill.id, successor, { principal: { type: "user", userId: memberId }, permission: "read" });
-      await aiSkills.linkProject(skill.id, project.id, true, successor);
-      await aiSkills.linkProject(skill.id, project.id, false, successor);
-      expect((await aiSkills.get(skill.id, member))?.permission).toBe("read");
+      await aiProjects.revokeAccess(project.id, memberGrant.id, userResourceContext(successor));
+      expect(await aiSkills.get(skill.id, userResourceContext(member))).toBeNull();
+      expect(await aiSkills.listTurnFiles(turn!.id, userResourceContext(member))).toEqual([]);
+      expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, userResourceContext(member))).toBeNull();
+      await aiProjects.grantAccess(project.id, userResourceContext(successor), {
+        principal: { type: "user", userId: memberId },
+        permission: "read",
+      });
+      await aiSkills.linkProject(skill.id, project.id, false, userResourceContext(successor));
+      expect(await aiSkills.get(skill.id, userResourceContext(member))).toBeNull();
+      await aiSkills.grantAccess(skill.id, userResourceContext(successor), {
+        principal: { type: "user", userId: memberId },
+        permission: "read",
+      });
+      await aiSkills.linkProject(skill.id, project.id, true, userResourceContext(successor));
+      await aiSkills.linkProject(skill.id, project.id, false, userResourceContext(successor));
+      expect((await aiSkills.get(skill.id, userResourceContext(member)))?.permission).toBe("read");
     } finally {
       await aiSkills.admin.delete(skill.id);
       await aiProjects.admin.delete(project.id);
@@ -224,7 +258,7 @@ databaseSuite()("aiSkills (integration)", () => {
     try {
       skills.push(
         await aiSkills.create({
-          subject: owner,
+          subject: userResourceContext(owner),
           name: `zz-invoices-${suffix}`,
           description: "Match receipts to bank transactions.",
           instructions: "Private instructions never searched.",
@@ -232,7 +266,7 @@ databaseSuite()("aiSkills (integration)", () => {
       );
       skills.push(
         await aiSkills.create({
-          subject: owner,
+          subject: userResourceContext(owner),
           name: `aa-ledger-${suffix}`,
           description: "Process invoices and reconcile accounting.",
           instructions: "Do the work.",
@@ -240,7 +274,7 @@ databaseSuite()("aiSkills (integration)", () => {
       );
       skills.push(
         await aiSkills.create({
-          subject: other,
+          subject: userResourceContext(other),
           name: `secret-invoices-${suffix}`,
           description: "Private invoices.",
           instructions: "Do the work.",
@@ -249,23 +283,23 @@ databaseSuite()("aiSkills (integration)", () => {
       // Built-in Skills seeded for every authenticated user share the catalog; rank only the fixture rows among them.
       const fixtureIds = (result: { skills: { id: string }[] }) =>
         result.skills.map((skill) => skill.id).filter((id) => skills.some((skill) => skill.id === id));
-      const exact = await aiSkills.search(owner, `zz-invoices-${suffix}`, 1);
+      const exact = await aiSkills.search(userResourceContext(owner), `zz-invoices-${suffix}`, 1);
       expect(exact.skills.map((skill) => skill.id)).toEqual([skills[0]!.id]);
       // A typo in the name outranks the same typo in a description.
-      expect(fixtureIds(await aiSkills.search(owner, "invioces"))).toEqual([skills[0]!.id, skills[1]!.id]);
+      expect(fixtureIds(await aiSkills.search(userResourceContext(owner), "invioces"))).toEqual([skills[0]!.id, skills[1]!.id]);
       // The other user's Skill ranks highest for this query but must not consume the single slot.
-      const fuzzy = await aiSkills.search(owner, "invioces", 1);
+      const fuzzy = await aiSkills.search(userResourceContext(owner), "invioces", 1);
       expect(fuzzy.skills).toHaveLength(1);
       expect(fuzzy.skills[0]!.id).not.toBe(skills[2]!.id);
       expect(fuzzy.more).toBe(true);
-      expect(fixtureIds(await aiSkills.search(owner, "reciepts transactions"))).toEqual([skills[0]!.id]);
-      expect((await aiSkills.search(owner, "secret")).skills).toEqual([]);
-      expect((await aiSkills.search(owner, "Private instructions")).skills).toEqual([]);
-      expect((await aiSkills.search(owner, "%%%")).skills).toEqual([]);
-      await aiSkills.setEnabled(skills[0]!.id, owner, false);
-      expect(fixtureIds(await aiSkills.search(owner, "receipts"))).toEqual([]);
-      expect((await aiSkills.list(owner)).some((skill) => skill.id === skills[0]!.id && !skill.enabled)).toBe(true);
-      await aiSkills.setEnabled(skills[0]!.id, owner, true);
+      expect(fixtureIds(await aiSkills.search(userResourceContext(owner), "reciepts transactions"))).toEqual([skills[0]!.id]);
+      expect((await aiSkills.search(userResourceContext(owner), "secret")).skills).toEqual([]);
+      expect((await aiSkills.search(userResourceContext(owner), "Private instructions")).skills).toEqual([]);
+      expect((await aiSkills.search(userResourceContext(owner), "%%%")).skills).toEqual([]);
+      await aiSkills.setEnabled(skills[0]!.id, userResourceContext(owner), false);
+      expect(fixtureIds(await aiSkills.search(userResourceContext(owner), "receipts"))).toEqual([]);
+      expect((await aiSkills.list(userResourceContext(owner))).some((skill) => skill.id === skills[0]!.id && !skill.enabled)).toBe(true);
+      await aiSkills.setEnabled(skills[0]!.id, userResourceContext(owner), true);
       // The result must remain discoverable beyond the old 200-row catalog cap.
       await sql`INSERT INTO ai.skills (short_id, name, description, instructions)
         SELECT 't' || lpad(n::text, 5, '0'), 'a-padding-' || ${suffix} || '-' || n, 'Other work', 'Work'
@@ -274,8 +308,8 @@ databaseSuite()("aiSkills (integration)", () => {
         SELECT padding.id, original.access_id, padding.short_id FROM ai.skills padding
         CROSS JOIN ai.skill_access original WHERE original.skill_id = ${skills[0]!.id}::uuid
         AND padding.name LIKE ${"a-padding-" + suffix + "-%"} `;
-      expect(fixtureIds(await aiSkills.search(owner, "receipts"))).toEqual([skills[0]!.id]);
-      expect(fixtureIds(await aiSkills.search(owner, "reciepts"))).toEqual([skills[0]!.id]);
+      expect(fixtureIds(await aiSkills.search(userResourceContext(owner), "receipts"))).toEqual([skills[0]!.id]);
+      expect(fixtureIds(await aiSkills.search(userResourceContext(owner), "reciepts"))).toEqual([skills[0]!.id]);
     } finally {
       await sql`DELETE FROM ai.skills WHERE name LIKE ${"a-padding-" + suffix + "-%"}`;
       for (const skill of skills) await aiSkills.admin.delete(skill.id);
@@ -288,26 +322,33 @@ databaseSuite()("aiSkills (integration)", () => {
       otherId = await insertUser("access-reader");
     const owner = { type: "user" as const, userId: ownerId };
     const skill = await aiSkills.create({
-      subject: owner,
+      subject: userResourceContext(owner),
       name: `access-${crypto.randomUUID()}`,
       description: "Reviewed access fixture",
       instructions: "Summarize the supplied text.",
     });
     try {
-      const initial = (await aiSkills.listAccess(skill.id, owner))!;
+      const initial = (await aiSkills.listAccess(skill.id, userResourceContext(owner)))!;
       const expected = accessRevision(initial);
       const changes = await Promise.allSettled([
-        aiSkills.grantAccess(skill.id, owner, { principal: { type: "user", userId: otherId }, permission: "read" }, expected),
-        aiSkills.grantAccess(skill.id, owner, { principal: { type: "authenticated" }, permission: "read" }, expected),
+        aiSkills.grantAccess(
+          skill.id,
+          userResourceContext(owner),
+          { principal: { type: "user", userId: otherId }, permission: "read" },
+          expected,
+        ),
+        aiSkills.grantAccess(skill.id, userResourceContext(owner), { principal: { type: "authenticated" }, permission: "read" }, expected),
       ]);
       expect(changes.filter((change) => change.status === "fulfilled")).toHaveLength(1);
       expect(changes.filter((change) => change.status === "rejected")).toHaveLength(1);
-      const current = (await aiSkills.listAccess(skill.id, owner))!;
-      await expect(aiSkills.revokeAccess(skill.id, initial[0]!.id, owner, accessRevision(current))).rejects.toThrow("at least one admin");
-      await expect(aiSkills.updateAccess(skill.id, initial[0]!.id, owner, "read", expected)).rejects.toBeInstanceOf(
+      const current = (await aiSkills.listAccess(skill.id, userResourceContext(owner)))!;
+      await expect(aiSkills.revokeAccess(skill.id, initial[0]!.id, userResourceContext(owner), accessRevision(current))).rejects.toThrow(
+        "at least one admin",
+      );
+      await expect(aiSkills.updateAccess(skill.id, initial[0]!.id, userResourceContext(owner), "read", expected)).rejects.toBeInstanceOf(
         AiSkillRevisionConflictError,
       );
-      expect(await aiSkills.listAccess(skill.id, { type: "user", userId: otherId })).toBeNull();
+      expect(await aiSkills.listAccess(skill.id, userResourceContext({ type: "user", userId: otherId }))).toBeNull();
     } finally {
       await aiSkills.admin.delete(skill.id);
       await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid,${otherId}::uuid)`;
@@ -321,17 +362,19 @@ databaseSuite()("aiSkills (integration)", () => {
     `;
     const principal = { type: "service_account" as const, serviceAccountId: agent!.id };
     const skill = await aiSkills.create({
-      subject: owner,
+      subject: userResourceContext(owner),
       name: `agent-kind-${crypto.randomUUID()}`,
       description: "Agent kind fixture",
       instructions: "Summarize the supplied text.",
     });
     try {
-      expect(await aiSkills.grantAccess(skill.id, owner, { principal, permission: "read" })).toMatchObject({
+      expect(await aiSkills.grantAccess(skill.id, userResourceContext(owner), { principal, permission: "read" })).toMatchObject({
         principal,
         serviceAccountKind: "agent",
       });
-      expect((await aiSkills.listAccess(skill.id, owner))?.find((entry) => entry.principal.type === "service_account")).toMatchObject({
+      expect(
+        (await aiSkills.listAccess(skill.id, userResourceContext(owner)))?.find((entry) => entry.principal.type === "service_account"),
+      ).toMatchObject({
         principal,
         serviceAccountKind: "agent",
       });
@@ -357,27 +400,27 @@ databaseSuite()("aiSkills (integration)", () => {
 
     try {
       const skill = await aiSkills.create({
-        subject: owner,
+        subject: userResourceContext(owner),
         name: `weekly-${crypto.randomUUID().slice(0, 8)}`,
         description: "Summarize recent work.",
         instructions: "List wins and blockers.",
         references: [{ path: "references/style.md", content: "Be concise." }],
       });
       skillId = skill.id;
-      const grant = await aiSkills.grantAccess(skill.id, owner, {
+      const grant = await aiSkills.grantAccess(skill.id, userResourceContext(owner), {
         principal: { type: "user", userId: memberId },
         permission: "read",
       });
-      expect((await aiSkills.get(skill.id, member))?.permission).toBe("read");
+      expect((await aiSkills.get(skill.id, userResourceContext(member)))?.permission).toBe("read");
 
-      const loaded = await aiSkills.loadForTurn(turn!.id, skill.name, member);
+      const loaded = await aiSkills.loadForTurn(turn!.id, skill.name, userResourceContext(member));
       expect(loaded).toMatchObject({ revision: 1, instructions: "List wins and blockers." });
       expect(loaded?.files.map((file) => file.path)).toEqual([
         `/skills/${skill.name}/SKILL.md`,
         `/skills/${skill.name}/references/style.md`,
       ]);
 
-      const updated = await aiSkills.update(skill.id, owner, {
+      const updated = await aiSkills.update(skill.id, userResourceContext(owner), {
         expectedRevision: skill.revision,
         name: `${skill.name}-renamed`,
         description: skill.description,
@@ -386,36 +429,40 @@ databaseSuite()("aiSkills (integration)", () => {
         references: skill.references,
       });
       expect(updated?.revision).toBe(2);
-      expect((await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, member))?.instructions).toBe("List wins and blockers.");
-      expect(await aiSkills.loadForTurn(turn!.id, skill.name, member)).toBeNull();
+      expect((await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, userResourceContext(member)))?.instructions).toBe(
+        "List wins and blockers.",
+      );
+      expect(await aiSkills.loadForTurn(turn!.id, skill.name, userResourceContext(member))).toBeNull();
 
-      expect((await aiSkills.list(member)).find((entry) => entry.id === skill.id)?.enabled).toBe(true);
-      expect(await aiSkills.setEnabled(skill.id, member, false)).toBe(false);
-      expect((await aiSkills.list(member)).find((entry) => entry.id === skill.id)?.enabled).toBe(false);
+      expect((await aiSkills.list(userResourceContext(member))).find((entry) => entry.id === skill.id)?.enabled).toBe(true);
+      expect(await aiSkills.setEnabled(skill.id, userResourceContext(member), false)).toBe(false);
+      expect((await aiSkills.list(userResourceContext(member))).find((entry) => entry.id === skill.id)?.enabled).toBe(false);
       const name = updated!.name;
-      expect(await aiSkills.list(member, { name })).toEqual([expect.objectContaining({ id: skill.id, name, enabled: false })]);
-      expect(await aiSkills.list(member, { name: `${name}-missing` })).toEqual([]);
+      expect(await aiSkills.list(userResourceContext(member), { name })).toEqual([
+        expect.objectContaining({ id: skill.id, name, enabled: false }),
+      ]);
+      expect(await aiSkills.list(userResourceContext(member), { name: `${name}-missing` })).toEqual([]);
       // "Recent" asks for exactly the Skills a person sent, with the same visibility and enabled state.
-      expect(await aiSkills.list(member, { shortIds: [skill.shortId, "Missing1"] })).toEqual([
+      expect(await aiSkills.list(userResourceContext(member), { shortIds: [skill.shortId, "Missing1"] })).toEqual([
         expect.objectContaining({ id: skill.id, enabled: false }),
       ]);
-      expect(await aiSkills.list(member, { shortIds: [] })).toEqual([]);
-      expect((await aiSkills.search(member, name)).skills.some((entry) => entry.id === skill.id)).toBe(false);
-      expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, member)).toBeNull();
-      expect(await aiSkills.listTurnFiles(turn!.id, member)).toEqual([]);
-      expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).toBeNull();
+      expect(await aiSkills.list(userResourceContext(member), { shortIds: [] })).toEqual([]);
+      expect((await aiSkills.search(userResourceContext(member), name)).skills.some((entry) => entry.id === skill.id)).toBe(false);
+      expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, userResourceContext(member))).toBeNull();
+      expect(await aiSkills.listTurnFiles(turn!.id, userResourceContext(member))).toEqual([]);
+      expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, userResourceContext(member))).toBeNull();
 
-      expect(await aiSkills.setEnabled(skill.id, member, true)).toBe(true);
-      expect((await aiSkills.list(member)).find((entry) => entry.id === skill.id)?.enabled).toBe(true);
-      expect((await aiSkills.listTurnFiles(turn!.id, member)).length).toBe(2);
+      expect(await aiSkills.setEnabled(skill.id, userResourceContext(member), true)).toBe(true);
+      expect((await aiSkills.list(userResourceContext(member))).find((entry) => entry.id === skill.id)?.enabled).toBe(true);
+      expect((await aiSkills.listTurnFiles(turn!.id, userResourceContext(member))).length).toBe(2);
 
-      expect(await aiSkills.revokeAccess(skill.id, grant!.id, owner)).toBe(true);
-      expect(await aiSkills.list(member, { shortIds: [skill.shortId] })).toEqual([]);
-      expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, member)).toBeNull();
-      expect(await aiSkills.listTurnFiles(turn!.id, member)).toEqual([]);
-      expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, member)).toBeNull();
+      expect(await aiSkills.revokeAccess(skill.id, grant!.id, userResourceContext(owner))).toBe(true);
+      expect(await aiSkills.list(userResourceContext(member), { shortIds: [skill.shortId] })).toEqual([]);
+      expect(await aiSkills.loadForTurn(turn!.id, { id: skill.shortId }, userResourceContext(member))).toBeNull();
+      expect(await aiSkills.listTurnFiles(turn!.id, userResourceContext(member))).toEqual([]);
+      expect(await aiSkills.readTurnFile(turn!.id, `${skill.name}/SKILL.md`, userResourceContext(member))).toBeNull();
     } finally {
-      if (skillId) await aiSkills.delete(skillId, owner);
+      if (skillId) await aiSkills.delete(skillId, userResourceContext(owner));
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid, ${memberId}::uuid)`;
     }
@@ -432,16 +479,25 @@ databaseSuite()("aiSkills (integration)", () => {
     const suffix = crypto.randomUUID();
     const skills = await Promise.all(
       Array.from({ length: count }, (_, index) =>
-        aiSkills.create({ subject: owner, name: `pool-${index}-${suffix}`, description: "Pool.", instructions: "Pool." }),
+        aiSkills.create({
+          subject: userResourceContext(owner),
+          name: `pool-${index}-${suffix}`,
+          description: "Pool.",
+          instructions: "Pool.",
+        }),
       ),
     );
     try {
       const updated = await Promise.all(
-        skills.map((skill) => aiSkills.update(skill.id, owner, { ...skill, instructions: "Updated.", expectedRevision: skill.revision })),
+        skills.map((skill) =>
+          aiSkills.update(skill.id, userResourceContext(owner), { ...skill, instructions: "Updated.", expectedRevision: skill.revision }),
+        ),
       );
       expect(updated.map((skill) => skill?.revision)).toEqual(skills.map(() => 2));
-      expect(await Promise.all(skills.map((skill) => aiSkills.setEnabled(skill.id, owner, true)))).toEqual(skills.map(() => true));
-      const loaded = await Promise.all(skills.map((skill) => aiSkills.loadForTurn(turn!.id, skill.name, owner)));
+      expect(await Promise.all(skills.map((skill) => aiSkills.setEnabled(skill.id, userResourceContext(owner), true)))).toEqual(
+        skills.map(() => true),
+      );
+      const loaded = await Promise.all(skills.map((skill) => aiSkills.loadForTurn(turn!.id, skill.name, userResourceContext(owner))));
       expect(loaded.map((skill) => skill?.instructions)).toEqual(skills.map(() => "Updated."));
     } finally {
       for (const skill of skills) await aiSkills.admin.delete(skill.id);
@@ -457,7 +513,7 @@ databaseSuite()("aiSkills (integration)", () => {
 
     try {
       const skill = await aiSkills.create({
-        subject: owner,
+        subject: userResourceContext(owner),
         name: `batch-${crypto.randomUUID().slice(0, 8)}`,
         description: "Exercise atomic reference batches.",
         instructions: "Use the supporting references.",
@@ -469,7 +525,7 @@ databaseSuite()("aiSkills (integration)", () => {
         content: `Topic ${index + 1}`,
       }));
 
-      const updated = await aiSkills.setReferences(skill.id, owner, {
+      const updated = await aiSkills.setReferences(skill.id, userResourceContext(owner), {
         expectedRevision: skill.revision,
         references,
       });
@@ -479,14 +535,14 @@ databaseSuite()("aiSkills (integration)", () => {
       expect(updated?.references).toEqual(sortedReferences);
 
       await expect(
-        aiSkills.setReferences(skill.id, owner, {
+        aiSkills.setReferences(skill.id, userResourceContext(owner), {
           expectedRevision: skill.revision,
           references: [{ path: "references/stale.md", content: "Must not be written." }],
         }),
       ).rejects.toBeInstanceOf(AiSkillRevisionConflictError);
 
       await expect(
-        aiSkills.setReferences(skill.id, owner, {
+        aiSkills.setReferences(skill.id, userResourceContext(owner), {
           expectedRevision: updated!.revision,
           references: [
             { path: "references/duplicate.md", content: "First" },
@@ -495,11 +551,11 @@ databaseSuite()("aiSkills (integration)", () => {
         }),
       ).rejects.toThrow('Reference path "references/duplicate.md" is duplicated.');
 
-      const unchanged = await aiSkills.get(skill.id, owner);
+      const unchanged = await aiSkills.get(skill.id, userResourceContext(owner));
       expect(unchanged).toMatchObject({ revision: 2, referenceCount: 16 });
       expect(unchanged?.references).toEqual(sortedReferences);
     } finally {
-      if (skillId) await aiSkills.delete(skillId, owner);
+      if (skillId) await aiSkills.delete(skillId, userResourceContext(owner));
       await sql`DELETE FROM auth.users WHERE id = ${ownerId}::uuid`;
     }
   });
@@ -514,7 +570,7 @@ databaseSuite()("aiSkills (integration)", () => {
 
     try {
       const skill = await aiSkills.create({
-        subject: owner,
+        subject: userResourceContext(owner),
         name,
         description: "Exercise platform administrator recovery.",
         instructions: "Recover this Skill.",
@@ -530,7 +586,7 @@ databaseSuite()("aiSkills (integration)", () => {
         permission: "admin",
       });
       expect(recovered?.permission).toBe("admin");
-      expect(await aiSkills.get(skill.id, rescuer, "admin")).not.toBeNull();
+      expect(await aiSkills.get(skill.id, userResourceContext(rescuer), "admin")).not.toBeNull();
 
       expect(await aiSkills.admin.delete(skill.id)).toBe(true);
       skillId = undefined;
@@ -549,7 +605,7 @@ databaseSuite()("aiSkills (integration)", () => {
     try {
       skills.push(
         await aiSkills.create({
-          subject: owner,
+          subject: userResourceContext(owner),
           name: `zz-invoices-${suffix}`,
           description: "Match receipts to bank transactions.",
           instructions: "Do the work.",
@@ -559,13 +615,13 @@ databaseSuite()("aiSkills (integration)", () => {
       // and "spaces" adds a small name hit; the typo'd name must still win.
       skills.push(
         await aiSkills.create({
-          subject: owner,
+          subject: userResourceContext(owner),
           name: `aa-spaces-${suffix}`,
           description: "Send calendar invitations for events.",
           instructions: "Do the work.",
         }),
       );
-      const result = await aiSkills.search(owner, "invioces");
+      const result = await aiSkills.search(userResourceContext(owner), "invioces");
       expect(result.skills[0]?.id).toBe(skills[0]!.id);
       expect(result.skills.map((skill) => skill.id).filter((id) => skills.some((skill) => skill.id === id))).toEqual([
         skills[0]!.id,

@@ -7,6 +7,8 @@ import type {
   EntityListItem,
   GroupMember,
   MutationResult,
+  ServiceAccountKind,
+  ServiceAccountStatus,
   User,
   UserProfile,
   UserProvider,
@@ -1227,6 +1229,8 @@ export const accountsAppService = {
       profile?: UserProfile;
       userIds?: string[];
       groupIds?: string[];
+      serviceAccountKinds?: ServiceAccountKind[];
+      serviceAccountStatus?: ServiceAccountStatus;
       excludeUserIds?: string[];
       excludeGroupIds?: string[];
       excludeServiceAccountIds?: string[];
@@ -1258,6 +1262,8 @@ export const accountsAppService = {
         profile: config.profile,
         userIds: config.userIds,
         groupIds: config.groupIds,
+        serviceAccountKinds: config.serviceAccountKinds,
+        serviceAccountStatus: config.serviceAccountStatus,
         excludeUserIds: config.excludeUserIds,
         excludeGroupIds: config.excludeGroupIds,
         excludeServiceAccountIds: config.excludeServiceAccountIds,

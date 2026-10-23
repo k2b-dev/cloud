@@ -92,7 +92,7 @@ test("denial, throw, invalid answer and hung reader fail independently under one
   expect(signals.every((signal) => signal.aborted)).toBe(true);
 });
 
-test("lists skills once by accessSubject and never calls readers for disabled, invisible, unsupported or scoped Studio refs", async () => {
+test("lists skills once with credential context and never calls readers for disabled, invisible, unsupported or scoped Studio refs", async () => {
   let calls = 0;
   const resources = await run({
     store: {
@@ -108,7 +108,7 @@ test("lists skills once by accessSubject and never calls readers for disabled, i
     skills: {
       list: async (subject, options) => {
         calls++;
-        expect(subject).toBe(recentTestAuthority.accessSubject);
+        expect(subject).toBe(recentTestAuthority);
         // Only the sent Skills, never a page of the whole catalog.
         expect(options).toEqual({ shortIds: ["enabled", "disabled", "invisible"], authority: recentTestAuthority });
         return [recentTestSkill("enabled"), recentTestSkill("disabled", false)];

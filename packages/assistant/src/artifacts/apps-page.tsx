@@ -20,7 +20,10 @@ export default ssr<AuthContext>(async (c) => {
     if (app.permission !== "admin" && !c.req.path.endsWith("/edit") && !c.req.path.endsWith("/database"))
       return c.redirect(`/app/assistant/apps/${app.id}/run`);
     const [sidebar, approvals] = await Promise.all([
-      loadAssistantSidebarSnapshot(user.id, { locale: getLocale(c), timeZone: getTimeZone(c) }),
+      loadAssistantSidebarSnapshot(
+        { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
+        { locale: getLocale(c), timeZone: getTimeZone(c) },
+      ),
       loadPendingApprovals(c, { app: "assistant" }),
     ]);
     const view = c.req.path.endsWith("/edit") ? "edit" : c.req.path.endsWith("/database") ? "database" : "app";

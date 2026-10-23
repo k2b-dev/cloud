@@ -1,5 +1,5 @@
 import type { AiProject, AiProjectAccess, AiProjectFile, AiProjectKnowledge, AiProjectReference } from "@k2b/cloud/ai";
-import { arg, type CloudCliContext, command, confirmFlag, flag, readCliInput } from "@k2b/cloud/cli";
+import { arg, type CloudCliContext, command, confirmFlag, createAccessCommands, flag, readCliInput } from "@k2b/cloud/cli";
 import { principalLabel } from "@k2b/cloud/shared";
 import { jsonRequest, printRows, printValue, queryString, readApi, readProjectsApi, requireConfirmation } from "./shared";
 
@@ -24,7 +24,56 @@ const resolveProject = async (ctx: CloudCliContext, reference: string): Promise<
 const readText = (value: Parameters<typeof readCliInput>[0], label: string, required = false): Promise<string | undefined> =>
   readCliInput(value, { label, required, trimFinalNewline: true });
 
+const projectAccessCommands = createAccessCommands({
+  resourceLabel: "Project",
+  resourceArgLabel: "project-id-or-name",
+  async resolveResource(ctx, args) {
+    if (args.length !== 1) throw new Error("Pass one Project name or ID.");
+    const project = await resolveProject(ctx, args[0]!);
+    return { id: project.shortId, label: project.name };
+  },
+  async list(ctx, resource) {
+    return (await readProjectsApi<{ access: AiProjectAccess[] }>(ctx, path(resource.id, "/access"))).access;
+  },
+  async grant(ctx, resource, principal, permission) {
+    return (
+      await readProjectsApi<{ access: AiProjectAccess }>(ctx, path(resource.id, "/access"), jsonRequest("POST", { principal, permission }))
+    ).access;
+  },
+  async update(ctx, resource, accessId, permission) {
+    await readProjectsApi(ctx, path(resource.id, `/access/${encodeURIComponent(accessId)}`), jsonRequest("PATCH", { permission }));
+  },
+  async revoke(ctx, resource, accessId) {
+    await readProjectsApi(ctx, path(resource.id, `/access/${encodeURIComponent(accessId)}`), { method: "DELETE" });
+  },
+}).map((definition) => ({ ...definition, path: ["projects", ...definition.path] }));
+
+/** Preserve the established positional recipient/access syntax at the CLI transport boundary. */
+export const projectAccessContext = (ctx: CloudCliContext): CloudCliContext => {
+  const [resource, group, action, project, recipient, ...extra] = ctx.args;
+  if (resource !== "projects" || group !== "access" || !project || !recipient || extra.length) return ctx;
+  if (action === "grant") {
+    const { type = "user", ...flags } = ctx.flags;
+    if (type !== "user" && type !== "group" && type !== "service_account")
+      throw new Error("--type must be user, group, or service_account.");
+    if (["user", "group", "service-account", "authenticated", "public"].some((key) => flags[key] !== undefined))
+      throw new Error("Pass either a positional recipient or one principal flag.");
+    return {
+      ...ctx,
+      args: [resource, group, action, project],
+      flags: { permission: "read", ...flags, [type === "service_account" ? "service-account" : type]: recipient },
+    };
+  }
+  if (action === "revoke") {
+    if (["access-id", "user", "group", "service-account", "authenticated", "public"].some((key) => ctx.flags[key] !== undefined))
+      throw new Error("Pass either a positional access ID or one access/principal flag.");
+    return { ...ctx, args: [resource, group, action, project], flags: { ...ctx.flags, "access-id": recipient } };
+  }
+  return ctx;
+};
+
 export const assistantProjectCommands = [
+  ...projectAccessCommands,
   command("projects list", {
     summary: "List accessible Projects",
     async run({ ctx }) {
@@ -324,40 +373,6 @@ export const assistantProjectCommands = [
       );
     },
   }),
-  command("projects access list", {
-    summary: "List Project access grants",
-    args: { project: arg.required({ valueLabel: "project-id-or-name" }) },
-    async run({ ctx, args }) {
-      const project = await resolveProject(ctx, args.project);
-      const result = await readProjectsApi<{ access: AiProjectAccess[] }>(ctx, path(project.shortId, "/access"));
-      printRows(ctx, result, projectAccessRows(result.access, ctx.options.locale), [
-        { key: "id" },
-        { key: "principal" },
-        { key: "permission" },
-      ]);
-    },
-  }),
-  command("projects access grant", {
-    summary: "Grant Project access to a user or group",
-    args: { project: arg.required({ valueLabel: "project-id-or-name" }), principal: arg.required({ valueLabel: "principal-id" }) },
-    flags: {
-      type: flag.enum(["user", "group", "service_account"] as const, { default: "user" }),
-      permission: flag.enum(["read", "write", "admin"] as const, { default: "read" }),
-    },
-    async run({ ctx, args, flags }) {
-      const project = await resolveProject(ctx, args.project);
-      const principal =
-        flags.type === "user"
-          ? { type: "user" as const, userId: args.principal }
-          : flags.type === "group"
-            ? { type: "group" as const, groupId: args.principal }
-            : { type: "service_account" as const, serviceAccountId: args.principal };
-      printValue(
-        ctx,
-        await readProjectsApi(ctx, path(project.shortId, "/access"), jsonRequest("POST", { principal, permission: flags.permission })),
-      );
-    },
-  }),
   command("projects access update", {
     summary: "Update a Project access grant",
     args: { project: arg.required({ valueLabel: "project-id-or-name" }), access: arg.required({ valueLabel: "access-id" }) },
@@ -371,19 +386,6 @@ export const assistantProjectCommands = [
           path(project.shortId, `/access/${encodeURIComponent(args.access)}`),
           jsonRequest("PATCH", { permission: flags.permission }),
         ),
-      );
-    },
-  }),
-  command("projects access revoke", {
-    summary: "Revoke a Project access grant",
-    args: { project: arg.required({ valueLabel: "project-id-or-name" }), access: arg.required({ valueLabel: "access-id" }) },
-    flags: { yes: confirmFlag("Confirm revoking Project access") },
-    async run({ ctx, args, flags }) {
-      requireConfirmation(flags.yes, "Revoking Project access");
-      const project = await resolveProject(ctx, args.project);
-      printValue(
-        ctx,
-        await readProjectsApi(ctx, path(project.shortId, `/access/${encodeURIComponent(args.access)}`), { method: "DELETE" }),
       );
     },
   }),

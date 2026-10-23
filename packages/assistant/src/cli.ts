@@ -6,7 +6,7 @@ import { assistantCodeCommands } from "./cli/code";
 import { CODE_HOST_COMMAND } from "./cli/code-host";
 import { assistantRootCommand } from "./cli/interactive";
 import { assistantPersonalizationCommands } from "./cli/personalization";
-import { assistantProjectCommands } from "./cli/projects";
+import { assistantProjectCommands, projectAccessContext } from "./cli/projects";
 import { assistantSkillCommands } from "./cli/skills";
 import { assistantTaskCommands } from "./cli/tasks";
 
@@ -33,6 +33,7 @@ const commands = defineCliCommands({
     "projects references": "Manage Project Cloud references",
     "projects skills": "Manage Skills linked to a Project",
     skills: "List Cloud Skills and move them to and from Agent Skills folders",
+    "skills access": "Manage Skill access grants",
     tasks: "Manage routines, called tasks in the CLI, that run once or repeatedly in a chat",
     turns: "Watch, steer, and stop Assistant turns",
   },
@@ -59,7 +60,7 @@ const module: CloudCliModule = {
   ...commands,
   requiresCloudFor: (args, flags) => args[0] !== CODE_HOST_COMMAND && (commands.requiresCloudFor?.(args, flags) ?? true),
   run: async (ctx) => {
-    if (ctx.args[0] !== CODE_HOST_COMMAND) return commands.run(ctx);
+    if (ctx.args[0] !== CODE_HOST_COMMAND) return commands.run(projectAccessContext(ctx));
     if (!process.send) throw new Error("Code host requires a parent CLI connection");
     (await import("./cli/code-host-process")).startCliCodeHostProcess();
     return 0;

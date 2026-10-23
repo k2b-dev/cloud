@@ -426,7 +426,7 @@ export async function evaluateStudioCase(evalCase: StudioEvalCase, context: Code
     }),
   );
   const skillFiles = new Map<string, AiSkillFileToolContent>();
-  const loadSkill = createCloudAiLoadSkillTool(context.accessSubject);
+  const loadSkill = createCloudAiLoadSkillTool(context);
   const builtIns = [
     ...(await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: null, accessSubject: context.accessSubject })),
     ...createCloudAiCodeTools(),

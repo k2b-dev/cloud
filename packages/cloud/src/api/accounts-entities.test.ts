@@ -51,6 +51,41 @@ describe("accounts entity routes", () => {
     });
   });
 
+  test("validates and forwards optional service-account kind and status filters", async () => {
+    const seen: unknown[] = [];
+    const routes = createAccountsEntitiesRoutes({
+      authenticate: authenticateAs("user"),
+      requireUser,
+      listEntities: async (input) => {
+        seen.push({ kinds: input.serviceAccountKinds, status: input.serviceAccountStatus });
+        return { items: [], page: 1, perPage: 10, total: 0, hasNext: false };
+      },
+    });
+
+    expect((await routes.request("/entities")).status).toBe(200);
+    expect((await routes.request("/entities?service_account_kinds=standalone,agent,standalone&service_account_status=active")).status).toBe(
+      200,
+    );
+    expect(
+      (await routes.request("/entities?service_account_kinds=user_delegated,resource_bound&service_account_status=disabled")).status,
+    ).toBe(200);
+    expect((await routes.request("/entities?service_account_kinds=%20,%20")).status).toBe(200);
+    expect(seen).toEqual([
+      { kinds: undefined, status: undefined },
+      { kinds: ["standalone", "agent"], status: "active" },
+      { kinds: ["user_delegated", "resource_bound"], status: "disabled" },
+      { kinds: undefined, status: undefined },
+    ]);
+    for (const query of [
+      "service_account_kinds=agent,unknown",
+      "service_account_status=enabled",
+      "service_account_status=active,disabled",
+    ]) {
+      expect((await routes.request(`/entities?${query}`)).status).toBe(400);
+    }
+    expect(seen).toHaveLength(4);
+  });
+
   test("leaves personal Linux groups out unless include_personal=true", async () => {
     const seen: unknown[] = [];
     const routes = createAccountsEntitiesRoutes({

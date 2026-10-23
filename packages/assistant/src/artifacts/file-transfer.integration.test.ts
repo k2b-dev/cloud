@@ -20,7 +20,7 @@ databaseSuite()("Studio image file transfers", () => {
     const identity = testIdentity(user!.id);
     const source = await aiConversations.createConversation({ ownerUserId: user!.id });
     const target = await aiConversations.createConversation({ ownerUserId: user!.id });
-    const project = await aiProjects.create({ subject: identity.accessSubject, name: "Photo destination" });
+    const project = await aiProjects.create({ subject: identity, name: "Photo destination" });
     try {
       const jpeg = await tinyJpeg();
       const legacy = withCameraMetadata(jpeg, 1);

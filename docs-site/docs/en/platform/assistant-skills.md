@@ -178,8 +178,10 @@ person, group, or service account access; such a grant does not depend on the
 app's audience. Like every Skill, an app Skill can be turned off personally.
 
 Unlike Help, a Skill does not need a user. A service account without a user
-counts as signed in but has no roles: it can use the Skills of apps without
-either declaration, and other app Skills only through a direct grant.
+with kind `standalone` or `agent` counts as signed in but has no roles: it can
+use the Skills of apps without either declaration, and other app Skills only through a direct grant. Its
+credential must allow at least `read`; write and administration also require
+the corresponding scope and grant. Resource-bound credentials are unsupported.
 
 When the app is stopped or removed, Cloud keeps its Skills but no longer offers
 them. They do not appear in Assistant, cannot be loaded, and their reference

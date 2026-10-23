@@ -5,6 +5,7 @@ import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { z } from "zod";
 import { databaseSuite, suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
+import { userResourceContext } from "./projects.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
 import { compileCapabilities } from "../_internal/capabilities";
 import { compileReviewFixture, reviewFixture } from "../_internal/capability-review.test-fixture";
@@ -14,10 +15,12 @@ import * as capabilityDispatch from "../api/capabilities";
 import type { User } from "../contracts";
 import { type CapabilityActionReviewData, defineCapabilities } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
+import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
 import { approvals } from "../services/approvals";
 import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import { type CapabilityGrant, mandates } from "../services/mandates";
+import { serviceAccounts } from "../services/service-accounts";
 import { createTestSession } from "../services/session/session.test-fixture";
 import { normalizeLocale } from "../shared/locale";
 import { reconcileAppSkills } from "./app-skill-store";
@@ -1040,10 +1043,10 @@ suite("AI executor integration", () => {
         markdown: "---\nname: skill-creator\ndescription: Create and improve reusable Assistant Skills.\n---\n\nDraft the Skill.\n",
       }),
     );
-    const creator = (await aiSkills.list(owner, { authority })).find((candidate) => candidate.name === "skill-creator");
+    const creator = (await aiSkills.list(userResourceContext(owner), { authority })).find((candidate) => candidate.name === "skill-creator");
     if (!creator?.enabled) throw new Error("Expected the app's skill-creator to be enabled for a new user");
     const skill = await aiSkills.create({
-      subject: owner,
+      subject: userResourceContext(owner),
       name: `weekly-report-${crypto.randomUUID().slice(0, 8)}`,
       description: "Write the weekly sales report.",
       instructions: "Summarize the week.",
@@ -1123,7 +1126,7 @@ suite("AI executor integration", () => {
       expect(background).not.toContain("Offer once at the end");
 
       // A user who disabled skill-creator still has load_skill for other Skills, but gets no offer it could not keep.
-      expect(await aiSkills.setEnabled(creator.id, owner, false, authority)).toBeFalse();
+      expect(await aiSkills.setEnabled(creator.id, userResourceContext(owner), false, authority)).toBeFalse();
       const { turn: withoutCreator } = await aiConversations.submitChatTurn({
         conversationId: conversation.id,
         modelProfileId: MODEL_ID,
@@ -1139,7 +1142,7 @@ suite("AI executor integration", () => {
     } finally {
       onCompletionRequest = null;
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
-      await aiSkills.delete(skill.id, owner);
+      await aiSkills.delete(skill.id, userResourceContext(owner));
       await creatorApp.remove();
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
@@ -2020,22 +2023,112 @@ suite("AI executor integration", () => {
     },
   );
 
+  for (const kind of ["standalone", "agent"] as const) {
+    test(`${kind} executor retains read credential for Project mounts and selected Skills, then rejects revoked access`, async () => {
+      const userId = await insertUser();
+      const owner = userResourceContext({ type: "user", userId });
+      const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind)
+        VALUES (${`executor-${kind}-${crypto.randomUUID()}`},${kind}) RETURNING id`;
+      if (!account) throw new Error("Missing machine fixture");
+      const serviceAccount = await serviceAccounts.get({ id: account.id });
+      if (!serviceAccount) throw new Error("Missing service account");
+      const actor: RequestActor = { kind: "service_account", serviceAccount, delegatedUser: null, scopes: ["read"] };
+      const project = await aiProjects.create({ subject: owner, name: "Machine project", instructions: "Machine project rules" });
+      const skill = await aiSkills.create({
+        subject: owner,
+        name: `machine-${crypto.randomUUID()}`,
+        description: "Machine workflow",
+        instructions: "Machine Skill rules",
+      });
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId, projectId: project.id });
+      try {
+        const principal = { type: "service_account" as const, serviceAccountId: account.id };
+        const grant = await aiProjects.grantAccess(project.id, owner, { principal, permission: "admin" });
+        await aiSkills.grantAccess(skill.id, owner, { principal, permission: "admin" });
+        await aiProjects.writeFile(project.id, owner, {
+          path: "rules.md",
+          bytes: new TextEncoder().encode("Machine file rules"),
+          mediaType: "text/markdown",
+        });
+        const snapshot = await aiProjects.snapshot(project.id, owner);
+        if (!snapshot || !grant) throw new Error("Missing Project fixture");
+        const config: AiChatTurnRunConfig = {
+          kind: "chat",
+          actor,
+          input: "Read the machine rules.",
+          project: snapshot,
+          selectedSkillIds: [skill.shortId],
+          toolSource: { kind: "default", appTools: false },
+        };
+        const requests: unknown[] = [];
+        onCompletionRequest = (body) => {
+          requests.push(body);
+        };
+        completionQueue = [
+          toolCallCompletion("read-machine-project", "read_file", { path: "/project/rules.md" }),
+          textCompletion("Read the rules"),
+        ];
+        const run = async () => {
+          const { turn } = await aiConversations.submitChatTurn({
+            conversationId: conversation.id,
+            modelProfileId: MODEL_ID,
+            runConfig: config,
+            userMessage: userMessage("Read the machine rules."),
+          });
+          const leaseOwner = `machine-${kind}-exec`;
+          const claim = await aiConversations.claimTurn({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            leaseOwner,
+            leaseMs: 30_000,
+            from: "queue",
+            maxAttempts: 5,
+            runBudgetMs: 60_000,
+          });
+          if (!claim) throw new Error("Missing turn claim");
+          await createExecutor(leaseOwner, undefined, fakeValidateBoundedToolTurn).run({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            claim,
+            signal: new AbortController().signal,
+          });
+          return aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id });
+        };
+        expect((await run())?.status).toBe("completed");
+        expect(requests).toHaveLength(2);
+        expect(JSON.stringify(requests[0])).toContain("Machine Skill rules");
+        expect(JSON.stringify(requests[1])).toContain("Machine file rules");
+        await aiProjects.revokeAccess(project.id, grant.id, owner);
+        expect((await run())?.status).toBe("failed");
+        expect(requests).toHaveLength(2);
+      } finally {
+        completionQueue = [];
+        onCompletionRequest = null;
+        await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+        await aiProjects.admin.delete(project.id);
+        await aiSkills.admin.delete(skill.id);
+        await sql`DELETE FROM auth.service_accounts WHERE id=${account.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+      }
+    });
+  }
+
   test("keeps mounted Project files available when dynamic discovery reprepares the tools", async () => {
     const userId = await insertUser();
     const subject = { type: "user" as const, userId };
-    const project = await aiProjects.create({ subject, name: "Project files" });
+    const project = await aiProjects.create({ subject: userResourceContext(subject), name: "Project files" });
     const conversation = await aiConversations.createConversation({
       ownerUserId: userId,
       projectId: project.id,
       preloadTools: ["list_files"],
     });
     try {
-      await aiProjects.writeFile(project.id, subject, {
+      await aiProjects.writeFile(project.id, userResourceContext(subject), {
         path: "guide.md",
         mediaType: "text/markdown",
         bytes: new TextEncoder().encode("# Guide"),
       });
-      const projectSnapshot = await aiProjects.snapshot(project.id, subject);
+      const projectSnapshot = await aiProjects.snapshot(project.id, userResourceContext(subject));
       if (!projectSnapshot) throw new Error("Expected Project snapshot");
 
       const requests: unknown[] = [];
@@ -2536,7 +2629,7 @@ suite("AI executor integration", () => {
   test("uses the Project snapshot from the durable turn config", async () => {
     const userId = await insertUser();
     const project = await aiProjects.create({
-      subject: { type: "user", userId },
+      subject: userResourceContext({ type: "user", userId }),
       name: "Meeting summary",
       instructions: "Current instructions that must not replace the snapshot.",
     });

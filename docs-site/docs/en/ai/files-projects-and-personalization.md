@@ -226,6 +226,19 @@ below `references/`, export it, or manage its Cloud access. `read` access can
 view and use a Skill, `write` can edit it, and `admin` can also share or delete
 it. The final admin grant cannot be removed.
 
+Project and Skill services require an `AiResourceContext` from `@k2b/cloud/ai`:
+pass `{ actor, accessSubject }` from the authenticated request or capability
+context to every service call, including creation. Skill calls also retain their
+resolved `RequestAuthority` argument (or `authority` list option) for app-entry
+checks; missing authority denies Skills whose app declares an access rule. Standalone and agent accounts
+use their own grants; their credential's `read`, `write`, or `admin` scope caps
+the granted permission. Creating a Project or Skill needs `write` or `admin`.
+Scopes alone grant no resource access. Resource-bound credentials are unsupported
+for these resources. User and user-delegated requests retain the user's grants.
+User, group, authenticated-audience, standalone-account, and agent admin grants
+can keep a resource manageable when another admin grant is removed. Delegated
+and resource-bound account grants cannot replace the last manager.
+
 If the sole Skill administrator is removed outside the Skill service, a
 platform administrator can restore access under **Administration > AI Skills**. The
 same recovery surface can grant access to or permanently delete any Skill.
@@ -246,6 +259,26 @@ a differing Cloud Skill; pull first to keep Cloud changes, or use `push <dir> --
 to replace it. Pull defaults to `.agents/skills/<name>` in the current folder.
 `cld assistant reference` explains skipped files and `--force`.
 
+Manage direct grants with `cld assistant skills access list <name-or-id>` and
+`grant`, `set`, or `revoke`. The same commands exist under
+`cld assistant projects access`. For example:
+
+```bash
+cld assistant skills access grant weekly-status --service-account "Release agent" --permission read
+cld assistant projects access set "Release notes" --service-account <account-uuid> --permission write
+cld assistant skills access revoke weekly-status --access-id <grant-id> --yes
+```
+
+Use `--user`, `--group`, `--service-account`, or `--authenticated` to choose
+one recipient. Names require directory access; use the recipient's UUID when
+that access is unavailable. `access search-principals <query>` uses the same
+directory policy. `set` creates or updates a direct grant. Revoking needs `--yes`.
+
+Skill HTTP management, including these CLI writes, requires a user-backed actor
+and Core app access. The list and read routes broker access through the Skill's
+grant and its owning app. Machine callers use the supported service or capability
+contract for Skill mutations; their credential scopes still cap each operation.
+
 With `disable-model-invocation: true`, a Skill starts only when a person
 selects it with `/`. It stays out of the model catalog and `search_skills`,
 while remaining available in the slash menu. Later turns can reload a selected
@@ -262,7 +295,7 @@ request and exposes the omitted entries through `search_skills`. The slash menu 
 It supports partial words and minor typos, prioritizes name matches, and excludes
 disabled Skills before limiting results. Skill instructions and references are
 not searched or loaded during discovery. Server callers use
-`aiSkills.search(accessSubject, query, limit, { modelInvocableOnly })` and receive
+`aiSkills.search({ actor, accessSubject }, query, limit, { modelInvocableOnly })` and receive
 `{ skills, more }`. Set `modelInvocableOnly: true` for model discovery; omit it
 to include manual-only Skills for explicit selection.
 `GET /api/ai/skills?q=…` uses this search

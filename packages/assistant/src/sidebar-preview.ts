@@ -1,8 +1,16 @@
-import { aiConversations, isAiWorkingFilePath, listAiConversationFiles, listAssistantAiModels } from "@k2b/cloud/ai";
+import {
+  type AiResourceContext,
+  aiConversations,
+  isAiWorkingFilePath,
+  listAiConversationFiles,
+  listAssistantAiModels,
+} from "@k2b/cloud/ai";
 import { artifacts } from "./artifacts/service";
 
 /** Bounded, permission-aware details fetched only when a sidebar preview opens. */
-export async function loadAssistantSidebarPreview(userId: string, chatId: string) {
+export async function loadAssistantSidebarPreview(identity: AiResourceContext, chatId: string) {
+  if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");
+  const userId = identity.accessSubject.userId;
   const conversation = await aiConversations.getConversationByShortId({ shortId: chatId, ownerUserId: userId });
   if (!conversation) return null;
   const [sources, files, turn, models] = await Promise.all([
@@ -12,7 +20,7 @@ export async function loadAssistantSidebarPreview(userId: string, chatId: string
     listAssistantAiModels({ type: "user", userId }),
   ]);
   const ids = [...new Set(sources.sources.flatMap((source) => (source.ref?.type === "assistant.artifact" ? [source.ref.id] : [])))];
-  const apps = await artifacts.describe(ids, userId, conversation.id);
+  const apps = await artifacts.describe(ids, identity, conversation.id);
   return {
     model: turn ? (models.find((model) => model.id === turn.modelProfileId)?.label ?? turn.modelProfileId) : null,
     // Working files below /temp/ come last, so the preview names what the user brought and received.

@@ -28,8 +28,8 @@ async function resolve(location: Container, identity: ArtifactIdentity, write = 
   if (location.scope === "project") {
     const permission = write ? "write" : "read";
     const project = z.uuid().safeParse(location.id).success
-      ? await aiProjects.get(location.id, identity.accessSubject, permission)
-      : await aiProjects.getByShortId(location.id, identity.accessSubject, permission);
+      ? await aiProjects.get(location.id, identity, permission)
+      : await aiProjects.getByShortId(location.id, identity, permission);
     if (!project) throw new ArtifactError("ACCESS_DENIED");
     return { scope: location.scope, id: project.id, title: project.name };
   }
@@ -51,7 +51,7 @@ export const studioFiles = {
       if (!page.items) throw new ArtifactError("INVALID_INPUT");
       items = page.items.map((item) => ({ path: item.key, size: item.bytes, mediaType: item.mediaType }));
     } else if (resolved.scope === "project") {
-      items = await aiProjects.listFiles(resolved.id, identity.accessSubject, { after, limit });
+      items = await aiProjects.listFiles(resolved.id, identity, { after, limit });
     } else items = await listAiConversationFiles(resolved.id, undefined, { after, limit });
     return {
       container: resolved,
@@ -71,7 +71,7 @@ export const studioFiles = {
       const result = await artifacts.storage(resolved.id, { area: "files", operation: "read", key: location.path }, identity);
       if (result.item?.data) file = { bytes: result.item.data, mediaType: result.item.mediaType, version: String(result.item.version) };
     } else if (resolved.scope === "project") {
-      const result = await aiProjects.readFileByPath(resolved.id, location.path, identity.accessSubject);
+      const result = await aiProjects.readFileByPath(resolved.id, location.path, identity);
       if (result) file = { bytes: result.bytes, mediaType: result.mediaType, version: aiFileContentVersion(result) };
     } else {
       const result = await readAiConversationFile({ conversationId: resolved.id, ownerUserId: user(identity).id, path: location.path });
@@ -123,7 +123,7 @@ export const studioFiles = {
         );
         if (!result.version) throw new ArtifactError("CONFLICT");
       } else if (target.scope === "project") {
-        const result = await aiProjects.writeFile(target.id, identity.accessSubject, {
+        const result = await aiProjects.writeFile(target.id, identity, {
           path: destination.path,
           mediaType: file.mediaType,
           bytes: file.bytes,

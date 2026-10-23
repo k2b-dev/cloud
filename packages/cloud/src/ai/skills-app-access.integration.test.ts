@@ -34,12 +34,17 @@ databaseSuite()("Skill broker routes (integration)", () => {
       baseUrl: "http://notebooks.invalid",
       access: { kind: "signedIn" },
     };
-    const otherApp = { ...ownApp, id: `broker-other-${suffix}`, name: "Other app fixture" };
+    const otherApp: AppRegistryEntry = {
+      ...ownApp,
+      access: { kind: "roles", roles: ["admin"] },
+      id: `broker-other-${suffix}`,
+      name: "Other app fixture",
+    };
     const core: AppRegistryEntry = {
       ...ownApp,
       id: "core",
       name: "Core",
-      access: { kind: "signedIn", publicRoutes: ["/api/ai/skills", "/api/ai/skills/*"] },
+      access: { kind: "roles", roles: ["admin"], publicRoutes: ["/api/ai/skills", "/api/ai/skills/*"] },
     };
     const [owner] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid, provider, profile, display_name)
       VALUES (${`broker-owner-${suffix}`}, 'local', 'user', 'Broker fixture owner') RETURNING id`;
@@ -50,21 +55,20 @@ databaseSuite()("Skill broker routes (integration)", () => {
       credentialKind: "session",
       scopes: [],
     };
-    const resourceId = crypto.randomUUID();
-    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name, kind, app_id, resource_type, resource_id)
-      VALUES (${`broker-reader-${suffix}`}, 'resource_bound', ${ownApp.id}, 'notebook', ${resourceId}) RETURNING id`;
+    const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name, kind)
+      VALUES (${`broker-reader-${suffix}`}, 'standalone') RETURNING id`;
     const resolved: RequestAuthority = {
       actor: {
         kind: "service_account",
         serviceAccount: {
           id: account!.id,
           name: "Broker fixture reader",
-          kind: "resource_bound",
+          kind: "standalone",
           status: "active",
           delegatedUserId: null,
-          appId: ownApp.id,
-          resourceType: "notebook",
-          resourceId,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
           createdBy: null,
           createdAt: "2026-10-01T00:00:00Z",
         },
@@ -104,7 +108,7 @@ databaseSuite()("Skill broker routes (integration)", () => {
       ] as const) {
         const skill = await aiSkills.create(
           {
-            subject: ownerSubject,
+            subject: ownerAuthority,
             name: `broker-${label}-${suffix}`,
             description: "Broker fixture.",
             instructions: "Original instructions.",
@@ -132,7 +136,7 @@ databaseSuite()("Skill broker routes (integration)", () => {
       }
       const allowed = await routes.request(`/api/ai/skills/${own!.shortId}`);
       expect(allowed.status).toBe(200);
-      expect(await allowed.json()).toMatchObject({ skill: { id: own!.shortId, source: { appId: ownApp.id }, permission: "admin" } });
+      expect(await allowed.json()).toMatchObject({ skill: { id: own!.shortId, source: { appId: ownApp.id }, permission: "read" } });
       for (const target of [other!, ungranted!]) {
         const response = await routes.request(`/api/ai/skills/${target.shortId}`);
         expect(response.status).toBe(404);

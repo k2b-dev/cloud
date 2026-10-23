@@ -84,7 +84,7 @@ test("every Skill mutation keeps the resolved authority and stops before effects
     createdAt: row.created_at.toString(),
     updatedAt: row.updated_at.toString(),
   });
-  const subject = authority.accessSubject;
+  const subject = { actor: authority.actor, accessSubject: authority.accessSubject };
   const grantId = "gRa234";
   const content = { expectedRevision: 1, name: row.name, description: row.description, instructions: row.instructions };
   const results = [

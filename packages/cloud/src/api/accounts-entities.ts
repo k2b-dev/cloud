@@ -10,6 +10,8 @@ import {
   PaginationQuerySchema,
   PaginationResponseSchema,
   parsePagination,
+  ServiceAccountKindSchema,
+  ServiceAccountStatusSchema,
   UserProfileSchema,
   UserProviderSchema,
 } from "../contracts";
@@ -33,6 +35,8 @@ const QuerySchema = z
     profile: UserProfileSchema.optional(),
     user_ids: z.string().optional(),
     group_ids: z.string().optional(),
+    service_account_kinds: z.string().optional(),
+    service_account_status: ServiceAccountStatusSchema.optional(),
     exclude_user_ids: z.string().optional(),
     exclude_group_ids: z.string().optional(),
     exclude_service_account_ids: z.string().optional(),
@@ -70,6 +74,14 @@ const parseKinds = (value?: string) => {
     return { ok: true as const, value: [...new Set(kinds)] };
   }
   return { ok: false as const, message: "Invalid kinds query parameter." };
+};
+
+const parseServiceAccountKinds = (value?: string) => {
+  const kinds = parseCsv(value);
+  if (kinds.length === 0) return { ok: true as const, value: undefined };
+  const parsed = z.array(ServiceAccountKindSchema).safeParse([...new Set(kinds)]);
+  if (parsed.success) return { ok: true as const, value: parsed.data };
+  return { ok: false as const, message: "Invalid service_account_kinds query parameter." };
 };
 
 const parseUuidList = (value: string | undefined, label: string) => {
@@ -125,6 +137,8 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
       const params = parsePagination(query);
       const kinds = parseKinds(query.kinds);
       if (!kinds.ok) return respond(c, fail(err.badInput(kinds.message)));
+      const serviceAccountKinds = parseServiceAccountKinds(query.service_account_kinds);
+      if (!serviceAccountKinds.ok) return respond(c, fail(err.badInput(serviceAccountKinds.message)));
       const excludeUserIds = parseUuidList(query.exclude_user_ids, "exclude_user_ids");
       if (!excludeUserIds.ok) return respond(c, fail(err.badInput(excludeUserIds.message)));
       const excludeGroupIds = parseUuidList(query.exclude_group_ids, "exclude_group_ids");
@@ -152,6 +166,8 @@ export const createAccountsEntitiesRoutes = (dependencies: AccountsEntitiesRoute
         profile: query.profile,
         userIds: userIds.value,
         groupIds: groupIds.value,
+        serviceAccountKinds: serviceAccountKinds.value,
+        serviceAccountStatus: query.service_account_status,
         excludeUserIds: excludeUserIds.value,
         excludeGroupIds: excludeGroupIds.value,
         excludeServiceAccountIds: excludeServiceAccountIds.value,

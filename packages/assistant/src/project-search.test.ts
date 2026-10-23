@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import type { AiProject } from "@k2b/cloud/ai";
 import { UniversalSearchDataSchema } from "@k2b/cloud/contracts";
+import { testIdentity } from "./artifacts/test-identity";
 import { assistantCapabilities } from "./capabilities";
 import { assistantProjectsSearchOptions } from "./frontend/assistant-search";
 import { searchAssistantProjects } from "./search";
@@ -18,13 +19,13 @@ const project = (shortId: string, name: string, description = ""): AiProject => 
   createdAt: "",
   updatedAt: "",
 });
-const context = { accessSubject: { type: "user" as const, userId: "owner" }, locale: "de" };
+const context = { ...testIdentity("owner"), locale: "de" };
 const input = { query: "RECHNUNG banking", tags: ["assistant-project"], limit: 1 };
 
 test("project search uses the authorized catalog, matches names and descriptions before limiting, and returns public links", async () => {
   const result = await searchAssistantProjects(input, context, {
     list: async (subject) => {
-      expect(subject).toEqual(context.accessSubject);
+      expect(subject).toBe(context);
       return [
         project("Other1", "Other"),
         project("Bank01", "Banking", "Rechnung zuordnen"),

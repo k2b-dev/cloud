@@ -56,6 +56,7 @@ import { answerOpenToolCalls } from "./open-tool-calls";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
+import type { AiResourceContext } from "./projects-authorization";
 import {
   AI_TURN_LEASE_MS,
   type AiTurnBlock,
@@ -302,6 +303,11 @@ const accessSubjectForActor = (actor: RequestActor | undefined): AccessSubject |
     return { type: "user", userId: actor.delegatedUser.id, delegatedByServiceAccountId: actor.serviceAccount.id };
   }
   return { type: "service_account", serviceAccountId: actor.serviceAccount.id };
+};
+
+const resourceContextForActor = (actor: RequestActor | undefined): AiResourceContext | null => {
+  const accessSubject = accessSubjectForActor(actor);
+  return actor && accessSubject ? { actor, accessSubject } : null;
 };
 
 export type ExecutorConfig = {
@@ -881,7 +887,7 @@ export class AiTurnExecutor {
       if (allowed) material.tools = material.tools.filter((tool) => allowed.has(tool.def.name));
       chatId ||= conversation?.shortId ?? "";
       if (config.project) {
-        const subject = accessSubjectForActor(material.actor);
+        const subject = resourceContextForActor(material.actor);
         const project = subject ? await aiProjects.getByShortId(config.project.id, subject, "read") : null;
         if (!project) {
           throw new AiTurnFailure("not_allowed", "Project access is no longer available.");
@@ -964,11 +970,11 @@ export class AiTurnExecutor {
     const timeZone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "UTC";
     const promptLocale = normalizeLocale(config.locale ?? (await coreSettings.get<string>("app.locale")));
     const project = config.project;
-    const projectSubject = project ? accessSubjectForActor(material.actor) : null;
+    const projectSubject = project ? resourceContextForActor(material.actor) : null;
     // Skills are an Assistant/default-tool capability. Custom and structured
     // executions must not gain an implicit database dependency or extra tools.
     const skillSubject =
-      defaultToolSource && resolved.profile.capabilities.includes("tools") ? accessSubjectForActor(material.actor) : null;
+      defaultToolSource && resolved.profile.capabilities.includes("tools") ? resourceContextForActor(material.actor) : null;
     const availableSkills = skillSubject
       ? (await aiSkills.list(skillSubject, { authority: toolAuthority })).filter((skill) => skill.enabled)
       : [];
