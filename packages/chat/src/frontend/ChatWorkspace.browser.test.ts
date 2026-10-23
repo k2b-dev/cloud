@@ -758,6 +758,7 @@ describe("ChatWorkspace browser read state", () => {
         await page.waitForURL(`**/c/${chat}`);
         const target = harness.messageId(chat, 5);
         const item = page.locator(`[data-key="${target}"]`);
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
         await chooseFromMessageMenu(page, name, item, "Mark unread from here");
         await marker(page).waitFor();
         expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(target);
@@ -787,6 +788,7 @@ describe("ChatWorkspace browser read state", () => {
         const own = page.locator(`[data-key="${harness.messageId(chat, 7)}"]`);
 
         // Own messages never count as unread, so their menu has no such entry; "Reply" and "Copy text" are on every message.
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
         const ownMenu = await openMessageMenu(page, name, own);
         expect(await ownMenu.getByRole("menuitem").allInnerTexts()).toEqual([
           expect.stringContaining("Reply"),
@@ -840,6 +842,7 @@ describe("ChatWorkspace browser read state", () => {
           .context()
           .grantPermissions(["clipboard-read", "clipboard-write"])
           .catch(() => {});
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
         await chooseFromMessageMenu(page, name, target, "Copy text");
         await page.locator("[data-k2b-live]").getByText("Copied", { exact: true }).waitFor({ state: "attached" });
         if (errors.length) expect(errors).toEqual([]);
@@ -871,6 +874,7 @@ describe("ChatWorkspace browser read state", () => {
         ).toBe(200);
         await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 6);
         const target = page.locator(".k2b-message-row:not([data-own])").last().locator("xpath=ancestor::*[@data-key][1]");
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
         await chooseFromMessageMenu(page, name, target, "Mark unread from here");
         const done = page.locator(".k2b-toast").filter({ hasText: "Unread from" });
         await done.waitFor();

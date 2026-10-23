@@ -1291,6 +1291,11 @@ export const startChatHarness = async () => {
       elements.set(element.id, { preview: "", readable: true, ...element });
       return { type: "spaces.task", id: element.id } satisfies CloudResourceRef;
     },
+    /** Grants or takes away the viewer's access to an element of the made-up "spaces" app. */
+    setReadable: (id: string, readable: boolean) => {
+      const element = elements.get(id);
+      if (element) element.readable = readable;
+    },
     /** A message from someone else that shares elements, delivered live. */
     receiveShared: (chat: string, author: Person, body: string, refs: CloudResourceRef[]) =>
       publish(append(chat, author, body, now(), "text", { refs })),

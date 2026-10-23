@@ -2,6 +2,7 @@
 id: chat-threads
 title: Use threads and replies
 icon: ti ti-hash
+kind: task
 description: Keep topics apart in threads, reply with a quote, and see every thread at once.
 order: 115
 ---
@@ -39,7 +40,7 @@ The reply shows the original message as a quote. Select the quote to jump to the
 
 ## Create, rename, and archive threads {icon="settings"}
 
-Only chat admins create, rename, and archive threads.
+Only people who manage the chat create, rename, and archive threads.
 
 :::steps
 1. Select **New thread** below the chat's threads, or in the thread button next to the chat's name. In a chat without threads, open the chat's info, select **…**, and choose **New thread**.

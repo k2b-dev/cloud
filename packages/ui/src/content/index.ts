@@ -103,12 +103,12 @@ export type {
   MessageRowAuthor,
   MessageRowFile,
   MessageRowMedia,
+  MessageRowOrigin,
   MessageRowProgress,
   MessageRowProps,
   MessageRowQuote,
   MessageRowReaction,
   MessageRowStatus,
-  MessageRowOrigin,
   MessageRowThread,
   MessageSystemRowProps,
 } from "./MessageRow";

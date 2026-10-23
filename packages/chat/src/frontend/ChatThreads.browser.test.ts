@@ -21,7 +21,7 @@ const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, is
 const until = async (condition: () => boolean) => {
   const deadline = Date.now() + 5_000; // real clock: bounds the wait for the in-memory server
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error("Condition not met in time");
+    if (Date.now() > deadline) throw new Error("Condition not met in time"); // real clock: bounds the wait
     await Bun.sleep(20);
   }
 };
@@ -121,6 +121,7 @@ describe("Chat threads on a desktop", () => {
       expect(await page.locator(".k2b-message-row__origin", { hasText: "General" }).count()).toBeGreaterThan(0);
       await page.getByRole("textbox", { name: "Message to General" }).fill("For everyone");
       // The send names its thread from its first frame, so the chip adds no line when the server confirms it.
+      // settled: every frame of the send is the subject, also the unsettled ones.
       await page.evaluate(() => {
         const seen: { chip: boolean; height: number }[] = [];
         (window as unknown as { ownRow: typeof seen }).ownRow = seen;
