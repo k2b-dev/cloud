@@ -86,10 +86,13 @@ for (const width of [390, 768, 1440])
             },
           });
         });
+        await tab.route("https://cloud.example.test/machine-fixture.js", (route) =>
+          route.fulfill({ contentType: "text/javascript; charset=utf-8", body: bundle }),
+        );
         await tab.route("https://cloud.example.test/app/accounts/service-accounts", (route) =>
           route.fulfill({
-            contentType: "text/html",
-            body: `<!doctype html><html lang="en" class="${dark ? "dark" : ""}"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-theme="${dark ? "dark" : "light"}"><main id="root" class="p-4"></main><script>${bundle}</script></body></html>`,
+            contentType: "text/html; charset=utf-8",
+            body: `<!doctype html><html lang="en" class="${dark ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-theme="${dark ? "dark" : "light"}"><main id="root" class="p-4"></main><script src="/machine-fixture.js"></script></body></html>`,
           }),
         );
         await tab.goto("https://cloud.example.test/app/accounts/service-accounts");
