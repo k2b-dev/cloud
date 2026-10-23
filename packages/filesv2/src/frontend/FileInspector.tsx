@@ -239,7 +239,11 @@ export default function FileInspector(props: {
           >
             {(item) => {
               // One versions request feeds the Info count on phones and the versions list.
-              const versions = createVersions(() => props.base, item, () => details.refresh());
+              const versions = createVersions(
+                () => props.base,
+                item,
+                () => details.refresh(),
+              );
               const currentAuthor = () => {
                 const history = props.history?.initial;
                 const request = itemHistoryRequest(props.base, {
@@ -555,7 +559,16 @@ export default function FileInspector(props: {
  */
 function createVersions(base: () => BaseSummary, entry: () => FileEntry, onStale: () => Promise<void>) {
   const t = useBrowserMessages();
-  const key = () => JSON.stringify([base().id, base().locationKey, entry().path, entry().modified, entry().revision ?? null]);
+  const key = () =>
+    JSON.stringify([
+      base().id,
+      base().locationKey,
+      entry().path,
+      entry().resourceId ?? null,
+      entry().modified,
+      entry().size,
+      entry().revision ?? null,
+    ]);
   const versions = query.create({
     source: key,
     enabled: () => base().versioningEnabled && !entry().directory,
@@ -567,14 +580,21 @@ function createVersions(base: () => BaseSummary, entry: () => FileEntry, onStale
       const items = await response.json();
       const confirmed = await apiClient.bases[":baseId"].entry.$get({ param, query: { path } }, { init: { signal: abortSignal } });
       if (!confirmed.ok) return apiFailure(confirmed, t().detailsFailed);
-      const file = (await confirmed.json()).entry;
-      return { key, items, revision: file.revision ?? null, modified: file.modified };
+      const result = await confirmed.json();
+      return { key, items, base: result.base, file: result.entry };
     },
   });
   type Loaded = NonNullable<ReturnType<typeof versions.data>>;
-  /** The same revision before and after the list means the list belongs to it; without revisions, the same change time. */
+  /** Match storage and file identity; revisionless storage additionally compares its available content metadata. */
   const confirms = (value: Loaded) =>
-    value.key === key() && value.revision === (entry().revision ?? null) && (value.revision !== null || value.modified === entry().modified);
+    value.key === key() &&
+    value.base.id === base().id &&
+    value.base.locationKey === base().locationKey &&
+    value.file.path === entry().path &&
+    value.file.directory === entry().directory &&
+    value.file.resourceId === entry().resourceId &&
+    value.file.revision === entry().revision &&
+    (value.file.revision !== undefined || (value.file.modified === entry().modified && value.file.size === entry().size));
   /** A list the refreshed details still did not confirm; it shows as a failed read with Retry instead of loading forever. */
   const [unconfirmed, setUnconfirmed] = createSignal<Loaded | null>(null);
   let alive = true;
@@ -812,6 +832,8 @@ function VersionsSection(props: {
   };
   const restore = (version: FileVersion) =>
     run(async () => {
+      // An in-place restore needs a server-enforced precondition; revisionless storage can restore to a new file.
+      if (!props.entry.revision) throw new Error(h().versionsFailed);
       const response = await apiClient.bases[":baseId"].versions.restore.$post({
         param: param(),
         json: { path: path(), id: version.id, expectedRevision: props.entry.revision },
@@ -960,8 +982,9 @@ function VersionsSection(props: {
                         action: () => void downloadVersion(version),
                       },
                       {
-                        disabled: !canAct() || props.entry.actions?.write === false,
+                        disabled: !canAct() || !props.entry.revision || props.entry.actions?.write === false,
                         label: t().restoreVersion,
+                        description: !props.entry.revision ? t().restoreNeedsRevision : undefined,
                         icon: "ti ti-arrow-back-up",
                         action: () => void restore(version),
                       },

@@ -880,65 +880,100 @@ describe("Files history in the workspace", () => {
     };
   };
 
-  for (const refresh of ["current", "unchanged", "failed"] as const)
-    test(`details of R3 never number or restore from the version list of R4 (${refresh} details refresh)`, async () => {
-      const file: FileEntry = { name: "Proof.bin", path: "Kunden/Proof.bin", directory: false, size: 1, modified: NOW, revision: "rev-3" };
-      const newer: FileEntry = { ...file, size: 2, modified: "2026-10-20T12:31:00.000Z", revision: "rev-4" };
-      const { inspector, section, toggle, titles } = mountDetail(file, "rev-3");
-      await flush();
-      pending("shares").resolve(Response.json({ items: [], next: null }));
-      // R4 was written after the details were read: the list now saves R3 as v-3.
-      pending("versions").resolve(Response.json(versionFixtures(3)));
-      await flush();
-      confirmEntry(newer);
-      await flush();
-      expect(inspector().textContent).not.toContain("Version 4");
-      expect(button(inspector(), "Restore version 3")).toBeUndefined();
-      expect(toggle().textContent?.trim()).toBe("Loading details…");
-      expect(section().querySelector(".k2b-count-chip")).toBeNull();
-      // Exactly one details refresh follows the mismatched list.
-      expect(apiRequests.filter((item) => item.kind === "entry")).toHaveLength(2);
-      if (refresh === "failed") {
-        pending("entry").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+  for (const change of ["revision", "size", "identity"] as const)
+    for (const refresh of ["current", "unchanged", "failed"] as const)
+      test(`details of R3 never number or restore from the version list of R4 (${change}, ${refresh} details refresh)`, async () => {
+        const file: FileEntry = {
+          name: "Proof.bin",
+          path: "Kunden/Proof.bin",
+          directory: false,
+          size: 1,
+          modified: NOW,
+          ...(change === "size" ? {} : { revision: "rev-3" }),
+          ...(change === "identity" ? { resourceId: "original-file" } : {}),
+        };
+        const newer: FileEntry =
+          change === "size"
+            ? { ...file, size: 2 }
+            : change === "identity"
+              ? { ...file, resourceId: "replacement-file" }
+              : { ...file, size: 2, modified: "2026-10-20T12:31:00.000Z", revision: "rev-4" };
+        const { inspector, section, toggle, titles } = mountDetail(file, change === "identity" ? "older-revision" : "rev-3");
         await flush();
-        // The failed refresh ends in the detail error with its retry, not in a spinner.
-        expect(inspector().textContent).toContain("This item is no longer available or you do not have access.");
-        expect(inspector().textContent).not.toContain("Version 4");
-        button(inspector(), "Try again")!.click();
-        await flush();
-      } else if (refresh === "unchanged") {
-        pending("entry").resolve(Response.json({ base: home, entry: file }));
-        await flush();
-        // Still no confirmation: a failed list with Try again, never an endless spinner or a guessed number.
-        expect(section().textContent).toContain("Versions not loaded.");
-        expect(toggle().textContent?.trim()).toBe("Versions not loaded.");
-        expect(inspector().textContent).not.toContain("Version 4");
-        expect(apiRequests.filter((item) => item.kind === "entry")).toHaveLength(2);
-        button(section(), "Try again")!.click();
-        await flush();
-        expect(toggle().textContent?.trim()).toBe("Loading details…");
+        pending("shares").resolve(Response.json({ items: [], next: null }));
+        // R4 was written after the details were read: the list now saves R3 as v-3.
         pending("versions").resolve(Response.json(versionFixtures(3)));
         await flush();
         confirmEntry(newer);
         await flush();
-        // A new mismatched list asks the details once more.
-        expect(apiRequests.filter((item) => item.kind === "entry")).toHaveLength(4);
-      }
-      pending("entry").resolve(Response.json({ base: home, entry: newer }));
-      await flush();
-      // The details show R4, so its list is read and confirmed again.
-      pending("versions").resolve(Response.json(versionFixtures(3)));
-      await flush();
-      confirmEntry(newer);
-      await flush();
-      expect(titles()[0]).toBe("Version 4 · current");
-      expect(section().querySelector(".k2b-count-chip")?.textContent).toBe("4");
-      expect(toggle().textContent?.trim()).toBe("4");
-      // The overwrite that produced R3 no longer names the current file, so it restores no predecessor.
-      expect(button(inspector(), "Restore version 3")).toBeUndefined();
-      expect(button(inspector(), "Restore version 2")).toBeUndefined();
-      expect(apiRequests.some((item) => item.kind === "version-restore")).toBe(false);
-    });
+        expect(inspector().textContent).not.toContain("Version 4");
+        expect(button(inspector(), "Restore version 3")).toBeUndefined();
+        expect(toggle().textContent?.trim()).toBe("Loading details…");
+        expect(section().querySelector(".k2b-count-chip")).toBeNull();
+        // Exactly one details refresh follows the mismatched list.
+        expect(apiRequests.filter((item) => item.kind === "entry")).toHaveLength(2);
+        if (refresh === "failed") {
+          pending("entry").resolve(Response.json({ message: "Unavailable" }, { status: 503 }));
+          await flush();
+          // The failed refresh ends in the detail error with its retry, not in a spinner.
+          expect(inspector().textContent).toContain("This item is no longer available or you do not have access.");
+          expect(inspector().textContent).not.toContain("Version 4");
+          button(inspector(), "Try again")!.click();
+          await flush();
+        } else if (refresh === "unchanged") {
+          pending("entry").resolve(Response.json({ base: home, entry: file }));
+          await flush();
+          // Still no confirmation: a failed list with Try again, never an endless spinner or a guessed number.
+          expect(section().textContent).toContain("Versions not loaded.");
+          expect(toggle().textContent?.trim()).toBe("Versions not loaded.");
+          expect(inspector().textContent).not.toContain("Version 4");
+          expect(apiRequests.filter((item) => item.kind === "entry")).toHaveLength(2);
+          button(section(), "Try again")!.click();
+          await flush();
+          expect(toggle().textContent?.trim()).toBe("Loading details…");
+          pending("versions").resolve(Response.json(versionFixtures(3)));
+          await flush();
+          confirmEntry(newer);
+          await flush();
+          // A new mismatched list asks the details once more.
+          expect(apiRequests.filter((item) => item.kind === "entry")).toHaveLength(4);
+        }
+        pending("entry").resolve(Response.json({ base: home, entry: newer }));
+        await flush();
+        // The details show R4, so its list is read and confirmed again.
+        pending("versions").resolve(Response.json(versionFixtures(3)));
+        await flush();
+        confirmEntry(newer);
+        await flush();
+        expect(titles()[0]).toBe("Version 4 · current");
+        expect(section().querySelector(".k2b-count-chip")?.textContent).toBe("4");
+        expect(toggle().textContent?.trim()).toBe("4");
+        // The overwrite that produced R3 no longer names the current file, so it restores no predecessor.
+        expect(button(inspector(), "Restore version 3")).toBeUndefined();
+        expect(button(inspector(), "Restore version 2")).toBeUndefined();
+        expect(apiRequests.some((item) => item.kind === "version-restore")).toBe(false);
+      });
+
+  test("revisionless storage offers restoring a new file but cannot overwrite the current content", async () => {
+    const file: FileEntry = { name: "Proof.bin", path: "Kunden/Proof.bin", directory: false, size: 1, modified: NOW };
+    const { section } = mountDetail(file, "previous");
+    await flush();
+    pending("shares").resolve(Response.json({ items: [], next: null }));
+    pending("versions").resolve(Response.json(versionFixtures(2)));
+    await flush();
+    confirmEntry(file);
+    await flush();
+    section().querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!.click();
+    await flush();
+    const items = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    const restore = items.find((item) => item.textContent?.startsWith("Restore this version"))!;
+    expect(restore.disabled).toBe(true);
+    expect(restore.textContent).toContain("Restore as a new file to avoid replacing newer content.");
+    expect(items.find((item) => item.textContent?.startsWith("Restore as a new file"))!.disabled).toBe(false);
+    restore.click();
+    await flush();
+    expect(apiRequests.some((item) => item.kind === "version-restore")).toBe(false);
+  });
 
   test("a failed file read after the version list shows Try again, keeps confirmed rows and disables their actions", async () => {
     const file: FileEntry = { name: "Proof.bin", path: "Kunden/Proof.bin", directory: false, size: 1, modified: NOW, revision: "rev-3" };
