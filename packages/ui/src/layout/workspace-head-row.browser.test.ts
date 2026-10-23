@@ -448,7 +448,7 @@ test("chips that scroll on their own row fade at the edge that hides them", asyn
   const page = await load({}, 1440, 1440, true);
   try {
     const filters = page.locator(".k2b-app-workspace__head-filters");
-    await expect(filters.getAttribute("data-scroll-fade-mode")).resolves.toBe("both");
+    expect(await filters.getAttribute("data-scroll-fade-mode")).toBe("both");
     expect(await filters.getAttribute("data-scroll-fade")).toBeNull();
     await resizeHost(page, 300);
     const overflow = await filters.evaluate((element) => element.scrollWidth - element.clientWidth);
