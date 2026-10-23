@@ -174,15 +174,15 @@ describe("PermissionEditor last manager in a browser", () => {
     }
   };
 
-  test("locks the only manager's row without moving anything", async () => {
-    for (const width of [320, 1024]) {
+  for (const width of [320, 1024]) {
+    test(`${width}px: locks the only manager's row without moving anything`, async () => {
       const locked = await firstRow(width, [manager("qdt", "Quentin Dorn")]);
       const free = await firstRow(width, [manager("qdt", "Quentin Dorn"), manager("lym", "Lya Meyer")]);
       expect(locked.disabled).toBe(true);
       expect(free.disabled).toBe(false);
       expect({ ...locked, disabled: undefined }).toEqual({ ...free, disabled: undefined });
-    }
-  });
+    });
+  }
 });
 
 describe("PermissionEditor group coverage in a browser", () => {
