@@ -1,6 +1,9 @@
+import type { SQL } from "bun";
 import { env } from "../../config/env";
 import { publicCloudOrigin } from "../../shared/app-url";
 import { get as getSetting } from "../settings";
+import { decryptValue } from "../settings/crypto";
+import { SETTINGS_MAP, validateSettingValue } from "../settings/defaults";
 import { CLOUD_INVOCATION_JWKS_PATH, CLOUD_OAUTH_JWKS_PATH, CLOUD_SESSION_JWKS_PATH, IDENTITY_REFRESH_TIMEOUT_MS } from "./constants";
 
 const RUNTIME_CONFIG_TTL_MS = 60_000;
@@ -27,6 +30,26 @@ const normalizeGroups = (value: unknown): string[] => {
     ),
   ];
   return groups.length > 0 ? groups : ["admins"];
+};
+
+/** Transaction-local admin groups for callers that already hold a connection.
+ * Never fill the process/settings cache with an uncommitted setting.
+ */
+export const readIdentityGroupsAdmin = async (db: SQL): Promise<readonly string[]> => {
+  const key = "freeipa.groups.admin";
+  const def = SETTINGS_MAP.get(key);
+  if (!def) throw new Error("Missing identity admin-group setting definition");
+  const [row] = await db<{ value: string }[]>`SELECT value FROM settings.entries WHERE key = ${key}`;
+  let groups: unknown = def.default;
+  if (row) {
+    try {
+      const validated = validateSettingValue(def, await decryptValue(row.value));
+      if (validated.ok) groups = validated.value;
+    } catch {
+      // Match the settings store's unreadable-row fallback without mutating the row.
+    }
+  }
+  return Object.freeze(normalizeGroups(groups));
 };
 
 const resolveCoreJwksUrl = (issuer: string, path: string, transportOrigin = env.CLOUD_IDENTITY_JWKS_ORIGIN): URL => {

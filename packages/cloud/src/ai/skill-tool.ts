@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AccessSubject } from "../server";
+import type { RequestAuthority } from "../server/middleware/auth";
 import { AI_SKILL_FILE_MOUNT } from "./file-mount";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { type AiSkillCatalogEntry, mergeAiSkillCatalog, rankAiSkillCatalog, searchAiSkillCatalog } from "./skill-catalog";
@@ -8,11 +9,17 @@ import { aiSkills } from "./skills";
 import { defineAiTool } from "./tools";
 
 /** Explicit selections use the same permission check and turn snapshot as load_skill. */
-export async function loadSelectedAiSkills(ids: readonly string[], turnId: string, subject: AccessSubject | null, allowed: boolean) {
+export async function loadSelectedAiSkills(
+  ids: readonly string[],
+  turnId: string,
+  subject: AccessSubject | null,
+  allowed: boolean,
+  authority: RequestAuthority | null = null,
+) {
   const loaded = [];
   for (const id of new Set(ids)) {
     if (!subject || !allowed) throw new Error("The selected Skill requires a model and tool scope that allow Skills.");
-    const skill = await aiSkills.loadForTurn(turnId, { id }, subject);
+    const skill = await aiSkills.loadForTurn(turnId, { id }, subject, authority);
     if (!skill) throw new Error(`Selected Skill ${id} is unavailable or access was revoked.`);
     loaded.push({
       name: skill.name,
@@ -51,7 +58,7 @@ export const CloudAiLoadSkillOutputSchema = z.object({
   files: z.array(z.string()),
 });
 
-export const createCloudAiLoadSkillTool = (subject: AccessSubject) =>
+export const createCloudAiLoadSkillTool = (subject: AccessSubject, authority: RequestAuthority | null = null) =>
   defineAiTool({
     name: "load_skill",
     description:
@@ -62,7 +69,7 @@ export const createCloudAiLoadSkillTool = (subject: AccessSubject) =>
   }).server(async (input, ctx) => {
     if (!ctx.turnId) throw new Error("load_skill requires a turn context.");
     const selector = input.id ? { id: input.id } : input.name;
-    const snapshot = selector ? await aiSkills.loadForTurn(ctx.turnId, selector, subject) : null;
+    const snapshot = selector ? await aiSkills.loadForTurn(ctx.turnId, selector, subject, authority) : null;
     if (!snapshot) throw new Error(`Skill "${input.id ?? input.name}" is unavailable or access was revoked.`);
     return {
       name: snapshot.name,
@@ -84,7 +91,11 @@ export const CloudAiSearchSkillsOutputSchema = z.object({
   more: z.boolean(),
 });
 
-export const createCloudAiSearchSkillsTool = (subject: AccessSubject | null, localSkills: readonly AiSkillCatalogEntry[] = []) =>
+export const createCloudAiSearchSkillsTool = (
+  subject: AccessSubject | null,
+  localSkills: readonly AiSkillCatalogEntry[] = [],
+  authority: RequestAuthority | null = null,
+) =>
   defineAiTool({
     name: "search_skills",
     description:
@@ -94,7 +105,7 @@ export const createCloudAiSearchSkillsTool = (subject: AccessSubject | null, loc
     approval: "never",
   }).server(async (input) => {
     const result = subject
-      ? await aiSkills.search(subject, input.query, input.limit + localSkills.length, { modelInvocableOnly: true })
+      ? await aiSkills.search(subject, input.query, input.limit + localSkills.length, { modelInvocableOnly: true, authority })
       : { skills: [], more: false };
     const cloud = result.skills.map(({ name, description }) => ({ name, description }));
     if (!localSkills.length) return { skills: cloud, more: result.more };

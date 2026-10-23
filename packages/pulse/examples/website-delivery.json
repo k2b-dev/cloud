@@ -1,0 +1,10 @@
+{
+  "key": "willow-website-2026-10-20-001",
+  "events": [
+    { "kind": "page_view", "ts": "2026-10-19T21:55:00Z", "sessionId": "fictional-session-a", "path": "/" },
+    { "kind": "page_view", "ts": "2026-10-19T22:05:00Z", "sessionId": "fictional-session-a", "path": "/services" },
+    { "kind": "page_view", "ts": "2026-10-20T10:00:00Z", "sessionId": "fictional-session-b", "path": "/services" },
+    { "kind": "page_view", "ts": "2026-10-20T10:01:00Z", "sessionId": "fictional-session-b", "path": "/contact" },
+    { "kind": "contact_form_sent", "ts": "2026-10-20T10:02:00Z", "sessionId": "fictional-session-b", "path": "/contact" }
+  ]
+}

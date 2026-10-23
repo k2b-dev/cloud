@@ -715,6 +715,24 @@ the operator can replace this list with `ASSISTANT_RSQL_ALLOWED_TARGETS` in the
 Assistant container to allow another internal host. A blocked target reports
 `DB_TARGET_BLOCKED` without changing stored configuration.
 
+**Storage limits** changes the maximum file size and storage per app. Storage
+and **Database settings** show which saved values cannot be read; displayed
+values are fallbacks. Select **Replace stored value** for each value you intend
+to replace. Other unreadable values remain untouched. A failed save leaves the
+dialog and draft open.
+
+The storage and database settings APIs return `unreadable` keyed by setting
+name. Updates accept only the fields to change and an optional
+`replaceUnreadable` array of their setting names. The Studio administration CLI
+uses the same JSON contract. Without explicit intent, a supplied unreadable
+key returns HTTP 409 `setting_unreadable`. Testing a connection also refuses
+an unreadable URL or token unless you supply that value for the test.
+
+Storage and database submissions commit all supplied keys together. A token-only
+save omits the unchanged database URL. If a saved value becomes unreadable while
+the editor is open, the warning and replacement choices refresh without losing
+the draft. Select the affected value explicitly, then retry.
+
 The stored API token is never returned. Removing or changing the server is
 blocked while databases or queued database cleanup still depend on it.
 

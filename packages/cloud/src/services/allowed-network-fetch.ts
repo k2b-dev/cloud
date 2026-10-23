@@ -2,6 +2,7 @@ import { type ClientRequest, request as httpRequest, type IncomingMessage, type 
 import { request as httpsRequest } from "node:https";
 import { type NetworkAllowlist, networkAddressFamily, normalizeNetworkHostname } from "../shared/network-address";
 import { type NetworkLookup, pinnedNetworkLookup, resolveAllowedNetworkAddresses } from "./network-security";
+import { awaitNetworkOperation } from "./network-transport";
 
 type RequestFactory = (options: RequestOptions, callback: (response: IncomingMessage) => void) => ClientRequest;
 type AllowedNetworkFetchDeps = {
@@ -25,23 +26,19 @@ export const createAllowedNetworkFetch =
     if (url.username || url.password) throw new TypeError("Network target must not include user information");
     const signal = request.signal;
     signal.throwIfAborted();
-    const addresses = await new Promise<Awaited<ReturnType<typeof resolveAllowedNetworkAddresses>>>((resolve, reject) => {
-      const abort = () => reject(signal.reason);
-      signal.addEventListener("abort", abort, { once: true });
+    const addresses = await awaitNetworkOperation(
       (deps.resolve ?? resolveAllowedNetworkAddresses)(
         url.hostname,
         allowlist,
         deps.lookup,
         Number(url.port || (url.protocol === "https:" ? 443 : 80)),
-      )
-        .then(resolve, reject)
-        .finally(() => signal.removeEventListener("abort", abort));
-      if (signal.aborted) abort();
-    });
+      ),
+      signal,
+    );
     signal.throwIfAborted();
     // A body of known size goes out with Content-Length; only a caller's stream (in init or an input Request) is chunked.
     const streamed = init?.body != null ? init.body instanceof ReadableStream : input instanceof Request && input.body !== null;
-    const payload = request.body && !streamed ? new Uint8Array(await request.arrayBuffer()) : undefined;
+    const payload = request.body && !streamed ? new Uint8Array(await awaitNetworkOperation(request.arrayBuffer(), signal)) : undefined;
     signal.throwIfAborted();
     return new Promise<Response>((resolve, reject) => {
       const headers = new Headers(request.headers);
@@ -130,7 +127,11 @@ export const createAllowedNetworkFetch =
               });
           try {
             resolve(new Response(body, { status, statusText: incoming.statusMessage, headers: responseHeaders }));
-            if (empty) incoming.resume();
+            if (empty) {
+              incoming.destroy();
+              outgoing.destroy();
+              cleanup();
+            }
           } catch (error) {
             fail(error instanceof Error ? error : new Error(String(error)));
           }

@@ -1,6 +1,6 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { ButtonLink, Paper, Placeholder, ScrollArea, useLocale } from "@k2b/ui";
+import { ButtonLink, Placeholder, ScrollArea, useLocale } from "@k2b/ui";
 import { createMemo, For, Show } from "solid-js";
 import type { DraftFolderItem, DraftFolderPage } from "../../contracts";
 import { mailDraftHref } from "./mail-compose-route";
@@ -39,62 +39,45 @@ export default function MailDraftsView(props: {
 
   return (
     <section class="flex h-full min-h-0 flex-1 flex-col overflow-hidden" aria-busy={props.loading}>
-      <header class="flex shrink-0 items-center gap-3 px-4 py-3">
-        <span class="flex h-8 w-8 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
-          <i class="ti ti-file-pencil" aria-hidden="true" />
-        </span>
-        <div class="min-w-0 flex-1">
-          <h1 class="truncate text-base font-semibold text-primary">{props.title}</h1>
-          <p class="text-xs text-dimmed">{t().draftCount({ count: props.page.total })}</p>
-        </div>
-      </header>
-      <ScrollArea class="flex-1 p-3">
+      <h1 class="sr-only">{props.title}</h1>
+      <ScrollArea class="flex-1">
         <Show when={!props.error} fallback={<Placeholder state="error" title={t().draftsUnavailable} description={props.error!} />}>
           <Show
             when={props.page.items.length > 0}
             fallback={<Placeholder icon="ti ti-file-pencil" title={t().noDrafts} description={t().noDraftsDescription} />}
           >
-            <div class="flex flex-col gap-2">
+            <div class="mail-drafts-list">
               <For each={props.page.items}>
                 {(item) => {
                   const card = (
                     <>
-                      <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
+                      <span class="mail-draft-row__icon">
                         <i class={`ti ${item.intent === "new" ? "ti-file-pencil" : "ti-arrow-back-up"}`} aria-hidden="true" />
                       </span>
-                      <div class="min-w-0 flex-1">
-                        <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                          <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-primary">{item.subject || t().noSubject}</h2>
-                          <time
-                            class="shrink-0 text-xs text-dimmed"
-                            dateTime={item.updatedAt}
-                            title={dates.formatDateTime(item.updatedAt, props.dateConfig)}
-                          >
-                            {t().edited({ value: dates.formatDateTimeRelative(item.updatedAt, props.dateConfig) })}
-                          </time>
-                        </div>
-                        <p class="mt-0.5 truncate text-xs text-secondary">
-                          {t().to} {recipients(item, t())}
-                        </p>
-                        <p class="mt-2 line-clamp-2 text-sm leading-5 text-secondary">{item.bodyPreview || t().noMessageBody}</p>
-                        <p class="mt-2 text-xs text-dimmed">
-                          <i class="ti ti-user mr-1" aria-hidden="true" />
-                          {t().draftStartedBy({ name: item.createdByDisplayName })}
-                        </p>
-                      </div>
+                      <h2 class="mail-draft-row__subject">{item.subject || t().noSubject}</h2>
+                      <p class="mail-draft-row__recipients">
+                        {t().to} {recipients(item, t())}
+                      </p>
+                      <time
+                        class="mail-draft-row__time"
+                        dateTime={item.updatedAt}
+                        title={dates.formatDateTime(item.updatedAt, props.dateConfig)}
+                      >
+                        {t().edited({ value: dates.formatDateTimeRelative(item.updatedAt, props.dateConfig) })}
+                      </time>
+                      <p class="mail-draft-row__preview">{item.bodyPreview || t().noMessageBody}</p>
+                      <p class="mail-draft-row__owner">{t().draftStartedBy({ name: item.createdByDisplayName })}</p>
                     </>
                   );
                   return (
-                    <Show when={props.canWrite} fallback={<Paper class="flex min-w-0 items-start gap-3 p-3">{card}</Paper>}>
-                      <Paper
-                        as="a"
-                        interactive
+                    <Show when={props.canWrite} fallback={<article class="mail-draft-row">{card}</article>}>
+                      <a
                         href={mailDraftHref(props.mailboxId, item.id, listHref(null))}
                         aria-label={t().openDraft({ subject: item.subject || t().noSubject })}
-                        class="flex min-w-0 items-start gap-3 p-3"
+                        class="mail-draft-row"
                       >
                         {card}
-                      </Paper>
+                      </a>
                     </Show>
                   );
                 }}
