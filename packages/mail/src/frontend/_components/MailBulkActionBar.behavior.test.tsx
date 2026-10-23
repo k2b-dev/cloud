@@ -59,17 +59,17 @@ const renderBar = async (locale: string) => {
   };
 };
 
-test.skipIf(isServer)("puts Assign after read and moves flag and trash into the more menu", async () => {
+test.skipIf(isServer)("keeps labeled primary actions in reading order and flag and trash in the more menu", async () => {
   const bar = await renderBar("en");
   try {
     expect(bar.toolbarLabels()).toEqual([
-      "Add tags to 3 selected conversations",
+      "Exit selection",
       "Archive 3 selected conversations",
       "Mark as read 3 selected conversations",
-      "Assign 3 selected conversations",
       "Move 3 selected conversations",
+      "Add tags to 3 selected conversations",
+      "Assign 3 selected conversations",
       "More selected conversation actions",
-      "Exit selection",
     ]);
     bar.dom.root.querySelector<HTMLButtonElement>("button[aria-label='Assign 3 selected conversations']")!.click();
     expect(bar.assigns()).toBe(1);
