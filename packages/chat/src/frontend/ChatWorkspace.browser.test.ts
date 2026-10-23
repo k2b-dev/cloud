@@ -3,7 +3,7 @@ import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { CreateConversationSchema, CreateOutcomeSchema } from "../service/contracts";
-import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
+import { chatTestNow, nora, pinPageClock, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 declare global {
   interface Window {
@@ -52,26 +52,7 @@ const observeShifts = (page: Page) =>
     // WebKit has no Layout Instability API. The geometry assertions still run in both engines.
     if (PerformanceObserver.supportedEntryTypes.includes("layout-shift")) window.chatShiftObserver.observe({ type: "layout-shift" });
   });
-/**
- * Starts the page's wall clock at the harness clock and lets it flow from there; each new document starts again at that
- * instant. Only `Date` changes: Playwright's `clock` also replaces timers, animation frames, and `performance`, and
- * WebKit then stops reporting reads in the read-state tests.
- */
-const pinPageClock = (at: number) => {
-  const RealDate = Date;
-  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
-  class PinnedDate extends RealDate {
-    constructor(...args: ConstructorParameters<DateConstructor> | []) {
-      if (args.length === 0)
-        super(RealDate.now() + offset); // real clock: flows from the pinned instant
-      else super(...(args as ConstructorParameters<DateConstructor>));
-    }
-    static override now() {
-      return RealDate.now() + offset; // real clock: flows from the pinned instant
-    }
-  }
-  globalThis.Date = PinnedDate as DateConstructor;
-};
+
 /** Records when the page starts each read post, on the page's own clock, so throttle assertions do not depend on event delivery. */
 const recordReadStarts = () => {
   window.chatReadStarts = [];
@@ -766,6 +747,7 @@ describe("ChatWorkspace browser read state", () => {
         await page.waitForURL(`**/c/${chat}`);
         const target = harness.messageId(chat, 5);
         const item = page.locator(`[data-key="${target}"]`);
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
         await chooseFromMessageMenu(page, name, item, "Mark unread from here");
         await marker(page).waitFor();
         expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(target);
@@ -795,9 +777,11 @@ describe("ChatWorkspace browser read state", () => {
         const own = page.locator(`[data-key="${harness.messageId(chat, 7)}"]`);
 
         // Own messages never count as unread, so their menu has no such entry; "Reply" and "Copy text" are on every message.
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
         const ownMenu = await openMessageMenu(page, name, own);
         expect(await ownMenu.getByRole("menuitem").allInnerTexts()).toEqual([
           expect.stringContaining("Reply"),
+          expect.stringContaining("Add reaction"),
           expect.stringContaining("Copy text"),
         ]);
         await page.keyboard.press("Escape");
@@ -848,6 +832,7 @@ describe("ChatWorkspace browser read state", () => {
           .context()
           .grantPermissions(["clipboard-read", "clipboard-write"])
           .catch(() => {});
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
         await chooseFromMessageMenu(page, name, target, "Copy text");
         await page.locator("[data-k2b-live]").getByText("Copied", { exact: true }).waitFor({ state: "attached" });
         if (errors.length) expect(errors).toEqual([]);
@@ -879,6 +864,7 @@ describe("ChatWorkspace browser read state", () => {
         ).toBe(200);
         await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 6);
         const target = page.locator(".k2b-message-row:not([data-own])").last().locator("xpath=ancestor::*[@data-key][1]");
+        // settled: the menu helper waits for its target under the pointer, Playwright for the button.
         await chooseFromMessageMenu(page, name, target, "Mark unread from here");
         const done = page.locator(".k2b-toast").filter({ hasText: "Unread from" });
         await done.waitFor();
@@ -938,7 +924,8 @@ describe("ChatWorkspace browser read state", () => {
       const { page, errors } = await load(options, {});
       const geometry = () =>
         rows(page, name)
-          .locator("a[href]")
+          // Chat rows only; "Discover channels" has no time.
+          .locator('a[href*="/app/chat/c/"]')
           .evaluateAll((links) =>
             links.map((link) => {
               const time = link.querySelector("time")!.getBoundingClientRect();

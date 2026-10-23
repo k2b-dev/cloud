@@ -771,3 +771,22 @@
     justify-content: flex-end;
   }
 }
+/* Discover is a flat workspace page; the action slot stays fixed across membership and pending states. */
+.chat-discover { display: flex; flex-direction: column; min-width: 0; width: 100%; height: 100%; }
+.chat-discover__body { min-height: 0; padding: 1rem; flex: 1; }
+/* The catalog reads in the same column as a chat. */
+.chat-discover__content { max-width: var(--k2b-reading-column); margin-inline: auto; }
+.chat-discover__row { display: flex; align-items: center; gap: 0.75rem; padding-block: 0.75rem; }
+.chat-discover__icon { display: flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; flex-shrink: 0; border-radius: 50%; background: var(--k2b-surface-muted); }
+.chat-discover__subscribe { width: 8.5rem; flex-shrink: 0; }
+
+/* The audience line keeps its height while it counts, shows the count, or offers Try again. */
+.chat-channel-audience {
+  display: flex;
+  /* Two lines: a failure with Try again may wrap on a phone. */
+  min-height: 3rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+
+}

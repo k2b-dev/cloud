@@ -83,7 +83,7 @@ export default function ChatSystemChats(props: {
             <For each={[0, 1, 2]}>{() => <Skeleton class="chat-system-chats__skeleton" />}</For>
           </div>
         </Show>
-        <ChatList {...props.list} rows={rows()} onOpen={props.onOpen} hasMore={false} onMore={() => {}} />
+        <ChatList system {...props.list} rows={rows()} onOpen={props.onOpen} hasMore={false} onMore={() => {}} />
         <Show when={props.state.status() === "failed"}>
           <InlineGuidance tone="danger" role="status">
             {t().systemChatsFailed}{" "}

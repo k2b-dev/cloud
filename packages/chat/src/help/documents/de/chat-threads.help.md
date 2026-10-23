@@ -29,6 +29,8 @@ Ein Thread ist ein benannter Strang in einem Chat, zum Beispiel „Problemfälle
 
 :::steps
 1. Zeige auf die Nachricht und wähle **…** daneben, oder öffne mit der rechten Maustaste das Nachrichtenmenü. Auf dem Telefon hältst du die Nachricht gedrückt oder wischst sie nach rechts.
+1. Zeige auf die Nachricht und wähle **…** daneben, oder öffne ihr Menü mit der rechten Maustaste. Auf dem Telefon hältst du die Nachricht gedrückt oder wischst sie nach rechts.
+
 2. Wähle **Antworten**.
 3. Schreib deine Antwort und sende sie.
 :::
@@ -42,7 +44,7 @@ Die Antwort zeigt die ursprüngliche Nachricht als Zitat. Wähle das Zitat, um z
 
 ## Threads anlegen, umbenennen und archivieren {icon="settings"}
 
-Nur Personen mit **Verwalten** im Chat legen Threads an, benennen sie um und archivieren sie.
+Nur wer den Chat verwaltet, legt Threads an, benennt sie um und archiviert sie.
 
 :::steps
 1. Wähle **Neuer Thread** unter den Threads des Chats oder in der Thread-Auswahl neben dem Namen des Chats. In einem Chat ohne Threads öffnest du die Infos zum Chat, wählst **…** und dann **Neuer Thread**.

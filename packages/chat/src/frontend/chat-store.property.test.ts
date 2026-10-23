@@ -13,6 +13,8 @@ const unusedMemberRequest = async () => {
 };
 const memberApi = {
   threads: async () => noThreads,
+  react: async () => {},
+  reactions: async () => ({ items: [] }),
   shared: async () => ({ items: [], nextCursor: null }),
   createThread: async () => {
     throw new Error("Unused thread request");
@@ -68,6 +70,8 @@ test("real store converges to V5 under per-key FIFO, random cross-key order, dup
       const latest = model.msgs.findLast((m) => m.kind === "text");
       return ConversationSchema.parse({
         threads: 0,
+        channel: false,
+        member: true,
         id: cid,
         name: null,
         icon: null,

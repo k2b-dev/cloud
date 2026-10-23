@@ -60,7 +60,8 @@ const list = async (
       AND ${threadFilter} AND ${kindFilter} AND ${cursor ? db`seq <= ${cursor.seq}` : db`true`}
       ORDER BY seq DESC LIMIT ${SHARED_PAGE_SIZE + 2}`;
     const rows = query.thread === undefined ? await visibleMessages(db, input, scanned) : scanned;
-    const views = await messageViews(db, rows, input.conversationId, input.locale);
+    const views = await messageViews(db, rows, input.conversationId, input.accessSubject, input.locale);
+
     const candidates: { item: SharedItem; position: number }[] = [];
     for (const [index, row] of rows.entries()) {
       const message = views[index]!;

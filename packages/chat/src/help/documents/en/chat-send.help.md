@@ -52,7 +52,7 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 :::
 
 :::reference
-- The element shows as a card in the message. Choosing the card opens the element.
+- The element shows as a card in the message. Choose the card to open the element.
 - Each person sees only what they may see. Without access to the element, the card says **Item not available** and shows no title or place.
 - Sharing an element gives nobody access to it.
 :::
@@ -64,4 +64,17 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 2. Look under **Shared**. It lists links and Cloud elements, newest first.
 3. Choose a kind, such as **Links** or **Cloud elements**, or a thread to narrow the list.
 4. Choose an entry to jump to its message.
+:::
+
+## React to a message {icon="mood-plus"}
+
+:::steps
+1. Open the message's menu: choose **…** next to the message, or hold the message on a phone.
+2. Choose **Add reaction**, then choose an emoji.
+:::
+
+:::reference
+- Reactions show under the message with how many people chose them. Yours are highlighted.
+- Choose a reaction under a message to add yours or to take it back.
+- Everyone who can read a message can react to it, also readers of a channel who cannot write there.
 :::

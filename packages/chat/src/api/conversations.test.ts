@@ -75,11 +75,11 @@ beforeEach(() => {
 });
 afterEach(() => mock.restore());
 
-test("admits a service account to the service and returns the localized people-only error", async () => {
+test("admits a service account to the service and returns the localized personal-account creation requirement", async () => {
   authenticate();
   const response = await post("/conversations", {}, "de-DE");
   expect(response.status).toBe(400);
-  expect(await response.json()).toEqual({ code: "BAD_INPUT", message: "Nur Personen und Gruppen können Chat-Mitglieder sein." });
+  expect(await response.json()).toEqual({ code: "BAD_INPUT", message: "Erstelle Chats mit einem persönlichen Konto." });
 });
 test("forwards the acting account, delegated subject, and request locale to member mutations", async () => {
   authenticate(true);
@@ -107,6 +107,8 @@ test("maps creation and duplicate outcomes to 201 and 200", async () => {
       outcome: "created",
       conversation: {
         threads: 0,
+        channel: false,
+        member: true,
         id: "abcdef",
         name: null,
         icon: null,
@@ -155,6 +157,7 @@ test("requires authentication for all conversation routes", async () => {
 });
 
 const textMessage = {
+  reactions: [],
   refs: [],
   thread: null,
   replyTo: null,
@@ -217,6 +220,8 @@ test("snapshot reads the cursor before history and tolerates invalid message lin
   authenticate(true);
   const conversation = ConversationSchema.parse({
     threads: 0,
+    channel: false,
+    member: true,
     id: "abcdef",
     name: null,
     title: "You",

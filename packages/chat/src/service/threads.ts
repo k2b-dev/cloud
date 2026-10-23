@@ -78,7 +78,7 @@ const projectList = async (
     UNION ALL
     (SELECT * FROM chat.messages WHERE conversation_id = ${conversationId}::uuid
       AND thread_id IS NULL AND kind = 'text' ORDER BY seq DESC LIMIT 1)`;
-  const views = await messageViews(db, latest, input.conversationId, input.locale);
+  const views = await messageViews(db, latest, input.conversationId, input.accessSubject, input.locale);
   const previews = new Map(
     views.map((message) => [
       message.thread,

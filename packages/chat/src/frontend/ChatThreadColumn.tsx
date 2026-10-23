@@ -19,6 +19,7 @@ type LastMessage = Thread["lastMessage"];
  */
 export default function ChatThreadColumn(props: {
   conversation: Conversation;
+  basePath?: string;
   threads: ThreadList | null;
   status: "loading" | "ready" | "failed";
   view: ThreadView;
@@ -47,7 +48,7 @@ export default function ChatThreadColumn(props: {
     const count = () => (unread > 0 && (!current() || marked) ? unread : 0);
     return (
       <Link
-        href={threadHref(props.conversation.id, view)}
+        href={threadHref(props.conversation.id, view, null, props.basePath)}
         onNavigate={(navigation) => props.onOpen(view, navigation)}
         class="chat-thread-column__row"
         aria-current={current() ? "page" : undefined}
@@ -152,6 +153,7 @@ export default function ChatThreadColumn(props: {
           }
         >
           <SystemThreadDirectory
+            basePath={props.basePath}
             viewerId={props.viewerId}
             dateConfig={props.dateConfig}
             now={props.now}

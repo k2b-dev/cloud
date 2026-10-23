@@ -11,6 +11,7 @@ import {
   CreateOutcomeSchema,
   CreateThreadSchema,
   ExistingMatchSchema,
+  LeaveResultSchema,
   LeaveSchema,
   MAX_EXISTING_MATCHES,
   MarkUnreadSchema,
@@ -46,6 +47,14 @@ import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageViewSchema>;
 type Person = { id: string; name: string };
+type ServiceAccount = {
+  id: string;
+  name: string;
+  kind: "agent" | "standalone" | "resource_bound" | "user_delegated";
+  status?: "active" | "disabled";
+  /** A resource-bound account's binding, as `app:type:id`. */
+  binding?: string;
+};
 type Group = { id: string; name: string; size: number };
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
@@ -60,11 +69,43 @@ type ThreadEntry = {
   createdAt: string;
   lastActivityAt: string;
 };
-type Chat = { conversation: Conversation; messages: Message[]; members: Member[]; archived: boolean; threads: ThreadEntry[] };
+type Chat = {
+  discovery?: {
+    principal: { type: "authenticated" } | { type: "group"; groupId: string };
+    permission: "read" | "write";
+    displayName: string;
+  }[];
+  conversation: Conversation;
+  messages: Message[];
+  members: Member[];
+  archived: boolean;
+  threads: ThreadEntry[];
+};
 type Subscription = { socket: ServerWebSocket<unknown>; id: string; channel: string; scope: { conversation?: string } };
 
 /** Midday in Berlin keeps even the longest seeded history on one fixed calendar day. */
 export const chatTestNow = new Date("2026-10-14T10:00:00.000Z");
+
+/**
+ * Starts the page's wall clock at the harness clock and lets it flow from there; each new document starts again at that
+ * instant. Only `Date` changes: Playwright's `clock` also replaces timers, animation frames, and `performance`, and
+ * WebKit then stops reporting reads in the read-state tests.
+ */
+export const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
 
 export const viewer: Person = { id: "11111111-1111-4111-8111-111111111111", name: "Robin Example" };
 export const nora: Person = { id: "22222222-2222-4222-8222-222222222222", name: "Nora Weber" };
@@ -144,6 +185,7 @@ export const startChatHarness = async () => {
   const createIntents = new Map<string, string>();
   const people = new Map([viewer, nora, tobias].map((person) => [person.id, person]));
   const groups = new Map<string, Group>();
+  const serviceAccounts = new Map<string, ServiceAccount>();
   const subscriptions: Subscription[] = [];
   const events: { cursor: number; channel: string; chat: string; data: unknown }[] = [];
   let cursor = 0;
@@ -151,6 +193,8 @@ export const startChatHarness = async () => {
   let nextAccess = 0;
   let nextPerson = 0;
   let failing = 0;
+  let failingReactions = 0;
+  const reactionRequests: { method: string; messageId: string; emoji?: string }[] = [];
   let failingUnread = 0;
   let failingThreads = 0;
   let failingShared = 0;
@@ -211,15 +255,19 @@ export const startChatHarness = async () => {
   // Which part of the chat each read named: "general", "all", or a thread.
   const readViews: { chat: string; seq: number; thread: string }[] = [];
   const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] }[] = [];
+  const discoveryUpdates: { entries: unknown[]; name?: string; purpose?: string; revision?: string }[] = [];
 
-  const principalId = (principal: MemberPrincipal) => (principal.type === "user" ? principal.userId : principal.groupId);
+  const principalId = (principal: MemberPrincipal) =>
+    principal.type === "user" ? principal.userId : principal.type === "group" ? principal.groupId : principal.serviceAccountId;
   const makeMember = (principal: MemberPrincipal, permission: Permission, addedAt: string): Member => {
     const id = principalId(principal);
     const group = principal.type === "group" ? groups.get(id) : undefined;
     return MemberSchema.parse({
       accessId: `aaaaaaaa-aaaa-4aaa-8aaa-${String(++nextAccess).padStart(12, "0")}`,
       principal,
-      displayName: principal.type === "user" ? people.get(id)!.name : group!.name,
+      displayName:
+        principal.type === "user" ? people.get(id)!.name : principal.type === "group" ? group!.name : serviceAccounts.get(id)!.name,
+      ...(principal.type === "service_account" ? { serviceAccountKind: serviceAccounts.get(id)!.kind } : {}),
       guest: false,
       deactivated: false,
       groupSize: group?.size ?? null,
@@ -228,7 +276,7 @@ export const startChatHarness = async () => {
     });
   };
   const managers = (chat: Chat) =>
-    chat.members.filter((member) => member.principal.type === "user" && !member.deactivated && member.permission === "admin").length;
+    chat.members.filter((member) => member.principal.type !== "group" && !member.deactivated && member.permission === "admin").length;
   const refreshMembers = (chat: Chat) => {
     const others = chat.members.filter((member) => member.principal.type !== "user" || member.principal.userId !== viewer.id);
     const derived =
@@ -405,6 +453,7 @@ export const startChatHarness = async () => {
     const original = target.replyTo ? entry.messages.find((message) => message.id === target.replyTo) : undefined;
     const thread = original ? original.thread : (target.thread ?? null);
     const message: Message = {
+      reactions: [],
       refs: target.refs ?? [],
       thread,
       replyTo: original ? { id: original.id, author: original.author, preview: original.body ?? "" } : null,
@@ -440,6 +489,31 @@ export const startChatHarness = async () => {
     };
     project(entry);
     return message;
+  };
+  // Who reacted with which emoji, per message; the viewer's views count them and mark their own.
+  const reactors = new Map<string, Map<string, Set<string>>>();
+  const reactionView = (messageId: string) =>
+    [...(reactors.get(messageId) ?? new Map<string, Set<string>>())]
+      .filter(([, people]) => people.size > 0)
+      .map(([emoji, people]) => ({ emoji, count: people.size, own: people.has(viewer.id) }));
+  /** Adds or removes a reaction as the server does: the message's revision moves and a hint goes out. */
+  const setReaction = (chat: string, messageId: string, personId: string, emoji: string, on: boolean) => {
+    const entry = chats.get(chat)!;
+    const message = entry.messages.find((candidate) => candidate.id === messageId);
+    if (!message) return false;
+    const byEmoji = reactors.get(messageId) ?? new Map<string, Set<string>>();
+    reactors.set(messageId, byEmoji);
+    const people = byEmoji.get(emoji) ?? new Set<string>();
+    byEmoji.set(emoji, people);
+    if (people.has(personId) === on) return true;
+    if (on) people.add(personId);
+    else people.delete(personId);
+    const rev = entry.conversation.rev + 1;
+    entry.conversation = { ...entry.conversation, rev };
+    message.rev = rev;
+    message.reactions = reactionView(messageId);
+    deliver("conversation", chat, { type: "reactions", conversationId: chat, messageId, rev });
+    return true;
   };
   const publish = (message: Message) => {
     const { systemText: _, ...live } = message;
@@ -493,6 +567,8 @@ export const startChatHarness = async () => {
     chats.set(id, {
       conversation: {
         threads: 0,
+        channel: false,
+        member: true,
         id,
         name: options.name ?? null,
         icon: null,
@@ -558,10 +634,13 @@ export const startChatHarness = async () => {
       to: before ? Number(before) - 1 : after && items.length === 50 ? items.at(-1)!.seq : all.length,
     };
   };
+  let allowAuthenticated = true;
   const list = () => ({
     items: [...chats.values()]
       .filter((chat) => chat.conversation.kind !== "system")
       .map((chat) => chat.conversation)
+      .filter((row) => row.member)
+
       .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
     nextCursor: null,
   });
@@ -598,6 +677,37 @@ export const startChatHarness = async () => {
     };
   };
 
+  const viewProps = (
+    address: {
+      chat?: string;
+      message?: string;
+      panel?: string;
+      thread?: string;
+      threadsPage?: boolean;
+      channelsPage?: boolean;
+      query?: string;
+    },
+    options: { guest?: boolean } = {},
+  ): ChatWorkspaceProps => {
+    const view = address.thread ?? "all";
+    const open = address.chat ? snapshot(address.chat, address.message ?? null, view) : null;
+    return {
+      channelsPage: address.channelsPage,
+      channelQuery: address.query,
+      cursor: `c.${cursor}`,
+      sidebar: list(),
+      view,
+      threadsPage: address.threadsPage ?? false,
+      open: open && { threads: open.threads, conversation: open.conversation, page: open.page, focus: open.focus },
+      chatId: address.chat ?? null,
+      guest: options.guest ?? false,
+      panel: open && address.panel === "info" ? "info" : null,
+      viewerId: viewer.id,
+      dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+      now: now().toISOString(),
+    };
+  };
+
   const server = Bun.serve<unknown, never>({
     port: 0,
     hostname: "127.0.0.1",
@@ -605,6 +715,19 @@ export const startChatHarness = async () => {
       const url = new URL(request.url);
       if (url.pathname === "/api/chat/live")
         return bun.upgrade(request, { data: undefined }) ? undefined : new Response("upgrade failed", { status: 400 });
+      if (url.pathname === "/__props") {
+        const target = new URL(url.searchParams.get("path") ?? "/app/chat", "https://chat.test");
+        const match = /^\/app\/chat\/c\/([^/]+)(?:\/m\/([^/]+))?/.exec(target.pathname);
+        return Response.json(
+          viewProps({
+            chat: match?.[1],
+            message: match?.[2],
+            panel: target.searchParams.get("panel") ?? undefined,
+            channelsPage: target.pathname === "/app/chat/channels",
+            query: target.searchParams.get("q") ?? "",
+          }),
+        );
+      }
       if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname === "/fonts.css") return new Response(fontAssets.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
@@ -614,8 +737,26 @@ export const startChatHarness = async () => {
         const search = (url.searchParams.get("search") ?? "").toLowerCase();
         const kinds = (url.searchParams.get("kinds") ?? "user,group").split(",");
         const excludedUsers = (url.searchParams.get("exclude_user_ids") ?? "").split(",");
+        const excludedServices = (url.searchParams.get("exclude_service_account_ids") ?? "").split(",");
         const excludedGroups = (url.searchParams.get("exclude_group_ids") ?? "").split(",");
         const items = [
+          ...[...serviceAccounts.values()]
+            .filter(
+              (account) =>
+                kinds.includes("service_account") && !excludedServices.includes(account.id) && account.name.toLowerCase().includes(search),
+            )
+            .map((account) => ({
+              kind: "service_account",
+              serviceAccount: {
+                id: account.id,
+                name: account.name,
+                kind: account.kind,
+                status: account.status ?? "active",
+                appId: account.binding?.split(":")[0] ?? null,
+                resourceType: account.binding?.split(":")[1] ?? null,
+                resourceId: account.binding?.split(":")[2] ?? null,
+              },
+            })),
           ...[...people.values()]
             .filter((person) => kinds.includes("user") && !excludedUsers.includes(person.id) && person.name.toLowerCase().includes(search))
             .map((person) => ({
@@ -720,6 +861,31 @@ export const startChatHarness = async () => {
           links: [{ rel: "open", href: `/app/spaces/task/${element.id}` }],
         });
       }
+      if (url.pathname === "/api/chat/channels/options") return Response.json({ allowAuthenticated });
+      if (url.pathname === "/api/chat/channels/preview") {
+        const entries = (await request.json()) as NonNullable<Chat["discovery"]>;
+        if (!allowAuthenticated && entries.some((entry) => entry.principal.type === "authenticated"))
+          return Response.json({ message: "Authenticated discovery is disabled." }, { status: 400 });
+        return Response.json({
+          audienceCount: entries.length ? 42 : 0,
+          includesAuthenticated: entries.some((entry) => entry.principal.type === "authenticated"),
+        });
+      }
+      if (url.pathname === "/api/chat/channels") {
+        const q = (url.searchParams.get("q") ?? "").toLowerCase();
+        return Response.json({
+          items: [...chats.values()]
+            .filter(
+              (chat) =>
+                chat.conversation.channel &&
+                (allowAuthenticated || chat.discovery?.some((entry) => entry.principal.type === "group")) &&
+                `${chat.conversation.title} ${chat.conversation.purpose}`.toLowerCase().includes(q),
+            )
+            .map((chat) => project(chat))
+            .sort((a, b) => a.title.localeCompare(b.title)),
+          nextCursor: null,
+        });
+      }
       if (url.pathname === "/api/chat/conversations" && request.method === "GET") return Response.json(list());
       if (url.pathname === "/api/chat/conversations" && request.method === "POST") {
         const input = CreateConversationSchema.parse(await request.json());
@@ -729,7 +895,7 @@ export const startChatHarness = async () => {
             status: 201,
           });
         const direct = new Set([viewer.id, ...input.members.flatMap((principal) => (principal.type === "user" ? [principal.userId] : []))]);
-        if (!input.allowDuplicate && input.members.every((principal) => principal.type === "user")) {
+        if (!input.discovery?.length && !input.allowDuplicate && input.members.every((principal) => principal.type === "user")) {
           const matches = [...chats.values()]
             .filter(
               (chat) =>
@@ -756,8 +922,17 @@ export const startChatHarness = async () => {
         });
         if (input.createKey) createIntents.set(input.createKey, id);
         const chat = chats.get(id)!;
-        chat.conversation = { ...chat.conversation, icon: input.icon ?? null, purpose: input.purpose ?? null };
-        for (const principal of input.members.filter((principal) => principal.type === "group"))
+        chat.conversation = {
+          ...chat.conversation,
+          icon: input.icon ?? null,
+          purpose: input.purpose ?? null,
+          channel: !!input.discovery?.length,
+        };
+        chat.discovery = input.discovery?.map((entry) => ({
+          ...entry,
+          displayName: entry.principal.type === "authenticated" ? "All signed-in accounts" : groups.get(entry.principal.groupId)!.name,
+        }));
+        for (const principal of input.members.filter((principal) => principal.type !== "user"))
           chat.members.push(makeMember(principal, "write", chat.conversation.createdAt));
         refreshMembers(chat);
         publish(chat.messages[0]!);
@@ -779,11 +954,99 @@ export const startChatHarness = async () => {
         for (const chat of batch) read(chat.conversation.id, chat.messages.length, "all");
         return Response.json({ outcome: "done", marked: batch.length, more: candidates().length > 0 });
       }
+      const reaction = /^\/api\/chat\/conversations\/([^/]+)\/messages\/([^/]+)\/reactions(?:\/([^/]+))?$/.exec(url.pathname);
+      if (reaction) {
+        const [, chat, messageId, emoji] = reaction;
+        if (!chats.has(chat!)) return Response.json({ code: "NOT_FOUND", message: "Chat not found." }, { status: 404 });
+        reactionRequests.push({ method: request.method, messageId: messageId!, emoji: emoji ? decodeURIComponent(emoji) : undefined });
+        if (request.method === "GET")
+          return Response.json({
+            items: reactionView(messageId!).map((item) => ({
+              ...item,
+              people: [...(reactors.get(messageId!)?.get(item.emoji) ?? [])].map((id) => people.get(id)?.name ?? "Someone"),
+            })),
+          });
+        if (failingReactions > 0) {
+          failingReactions -= 1;
+          return Response.json({ message: "Reactions are unavailable." }, { status: 503 });
+        }
+        const done = setReaction(chat!, messageId!, viewer.id, decodeURIComponent(emoji!), request.method === "PUT");
+        return done
+          ? new Response(null, { status: 204 })
+          : Response.json({ code: "NOT_FOUND", message: "Message not found." }, { status: 404 });
+      }
       const match = /^\/api\/chat\/conversations\/([^/]+)(?:\/([a-z]+)(?:\/([^/]+))?)?$/.exec(url.pathname);
       if (match) {
         const [, id, part, accessId] = match;
         const chat = chats.get(id!);
         if (!chat) return Response.json({ code: "NOT_FOUND", message: "Chat not found." }, { status: 404 });
+        if (part === "discovery") {
+          const key = (entries: NonNullable<Chat["discovery"]>) =>
+            entries
+              .map((entry) => `${entry.principal.type === "group" ? entry.principal.groupId : "authenticated"}:${entry.permission}`)
+              .sort()
+              .join(",");
+          const revision = new Bun.CryptoHasher("sha256").update(key(chat.discovery ?? [])).digest("hex");
+          if (request.method === "GET")
+            return Response.json({
+              revision,
+              entries: (chat.discovery ?? []).map((entry, index) => ({
+                ...entry,
+                displayName:
+                  entry.principal.type === "authenticated"
+                    ? "All signed-in accounts"
+                    : (groups.get(entry.principal.groupId)?.name ?? "Directory group"),
+                accessId: `cccccccc-cccc-4ccc-8ccc-${String(index).padStart(12, "0")}`,
+              })),
+              allowAuthenticated,
+              audienceCount: chat.discovery?.length ? 42 : 0,
+            });
+          const input = (await request.json()) as {
+            entries: NonNullable<Chat["discovery"]>;
+            name?: string;
+            purpose?: string;
+            revision?: string;
+          };
+          discoveryUpdates.push(input);
+          if (input.revision !== undefined && input.revision !== revision)
+            return Response.json(
+              {
+                code: "DISCOVERY_CHANGED",
+                message: "Someone changed who can find this channel in the meantime. Check the current settings and save again.",
+              },
+              { status: 409 },
+            );
+          const discoveryChanged = key(chat.discovery ?? []) !== key(input.entries);
+          const detailsChanged =
+            (input.name !== undefined && input.name !== chat.conversation.name) ||
+            (input.purpose !== undefined && input.purpose !== chat.conversation.purpose);
+          chat.discovery = input.entries;
+          chat.conversation = {
+            ...chat.conversation,
+            channel: !!input.entries.length,
+            name: input.name ?? chat.conversation.name,
+            title: input.name ?? chat.conversation.title,
+            purpose: input.purpose ?? chat.conversation.purpose,
+          };
+          if (detailsChanged)
+            announce(id!, { code: "details_changed", params: { name: input.name, purpose: input.purpose } }, "Details changed.");
+          if (discoveryChanged) announce(id!, { code: "discovery_changed", params: { count: input.entries.length } }, "Discovery changed.");
+          return Response.json(project(chat));
+        }
+        if (part === "join") {
+          if (!chat.conversation.member) {
+            const permission = chat.discovery?.some((entry) => entry.permission === "write") ? "write" : "read";
+            chat.members.push(makeMember({ type: "user", userId: viewer.id }, permission, now().toISOString()));
+            chat.conversation = { ...chat.conversation, member: true, permission, memberCount: chat.conversation.memberCount + 1 };
+            chat.conversation.rev++;
+            // As the server: a channel's subscriptions change its members without a timeline line.
+            const update = { type: "membership" as const, conversationId: id! };
+            deliver("conversation", id!, update);
+            deliver("list", id!, update);
+            deliver("me", id!, { type: "membership", conversationId: id! });
+          }
+          return Response.json(project(chat));
+        }
         if ((request.method === "PATCH" && !part) || (part === "members" && request.method !== "GET")) {
           if (chat.conversation.permission !== "admin")
             return Response.json({ code: "FORBIDDEN", message: "Manage permission is required." }, { status: 403 });
@@ -945,7 +1208,7 @@ export const startChatHarness = async () => {
             (count, principal) => count + (principal.type === "group" ? groups.get(principal.groupId)!.size : 0),
             0,
           );
-          const joining = additions.filter((principal) => principal.type === "user").length + throughGroups;
+          const joining = additions.filter((principal) => principal.type !== "group").length + throughGroups;
           if (accessId === "preview")
             return Response.json(
               MemberPreviewSchema.parse({ joining, throughGroups, memberCount: chat.conversation.memberCount + joining }),
@@ -954,7 +1217,7 @@ export const startChatHarness = async () => {
           chat.members.push(...added);
           refreshMembers(chat);
           const users = added
-            .filter((member) => member.principal.type === "user")
+            .filter((member) => member.principal.type !== "group")
             .map((member) => ({ id: principalId(member.principal), name: member.displayName }));
           const addedGroups = added
             .filter((member) => member.principal.type === "group")
@@ -978,7 +1241,7 @@ export const startChatHarness = async () => {
           if (!member) return Response.json({ code: "NOT_FOUND", message: "Member not found." }, { status: 404 });
           const permission = request.method === "PATCH" ? UpdateMemberSchema.parse(await request.json()).permission : null;
           if (
-            member.principal.type === "user" &&
+            member.principal.type !== "group" &&
             !member.deactivated &&
             member.permission === "admin" &&
             permission !== "admin" &&
@@ -1022,7 +1285,7 @@ export const startChatHarness = async () => {
             );
           const next = successor
             ? chat.members.find(
-                (member) => member.accessId === successor && member !== own && member.principal.type === "user" && !member.deactivated,
+                (member) => member.accessId === successor && member !== own && member.principal.type !== "group" && !member.deactivated,
               )
             : undefined;
           if (successor && !next)
@@ -1030,8 +1293,15 @@ export const startChatHarness = async () => {
           if (lastManager && next) next.permission = "admin";
           chat.members = chat.members.filter((member) => member !== own);
           refreshMembers(chat);
-          revoke(id!);
-          return Response.json(MemberRemovalSchema.parse({ success: true, keptThroughGroup: false }));
+          if (chat.conversation.channel) {
+            chat.conversation = { ...chat.conversation, member: false, permission: "read", rev: chat.conversation.rev + 1 };
+            // As the server: a channel's subscriptions change its members without a timeline line.
+            const update = { type: "membership" as const, conversationId: id! };
+            deliver("conversation", id!, update);
+            deliver("list", id!, update);
+            deliver("me", id!, { type: "membership", conversationId: id! });
+          } else revoke(id!);
+          return Response.json(LeaveResultSchema.parse({ success: true, keptThroughGroup: false, canRejoin: !!chat.discovery?.length }));
         }
         if (part === "read" && request.method === "POST") {
           const { seq, thread } = ReadSchema.parse(await request.json());
@@ -1191,6 +1461,27 @@ export const startChatHarness = async () => {
     systemPageSize: (count: number) => {
       systemThreadPageSize = count;
     },
+    setAllowAuthenticated: (allowed: boolean) => {
+      allowAuthenticated = allowed;
+    },
+    addChannel: (name: string, purpose: string, member = false, permission: "read" | "write" = "write") => {
+      const id = addChat({ name, members: [nora], count: 3, end: now(), spacing: 1 });
+      const chat = chats.get(id)!;
+      chat.discovery = [{ principal: { type: "authenticated" }, permission, displayName: "All signed-in accounts" }];
+      if (!member) chat.members = chat.members.filter((entry) => entry.principal.type !== "user" || entry.principal.userId !== viewer.id);
+      chat.conversation = {
+        ...chat.conversation,
+        channel: true,
+        purpose,
+        member,
+        permission: member ? "admin" : "read",
+        memberCount: chat.members.length,
+      };
+      return id;
+    },
+    addServiceAccount: (account: ServiceAccount) => {
+      serviceAccounts.set(account.id, account);
+    },
     /** Adds a person to the directory available to the member pickers. */
     addPerson: (person: Person) => {
       people.set(person.id, person);
@@ -1227,10 +1518,28 @@ export const startChatHarness = async () => {
     /** Returns the current member entries for assertions. */
     members: (chat: string): Member[] => chats.get(chat)?.members ?? [],
     posted,
+    reactionRequests,
+    /** Someone else reacts, as the server would tell the open chat. */
+    react: (chat: string, messageId: string, personId: string, emoji: string, on = true) =>
+      setReaction(chat, messageId, personId, emoji, on),
+    /** The next reaction changes fail. */
+    failReactions: (count = 1) => {
+      failingReactions = count;
+    },
+    discoveryUpdates,
+    /** Changes who can find a channel, as another admin would. */
+    setDiscovery: (chat: string, entries: NonNullable<Chat["discovery"]>) => {
+      chats.get(chat)!.discovery = entries;
+    },
     /** An element of the made-up "spaces" app; `readable: false` makes its card "not available". */
     addElement: (element: { id: string; title: string; preview?: string; readable?: boolean }) => {
       elements.set(element.id, { preview: "", readable: true, ...element });
       return { type: "spaces.task", id: element.id } satisfies CloudResourceRef;
+    },
+    /** Grants or takes away the viewer's access to an element of the made-up "spaces" app. */
+    setReadable: (id: string, readable: boolean) => {
+      const element = elements.get(id);
+      if (element) element.readable = readable;
     },
     /** A message from someone else that shares elements, delivered live. */
     receiveShared: (chat: string, author: Person, body: string, refs: CloudResourceRef[]) =>
@@ -1247,17 +1556,23 @@ export const startChatHarness = async () => {
     readElsewhere: read,
     /** Isolates scenarios; IDs stay unique so a closing page cannot report against a later chat. */
     reset: () => {
+      allowAuthenticated = true;
       chats.clear();
       createIntents.clear();
       people.clear();
       for (const person of [viewer, nora, tobias]) people.set(person.id, person);
       groups.clear();
+      serviceAccounts.clear();
       nextAccess = 0;
       nextPerson = 0;
       events.length = 0;
       reads.length = 0;
       readViews.length = 0;
       posted.length = 0;
+      reactionRequests.length = 0;
+      reactors.clear();
+      failingReactions = 0;
+      discoveryUpdates.length = 0;
       failing = 0;
       failingUnread = 0;
       failingThreads = 0;
@@ -1347,26 +1662,7 @@ export const startChatHarness = async () => {
     revoke,
     messageId,
     /** The island's props for an address, as the server renders them. */
-    props: (
-      address: { chat?: string; message?: string; panel?: string; thread?: string; threadsPage?: boolean },
-      options: { guest?: boolean } = {},
-    ): ChatWorkspaceProps => {
-      const view = address.thread ?? "all";
-      const open = address.chat ? snapshot(address.chat, address.message ?? null, view) : null;
-      return {
-        cursor: `c.${cursor}`,
-        sidebar: list(),
-        view,
-        threadsPage: address.threadsPage ?? false,
-        open: open && { threads: open.threads, conversation: open.conversation, page: open.page, focus: open.focus },
-        chatId: address.chat ?? null,
-        guest: options.guest ?? false,
-        panel: open && address.panel === "info" ? "info" : null,
-        viewerId: viewer.id,
-        dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
-        now: now().toISOString(),
-      };
-    },
+    props: viewProps,
     stop: () => server.stop(true),
   };
 };

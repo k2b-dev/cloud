@@ -3,22 +3,26 @@ import { type ProcessSync, startProcessSync } from "@k2b/cloud";
 import { type CapabilityExecutionContext, UserSchema } from "@k2b/cloud/contracts";
 import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities } from "@k2b/cloud/services";
-import { Filegate, FilegateError } from "@k2b/filegate";
+import { Filegate, FilegateError, type WriteOptions } from "@k2b/filegate";
 import { sql } from "bun";
-import { suiteFor, testInfra } from "../../../scripts/fixtures/test-infra";
+import { suiteFor } from "../../../scripts/fixtures/test-infra";
 import { filesCapabilities } from "../src/capabilities";
 import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
 import { withRootLock } from "../src/data/operations";
+import { persistedEntryRefId } from "../src/data/references";
+import { type Upload, uploadSessionId, uploads } from "../src/data/uploads";
 import { migrate } from "../src/migrate";
 import { createFilesService, filesService } from "../src/service";
-import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity } from "../src/service/activity";
+import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, uploadAction } from "../src/service/activity";
+import { signEditorToken } from "../src/service/collabora";
 import { FilesError } from "../src/service/errors";
 import { connectFilegate, type FilesFilegate } from "../src/service/filegate-facade";
+import { activityFilegate } from "./activity-filegate";
 import { testActor, testCall } from "./files-call";
-import { assertPrivateDatabase, localFilegateToken } from "./private-database";
+import { assertPrivateDatabase } from "./private-database";
 
-const suite = suiteFor("database", "filegate", "nats");
+const suite = suiteFor("database", "nats");
 const now = new Date("2030-05-15T12:00:00Z");
 const day = 86_400_000;
 type State = "pending" | "done" | "failed" | "not_done" | "unclear";
@@ -40,8 +44,10 @@ type Row = {
 };
 
 suite("Files activity with real storage", () => {
-  const prefix = `filesv2-activity-${Bun.randomUUIDv7()}`;
+  const runId = Bun.randomUUIDv7();
+  const prefix = `filesv2-activity-${runId}`;
   let processSync: ProcessSync | undefined;
+  let storage: Awaited<ReturnType<typeof activityFilegate>> | undefined;
   let client: Filegate;
   let facade: FilesFilegate;
   let config: Configuration & { token: string; tokenConfigured: boolean; unreadable: boolean };
@@ -74,10 +80,11 @@ suite("Files activity with real storage", () => {
   beforeAll(async () => {
     await assertPrivateDatabase();
     processSync = await startProcessSync({ application: "filesv2" });
-    const token = await localFilegateToken();
+    storage = await activityFilegate();
+    const { token, url } = storage;
     config = {
       activityRetentionDays: 365,
-      url: testInfra.filegate!,
+      url,
       token,
       tokenConfigured: true,
       unreadable: false,
@@ -178,14 +185,27 @@ suite("Files activity with real storage", () => {
   });
   afterAll(async () => {
     try {
-      if (client)
+      if (client) {
+        const open = await sql<Upload[]>`SELECT u.* FROM filesv2.uploads u JOIN filesv2.bases b ON b.id=u.base_id
+          WHERE u.state='open' AND starts_with(b.path,${`${prefix}/`}) AND u.server_url=${config.url}`;
+        for (const upload of open) {
+          const id = uploadSessionId(upload);
+          if (!id) continue;
+          const root = client.root(upload.root);
+          await (upload.execution ? root.as(upload.execution) : root).abortSession(id).catch(() => undefined);
+        }
         for (const name of ["cloud", "freeipa"])
           await client
             .root(name)
             .remove(prefix, true)
             .catch(() => undefined);
+      }
     } finally {
-      await processSync?.stop();
+      try {
+        await processSync?.stop();
+      } finally {
+        await storage?.stop();
+      }
     }
   });
 
@@ -210,6 +230,474 @@ suite("Files activity with real storage", () => {
       await sql`DROP TRIGGER reject_activity ON filesv2.activity`.simple();
       await sql`DROP FUNCTION filesv2.reject_activity()`.simple();
     }
+  });
+  const uploadRows = (id: string) => sql<Row[]>`SELECT * FROM filesv2.activity WHERE upload_id=${id}`;
+  const uploadInput = (name: string) => ({
+    baseId: baseId(),
+    path: name,
+    size: 0,
+    onConflict: "error" as const,
+    idempotencyKey: Bun.randomUUIDv7(),
+  });
+  test("upload reservation and intent commit together before issuing a session", async () => {
+    const input = uploadInput("reservation-failed.txt");
+    let sent = 0;
+    const transport: typeof fetch = Object.assign(
+      async (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        if (init?.method === "POST") sent++;
+        return fetch(url, init);
+      },
+      { preconnect: fetch.preconnect },
+    );
+    const counted = createFilesService({ ...serviceDependencies(), connect: (configuration) => connectFilegate(configuration, transport) });
+    await sql`CREATE OR REPLACE FUNCTION filesv2.reject_activity() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'intent unavailable'; END $$`.simple();
+    await sql`CREATE TRIGGER reject_activity BEFORE INSERT ON filesv2.activity FOR EACH ROW EXECUTE FUNCTION filesv2.reject_activity()`.simple();
+    try {
+      await expect(counted.upload(testCall(actor), input)).rejects.toThrow("intent unavailable");
+      expect(sent).toBe(0);
+      expect(await uploads.get(input.idempotencyKey, actor.user.id)).toBeNull();
+    } finally {
+      await sql`DROP TRIGGER reject_activity ON filesv2.activity`.simple();
+      await sql`DROP FUNCTION filesv2.reject_activity()`.simple();
+    }
+  });
+  test.each(["retry", "lease", "status", "abort", "commit"])(
+    "%s reconciles the same original upload from a real committed receipt",
+    async (way) => {
+      const input = uploadInput(`receipt-${way}.txt`);
+      const original = {
+        ...testCall(actor),
+        via: "agent" as const,
+        origin: "assistant",
+        requestId: "original-request",
+        invocationId: "original-invocation",
+      };
+      const opened = await service.upload(original, input);
+      const stored = (await uploads.get(opened.id, actor.user.id))!;
+      expect((await uploadRows(opened.id))[0]).toMatchObject({ state: "pending", via: "agent", request_id: "original-request" });
+      await client.root("cloud").commitSession(uploadSessionId(stored)!);
+      const followup = { ...testCall(actor), requestId: "retry-request" };
+      if (way === "retry") expect((await service.upload(followup, input)).state).toBe("committed");
+      if (way === "lease")
+        await expect(service.uploadLease(followup, { baseId: baseId(), id: opened.id })).rejects.toMatchObject({ code: "upload_closed" });
+      if (way === "status")
+        expect((await service.capabilityUploadStatus(followup, { baseId: baseId(), id: opened.id })).state).toBe("completed");
+      if (way === "abort")
+        await expect(service.abortUpload(followup, { baseId: baseId(), id: opened.id })).rejects.toMatchObject({ code: "upload_closed" });
+      if (way === "commit") await service.commitUpload(followup, { baseId: baseId(), id: opened.id });
+      const entries = await uploadRows(opened.id);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        state: "done",
+        via: "agent",
+        actor_user_id: actor.user.id,
+        request_id: "original-request",
+        path_after: `${home}/${input.path}`,
+      });
+      expect((await uploads.get(opened.id, actor.user.id))?.state).toBe("committed");
+    },
+  );
+  test("a failed history finish also rolls back the upload journal; status safely retries it", async () => {
+    const input = uploadInput("atomic-finish.txt");
+    const opened = await service.upload(testCall(actor), input);
+    await sql`CREATE OR REPLACE FUNCTION filesv2.reject_finish() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state='done' THEN RAISE EXCEPTION 'finish unavailable'; END IF; RETURN NEW; END $$`.simple();
+    await sql`CREATE TRIGGER reject_finish BEFORE UPDATE ON filesv2.activity FOR EACH ROW EXECUTE FUNCTION filesv2.reject_finish()`.simple();
+    try {
+      await expect(service.commitUpload(testCall(actor), { baseId: baseId(), id: opened.id })).rejects.toThrow("finish unavailable");
+      expect((await uploads.get(opened.id, actor.user.id))?.state).toBe("open");
+      expect((await uploadRows(opened.id))[0]?.state).toBe("pending");
+      expect((await client.root("cloud").stat(`${home}/${input.path}`)).size).toBe(0);
+    } finally {
+      await sql`DROP TRIGGER reject_finish ON filesv2.activity`.simple();
+      await sql`DROP FUNCTION filesv2.reject_finish()`.simple();
+    }
+    await service.capabilityUploadStatus(testCall(actor), { baseId: baseId(), id: opened.id });
+    expect((await uploadRows(opened.id))[0]?.state).toBe("done");
+    expect((await uploads.get(opened.id, actor.user.id))?.state).toBe("committed");
+  });
+  test.each(["abort", "status", "recovery"])("%s records a real abort as not done", async (way) => {
+    const opened = await service.upload(testCall(actor), uploadInput(`aborted-${way}.txt`));
+    if (way === "abort") await service.abortUpload(testCall(actor), { baseId: baseId(), id: opened.id });
+    else {
+      const stored = (await uploads.get(opened.id, actor.user.id))!;
+      await client.root("cloud").abortSession(uploadSessionId(stored)!);
+      if (way === "status") await service.capabilityUploadStatus(testCall(actor), { baseId: baseId(), id: opened.id });
+      else {
+        await sql`UPDATE filesv2.activity SET heartbeat_at=${new Date(now.getTime() - 120_000)},next_check_at=${new Date(now.getTime() - 1)} WHERE upload_id=${opened.id}`;
+        await recover();
+      }
+    }
+    expect((await uploadRows(opened.id))[0]?.state).toBe("not_done");
+    expect((await uploads.get(opened.id, actor.user.id))?.state).toBe("aborted");
+  });
+  test("capability publication records one upload, while bytes and template creations record file creation", async () => {
+    const opened = await service.upload(testCall(actor), uploadInput("capability-publication.txt"));
+    await service.capabilityUpload(
+      testCall(actor),
+      { baseId: baseId(), id: opened.id },
+      new ReadableStream({
+        start(controller) {
+          controller.close();
+        },
+      }),
+      AbortSignal.timeout(10_000),
+    );
+    expect((await uploadRows(opened.id))[0]?.state).toBe("done");
+    const templateId = Bun.randomUUIDv7();
+    await service.createFromBytes(testCall(actor), { baseId: baseId(), path: "template-output.txt", templateId }, new Uint8Array([65, 66]));
+    const [created] = await sql`SELECT *,size::float8 FROM filesv2.activity WHERE action='file.create'`;
+    expect(created).toMatchObject({ state: "done", path_after: `${home}/template-output.txt`, size: 2, detail: { template: templateId } });
+  });
+  test("upload scopes reject a different session, target, size, key, options and extra write before transport", async () => {
+    const opened = await service.upload(testCall(actor), uploadInput("guard-session.txt"));
+    const stored = (await uploads.get(opened.id, actor.user.id))!;
+    const f = guardedTransport();
+    const root = f.client.root("cloud");
+    for (const effect of [
+      () => root.commitSession("another"),
+      () => root.abortSession("another"),
+      () => root.createSession(`${home}/other.txt`, 0, { ...stored.write_options, idempotencyKey: stored.id }),
+      () => root.createSession(`${home}/guard-session.txt`, 1, { ...stored.write_options, idempotencyKey: stored.id }),
+      () => root.createSession(`${home}/guard-session.txt`, 0, { ...stored.write_options, idempotencyKey: "another" }),
+      () =>
+        root.createSession(`${home}/guard-session.txt`, 0, { ...stored.write_options, onConflict: "overwrite", idempotencyKey: stored.id }),
+      () => root.put(`${home}/guard-session.txt`, new Blob([])),
+    ])
+      await expect(
+        uploadAction(opened.id, async () => {
+          await effect();
+        }),
+      ).rejects.toMatchObject({ code: "activity_scope_mismatch" });
+    expect(f.sent()).toBe(0);
+    await uploadAction(opened.id, async () => {
+      await root.abortSession(uploadSessionId(stored)!);
+      await expect(root.abortSession(uploadSessionId(stored)!)).rejects.toMatchObject({ code: "activity_scope_mismatch" });
+    });
+    expect(f.sent()).toBe(1);
+  });
+  test("retention preserves a final unclear upload while its reservation remains open", async () => {
+    const opened = await service.upload(testCall(actor), uploadInput("retained-reservation.txt"));
+    await sql`UPDATE filesv2.activity SET state='unclear',started_at=${new Date(now.getTime() - 400 * day)} WHERE upload_id=${opened.id}`;
+    await purgeActivity({ now, retentionDays: 365 });
+    expect(await uploadRows(opened.id)).toHaveLength(1);
+    await service.abortUpload(testCall(actor), { baseId: baseId(), id: opened.id });
+    await purgeActivity({ now, retentionDays: 365 });
+    expect(await uploadRows(opened.id)).toHaveLength(0);
+  });
+  test.each(["retry", "lease", "commit", "abort", "maintenance"])(
+    "public inbox %s preserves the visitor and closes the same real receipt",
+    async (way) => {
+      const publicService = createFilesService({ ...serviceDependencies(), userById: async () => actor.user });
+      const share = await publicService.createShare(testCall(actor), {
+        baseId: baseId(),
+        kind: "inbox",
+        title: "Fictional inbox",
+        folder: "",
+        expiresIn: "unlimited",
+      });
+      const token = share.url.split("/").at(-1)!;
+      const input = { name: `public-${way}.txt`, size: 0, idempotencyKey: Bun.randomUUIDv7() };
+      const opened = await publicService.publicInboxUpload(token, input, undefined, "visitor-request");
+      const stored = (await uploads.getForShare(opened.id, share.id))!;
+      expect((await uploadRows(opened.id))[0]).toMatchObject({
+        state: "pending",
+        actor_user_id: null,
+        via: "link",
+        request_id: "visitor-request",
+      });
+      if (way === "commit") await publicService.publicInboxCommit(token, opened.id);
+      else {
+        await client.root("cloud").commitSession(uploadSessionId(stored)!);
+        if (way === "retry")
+          expect((await publicService.publicInboxUpload(token, input, undefined, "retry-request")).state).toBe("committed");
+        if (way === "lease")
+          await expect(publicService.publicInboxLease(token, opened.id)).rejects.toMatchObject({ code: "upload_closed" });
+        if (way === "abort") await publicService.publicInboxAbort(token, opened.id);
+        if (way === "maintenance") await publicService.reconcileInboxUploads();
+      }
+      const entries = await uploadRows(opened.id);
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ state: "done", actor_user_id: null, via: "link", request_id: "visitor-request" });
+      expect((await sql`SELECT actor_kind,share_id FROM filesv2.activity WHERE upload_id=${opened.id}`)[0]).toMatchObject({
+        actor_kind: "visitor",
+        share_id: share.id,
+      });
+    },
+  );
+  test("public abort confirms not done without attributing the upload to its link owner", async () => {
+    const publicService = createFilesService({ ...serviceDependencies(), userById: async () => actor.user });
+    const share = await publicService.createShare(testCall(actor), {
+      baseId: baseId(),
+      kind: "inbox",
+      title: "Fictional cancelled inbox",
+      expiresIn: "unlimited",
+    });
+    const token = share.url.split("/").at(-1)!;
+    const opened = await publicService.publicInboxUpload(token, {
+      name: "public-aborted.txt",
+      size: 0,
+      idempotencyKey: Bun.randomUUIDv7(),
+    });
+    await publicService.publicInboxAbort(token, opened.id);
+    expect((await uploadRows(opened.id))[0]).toMatchObject({ state: "not_done", actor_user_id: null, via: "link" });
+  });
+  test("old upload journals adopt their stored actor, and lost session receipts never invent completion", async () => {
+    const opened = await service.upload(testCall(actor), uploadInput("legacy-upload.txt"));
+    await sql`DELETE FROM filesv2.activity WHERE upload_id=${opened.id}`;
+    await sql`UPDATE filesv2.uploads SET activity_recorded=false WHERE id=${opened.id}`;
+    const restored = await uploads.history(opened.id);
+    expect((await uploadRows(opened.id))[0]).toMatchObject({ actor_user_id: actor.user.id, via: "unknown", detail: { adopted: true } });
+    try {
+      await sql`UPDATE filesv2.uploads SET filegate_session_id='missing-receipt' WHERE id=${opened.id}`;
+      await sql`UPDATE filesv2.activity SET started_at=${new Date(now.getTime() - day)},heartbeat_at=${new Date(now.getTime() - 120_000)},next_check_at=${new Date(now.getTime() - 1)} WHERE id=${restored.activity!.id}::uuid`;
+      await recover();
+      expect((await uploadRows(opened.id))[0]?.state).toBe("unclear");
+      expect((await uploads.get(opened.id, actor.user.id))?.state).toBe("open");
+    } finally {
+      await sql`UPDATE filesv2.uploads SET filegate_session_id=${uploadSessionId(restored.upload)} WHERE id=${opened.id}`;
+    }
+  });
+  test("a managed overwrite conflict keeps its reservation and history open until a confirmed abort", async () => {
+    const root = client.root("cloud");
+    expect((await root.info()).managed).toBe(true);
+    await root.put(`${home}/overwrite-conflict.txt`, new Blob(["initial"]));
+    const opened = await service.upload(testCall(actor), { ...uploadInput("overwrite-conflict.txt"), onConflict: "overwrite" });
+    expect((await sql`SELECT action,state FROM filesv2.activity WHERE upload_id=${opened.id}`)[0]).toMatchObject({
+      action: "file.overwrite",
+      state: "pending",
+    });
+    await root.put(`${home}/overwrite-conflict.txt`, new Blob(["changed"]), { onConflict: "overwrite" });
+    await expect(service.commitUpload(testCall(actor), { baseId: baseId(), id: opened.id })).rejects.toMatchObject({ status: 412 });
+    expect((await uploadRows(opened.id))[0]?.state).toBe("pending");
+    expect((await uploads.get(opened.id, actor.user.id))?.state).toBe("open");
+    await service.abortUpload(testCall(actor), { baseId: baseId(), id: opened.id });
+    expect((await uploadRows(opened.id))[0]?.state).toBe("not_done");
+  });
+  test("document creation and each Office save record their original channel", async () => {
+    const editorConfig = { ...config, collabora: { ...config.collabora, url: "https://office.test" } };
+    const editorService = createFilesService({
+      ...serviceDependencies(),
+      readConfiguration: async () => editorConfig,
+      userById: async () => actor.user,
+    });
+    const created = await editorService.createDocument(testCall(actor), { baseId: baseId(), path: "history-document", kind: "text" });
+    expect((await sql`SELECT action,state FROM filesv2.activity WHERE name=${created.entry.name}`)[0]).toMatchObject({
+      action: "file.create",
+      state: "done",
+    });
+    const id = (await persistedEntryRefId(baseId(), created.entry.path))!;
+    const token = signEditorToken({
+      userId: actor.user.id,
+      baseId: baseId(),
+      path: created.entry.path,
+      expiresAt: Number.MAX_SAFE_INTEGER,
+    });
+    for (const content of ["first save", "second save"])
+      await editorService.editorSave(token, id, { read: async () => new Blob([content]), timestamp: null }, "office-request");
+    const rows = await sql`SELECT action,state,via,request_id FROM filesv2.activity WHERE action='file.edit'`;
+    expect(rows).toHaveLength(2);
+    for (const entry of rows) expect(entry).toMatchObject({ state: "done", via: "office", request_id: "office-request" });
+  });
+  test.each(["delayed", "lost"])("a %s commit response never finishes history before proof", async (mode) => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let intercepted = false;
+    const transport: typeof fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        if (!intercepted && url.pathname.endsWith("/commit")) {
+          intercepted = true;
+          entered.resolve();
+          if (mode === "delayed") await release.promise;
+          const response = await fetch(input, init);
+          if (mode === "lost") throw new Error("lost commit response");
+          return response;
+        }
+        return fetch(input, init);
+      },
+      { preconnect: fetch.preconnect },
+    );
+    const controlled = createFilesService({
+      ...serviceDependencies(),
+      connect: (configuration) => connectFilegate(configuration, transport),
+    });
+    const opened = await controlled.upload(testCall(actor), uploadInput(`${mode}-commit.txt`));
+    const commit = controlled.commitUpload(testCall(actor), { baseId: baseId(), id: opened.id });
+    const outcome = commit.catch((error: unknown) => error);
+    await Promise.race([
+      entered.promise,
+      outcome.then(() => {
+        if (!intercepted) throw new Error("commit did not reach Filegate");
+      }),
+    ]);
+    try {
+      expect((await uploadRows(opened.id))[0]?.state).toBe("pending");
+      expect((await uploads.get(opened.id, actor.user.id))?.state).toBe("open");
+    } finally {
+      release.resolve();
+    }
+    if (mode === "lost") {
+      expect(await outcome).toMatchObject({ message: "lost commit response" });
+      expect((await uploadRows(opened.id))[0]?.state).toBe("pending");
+      await controlled.capabilityUploadStatus(testCall(actor), { baseId: baseId(), id: opened.id });
+    } else {
+      await outcome;
+    }
+    expect((await uploadRows(opened.id))[0]?.state).toBe("done");
+  });
+  test("case-distinct legacy UUID keys keep distinct history, recovery and retention", async () => {
+    // Session idempotency mappings outlive aborted sessions on a reused test daemon.
+    // Isolate this run while keeping the two keys different only in letter case.
+    const lower = `a${runId.slice(1)}`;
+    const keys = [lower, lower.toUpperCase()];
+    const opened = [];
+    for (const [index, key] of keys.entries())
+      opened.push(await service.upload(testCall(actor), { ...uploadInput(`case-key-${index}.txt`), idempotencyKey: key }));
+    expect(await sql`SELECT id FROM filesv2.activity WHERE upload_id IN (${keys[0]},${keys[1]})`).toHaveLength(2);
+    await sql`UPDATE filesv2.activity SET state='unclear',started_at=${new Date(now.getTime() - 400 * day)},heartbeat_at=${new Date(now.getTime() - 120_000)},next_check_at=${new Date(now.getTime() - 1)} WHERE upload_id IN (${keys[0]},${keys[1]})`;
+    await purgeActivity({ now, retentionDays: 365 });
+    for (const upload of opened) {
+      expect(await uploadRows(upload.id)).toHaveLength(1);
+      const stored = (await uploads.get(upload.id, actor.user.id))!;
+      await client.root("cloud").abortSession(uploadSessionId(stored)!);
+    }
+    await recover();
+    for (const key of keys) expect((await uploadRows(key))[0]?.state).toBe("not_done");
+  });
+  test.each(["condition", "ownership", "acl", "marker", "changed-intent"])(
+    "direct-write scope refuses changed %s before transport",
+    async (change) => {
+      const f = guardedTransport();
+      const options: WriteOptions = { onConflict: "overwrite", precondition: { ifMatch: "expected-revision" } };
+      await fileAction(
+        testCall(actor),
+        {
+          ...intent("guarded"),
+          action: "file.edit",
+          directory: false,
+          size: 0,
+          writeOptions: options,
+        },
+        async () => {
+          const altered: WriteOptions = { ...options, metadata: { activity: currentActivityId() } };
+          if (change === "condition") delete altered.precondition;
+          if (change === "ownership") altered.ownership = { uid: 1234, gid: 1234 };
+          if (change === "acl") altered.accessACL = { entries: [] };
+          if (change === "marker") altered.metadata = { activity: "another-activity" };
+          if (change === "changed-intent") {
+            options.precondition = { ifMatch: "changed" };
+            altered.precondition = options.precondition;
+          }
+          await expect(f.client.root("cloud").put(`${home}/guarded`, new Blob([]), altered)).rejects.toMatchObject({
+            code: "activity_scope_mismatch",
+          });
+        },
+        async () => {},
+      );
+      expect(f.sent()).toBe(0);
+    },
+  );
+  test("executed FreeIPA writes also record uploads and direct file creation", async () => {
+    const ipaBase = `freeipa:users:${ipa.user.id}`;
+    const opened = await service.upload(testCall(ipa), {
+      baseId: ipaBase,
+      path: "recorded-upload.txt",
+      size: 0,
+      onConflict: "error",
+      idempotencyKey: Bun.randomUUIDv7(),
+    });
+    await service.commitUpload(testCall(ipa), { baseId: ipaBase, id: opened.id });
+    expect((await uploadRows(opened.id))[0]).toMatchObject({ state: "done", actor_user_id: ipa.user.id });
+    await service.createFromBytes(testCall(ipa), { baseId: ipaBase, path: "recorded-bytes.txt" }, new Uint8Array([65]));
+    expect((await sql`SELECT state,actor_user_id FROM filesv2.activity WHERE action='file.create'`)[0]).toMatchObject({
+      state: "done",
+      actor_user_id: ipa.user.id,
+    });
+  });
+  test("public reservation failure rolls back its quota row before creating any session", async () => {
+    let sessions = 0;
+    const transport: typeof fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        if (init?.method === "POST" && new URL(input instanceof Request ? input.url : String(input)).pathname.endsWith("/sessions"))
+          sessions++;
+        return fetch(input, init);
+      },
+      { preconnect: fetch.preconnect },
+    );
+    const publicService = createFilesService({
+      ...serviceDependencies(),
+      userById: async () => actor.user,
+      connect: (configuration) => connectFilegate(configuration, transport),
+    });
+    const share = await publicService.createShare(testCall(actor), {
+      baseId: baseId(),
+      kind: "inbox",
+      title: "Fictional atomic inbox",
+      expiresIn: "unlimited",
+    });
+    const token = share.url.split("/").at(-1)!;
+    const id = Bun.randomUUIDv7();
+    await sql`CREATE OR REPLACE FUNCTION filesv2.reject_activity() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'intent unavailable'; END $$`.simple();
+    await sql`CREATE TRIGGER reject_activity BEFORE INSERT ON filesv2.activity FOR EACH ROW EXECUTE FUNCTION filesv2.reject_activity()`.simple();
+    try {
+      await expect(publicService.publicInboxUpload(token, { name: "rejected.txt", size: 0, idempotencyKey: id })).rejects.toThrow(
+        "intent unavailable",
+      );
+      expect(sessions).toBe(0);
+      expect(await uploads.getForShare(id, share.id)).toBeNull();
+    } finally {
+      await sql`DROP TRIGGER reject_activity ON filesv2.activity`.simple();
+      await sql`DROP FUNCTION filesv2.reject_activity()`.simple();
+    }
+  });
+  test.each(["private", "public"])("terminal %s retries do not recreate purged activity", async (kind) => {
+    const publicService = createFilesService({ ...serviceDependencies(), userById: async () => actor.user });
+    const input = uploadInput(`purged-${kind}.txt`);
+    const share =
+      kind === "public"
+        ? await publicService.createShare(testCall(actor), {
+            baseId: baseId(),
+            kind: "inbox",
+            title: "Fictional retained journal",
+            expiresIn: "unlimited",
+          })
+        : null;
+    const token = share?.url.split("/").at(-1)!;
+    const publicInput = { name: input.path, size: 0, idempotencyKey: input.idempotencyKey };
+    const opened =
+      kind === "public" ? await publicService.publicInboxUpload(token, publicInput) : await service.upload(testCall(actor), input);
+    if (kind === "public") await publicService.publicInboxCommit(token, opened.id);
+    else await service.commitUpload(testCall(actor), { baseId: baseId(), id: opened.id });
+    await sql`UPDATE filesv2.activity SET started_at=${new Date(now.getTime() - 400 * day)} WHERE upload_id=${opened.id}`;
+    await purgeActivity({ now, retentionDays: 365 });
+    expect(await uploadRows(opened.id)).toHaveLength(0);
+    if (kind === "public") {
+      await publicService.publicInboxCommit(token, opened.id);
+      await publicService.publicInboxUpload(token, publicInput);
+    } else {
+      await service.capabilityUploadStatus(testCall(actor), { baseId: baseId(), id: opened.id });
+      await service.upload(testCall(actor), input);
+    }
+    expect(await uploadRows(opened.id)).toHaveLength(0);
+  });
+  test("an old terminal journal is adopted once, and a known old overwrite stays an overwrite", async () => {
+    await client.root("cloud").put(`${home}/adopt-overwrite.txt`, new Blob(["old"]));
+    const input = { ...uploadInput("adopt-overwrite.txt"), onConflict: "overwrite" as const };
+    const opened = await service.upload(testCall(actor), input);
+    await service.commitUpload(testCall(actor), { baseId: baseId(), id: opened.id });
+    await sql`DELETE FROM filesv2.activity WHERE upload_id=${opened.id}`;
+    await sql`UPDATE filesv2.uploads SET activity_recorded=false WHERE id=${opened.id}`;
+    const adopted = await uploads.history(opened.id);
+    expect(adopted.activity).toMatchObject({ state: "done", action: "file.overwrite" });
+    expect((await sql`SELECT path_before,via,detail FROM filesv2.activity WHERE upload_id=${opened.id}`)[0]).toMatchObject({
+      path_before: `${home}/adopt-overwrite.txt`,
+      via: "unknown",
+      detail: { adopted: true },
+    });
+    await sql`UPDATE filesv2.activity SET started_at=${new Date(now.getTime() - 400 * day)} WHERE upload_id=${opened.id}`;
+    await purgeActivity({ now, retentionDays: 365 });
+    expect((await uploads.history(opened.id)).activity).toBeNull();
+    expect(await uploadRows(opened.id)).toHaveLength(0);
   });
   function serviceDependencies(): NonNullable<Parameters<typeof createFilesService>[0]> {
     return {
@@ -732,15 +1220,16 @@ suite("Files activity with real storage", () => {
         fileAction(
           testCall(actor),
           input,
-          () =>
-            part === "method"
+          async () => {
+            await (part === "method"
               ? root.remove(`${home}/source`)
               : root.transfer(
                   part === "source" ? `${home}/other` : `${home}/source`,
                   part === "target-root" ? "freeipa" : "cloud",
                   part === "target" ? `${home}/elsewhere` : `${home}/target`,
                   { move: part !== "move", onConflict: part === "conflict" ? "rename" : "error" },
-                ),
+                ));
+          },
           async () => {},
         ),
       ).rejects.toMatchObject({ code: "activity_scope_mismatch" });
@@ -933,7 +1422,10 @@ suite("Files activity with real storage", () => {
       expect(requests).toBe(1);
       const after = await row(id);
       if (state === "unclear") expect(after).toMatchObject({ state: "failed", error_code: "path_conflict" });
-      else expect(after).toEqual(before);
+      else {
+        if (!before) throw new Error("missing state before refusal");
+        expect(after).toEqual(before);
+      }
     },
   );
 });

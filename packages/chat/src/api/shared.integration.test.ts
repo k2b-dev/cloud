@@ -70,7 +70,7 @@ suite("chat shared items API", () => {
       { payload: unknown }[]
     >`SELECT payload FROM events.outbox WHERE app_id = 'chat' AND ordering_key = ${`c:${chat.shortId}`} ORDER BY seq`;
     const events = rows.map((row) => z.object({ d: ChatLiveEventSchema }).parse(row.payload).d);
-    const { systemText: _, ...storedMessage } = message;
+    const { systemText: _, reactions: _reactions, ...storedMessage } = message;
     expect(events.filter((event) => event.type === "message")).toEqual([{ type: "message", message: storedMessage }]);
     const history = MessagePageSchema.parse(await (await f.request(owner.headers, `/${chat.shortId}/messages`)).json());
     expect(history.items[0]!.refs).toEqual(refs);

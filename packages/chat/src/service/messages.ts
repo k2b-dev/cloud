@@ -1,4 +1,4 @@
-import { err, fail, ok, type Result, ratelimit } from "@k2b/cloud/server";
+import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { sql } from "bun";
 import type { z } from "zod";
 import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./access";
@@ -11,10 +11,6 @@ import {
   MessageQuerySchema,
   type MessageViewSchema,
   readStart,
-  SEND_CONVERSATION_LIMIT,
-  SEND_CONVERSATION_WINDOW_SECONDS,
-  SEND_LIMIT,
-  SEND_WINDOW_SECONDS,
   SendMessageSchema,
   SnapshotQuerySchema,
 } from "./contracts";
@@ -25,20 +21,14 @@ import { openParticipant } from "./read-state";
 import { canReadThread, visibleMessages, visibleThreadIdPage } from "./thread-access";
 import { threadStates } from "./thread-state";
 import { findThread, threadNotFound, threads } from "./threads";
+import { checkWriteRate, type RateLimited } from "./write-rate";
 
-const conversationLimit = ratelimit({
-  id: "chat.message.send.conversation",
-  limit: SEND_CONVERSATION_LIMIT,
-  windowSecs: SEND_CONVERSATION_WINDOW_SECONDS,
-});
-const sendLimit = ratelimit({ id: "chat.message.send", limit: SEND_LIMIT, windowSecs: SEND_WINDOW_SECONDS });
 const parse = <T>(schema: z.ZodType<T>, input: unknown, context: ChatContext): Result<T> => {
   const result = schema.safeParse(input);
   return result.success ? ok(result.data) : fail(err.badInput(catalog(context).invalidInput));
 };
 type Input = ChatContext & { conversationId: string };
 type Sent = { message: z.infer<typeof MessageViewSchema>; created: boolean };
-type RateLimited = { ok: false; error: string; code: "RATE_LIMITED"; status: 429; retryAfter: number };
 const existing = async (db: typeof sql, conversationId: string, input: ChatContext, clientId: string) => {
   const author = subjectPrincipal(input.accessSubject);
   const [row] = await db<MessageRow[]>`SELECT * FROM chat.messages WHERE conversation_id = ${conversationId}::uuid
@@ -53,25 +43,11 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
   const data = parsed.data;
   const found = await existing(sql, allowed.data.id, input, data.clientId);
   if (found && !(await canReadThread(sql, input, found.thread_id))) return threadNotFound(input);
-  if (found) return ok({ message: (await messageViews(sql, [found], input.conversationId, input.locale))[0]!, created: false });
-  const author = subjectPrincipal(input.accessSubject);
-  const identifier = `${author.type}:${author.id}`;
-  // Limits run before the lock: a sender at its limit must not hold up the chat's other writers.
-  for (const [limiter, key] of [
-    [conversationLimit, `${identifier}:${input.conversationId}`],
-    [sendLimit, identifier],
-  ] as const) {
-    const limited = await limiter.check(key);
-    if (limited.limited) {
-      return {
-        ok: false,
-        error: catalog(input).sendRateLimited,
-        code: "RATE_LIMITED",
-        status: 429,
-        retryAfter: Math.max(1, Math.ceil(limited.resetIn / 1000)),
-      } satisfies RateLimited;
-    }
-  }
+  if (found)
+    return ok({ message: (await messageViews(sql, [found], input.conversationId, input.accessSubject, input.locale))[0]!, created: false });
+  const limited = await checkWriteRate(input);
+  if (limited) return limited;
+
   const result = await sql.begin(async (db): Promise<Result<Sent>> => {
     await db`SELECT id FROM chat.conversations WHERE short_id = ${input.conversationId} FOR UPDATE`;
     const current = await requireConversation({ ...input, required: "write" }, db);
@@ -79,7 +55,12 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
     // A concurrent retry of the same clientId may have committed while this one waited for the lock.
     const retry = await existing(db, current.data.id, input, data.clientId);
     if (retry && !(await canReadThread(db, input, retry.thread_id))) return threadNotFound(input);
-    if (retry) return ok({ message: (await messageViews(db, [retry], input.conversationId, input.locale))[0]!, created: false });
+    if (retry)
+      return ok({
+        message: (await messageViews(db, [retry], input.conversationId, input.accessSubject, input.locale))[0]!,
+        created: false,
+      });
+
     let threadId: string | null = null;
     let replyToSeq: string | bigint | undefined;
     if (data.replyTo) {
@@ -112,7 +93,7 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
       threadId: threadId ?? undefined,
       replyToSeq,
     });
-    return ok({ message: (await messageViews(db, [row], input.conversationId, input.locale))[0]!, created: true });
+    return ok({ message: (await messageViews(db, [row], input.conversationId, input.accessSubject, input.locale))[0]!, created: true });
   });
   if (result.ok && result.data.created) chatLive.wake();
   return result;
@@ -136,7 +117,7 @@ const list = async (input: Input & { query?: unknown }) => {
     const seqHead = Number(allowed.data.seq_head);
     const full = candidates.length === MESSAGE_PAGE_SIZE;
     return ok({
-      items: await messageViews(db, rows, input.conversationId, input.locale),
+      items: await messageViews(db, rows, input.conversationId, input.accessSubject, input.locale),
       seqHead,
       rev: Number(allowed.data.rev),
       ...(query.after !== undefined
@@ -207,7 +188,7 @@ const snapshot = async (
     return ok({
       conversation: conversation.data,
       page: {
-        items: await messageViews(db, rows, input.conversationId, input.locale),
+        items: await messageViews(db, rows, input.conversationId, input.accessSubject, input.locale),
         seqHead,
         rev: Number(allowed.data.rev),
         from: candidates.length === MESSAGE_PAGE_SIZE ? Number(candidates[0]!.seq) : 1,
@@ -227,7 +208,7 @@ const get = async (input: Input & { messageId: string }) => {
     MessageRow[]
   >`SELECT * FROM chat.messages WHERE conversation_id = ${allowed.data.id}::uuid AND short_id = ${parsed.data}`;
   return row && (await canReadThread(sql, input, row.thread_id))
-    ? ok((await messageViews(sql, [row], input.conversationId, input.locale))[0]!)
+    ? ok((await messageViews(sql, [row], input.conversationId, input.accessSubject, input.locale))[0]!)
     : fail({ code: "NOT_FOUND", message: catalog(input).messageNotFound, status: 404 });
 };
 const changes = async (input: Input & { query: unknown }) => {
@@ -251,7 +232,7 @@ const changes = async (input: Input & { query: unknown }) => {
       rev: more ? Number(candidates.at(-1)!.rev) : head,
       more,
       conversation: conversation?.data ?? null,
-      messages: await messageViews(db, rows, input.conversationId, input.locale),
+      messages: await messageViews(db, rows, input.conversationId, input.accessSubject, input.locale),
     });
   });
 };

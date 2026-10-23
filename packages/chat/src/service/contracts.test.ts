@@ -295,3 +295,32 @@ test("summary and read-all continuations reject malformed state and preserve an 
     expect(ReadAllSchema.safeParse({ cursor }).success).toBeFalse();
   expect(SummaryQuerySchema.safeParse({ summaryCursor: "not-a-thread" }).success).toBeFalse();
 });
+
+test("channel discovery accepts bounded distinct audiences and service-account members", async () => {
+  const { ChannelQuerySchema, DiscoveryEntriesSchema, DiscoveryUpdateSchema, SystemMessageSchema } = await import("./contracts");
+  const entries = [
+    { principal: { type: "group" as const, groupId: lea }, permission: "write" as const },
+    { principal: { type: "authenticated" as const }, permission: "read" as const },
+  ];
+  expect(DiscoveryEntriesSchema.parse(entries)).toEqual(entries);
+  for (const invalid of [
+    [...entries, entries[0]],
+    [{ principal: { type: "user", userId: lea }, permission: "read" }],
+    [{ principal: { type: "authenticated" }, permission: "admin" }],
+    Array(101).fill(entries[0]),
+  ])
+    expect(DiscoveryEntriesSchema.safeParse(invalid).success).toBeFalse();
+  expect(DiscoveryUpdateSchema.parse({ entries: [], name: "  News  " })).toEqual({ entries: [], name: "News" });
+  const principal = { type: "service_account" as const, serviceAccountId: lea };
+  expect(AddMembersSchema.parse({ members: [principal, principal] }).members).toEqual([principal]);
+  expect(CreateConversationSchema.parse({ discovery: entries, members: [principal] }).discovery).toEqual(entries);
+  expect(ChannelQuerySchema.parse({ q: " News ", cursor: JSON.stringify({ name: "news", id: lea }) })).toEqual({
+    q: "News",
+    cursor: { name: "news", id: lea },
+  });
+  expect(ChannelQuerySchema.safeParse({ cursor: "invalid" }).success).toBeFalse();
+  expect(ChannelQuerySchema.safeParse({ q: "x".repeat(101) }).success).toBeFalse();
+  expect(SystemMessageSchema.parse({ code: "discovery_changed", params: { count: 2 } }).code).toBe("discovery_changed");
+  expect(ConversationSchema.shape.channel.parse(true)).toBeTrue();
+  expect(ConversationSchema.shape.member.parse(false)).toBeFalse();
+});

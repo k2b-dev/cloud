@@ -44,7 +44,44 @@ const IconSchema = z
   .nullable()
   .optional();
 const metadata = { name: clearedText(80), icon: IconSchema, purpose: clearedText(300) };
+export const ServiceAccountPrincipalSchema = z.strictObject({
+  type: z.literal("service_account"),
+  serviceAccountId: z.uuid().transform((id) => id.toLowerCase()),
+});
+export const DiscoveryPrincipalSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("group"), groupId: z.uuid().transform((id) => id.toLowerCase()) }),
+  z.strictObject({ type: z.literal("authenticated") }),
+]);
+export const DiscoveryEntrySchema = z.strictObject({ principal: DiscoveryPrincipalSchema, permission: z.enum(["read", "write"]) });
+export const DiscoveryEntriesSchema = z
+  .array(DiscoveryEntrySchema)
+  .max(MEMBER_PAGE_SIZE)
+  .refine(
+    (entries) =>
+      new Set(entries.map((entry) => (entry.principal.type === "group" ? entry.principal.groupId : "authenticated"))).size ===
+      entries.length,
+  );
+export const DiscoveryUpdateSchema = z.strictObject({
+  entries: DiscoveryEntriesSchema,
+  name: clearedText(80),
+  purpose: clearedText(300),
+  /** The `revision` of the settings this change starts from; a newer stored audience answers 409 DISCOVERY_CHANGED. */
+  revision: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
+});
+export const DiscoveryStateSchema = z.object({
+  entries: z.array(DiscoveryEntrySchema.extend({ accessId: z.uuid(), displayName: z.string() })),
+  revision: z.string(),
+  allowAuthenticated: z.boolean(),
+  audienceCount: z.number().int().nonnegative(),
+});
+export const DiscoveryOptionsSchema = z.object({ allowAuthenticated: z.boolean() });
+export const DiscoveryPreviewSchema = z.object({ audienceCount: z.number().int().nonnegative(), includesAuthenticated: z.boolean() });
+
 export const MemberPrincipalSchema = z.discriminatedUnion("type", [
+  ServiceAccountPrincipalSchema,
   z.strictObject({ type: z.literal("user"), userId: z.uuid().transform((id) => id.toLowerCase()) }),
   z.strictObject({ type: z.literal("group"), groupId: z.uuid().transform((id) => id.toLowerCase()) }),
 ]);
@@ -55,7 +92,10 @@ const members = z
   .transform((principals) => {
     const seen = new Set<string>();
     return principals.filter((principal) => {
-      const key = principal.type + ":" + (principal.type === "user" ? principal.userId : principal.groupId);
+      const key =
+        principal.type +
+        ":" +
+        (principal.type === "user" ? principal.userId : principal.type === "group" ? principal.groupId : principal.serviceAccountId);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -68,6 +108,7 @@ export const CreateConversationSchema = z.strictObject({
     .transform((id) => id.toLowerCase())
     .optional(),
   ...metadata,
+  discovery: DiscoveryEntriesSchema.optional(),
   members: members.default([]),
   allowDuplicate: z.boolean().default(false),
 });
@@ -116,6 +157,7 @@ export const PeopleQuerySchema = z.strictObject({
     })
     .optional(),
 });
+export const ChannelQuerySchema = z.object({ q: z.string().trim().max(100).optional(), cursor: PeopleQuerySchema.shape.cursor });
 export const PeoplePageSchema = z.object({
   items: z.array(z.object({ id: z.uuid(), displayName: z.string() })),
   nextCursor: z.string().nullable(),
@@ -240,6 +282,9 @@ export const ConversationSchema = z.object({
   kind: z.enum(["chat", "system"]).optional(),
   resource: CloudResourceRefSchema.nullable().optional(),
   threads: z.number().int().min(0),
+  channel: z.boolean(),
+  member: z.boolean(),
+
   unread: z.number().int().min(0).max(UNREAD_CAP),
   read: ReadStateSchema.nullable(),
   id: ShortIdSchema,
@@ -272,6 +317,7 @@ export const ConversationPageSchema = z.object({ items: z.array(ConversationSche
 export const MemberSchema = z.object({
   accessId: z.uuid(),
   principal: MemberPrincipalSchema,
+  serviceAccountKind: z.enum(["standalone", "agent", "resource_bound", "user_delegated"]).optional(),
   displayName: z.string(),
   avatarHash: z.string().nullable().optional(),
   guest: z.boolean(),
@@ -284,7 +330,7 @@ export const MemberPageSchema = z.object({
   items: z.array(MemberSchema),
   nextCursor: z.string().nullable(),
   managers: z.number().int().nonnegative(),
-  /** The access subject's direct user membership, independent of search and pagination. */
+  /** The access subject's direct membership, independent of search and pagination. */
   self: z.object({ accessId: z.uuid(), permission: PermissionSchema, active: z.boolean() }).nullable(),
 });
 export const MemberPreviewSchema = z.object({
@@ -294,10 +340,13 @@ export const MemberPreviewSchema = z.object({
 });
 export const ChangeSchema = z.object({ added: z.number().int() });
 export const MemberRemovalSchema = z.object({ success: z.literal(true), keptThroughGroup: z.boolean() });
+/** `canRejoin`: a channel the person left still lets them find and subscribe to it again. */
+export const LeaveResultSchema = MemberRemovalSchema.extend({ canRejoin: z.boolean() });
 export const SuccessSchema = z.object({ success: z.literal(true) });
 
-const personSnapshot = z.object({ id: z.uuid(), name: z.string() });
+const personSnapshot = z.object({ id: z.uuid(), name: z.string(), type: z.literal("service_account").optional() });
 export const SystemMessageSchema = z.discriminatedUnion("code", [
+  z.object({ code: z.literal("discovery_changed"), params: z.object({ count: z.number().int().nonnegative() }) }),
   z.strictObject({
     code: z.literal("thread_created"),
     params: z.strictObject({ thread: z.strictObject({ id: ThreadIdSchema, name: z.string() }) }),
@@ -321,7 +370,31 @@ export const SystemMessageSchema = z.discriminatedUnion("code", [
   z.object({ code: z.literal("permission_changed"), params: z.object({ member: personSnapshot, permission: PermissionSchema }) }),
 ]);
 export type SystemMessage = z.infer<typeof SystemMessageSchema>;
+// Product budgets: one picker row group per person; two wrapped reaction-bar lines per message.
+export const REACTIONS_PER_PERSON = 20;
+export const REACTIONS_PER_MESSAGE = 50;
+export const REACTION_PEOPLE = 10;
+const emojiSegments = new Intl.Segmenter("en", { granularity: "grapheme" });
+const emojiPart = String.raw`(?:\p{Emoji_Modifier_Base}\uFE0F?\p{Emoji_Modifier}|\p{Extended_Pictographic}\uFE0F?)`;
+const emojiPattern = new RegExp(
+  String.raw`^(?:${emojiPart}(?:\u200D${emojiPart})*|\p{Regional_Indicator}{2}|[0-9#*]\uFE0F?\u20E3|\u{1F3F4}[\u{E0061}-\u{E007A}]+\u{E007F})$`,
+  "u",
+);
+export const EmojiSchema = z
+  .string()
+  .refine(
+    (emoji) =>
+      emoji.length <= 32 &&
+      new TextEncoder().encode(emoji).byteLength <= 32 &&
+      [...emojiSegments.segment(emoji)].length === 1 &&
+      emojiPattern.test(emoji),
+  );
+export const ReactionSchema = z.strictObject({ emoji: EmojiSchema, count: z.number().int().positive(), own: z.boolean() });
+export const ReactionsSchema = z.strictObject({
+  items: z.array(ReactionSchema.extend({ people: z.array(z.string()).max(REACTION_PEOPLE) })).max(REACTIONS_PER_MESSAGE),
+});
 export const MessageSchema = z.object({
+  reactions: z.array(ReactionSchema).max(REACTIONS_PER_MESSAGE),
   refs: z.array(CloudResourceRefSchema).max(MAX_MESSAGE_REFS),
   thread: ThreadIdSchema.nullable(),
   replyTo: z
@@ -395,6 +468,7 @@ export const MessageQuerySchema = z
   .strictObject({ before: sequenceQuery(1).optional(), after: sequenceQuery(0).optional(), thread: ThreadSelectorSchema.optional() })
   .refine((query) => query.before === undefined || query.after === undefined);
 export const MessageParamSchema = ConversationParamSchema.extend({ message: MessageIdSchema });
+export const ReactionParamSchema = MessageParamSchema.extend({ emoji: EmojiSchema });
 export const ChangesQuerySchema = z.object({ afterRev: sequenceQuery(0) });
 /**
  * `from` and `to` are the positions the page covers for its thread selection: every selected message in that range is
@@ -431,7 +505,13 @@ export const ChatLiveEventSchema = z.discriminatedUnion("type", [
   ReadUpdateSchema.extend({ type: z.literal("read") }),
   z.object({ type: z.literal("membership"), conversationId: ShortIdSchema }),
   z.strictObject({ type: z.literal("threads"), conversationId: ShortIdSchema }),
-  z.object({ type: z.literal("message"), message: MessageSchema }),
+  z.strictObject({
+    type: z.literal("reactions"),
+    conversationId: ShortIdSchema,
+    messageId: MessageIdSchema,
+    rev: z.number().int().nonnegative(),
+  }),
+  z.object({ type: z.literal("message"), message: MessageSchema.omit({ reactions: true }) }),
   MessageSchema.pick({
     thread: true,
     conversationId: true,

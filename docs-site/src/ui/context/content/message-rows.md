@@ -218,6 +218,8 @@ chip shows the names too. Build the label with `reactionPeople`, for example
 Each chip keeps its element for its `key`. A toggled chip keeps focus when the
 application passes a new list of new objects, as long as the message itself
 is updated in place (see [Update messages in place](#update-messages-in-place)).
+A removed chip that had focus hands it to the chip in its place or to "Add
+reaction".
 
 The bar has one fixed height. Chips never wrap; when there are more than fit,
 the chips scroll sideways, a fade at the edge shows that more follow, and

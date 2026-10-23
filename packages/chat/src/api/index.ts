@@ -21,6 +21,7 @@ import {
   ChangeSchema,
   ChangesPageSchema,
   ChangesQuerySchema,
+  ChannelQuerySchema,
   ChatSnapshotSchema,
   ConversationPageSchema,
   ConversationParamSchema,
@@ -29,7 +30,13 @@ import {
   CreateConversationSchema,
   CreateOutcomeSchema,
   CreateThreadSchema,
+  DiscoveryEntriesSchema,
+  DiscoveryOptionsSchema,
+  DiscoveryPreviewSchema,
+  DiscoveryStateSchema,
+  DiscoveryUpdateSchema,
   ForResourceSchema,
+  LeaveResultSchema,
   LeaveSchema,
   MarkUnreadSchema,
   MemberPageSchema,
@@ -43,6 +50,8 @@ import {
   MessageViewSchema,
   PeoplePageSchema,
   PeopleQuerySchema,
+  ReactionParamSchema,
+  ReactionsSchema,
   ReadAllOutcomeSchema,
   ReadAllSchema,
   ReadSchema,
@@ -68,6 +77,10 @@ import { chatLive } from "../service/live";
 import { chatLiveChannels } from "../service/live-channels";
 
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
+const audienceUnavailableResponse = jsonResponse(
+  z.object({ code: z.literal("AUDIENCE_UNAVAILABLE"), message: z.string() }),
+  "Audience counting timed out; retry the request",
+);
 const description = (summary: string, schema: z.ZodType) =>
   describeRoute({
     tags: ["Chat"],
@@ -132,6 +145,74 @@ const app = new Hono<AuthContext>()
     }),
     validator("param", SystemChatParamSchema, invalidInput),
     async (c) => respond(c, chatService.systemChats.open({ ...context(c), ...c.req.valid("param") })),
+  )
+  .get(
+    "/channels/options",
+    auth.requireRole("authenticated"),
+    description("Read channel audience options", DiscoveryOptionsSchema),
+    async (c) => respond(c, chatService.channels.options()),
+  )
+  .get(
+    "/channels",
+    auth.requireRole("authenticated"),
+    description("Browse discoverable channels", ConversationPageSchema),
+    validator("query", ChannelQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.channels.browse({
+          ...context(c),
+          query: { ...c.req.valid("query"), cursor: c.req.valid("query").cursor ? JSON.stringify(c.req.valid("query").cursor) : undefined },
+        }),
+      ),
+  )
+  .post(
+    "/channels/preview",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Count the discovery audience",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(DiscoveryPreviewSchema, "Audience count"), 503: audienceUnavailableResponse },
+    }),
+    validator("query", ConversationParamSchema.partial(), invalidInput),
+    validator("json", DiscoveryEntriesSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.channels.preview({ ...context(c), conversationId: c.req.valid("query").conversation, input: c.req.valid("json") }),
+      ),
+  )
+  .get(
+    "/conversations/:conversation/discovery",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read channel discovery settings",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(DiscoveryStateSchema, "Discovery settings"), 503: audienceUnavailableResponse },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    async (c) => respond(c, chatService.channels.get({ ...context(c), conversationId: c.req.valid("param").conversation })),
+  )
+  .put(
+    "/conversations/:conversation/discovery",
+    auth.requireRole("authenticated"),
+    description("Change channel discovery settings", ConversationSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("json", DiscoveryUpdateSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.channels.update({ ...context(c), conversationId: c.req.valid("param").conversation, input: c.req.valid("json") }),
+      ),
+  )
+  .post(
+    "/conversations/:conversation/join",
+    auth.requireRole("authenticated"),
+    description("Join a discoverable channel", ConversationSchema),
+    validator("param", ConversationParamSchema, invalidInput),
+    async (c) => respond(c, chatService.channels.join({ ...context(c), conversationId: c.req.valid("param").conversation })),
   )
   .use("/conversations", auth.requireRole("authenticated"))
   .use("/conversations/*", auth.requireRole("authenticated"))
@@ -365,7 +446,7 @@ const app = new Hono<AuthContext>()
       tags: ["Chat"],
       summary: "Post a Markdown message",
       description:
-        "Accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored message unchanged.",
+        "Accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored content with the caller's current reactions.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageViewSchema, "Idempotent retry"),
@@ -433,6 +514,107 @@ const app = new Hono<AuthContext>()
         c,
         chatService.messages.list({ ...context(c), conversationId: c.req.valid("param").conversation, query: c.req.valid("query") }),
       ),
+  )
+  .get(
+    "/conversations/:conversation/messages/:message/reactions",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read message reactions",
+      ...requiresAuth,
+      description: "First-reaction order, with up to 10 newest display names per emoji. Requires message read access.",
+      responses: {
+        200: jsonResponse(ReactionsSchema, "Reactions for this viewer"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Message unavailable"),
+      },
+    }),
+    validator("param", MessageParamSchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.reactions.list({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          messageId: c.req.valid("param").message,
+        }),
+      ),
+  )
+  .put(
+    "/conversations/:conversation/messages/:message/reactions/:emoji",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Add a message reaction",
+      ...requiresAuth,
+      description: "Idempotent. Requires message read access and write/admin credential scope. One emoji grapheme, at most 32 UTF-8 bytes.",
+      responses: {
+        204: { description: "Reaction state saved" },
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid emoji"),
+        403: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Credential lacks write scope"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Message unavailable"),
+        409: jsonResponse(
+          z.object({ code: z.enum(["REACTION_PERSON_LIMIT", "REACTION_MESSAGE_LIMIT"]), message: z.string() }),
+          "Reaction budget reached",
+        ),
+        429: {
+          ...jsonResponse(z.object({ code: z.string().optional(), message: z.string() }), "Chat write rate limit reached"),
+          headers: { "Retry-After": { description: "Seconds until retry", schema: { type: "integer", minimum: 1 } } },
+        },
+      },
+    }),
+    validator("param", ReactionParamSchema, invalidInput),
+    async (c) => {
+      const param = c.req.valid("param");
+      const result = await chatService.reactions.set({
+        ...context(c),
+        conversationId: param.conversation,
+        messageId: param.message,
+        emoji: param.emoji,
+        on: true,
+      });
+      if (!result.ok) {
+        if ("retryAfter" in result) c.header("Retry-After", String(result.retryAfter));
+        return respond(c, result);
+      }
+      return c.body(null, 204);
+    },
+  )
+  .delete(
+    "/conversations/:conversation/messages/:message/reactions/:emoji",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Remove a message reaction",
+      ...requiresAuth,
+      description: "Idempotent. Requires message read access and write/admin credential scope. One emoji grapheme, at most 32 UTF-8 bytes.",
+      responses: {
+        204: { description: "Reaction state saved" },
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid emoji"),
+        403: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Credential lacks write scope"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Message unavailable"),
+        409: jsonResponse(
+          z.object({ code: z.enum(["REACTION_PERSON_LIMIT", "REACTION_MESSAGE_LIMIT"]), message: z.string() }),
+          "Reaction budget reached",
+        ),
+        429: {
+          ...jsonResponse(z.object({ code: z.string().optional(), message: z.string() }), "Chat write rate limit reached"),
+          headers: { "Retry-After": { description: "Seconds until retry", schema: { type: "integer", minimum: 1 } } },
+        },
+      },
+    }),
+    validator("param", ReactionParamSchema, invalidInput),
+    async (c) => {
+      const param = c.req.valid("param");
+      const result = await chatService.reactions.set({
+        ...context(c),
+        conversationId: param.conversation,
+        messageId: param.message,
+        emoji: param.emoji,
+        on: false,
+      });
+      if (!result.ok) {
+        if ("retryAfter" in result) c.header("Retry-After", String(result.retryAfter));
+        return respond(c, result);
+      }
+      return c.body(null, 204);
+    },
   )
   .get(
     "/conversations/:conversation/messages/:message",
@@ -549,7 +731,7 @@ const app = new Hono<AuthContext>()
   )
   .post(
     "/conversations/:conversation/leave",
-    description("Leave a chat, handing over management when needed", MemberRemovalSchema),
+    description("Leave a chat, handing over management when needed", LeaveResultSchema),
     validator("param", ConversationParamSchema, invalidInput),
     validator("json", LeaveSchema, invalidInput),
     async (c) =>

@@ -11,6 +11,7 @@ import { byActivity, type ThreadList, type ThreadView, threadHref } from "./thre
 /** The same server-filtered, paged directory in the overview and the wide thread column. */
 export default function SystemThreadDirectory(props: {
   conversation: Conversation;
+  basePath?: string;
   view?: ThreadView;
   viewerId: string;
   dateConfig: DateContext;
@@ -38,7 +39,7 @@ export default function SystemThreadDirectory(props: {
       () => props.conversation.id,
       (id) => {
         if (!mounted()) return;
-        if (location.pathname.startsWith(`/app/chat/c/${id}`)) readAddress();
+        if (location.pathname.startsWith(`${props.basePath ?? "/app/chat"}/c/${id}`)) readAddress();
         else {
           setInput("");
           setFilter(undefined);
@@ -97,7 +98,7 @@ export default function SystemThreadDirectory(props: {
   return (
     <div class="chat-system-directory">
       <AppWorkspace.SidebarItem
-        href={threadHref(props.conversation.id, "all")}
+        href={threadHref(props.conversation.id, "all", null, props.basePath)}
         navigation="enhanced"
         active={props.view === "all"}
         onNavigate={(event) => props.onOpen("all", event)}
@@ -150,7 +151,7 @@ export default function SystemThreadDirectory(props: {
         <For each={page()?.items ?? []}>
           {(thread) => (
             <AppWorkspace.SidebarItem
-              href={threadHref(props.conversation.id, thread.id)}
+              href={threadHref(props.conversation.id, thread.id, null, props.basePath)}
               navigation="enhanced"
               active={props.view === thread.id}
               onNavigate={(event) => props.onOpen(thread.id, event)}

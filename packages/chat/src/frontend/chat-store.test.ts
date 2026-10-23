@@ -8,6 +8,8 @@ const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
 
 const conversation = ConversationSchema.parse({
   threads: 0,
+  channel: false,
+  member: true,
   id: "abcdef",
   name: "Chat",
   title: "Chat",
@@ -26,6 +28,7 @@ const conversation = ConversationSchema.parse({
 });
 const message = (rev: number) =>
   MessageSchema.parse({
+    reactions: [],
     refs: [],
     thread: null,
     replyTo: null,
@@ -77,6 +80,8 @@ class ManualConnection implements LiveConnection {
 const self = { accessId: "11111111-1111-4111-8111-111111111111", permission: "write" as const, active: true };
 const memberApi = {
   threads: async () => noThreads,
+  react: async () => {},
+  reactions: async () => ({ items: [] }),
   shared: async () => ({ items: [], nextCursor: null }),
   createThread: async () => {
     throw new Error("Unused thread request");
@@ -91,7 +96,7 @@ const memberApi = {
   addMembers: async () => ({ added: 1 }),
   updateMember: async () => ({ success: true as const }),
   removeMember: async () => ({ success: true as const, keptThroughGroup: false }),
-  leave: async () => ({ success: true as const, keptThroughGroup: false }),
+  leave: async () => ({ success: true as const, keptThroughGroup: false, canRejoin: false }),
   people: async () => ({ items: [], nextCursor: null }),
 };
 const fixture = (overrides: Partial<ChatStoreApi> = {}) => {
@@ -386,6 +391,17 @@ test("sidebar text summaries sort rows, guard revisions, and fetch missing and s
   expect(fetched).toEqual(["ghijkl", "abcdef"]);
   await connection.get("me").apply({ type: "membership", conversationId: "abcdef" });
   expect(store.sidebar.map((row) => row.id)).toEqual(["abcdef"]);
+  store.dispose();
+});
+
+test("a channel subscription by someone else updates the open chat's members and its sidebar row", async () => {
+  const { store, connection } = fixture({ conversation: async () => ({ ...conversation, channel: true, rev: 2, memberCount: 3 }) });
+  await connection.get("conversation").apply({ type: "membership", conversationId: conversation.id });
+  expect(store.openConversation?.membershipRev).toBe(1);
+  expect(store.openConversation?.conversation?.memberCount).toBe(3);
+  expect(store.openConversation?.messages).toHaveLength(1);
+  await connection.get("list").apply({ type: "membership", conversationId: conversation.id });
+  expect(store.sidebar.find((row) => row.id === conversation.id)?.memberCount).toBe(3);
   store.dispose();
 });
 
@@ -1152,7 +1168,7 @@ test("member methods forward arguments, and the reader's own changes refresh tha
     },
     leave: async (id, successor) => {
       calls.push(["leave", id, successor]);
-      return { success: true, keptThroughGroup: false };
+      return { success: true, keptThroughGroup: false, canRejoin: false };
     },
     people: async (search, cursor) => {
       calls.push(["people", search, cursor]);
@@ -1215,7 +1231,9 @@ for (const operation of ["create", "updateDetails", "addMembers", "updateMember"
             ? { added: 1 }
             : operation === "updateMember"
               ? { success: true as const }
-              : { success: true as const, keptThroughGroup: true };
+              : operation === "leave"
+                ? { success: true as const, keptThroughGroup: true, canRejoin: false }
+                : { success: true as const, keptThroughGroup: true };
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(String(input), "http://localhost");
@@ -1280,7 +1298,7 @@ test("leaving the open chat reaches no-access on the refresh 404, without a live
   const { store, connection } = fixture({
     leave: async () => {
       left = true;
-      return { success: true, keptThroughGroup: false };
+      return { success: true, keptThroughGroup: false, canRejoin: false };
     },
     conversations: async () => ({ items: [], nextCursor: null }),
     conversation: async () => (left ? null : conversation),
@@ -1313,7 +1331,7 @@ test("leaving a chat that stays readable through another grant removes it from t
   const { store } = fixture({
     leave: async () => {
       left = true;
-      return { success: true, keptThroughGroup: false };
+      return { success: true, keptThroughGroup: false, canRejoin: false };
     },
     // The list holds only the reader's chats; the detail stays readable, as through a discoverable grant.
     conversations: async () => ({ items: left ? [] : [conversation], nextCursor: null }),
@@ -1357,7 +1375,7 @@ test("typed member requests use their routes, payloads and schemas, including bo
         return Response.json(method === "GET" ? { items: [], nextCursor: null, managers: 1, self } : { added: 1 });
       if (url.pathname.endsWith("/people")) return Response.json({ items: [], nextCursor: null });
       if (url.pathname.endsWith(conversation.id)) return Response.json(conversation);
-      return Response.json({ success: true, keptThroughGroup: true });
+      return Response.json({ success: true, keptThroughGroup: true, canRejoin: false });
     },
     { preconnect: original.preconnect },
   );
@@ -1378,7 +1396,7 @@ test("typed member requests use their routes, payloads and schemas, including bo
     await api.addMembers(conversation.id, members);
     await api.updateMember(conversation.id, "access", "admin");
     expect(await api.removeMember(conversation.id, "access")).toEqual({ success: true, keptThroughGroup: true });
-    expect(await api.leave(conversation.id, "successor")).toEqual({ success: true, keptThroughGroup: true });
+    expect(await api.leave(conversation.id, "successor")).toEqual({ success: true, keptThroughGroup: true, canRejoin: false });
     await api.people("co member", "opaque");
     expect(calls.map(({ path, method, body }) => ({ path, method, body }))).toEqual([
       { path: "/api/chat/conversations", method: "POST", body: { members, name: "New", allowDuplicate: true } },
@@ -1554,4 +1572,161 @@ test("a failed continuation keeps the selected resource and is retryable; closin
   } finally {
     store.dispose();
   }
+});
+
+test("reactions update optimistically and restore the previous counts on failure", async () => {
+  const pending = deferred<void>();
+  const { store } = fixture({ react: () => pending.promise });
+  const before = store.sidebar;
+  const writing = store.react(conversation.id, message(1).id, "👍", true);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 1, own: true }]);
+  pending.reject(new Error("Try again"));
+  await expect(writing).rejects.toThrow("Try again");
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([]);
+  expect(store.sidebar).toBe(before);
+  store.dispose();
+});
+
+test("reactions add and remove optimistically, preserve other people and serialize rapid toggles", async () => {
+  const first = deferred<void>();
+  const second = deferred<void>();
+  let calls = 0;
+  const { store, connection } = fixture({
+    react: () => (++calls === 1 ? first.promise : second.promise),
+    reactions: async () => ({ items: [{ emoji: "👍", count: 2, own: false, people: ["Ana", "Lea"] }] }),
+  });
+  await connection.get("conversation").apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 2 });
+  const add = store.react(conversation.id, message(1).id, "👍", true);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 3, own: true }]);
+  const remove = store.react(conversation.id, message(1).id, "👍", false);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 2, own: false }]);
+  first.resolve();
+  await add;
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 2, own: false }]);
+  second.resolve();
+  await remove;
+  expect(calls).toBe(2);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 2, own: false }]);
+  store.dispose();
+});
+
+test("a late write answer never outlives newer reactions from elsewhere", async () => {
+  const write = deferred<void>();
+  // The server has the latest state: another tab took the reaction back after this tab's write.
+  const { store, connection } = fixture({ react: () => write.promise, reactions: async () => ({ items: [] }) });
+  const add = store.react(conversation.id, message(1).id, "👍", true);
+  await connection.get("conversation").apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 3 });
+  write.resolve();
+  await add;
+  await Bun.sleep(0);
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([]);
+  store.dispose();
+});
+
+test("reaction hint batches coalesce per loaded message and skip old or foreign hints", async () => {
+  const calls: string[] = [];
+  const { store, connection } = fixture({
+    reactions: async (id, message) => {
+      calls.push(`${id}:${message}`);
+      return { items: [{ emoji: "👍", count: 2, own: false, people: ["Ana", "Lea"] }] };
+    },
+  });
+  const hint = { type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 2 };
+  await connection
+    .get("conversation")
+    .applyBatch([
+      hint,
+      { ...hint, rev: 3 },
+      { ...hint, rev: 2 },
+      { ...hint, messageId: message(9).id },
+      { ...hint, conversationId: "ghijkl" },
+    ]);
+  expect(calls).toEqual([`${conversation.id}:${message(1).id}`]);
+  expect(store.openConversation?.messages[0]).toMatchObject({ rev: 3, reactions: [{ emoji: "👍", count: 2, own: false }] });
+  await connection.get("conversation").applyBatch([hint, { ...hint, rev: 1 }, { ...hint, rev: 3 }]);
+  expect(calls).toHaveLength(1);
+  store.dispose();
+});
+
+test("a failed reaction hint read rejects the live batch for retry", async () => {
+  const { store, connection } = fixture({
+    reactions: async () => {
+      throw new Error("Offline");
+    },
+  });
+  await expect(
+    connection.get("conversation").apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 2 }),
+  ).rejects.toThrow("Offline");
+  expect(store.openConversation?.messages[0]?.rev).toBe(1);
+  store.dispose();
+});
+
+test("reaction HTTP client encodes emoji paths, accepts empty 204s and preserves failures", async () => {
+  const original = globalThis.fetch;
+  const requests: { url: string; method: string }[] = [];
+  try {
+    globalThis.fetch = Object.assign(
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        requests.push({ url: String(input), method: init?.method ?? "GET" });
+        return init?.method === "GET"
+          ? Response.json({ items: [{ emoji: "👍🏽", count: 1, own: true, people: ["Ana"] }] })
+          : new Response(null, { status: 204 });
+      },
+      { preconnect: original.preconnect },
+    );
+    const api = createChatStoreApi();
+    await api.react(conversation.id, message(1).id, "👍🏽", true);
+    await api.react(conversation.id, message(1).id, "👍🏽", false);
+    expect((await api.reactions(conversation.id, message(1).id)).items[0]?.own).toBeTrue();
+    expect(requests.map(({ url, method }) => [new URL(url, "https://cloud.example.test").pathname, method])).toEqual([
+      [`/api/chat/conversations/${conversation.id}/messages/${message(1).id}/reactions/${encodeURIComponent("👍🏽")}`, "PUT"],
+      [`/api/chat/conversations/${conversation.id}/messages/${message(1).id}/reactions/${encodeURIComponent("👍🏽")}`, "DELETE"],
+      [`/api/chat/conversations/${conversation.id}/messages/${message(1).id}/reactions`, "GET"],
+    ]);
+    globalThis.fetch = Object.assign(
+      async () => Response.json({ code: "REACTION_PERSON_LIMIT", message: "Remove a reaction." }, { status: 409 }),
+      { preconnect: original.preconnect },
+    );
+    await expect(api.react(conversation.id, message(1).id, "👍🏽", true)).rejects.toMatchObject({
+      status: 409,
+      code: "REACTION_PERSON_LIMIT",
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("reaction hint reads cannot overwrite a newly opened chat", async () => {
+  const pending = deferred<Awaited<ReturnType<ChatStoreApi["reactions"]>>>();
+  const { store, connection } = fixture({ reactions: () => pending.promise });
+  const hinted = connection
+    .get("conversation")
+    .apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 2 });
+  await connection.get("conversation").resync();
+  store.open({
+    threads: noThreads,
+    view: "all",
+    cursor: "new",
+    conversation,
+    page: { ...page(1), items: [{ ...message(1), rev: 3, reactions: [{ emoji: "❤️", count: 1, own: false }], systemText: null }] },
+  });
+  pending.resolve({ items: [{ emoji: "👍", count: 1, own: true, people: ["Ana"] }] });
+  await hinted;
+  expect(store.openConversation?.messages[0]).toMatchObject({ rev: 3, reactions: [{ emoji: "❤️", count: 1, own: false }] });
+  store.dispose();
+});
+
+test("failed optimistic reactions keep other people's updates received while the write waits", async () => {
+  const pending = deferred<void>();
+  const { store, connection } = fixture({
+    react: () => pending.promise,
+    reactions: async () => ({ items: [{ emoji: "👍", count: 2, own: false, people: ["Ana", "Lea"] }] }),
+  });
+  const writing = store.react(conversation.id, message(1).id, "👍", true);
+  await connection.get("conversation").apply({ type: "reactions", conversationId: conversation.id, messageId: message(1).id, rev: 2 });
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 3, own: true }]);
+  pending.reject(new Error("Try again"));
+  await expect(writing).rejects.toThrow("Try again");
+  expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 2, own: false }]);
+  store.dispose();
 });

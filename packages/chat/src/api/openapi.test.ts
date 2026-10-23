@@ -12,11 +12,38 @@ const OperationSchema = z.object({
   parameters: z.array(z.unknown()).optional(),
 });
 const SpecSchema = z.object({ paths: z.record(z.string(), z.record(z.string(), OperationSchema)) });
+test("audience reads document an unavailable count as HTTP 503", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  for (const [path, method] of [
+    ["/api/chat/channels/preview", "post"],
+    ["/api/chat/conversations/{conversation}/discovery", "get"],
+  ] as const) {
+    const response = z
+      .object({
+        content: z.object({
+          "application/json": z.object({
+            schema: z.object({
+              required: z.array(z.string()),
+              properties: z.object({ code: z.object({ const: z.literal("AUDIENCE_UNAVAILABLE") }) }),
+            }),
+          }),
+        }),
+      })
+      .parse(spec.paths[path]?.[method]?.responses["503"]);
+    expect(response.content["application/json"].schema.required).toEqual(["code", "message"]);
+  }
+});
 test("publishes every conversation operation with typed request and response schemas", async () => {
   const app = new Hono<AuthContext>().route("/api/chat", chatApi);
   const spec = SpecSchema.parse(await generateSpecs(app));
   for (const [path, method] of [
     ["/people", "get"],
+    ["/channels", "get"],
+    ["/channels/options", "get"],
+    ["/channels/preview", "post"],
+    ["/conversations/{conversation}/discovery", "get"],
+    ["/conversations/{conversation}/discovery", "put"],
+    ["/conversations/{conversation}/join", "post"],
     ["/conversations/read-all", "post"],
     ["/conversations/{conversation}/read", "post"],
     ["/conversations/{conversation}/unread", "post"],
@@ -43,7 +70,7 @@ test("publishes every conversation operation with typed request and response sch
     const operation = spec.paths[`/api/chat${path}`]?.[method];
     expect(operation).toBeDefined();
     expect(operation?.responses[method === "post" && path === "/conversations" ? "201" : "200"]).toBeDefined();
-    if (["post", "patch"].includes(method)) expect(operation?.requestBody).toBeDefined();
+    if (["post", "patch", "put"].includes(method) && !path.endsWith("/join")) expect(operation?.requestBody).toBeDefined();
     if (path.includes("{conversation}")) expect(operation?.parameters?.length).toBeGreaterThanOrEqual(1);
   }
 });
@@ -140,7 +167,9 @@ test("member removal and leave require the group access outcome", async () => {
         }),
       })
       .parse(spec.paths[path]?.[method]?.responses["200"]);
-    expect(response.content["application/json"].schema.required).toEqual(["success", "keptThroughGroup"]);
+    expect(response.content["application/json"].schema.required).toEqual(
+      method === "post" ? ["success", "keptThroughGroup", "canRejoin"] : ["success", "keptThroughGroup"],
+    );
     expect(response.content["application/json"].schema.properties.keptThroughGroup).toMatchObject({ type: "boolean" });
   }
 });
@@ -223,4 +252,18 @@ test("documents summary and read-all continuation at the HTTP boundary", async (
     })
     .parse(spec.paths["/api/chat/conversations/read-all"]?.post?.requestBody);
   expect(body.content["application/json"].schema.properties.cursor).toMatchObject({ type: "string", maxLength: 256 });
+});
+
+test("reactions document read projection, empty writes and stable budget errors", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  const path = "/api/chat/conversations/{conversation}/messages/{message}/reactions";
+  expect(spec.paths[path]?.get?.responses["200"]).toBeDefined();
+  for (const method of ["put", "delete"]) {
+    const op = spec.paths[`${path}/{emoji}`]?.[method];
+    expect(op?.parameters).toHaveLength(3);
+    for (const code of ["204", "400", "403", "404", "409", "429"]) expect(op?.responses[code]).toBeDefined();
+    expect(JSON.stringify(op?.responses["409"])).toContain("REACTION_PERSON_LIMIT");
+    expect(JSON.stringify(op?.responses["409"])).toContain("REACTION_MESSAGE_LIMIT");
+    expect(JSON.stringify(op?.responses["204"])).not.toContain("content");
+  }
 });

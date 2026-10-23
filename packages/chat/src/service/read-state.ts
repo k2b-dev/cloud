@@ -7,6 +7,8 @@ import {
   type ChatContext,
   capPermission,
   messages,
+  personalChannelKey,
+  principalCondition,
   readableMemberCondition,
   requireConversation,
   subjectPrincipal,
@@ -39,11 +41,18 @@ export type ReadProjection = {
   joined_seq: string | bigint | null;
   unread: number;
   threads: number;
+  channel: boolean;
+  member: boolean;
 };
 /** Production and EXPLAIN use this same bounded, index-backed count and snapshot revision. */
 export const unreadQuery = (db: typeof sql, subject: AccessSubject, conversationIds: readonly string[]) => {
   const self = subjectPrincipal(subject);
-  return db`SELECT c.id AS conversation_id, c.short_id, c.rev, (SELECT count(*)::int FROM chat.threads t WHERE t.conversation_id = c.id) AS threads, p.last_read_seq, p.unread_from_seq, p.joined_seq,
+  return db`SELECT c.id AS conversation_id, c.short_id, c.rev,
+    EXISTS(SELECT 1 FROM chat.conversation_access ca WHERE ca.conversation_id = c.id AND ca.role = 'discoverable') AS channel,
+    EXISTS(SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = c.id AND ca.role = 'member' AND ${principalCondition(subject, db)}
+        AND a.permission IN ('read', 'write', 'admin')) AS member,
+    (SELECT count(*)::int FROM chat.threads t WHERE t.conversation_id = c.id) AS threads, p.last_read_seq, p.unread_from_seq, p.joined_seq,
     CASE WHEN NOT EXISTS (SELECT 1 FROM chat.threads t WHERE t.conversation_id = c.id) THEN
       CASE WHEN p.conversation_id IS NOT NULL AND c.seq_head > ${readStartSql(db)} THEN
         (SELECT count(*)::int FROM (SELECT seq FROM chat.messages m
@@ -57,8 +66,8 @@ export const unreadQuery = (db: typeof sql, subject: AccessSubject, conversation
     WHERE c.id = ANY(${toPgUuidArray([...conversationIds])}::uuid[])`;
 };
 export const projectRead = (
-  row: Pick<ReadProjection, "joined_seq" | "last_read_seq" | "unread_from_seq" | "unread" | "threads">,
-): { read: ReadState | null; unread: number; threads: number } => ({
+  row: Pick<ReadProjection, "joined_seq" | "last_read_seq" | "unread_from_seq" | "unread" | "threads" | "channel" | "member">,
+): { read: ReadState | null; unread: number; threads: number; channel: boolean; member: boolean } => ({
   read:
     row.joined_seq === null
       ? null
@@ -69,13 +78,23 @@ export const projectRead = (
         },
   unread: row.unread,
   threads: row.threads,
+  channel: row.channel,
+  member: row.member,
 });
 export const readProjection = async (db: typeof sql, context: ChatContext, id: string, ids?: string[], includeGeneral = true) => {
   if (ids === undefined) return projectRead((await db<ReadProjection[]>`${unreadQuery(db, context.accessSubject, [id])}`)[0]!);
+  const [flags] = await db<{ channel: boolean; member: boolean }[]>`SELECT
+    EXISTS(SELECT 1 FROM chat.conversation_access ca WHERE ca.conversation_id = c.id AND ca.role = 'discoverable') AS channel,
+    EXISTS(SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = c.id AND ca.role = 'member' AND ${principalCondition(context.accessSubject, db)}
+        AND a.permission IN ('read', 'write', 'admin')) AS member
+    FROM chat.conversations c WHERE c.id = ${id}::uuid`;
+  if (!flags) throw new Error("Read projection has no conversation");
   const states = await threadStates(db, context.accessSubject, id, ids);
   const general = states.find((state) => state.id === null)!;
   return projectRead({
     ...general,
+    ...flags,
     unread: Math.min(
       UNREAD_CAP,
       states.reduce((sum, state) => sum + (state.id !== null || includeGeneral ? state.unread : 0), 0),
@@ -116,11 +135,11 @@ const update = async (
   };
 };
 const publish = async (db: typeof sql, context: ChatContext, data: z.infer<typeof ReadUpdateSchema>) => {
-  if (context.accessSubject.type !== "user") return false;
   const [conversation] = await db<{ kind: string }[]>`SELECT kind FROM chat.conversations WHERE short_id = ${data.conversationId}`;
   // Personal channels cannot reauthorize the container or item for each receiver's credential.
   if (conversation?.kind === "system") return false;
-  await chatLive.publish(db, { key: `p:${context.accessSubject.userId}`, data: { type: "read", ...data } });
+  await chatLive.publish(db, { key: personalChannelKey(context.accessSubject), data: { type: "read", ...data } });
+
   return true;
 };
 type ParticipantRow = {

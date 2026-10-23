@@ -21,12 +21,13 @@ export type Thread = z.infer<typeof ThreadSchema>;
  */
 export type ThreadView = "all" | "general" | (string & {});
 
-export const chatHasThreads = (conversation: Pick<Conversation, "threads" | "kind"> | null | undefined) =>
-  conversation?.kind === "system" || (conversation?.threads ?? 0) > 0;
+export const chatHasThreads = (
+  conversation: (Pick<Conversation, "threads"> & Partial<Pick<Conversation, "channel" | "kind">>) | null | undefined,
+) => !conversation?.channel && (conversation?.kind === "system" || (conversation?.threads ?? 0) > 0);
 
 /** The address of a view; the chat's own address is "All threads". */
-export const threadHref = (chatId: string, view: ThreadView, message?: string | null) =>
-  `/app/chat/c/${encodeURIComponent(chatId)}${view === "all" ? "" : `/t/${encodeURIComponent(view)}`}${message ? `/m/${encodeURIComponent(message)}` : ""}`;
+export const threadHref = (chatId: string, view: ThreadView, message?: string | null, basePath = "/app/chat") =>
+  `${basePath}/c/${encodeURIComponent(chatId)}${view === "all" ? "" : `/t/${encodeURIComponent(view)}`}${message ? `/m/${encodeURIComponent(message)}` : ""}`;
 
 /** The thread a message belongs to, as a view: its ID, or "general". */
 export const messageThread = (message: Pick<Message, "thread">): ThreadView => message.thread ?? "general";

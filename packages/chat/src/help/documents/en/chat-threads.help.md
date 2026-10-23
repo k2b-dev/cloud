@@ -42,7 +42,7 @@ The reply shows the original message as a quote. Select the quote to jump to the
 
 ## Create, rename, and archive threads {icon="settings"}
 
-Only people with **Manage** access to the chat create, rename, and archive threads.
+Only people who manage the chat create, rename, and archive threads.
 
 :::steps
 1. Select **New thread** below the chat's threads, or in the thread button next to the chat's name. In a chat without threads, open the chat's info, select **…**, and choose **New thread**.

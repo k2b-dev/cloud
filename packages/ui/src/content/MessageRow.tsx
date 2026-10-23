@@ -813,12 +813,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
               }
             >
               {(select) => (
-                <button
-                  type="button"
-                  class="k2b-message-row__origin"
-                  aria-label={origin().selectLabel}
-                  onClick={() => select()()}
-                >
+                <button type="button" class="k2b-message-row__origin" aria-label={origin().selectLabel} onClick={() => select()()}>
                   <Show when={origin().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
                   {origin().label}
                 </button>

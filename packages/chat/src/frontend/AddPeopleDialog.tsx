@@ -197,6 +197,7 @@ export function AddPeopleDialog(
           chosen={chosen()}
           excluded={[{ type: "user", userId: props.viewerId }]}
           people={props.store.people}
+          conversationId={props.conversation.id}
           disabled={busy() || added() || !!intent.pending()}
           onChange={setChosen}
         />

@@ -20,6 +20,8 @@ export const viewIcon = (view: ThreadView) =>
 
 type RowsProps = {
   chatId: string;
+  /** "/app/chat", or "/app/chat/panel" inside the universal panel. */
+  basePath?: string;
   threads: ThreadList | null;
   status: "loading" | "ready" | "failed";
   /** The chat's whole unread count, shown at "All threads". */
@@ -54,7 +56,7 @@ export function ThreadRows(props: RowsProps): JSX.Element {
     return (
       <AppWorkspace.SidebarItem
         depth={depth}
-        href={threadHref(props.chatId, view)}
+        href={threadHref(props.chatId, view, null, props.basePath)}
         navigation="enhanced"
         onNavigate={(navigation) => props.onNavigate(view, navigation)}
         active={props.view === view}
@@ -159,7 +161,7 @@ export function ThreadPicker(
       icon: viewIcon(view),
       class: unread > 0 && view !== props.view ? "chat-thread-picker__unread" : undefined,
       trailing: unread > 0 && view !== props.view ? <span class="chat-thread-count">{unread > 99 ? "99+" : unread}</span> : undefined,
-      href: threadHref(props.chatId, view),
+      href: threadHref(props.chatId, view, null, props.basePath),
       action: () => props.onSelect(view),
     };
   };

@@ -39,4 +39,6 @@ export type MapViewProps = Omit<MapViewFrameProps, "attribution"> & {
   notice?: JSX.Element;
   empty?: JSX.Element;
   onLocate?: () => void;
+  /** Observe rendering and resource failures without receiving provider responses or URLs. */
+  onStateChange?: (state: "static" | "loading" | "ready" | "error" | "no-webgl" | "empty") => void;
 };
