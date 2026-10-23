@@ -80,8 +80,13 @@ suite("principal notification migration compatibility", () => {
       status: "delivered",
       payload_encrypted: null,
     });
-    await expect(sql`UPDATE notifications.events SET recipient_user_id = ${userId}::uuid WHERE id = ${agentEvent}::uuid`).rejects.toThrow();
-    await expect(sql`UPDATE notifications.events SET recipient_service_account_id = NULL WHERE id = ${agentEvent}::uuid`).rejects.toThrow();
+    // Bun SQL queries are lazy; start them before handing them to the rejection matcher.
+    await expect(
+      sql`UPDATE notifications.events SET recipient_user_id = ${userId}::uuid WHERE id = ${agentEvent}::uuid`.execute(),
+    ).rejects.toThrow();
+    await expect(
+      sql`UPDATE notifications.events SET recipient_service_account_id = NULL WHERE id = ${agentEvent}::uuid`.execute(),
+    ).rejects.toThrow();
     await sql`INSERT INTO notifications.deliveries(event_id, channel, destination_key, destination_label, status, payload_encrypted)
       VALUES (${userEvent}::uuid, 'email', 'new-human-email', 'Email', 'pending', ${encrypted})`;
     await sql`UPDATE notifications.deliveries SET status = 'delivered' WHERE destination_key = 'new-human-email'`;
