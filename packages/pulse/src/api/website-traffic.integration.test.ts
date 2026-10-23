@@ -134,8 +134,8 @@ suiteFor(
         { baseId: base.shortId, sql: sqlText, params: { bucket: "1d" } },
         context,
       );
+      if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
       expect(result.ok).toBe(true);
-      if (!result.ok) throw new Error(result.error.message);
       expect(result.data.data.rows.map((row) => row.map((value, index) => (index > 1 ? Number(value) : value)))).toEqual([
         ["2026-10-19 00:00:00", "/", 1, 1, 0],
         ["2026-10-20 00:00:00", "/contact", 1, 1, 1],
@@ -294,7 +294,8 @@ suiteFor(
         sql: "SELECT toString(bucket(:at,:minute)),toString(bucket(:sunday,:week))",
         params: { at: "2026-10-20T10:02:30Z", minute: "5m", sunday: "2026-10-25T12:00:00Z", week: "1w" },
       });
-      expect(intervals.rows).toEqual([["2026-10-20 12:00:00", "2026-10-19 00:00:00"]]);
+      // ClickHouse returns a Date for calendar weeks and a DateTime for minute buckets.
+      expect(intervals.rows).toEqual([["2026-10-20 12:00:00", "2026-10-19"]]);
     } finally {
       await ingestServer?.stop(true);
       credentials.mockRestore();
