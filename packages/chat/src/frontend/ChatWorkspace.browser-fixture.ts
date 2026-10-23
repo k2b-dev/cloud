@@ -8,6 +8,7 @@ import {
   ConversationSchema,
   CreateConversationSchema,
   CreateOutcomeSchema,
+  CreateThreadSchema,
   ExistingMatchSchema,
   LeaveSchema,
   MAX_EXISTING_MATCHES,
@@ -32,12 +33,11 @@ import {
   SendMessageSchema,
   SuccessSchema,
   type SystemMessage,
-  UNREAD_CAP,
   type ThreadListSchema,
   type ThreadSchema,
+  UNREAD_CAP,
   UpdateConversationSchema,
   UpdateMemberSchema,
-  CreateThreadSchema,
   UpdateThreadSchema,
 } from "../service/contracts";
 import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
@@ -155,7 +155,7 @@ export const startChatHarness = async () => {
   const reads: { chat: string; seq: number }[] = [];
   // Which part of the chat each read named: "general", "all", or a thread.
   const readViews: { chat: string; seq: number; thread: string }[] = [];
-  const posted: { chat: string; clientId: string; body: string }[] = [];
+  const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string }[] = [];
 
   const principalId = (principal: MemberPrincipal) => (principal.type === "user" ? principal.userId : principal.groupId);
   const makeMember = (principal: MemberPrincipal, permission: Permission, addedAt: string): Member => {
@@ -236,18 +236,24 @@ export const startChatHarness = async () => {
   const threadList = (chat: Chat): z.infer<typeof ThreadListSchema> => ({
     general: { unread: unreadIn(chat, null), lastMessage: lastIn(chat, null) },
     items: [...chat.threads]
-      .sort((a, b) => Number(a.archived) - Number(b.archived) || (a.archived ? a.name.localeCompare(b.name) : b.lastActivityAt.localeCompare(a.lastActivityAt)))
-      .map((thread): z.infer<typeof ThreadSchema> => ({
-        id: thread.id,
-        name: thread.name,
-        description: thread.description,
-        archived: thread.archived,
-        unread: unreadIn(chat, thread.id),
-        read: thread.read,
-        lastMessage: lastIn(chat, thread.id),
-        lastActivityAt: thread.lastActivityAt,
-        createdAt: thread.createdAt,
-      })),
+      .sort(
+        (a, b) =>
+          Number(a.archived) - Number(b.archived) ||
+          (a.archived ? a.name.localeCompare(b.name) : b.lastActivityAt.localeCompare(a.lastActivityAt)),
+      )
+      .map(
+        (thread): z.infer<typeof ThreadSchema> => ({
+          id: thread.id,
+          name: thread.name,
+          description: thread.description,
+          archived: thread.archived,
+          unread: unreadIn(chat, thread.id),
+          read: thread.read,
+          lastMessage: lastIn(chat, thread.id),
+          lastActivityAt: thread.lastActivityAt,
+          createdAt: thread.createdAt,
+        }),
+      ),
   });
   const project = (chat: Chat) => {
     const unread = [null, ...chat.threads.map((thread) => thread.id)].reduce((sum, thread) => sum + unreadIn(chat, thread), 0);
@@ -691,7 +697,10 @@ export const startChatHarness = async () => {
             );
             project(chat);
             deliver("conversation", id!, { type: "threads", conversationId: id });
-            return Response.json(threadList(chat).items.find((entry) => entry.id === created.id), { status: 201 });
+            return Response.json(
+              threadList(chat).items.find((entry) => entry.id === created.id),
+              { status: 201 },
+            );
           }
           if (request.method === "PATCH" && thread) {
             const input = UpdateThreadSchema.parse(await request.json());
@@ -1035,9 +1044,16 @@ export const startChatHarness = async () => {
       });
       const authors = [nora, tobias];
       for (let index = 0; index < count; index += 1)
-        append(chat, authors[index % 2]!, `${options.name}: update ${index + 1}`, new Date(end.getTime() - (count - index) * 180_000), "text", {
-          thread: id,
-        });
+        append(
+          chat,
+          authors[index % 2]!,
+          `${options.name}: update ${index + 1}`,
+          new Date(end.getTime() - (count - index) * 180_000),
+          "text",
+          {
+            thread: id,
+          },
+        );
       const thread = entry.threads.find((candidate) => candidate.id === id)!;
       const incoming = entry.messages.filter((message) => message.thread === id && message.author.id !== viewer.id);
       const first = options.unread ? incoming.slice(-options.unread)[0] : undefined;
