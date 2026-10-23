@@ -535,55 +535,73 @@ describe.each(["pending", "unknown", "saved"])("legacy %s receipt", (status) => 
   });
 });
 
-test("a storage-failed tab adopts a newer completed receipt without replacing it", async () => {
+describe("a storage-failed tab adopts a newer completed receipt without replacing it", () => {
   const scenario = "places-failed-tab-newer-receipt";
-  const { page, context } = await open(scenario);
-  const second = await context.newPage();
-  let creates = 0;
-  await context.route("**/actions/notebooks/note.create", async (route) => {
-    creates++;
-    await route.continue();
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    opened = await open(scenario);
   });
-  try {
-    await page.evaluate(() => {
-      Storage.prototype.setItem = () => {
-        throw new DOMException("Full", "QuotaExceededError");
-      };
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("preserves the stored receipt and recovery action", async () => {
+    const { page, context } = opened;
+    const second = await context.newPage();
+    let creates = 0;
+    await context.route("**/actions/notebooks/note.create", async (route) => {
+      creates++;
+      await route.continue();
     });
-    await beginSave(page);
-    await page.getByText(/Der Fortschritt konnte in diesem Browser nicht gespeichert werden/).waitFor();
-    expect(creates).toBe(0);
-    await second.goto(page.url());
-    await beginSave(second);
-    await second.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    const receipt = await second.evaluate(() => Object.entries(localStorage));
-    await page.getByRole("button", { name: "Speichern fortsetzen", exact: true }).click();
-    await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
-    expect(await page.evaluate(() => Object.entries(localStorage))).toEqual(receipt);
-    expect(creates).toBe(1);
-  } finally {
-    await context.close();
-  }
+    try {
+      await page.evaluate(() => {
+        Storage.prototype.setItem = () => {
+          throw new DOMException("Full", "QuotaExceededError");
+        };
+      });
+      await beginSave(page);
+      await page.getByText(/Der Fortschritt konnte in diesem Browser nicht gespeichert werden/).waitFor();
+      expect(creates).toBe(0);
+      await second.goto(page.url());
+      await beginSave(second);
+      await second.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
+      const receipt = await second.evaluate(() => Object.entries(localStorage));
+      await page.getByRole("button", { name: "Speichern fortsetzen", exact: true }).click();
+      await page.getByRole("link", { name: "Im Notebook gespeichert", exact: true }).waitFor();
+      expect(await page.evaluate(() => Object.entries(localStorage))).toEqual(receipt);
+      expect(creates).toBe(1);
+    } finally {
+      await context.close();
+    }
+  });
 });
 
-test("corrupt stored progress fails visibly instead of starting a fresh save", async () => {
+describe("corrupt stored progress fails visibly instead of starting a fresh save", () => {
   const scenario = "places-corrupt-save";
-  const { page, context } = await open(scenario, 1440, "&lang=en");
-  try {
-    await page.evaluate((map) => {
-      const source = JSON.stringify(["fictional-owner", map.conversationId, map.id, map.revision]);
-      localStorage.setItem(`cloud.ai.map-save:v1:${source}`, '{"checkpoint":{"version":1}}');
-    }, fixture.get(scenario).map);
-    const start = fixture.commands.length;
-    await page.getByRole("button", { name: "Save as Notebook", exact: true }).click();
-    await page.getByText(/Save progress could not be stored in this browser/).waitFor();
-    expect(await page.getByRole("button", { name: "Try again", exact: true }).isEnabled()).toBe(true);
-    expect(fixture.commands.length).toBe(start);
-    await page.getByRole("button", { name: "Cancel", exact: true }).click();
-    expect(await page.locator(".ai-map__save").count()).toBe(0);
-  } finally {
-    await context.close();
-  }
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    opened = await open(scenario, 1440, "&lang=en");
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("preserves the stored receipt and recovery action", async () => {
+    const { page, context } = opened;
+    try {
+      await page.evaluate((map) => {
+        const source = JSON.stringify(["fictional-owner", map.conversationId, map.id, map.revision]);
+        localStorage.setItem(`cloud.ai.map-save:v1:${source}`, '{"checkpoint":{"version":1}}');
+      }, fixture.get(scenario).map);
+      const start = fixture.commands.length;
+      await page.getByRole("button", { name: "Save as Notebook", exact: true }).click();
+      await page.getByText(/Save progress could not be stored in this browser/).waitFor();
+      expect(await page.getByRole("button", { name: "Try again", exact: true }).isEnabled()).toBe(true);
+      expect(fixture.commands.length).toBe(start);
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+      expect(await page.locator(".ai-map__save").count()).toBe(0);
+    } finally {
+      await context.close();
+    }
+  });
 });
 
 test("an invalid export response leaves a calm localized error and a working retry", async () => {

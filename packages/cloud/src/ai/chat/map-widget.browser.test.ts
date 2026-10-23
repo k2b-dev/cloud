@@ -144,10 +144,17 @@ describe.each(["/app/assistant", "/app/assistant/panel"])("older map navigation 
     });
   });
 });
-test.each([1440, 390])("named place search submits the provider name, fits all results and restores after reload at %i", async (width) => {
+describe.each([1440, 390])("named place search at %i", (width) => {
   const scenario = `route-name-${width}`;
-  const { page, context } = await open(scenario, width);
-  try {
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    opened = await open(scenario, width);
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("submits the provider name, fits all results and restores after reload", async () => {
+    const { page } = opened;
     const before = await dimensions(page);
     expect(before.height).toBe(width === 1440 ? 869 : 853);
     await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
@@ -176,51 +183,56 @@ test.each([1440, 390])("named place search submits the provider name, fits all r
     await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
     expect(await page.getByLabel("Ortsname (optional)", { exact: true }).inputValue()).toBe("Wasserfall");
     await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
-  } finally {
-    await context.close();
-  }
+  });
 });
-test.each([1440, 390])(
-  "insert search, selected stop, real delta, discard, accept and timestamped undo keep route dimensions at %i",
-  async (width) => {
-    const scenario = `route-insert-${width}`;
-    const { page, context } = await open(scenario, width);
-    try {
-      const before = await dimensions(page);
-      expect(before.height).toBe(width === 1440 ? 869 : 853);
-      await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
-      await page.getByLabel("Ortsname (optional)", { exact: true }).fill("Wasserfall");
-      await page.getByRole("button", { name: "Suchen", exact: true }).click();
-      await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
-      await page.getByRole("button", { name: /Vorschau für Fiktiver Wasserfall 3/ }).click();
-      await page.getByRole("button", { name: "Verwerfen", exact: true }).waitFor();
-      await settled(page);
-      expect(await page.locator(".ai-map__facts").innerText()).toContain("+12 min");
-      expect(await page.locator(".ai-map__facts").innerText()).toContain("+4 km");
-      expect(await dimensions(page)).toEqual(before);
-      expect(fixture.get(scenario).map.route?.stops).toHaveLength(4);
-      await page.getByRole("button", { name: "Verwerfen", exact: true }).click();
-      await page.getByRole("button", { name: "Stopp einfügen", exact: true }).waitFor();
-      await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
-      await page.getByRole("button", { name: "Suchen", exact: true }).click();
-      await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
-      await page.getByRole("button", { name: /Vorschau für Fiktiver Wasserfall 3/ }).click();
-      await page.getByRole("button", { name: "Fiktiver Wasserfall 3 einfügen", exact: true }).click();
-      await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
-      expect(fixture.get(scenario).map.route?.stops).toHaveLength(5);
-      await settled(page);
-      expect(await dimensions(page)).toEqual(before);
-      expect(await page.locator(".ai-map__receipt time").getAttribute("datetime")).toBe("2026-10-19T14:31:00.000Z");
-      await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
-      await page.waitForFunction(() => !document.querySelector(".ai-map__receipt button"));
-      expect(fixture.get(scenario).map.route?.stops).toHaveLength(4);
-      await settled(page);
-      expect(await dimensions(page)).toEqual(before);
-    } finally {
-      await context.close();
-    }
-  },
-);
+describe.each([1440, 390])("insert search and route dimensions at %i", (width) => {
+  const scenario = `route-insert-${width}`;
+  let opened: Awaited<ReturnType<typeof open>>;
+  let before: Awaited<ReturnType<typeof dimensions>>;
+  beforeAll(async () => {
+    opened = await open(scenario, width);
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  // Ordered phases retain the selected stop, discarded preview and original dimensions.
+  test("searches, selects a stop and discards its real delta preview", async () => {
+    const { page } = opened;
+    before = await dimensions(page);
+    expect(before.height).toBe(width === 1440 ? 869 : 853);
+    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
+    await page.getByLabel("Ortsname (optional)", { exact: true }).fill("Wasserfall");
+    await page.getByRole("button", { name: "Suchen", exact: true }).click();
+    await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
+    await page.getByRole("button", { name: /Vorschau für Fiktiver Wasserfall 3/ }).click();
+    await page.getByRole("button", { name: "Verwerfen", exact: true }).waitFor();
+    await settled(page);
+    expect(await page.locator(".ai-map__facts").innerText()).toContain("+12 min");
+    expect(await page.locator(".ai-map__facts").innerText()).toContain("+4 km");
+    expect(await dimensions(page)).toEqual(before);
+    expect(fixture.get(scenario).map.route?.stops).toHaveLength(4);
+    await page.getByRole("button", { name: "Verwerfen", exact: true }).click();
+    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).waitFor();
+  });
+  test("accepts the selected stop and restores the route with timestamped undo", async () => {
+    const { page } = opened;
+    await page.getByRole("button", { name: "Stopp einfügen", exact: true }).click();
+    await page.getByRole("button", { name: "Suchen", exact: true }).click();
+    await page.getByRole("button", { name: /3\. Fiktiver Wasserfall 3/ }).click();
+    await page.getByRole("button", { name: /Vorschau für Fiktiver Wasserfall 3/ }).click();
+    await page.getByRole("button", { name: "Fiktiver Wasserfall 3 einfügen", exact: true }).click();
+    await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
+    expect(fixture.get(scenario).map.route?.stops).toHaveLength(5);
+    await settled(page);
+    expect(await dimensions(page)).toEqual(before);
+    expect(await page.locator(".ai-map__receipt time").getAttribute("datetime")).toBe("2026-10-19T14:31:00.000Z");
+    await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector(".ai-map__receipt button"));
+    expect(fixture.get(scenario).map.route?.stops).toHaveLength(4);
+    await settled(page);
+    expect(await dimensions(page)).toEqual(before);
+  });
+});
 test("ambiguity calculates only after choosing server candidate; options preserve scope", async () => {
   const { page, context } = await open("route-ambiguous");
   try {
@@ -264,9 +276,16 @@ test.each(["person", "cloud"])("budget %s shows reset and retained source list",
     await context.close();
   }
 });
-test("empty search expands original query, failure retries, dark/tablet and compact panel reserve their regions", async () => {
-  const { page, context } = await open("places-empty", 768, "&theme=dark");
-  try {
+describe("empty search, failure retry, dark/tablet and compact panel regions", () => {
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    opened = await open("places-empty", 768, "&theme=dark");
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("expands the original query, retries failure and reserves the panel regions", async () => {
+    const { page } = opened;
     await page.getByRole("button", { name: "Umkreis 10 km" }).click();
     await page.locator(".ai-map__place").first().waitFor();
     expect(fixture.commands.at(-1)).toMatchObject({ type: "search", search: { categories: ["museum"], near: "Ulm", radiusMeters: 10000 } });
@@ -277,14 +296,19 @@ test("empty search expands original query, failure retries, dark/tablet and comp
     await settled(page);
     expect(await page.locator(".k2b-map-view").evaluate((el) => el.getBoundingClientRect().height)).toBe(200);
     expect(await page.locator(".ai-map__info").evaluate((el) => el.getBoundingClientRect().height)).toBe(228);
-  } finally {
-    await context.close();
-  }
+  });
 });
 
-test.each([1440, 390, 768])("SSR and first browser render reserve the same map and information regions at %i", async (width) => {
-  const { page, context } = await open(`places-ssr-${width}`, width, "&ssr=1");
-  try {
+describe.each([1440, 390, 768])("SSR and first browser render at %i", (width) => {
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    opened = await open(`places-ssr-${width}`, width, "&ssr=1");
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("reserve the same map and information regions", async () => {
+    const { page } = opened;
     const server = await dimensions(page);
     const card = await page.locator(".ai-map__info").boundingBox();
     await page.goto(`${fixture.server.url}?scenario=places-ssr-${width}`);
@@ -292,14 +316,19 @@ test.each([1440, 390, 768])("SSR and first browser render reserve the same map a
     await settled(page);
     expect(await dimensions(page)).toEqual(server);
     expect(await page.locator(".ai-map__info").boundingBox()).toEqual(card);
-  } finally {
-    await context.close();
-  }
+  });
 });
 
-test("location denial keeps dimensions and offers address route recovery", async () => {
-  const { page, context } = await open("places-location");
-  try {
+describe("location denial and address route recovery", () => {
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    opened = await open("places-location");
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  test("keeps dimensions and offers address route recovery", async () => {
+    const { page } = opened;
     const before = await dimensions(page);
     await page.evaluate(() =>
       Object.defineProperty(navigator.geolocation, "getCurrentPosition", {
@@ -319,9 +348,7 @@ test("location denial keeps dimensions and offers address route recovery", async
       type: "route",
       stops: [{ address: "Fiktiver Hauptbahnhof" }, { placeId: "museum-0" }],
     });
-  } finally {
-    await context.close();
-  }
+  });
 });
 
 test("browser location routes to the selected verified place", async () => {

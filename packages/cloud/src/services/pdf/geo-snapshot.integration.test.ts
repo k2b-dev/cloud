@@ -6,7 +6,7 @@ import sharp from "sharp";
 import { startGotenbergTrap } from "../../../../../scripts/fixtures/gotenberg-trap";
 import { requireInfraUrl, suiteFor } from "../../../../../scripts/fixtures/test-infra";
 
-suiteFor("gotenberg")("map snapshot offline PDF assets", () => {
+suiteFor("gotenberg", "valkey")("map snapshot offline PDF assets", () => {
   test("a decoded upload survives offline HTML conversion as an image with linked attribution", async () => {
     // This fixture tests upload/decoder/PDF transport. The MapView browser suite proves vector basemap pixels.
     const data = await sharp({ create: { width: 200, height: 100, channels: 3, background: "#f1efe9" } })
