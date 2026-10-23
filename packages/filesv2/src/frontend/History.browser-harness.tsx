@@ -1,4 +1,4 @@
-import { LocaleProvider } from "@k2b/ui";
+import { LocaleProvider, PageTrailProvider } from "@k2b/ui";
 import { historySnapshot } from "./History.browser-fixtures";
 import Workspace from "./Workspace.island";
 
@@ -6,12 +6,14 @@ import Workspace from "./Workspace.island";
 export default function HistoryHarness(props: { source: string; locale: string }) {
   return (
     <LocaleProvider locale={props.locale}>
-      <Workspace
-        initial={historySnapshot(props.source)}
-        cloudUrl="http://files-history.test"
-        timeZone="Europe/Berlin"
-        retentionDays={365}
-      />
+      <PageTrailProvider trail={{ title: props.locale === "de" ? "Aktivität" : "Activity", ancestors: [] }}>
+        <Workspace
+          initial={historySnapshot(props.source)}
+          cloudUrl="http://files-history.test"
+          timeZone="Europe/Berlin"
+          retentionDays={365}
+        />
+      </PageTrailProvider>
     </LocaleProvider>
   );
 }
