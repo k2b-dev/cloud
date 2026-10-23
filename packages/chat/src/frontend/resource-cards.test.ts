@@ -200,3 +200,28 @@ test("answered cards beyond the remembered number are forgotten once their cards
   expect(reads.filter((id) => id === "k0")).toHaveLength(2);
   expect(reads.filter((id) => id === "k249")).toHaveLength(1);
 });
+
+test("cards that ran out of time while waiting are read first next time", async () => {
+  const { cards, reads, deadlines, hold, answer } = setup();
+  hold();
+  const first = deadlines.length;
+  const shown = Array.from({ length: 6 }, (_, index) => cards.view(ref(`f${index}`)));
+  await flush();
+  // Four read; the last two wait and run out of time.
+  for (const index of [4, 5]) deadlines[first + 1 + index]!.abort();
+  expect(await shown[4]!.view).toEqual({ state: "unavailable" });
+  answer();
+  await Promise.all(shown.slice(0, 4).map((card) => card.view));
+  reads.length = 0;
+  for (const card of shown) card.release();
+  cards.tick();
+  const again = Array.from({ length: 6 }, (_, index) => cards.view(ref(`f${index}`)));
+  await flush();
+  expect(reads.slice(0, 2).sort()).toEqual(["f4", "f5"]);
+  answer();
+  for (let round = 0; round < 5; round++) {
+    await flush();
+    answer();
+  }
+  await Promise.all(again.map((card) => card.view));
+});
