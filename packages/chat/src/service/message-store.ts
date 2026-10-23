@@ -1,3 +1,4 @@
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
 import { crypto } from "@k2b/stdlib";
 import type { sql } from "bun";
@@ -7,6 +8,7 @@ import { type ChatContext, type ConversationRow, messages, subjectPrincipal } fr
 import { type MessageSchema, type SystemMessage, SystemMessageSchema } from "./contracts";
 import { chatLive } from "./live";
 import { chatLiveUpdates } from "./live-updates";
+import { extractMessageLinks } from "./message-links";
 
 export type MessageRow = {
   short_id: string;
@@ -17,6 +19,8 @@ export type MessageRow = {
   author_id: string;
   author_name: string;
   body_md: string | null;
+  refs: CloudResourceRef[];
+  links: string[];
   system_code: string | null;
   system_params: unknown;
   created_at: Date;
@@ -38,6 +42,7 @@ export const projectMessage = (
   kind: row.kind,
   author: { type: row.author_type, id: row.author_id, name: row.author_name },
   body: row.body_md,
+  refs: row.refs,
   system: row.kind === "system" ? SystemMessageSchema.parse({ code: row.system_code, params: row.system_params }) : null,
   createdAt: row.created_at.toISOString(),
 });
@@ -120,7 +125,7 @@ export const personSnapshots = async (db: typeof sql, ids: string[]) => {
 };
 
 type NewMessage =
-  | { kind: "text"; clientId: string; body: string; threadId?: string; replyToSeq?: string | bigint }
+  | { kind: "text"; clientId: string; body: string; refs?: CloudResourceRef[]; threadId?: string; replyToSeq?: string | bigint }
   | { kind: "system"; system: SystemMessage; threadId?: string };
 // The caller holds the conversation lock until commit, so numbers cannot become visible out of order.
 export const appendMessage = async (
@@ -141,16 +146,19 @@ export const appendMessage = async (
       last_activity_at = ${message.kind === "text" ? db`GREATEST(last_activity_at, clock_timestamp())` : db`last_activity_at`}, updated_at = now()
     WHERE id = ${conversation.id}::uuid RETURNING seq_head, rev`;
   if (!head) throw new Error("Chat message has no conversation");
+  const refs = message.kind === "text" ? (message.refs ?? []) : [];
+  const links = message.kind === "text" ? extractMessageLinks(message.body) : [];
   let row: MessageRow | undefined;
   for (let attempt = 0; attempt < 10 && !row; attempt++) {
     [row] = await db<MessageRow[]>`INSERT INTO chat.messages
-      (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md, system_code, system_params, created_at, thread_id, reply_to_seq)
+      (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md, system_code, system_params, created_at, thread_id, reply_to_seq, refs, links)
       VALUES (${crypto.common.readableId(10)}, ${conversation.id}::uuid, ${head.seq_head}, ${head.rev}, ${message.kind},
         ${author.type}, ${author.id}::uuid, ${snapshot.name}, ${message.kind === "text" ? message.clientId : null},
         ${message.kind === "text" ? message.body : null}, ${message.kind === "system" ? message.system.code : null},
         ${message.kind === "system" ? JSON.stringify(message.system.params) : null}::text::jsonb,
         ${message.kind === "text" ? db`(SELECT last_activity_at FROM chat.conversations WHERE id = ${conversation.id}::uuid)` : db`clock_timestamp()`},
-        ${message.threadId ?? null}::uuid, ${message.kind === "text" ? (message.replyToSeq ?? null) : null})
+        ${message.threadId ?? null}::uuid, ${message.kind === "text" ? (message.replyToSeq ?? null) : null},
+        ${JSON.stringify(refs)}::jsonb, ${toPgTextArray(links)}::text[])
       ON CONFLICT (short_id) DO NOTHING RETURNING *`;
   }
   if (!row) throw new Error("Chat message ID could not be allocated");

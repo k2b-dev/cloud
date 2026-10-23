@@ -104,6 +104,7 @@ const send = async (input: Input & { input: unknown }): Promise<Result<Sent> | R
       kind: "text",
       clientId: data.clientId,
       body: data.body,
+      refs: data.refs,
       threadId: threadId ?? undefined,
       replyToSeq,
     });

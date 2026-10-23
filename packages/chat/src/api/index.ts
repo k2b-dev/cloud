@@ -46,6 +46,8 @@ import {
   ReadSchema,
   ReadUpdateSchema,
   SendMessageSchema,
+  SharedPageSchema,
+  SharedQuerySchema,
   SnapshotQuerySchema,
   SuccessSchema,
   ThreadListSchema,
@@ -271,6 +273,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Chat"],
       summary: "Post a Markdown message",
+      description:
+        "Accepts up to 10 Cloud resource refs, deduplicated in input order. An empty body requires at least one ref. Refs are stored without resolving their resources. A clientId retry returns the stored message unchanged.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageViewSchema, "Idempotent retry"),
@@ -301,6 +305,32 @@ const app = new Hono<AuthContext>()
       }
       return respond(c, ok(result.data.message), result.data.created ? 201 : 200);
     },
+  )
+  .get(
+    "/conversations/:conversation/shared",
+    describeRoute({
+      tags: ["Chat"],
+      summary: "List shared links and Cloud elements",
+      description:
+        "Newest messages first, up to 30 items per page. Within a message, refs precede links, each in stored order. Omit thread for the whole chat or use general. Pass nextCursor unchanged with the same filters. Images and documents currently return no items. Resource refs confer no access; resolve them with the reader's session.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SharedPageSchema, "Shared items and opaque continuation cursor"),
+        400: jsonResponse(z.object({ code: z.string(), message: z.string() }), "Invalid filter or cursor"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Chat or thread not found"),
+      },
+    }),
+    validator("param", ConversationParamSchema, invalidInput),
+    validator("query", SharedQuerySchema, invalidInput),
+    async (c) =>
+      respond(
+        c,
+        chatService.shared.list({
+          ...context(c),
+          conversationId: c.req.valid("param").conversation,
+          query: c.req.valid("query"),
+        }),
+      ),
   )
   .get(
     "/conversations/:conversation/messages",
