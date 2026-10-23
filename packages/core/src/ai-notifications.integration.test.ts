@@ -7,6 +7,7 @@ import { notifications } from "@k2b/cloud/services";
 import { approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { registerNotificationDefinitions } from "@k2b/cloud/services/notifications/catalog";
 import { sql } from "bun";
+import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import { databaseSuite } from "../../../scripts/fixtures/test-infra";
 import "../../../scripts/fixtures/authorization-preload";
 import { createAiNotificationService } from "./ai-notifications";
@@ -16,6 +17,7 @@ import { app } from "./config";
 const suite = databaseSuite();
 
 suite("Core AI completion notifications", () => {
+  useTestAppRegistry(["core", "assistant"]);
   beforeAll(async () => {
     await migrateCloudAi();
     await migrateApprovals();

@@ -7,6 +7,7 @@ import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { SettingsFlat, Unflatten } from "../contracts/settings-types";
 import type { User } from "../contracts/shared";
 import type { CORE_SETTINGS } from "../services/settings/core-settings";
+import { preloadDisplayApps } from "../ssr/runtime";
 import { measureServerPhase } from "./server-timing";
 
 type PageEnv<T extends object> = {
@@ -45,6 +46,7 @@ export const createStatusPreservingSsrHandler = <T extends object>(
     const handler = args[args.length - 1] as SsrHandler<E, T>;
 
     return createHandler<E>(...middlewares, async (context) => {
+      await preloadDisplayApps(context);
       const result = await measureServerPhase(context, "ssr_data", () => handler(context as Context<E & PageEnv<T>>));
       if (result instanceof Response) return result;
       await measureServerPhase(context, "ssr_finalize", () => finalizePage?.(context as unknown as Context<PageEnv<T>>));

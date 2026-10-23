@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { get as getSetting, serviceAccountCredentials } from "@k2b/cloud/services";
+import { useRegisteredTestApp } from "@k2b/cloud/services/identity/application.test-fixture";
 import { createTestAppSession, createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { sql } from "bun";
@@ -152,4 +153,5 @@ suite("Contacts live channels", () => {
     expect(answer).toMatchObject({ type: "contacts.live.error", payload: { code: "resync_required" } });
     socket.close();
   });
+  useRegisteredTestApp("contacts");
 });

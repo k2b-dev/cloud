@@ -33,7 +33,7 @@ import { derivePageTrail } from "./page-trail";
 import { platformMessages } from "./platform-messages";
 import { sortRailApps } from "./rail-navigation";
 import { requestPath } from "./request-path";
-import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
+import { getDisplayRuntimeContext, getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 import ShellFocusToggle from "./ShellFocusToggle";
 import ShellRuntime from "./ShellRuntime.island";
 import { type ShellData, ShellDataProvider, ShellDataScript } from "./shell-data";
@@ -166,7 +166,9 @@ export default function Layout(props: LayoutProps) {
   const lang = getLocale(c);
   const t = platformMessages.resolve([lang]).t;
   const user = c.get("user");
-  const providers = user && props.panel !== false ? visiblePanelProviders(runtime.apps, user, lang) : [];
+  const displayIds = new Set(getDisplayRuntimeContext(c).apps.map((app) => app.id));
+  const displayApps = runtime.apps.filter((app) => displayIds.has(app.id));
+  const providers = user && props.panel !== false ? visiblePanelProviders(displayApps, user, lang) : [];
   const panelState = readPanelCookie(
     providers.length ? cookie : undefined,
     providers.map((provider) => provider.id),
@@ -180,11 +182,11 @@ export default function Layout(props: LayoutProps) {
     readAppWorkspaceLayoutCookie(cookie, currentApp?.id),
     workspaceSidebarCollapsible,
   );
-  const { primary: primaryApps, more: moreApps } = buildNavLinks(runtime.apps, user, lang);
+  const { primary: primaryApps, more: moreApps } = buildNavLinks(displayApps, user, lang);
   const allApps = sortRailApps([...primaryApps, ...moreApps], lang);
   const visibleAppIds = new Set(allApps.map((app) => app.id));
   const searchLinks = Object.fromEntries(
-    runtime.apps.flatMap((app) => (visibleAppIds.has(app.id) && app.searchLinks?.length ? [[app.id, app.searchLinks] as const] : [])),
+    displayApps.flatMap((app) => (visibleAppIds.has(app.id) && app.searchLinks?.length ? [[app.id, app.searchLinks] as const] : [])),
   );
   const swapBuild = getPageSwapBuild(c);
   const swap = swapBuild !== undefined && !focusMode && !!currentRoute?.prefix;
@@ -216,7 +218,7 @@ export default function Layout(props: LayoutProps) {
   // The app bar and the app's navigation hidden with Cmd/Ctrl+\ or the sidebar buttons; phones ignore it in CSS.
   const shellFocus = showRail && readShellFocusCookie(cookie);
   // The profile menu offers the mobile app only while the installation runs it.
-  const appHref = user && isPwaShellAvailable(runtime.apps) ? "/me/app" : undefined;
+  const appHref = user && isPwaShellAvailable(displayApps) ? "/me/app" : undefined;
   const profileName = user?.displayName || user?.uid || "?";
   const profileAvatarSrc =
     user?.avatarHash && user.id
