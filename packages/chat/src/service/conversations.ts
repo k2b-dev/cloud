@@ -979,7 +979,13 @@ const leave = async (input: ChatContext & { conversationId: string; input: unkno
   if (!parsed.ok) return parsed;
   return transaction(async (db) => {
     await lockConversation(db, input.conversationId);
-    const allowed = await authorizeManagement(db, input, input.conversationId, "chat.member.leave", "read");
+    const allowed = await authorizeManagement(
+      db,
+      input,
+      input.conversationId,
+      "chat.member.leave",
+      parsed.data.successor ? "admin" : "read",
+    );
     if (!allowed.ok) return allowed;
     const before = await directEntries(db, allowed.data.id);
     const self = subjectPrincipal(input.accessSubject);

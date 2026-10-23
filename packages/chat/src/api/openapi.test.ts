@@ -12,6 +12,27 @@ const OperationSchema = z.object({
   parameters: z.array(z.unknown()).optional(),
 });
 const SpecSchema = z.object({ paths: z.record(z.string(), z.record(z.string(), OperationSchema)) });
+test("audience reads document an unavailable count as HTTP 503", async () => {
+  const spec = SpecSchema.parse(await generateSpecs(new Hono<AuthContext>().route("/api/chat", chatApi)));
+  for (const [path, method] of [
+    ["/api/chat/channels/preview", "post"],
+    ["/api/chat/conversations/{conversation}/discovery", "get"],
+  ] as const) {
+    const response = z
+      .object({
+        content: z.object({
+          "application/json": z.object({
+            schema: z.object({
+              required: z.array(z.string()),
+              properties: z.object({ code: z.object({ const: z.literal("AUDIENCE_UNAVAILABLE") }) }),
+            }),
+          }),
+        }),
+      })
+      .parse(spec.paths[path]?.[method]?.responses["503"]);
+    expect(response.content["application/json"].schema.required).toEqual(["code", "message"]);
+  }
+});
 test("publishes every conversation operation with typed request and response schemas", async () => {
   const app = new Hono<AuthContext>().route("/api/chat", chatApi);
   const spec = SpecSchema.parse(await generateSpecs(app));

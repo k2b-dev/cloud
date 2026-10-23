@@ -68,6 +68,10 @@ import { chatLiveChannels } from "../service/live-channels";
 
 const context = (c: Context<AuthContext>) => ({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), locale: getLocale(c) });
 const invalidInput = (c: Context) => ({ code: "BAD_INPUT", message: chatMessages.resolve([getLocale(c)]).t.invalidInput });
+const audienceUnavailableResponse = jsonResponse(
+  z.object({ code: z.literal("AUDIENCE_UNAVAILABLE"), message: z.string() }),
+  "Audience counting timed out; retry the request",
+);
 const description = (summary: string, schema: z.ZodType) =>
   describeRoute({
     tags: ["Chat"],
@@ -125,7 +129,12 @@ const app = new Hono<AuthContext>()
   .post(
     "/channels/preview",
     auth.requireRole("authenticated"),
-    description("Count the discovery audience", DiscoveryPreviewSchema),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Count the discovery audience",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(DiscoveryPreviewSchema, "Audience count"), 503: audienceUnavailableResponse },
+    }),
     validator("query", ConversationParamSchema.partial(), invalidInput),
     validator("json", DiscoveryEntriesSchema, invalidInput),
     async (c) =>
@@ -137,7 +146,12 @@ const app = new Hono<AuthContext>()
   .get(
     "/conversations/:conversation/discovery",
     auth.requireRole("authenticated"),
-    description("Read channel discovery settings", DiscoveryStateSchema),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Read channel discovery settings",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(DiscoveryStateSchema, "Discovery settings"), 503: audienceUnavailableResponse },
+    }),
     validator("param", ConversationParamSchema, invalidInput),
     async (c) => respond(c, chatService.channels.get({ ...context(c), conversationId: c.req.valid("param").conversation })),
   )

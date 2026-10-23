@@ -1,6 +1,6 @@
-import { createAccess, deleteAccess, err, fail, ok } from "@k2b/cloud/server";
+import { createAccess, deleteAccess, err, fail, ok, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import { toPgUuidArray } from "@k2b/cloud/services";
-import { sql } from "bun";
+import { sql, type TransactionSQL } from "bun";
 import type { z } from "zod";
 import {
   actingPrincipal,
@@ -25,6 +25,7 @@ import {
   MAX_PARTICIPANTS,
 } from "./contracts";
 import { addDirectSubject, conversations, lockConversation, projectConversations, record, transaction, value } from "./conversations";
+import { chatLive } from "./live";
 import { publishMembership } from "./live-updates";
 import { appendMessage } from "./message-store";
 
@@ -45,10 +46,26 @@ export const validateDiscovery = async (db: typeof sql, entries: Entry[], contex
   }
   return ok();
 };
-const audience = async (db: typeof sql, entries: Entry[], conversationId?: string) => {
+// Spend at most 5s of the default 10s request budget on counting, leaving half
+// for authorization, settings, and the response. Never return a partial count.
+const AUDIENCE_TIMEOUT_MS = (REQUEST_IDLE_TIMEOUT_SECONDS * 1_000) / 2;
+/** Internal counting seam; callers supply a transaction, tests may shorten its budget. */
+export const countAudience = async (
+  db: TransactionSQL,
+  entries: Entry[],
+  context: ChatContext,
+  conversationId?: string,
+  timeoutMs = AUDIENCE_TIMEOUT_MS,
+) => {
   const authenticated = entries.some((entry) => entry.principal.type === "authenticated") && (await discoveryAllowed());
   const ids = entries.flatMap((entry) => (entry.principal.type === "group" ? [entry.principal.groupId] : []));
-  const [row] = await db<{ count: number }[]>`
+  try {
+    // A timeout aborts the statement's transaction. Roll back the savepoint
+    // before returning a visible failure, and restore its local timeout too.
+    return await db.savepoint(async (tx) => {
+      const [previous] = await tx<{ timeout: string }[]>`SELECT current_setting('statement_timeout') AS timeout`;
+      await tx`SELECT set_config('statement_timeout', ${`${timeoutMs}ms`}, true)`;
+      const [row] = await tx<{ count: number }[]>`
     WITH RECURSIVE groups(id, provider) AS (
       SELECT id, provider FROM auth.groups WHERE id = ANY(${toPgUuidArray(ids)}::uuid[])
       UNION SELECT child.id, child.provider FROM groups parent JOIN auth.group_groups_v2 gg ON gg.parent_group_id = parent.id
@@ -58,7 +75,18 @@ const audience = async (db: typeof sql, entries: Entry[], conversationId?: strin
       + (SELECT COUNT(*) FROM auth.service_accounts WHERE ${authenticated} AND status = 'active'
         AND (kind IN ('standalone', 'agent') OR (kind = 'resource_bound' AND app_id = 'chat'
           AND resource_type = 'conversation' AND resource_id = ${conversationId ?? null}))))::int AS count`;
-  return { audienceCount: row!.count, includesAuthenticated: authenticated };
+      await tx`SELECT set_config('statement_timeout', ${previous!.timeout}, true)`;
+      return ok({ audienceCount: row!.count, includesAuthenticated: authenticated });
+    });
+  } catch (error) {
+    if (
+      error !== null &&
+      typeof error === "object" &&
+      (("code" in error && error.code === "57014") || ("errno" in error && error.errno === "57014"))
+    )
+      return { ok: false as const, code: "AUDIENCE_UNAVAILABLE" as const, status: 503 as const, error: messages(context).requestFailed };
+    throw error;
+  }
 };
 export const writeDiscovery = async (db: typeof sql, row: ConversationRow, entries: Entry[], context: ChatContext) => {
   const previous = await db<
@@ -73,6 +101,7 @@ export const writeDiscovery = async (db: typeof sql, row: ConversationRow, entri
   }
 };
 const preview = async (input: ChatContext & { input: unknown; conversationId?: string }) => {
+  if (!input.conversationId && input.accessSubject.type !== "user") return fail(err.badInput(messages(input).personalAccountRequired));
   const parsed = DiscoveryEntriesSchema.safeParse(input.input);
   if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));
   const bound = boundConversation(input.actor, input.locale);
@@ -84,7 +113,7 @@ const preview = async (input: ChatContext & { input: unknown; conversationId?: s
       if (!allowed.ok) return allowed;
     }
     const valid = await validateDiscovery(db, parsed.data, input);
-    return valid.ok ? ok(await audience(db, parsed.data, input.conversationId)) : valid;
+    return valid.ok ? countAudience(db, parsed.data, input, input.conversationId) : valid;
   });
 };
 const get = async (input: ChatContext & { conversationId: string }) =>
@@ -101,10 +130,12 @@ const get = async (input: ChatContext & { conversationId: string }) =>
       permission: entry.permission,
       displayName: entry.name ?? messages(input).allAuthenticated,
     }));
+    const audience = await countAudience(db, projected, input, allowed.data.short_id);
+    if (!audience.ok) return audience;
     return ok({
       entries: projected,
       allowAuthenticated: await discoveryAllowed(),
-      ...(await audience(db, projected, allowed.data.short_id)),
+      ...audience.data,
     });
   });
 const update = async (input: ChatContext & { conversationId: string; input: unknown }) => {
@@ -137,7 +168,11 @@ const update = async (input: ChatContext & { conversationId: string; input: unkn
       ...(data.name !== undefined && data.name !== allowed.data.name ? { name: data.name } : {}),
       ...(data.purpose !== undefined && data.purpose !== allowed.data.purpose ? { purpose: data.purpose } : {}),
     };
-    if (discoveryChanged) await writeDiscovery(db, allowed.data, data.entries, input);
+    if (discoveryChanged) {
+      await writeDiscovery(db, allowed.data, data.entries, input);
+      // Invalidate every affected key before even the details_changed data.
+      for (const key of [`c:${allowed.data.short_id}`, `l:${allowed.data.short_id}`]) await chatLive.publish(db, { key, access: true });
+    }
     if (Object.keys(changed).length) {
       await db`UPDATE chat.conversations SET name = ${data.name === undefined ? allowed.data.name : data.name}, purpose = ${data.purpose === undefined ? allowed.data.purpose : data.purpose} WHERE id = ${allowed.data.id}::uuid`;
       await appendMessage(db, allowed.data, input, { kind: "system", system: { code: "details_changed", params: changed } });

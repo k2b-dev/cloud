@@ -316,6 +316,11 @@ an array of `{ principal, permission }` entries. A principal is
 `POST /api/chat/channels/preview` accepts the audience array and returns
 `audienceCount` and `includesAuthenticated`. Pass `?conversation=<ID>` to
 preview an existing channel as its manager.
+Without a conversation ID, preview requires a user-backed account, as does
+creation. Guests cannot preview group audiences. Audience counts include each
+eligible account once, even when groups overlap or contain cycles. Counting
+has a five-second budget; on timeout, preview and discovery settings return
+`AUDIENCE_UNAVAILABLE` (HTTP 503) without a partial count. Retry the request.
 
 `GET /api/chat/channels` accepts a search term `q` and an opaque `cursor`.
 It returns up to 50 channels in name order as `{ items, nextCursor }`.
@@ -324,6 +329,8 @@ whether a channel is already subscribed. `POST /api/chat/conversations/:conversa
 subscribes with the audience's permission. The existing `leave` operation
 unsubscribes. Joining and leaving publish membership hints without adding
 subscription messages to the timeline.
+Leaving with a successor requires effective `admin` permission, including the
+credential's scope limit.
 
 Managers read and replace the audience through `GET` and `PUT`
 `/api/chat/conversations/:conversation/discovery`. A replacement accepts
