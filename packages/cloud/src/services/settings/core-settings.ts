@@ -1,4 +1,5 @@
 import { env } from "../../config/env";
+import { GEO_MAX_CREDITS, GEO_MAX_RPS } from "../../contracts/geo-admin";
 
 /**
  * Platform-owned settings, declared in the `defineApp({ settings: ... })` shape.
@@ -245,7 +246,7 @@ export const CORE_SETTINGS = {
     default: 5,
     integer: true,
     min: 1,
-    max: Math.floor(Number.MAX_SAFE_INTEGER / 9000),
+    max: GEO_MAX_RPS,
     presentation: { translations: { de: { label: "Eigene Anfragen pro Sekunde", description: "Gilt nur beim eigenen Tarif." } } },
   },
   "geo.custom_daily_credits": {
@@ -255,7 +256,7 @@ export const CORE_SETTINGS = {
     default: 3000,
     integer: true,
     min: 1,
-    max: Math.floor(Number.MAX_SAFE_INTEGER / 1000),
+    max: GEO_MAX_CREDITS,
     presentation: {
       translations: { de: { label: "Eigene tägliche Anbieter-Credits", description: "Anbieterkontingent; gilt nur beim eigenen Tarif." } },
     },
@@ -267,7 +268,7 @@ export const CORE_SETTINGS = {
     default: 90000,
     integer: true,
     min: 0,
-    max: Math.floor(Number.MAX_SAFE_INTEGER / 1000),
+    max: GEO_MAX_CREDITS,
     presentation: {
       translations: { de: { label: "Monatsbudget Geo (Credits)", description: "Harte Cloud-Grenze je Kalendermonat in app.timezone." } },
     },
@@ -279,7 +280,7 @@ export const CORE_SETTINGS = {
     default: 300,
     integer: true,
     min: 0,
-    max: Math.floor(Number.MAX_SAFE_INTEGER / 1000),
+    max: GEO_MAX_CREDITS,
     presentation: {
       translations: {
         de: {

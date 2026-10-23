@@ -165,7 +165,7 @@ export const pulseRuntime = {
           () => runHourlyRollup(),
           { summarize: (result) => result },
         );
-        if (!result.done) context.resubmit();
+        if (!result.done) context.resubmit({ delayMs: result.retryAfterMs ?? 0 });
       }),
     );
     await pulseScheduler().create({
