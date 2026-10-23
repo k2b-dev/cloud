@@ -15,7 +15,6 @@ export default ssr<AuthContext>(async (c) => {
       "weather.default_lat": String(entries.get("weather.default_lat")?.value ?? ""),
       "weather.default_lon": String(entries.get("weather.default_lon")?.value ?? ""),
       "weather.cache_minutes": Number(entries.get("weather.cache_minutes")?.value ?? 30),
-      "weather.geo_url": String(entries.get("weather.geo_url")?.value ?? ""),
     },
     unreadable: Object.fromEntries(items.map((entry) => [entry.key, entry.unreadable])),
   };

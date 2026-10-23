@@ -114,7 +114,7 @@ const renderReader = (
       listCollapsed: false,
       detailsOpen: false,
       toolbarActions: options.toolbarActions ?? ["reply", "reply_all"],
-      onRestoreList: () => undefined,
+      onToggleList: () => undefined,
       onToggleDetails: () => undefined,
       onToolbarActionsChange: () => undefined,
       actionPending: false,

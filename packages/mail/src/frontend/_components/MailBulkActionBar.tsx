@@ -1,4 +1,4 @@
-import { Dropdown, IconButton, Tooltip, useLocale } from "@k2b/ui";
+import { Button, Dropdown, IconButton, Tooltip, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import { getMailAction, type MailActionId } from "./mail-actions";
 import { mailRemainingMessages } from "./mail-remaining-messages";
@@ -32,16 +32,17 @@ export default function MailBulkActionBar(props: {
   const actionButton = (actionId: MailActionId) => {
     const label = actionLabel(actionId);
     return (
-      <Tooltip.Anchor content={label}>
-        <IconButton
-          type="button"
-          label={messages().actionOnSelected({ action: label, count: props.selectedCount })}
-          disabled={props.busy}
-          onClick={() => void props.onAction(actionId)}
-        >
-          <i class={getMailAction(actionId).icon} aria-hidden="true" />
-        </IconButton>
-      </Tooltip.Anchor>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        aria-label={messages().actionOnSelected({ action: label, count: props.selectedCount })}
+        disabled={props.busy}
+        onClick={() => void props.onAction(actionId)}
+      >
+        <i class={getMailAction(actionId).icon} aria-hidden="true" />
+        {label}
+      </Button>
     );
   };
   const menuAction = (actionId: MailActionId) => ({
@@ -51,57 +52,61 @@ export default function MailBulkActionBar(props: {
     action: () => void props.onAction(actionId),
   });
   return (
-    <div class="flex min-w-0 items-center gap-1" role="toolbar" aria-label={messages().selectedConversationActions}>
-      <span class="min-w-0 flex-1 truncate text-sm font-medium text-primary" aria-live="polite">
-        {props.selectedCount > 0 ? messages().selected({ count: props.selectedCount }) : messages().selectConversations}
+    <div class="mail-bulk-bar" role="toolbar" aria-label={messages().selectedConversationActions}>
+      <span class="mail-bulk-summary">
+        <Tooltip.Anchor content={messages().exitSelection}>
+          <IconButton type="button" data-mail-selection-exit label={messages().exitSelection} disabled={props.busy} onClick={props.onClear}>
+            <i class="ti ti-x" aria-hidden="true" />
+          </IconButton>
+        </Tooltip.Anchor>
+        <span class="truncate text-sm font-medium text-primary" aria-live="polite">
+          {props.selectedCount > 0 ? messages().selected({ count: props.selectedCount }) : messages().selectConversations}
+        </span>
       </span>
       <Show when={props.selectedCount > 0}>
-        <Show when={props.onAddTags}>
-          {(onAddTags) => (
-            <Tooltip.Anchor content={messages().addTags}>
-              <IconButton
+        <div class="mail-bulk-actions">
+          {actionButton("archive")}
+          {actionButton("mark_read")}
+          {actionButton("move")}
+          <Show when={props.onAddTags}>
+            {(onAddTags) => (
+              <Button
                 type="button"
-                label={messages().addTagsToSelected({ count: props.selectedCount })}
+                variant="ghost"
+                size="sm"
+                aria-label={messages().addTagsToSelected({ count: props.selectedCount })}
                 disabled={props.busy}
                 onClick={() => void onAddTags()()}
               >
-                <i class="ti ti-tags" aria-hidden="true" />
-              </IconButton>
-            </Tooltip.Anchor>
-          )}
-        </Show>
-        {actionButton("archive")}
-        {actionButton("mark_read")}
-        <Show when={props.onAssign}>
-          {(onAssign) => (
-            <Tooltip.Anchor content={messages().assign}>
-              <IconButton
+                <i class="ti ti-tags" aria-hidden="true" /> {messages().addTags}
+              </Button>
+            )}
+          </Show>
+          <Show when={props.onAssign}>
+            {(onAssign) => (
+              <Button
                 type="button"
-                label={messages().actionOnSelected({ action: messages().assign, count: props.selectedCount })}
+                variant="ghost"
+                size="sm"
+                aria-label={messages().actionOnSelected({ action: messages().assign, count: props.selectedCount })}
                 disabled={props.busy}
                 onClick={() => void onAssign()()}
               >
-                <i class="ti ti-user-plus" aria-hidden="true" />
-              </IconButton>
-            </Tooltip.Anchor>
-          )}
-        </Show>
-        {actionButton("move")}
-        <Dropdown.Root
-          position="bottom-left"
-          width="16rem"
-          items={(["mark_unread", "flag", "unflag", props.selectedInJunk ? "not_spam" : "junk", "trash"] as const).map(menuAction)}
-        >
-          <Dropdown.Trigger iconOnly type="button" variant="ghost" label={messages().moreSelectedActions} disabled={props.busy}>
-            <i class="ti ti-dots" aria-hidden="true" />
-          </Dropdown.Trigger>
-        </Dropdown.Root>
+                <i class="ti ti-user-plus" aria-hidden="true" /> {messages().assign}
+              </Button>
+            )}
+          </Show>
+          <Dropdown.Root
+            position="bottom-left"
+            width="16rem"
+            items={(["mark_unread", "flag", "unflag", props.selectedInJunk ? "not_spam" : "junk", "trash"] as const).map(menuAction)}
+          >
+            <Dropdown.Trigger iconOnly type="button" variant="ghost" label={messages().moreSelectedActions} disabled={props.busy}>
+              <i class="ti ti-dots" aria-hidden="true" />
+            </Dropdown.Trigger>
+          </Dropdown.Root>
+        </div>
       </Show>
-      <Tooltip.Anchor content={messages().exitSelection}>
-        <IconButton type="button" label={messages().exitSelection} disabled={props.busy} onClick={props.onClear}>
-          <i class="ti ti-x" aria-hidden="true" />
-        </IconButton>
-      </Tooltip.Anchor>
     </div>
   );
 }

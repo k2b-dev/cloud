@@ -212,4 +212,3 @@ services:
     image: ghcr.io/k2b-dev/cloud-app-weather:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
     environment:
       <<: *shared-env
-      GEO_ALLOWED_TARGETS: ${GEO_ALLOWED_TARGETS:-}
