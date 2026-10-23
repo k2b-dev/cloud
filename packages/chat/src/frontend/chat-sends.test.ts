@@ -4,6 +4,7 @@ import { MessageViewSchema } from "../service/contracts";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 
 const message = MessageViewSchema.parse({
+  refs: [],
   thread: null,
   replyTo: null,
   id: "message001",

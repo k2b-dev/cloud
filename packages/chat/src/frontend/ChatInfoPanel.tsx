@@ -43,6 +43,8 @@ export default function ChatInfoPanel(props: {
   onEditDetails: () => void;
   /** For admins: "New thread", also where the chat has none yet. */
   onCreateThread?: () => void;
+  /** What the chat shared, below its members. */
+  shared?: JSX.Element;
   onLeave: () => void;
 }): JSX.Element {
   const t = useChatMessages();
@@ -291,6 +293,7 @@ export default function ChatInfoPanel(props: {
             </Show>
           </div>
         </DetailPanel.Section>
+        {props.shared}
       </DetailPanel.Body>
     </DetailPanel>
   );

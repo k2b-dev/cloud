@@ -1,8 +1,10 @@
+import { type CloudResourceRef, CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
   Chat,
+  type ChatAttachment,
   type ChatComposerReply,
   EmojiPicker,
   IconButtonLink,
@@ -18,8 +20,9 @@ import {
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { chatMessages } from "../messages";
+import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { dayLabel, messageTime, sameDay } from "./chat-format";
 import { followVisualViewport } from "./follow-viewport";
 
@@ -45,6 +48,8 @@ export type ChatFeedItem = {
   thread?: string | null;
   /** The message it answers. */
   quote?: MessageRowQuote;
+  /** The Cloud elements it shares, shown as cards. */
+  refs?: readonly CloudResourceRef[];
   /** Its thread, shown under it where several threads mix. */
   origin?: MessageRowOrigin;
 };
@@ -93,7 +98,11 @@ export type ChatConversationProps = {
   hint?: string;
   draft: string;
   onDraftChange: (value: string) => void;
-  onSend: (text: string) => boolean | Promise<boolean>;
+  onSend: (text: string, refs: readonly CloudResourceRef[]) => boolean | Promise<boolean>;
+  /** Reads shared elements for their cards; missing on the server, where cards show their placeholder. */
+  cards?: ResourceCards;
+  /** "Share a Cloud element" in the composer's add menu: picks one, or null when the reader cancels. */
+  onPickResource?: () => Promise<{ ref: CloudResourceRef; title: string; icon?: string } | null>;
   busy: boolean;
   dateConfig: DateContext;
   now: () => Date;
@@ -121,6 +130,27 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const t = () => chatMessages.resolve([locale()]).t;
   const config = () => ({ ...props.dateConfig, locale: locale() });
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
+  // Elements picked for the next message; they belong to the draft they were picked for.
+  const [shared, setShared] = createSignal<readonly ChatAttachment[]>([]);
+  createEffect(
+    on(
+      () => props.draftKey ?? props.chatId,
+      () => setShared([]),
+      { defer: true },
+    ),
+  );
+  const pickResource = async () => {
+    const picked = await props.onPickResource?.();
+    if (!picked) return;
+    const id = `${picked.ref.type}:${picked.ref.id}`;
+    if (shared().some((attachment) => attachment.id === id)) return;
+    setShared((current) => [...current, { id, name: picked.title, kind: "resource", icon: picked.icon, data: picked.ref }]);
+  };
+  const refsOf = (attachments: readonly ChatAttachment[]) =>
+    attachments.flatMap((attachment) => {
+      const ref = attachment.kind === "resource" ? CloudResourceRefSchema.safeParse(attachment.data) : null;
+      return ref?.success ? [ref.data] : [];
+    });
   const [recent, setRecent] = createSignal<readonly string[]>([]);
   let frame!: HTMLElement;
   const [feed, setFeed] = createSignal<VirtualFeedController>();
@@ -281,6 +311,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               status={item.status}
               quote={item.quote}
               origin={item.origin}
+              card={item.refs?.length ? <ChatResourceCards refs={item.refs} cards={props.cards} /> : undefined}
               onRetry={item.retry}
               onDiscard={item.discard}
               actions={
@@ -343,7 +374,18 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             variant="conversation"
             value={props.draft}
             onValueChange={props.onDraftChange}
-            onSubmit={({ text }) => props.onSend(text)}
+            onSubmit={async ({ text, attachments }) => {
+              const sent = await props.onSend(text, refsOf(attachments));
+              if (sent) setShared([]);
+              return sent;
+            }}
+            attachments={shared()}
+            onAttachmentsChange={setShared}
+            menuActions={
+              props.onPickResource
+                ? [{ id: "share-resource", label: t().shareResource, icon: "ti ti-share", onSelect: () => void pickResource() }]
+                : undefined
+            }
             draftKey={props.draftKey ?? props.chatId}
             reply={props.reply}
             formatting

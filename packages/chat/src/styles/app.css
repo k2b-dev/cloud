@@ -569,3 +569,92 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Shared Cloud elements under a message's text, one card each, at most the bubble's width. */
+.chat-resource-cards {
+  display: flex;
+  max-width: 24rem;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/* "Shared" in the info panel: kind filters, the thread, then one row per item that jumps to its message. */
+.chat-shared {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+.chat-shared__kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.chat-shared__loading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.chat-shared__loading > * {
+  height: 2.5rem;
+}
+.chat-shared__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -0.5rem;
+  padding: 0;
+  list-style: none;
+}
+.chat-shared__row {
+  display: flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  border-radius: 0.5rem;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.chat-shared__row:hover {
+  background: var(--k2b-hover);
+}
+.chat-shared__row:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+.chat-shared__icon {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+}
+.chat-shared__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.chat-shared__title,
+.chat-shared__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-shared__title {
+  font-size: 0.875rem;
+}
+.chat-shared__meta {
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+.chat-shared__row[data-unavailable] .chat-shared__title {
+  color: var(--k2b-text-secondary);
+}

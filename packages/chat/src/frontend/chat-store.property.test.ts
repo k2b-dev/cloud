@@ -13,6 +13,7 @@ const unusedMemberRequest = async () => {
 };
 const memberApi = {
   threads: async () => noThreads,
+  shared: async () => ({ items: [], nextCursor: null }),
   createThread: async () => {
     throw new Error("Unused thread request");
   },
