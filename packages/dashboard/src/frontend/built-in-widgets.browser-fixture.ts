@@ -319,7 +319,7 @@ const ipaHosts = (size: DashboardWidgetSize): BuiltInWidgetFixture[] => {
 
 const platformHealth = (size: DashboardWidgetSize): BuiltInWidgetFixture[] => [
   {
-    key: "gateway/health",
+    key: "gateway-ops/health",
     size,
     variant: "all operational",
     response: {
@@ -332,7 +332,38 @@ const platformHealth = (size: DashboardWidgetSize): BuiltInWidgetFixture[] => [
           grow: true,
           tone: "ok",
           title: "Alle Systeme betriebsbereit",
-          message: "24 Apps registriert · keine Momentaufnahme des Gateway-Routers",
+          message: size === "small" ? "Gateway läuft seit 12d 23h" : "Gateway läuft seit 12d 23h · 24 Apps registriert",
+        },
+        ...(size === "small"
+          ? []
+          : ([
+              {
+                kind: "pills",
+                pills: [
+                  { label: "Apps", value: "24/24", tone: "emerald" },
+                  { label: "Routen", value: "312" },
+                  { label: "Anfragen", value: "1.284.551" },
+                ],
+              },
+            ] satisfies WidgetBlock[])),
+      ],
+    },
+  },
+  {
+    key: "gateway-ops/health",
+    size,
+    variant: "no router snapshot",
+    response: {
+      title: "Plattformzustand",
+      icon: "ti ti-heartbeat",
+      href: "/admin/gateway",
+      blocks: [
+        {
+          kind: "status",
+          grow: true,
+          tone: "ok",
+          title: "Alle Systeme betriebsbereit",
+          message: size === "small" ? undefined : "24 Apps registriert · keine Momentaufnahme des Gateway-Routers",
         },
         ...(size === "small"
           ? []
@@ -350,7 +381,7 @@ const platformHealth = (size: DashboardWidgetSize): BuiltInWidgetFixture[] => [
     },
   },
   {
-    key: "gateway/health",
+    key: "gateway-ops/health",
     size,
     variant: "apps need attention",
     response: {
@@ -363,7 +394,7 @@ const platformHealth = (size: DashboardWidgetSize): BuiltInWidgetFixture[] => [
           grow: true,
           tone: "warn",
           title: "2 von 24 Apps erfordern einen Eingriff",
-          message: size === "small" ? undefined : "Gateway läuft seit 3 Tagen, 4 Stunden · 24 Apps registriert",
+          message: size === "small" ? undefined : "Gateway läuft seit 12d 23h · 24 Apps registriert",
         },
         ...(size === "small"
           ? []
@@ -385,7 +416,7 @@ const platformHealth = (size: DashboardWidgetSize): BuiltInWidgetFixture[] => [
 
 const logs = (size: DashboardWidgetSize): BuiltInWidgetFixture[] => [
   {
-    key: "gateway/errors",
+    key: "gateway-ops/errors",
     size,
     variant: "errors",
     response: {
@@ -518,8 +549,8 @@ export const builtInWidgets: {
   { key: "weather/current", sizes: ["small", "medium", "large"], fixtures: weather },
   { key: "accounts/admin-queue", sizes: ["small", "medium", "large"], fixtures: adminQueue },
   { key: "ipa-hosts/sync", sizes: ["small", "medium"], fixtures: ipaHosts },
-  { key: "gateway/health", sizes: ["small", "medium"], fixtures: platformHealth },
-  { key: "gateway/errors", sizes: ["small", "medium"], fixtures: logs },
+  { key: "gateway-ops/health", sizes: ["small", "medium"], fixtures: platformHealth },
+  { key: "gateway-ops/errors", sizes: ["small", "medium"], fixtures: logs },
   { key: "quotes/quote", sizes: ["medium"], fixtures: quote },
   { key: "venue/today", sizes: ["small", "medium", "large"], fixtures: venueToday },
 ];

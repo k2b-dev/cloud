@@ -1266,18 +1266,20 @@ describe("the dashboard board in a browser", () => {
   test("every built-in widget fits its frame in every size it offers, at desktop, tablet and phone widths", async () => {
     // Only a list may hold more than its frame, and then it scrolls its own rows: the header and the blocks after it
     // stay whole, and its scrollbar has its place from the start, so its rows are as wide as those of a list that fits.
+    // A list crowded by other blocks still shows a whole row; the body scrolls the rest into view.
     const sizes = ["small", "medium", "large"] as const;
     const fixtures = builtInWidgets.flatMap((built) => built.sizes.flatMap((size) => built.fixtures(size)));
     const states = (["loading", "empty", "forbidden", "timeout", "error"] as const).flatMap((status) =>
       sizes.map((size) => ({ id: `frame:${status}:${size}`, key: "frame/state", size, status })),
     );
     const footer: WidgetResponse["blocks"][number] = { kind: "pills", pills: [{ label: "Open", value: 12 }] };
-    const lists = (["long", "short"] as const).flatMap((length) =>
+    const stat: WidgetResponse["blocks"][number] = { kind: "stat", value: 12, label: "Open", sub: "this week" };
+    const lists = (["long", "short", "crowded"] as const).flatMap((length) =>
       sizes.map((size) => {
         const response: WidgetResponse = {
           title: "Tasks",
           meta: "12 open",
-          blocks: [{ kind: "list", items: list(length === "long" ? 12 : 1) }, footer],
+          blocks: [...(length === "crowded" ? [stat] : []), { kind: "list", items: list(length === "short" ? 1 : 12) }, footer],
         };
         return { id: `frame:${length}-list:${size}`, key: "frame/state", size, response };
       }),
@@ -1313,6 +1315,7 @@ describe("the dashboard board in a browser", () => {
       { width: 768, height: 1024, touch: true },
       phone,
       { width: 360, height: 780, touch: true },
+      { width: 320, height: 640, touch: true },
     ];
     const report: { lang: string; width: number; misfits: string[] }[] = [];
     // Playwright hides scrollbars; Windows and Linux desktops draw classic ones that take space. WebKit draws overlay ones.
@@ -1335,6 +1338,11 @@ describe("the dashboard board in a browser", () => {
               return tiles.flatMap((tile) => {
                 const id = tile.dataset.id!;
                 const body = tile.querySelector<HTMLElement>(".k2b-widget__body")!;
+                if (id.startsWith("frame:crowded-list:")) {
+                  const rows = tile.querySelector<HTMLElement>(".k2b-widget-list")!;
+                  const row = rows.querySelector<HTMLElement>(".k2b-widget-list__item")!;
+                  return rows.clientHeight >= row.offsetHeight ? [] : [`${id}: shows no whole row`];
+                }
                 const bottom = body.getBoundingClientRect().bottom;
                 const problems: string[] = [];
                 if (body.scrollHeight > body.clientHeight) problems.push(`scrolls ${body.scrollHeight - body.clientHeight}px`);

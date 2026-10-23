@@ -911,7 +911,9 @@
 /* A fixed frame scrolls content taller than itself instead of cutting it off.
    Overscroll is not contained, so a wheel or swipe over a widget whose content
    fits still scrolls the page. */
-.k2b-ui .k2b-widget:not([data-size="content"]) .k2b-widget__body { overflow-y: auto; container: k2b-widget-body / inline-size; }
+.k2b-ui .k2b-widget:not([data-size="content"]) .k2b-widget__body { overflow-y: auto; }
+/* A fill frame takes the width its host gives it, so its body can be the container that narrow frames ask about. */
+.k2b-ui .k2b-widget[data-size="fill"] .k2b-widget__body { container: k2b-widget-body / inline-size; }
 
 /* ------------------------------------------------------------ WidgetHero -- */
 .k2b-ui .k2b-widget-hero {
@@ -934,9 +936,9 @@
 
 /* ------------------------------------------------------------ WidgetList -- */
 /* A list is the one block that may hold more than its frame: it gives up height and scrolls its own rows, so the
-   header and the blocks around it stay whole. Its scrollbar has its place from the start, so rows never move when
-   it appears. */
-.k2b-ui .k2b-widget-list { display: flex; min-height: 0; flex: 0 1 auto; flex-direction: column; overflow-y: auto; scrollbar-gutter: stable; }
+   header and the blocks around it stay whole, but keeps at least one row with a subline in view. Its scrollbar has
+   its place from the start, so rows never move when it appears. */
+.k2b-ui .k2b-widget-list { display: flex; min-height: 2.875rem; flex: 0 1 auto; flex-direction: column; overflow-y: auto; scrollbar-gutter: stable; }
 .k2b-ui .k2b-widget-list[data-grow="true"] { flex: 1 1 auto; }
 .k2b-ui .k2b-widget-list__item {
   display: flex;
@@ -1064,7 +1066,7 @@
 .k2b-ui .k2b-widget-status__title { font-size: 0.75rem; font-weight: 600; line-height: 1rem; }
 .k2b-ui .k2b-widget-status__message { font-size: 0.6875rem; line-height: 1rem; }
 
-/* A narrow fixed frame, such as a small dashboard widget on a tablet or phone, sets its blocks more densely: a smaller
+/* A narrow fill frame, such as a small dashboard widget on a tablet or phone, sets its blocks more densely: a smaller
    hero, and the icons beside a status or hero closer to their text, so what a small widget shows still fits. */
 @container k2b-widget-body (max-width: 15rem) {
   .k2b-ui .k2b-widget-hero { gap: 0.25rem; padding-inline: 0.75rem; }

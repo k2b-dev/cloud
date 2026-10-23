@@ -48,9 +48,11 @@ content has no fixed height. Compact fits a header with meta above one stat, sta
 and a row of pills. The header has the same height with and without meta. The
 body owns the spacing: 0.5rem above, between, and 0.75rem below its blocks,
 which have no vertical padding of their own, and every line height is a whole
-number of pixels. A frame narrower than 15rem sets a hero and a status more
-densely. A list gives up height and scrolls its own rows, with its scrollbar
-place reserved, so the blocks around it stay whole. A fixed frame scrolls other
+number of pixels. A fill frame narrower than 15rem sets a hero and a status
+more densely; only a fill frame measures its width this way, so other frames
+keep the width of their content. A list gives up height down to one row with a
+subline and scrolls its own rows, with its scrollbar place reserved, so the
+blocks around it stay whole. A fixed frame scrolls other
 body content taller than itself instead of cutting it off; it does not contain
 overscroll, so a wheel or swipe over a widget whose content fits still scrolls
 the page. When `href` is set,

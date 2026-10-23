@@ -97,7 +97,8 @@ them and add no spacing of their own, so their heights add up exactly: a
 stat with a supporting line is 70px, a row of pills 16px, and a list row with
 a subline 46px.
 
-A small widget can be as narrow as 10rem, on a phone or a tablet in portrait.
+A small widget can be as narrow as 8.5rem, on a 320px phone; on other phones
+and on tablets in portrait it is about 10rem wide.
 There the dashboard sets a hero and a status more densely, but long text still
 wraps to more lines. Fill a size so that it fits at its narrowest: keep a
 small widget to one short title and at most one short line under it. Offer a
@@ -337,7 +338,8 @@ answers; widgets that already arrived never wait for slower ones.
 - **Layout:** the frame's size comes from the board, not from the content.
   A list longer than its frame scrolls its own rows; the header and the
   blocks after the list stay whole, and the list keeps room for its scrollbar
-  from the start, so its rows do not move. Other content that is taller than
+  from the start, so its rows do not move. A list always shows at least one
+  row with a subline. Other content that is taller than
   the frame scrolls the whole body, so put the most important information at
   the top.
 - **Resizing:** when a person changes a widget's size, the board asks the
