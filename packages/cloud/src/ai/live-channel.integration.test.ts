@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { websocket } from "hono/bun";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { useRegisteredTestApp } from "../services/identity/application.test-fixture";
 import "../../../../scripts/fixtures/authorization-preload";
 import { startLiveOutbox } from "../events/live";
 import { LIVE_LIMITS } from "../events/live-engine";
@@ -171,4 +172,5 @@ suite("AI live channel", () => {
     }
     second.socket.close();
   });
+  useRegisteredTestApp("core");
 });

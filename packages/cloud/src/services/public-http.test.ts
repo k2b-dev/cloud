@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { request } from "node:http";
+import { networkTransportFixture } from "../../../../scripts/fixtures/network-transport";
 import { resolvePublicNetworkAddresses } from "./network-security";
 import { type PublicHttpInput, requestPublicHttps } from "./public-http";
 
@@ -147,5 +148,53 @@ test("cancellation destroys a response that has sent headers but never finishes 
     await closed.promise;
   } finally {
     await server.stop(true);
+  }
+});
+
+test("public HTTPS closes both sides of a discarded endless redirect", async () => {
+  const fixture = await networkTransportFixture((_req, res) => {
+    res.writeHead(302, { location: "https://other.example/" });
+    res.write("unused");
+  });
+  try {
+    const result = await requestPublicHttps(
+      { ...base, url: "https://api.example/redirect" },
+      {
+        resolve: async () => [{ address: "1.1.1.1", family: 4 }],
+        request: fixture.request,
+      },
+    );
+    expect(result.status).toBe(302);
+    expect(result.body).toHaveLength(0);
+    expect(fixture.requests).toHaveLength(1);
+    expect(fixture.responses[0]!.destroyed).toBe(true);
+    expect(fixture.requests[0]!.destroyed).toBe(true);
+    await fixture.disconnected();
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("public HTTPS keeps the caller deadline active during a slow body", async () => {
+  const fixture = await networkTransportFixture((_req, res) => {
+    res.write("x");
+    const timer = setInterval(() => res.write("x"), 5);
+    res.once("close", () => clearInterval(timer));
+  });
+  try {
+    await expect(
+      requestPublicHttps(
+        { ...base, signal: AbortSignal.timeout(80), url: "https://api.example/slow" },
+        {
+          resolve: async () => [{ address: "1.1.1.1", family: 4 }],
+          request: fixture.request,
+        },
+      ),
+    ).rejects.toThrow("HTTP_FAILED");
+    expect(fixture.responses[0]!.destroyed).toBe(true);
+    expect(fixture.requests[0]!.destroyed).toBe(true);
+    await fixture.disconnected();
+  } finally {
+    await fixture.close();
   }
 });

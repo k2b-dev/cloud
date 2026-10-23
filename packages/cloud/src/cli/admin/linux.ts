@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { type LinuxIdentityConfiguration, LinuxIdentityConfigurationSchema } from "../../contracts/posix";
 import { cliText, command, confirmFlag, flag, printStructured, readCliInput } from "../index";
 import { apiGet, apiJson, queryString } from "./shared";
@@ -31,6 +32,10 @@ export const linuxCommands = [
     flags: {
       config: flag.input({ required: true, description: "Configuration JSON: --config, --config-file, or --stdin" }),
       rangeReserved: flag.boolean({ name: "range-reserved", description: "Confirm the range is reserved across all connected systems" }),
+      replaceUnreadable: flag.boolean({
+        name: "replace-unreadable",
+        description: "Explicitly replace an unreadable stored Linux configuration",
+      }),
       yes: confirmFlag("Confirm replacing Linux identity configuration"),
     },
     async run({ ctx, flags }) {
@@ -40,7 +45,9 @@ export const linuxCommands = [
         );
       const input = await readCliInput(flags.config, { label: "Linux configuration", required: true });
       if (input === undefined) throw new Error("Missing Linux configuration.");
-      const config = LinuxIdentityConfigurationSchema.parse(JSON.parse(input));
+      const { unreadable: _unreadable, ...config } = LinuxIdentityConfigurationSchema.safeExtend({
+        unreadable: z.boolean().optional(),
+      }).parse(JSON.parse(input));
       if (config.enabled && !flags.rangeReserved)
         throw new Error(
           cliText(ctx, {
@@ -48,7 +55,11 @@ export const linuxCommands = [
             de: "Zum Aktivieren ist --range-reserved erforderlich.",
           }),
         );
-      const result = await apiJson<unknown>(ctx, "PUT", `${path}/configuration`, { config, rangeReserved: flags.rangeReserved });
+      const result = await apiJson<unknown>(ctx, "PUT", `${path}/configuration`, {
+        config,
+        rangeReserved: flags.rangeReserved,
+        ...(flags.replaceUnreadable ? { replaceUnreadable: true } : {}),
+      });
       if (!printStructured(ctx, result)) ctx.print(JSON.stringify(result, null, 2));
     },
   }),
