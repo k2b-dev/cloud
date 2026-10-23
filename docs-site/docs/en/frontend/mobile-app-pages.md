@@ -5,7 +5,7 @@ section: Frontend
 order: 835
 description: Add phone-first pages of an application to the installable mobile app.
 tags: [mobile, pwa, routing, layout]
-updated: 2026-10-12
+updated: 2026-10-23
 ---
 
 # Pages in the mobile app
@@ -275,6 +275,27 @@ Cover the part at its own seams, as described in
 To try a part on a phone, run Cloud over HTTPS at the address set in the
 installation's URL setting, open `/me/app` on a computer, and pair the phone.
 
+## Speed budget
+
+The mobile app must feel like an app on a phone, also over a slow link such
+as a VPN. Every part keeps these limits:
+
+| Interaction | Budget |
+| --- | --- |
+| Press feedback on a tab, link, or button | Within one frame, and at most 100 ms after the finger touches |
+| A settings choice, such as language or appearance | Visible as selected within 100 ms |
+| A tab switch inside one application | No full page load; visible response within 100 ms |
+| A page opened for the first time | One document round trip plus server rendering |
+
+Switches between applications, such as Start → Spaces, still load a new
+document because each application has its own asset bundle.
+
+A write that the person can undo, such as checking off a task, shows its
+result at once and saves in the background, as described in
+[Offline and updates](#offline-and-updates).
+
+### Judge loading speed
+
 Judge loading speed on a production build. In production, the phone's
 browser keeps stylesheets, scripts, and fonts in its cache, so a tab switch
 usually loads only its page. After an application restarts or updates, its
@@ -283,3 +304,16 @@ files uncompressed and asks the server again for each of them on every
 page. Over a slow or remote connection, such as a VPN, a tab switch then takes
 a second or more, while the same switch in production takes a few hundred
 milliseconds.
+
+Measure the budget with the performance harness. It pairs a throwaway phone
+through the real pairing flow and times taps, tab switches, settings changes,
+check-off, back and forward, and relaunches in WebKit at iPhone and iPad sizes
+and in Chromium at phone and monitor sizes, with the HTTP cache state of
+every asset:
+
+```bash
+bun --no-env-file scripts/perf-baseline.ts --pages pwa
+```
+
+Add `--rtt 100` to stand in for a VPN. See
+[Measure the installable Cloud app](/en/docs/contributing/performance-baseline#measure-the-installable-cloud-app).
