@@ -698,14 +698,14 @@
 }
 
 /* History's approved empty/error presentation, using the shared Placeholder and feedback semantics. */
-.k2b-ui .filesv2-history-placeholder { gap: 6px; padding: 72px 20px; }
-.k2b-ui .filesv2-history-placeholder .k2b-placeholder__icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); margin-bottom: 6px; }
-.k2b-ui .filesv2-history-placeholder[data-state="error"] .k2b-placeholder__icon { background: var(--k2b-danger-surface); color: var(--k2b-danger-text); }
-.k2b-ui .filesv2-history-placeholder .k2b-placeholder__title { font-size: 15px; }
-.k2b-ui .filesv2-history-placeholder .k2b-placeholder__description { max-width: 420px; }
-.k2b-ui .filesv2-history-placeholder .k2b-placeholder__action { margin-top: 12px; }
+.k2b-ui .k2b-placeholder.filesv2-history-placeholder { gap: 6px; padding: 72px 20px; }
+.k2b-ui .k2b-placeholder.filesv2-history-placeholder .k2b-placeholder__icon { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--k2b-surface-muted); color: var(--k2b-text-muted); margin-bottom: 6px; }
+.k2b-ui .k2b-placeholder.filesv2-history-placeholder[data-state="error"] .k2b-placeholder__icon { background: var(--k2b-danger-surface); color: var(--k2b-danger-text); }
+.k2b-ui .k2b-placeholder.filesv2-history-placeholder .k2b-placeholder__title { font-size: 15px; }
+.k2b-ui .k2b-placeholder.filesv2-history-placeholder .k2b-placeholder__description { max-width: 420px; }
+.k2b-ui .k2b-placeholder.filesv2-history-placeholder .k2b-placeholder__action { margin-top: 12px; }
 @container filesv2-history (max-width: 40rem) {
-  .k2b-ui .filesv2-history-placeholder { padding: 48px 8px; }
+  .k2b-ui .k2b-placeholder.filesv2-history-placeholder { padding: 48px 8px; }
   .filesv2-history-head__filters .k2b-filter-chip > i:not(.k2b-filter-chip__chevron) { display: none; }
   .k2b-ui .filesv2-history-head__filters .k2b-filter-chip { padding-inline: 7px; gap: 4px; }
 }
@@ -725,5 +725,5 @@
 }
 
 @container files-browser (max-width: 40rem) {
-  .k2b-ui .filesv2-history-placeholder { padding: 48px 8px; }
+  .k2b-ui .k2b-placeholder.filesv2-history-placeholder { padding: 48px 8px; }
 }

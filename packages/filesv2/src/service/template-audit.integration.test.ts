@@ -65,7 +65,11 @@ suite("Template administration security audit", () => {
   const failingCall = { ...call, requestId: "template-audit-failure" };
   const readerCall = testCall(reader);
   const sourceCalls: Array<{ call: UserFilesCall; input: typeof source }> = [];
-  const createCalls: Array<{ call: UserFilesCall; input: { baseId: string; path: string }; bytes: Uint8Array<ArrayBuffer> }> = [];
+  const createCalls: Array<{
+    call: UserFilesCall;
+    input: Parameters<typeof filesService.createFromBytes>[1];
+    bytes: Uint8Array<ArrayBuffer>;
+  }> = [];
   let sourceFailure = false;
   const created: EntryResult = {
     base: {

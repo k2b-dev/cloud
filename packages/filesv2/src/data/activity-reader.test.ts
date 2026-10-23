@@ -12,7 +12,7 @@ const { activityReaderData } = await import("./activity-reader");
 
 const id = "10000000-0000-4000-8000-000000000001";
 const modes = ["list", "batch", "entry", "bases", "shareAccess"] as const;
-function read(mode: (typeof modes)[number], budget: ActivityReadBudget) {
+async function read(mode: (typeof modes)[number], budget: ActivityReadBudget) {
   if (mode === "entry") return activityReaderData.byId(id, budget);
   if (mode === "bases") return activityReaderData.activityBases(undefined, 50, budget);
   if (mode === "shareAccess") return activityReaderData.shareAccess({ shareId: id, from: "2030-05-01", to: "2030-05-15" }, { budget });
@@ -53,7 +53,7 @@ function connectionFor(work: () => Promise<unknown>, close = mock(async () => {}
   return { connection, release, close, setup, released: released.promise };
 }
 
-test.each(modes)("aborting %s cancels only its reserved backend without waiting for the application pool", async (mode) => {
+test.each([...modes])("aborting %s cancels only its reserved backend without waiting for the application pool", async (mode) => {
   const started = Promise.withResolvers<void>();
   const result = Promise.withResolvers<unknown[]>();
   const close = mock(async () => {
@@ -70,7 +70,9 @@ test.each(modes)("aborting %s cancels only its reserved backend without waiting 
     return cancelResult.promise;
   });
   const control = connectionFor(cancel);
-  const createControl = spyOn(Bun, "SQL").mockImplementation(() => control.connection);
+  const originalSQL = Bun.SQL;
+  const createControl = mock(() => control.connection);
+  Bun.SQL = new Proxy(originalSQL, { construct: () => createControl() });
   const reserve = spyOn(sql, "reserve").mockResolvedValue(own.connection);
   const sharedClose = spyOn(sql, "close");
   const controller = new AbortController();
@@ -97,7 +99,7 @@ test.each(modes)("aborting %s cancels only its reserved backend without waiting 
     cancelResult.resolve([{ canceled: true }]);
     reserve.mockRestore();
     sharedClose.mockRestore();
-    createControl.mockRestore();
+    Bun.SQL = originalSQL;
   }
 });
 
@@ -221,7 +223,9 @@ test("a failed cancellation connection is observed before the original query set
   const control = connectionFor(async () => {
     throw new Error("cancellation connection unavailable");
   });
-  const createControl = spyOn(Bun, "SQL").mockImplementation(() => control.connection);
+  const originalSQL = Bun.SQL;
+  const createControl = mock(() => control.connection);
+  Bun.SQL = new Proxy(originalSQL, { construct: () => createControl() });
   const reserve = spyOn(sql, "reserve").mockResolvedValue(own.connection);
   const controller = new AbortController();
   try {
@@ -243,6 +247,6 @@ test("a failed cancellation connection is observed before the original query set
   } finally {
     result.reject(new Error("socket closed"));
     reserve.mockRestore();
-    createControl.mockRestore();
+    Bun.SQL = originalSQL;
   }
 });
