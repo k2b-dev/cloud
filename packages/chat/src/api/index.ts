@@ -96,10 +96,13 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Chat"],
       summary: "Create a chat or find chats with the same direct members",
+      description:
+        "Pass an optional createKey UUID for safe retries of one immutable create intent per access subject. A successful key is retained for the lifetime of the chat and subject; replay returns the current chat only with current read access. Changed normalized input returns 409. Existing-match responses do not reserve the key. Callers without a key keep the member-match behavior and have no retry guarantee for groups or allowDuplicate.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(CreateOutcomeSchema, "Existing chats"),
-        201: jsonResponse(CreateOutcomeSchema, "Created chat"),
+        201: jsonResponse(CreateOutcomeSchema, "Created chat or authorized replay"),
+        409: jsonResponse(z.object({ code: z.literal("CONFLICT"), message: z.string() }), "Create key already used with different input"),
         // The request limiter answers without a code; only the new-chat limit sends RATE_LIMITED.
         429: jsonResponse(
           z.object({ code: z.literal("RATE_LIMITED").optional(), message: z.string() }),

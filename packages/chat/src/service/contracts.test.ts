@@ -45,6 +45,14 @@ describe("conversation inputs", () => {
       }).members,
     ).toEqual([{ type: "user", userId: lea }]);
   });
+  test("create keys are optional UUIDs and remain stable through transport revalidation", () => {
+    const createKey = "ABCDEFAB-1234-4234-8234-123456789012";
+    const parsed = CreateConversationSchema.parse({ createKey });
+    expect(parsed.createKey).toBe(createKey.toLowerCase());
+    expect(CreateConversationSchema.parse(parsed)).toEqual(parsed);
+    for (const createKey of ["", "not-a-key", "x".repeat(100), null])
+      expect(CreateConversationSchema.safeParse({ createKey }).success).toBeFalse();
+  });
   test("trims metadata and clears empty strings", () => {
     expect(UpdateConversationSchema.parse({ name: "  ", purpose: " hello ", icon: " " })).toEqual({
       name: null,

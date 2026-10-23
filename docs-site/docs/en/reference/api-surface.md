@@ -144,7 +144,7 @@ log.info("Import completed", { itemCount: 42 });
 Use the capability guide to choose the narrow API:
 
 - [Settings](/en/docs/platform/settings): `SettingUnreadableError`, `SettingRead`, and `StoredSettingState` from `@k2b/cloud/services`; `app.settings.read()` reports stored state before a partial update.
-- [Places and maps](/en/docs/platform/places-and-maps): `geoClient` from `@k2b/cloud/server` calls Core with a `CapabilityCaller`; `geoContract`, geo input/result schemas, and provenance types come from `@k2b/cloud/contracts`.
+- [Places and maps](/en/docs/platform/places-and-maps): `geoClient` from `@k2b/cloud/server` calls Core with a `CapabilityCaller`; `geoContract`, `geoRouteContract`, geo input/result schemas, route plans/updates, and provenance types come from `@k2b/cloud/contracts`.
 - [Outgoing mail](/en/docs/platform/outgoing-mail): `mail.profiles()`, `mail.send()`, `mail.enqueue()`, `mail.list()`, `mail.readableApps()`, and audited `mail.content(id, context)` from `@k2b/cloud/services`, with mail contracts and `PlatformPermission` from `@k2b/cloud/contracts`.
 - [Notifications](/en/docs/platform/notifications)
 - [Logging](/en/docs/platform/logging): `logger()` and `redactSensitivePath()` for safe request-path logging.
@@ -337,6 +337,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/browser/testing` | Supported, browser tests | Inspect mounted context actions and navigation, and capture search requests | [Universal search](/en/docs/platform/search#test-application-search-and-context-actions) |
 | `@k2b/cloud/browser/composer-insert` | Supported, SolidJS | Build insert rows with `cloudInsertMenu` and app-opening rows with `cloudCommandMenu` / `openComposerCommand`; read tags, `commands()` and `state()` from `createCloudComposerCatalog` | [Universal search](/en/docs/platform/search#insert-resources-from-a-composer) |
 | `@k2b/cloud/browser/resource-picker` | Supported, SolidJS | Choose a stable resource reference through Universal Search | [Universal search](/en/docs/platform/search) |
+| `@k2b/cloud/geo/ui` | Supported, SolidJS | `CloudMap` with authenticated Core map styles and tiles | [Places and maps](/en/docs/platform/places-and-maps) |
 | `@k2b/cloud/browser/files` | Supported, SolidJS | `chooseFiles`: add files from this device or from Cloud apps that offer files, as `File` objects; `saveFiles`, `SaveFilesButton`, `saveFilesLabel`, `SAVE_FILES_ICON`: save copies into Cloud apps that store files | [File providers](/en/docs/platform/file-providers) |
 | `@k2b/cloud/clients/core` | Platform-owned, browser | Typed client for the Core platform API | — |
 | `@k2b/cloud/workflows/language` | Supported | Workflow compiler, parser, and authoring | [Author workflows](/en/docs/automation/author-and-publish-workflows) |

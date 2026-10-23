@@ -130,8 +130,8 @@ describe("Venue clarity behavior", () => {
     return;
   }
 
-  // Relative fixture dates must keep the summer-time offset assumed by slot().
-  beforeEach(() => setSystemTime(new Date("2026-09-28T10:00:00Z")));
+  // Keep relative fixture days and their Berlin offset independent of the calendar.
+  beforeEach(() => setSystemTime(new Date("2026-09-28T10:00:00.000Z")));
   afterEach(() => setSystemTime());
 
   test("the sign-up dialog lists every shift of its window and loads the next one on request", async () => {
