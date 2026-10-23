@@ -162,7 +162,10 @@ test("authorized project omitted by sidebar cap remains in the rendered workspac
   );
   const response = await request();
   expect(response.status).toBe(200);
-  expect(lookup).toHaveBeenCalledWith(project.shortId, { actor: { kind: "user", user }, accessSubject: { type: "user", userId: user.id } });
+  expect(lookup).toHaveBeenCalledWith(project.shortId, {
+    actor: { kind: "user", user, sessionKind: "app" },
+    accessSubject: { type: "user", userId: user.id },
+  });
   expect(chats).toHaveBeenCalledWith({ ownerUserId: user.id, projectId: project.id, page: 1, perPage: 20 });
   const html = await response.text();
   expect(html).toContain(project.name);

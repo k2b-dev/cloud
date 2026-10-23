@@ -195,7 +195,12 @@ suite("Project and Skill credential limits and manager eligibility", () => {
           }
           const skill = await aiSkills.admin.getByShortId(fixture.id);
           if (!skill) throw new Error("Missing Skill");
-          const content = { ...skill, description: "Machine service update", expectedRevision: skill.revision };
+          const content = {
+            name: skill.name,
+            description: "Machine service update",
+            instructions: fixture.input.instructions,
+            expectedRevision: skill.revision,
+          };
           expect(await aiSkills.update(skill.id, await machine.context(["read"]), content)).toBeNull();
           const updated = await aiSkills.update(skill.id, await machine.context(["write"]), content);
           expect(updated).toMatchObject({ description: content.description, permission: "write", revision: skill.revision + 1 });
