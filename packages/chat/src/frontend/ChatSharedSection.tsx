@@ -44,63 +44,74 @@ export default function ChatSharedSection(props: {
   const [cursor, setCursor] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal<"loading" | "ready" | "failed">("loading");
   const [loadingMore, setLoadingMore] = createSignal(false);
-  // A filter or chat starts a new list; each answer and "Show more" belong to the list they were asked for.
+  // Loads run one after another, so a refresh and "Show more" never undo each other. A filter or chat starts a new
+  // list: loads asked for the old one end without changing anything.
   let generation = 0;
-  let request = 0;
+  let chain: Promise<void> = Promise.resolve();
+  let refreshQueued = false;
   const query = (next?: string) => ({
     kind: kind(),
     ...(thread() === "all" ? {} : { thread: thread() }),
     ...(next ? { cursor: next } : {}),
   });
-  const restart = () => {
-    generation++;
-    setItems([]);
-    setCursor(null);
-    setLoadingMore(false);
-    void refresh();
+  const run = (work: (list: number) => Promise<void>) => {
+    const list = generation;
+    chain = chain.then(() => (list === generation ? work(list) : undefined)).catch(() => {});
   };
   /**
    * Reads the list again as deep as the reader has loaded it, page by page through the server's own cursors, and
-   * replaces rows and cursor together. New messages arrive at the top; deleted ones leave; nothing loaded is lost.
+   * replaces rows and cursor together. New messages arrive at the top; deleted ones leave; nothing loaded is lost. New
+   * messages while a refresh runs ask for one more refresh after it.
    */
-  const refresh = async () => {
-    const list = generation;
-    const token = ++request;
-    const depth = Math.max(items().length, 1);
-    if (items().length === 0) setStatus("loading");
-    try {
-      let page = await props.load(query());
-      const rows = [...page.items];
-      while (rows.length < depth && page.nextCursor) {
-        if (list !== generation || token !== request) return;
-        page = await props.load(query(page.nextCursor));
-        rows.push(...page.items);
+  const refresh = () => {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    run(async (list) => {
+      refreshQueued = false;
+      const depth = Math.max(items().length, 1);
+      if (items().length === 0) setStatus("loading");
+      try {
+        let page = await props.load(query());
+        const rows = [...page.items];
+        while (rows.length < depth && page.nextCursor && list === generation) {
+          page = await props.load(query(page.nextCursor));
+          rows.push(...page.items);
+        }
+        if (list !== generation) return;
+        setItems(rows);
+        setCursor(page.nextCursor);
+        setStatus("ready");
+      } catch {
+        if (list === generation) setStatus("failed");
       }
-      if (list !== generation || token !== request) return;
-      setItems(rows);
-      setCursor(page.nextCursor);
-      setStatus("ready");
-    } catch {
-      if (list === generation && token === request) setStatus("failed");
-    }
+    });
   };
-  const more = async () => {
-    const next = cursor();
-    if (!next || loadingMore() || status() !== "ready") return;
-    const list = generation;
-    const token = request;
+  const restart = () => {
+    generation++;
+    refreshQueued = false;
+    setItems([]);
+    setCursor(null);
+    setLoadingMore(false);
+    setStatus("loading");
+    refresh();
+  };
+  const more = () => {
+    if (!cursor() || loadingMore() || status() !== "ready") return;
     setLoadingMore(true);
-    try {
-      const page = await props.load(query(next));
-      // A refresh that started meanwhile answers for the whole list, this page included.
-      if (list !== generation || token !== request || cursor() !== next) return;
-      setItems((current) => [...current, ...page.items]);
-      setCursor(page.nextCursor);
-    } catch {
-      if (list === generation) setStatus("failed");
-    } finally {
-      if (list === generation) setLoadingMore(false);
-    }
+    run(async (list) => {
+      const next = cursor();
+      try {
+        if (!next) return;
+        const page = await props.load(query(next));
+        if (list !== generation) return;
+        setItems((current) => [...current, ...page.items]);
+        setCursor(page.nextCursor);
+      } catch {
+        if (list === generation) setStatus("failed");
+      } finally {
+        if (list === generation) setLoadingMore(false);
+      }
+    });
   };
   createEffect(on([kind, thread, () => props.chatId], restart));
   // A burst of new messages reads the list once.
@@ -110,7 +121,7 @@ export default function ChatSharedSection(props: {
       () => props.revision,
       () => {
         clearTimeout(pending);
-        pending = setTimeout(() => void refresh(), 300);
+        pending = setTimeout(refresh, 300);
       },
       { defer: true },
     ),
@@ -157,7 +168,7 @@ export default function ChatSharedSection(props: {
           <Match when={status() === "failed"}>
             <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
               {t().sharedFailed}{" "}
-              <Button variant="text" size="xs" onClick={() => void refresh()}>
+              <Button variant="text" size="xs" onClick={() => refresh()}>
                 {t().retry}
               </Button>
             </InlineGuidance>
@@ -185,7 +196,7 @@ export default function ChatSharedSection(props: {
                 class="self-start"
                 loading={loadingMore()}
                 disabled={status() !== "ready"}
-                onClick={() => void more()}
+                onClick={() => more()}
               >
                 {t().showMoreShared}
               </Button>

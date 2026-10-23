@@ -35,7 +35,7 @@ const catalog: typeof listCapabilityCatalog = async () => ({
  * A reader whose answers the test controls: by default it answers at once; `hold` keeps every answer until `answer`.
  * Deadlines are signals the test aborts itself, so no test waits for real time.
  */
-const setup = () => {
+const setup = (options: { catalog?: typeof listCapabilityCatalog } = {}) => {
   let clock = 0;
   let readable = true;
   let holding = false;
@@ -58,7 +58,7 @@ const setup = () => {
       : { ok: false, error: { code: "FORBIDDEN", message: "No access", status: 403 } };
   };
   const cards = createResourceCards({
-    listCapabilityCatalog: catalog,
+    listCapabilityCatalog: options.catalog ?? catalog,
     invokeCapability: invoke,
     now: () => clock,
     timeout: () => {
@@ -158,4 +158,45 @@ test("the minute tick makes every answer due again, so shown cards read once mor
   cards.tick();
   expect(await cards.view(ref("a")).view).toEqual({ state: "no_access" });
   expect(reads).toEqual(["a", "a"]);
+});
+
+test("every shown card is read in turn, also after many others, round after round", async () => {
+  const { cards, reads } = setup();
+  for (let round = 0; round < 3; round++) {
+    const shown = Array.from({ length: 60 }, (_, index) => cards.view(ref(`c${index}`)));
+    const views = await Promise.all(shown.map((card) => card.view));
+    expect(views.every((view) => view.state === "ok")).toBe(true);
+    for (const card of shown) card.release();
+    cards.tick();
+  }
+  for (let index = 0; index < 60; index++) expect(reads.filter((id) => id === `c${index}`)).toHaveLength(3);
+});
+
+test("a card whose time is up stops waiting for a slow catalog, and nobody waits for it after its last card left", async () => {
+  let answerCatalog = () => {};
+  const slowCatalog: typeof listCapabilityCatalog = (options) =>
+    new Promise((resolve) => {
+      answerCatalog = () => resolve(catalog(options));
+    });
+  const { cards, reads, deadlines } = setup({ catalog: slowCatalog });
+  const mine = deadlines.length;
+  const card = cards.view(ref("slow"));
+  await flush();
+  deadlines[mine]!.abort();
+  expect(await card.view).toEqual({ state: "unavailable" });
+  answerCatalog();
+  await flush();
+  expect(reads).not.toContain("slow");
+});
+
+test("answered cards beyond the remembered number are forgotten once their cards leave", async () => {
+  const { cards, reads } = setup();
+  const shown = Array.from({ length: 250 }, (_, index) => cards.view(ref(`k${index}`)));
+  await Promise.all(shown.map((card) => card.view));
+  for (const card of shown) card.release();
+  // The oldest was forgotten, so asking again reads it again; a recent one is still remembered.
+  await cards.view(ref("k0")).view;
+  await cards.view(ref("k249")).view;
+  expect(reads.filter((id) => id === "k0")).toHaveLength(2);
+  expect(reads.filter((id) => id === "k249")).toHaveLength(1);
 });

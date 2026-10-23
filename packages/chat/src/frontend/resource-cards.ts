@@ -31,10 +31,11 @@ const ReaderDataSchema = z.object({
   links: z.array(z.object({ rel: z.string(), href: z.string() })).optional(),
 });
 
-/** Cards read at the same time, so a long history does not flood the apps behind its elements. */
+/**
+ * Cards read at the same time, so a long history does not flood the apps behind its elements. The rest wait in order;
+ * only shown cards wait, because the history mounts only what is in view and a card that leaves gives up its read.
+ */
 const CONCURRENCY = 4;
-/** Cards waiting for a read; more show "not available right now" at once and ask again later. */
-const WAITING = 50;
 /** How long a read stands for the element: access and content may change, so shown cards read again after it. */
 export const FRESH_MS = 60_000;
 /** Answered elements remembered per page; the oldest is forgotten first. Elements still being read stay. */
@@ -71,9 +72,11 @@ export const createResourceCards = (
   const apps = () => {
     catalog ??= (async () => {
       const found = new Map<string, CatalogApp>();
+      // One deadline for every page: the catalog is read once per page view and shared by all cards.
+      const signal = dependencies.timeout(DEADLINE_MS);
       let cursor: string | undefined;
       do {
-        const page = await dependencies.listCapabilityCatalog({ cursor, limit: 25, signal: dependencies.timeout(DEADLINE_MS) });
+        const page = await dependencies.listCapabilityCatalog({ cursor, limit: 25, signal });
         if (!page.ok) return null;
         for (const app of page.data.apps) found.set(app.appId, app);
         cursor = page.data.page.hasMore ? page.data.page.nextCursor : undefined;
@@ -82,7 +85,7 @@ export const createResourceCards = (
     })();
     return catalog;
   };
-  /** Waits for a place; false when nobody wants the answer any more, its time is up, or too many cards wait. */
+  /** Waits for a place; false when nobody wants the answer any more or its time is up. */
   const slot = (entry: Entry) =>
     new Promise<boolean>((resolve) => {
       const signal = entry.abort.signal;
@@ -91,7 +94,6 @@ export const createResourceCards = (
         running++;
         return resolve(true);
       }
-      if (waiting.length >= WAITING) return resolve(false);
       const cancel = () => {
         const index = waiting.indexOf(waiter);
         if (index >= 0) waiting.splice(index, 1);
@@ -113,8 +115,22 @@ export const createResourceCards = (
     waiting.shift()?.start();
   };
 
+  /** The catalog, or null once the card's own time is up or nobody waits for it any more. */
+  const appsFor = (entry: Entry) =>
+    new Promise<Map<string, CatalogApp> | null | "gone">((resolve) => {
+      const signal = entry.abort.signal;
+      if (signal.aborted) return resolve("gone");
+      const gone = () => resolve("gone");
+      signal.addEventListener("abort", gone, { once: true });
+      void apps().then((found) => {
+        signal.removeEventListener("abort", gone);
+        resolve(found);
+      });
+    });
+
   const read = async (ref: CloudResourceRef, entry: Entry): Promise<ResourceCardView> => {
-    const known = await apps();
+    const known = await appsFor(entry);
+    if (known === "gone") return unavailable;
     // Without the catalog the card cannot tell missing access from an app that is down.
     if (!known) {
       catalog = undefined;
@@ -184,6 +200,7 @@ export const createResourceCards = (
           .then((view) => {
             next.settled = true;
             next.at = dependencies.now();
+            forgetOld();
             // An element that could not be read is asked again next time it shows.
             if (view.state === "unavailable" && entries.get(key) === next) entries.delete(key);
             return view;
@@ -202,7 +219,11 @@ export const createResourceCards = (
           if (released) return;
           released = true;
           held.users--;
-          if (held.users > 0 || held.settled) return;
+          if (held.users > 0) return;
+          if (held.settled) {
+            forgetOld();
+            return;
+          }
           held.abort.abort();
           if (entries.get(key) === held) entries.delete(key);
         },
