@@ -21,7 +21,7 @@ const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, is
 const until = async (condition: () => boolean) => {
   const deadline = Date.now() + 5_000; // real clock: bounds the wait for the in-memory server
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error("Condition not met in time");
+    if (Date.now() > deadline) throw new Error("Condition not met in time"); // real clock: bounds the wait
     await Bun.sleep(20);
   }
 };
