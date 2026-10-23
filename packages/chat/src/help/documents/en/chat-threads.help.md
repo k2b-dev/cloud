@@ -1,10 +1,13 @@
 ---
 id: chat-threads
 title: Use threads and replies
+kind: task
 icon: ti ti-hash
 description: Keep topics apart in threads, reply with a quote, and see every thread at once.
 order: 115
 ---
+
+For Space and Notebook chats, see [Spaces and Notebooks in Chat](help:chat-system-chats).
 
 A thread is a named strand in a chat, such as "Problems" in the chat "IT". Every chat with threads also has **General** for everything that fits no thread. Each thread keeps its own unread messages and its own draft.
 
@@ -39,7 +42,7 @@ The reply shows the original message as a quote. Select the quote to jump to the
 
 ## Create, rename, and archive threads {icon="settings"}
 
-Only chat admins create, rename, and archive threads.
+Only people with **Manage** access to the chat create, rename, and archive threads.
 
 :::steps
 1. Select **New thread** below the chat's threads, or in the thread button next to the chat's name. In a chat without threads, open the chat's info, select **…**, and choose **New thread**.

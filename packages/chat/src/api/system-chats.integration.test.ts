@@ -334,25 +334,25 @@ suite("system chats use caller-authorized readers", () => {
     expect(ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads`)).json()).items).toEqual([]);
   });
 
-  test("pages system threads beyond the manual limit and advances through fully hidden pages", async () => {
+  test("pages system threads by activity beyond the manual limit and advances through fully hidden pages", async () => {
     const person = await f.person(),
       id = testShortId();
     grant(person, "spaces.space", id, { name: "Space", permission: "write" });
     const chat = await open(person, id);
     // Bulk setup exercises the real page/read seam without 101 HTTP writes.
     for (let index = 0; index < 101; index++) {
-      const shortId = `p${String(index).padStart(5, "0")}`;
+      const shortId = `p${String(100 - index).padStart(5, "0")}`;
       const item = `i${String(index).padStart(5, "0")}`;
       key(person, "spaces.item", item);
       if (index === 100) grant(person, "spaces.item", item, { title: "Visible", kind: "task", spaceId: id });
-      await sql`INSERT INTO chat.threads (short_id, conversation_id, name, created_by_type, created_by_id, resource_type, resource_id)
-        SELECT ${shortId}, c.id, 'Same item title', 'user', ${person.id}::uuid, 'spaces.item', ${item} FROM chat.conversations c WHERE c.short_id = ${chat.id}`;
+      await sql`INSERT INTO chat.threads (short_id, conversation_id, name, created_by_type, created_by_id, resource_type, resource_id, last_activity_at)
+        SELECT ${shortId}, c.id, 'Same item title', 'user', ${person.id}::uuid, 'spaces.item', ${item}, ${new Date(Date.UTC(2026, 9, 14, 12) - index * 60_000)} FROM chat.conversations c WHERE c.short_id = ${chat.id}`;
     }
     const first = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads`)).json());
     expect(first.items).toEqual([]);
-    expect(first.nextCursor).toBe("p00099");
+    expect(first.nextCursor).toBe("p00001");
     const next = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?cursor=${first.nextCursor}`)).json());
-    expect(next.items.map((item) => item.id)).toEqual(["p00100"]);
+    expect(next.items.map((item) => item.id)).toEqual(["p00000"]);
     expect(next.nextCursor).toBeNull();
     const secondReads = calls.filter((call) => call.capability === "spaces.item.read");
     expect(secondReads.length).toBe(101);

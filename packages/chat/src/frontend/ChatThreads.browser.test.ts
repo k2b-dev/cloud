@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Locator, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import { chatTestNow, nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
 let harness: Awaited<ReturnType<typeof startChatHarness>>;
@@ -19,9 +19,9 @@ const desktop: BrowserContextOptions = { viewport: { width: 1440, height: 900 } 
 const phone: BrowserContextOptions = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
 
 const until = async (condition: () => boolean) => {
-  const deadline = Date.now() + 5_000; // real clock: bounds the wait for the in-memory server
+  const deadline = performance.now() + 5_000;
   while (!condition()) {
-    if (Date.now() > deadline) throw new Error("Condition not met in time");
+    if (performance.now() > deadline) throw new Error("Condition not met in time");
     await Bun.sleep(20);
   }
 };
@@ -54,6 +54,7 @@ const sidebar = (page: Page) => page.locator(".k2b-app-workspace__sidebar");
 const threadRow = (page: Page, view: string) => sidebar(page).locator(`[data-thread="${view}"]`);
 const longPress = async (page: Page, target: Locator) => {
   await target.scrollIntoViewIfNeeded();
+  await settled(page);
   const box = (await target.boundingBox())!;
   const point = { x: box.x + 8, y: box.y + box.height / 2 };
   await page.evaluate(async (point) => {
@@ -120,7 +121,7 @@ describe("Chat threads on a desktop", () => {
       await chip.waitFor();
       expect(await page.locator(".k2b-message-row__origin", { hasText: "General" }).count()).toBeGreaterThan(0);
       await page.getByRole("textbox", { name: "Message to General" }).fill("For everyone");
-      // The send names its thread from its first frame, so the chip adds no line when the server confirms it.
+      // settled: the send's first frame is the subject; its thread chip must add no line when the server confirms it.
       await page.evaluate(() => {
         const seen: { chip: boolean; height: number }[] = [];
         (window as unknown as { ownRow: typeof seen }).ownRow = seen;

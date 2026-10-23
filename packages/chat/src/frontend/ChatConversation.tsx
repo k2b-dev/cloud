@@ -3,6 +3,7 @@ import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
+  ButtonLink,
   Chat,
   type ChatAttachment,
   type ChatComposerReply,
@@ -15,6 +16,7 @@ import {
   MessageSystemRow,
   PageTitle,
   rememberEmoji,
+  StatusBadge,
   startsMessageGroup,
   toast,
   useLocale,
@@ -27,6 +29,7 @@ import { MAX_MESSAGE_REFS } from "../service/contracts";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { dayLabel, messageTime, sameDay } from "./chat-format";
 import { followVisualViewport } from "./follow-viewport";
+import type { Thread } from "./threads";
 
 /** One row of the history: a stored message, or one of the reader's own sends that the history does not hold yet. */
 export type ChatFeedItem = {
@@ -61,6 +64,7 @@ export type ChatConversationProps = {
   actions?: JSX.Element;
   chatId: string;
   title: string;
+  resource?: NonNullable<Thread["resource"]>;
   memberCount: number;
   /** The line under the title; the member count by default. */
   subtitle?: string;
@@ -130,6 +134,10 @@ const SYSTEM_ESTIMATE = 36;
 export default function ChatConversation(props: ChatConversationProps): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
+  const resourceLabel = () =>
+    props.resource?.kind === "note" ? t().goToNote : props.resource?.kind === "event" ? t().goToEvent : t().goToTask;
+  const resourceKind = () => (props.resource?.kind === "note" ? t().note : props.resource?.kind === "event" ? t().event : t().task);
+  const resourceStatus = () => (props.resource?.done ? t().threadsDone : props.resource?.status);
   const config = () => ({ ...props.dateConfig, locale: locale() });
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
   // Elements picked for the next message; they belong to the draft they were picked for.
@@ -217,7 +225,6 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const remember = (emoji: string) => setRecent((current) => rememberEmoji(current, emoji));
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: `r` answers the message whose article has focus; the menu offers the same.
     <section
       ref={frame}
       class="chat-conversation"
@@ -254,6 +261,29 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             </div>
           )}
         </Show>
+        <Show when={props.resource}>
+          {(resource) => (
+            <>
+              <Show when={resourceStatus()}>
+                {(status) => (
+                  <span class="chat-resource-head__status">
+                    <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />
+                  </span>
+                )}
+              </Show>
+              <span class="chat-resource-head__link">
+                <ButtonLink href={resource().href} variant="text" size="sm">
+                  {resourceLabel()}
+                </ButtonLink>
+              </span>
+              <span class="chat-resource-head__icon">
+                <IconButtonLink href={resource().href} label={resourceLabel()}>
+                  <i class="ti ti-external-link" aria-hidden="true" />
+                </IconButtonLink>
+              </span>
+            </>
+          )}
+        </Show>
         <Show when={markerAway()}>
           {(direction) => (
             <Button
@@ -269,6 +299,19 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         </Show>
         <div class="chat-conversation__actions">{props.actions}</div>
       </header>
+      <Show when={props.resource}>
+        {(resource) => (
+          <div class="chat-resource-head__mobile">
+            <span>{resourceKind()}</span>
+            <Show when={resourceStatus()}>
+              {(status) => <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />}
+            </Show>
+            <ButtonLink href={resource().href} variant="text" size="xs">
+              {resourceLabel()}
+            </ButtonLink>
+          </div>
+        )}
+      </Show>
       <VirtualFeed
         class="chat-conversation__feed"
         items={props.items}

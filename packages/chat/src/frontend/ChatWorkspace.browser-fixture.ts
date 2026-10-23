@@ -51,6 +51,7 @@ type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
 /** A thread as the in-memory server keeps it: the viewer's read state lives on the thread. */
 type ThreadEntry = {
+  resource?: z.infer<typeof ThreadSchema>["resource"];
   id: string;
   name: string;
   description: string | null;
@@ -153,8 +154,25 @@ export const startChatHarness = async () => {
   let failingUnread = 0;
   let failingThreads = 0;
   let failingShared = 0;
+  let failingSystems = 0;
+  let systemThreadPageSize = 100;
+  const systemRequests: { path: string; query: Record<string, string> }[] = [];
+  const containers = new Map<string, { ref: CloudResourceRef; name: string; chat: string | null }>();
   // Elements of a made-up "spaces" app that messages can share; a card reads them with the viewer's access.
-  const elements = new Map<string, { id: string; title: string; preview: string; readable: boolean }>();
+  const elements = new Map<
+    string,
+    {
+      id: string;
+      title: string;
+      preview: string;
+      readable: boolean;
+      type?: string;
+      parent?: CloudResourceRef;
+      kind?: "task" | "event" | "note";
+      done?: boolean;
+      status?: string;
+    }
+  >();
   let readerCalls = 0;
   const query = (localId: string) => ({
     localId,
@@ -177,7 +195,10 @@ export const startChatHarness = async () => {
           protocolVersion: 2,
           appId: "spaces",
           manifestHash: "0".repeat(64),
-          types: [{ localId: "task", title: "Task", description: "A task.", icon: "ti ti-circle", reader: "task.read" }],
+          types: [
+            { localId: "task", title: "Task", description: "A task.", icon: "ti ti-circle", reader: "task.read" },
+            { localId: "item", title: "Item", description: "An item.", icon: "ti ti-circle", reader: "task.read" },
+          ],
           queries: [query("task.read")],
           actions: [],
           commands: [],
@@ -277,6 +298,7 @@ export const startChatHarness = async () => {
       )
       .map(
         (thread): z.infer<typeof ThreadSchema> => ({
+          resource: thread.resource,
           id: thread.id,
           name: thread.name,
           description: thread.description,
@@ -537,7 +559,10 @@ export const startChatHarness = async () => {
     };
   };
   const list = () => ({
-    items: [...chats.values()].map((chat) => chat.conversation).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
+    items: [...chats.values()]
+      .filter((chat) => chat.conversation.kind !== "system")
+      .map((chat) => chat.conversation)
+      .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt)),
     nextCursor: null,
   });
   const snapshot = (id: string, focus: string | null, view = "all") => {
@@ -633,16 +658,43 @@ export const startChatHarness = async () => {
         );
       }
       // The Cloud element picker's search and the reader behind a card, for elements of a made-up "spaces" app.
+      if (url.pathname === "/api/chat/system-chats") {
+        systemRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+        if (failingSystems-- > 0) return Response.json({ message: "Unavailable" }, { status: 503 });
+        return Response.json({
+          items: [...containers.values()].map((item) => ({
+            ref: item.ref,
+            name: item.name,
+            conversation: item.chat ? (chats.get(item.chat)?.conversation ?? null) : null,
+          })),
+          spacesCursor: null,
+          notebooksCursor: null,
+        });
+      }
+      const systemOpen = /^\/api\/chat\/system-chats\/([^/]+)\/([^/]+)\/open$/.exec(url.pathname);
+      if (systemOpen && request.method === "POST") {
+        systemRequests.push({ path: url.pathname, query: {} });
+        const container = containers.get(`${decodeURIComponent(systemOpen[1]!)}:${systemOpen[2]}`);
+        const chat = container?.chat ? chats.get(container.chat) : undefined;
+        return chat ? Response.json(chat.conversation) : Response.json({ message: "Unavailable" }, { status: 404 });
+      }
       if (url.pathname === "/api/search") {
+        systemRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
         const query = (url.searchParams.get("q") ?? "").toLowerCase();
         const results = [...elements.values()]
-          .filter((element) => element.readable && element.title.toLowerCase().includes(query))
+          .filter(
+            (element) =>
+              element.readable &&
+              element.title.toLowerCase().includes(query) &&
+              (!url.searchParams.has("scope_id") ||
+                (element.parent?.id === url.searchParams.get("scope_id") && element.parent.type === url.searchParams.get("scope_type"))),
+          )
           .map((element) => ({
             appId: "spaces",
             appName: "Spaces",
             appIcon: "ti ti-layout-kanban",
             readable: true,
-            ref: { type: "spaces.task", id: element.id },
+            ref: { type: element.type ?? "spaces.task", id: element.id },
             title: element.title,
             preview: element.preview,
             href: `/app/spaces/task/${element.id}`,
@@ -738,7 +790,62 @@ export const startChatHarness = async () => {
         }
         if (part === "threads") {
           const thread = accessId ? chat.threads.find((entry) => entry.id === accessId) : undefined;
-          if (request.method === "GET" && !accessId) return Response.json(threadList(chat));
+          if (request.method === "GET" && !accessId) {
+            const page = threadList(chat);
+            if (chat.conversation.kind !== "system") return Response.json(page);
+            systemRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+            const cursor = url.searchParams.get("cursor");
+            const start = cursor ? page.items.findIndex((item) => item.id === cursor) + 1 : 0;
+            const candidates = page.items.slice(start, start + systemThreadPageSize);
+            const q = (url.searchParams.get("q") ?? "").toLowerCase();
+            const filter = url.searchParams.get("filter");
+            return Response.json({
+              ...page,
+              items: candidates.filter(
+                (item) =>
+                  `${item.name} ${item.description}`.toLowerCase().includes(q) &&
+                  (filter !== "done" || item.resource?.done) &&
+                  (filter !== "open" || !item.resource?.done) &&
+                  (filter !== "unread" || item.unread > 0),
+              ),
+              nextCursor: start + systemThreadPageSize < page.items.length ? candidates.at(-1)!.id : null,
+            });
+          }
+          if (accessId === "for-resource" && request.method === "POST") {
+            systemRequests.push({ path: url.pathname, query: {} });
+            if (chat.conversation.permission === "read") return Response.json({ message: "Forbidden" }, { status: 403 });
+            if (failingThreads-- > 0) return Response.json({ message: "Unavailable" }, { status: 503 });
+            const input = z.object({ ref: z.object({ type: z.string(), id: z.string() }) }).parse(await request.json());
+            const element = elements.get(input.ref.id);
+            if (
+              !element?.readable ||
+              element.parent?.id !== chat.conversation.resource?.id ||
+              element.parent?.type !== chat.conversation.resource?.type
+            )
+              return Response.json({ message: "Unavailable" }, { status: 404 });
+            let thread = chat.threads.find((thread) => thread.resource?.ref.id === input.ref.id);
+            if (!thread) {
+              thread = {
+                id: threadId(id!, chat.threads.length + 1),
+                name: element.title,
+                description: element.preview,
+                archived: false,
+                read: null,
+                createdAt: chatTestNow.toISOString(),
+                lastActivityAt: chatTestNow.toISOString(),
+                resource: {
+                  ref: input.ref,
+                  kind: element.kind ?? "task",
+                  done: element.done ?? false,
+                  status: element.status ?? null,
+                  href: `/app/spaces/task/${element.id}`,
+                },
+              };
+              chat.threads.push(thread);
+              project(chat);
+            }
+            return Response.json(threadList(chat).items.find((item) => item.id === thread.id));
+          }
           if (chat.conversation.permission !== "admin")
             return Response.json({ code: "FORBIDDEN", message: "Manage permission is required." }, { status: 403 });
           if (failingThreads > 0) {
@@ -1053,6 +1160,37 @@ export const startChatHarness = async () => {
     url: server.url.href,
     now,
     addChat,
+    systemRequests,
+    setSystem: (id: string, ref: CloudResourceRef) => {
+      const chat = chats.get(id)!;
+      chat.conversation = { ...chat.conversation, kind: "system", resource: ref, summaryCursor: null };
+      containers.set(`${ref.type}:${ref.id}`, { ref, name: chat.conversation.title, chat: id });
+    },
+    emptyContainer: (ref: CloudResourceRef, name: string) => containers.set(`${ref.type}:${ref.id}`, { ref, name, chat: null }),
+    systemElement: (element: {
+      id: string;
+      title: string;
+      parent: CloudResourceRef;
+      kind?: "task" | "event" | "note";
+      done?: boolean;
+      status?: string;
+    }) => {
+      elements.set(element.id, {
+        ...element,
+        preview: element.title,
+        readable: true,
+        type: element.parent.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
+      });
+    },
+    resourceThread: (chat: string, thread: string, resource: NonNullable<z.infer<typeof ThreadSchema>["resource"]>) => {
+      chats.get(chat)!.threads.find((item) => item.id === thread)!.resource = resource;
+    },
+    failSystemChats: (count = 1) => {
+      failingSystems = count;
+    },
+    systemPageSize: (count: number) => {
+      systemThreadPageSize = count;
+    },
     /** Adds a person to the directory available to the member pickers. */
     addPerson: (person: Person) => {
       people.set(person.id, person);
@@ -1125,6 +1263,10 @@ export const startChatHarness = async () => {
       failingThreads = 0;
       failingShared = 0;
       elements.clear();
+      containers.clear();
+      systemRequests.length = 0;
+      failingSystems = 0;
+      systemThreadPageSize = 100;
       readerCalls = 0;
     },
     /** Lets tests await the live connection before publishing. */

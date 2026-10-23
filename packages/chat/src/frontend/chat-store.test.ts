@@ -1472,3 +1472,86 @@ test("read-all forwards continuation even when the preceding page marked no chat
   expect(seen).toEqual([undefined, "hidden-page"]);
   store.dispose();
 });
+
+test("system thread refresh follows empty cursor pages, orders activity, and totals only the complete list", async () => {
+  const system = {
+    ...conversation,
+    kind: "system" as const,
+    resource: { type: "spaces.space", id: "Space1" },
+    threads: 1,
+    summaryCursor: "",
+  };
+  const entry = (id: string, at: string, unread: number) => ({
+    id,
+    name: id,
+    description: null,
+    archived: false,
+    unread,
+    read: null,
+    lastMessage: null,
+    lastActivityAt: at,
+    createdAt: at,
+  });
+  const requested: (string | undefined)[] = [];
+  const { store } = fixture({
+    threads: async (_id, query) => {
+      requested.push(query?.cursor);
+      if (!query?.cursor)
+        return { general: { unread: 2, lastMessage: null }, items: [entry("Older1", "2026-10-12T00:00:00.000Z", 3)], nextCursor: "Older1" };
+      if (query.cursor === "Older1") return { general: { unread: 2, lastMessage: null }, items: [], nextCursor: "Hidden" };
+      return { general: { unread: 2, lastMessage: null }, items: [entry("Newer1", "2026-10-13T00:00:00.000Z", 4)], nextCursor: null };
+    },
+  });
+  try {
+    store.open({ cursor: "cursor", conversation: system, threads: noThreads, page: page(1), view: "all" });
+    await store.refreshThreads();
+    expect(requested).toEqual([undefined, "Older1", "Hidden"]);
+    expect(store.openConversation?.threads?.items.map((item) => item.id)).toEqual(["Newer1", "Older1"]);
+    expect(store.openConversation?.conversation).toMatchObject({ threads: 2, unread: 9, summaryCursor: null });
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a failed continuation keeps the selected resource and is retryable; closing cancels a running refresh", async () => {
+  const system = { ...conversation, kind: "system" as const };
+  let fail = true;
+  let pending = false;
+  let aborted = false;
+  const { store } = fixture({
+    threads: async (_id, query, signal) => {
+      if (pending)
+        return new Promise((resolve) =>
+          signal?.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              resolve(null);
+            },
+            { once: true },
+          ),
+        );
+      if (!query?.cursor) return { ...noThreads, nextCursor: "After1" };
+      if (fail) throw new Error("Unavailable");
+      return noThreads;
+    },
+  });
+  try {
+    store.open({ cursor: "cursor", conversation: system, threads: noThreads, page: page(1), view: "all" });
+    await store.refreshThreads();
+    expect(store.openConversation?.threadsStatus).toBe("failed");
+    expect(store.openConversation?.conversation?.id).toBe(conversation.id);
+    fail = false;
+    await store.refreshThreads();
+    expect(store.openConversation?.threadsStatus).toBe("ready");
+    pending = true;
+    const request = store.refreshThreads();
+    await Promise.resolve();
+    store.closeConversation();
+    await request;
+    expect(aborted).toBe(true);
+    expect(store.openConversation).toBeNull();
+  } finally {
+    store.dispose();
+  }
+});

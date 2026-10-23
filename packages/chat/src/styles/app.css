@@ -148,6 +148,11 @@
   justify-content: flex-end;
   gap: 0.75rem;
 }
+.chat-add-people__alternative {
+  display: flex;
+  justify-content: flex-end;
+  min-height: 2rem;
+}
 .chat-match {
   width: 100%;
 }
@@ -657,4 +662,112 @@
 }
 .chat-shared__row[data-unavailable] .chat-shared__title {
   color: var(--k2b-text-secondary);
+}
+
+/* System chats use the existing flat list; counts and async actions keep their places. */
+.chat-system-chats {
+  margin-block-start: 0.75rem;
+}
+.chat-system-chats .k2b-app-workspace__sidebar-section-count {
+  order: 2;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  margin-inline-start: auto;
+  text-align: end;
+}
+.chat-system-chats .k2b-app-workspace__sidebar-section-toggle > i {
+  margin-inline-start: 0;
+}
+.chat-system-chats--read .k2b-app-workspace__sidebar-section-count {
+  visibility: hidden;
+}
+.chat-system-chats__count {
+  display: inline-flex;
+  justify-content: flex-end;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.chat-system-chats__loading,
+.chat-system-directory__results {
+  min-height: 3rem;
+}
+.chat-system-chats__skeleton {
+  height: 3.25rem;
+  margin: 0.25rem 0.5rem;
+}
+.chat-system-chats__empty,
+.chat-system-chats__membership {
+  padding: 0.5rem 0.75rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+}
+.chat-system-directory__controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+.chat-system-directory__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.chat-system-directory__description {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chat-system-directory__more {
+  min-width: 12rem;
+}
+.chat-resource-head__link {
+  white-space: nowrap;
+  margin-inline: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.chat-resource-head__icon,
+.chat-resource-head__mobile {
+  display: none;
+}
+@media (max-width: 47.999rem) {
+  .chat-resource-head__status,
+  .chat-resource-head__link {
+    display: none;
+  }
+  .chat-resource-head__icon {
+    display: flex;
+  }
+  .chat-resource-head__mobile {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--k2b-text-secondary);
+  }
+  .chat-resource-head__mobile a {
+    margin-inline-start: auto;
+    white-space: nowrap;
+  }
+}
+.chat-thread-picker--item .chat-thread-picker__name {
+  display: none;
+}
+.chat-system-directory__description > span {
+  min-height: 1.25rem;
+}
+
+/* Keep the container's name readable beside the longer item-discussion action on a phone. */
+@container k2b-app-area (max-width: 47.999rem) {
+  .chat-threads-page__header--system {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+  .chat-threads-page__header--system .chat-conversation__actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
 }

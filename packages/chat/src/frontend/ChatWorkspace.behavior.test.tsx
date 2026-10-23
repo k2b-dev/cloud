@@ -137,6 +137,7 @@ describe("ChatWorkspace interactions", () => {
     const fetchChat = Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");
+        if (url.pathname === "/api/chat/system-chats") return Response.json({ items: [], spacesCursor: null, notebooksCursor: null });
         const snapshot = /^\/api\/chat\/conversations\/([^/]+)\/snapshot$/.exec(url.pathname);
         if (snapshot) {
           const pending = pendingSnapshots.get(snapshot[1]!);
@@ -348,6 +349,7 @@ describe("ChatWorkspace interactions", () => {
         {
           thread: null,
           replyTo: null,
+          refs: [],
           id: "Chat010001",
           conversationId: "Chat01",
           seq: 1,
@@ -374,7 +376,7 @@ describe("ChatWorkspace interactions", () => {
     await settle();
     expect(dom.window.location.pathname).toBe("/app/chat/c/Chat01");
     const area = dom.root.querySelector(".k2b-app-workspace__main")!;
-    expect(area.textContent).toContain("No access");
+    expect(area.textContent).toContain("Thread unavailable");
     expect(area.textContent).toContain("This chat does not exist, or you are not a member of it.");
     expect(area.textContent).not.toContain("Secret board");
     // The open stayed in place: no document-navigation fallback.

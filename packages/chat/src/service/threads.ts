@@ -47,12 +47,19 @@ const projectList = async (
   const query = ThreadQuerySchema.parse(input.query ?? {});
   const [conversation] = await db<{ kind: string }[]>`SELECT kind FROM chat.conversations WHERE id = ${conversationId}::uuid`;
   const system = conversation?.kind === "system";
+  // The opaque thread ID identifies the activity boundary. Page candidates before reader checks and filters,
+  // so empty visible pages still advance without scanning an unbounded number of resources.
+  // Keep the timestamp in Postgres: converting it to Date would truncate the cursor's microseconds.
+  const after = db`(SELECT boundary.last_activity_at FROM chat.threads boundary
+    WHERE boundary.conversation_id = ${conversationId}::uuid AND boundary.short_id = ${query.cursor ?? ""})`;
   const rows = await db<ThreadRow[]>`SELECT * FROM chat.threads WHERE conversation_id = ${conversationId}::uuid
     AND ${onlyId ? db`short_id = ${onlyId}` : db`true`}
-    AND ${system && query.cursor ? db`short_id > ${query.cursor}` : db`true`}
+    AND ${
+      system && query.cursor ? db`(last_activity_at < ${after} OR (last_activity_at = ${after} AND short_id > ${query.cursor}))` : db`true`
+    }
     ORDER BY ${
       system
-        ? db`short_id`
+        ? db`last_activity_at DESC, short_id`
         : db`(archived_at IS NOT NULL), CASE WHEN archived_at IS NULL THEN last_activity_at END DESC,
       CASE WHEN archived_at IS NOT NULL THEN name END, short_id`
     } LIMIT ${MAX_THREADS + 1}`;

@@ -1,10 +1,13 @@
 ---
 id: chat-threads
 title: Threads und Antworten nutzen
+kind: task
 icon: ti ti-hash
 description: Halte Themen in Threads getrennt, antworte mit Zitat und sieh alle Threads auf einmal.
 order: 115
 ---
+
+Für Chats von Spaces und Notebooks gilt [Spaces und Notebooks in Chat](help:chat-system-chats).
 
 Ein Thread ist ein benannter Strang in einem Chat, zum Beispiel „Problemfälle“ im Chat „IT“. Jeder Chat mit Threads hat außerdem **Allgemein** für alles, was in keinen Thread passt. Jeder Thread hat eigene ungelesene Nachrichten und einen eigenen Entwurf.
 
@@ -25,7 +28,7 @@ Ein Thread ist ein benannter Strang in einem Chat, zum Beispiel „Problemfälle
 ## Mit Zitat antworten {icon="arrow-back-up"}
 
 :::steps
-1. Zeige auf die Nachricht und wähle **…** daneben, oder klicke mit der rechten Maustaste auf die Nachricht. Auf dem Telefon hältst du die Nachricht gedrückt oder wischst sie nach rechts.
+1. Zeige auf die Nachricht und wähle **…** daneben, oder öffne mit der rechten Maustaste das Nachrichtenmenü. Auf dem Telefon hältst du die Nachricht gedrückt oder wischst sie nach rechts.
 2. Wähle **Antworten**.
 3. Schreib deine Antwort und sende sie.
 :::
@@ -39,7 +42,7 @@ Die Antwort zeigt die ursprüngliche Nachricht als Zitat. Wähle das Zitat, um z
 
 ## Threads anlegen, umbenennen und archivieren {icon="settings"}
 
-Nur Admins des Chats legen Threads an, benennen sie um und archivieren sie.
+Nur Personen mit **Verwalten** im Chat legen Threads an, benennen sie um und archivieren sie.
 
 :::steps
 1. Wähle **Neuer Thread** unter den Threads des Chats oder in der Thread-Auswahl neben dem Namen des Chats. In einem Chat ohne Threads öffnest du die Infos zum Chat, wählst **…** und dann **Neuer Thread**.

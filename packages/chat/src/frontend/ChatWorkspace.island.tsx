@@ -1,7 +1,7 @@
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
-import { type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
+import { Link, type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
 import {
@@ -40,6 +40,7 @@ import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
 import ChatSharedSection from "./ChatSharedSection";
+import ChatSystemChats, { createSystemChatList } from "./ChatSystemChats";
 import ChatThreadColumn from "./ChatThreadColumn";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
 import ChatThreadsPage from "./ChatThreadsPage";
@@ -50,6 +51,7 @@ import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards } from "./resource-cards";
 import { panelHref, parseRoute, type Route, threadsPageHref } from "./route";
+import { containerIcon, openResourceThread, openSystemChat } from "./system-chats";
 import { openThreadDialog } from "./ThreadDialog";
 import { chatHasThreads, isUnread, messageThread, type ThreadView, threadHref, threadOf, viewName, viewReadStart } from "./threads";
 
@@ -131,6 +133,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // The latest open whose snapshot is still loading; an older one that a newer navigation superseded no longer counts.
   let openToken = 0;
   let pendingOpen = 0;
+  let systemOpen = 0;
   // The outbox changes its entries in place; this counts its changes so the history reads them again.
   const [sendsVersion, setSendsVersion] = createSignal(0);
   // The list keeps its order while messages arrive elsewhere; it sorts again on the reader's own actions.
@@ -168,6 +171,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     return current && current.status !== "no-access" && current.conversation ? current : null;
   };
   const conversation = () => openChat()?.conversation ?? null;
+  const system = () => conversation()?.kind === "system";
+  const systemList = createSystemChatList();
+  createEffect(
+    on([liveStore, systemList.page], ([live, page]) => {
+      if (live && page) live.includeSystemChats(page.items.flatMap((item) => (item.conversation ? [item.conversation] : [])));
+    }),
+  );
+  const [systemExpanded, setSystemExpanded] = createSignal(props.open?.conversation.kind === "system");
+  const [creatingThread, setCreatingThread] = createSignal(false);
+  const canCreateThread = () => {
+    const current = conversation();
+    return !!current && (system() ? current.permission !== "read" : current.permission === "admin");
+  };
+  const generalName = () => (system() ? (conversation()?.title ?? "") : t().general);
+  const threadName = (view: ThreadView) => (view === "general" ? generalName() : viewName(view, openChat()?.threads ?? null, t()));
   const noAccess = () => route().chatId !== null && openChat() === null;
   const breadcrumbs = (title?: string) => [
     { title: t().start, href: "/" },
@@ -180,7 +198,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const id = route().chatId;
     if (!id) return undefined;
     if (chat()?.id !== id) return previous;
-    return conversation()?.title ?? t().noAccessTitle;
+    return conversation()?.title ?? t().threadUnavailable;
   });
   createEffect(on(trailTitle, (title) => layout.update({ breadcrumbs: breadcrumbs(title) }), { defer: true }));
 
@@ -209,7 +227,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   // In "All threads", a chip under each message names its thread and opens it.
   const originOf = (chatId: string, view: ThreadView) => {
-    const name = viewName(view, openChat()?.threads ?? null, t());
+    const name = threadName(view);
+    if (system() && view === "general") return { label: name, icon: containerIcon(conversation()?.resource?.type) };
     if (!name) return undefined;
     return {
       label: name,
@@ -503,6 +522,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
   const open = async (next: Route): Promise<"applied" | "superseded" | "failed"> => {
+    systemOpen++;
     if (!store) return "failed";
     if (
       pendingOpen === 0 &&
@@ -533,6 +553,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     try {
       const result = await store.openChat(next.chatId, next.messageId ?? undefined, next.view);
       if (result.status === "superseded") return "superseded";
+      if (result.status === "opened" && store.openConversation?.conversation?.kind === "system") void store.refreshThreads();
       applyRoute({
         ...next,
         messageId: result.status === "opened" ? next.messageId : null,
@@ -553,12 +574,40 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const fromList = route().chatId === null;
     // A phone shows a chat with threads as its page of threads first; a wider window opens "All threads" and its rows.
     const row = rows().find((candidate) => candidate.id === id);
-    if (phone?.matches && chatHasThreads(row)) {
+    if (phone?.matches && row?.kind !== "system" && chatHasThreads(row)) {
       if ((await open(chatRoute(id, "all", { threads: true }))) === "applied")
         navigation.push(threadsPageHref(id), { scroll: "preserve", state: { chatFromList: fromList } });
       return;
     }
     if ((await open(chatRoute(id))) === "applied") navigation.push(undefined, { scroll: "preserve", state: { chatFromList: fromList } });
+  };
+  const openSystemFromList = async (id: string, navigation: LinkNavigateEvent) => {
+    const row = systemList.page()?.items.find((item) => item.conversation?.id === id);
+    const ref = row?.ref ?? rows().find((row) => row.id === id)?.resource ?? (conversation()?.id === id ? conversation()?.resource : null);
+    if (!ref || (ref.type !== "spaces.space" && ref.type !== "notebooks.notebook")) return;
+    const token = ++systemOpen;
+    setBusy(true);
+    try {
+      const current = await openSystemChat({ resourceType: ref.type, resourceId: ref.id });
+      if (token !== systemOpen) return;
+      if ((await open(chatRoute(current.id))) === "applied") navigation.push(threadHref(current.id, "all"), { scroll: "preserve" });
+    } catch {
+      if (token === systemOpen) toast.error(t().openFailed);
+    } finally {
+      if (token === systemOpen) setBusy(false);
+    }
+  };
+  const directoryQuery = () => {
+    const source = new URL(location.href).searchParams;
+    const params = new URLSearchParams();
+    for (const key of ["q", "filter"]) if (source.has(key)) params.set(key, source.get(key)!);
+    return params.size ? `?${params}` : "";
+  };
+  const openOverview = async (navigation?: LinkNavigateEvent) => {
+    const id = conversation()?.id;
+    if (!id || (await open(chatRoute(id, "all", { threads: true }))) !== "applied") return;
+    if (navigation) navigation.push(threadsPageHref(id), { scroll: "preserve" });
+    else navigate(threadsPageHref(id), { scroll: "preserve" });
   };
   /** Opens another part of the open chat, from the list, the picker, a thread chip, or a new thread. */
   const openView = async (id: string, view: ThreadView, navigation?: LinkNavigateEvent, message?: string) => {
@@ -567,7 +616,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const options = { scroll: "preserve" as const, state: { threadFromPage: route().threads && route().panel === null } };
     const next = chatRoute(id, view, { messageId: message ?? null });
     if ((await open(next)) !== "applied") return;
-    const href = threadHref(id, view, message);
+    const href = threadHref(id, view, message) + (system() ? directoryQuery() : "");
     if (navigation) navigation.push(href, options);
     else navigate(href, options);
   };
@@ -688,21 +737,45 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
   };
 
-  // Admins create, rename, archive, and restore threads; the server decides every request again.
+  // System chats use item discussions; manual chats let admins create named threads.
   const createThread = async () => {
     const current = conversation();
-    if (!store || current?.permission !== "admin") return;
-    const thread = await openThreadDialog({
-      store,
-      chatId: current.id,
-      title: current.title,
-      memberCount: current.memberCount,
-      threads: openChat()?.threads ?? null,
-      locale: locale(),
-    });
-    if (!thread) return;
-    toast(t().threadCreated({ name: thread.name }));
-    await openView(current.id, thread.id);
+    if (!store || !current || !canCreateThread() || creatingThread()) return;
+    setCreatingThread(true);
+    try {
+      if (current.kind === "system") {
+        if (!current.resource) return;
+        const item = await openCloudResourcePicker({
+          title: t().discussElement,
+          scope: { ref: current.resource, label: current.title, icon: containerIcon(current.resource.type) },
+          requireReader: true,
+          resourceType: current.resource.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
+        });
+        if (!item || conversation()?.id !== current.id) return;
+        if (item.ref.type !== "spaces.item" && item.ref.type !== "notebooks.note") return;
+        const thread = await openResourceThread(current.id, { ref: { type: item.ref.type, id: item.ref.id } });
+        if (conversation()?.id !== current.id) return;
+        await store.refreshThreads();
+        await openView(current.id, thread.id);
+        return;
+      }
+      const thread = await openThreadDialog({
+        store,
+        chatId: current.id,
+        title: current.title,
+        memberCount: current.memberCount,
+        threads: openChat()?.threads ?? null,
+        locale: locale(),
+      });
+      if (!thread) return;
+      toast(t().threadCreated({ name: thread.name }));
+      await openView(current.id, thread.id);
+    } catch (error) {
+      if (current.kind === "system") toast.error(t().itemThreadFailed, { duration: 0 });
+      else throw error;
+    } finally {
+      setCreatingThread(false);
+    }
   };
   const renameThread = async () => {
     const current = openChat();
@@ -800,6 +873,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         : {}),
     });
     store = live;
+    if (props.open?.conversation.kind === "system") void live.refreshThreads();
     setLiveStore(live);
     const sync = () => {
       prune();
@@ -875,34 +949,49 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     });
   });
 
+  const listProps = () => ({
+    activeId: openChat()?.id ?? null,
+    viewerId: props.viewerId,
+    dateConfig: props.dateConfig,
+    now,
+    onOpen: openFromList,
+    onMarkRead: markRead,
+    onMarkUnread: (id: string) => void markUnread(id),
+    threads:
+      openChat() && threaded()
+        ? {
+            threads: openChat()?.threads ?? null,
+            status: openChat()?.threadsStatus ?? ("loading" as const),
+            view: route().threads ? null : (openChat()?.view ?? null),
+            canAdmin: canCreateThread(),
+            system: system(),
+            total: conversation()?.threads,
+            creating: creatingThread(),
+            onOverview: openOverview,
+            onNavigate: (view: ThreadView, event: LinkNavigateEvent) => openView(openChat()!.id, view, event),
+            onCreate: () => void createThread(),
+            onRetry: () => void store?.refreshThreads(),
+          }
+        : undefined,
+  });
+  const systemSection = () => (
+    <ChatSystemChats
+      state={systemList}
+      list={listProps()}
+      current={conversation()}
+      updates={rows()}
+      unavailableId={chat()?.status === "no-access" ? chat()!.id : null}
+      expanded={systemExpanded()}
+      onExpanded={setSystemExpanded}
+      onOpen={openSystemFromList}
+    />
+  );
   const list = (): JSX.Element => (
     <ChatList
-      rows={listRows()}
-      activeId={openChat()?.id ?? null}
-      viewerId={props.viewerId}
-      dateConfig={props.dateConfig}
-      now={now}
+      rows={listRows().filter((row) => row.kind !== "system")}
+      {...listProps()}
       hasMore={hasMore()}
-      onOpen={openFromList}
       onMore={() => void store?.loadMoreSidebar()}
-      onMarkRead={markRead}
-      onMarkUnread={(id) => void markUnread(id)}
-      threads={
-        openChat() && chatHasThreads(conversation())
-          ? {
-              threads: openChat()?.threads ?? null,
-              status: openChat()?.threadsStatus ?? "loading",
-              view: route().threads ? null : (openChat()?.view ?? null),
-              canAdmin: conversation()?.permission === "admin",
-              onNavigate: (view, navigation) => {
-                const id = openChat()?.id;
-                return id ? openView(id, view, navigation) : undefined;
-              },
-              onCreate: () => void createThread(),
-              onRetry: () => void store?.refreshThreads(),
-            }
-          : undefined
-      }
     />
   );
   /** The open part of the chat, as the head names it and the composer addresses it. */
@@ -939,22 +1028,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (!current) return undefined;
     const answered = reply();
     if (answered)
-      return openChat()?.view === "all" && threaded()
-        ? t().replyIn({ name: viewName(answered.thread ?? "general", openChat()?.threads ?? null, t()) })
+      return (system() || openChat()?.view === "all") && threaded()
+        ? t().replyIn({ name: threadName(answered.thread ?? "general") })
         : t().replyPlaceholder;
     if (!threaded()) return t().composerPlaceholder({ title: current.title });
-    return t().composerPlaceholder({ title: openChat()?.view === "all" ? t().general : viewTitle() });
+    return t().composerPlaceholder({ title: openChat()?.view === "all" ? generalName() : viewTitle() });
   };
   const replyHint = (item: ChatFeedItem) =>
     !threaded()
       ? t().replyHintPlain
       : openChat()?.view === "all"
-        ? t().replyHintIn({ name: viewName(item.thread ?? "general", openChat()?.threads ?? null, t()) })
+        ? t().replyHintIn({ name: threadName(item.thread ?? "general") })
         : t().replyHint;
   const unreadHint = (item: ChatFeedItem) =>
-    threaded()
-      ? t().markUnreadThreadHint({ name: viewName(item.thread ?? "general", openChat()?.threads ?? null, t()) })
-      : t().markUnreadFromHereHint;
+    threaded() ? t().markUnreadThreadHint({ name: threadName(item.thread ?? "general") }) : t().markUnreadFromHereHint;
   const infoLink = (current: Conversation) => (
     <IconButtonLink
       label={t().chatInfo}
@@ -988,6 +1075,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 {list()}
               </Show>
             </AppWorkspace.SidebarSection>
+            {systemSection()}
           </AppWorkspace.SidebarBody>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
@@ -1020,6 +1108,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   dateConfig={props.dateConfig}
                   now={now}
                   onOpen={(view, navigation) => openView(current().id, view, navigation)}
+                  canCreate={canCreateThread()}
+                  creating={creatingThread()}
+                  revision={openChat()?.watermark ?? 0}
                   onCreate={() => void createThread()}
                   onRetry={() => void store?.refreshThreads()}
                 />
@@ -1039,6 +1130,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   info={infoLink(current())}
                   onBack={backToList}
                   onOpen={(view, navigation) => openView(current().id, view, navigation)}
+                  canCreate={canCreateThread()}
+                  creating={creatingThread()}
+                  revision={openChat()?.watermark ?? 0}
                   onCreate={() => void createThread()}
                   onRetry={() => void store?.refreshThreads()}
                 />
@@ -1052,32 +1146,40 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     <ChatConversation
                       actions={
                         <>
-                          <Show when={current().permission === "admin"}>
+                          <Show when={!system() && current().permission === "admin"}>
                             <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
                               <i class="ti ti-user-plus" aria-hidden="true" />
                             </IconButton>
                           </Show>
-                          <Show when={current().permission === "admin" && openThread() && !openThread()?.archived}>
+                          <Show when={!system() && current().permission === "admin" && openThread() && !openThread()?.archived}>
                             <ThreadMenu onRename={() => void renameThread()} onArchive={() => void archiveThread()} />
                           </Show>
                           {infoLink(current())}
                         </>
                       }
                       chatId={current().id}
-                      title={current().title}
+                      title={system() && openThread() ? openThread()!.name : current().title}
+                      resource={system() ? (openThread()?.resource ?? undefined) : undefined}
+                      subtitle={system() && openThread() ? current().title : undefined}
                       // A wider window picks the thread beside the title; a phone names it there and goes back to the
                       // chat's thread page for another one. CSS decides, so server and browser render the same head.
                       titleExtra={
                         threaded() ? (
                           <>
-                            <span class="chat-conversation__thread-name">· {viewTitle()}</span>
+                            <Show when={!system() || !openThread()}>
+                              <span class="chat-conversation__thread-name">· {viewTitle()}</span>
+                            </Show>
                             <span class="chat-conversation__picker">
                               <ThreadPicker
                                 chatId={current().id}
                                 threads={openChat()?.threads ?? null}
                                 unread={current().unread}
                                 view={openChat()?.view ?? "all"}
-                                canAdmin={current().permission === "admin"}
+                                canAdmin={canCreateThread()}
+                                system={system()}
+                                total={current().threads}
+                                creating={creatingThread()}
+                                onOverview={openOverview}
                                 onSelect={(view) => void openView(current().id, view)}
                                 onCreate={() => void createThread()}
                               />
@@ -1102,7 +1204,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
                       notice={notice()}
                       placeholder={placeholder()}
-                      target={threaded() ? (openChat()?.view === "all" ? t().general : viewTitle()) : undefined}
+                      target={threaded() ? (openChat()?.view === "all" ? generalName() : viewTitle()) : undefined}
                       reply={
                         reply()
                           ? {
@@ -1157,18 +1259,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 variant="panel"
                 class="flex-1"
                 icon="ti ti-lock"
-                title={t().noAccessTitle}
+                title={t().threadUnavailable}
+                action={
+                  <Link href="/app/chat" onNavigate={backToList}>
+                    {t().backToChats}
+                  </Link>
+                }
                 description={t().noAccessDescription}
-              />
-            </Match>
-            <Match when={rows().length === 0}>
-              <Placeholder
-                variant="panel"
-                class="flex-1"
-                icon="ti ti-messages"
-                title={t().noChatsTitle}
-                description={t().noChatsDescription}
-                action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
               />
             </Match>
             <Match when={true}>
@@ -1179,14 +1276,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
                   {list()}
                 </AppWorkspace.SidebarSection>
+                {systemSection()}
               </nav>
               <div class="chat-select">
                 <Placeholder
                   variant="panel"
                   class="flex-1"
                   icon="ti ti-messages"
-                  title={t().selectChatTitle}
-                  description={t().selectChatDescription}
+                  title={rows().length === 0 ? t().noChatsTitle : t().selectChatTitle}
+                  description={rows().length === 0 ? t().noChatsDescription : t().selectChatDescription}
+                  action={rows().length === 0 ? <Button onClick={() => void newChat()}>{t().newChat}</Button> : undefined}
                 />
               </div>
             </Match>
@@ -1212,7 +1311,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   onClose={() => closeInfo()}
                   onAddPeople={() => void addPeople()}
                   onEditDetails={editDetails}
-                  onCreateThread={current().permission === "admin" ? () => void createThread() : undefined}
+                  onCreateThread={!system() && current().permission === "admin" ? () => void createThread() : undefined}
                   shared={
                     <ChatSharedSection
                       chatId={current().id}

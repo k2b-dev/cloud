@@ -149,7 +149,7 @@ describe("ChatWorkspace server render", () => {
     }
     test(`no access reveals neither chat title nor address identifier in ${locale}`, () => {
       const html = render(locale, { ...props(), chatId: "Secret", open: null });
-      expect(html).toContain(t.noAccessTitle);
+      expect(html).toContain(t.threadUnavailable);
       expect(html).toContain(t.noAccessDescription);
       expect(html).not.toContain("Secret board");
       expect(html).not.toContain("Secret");

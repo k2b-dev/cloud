@@ -34,7 +34,8 @@ import {
   ThreadSchema,
   UNREAD_CAP,
 } from "../service/contracts";
-import { chatHasThreads, inView, type ThreadList, type ThreadView } from "./threads";
+import { completeSystemSummary } from "./system-chats";
+import { byActivity, chatHasThreads, inView, type ThreadList, type ThreadView } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageSchema>;
@@ -60,7 +61,7 @@ export type ChatStoreApi = {
   conversation(id: string): Promise<Conversation | null>;
   messages(id: string, query?: { before?: number; after?: number; thread?: ThreadView }): Promise<MessagePage | null>;
   snapshot(id: string, message?: string, thread?: ThreadView): Promise<(OpenChatSnapshot & { focus: string | null }) | null>;
-  threads(id: string): Promise<ThreadList | null>;
+  threads(id: string, query?: { cursor?: string }, signal?: AbortSignal): Promise<ThreadList | null>;
   createThread(id: string, input: { name: string; description: string | null; createKey: string }): Promise<z.infer<typeof ThreadSchema>>;
   updateThread(
     id: string,
@@ -176,8 +177,13 @@ export const createChatStoreApi = (): ChatStoreApi => {
     readAll: async (confirmed, cursor) =>
       requiredResponse(await client.conversations["read-all"].$post({ json: { confirmed, cursor } }), ReadAllOutcomeSchema),
     conversations: async (cursor) => requiredResponse(await client.conversations.$get({ query: { cursor } }), ConversationPageSchema),
-    conversation: async (id) =>
-      parseResponse(await client.conversations[":conversation"].$get({ param: { conversation: id }, query: {} }), ConversationSchema),
+    conversation: async (id) => {
+      const row = await parseResponse(
+        await client.conversations[":conversation"].$get({ param: { conversation: id }, query: {} }),
+        ConversationSchema,
+      );
+      return row?.kind === "system" ? completeSystemSummary(row, new AbortController().signal) : row;
+    },
     messages: async (id, query) =>
       parseResponse(
         await client.conversations[":conversation"].messages.$get({
@@ -198,8 +204,11 @@ export const createChatStoreApi = (): ChatStoreApi => {
         }),
         ChatSnapshotSchema,
       ),
-    threads: async (id) =>
-      parseResponse(await client.conversations[":conversation"].threads.$get({ param: { conversation: id }, query: {} }), ThreadListSchema),
+    threads: async (id, query = {}, signal) =>
+      parseResponse(
+        await client.conversations[":conversation"].threads.$get({ param: { conversation: id }, query }, { init: { signal } }),
+        ThreadListSchema,
+      ),
     createThread: async (id, input) =>
       requiredResponse(
         await client.conversations[":conversation"].threads.$post({ param: { conversation: id }, json: input }),
@@ -269,6 +278,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     latest: Promise<void> | null;
     threadsWork: Promise<void> | null;
     threadsAgain: boolean;
+    threadsAbort?: AbortController;
   };
   let current: Current | null = null;
   const notify = () => {
@@ -278,6 +288,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const noAccess = (chat: Current) => {
     if (!active(chat)) return;
     chat.view = { ...chat.view, status: "no-access", conversation: null, messages: [], seqHead: 0, hasOlder: false, hasNewer: false };
+    chat.threadsAbort?.abort();
     chat.messages.clear();
     chat.from = chat.to = null;
     chat.window++;
@@ -443,12 +454,42 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         do {
           chat.threadsAgain = false;
           if (!active(chat)) return;
-          const list = await api.threads(chat.view.id).catch(() => undefined);
+          chat.threadsAbort?.abort();
+          const controller = new AbortController();
+          chat.threadsAbort = controller;
+          const list = await (async () => {
+            const first = await api.threads(chat.view.id, {}, controller.signal);
+            if (!first || chat.view.conversation?.kind !== "system") return first;
+            let cursor = first.nextCursor;
+            const seen = new Set<string>();
+            const items = new Map(first.items.map((thread) => [thread.id, thread]));
+            while (cursor) {
+              if (!active(chat)) return undefined;
+              if (seen.has(cursor)) throw new Error("Repeated thread cursor");
+              seen.add(cursor);
+              const page = await api.threads(chat.view.id, { cursor }, controller.signal);
+              if (!page) return null;
+              for (const thread of page.items) items.set(thread.id, thread);
+              cursor = page.nextCursor;
+            }
+            return { ...first, items: byActivity([...items.values()]), nextCursor: null };
+          })().catch(() => undefined);
           if (!active(chat)) return;
           if (list === null) return noAccess(chat);
           // The chat's thread count follows its list, so the first thread shows the thread controls at once.
           const conversation =
-            list && chat.view.conversation ? { ...chat.view.conversation, threads: list.items.length } : chat.view.conversation;
+            list && chat.view.conversation
+              ? {
+                  ...chat.view.conversation,
+                  threads: list.items.length,
+                  ...(chat.view.conversation.kind === "system"
+                    ? {
+                        summaryCursor: null,
+                        unread: Math.min(UNREAD_CAP, list.general.unread + list.items.reduce((sum, item) => sum + item.unread, 0)),
+                      }
+                    : {}),
+                }
+              : chat.view.conversation;
           chat.view =
             list === undefined
               ? { ...chat.view, threadsStatus: "failed" }
@@ -465,6 +506,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const open = (next: OpenChatSnapshot & { view: ThreadView }) => {
     opening++;
     if (disposed) return;
+    current?.threadsAbort?.abort();
     current?.subscription?.close();
     const seqHead = Math.max(next.page.seqHead, ...next.page.items.map((message) => message.seq));
     const chat: Current = {
@@ -548,12 +590,17 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const reloadSidebar = async () => {
     const page = await api.conversations();
     if (disposed) return;
-    rows = [...page.items];
+    const systemRows = rows.filter((row) => row.kind === "system");
+    rows = [...new Map([...systemRows, ...page.items].map((row) => [row.id, row])).values()];
     unreadRev.clear();
     for (const row of rows) unreadRev.set(row.id, row.rev);
     nextCursor = page.nextCursor;
     complete = nextCursor === null;
     notify();
+    for (const row of systemRows) {
+      if (disposed) return;
+      await refetchRow(row.id);
+    }
     // The open chat may lie outside the first sidebar page, so its read state is refreshed on its own.
     const chat = current;
     if (chat && active(chat)) {
@@ -689,6 +736,17 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   );
   if (snapshot.open) open({ ...snapshot.open, cursor: snapshot.cursor });
   return {
+    /** Browser-loaded system rows join the same live read-state and invalidation owner as ordinary chats. */
+    includeSystemChats: (items: readonly Conversation[]) => {
+      if (disposed) return;
+      const merged = new Map(rows.map((row) => [row.id, row]));
+      for (const row of items) {
+        const known = merged.get(row.id);
+        if (row.kind === "system" && (!known || row.rev >= known.rev)) merged.set(row.id, row);
+      }
+      rows = [...merged.values()];
+      notify();
+    },
     // A change the reader made shows at once: its chat's row is read again instead of waiting for the live event.
     // Refresh failures leave committed changes successful; live updates and resync repair the row.
     // A chat the reader left answers 404, which removes the row and ends an open view in "No access".
@@ -798,6 +856,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         open({ ...next, view });
         return { status: "opened", focus: next.focus };
       }
+      current?.threadsAbort?.abort();
       current?.subscription?.close();
       const chat: Current = {
         view: {
@@ -860,6 +919,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     open,
     closeConversation: () => {
       opening++;
+      current?.threadsAbort?.abort();
       current?.subscription?.close();
       current = null;
       notify();
@@ -867,6 +927,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     dispose: () => {
       opening++;
       disposed = true;
+      current?.threadsAbort?.abort();
       current?.subscription?.close();
       for (const subscription of subscriptions) subscription.close();
       listeners.clear();

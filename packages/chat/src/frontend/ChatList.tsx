@@ -7,6 +7,7 @@ import { chatMessages } from "../messages";
 import type { ConversationSchema } from "../service/contracts";
 import { ThreadRows } from "./ChatThreads";
 import { lastMessageLine, listTime } from "./chat-format";
+import { containerIcon } from "./system-chats";
 import { chatHasThreads } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -80,15 +81,27 @@ export default function ChatList(props: {
                     {/* Its rows show below it; from a 1800 px window they move into their own column and the row reads
                     like any other chat again. */}
                     <Show when={expanded()}>
-                      <span class="chat-list__preview chat-list__members">{t().members({ count: row.memberCount })}</span>
+                      <span class="chat-list__preview chat-list__members">
+                        {row.kind === "system"
+                          ? `${row.resource?.type === "notebooks.notebook" ? t().notebook : t().space} · ${t().members({ count: row.memberCount })}`
+                          : t().members({ count: row.memberCount })}
+                      </span>
                     </Show>
                     <span class="chat-list__preview" data-collapsed-only={expanded() ? "" : undefined}>
-                      {lastMessageLine(row, props.viewerId, locale())}
+                      {row.kind === "system" && !row.lastMessage
+                        ? `${row.resource?.type === "notebooks.notebook" ? t().notebook : t().space} · ${t().members({ count: row.memberCount })}`
+                        : lastMessageLine(row, props.viewerId, locale())}
                     </span>
                   </>
                 }
               >
-                <AppWorkspace.SidebarItemIcon icon={row.icon ?? (row.memberCount <= 2 ? "ti ti-user" : "ti ti-users")} />
+                <AppWorkspace.SidebarItemIcon
+                  icon={
+                    row.kind === "system"
+                      ? containerIcon(row.resource?.type)
+                      : (row.icon ?? (row.memberCount <= 2 ? "ti ti-user" : "ti ti-users"))
+                  }
+                />
                 <AppWorkspace.SidebarItemLabel marquee={false}>
                   {row.title}
                   {/* A chat with threads has more inside; open it to see them. */}
