@@ -25,12 +25,14 @@ convention still needs a check or a test.
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
 | Presentation lifetime mistaken for mailbox lifetime | Retaining panes also retains selection, search, pending work and callbacks unless their mailbox owner is disposed; checking only the mailbox ID also accepts stale A→B→A completions. | Tests: Mail `MailWorkspace.mailbox-switch.behavior.test.tsx` and `mail-shell.browser-suite.ts` retain pane identity while clearing selection, reader, search, filters and scroll; List and Reader behavior guards reject earlier generations after A→B→A. |
+| Island props dropped by the SSR transform | A page passes island props with a JSX spread; the server renders them, but the browser receives empty props and the island fails during hydration. | Test: `packages/ssr/test/unit/transform.test.ts` renders a transformed page and requires spread and named attributes in `data-props` with Solid merge semantics. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
 | App CSS overrides shared control sizing | An app stretches a compact action or overrides its size, so adjacent controls no longer match. | Test: Notebooks `detail-panel.browser.test.ts` measures AI and View height, padding, font size, intrinsic width, hover, keyboard focus, and offline dimensions in both themes at phone, tablet, and desktop widths. |
 | Input consumed before deterministic validation | The client clears a message that the server rejects on every retry, leaving the person unable to correct the text. | Tests: Chat `ChatWorkspace.behavior.test.tsx` and `ChatWorkspace.browser.test.ts` reject oversized text before queuing, preserve the draft, and send it after correction. The composer and API share `MessageBodySchema`. |
 | A source location is valid but no longer names its evidence | A ranking accepts an in-range line number even when the line is blank or different code now occupies it. | Test: Mail `scripts/perf-baseline/browser-model.test.ts` rejects blank, changed and moved source lines and missing or multiline anchors; ranking requires the complete source line ([#1472](https://github.com/k2b-dev/cloud/issues/1472)). |
+| An app links assets below a prefix it never declared | The platform links `/public/<id>/app.css` on every page, but the gateway routes only declared prefixes, so the stylesheet answers 404 and the pages render unstyled. | Check: `app-public-route` requires the app's own `/public/<id>` prefix in every app config that declares pages below `/app/` or `/admin/`. |
 | Mixed timestamp precision drops measured requests | A recorder compares fractional browser starts with an integer end timestamp, discarding a required request in the final millisecond and reporting zero transferred bytes. | Test: Mail `page-change-network.browser.test.ts` fixes the fractional boundary while a real script remains pending, then requires its actual transfer; the cached-script guard still requires zero encoded transfer. Convention: compare measurement boundaries and request starts at the same precision. |
 | Positional input-union compatibility | A manifest check rejects preserved input variants after additions or reordering, or accepts a `oneOf` change that makes old inputs match multiple variants. | Tests: Cloud `_internal/capabilities.test.ts` covers nested additive unions, required disjoint tags, removed or narrowed branches, overlaps, optional tags, and unchanged result-union restrictions. |
 | An app adds an unnecessary administration group | A single administration entry declares `adminNav`, separating it from the shared app administration list. | Test: Pulse `frontend/admin/navigation.render.test.ts` checks the German and English SSR sidebar and mobile snapshot, active link, default data-store tab, and unchanged admin-only route access. Convention: use `adminHref` for one app administration entry. |
@@ -188,6 +190,13 @@ convention still needs a check or a test.
 
 ## Lessons
 
+### Spread props never reached Pulse, Grids scanner and Weather settings islands
+
+- **What happened:** Every Pulse base page showed "This section could not be displayed" after load; the browser threw `Cannot read properties of undefined (reading 'view')`.
+- **Root cause:** The `@k2b/ssr` island transform serialized only named JSX attributes and skipped `JSXSpreadAttribute`, so `<PulseWorkspace {...workspaceProps} />` hydrated with `{}`. The Grids scanner and Weather settings islands used the same pattern.
+- **Error class:** A build transform silently drops a supported JSX form, so server and browser receive different props.
+- **Guard:** The transform merges spread and named attributes with Solid's `mergeProps`, as Solid renders them; a unit test renders a transformed page and decodes its `data-props`, including order, `undefined` fallback and an overridden getter.
+
 ### Pulse retention confirmation and lowered policy limits
 
 - **What happened:** A retention confirmation could delete data under settings the person had never previewed; lowering the raw retention maximum also blocked unrelated settings edits.
@@ -207,6 +216,13 @@ convention still needs a check or a test.
 - **Root cause:** Every replica wrote the same keys and deleted them unconditionally on stop. No membership check protected the shared entries from a stop racing a new replica’s start.
 - **Error class:** Shared resource removed by one of several owners.
 - **Guard:** The replica-membership cases in `heartbeat.test.ts` cover clean stops, surge races, TTL expiry, late writes, registry failures, a survivor replacing the entry of a departed newer replica, and a newer replica taking back an entry that an older one repaired. A stale stop snapshot cannot remove shared entries unless at least half the membership lease remains. `heartbeat.integration.test.ts` checks real Sync watches. The nightly scale-acceptance `chat-replica-stop` scenario checks gateway requests across a graceful stop and a surge rollout, and requires the container to be stopped with exit code 0 and no OOM kill before removal.
+
+### Pulse pages rendered without the Pulse stylesheet
+
+- **What happened:** Every Pulse page linked `/public/pulse/app.css`, but the gateway answered it with 404, so overview, SQL console and settings showed unstyled text.
+- **Root cause:** A September change removed `/public/pulse` from the Pulse routes; the platform still links the stylesheet and favicon below that prefix. Browser harnesses load the stylesheet directly, so no test noticed.
+- **Error class:** An app links assets below a prefix it never declared to the gateway.
+- **Guard:** The `app-public-route` check requires the app's own `/public/<id>` prefix in every app config that declares pages below `/app/` or `/admin/`.
 
 ### Mail rows missed changes outside the detail page
 
