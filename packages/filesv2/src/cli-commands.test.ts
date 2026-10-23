@@ -743,17 +743,22 @@ test.each(
   const local = join(await directory(), "report.txt");
   await writeFile(local, "report");
   const nativeFetch = globalThis.fetch;
-  const nativeTimeout = AbortSignal.timeout;
   const deadlines: number[] = [];
   let stalledRequests = 0;
+  let requestDeadline: AbortController;
+  // Expire only once the intended request reaches its stalled transport boundary.
+  // A short real timer can expire while an earlier area lookup is still running.
   const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
     deadlines.push(ms);
-    return nativeTimeout(40);
+    requestDeadline = new AbortController();
+    return requestDeadline.signal;
   });
   globalThis.fetch = Object.assign(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       if (new URL(String(input)).pathname.includes(route)) {
         stalledRequests++;
+        const deadline = requestDeadline;
+        const expire = () => deadline.abort(new DOMException("Cloud deadline", "TimeoutError"));
         if (stall === "body" || stall === "503 body")
           return new Response(
             new ReadableStream({
@@ -761,12 +766,16 @@ test.each(
                 controller.enqueue(new TextEncoder().encode('{"items":'));
                 init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason), { once: true });
               },
+              pull() {
+                expire();
+              },
             }),
             { status: stall === "503 body" ? 503 : 200, headers: { "content-type": "application/json" } },
           );
         return new Promise<Response>((_, reject) => {
           init?.signal?.throwIfAborted();
           init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+          queueMicrotask(expire);
         });
       }
       return nativeFetch(input, init);

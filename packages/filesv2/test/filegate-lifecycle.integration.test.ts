@@ -256,50 +256,59 @@ suite("real Filegate directory lifecycle", () => {
       expect(auditEvents).toContainEqual({ action, outcome: "allowed" });
   }, 60_000);
 
-  test("two concurrent upload sequences commit all forty files into one root and base", async () => {
-    const baseId = `freeipa:users:${id(ipaUser)}`;
-    const folder = "concurrent-uploads";
-    const root = client.root("freeipa");
-    const target = `${prefix}/home/${name(ipaUser)}/${folder}`;
-    await root.mkdir(target, { ownership: { uid, gid, dirMode: "0700" } });
-    const failures: string[] = [];
-    const uncommitted = new Set<string>();
-    try {
-      for (let index = 0; index < 20; index++) {
-        // This per-pair barrier finishes both transfers before starting either commit, so the two
-        // commits contend for the root lock the way two tabs do.
-        const pair = await Promise.all(
-          [0, 1].map(async (tab) => {
-            const blob = new Blob([`tab ${tab}, file ${index}`]);
-            const upload = await service.upload(testCall(ipaUser), {
-              baseId,
-              path: `${folder}/tab-${tab}-${index}.txt`,
-              size: blob.size,
-              onConflict: "error",
-              idempotencyKey: crypto.randomUUID(),
-            });
-            uncommitted.add(upload.id);
-            if (!upload.url) throw new Error("Expected an open upload session");
-            await client.directSession({ url: upload.url, expires: upload.expires, operations: ["write"] }).put(0, blob);
-            return upload;
-          }),
-        );
-        const settled = await Promise.allSettled(pair.map((upload) => service.commitUpload(testCall(ipaUser), { baseId, id: upload.id })));
-        settled.forEach((result, tab) => {
-          if (result.status === "fulfilled") uncommitted.delete(pair[tab]!.id);
-          else failures.push(`tab-${tab}-${index}: ${(result.reason as { code?: string }).code ?? String(result.reason)}`);
-        });
+  // Keep both tabs, the shared root/base and all forty files. Bound each group of
+  // five contested pairs separately so fixture work cannot overrun one test and
+  // leak a still-running uploader into the editor/cleanup tests that follow.
+  test.each([0, 5, 10, 15])(
+    "two concurrent upload sequences commit five pairs starting at %i into one root and base",
+    async (first) => {
+      const baseId = `freeipa:users:${id(ipaUser)}`;
+      const folder = "concurrent-uploads";
+      const root = client.root("freeipa");
+      const target = `${prefix}/home/${name(ipaUser)}/${folder}`;
+      if (first === 0) await root.mkdir(target, { ownership: { uid, gid, dirMode: "0700" } });
+      const failures: string[] = [];
+      const uncommitted = new Set<string>();
+      try {
+        for (let index = first; index < first + 5; index++) {
+          // This per-pair barrier finishes both transfers before starting either commit, so the two
+          // commits contend for the root lock the way two tabs do.
+          const pair = await Promise.all(
+            [0, 1].map(async (tab) => {
+              const blob = new Blob([`tab ${tab}, file ${index}`]);
+              const upload = await service.upload(testCall(ipaUser), {
+                baseId,
+                path: `${folder}/tab-${tab}-${index}.txt`,
+                size: blob.size,
+                onConflict: "error",
+                idempotencyKey: crypto.randomUUID(),
+              });
+              uncommitted.add(upload.id);
+              if (!upload.url) throw new Error("Expected an open upload session");
+              await client.directSession({ url: upload.url, expires: upload.expires, operations: ["write"] }).put(0, blob);
+              return upload;
+            }),
+          );
+          const settled = await Promise.allSettled(
+            pair.map((upload) => service.commitUpload(testCall(ipaUser), { baseId, id: upload.id })),
+          );
+          settled.forEach((result, tab) => {
+            if (result.status === "fulfilled") uncommitted.delete(pair[tab]!.id);
+            else failures.push(`tab-${tab}-${index}: ${(result.reason as { code?: string }).code ?? String(result.reason)}`);
+          });
+        }
+        expect(failures).toEqual([]);
+        expect((await service.list(testCall(ipaUser), { baseId, path: folder })).items).toHaveLength((first + 5) * 2);
+        for (let index = 0; index < first + 5; index++)
+          for (const tab of [0, 1])
+            expect(await (await root.contentRaw(`${target}/tab-${tab}-${index}.txt`)).text()).toBe(`tab ${tab}, file ${index}`);
+      } finally {
+        // Best effort, one at a time: Filegate bounds concurrent Unix executions, and the suite removes its prefix anyway.
+        for (const uploadId of uncommitted) await service.abortUpload(testCall(ipaUser), { baseId, id: uploadId }).catch(() => undefined);
       }
-      expect(failures).toEqual([]);
-      expect((await service.list(testCall(ipaUser), { baseId, path: folder })).items).toHaveLength(40);
-      for (let index = 0; index < 20; index++)
-        for (const tab of [0, 1])
-          expect(await (await root.contentRaw(`${target}/tab-${tab}-${index}.txt`)).text()).toBe(`tab ${tab}, file ${index}`);
-    } finally {
-      // Best effort, one at a time: Filegate bounds concurrent Unix executions, and the suite removes its prefix anyway.
-      for (const uploadId of uncommitted) await service.abortUpload(testCall(ipaUser), { baseId, id: uploadId }).catch(() => undefined);
-    }
-  }, 60_000);
+    },
+    60_000,
+  );
 
   test("WOPI and Markdown publish through real Filegate with stale-save protection on unmanaged storage", async () => {
     configuration.collabora = { url: "http://localhost:9980", internalUrl: "", wopiOrigin: "", documentFormat: "odf" };
