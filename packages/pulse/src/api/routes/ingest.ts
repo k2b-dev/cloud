@@ -2,7 +2,7 @@ import { type AuthContext, auth, err, fail, getLocale, respond, v } from "@k2b/c
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { pulseService } from "../../service";
-import { ingestResponses, ingestTimeout, respondIngest } from "../ingest-response";
+import { ingestJsonBody, ingestResponses, ingestTimeout, respondIngest } from "../ingest-response";
 import { IngestBatchSchema } from "../schemas";
 
 const routes = new Hono<AuthContext>().post(
@@ -14,6 +14,7 @@ const routes = new Hono<AuthContext>().post(
     summary: "Ingest Pulse metrics, events, and states by source API key",
     responses: ingestResponses,
   }),
+  ingestJsonBody,
   v("json", IngestBatchSchema, () => ({ code: "BAD_INPUT", message: "Invalid ingest batch. Check telemetry fields and types." })),
   async (c) => {
     const actor = c.get("actor");

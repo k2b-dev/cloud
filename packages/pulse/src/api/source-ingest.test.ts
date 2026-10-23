@@ -155,14 +155,14 @@ test("source counts keep the extended timeout until their response resolves", as
   }
 });
 
-for (const batch of [{ events: [{ kind: "invalid", unknown: true }] }, { metrics: [{ name: "invalid", value: "text" }] }]) {
+for (const batch of ["{", { events: [{ kind: "invalid", unknown: true }] }, { metrics: [{ name: "invalid", value: "text" }] }]) {
   test("source ingest schema errors carry BAD_INPUT without calling the writer", async () => {
     const ingest = spyOn(pulseService.ingest, "batch");
     try {
       const response = await app.request(path, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(batch),
+        body: typeof batch === "string" ? batch : JSON.stringify(batch),
       });
       expect(response.status).toBe(400);
       expect(await response.json()).toMatchObject({ code: "BAD_INPUT" });

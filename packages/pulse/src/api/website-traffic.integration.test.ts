@@ -161,11 +161,11 @@ suiteFor(
       });
       expect(conflict.status).toBe(409);
       expect(await conflict.json()).toEqual({ code: "CONFLICT", message: "Idempotency key was already used for a different ingest batch" });
-      for (const batch of [{ events: [{ kind: "invalid", unknown: true }] }, { metrics: [{ name: "invalid", value: "text" }] }]) {
+      for (const batch of ["{", { events: [{ kind: "invalid", unknown: true }] }, { metrics: [{ name: "invalid", value: "text" }] }]) {
         const response = await fetch(config.endpoint, {
           method: "POST",
           headers: { authorization: `Bearer ${config.token}`, "content-type": "application/json" },
-          body: JSON.stringify(batch),
+          body: typeof batch === "string" ? batch : JSON.stringify(batch),
         });
         expect(response.status).toBe(400);
         expect(await response.json()).toMatchObject({ code: "BAD_INPUT" });

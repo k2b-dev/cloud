@@ -191,7 +191,8 @@ An authenticated lookup of a deleted source or base returns `404 NOT_FOUND`. Nor
 tokens, so later requests using those tokens return `401`. Recovery blocks retain
 `409 PULSE_BASE_WRITE_BLOCKED` and their recovery guidance.
 
-Schema validation failures and service input errors return `400 BAD_INPUT`.
+Malformed JSON, schema validation failures and service input errors return
+`400 BAD_INPUT`.
 Fix the batch before retrying. Reusing an idempotency key for a different batch
 returns `409 CONFLICT`; retry only the original batch with that key.
 
