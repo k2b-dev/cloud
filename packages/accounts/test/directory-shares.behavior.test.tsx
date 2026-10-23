@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 
 const accountId = "11111111-1111-4111-8111-111111111111";
@@ -14,6 +14,33 @@ const waitFor = async (predicate: () => boolean) => {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("Expected directory UI state did not arrive");
+};
+
+// Happy DOM lacks the native popover API. Browser tests cover its actual behavior.
+const createDirectoryDom = () => {
+  const dom = createDomTestHarness();
+  const open = new WeakSet<HTMLElement>();
+  const prototype = HTMLElement.prototype;
+  const matches = prototype.matches;
+  const toggle = (element: HTMLElement, newState: "open" | "closed") =>
+    element.dispatchEvent(Object.assign(new Event("toggle"), { newState, oldState: newState === "open" ? "closed" : "open" }));
+  Object.defineProperty(prototype, "matches", {
+    configurable: true,
+    writable: true,
+    value(this: HTMLElement, selector: string): boolean {
+      return selector === ":popover-open" ? open.has(this) : matches.call(this, selector);
+    },
+  });
+  prototype.showPopover = function () {
+    if (open.has(this)) return;
+    open.add(this);
+    toggle(this, "open");
+  };
+  prototype.hidePopover = function () {
+    if (open.delete(this)) toggle(this, "closed");
+  };
+  delegateEvents(["click", "input", "keydown", "pointerdown", "pointermove"]);
+  return dom;
 };
 
 const load = async () => {
@@ -33,7 +60,7 @@ describe("directory share administration", () => {
   let cleanup = () => {};
   afterEach(() => cleanup());
   test("shares a named entry, retains a failed change for retry, then revokes it", async () => {
-    const dom = createDomTestHarness();
+    const dom = createDirectoryDom();
     const requests: string[] = [];
     let granted = false;
     let failGrant = true;
@@ -108,7 +135,7 @@ describe("directory share administration", () => {
     expect(requests.filter((request) => request.startsWith("DELETE "))).toHaveLength(1);
   });
   test("a failed recipient switch never displays the previous recipient's entries", async () => {
-    const dom = createDomTestHarness();
+    const dom = createDirectoryDom();
     const secondId = "33333333-3333-4333-8333-333333333333";
     let secondFails = true;
     let release: ((value: Response) => void) | undefined;
@@ -171,7 +198,7 @@ describe("directory share administration", () => {
     expect(dom.root.textContent).not.toContain("First private entry");
   });
   test("revoking share 21 on page two returns to the remaining twenty entries", async () => {
-    const dom = createDomTestHarness();
+    const dom = createDirectoryDom();
     let total = 21;
     const network = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input), "http://localhost");

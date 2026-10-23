@@ -204,14 +204,17 @@ describe("PermissionEditor group coverage in a browser", () => {
   ];
 
   // Loading the members changes nothing in the row (see the behavior test), so the server-rendered layout is final.
-  test("the members toggle stays whole beside a long group name on phones", async () => {
-    for (const name of ["Studierendenvertretung Vorstand", longName]) {
-      for (const [width, locale] of [
-        [320, "de"],
-        [375, "de"],
-        [390, "en"],
-        [1024, "de"],
-      ] as const) {
+  for (const [nameKind, name] of [
+    ["long group", "Studierendenvertretung Vorstand"],
+    ["unbroken group", longName],
+  ] as const) {
+    for (const [width, locale] of [
+      [320, "de"],
+      [375, "de"],
+      [390, "en"],
+      [1024, "de"],
+    ] as const) {
+      test(`${nameKind}, ${width}px, ${locale}: the members toggle stays whole`, async () => {
         const tab = await open(width, locale, groupEntries(name));
         try {
           const layout = await tab.evaluate(() => {
@@ -241,9 +244,9 @@ describe("PermissionEditor group coverage in a browser", () => {
         } finally {
           await tab.close();
         }
-      }
+      });
     }
-  });
+  }
 });
 
 const openHarness = async (width: number) => {
