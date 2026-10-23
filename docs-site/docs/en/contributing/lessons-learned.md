@@ -190,6 +190,7 @@ convention still needs a check or a test.
 | Export safety checked against a different value | A numeric sort key exempts formatted text such as `-1 +1` from formula escaping. | Test: `ui/test/chart-explorer.behavior.test.ts` copies real ChartExplorer cells with numeric sort keys and checks formulas, compact suffixes, units and plain numeric values (#1342). |
 | User navigation mistaken for an async action's own navigation | Every draft-key change keeps an app opening active, leaving another chat's composer read-only. | Tests: `chat-slash.behavior.test.ts` requires `follow()` for one draft move and cancels unannounced changes; Assistant's `composer-app-commands.behavior.test.tsx` checks that editing returns before the previous save finishes. |
 | Nothing-opened outcome read as success | A call that shows its own failure notice and resolves without a value counts as done, so the caller drops state the person still needs. | Tests: `commands.behavior.test.tsx` checks that `openCommand` resolves `false` when nothing opened; Assistant's `composer-app-commands.behavior.test.tsx` checks that a Command whose code cannot load keeps the slash and saves the live draft again. |
+| A fixed screen trapped in an ancestor stacking context | A phone screen has a higher z-index than shell navigation, but its positioned ancestor stacks below that navigation, so the shell intercepts touches. | Test: Chat `ChatWorkspace.shell.browser.test.ts` renders the real Cloud Layout and checks unforced phone touch, focus and acknowledged send, desktop keyboard send, resize and return navigation in Chromium and WebKit ([#1676](https://github.com/k2b-dev/cloud/issues/1676)). |
 
 ## Lessons
 
@@ -946,6 +947,12 @@ convention still needs a check or a test.
 - **Error class:** Relative navigation URLs crossing from a web page into an offline document.
 - **Guard:** Notebooks `note-pdf.integration.test.ts` inspects actual PDF URI annotations for the configured public origin and rejects `file://`; renderer tests preserve browser URLs, escaping, and internal anchors, and the API test checks the configured origin passed to export.
 
+### Chat’s phone composer was covered by the shell tab bar
+
+- **What happened:** The Cloud Chat tab intercepted taps on the phone conversation composer at 390 × 844 in the nightly WebKit smoke ([#1676](https://github.com/k2b-dev/cloud/issues/1676)).
+- **Root cause:** The fixed conversation’s z-index of 25 was trapped inside AppWorkspace.Main’s positioned stacking context at 1, below the sibling shell tab bar at 10. The application-only browser fixture omitted that shell boundary.
+- **Error class:** A fixed screen trapped in an ancestor stacking context.
+- **Guard:** Chat removes its Main stacking context only while the phone conversation is open. The full-shell browser test uses the actual Layout and verifies normal touch, focus and acknowledged send, first client header/composer geometry, desktop keyboard send, resize, info layering and return to the list in both engines; the original code fails at the normal textarea tap in each engine.
 ### A lost Chat create response allowed a duplicate
 
 - **What happened:** On 2026-10-21, retrying a new group chat or an explicit second chat after a lost creation response could create another chat ([#1194](https://github.com/k2b-dev/cloud/issues/1194)).

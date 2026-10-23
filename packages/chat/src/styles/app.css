@@ -44,6 +44,10 @@
 
 /* A phone shows the chat as its own screen over the visible part of the page, so the keyboard never hides the composer. */
 @media (max-width: 47.999rem) {
+  /* Let the full-screen conversation stack above the shell, outside Main's desktop stacking context. */
+  .chat-workspace__main:has(> .chat-conversation) {
+    z-index: auto;
+  }
   .chat-conversation {
     /* follow-viewport.ts replaces both with the visual viewport's once the chat runs in the browser. */
     --chat-viewport-top: 0px;
