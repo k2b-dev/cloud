@@ -367,7 +367,6 @@ services:
     environment:
       <<: *env
       APP_ID: weather
-      GEO_ALLOWED_TARGETS: ${GEO_ALLOWED_TARGETS:-}
     profiles: [extra]
     volumes:
       - ./packages/cloud/src:/app/packages/cloud/src
