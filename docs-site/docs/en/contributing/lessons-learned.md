@@ -28,6 +28,10 @@ flow. Keep the saved enrollment key when a request is interrupted. Read the
 server's status before retrying a claim: only `pending` allows a new claim.
 Guard: Cloud Login's `pairing.browser.test.ts` checks outside taps, Escape,
 dragging, interrupted claims and resumption in Chromium and WebKit.
+Its status-bar test closes pairing through the explicit button. Loading-state
+tests hold mocked requests with a controlled promise until after the loading
+assertion; short sleeps can finish out of order under host load. Guard:
+`Clouds.behavior.test.tsx` ([#1780](https://github.com/k2b-dev/cloud/issues/1780)).
 
 ## Error classes
 
