@@ -51,7 +51,15 @@ import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "..
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import { isPdfName, pdfBody } from "../pdf-body";
 import { parseStableEntryRefId } from "../resource-ref";
-import { fileAction, pendingMigration, purgeActivity, recoverActivity, type UserFilesCall } from "./activity";
+import {
+  currentActivityId,
+  fileAction,
+  pendingMigration,
+  purgeActivity,
+  recoverActivity,
+  type UserFilesCall,
+  uploadAction,
+} from "./activity";
 import { normalizeSelection, runFileBatch } from "./batches";
 import { type BrowseInput, browsePage } from "./browsing";
 import { discoverEditor, signEditorToken, verifyEditorToken, wopiTimestamp } from "./collabora";
@@ -469,27 +477,52 @@ export function createFilesService(
   }
   /** Whole-document writes from Cloud: a direct lease, one PUT, and the resulting node. */
   async function writeBytes(
+    call: UserFilesCall,
     current: Awaited<ReturnType<typeof authorized>> & { target: string },
     body: Blob,
     onConflict: "error" | "overwrite",
+    templateId?: string,
   ): Promise<Node> {
     if (current.info.managed && onConflict === "overwrite" && !current.node.revision) throw new FilesError("write_conflict", 409);
     if (body.size > current.info.available) throw new FilesError("insufficient_space", 409);
-    return pendingMigration("files.write_bytes", () =>
-      current.root.put(
-        current.target,
-        body,
-        {
-          onConflict,
-          ownership: onConflict === "error" ? ownershipFor(current, false) : undefined,
-          precondition: current.info.managed
-            ? onConflict === "error"
-              ? { ifNoneMatch: true }
-              : { ifMatch: current.node.revision! }
-            : undefined,
-        },
-        AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
-      ),
+    const writeOptions = {
+      onConflict,
+      ownership: onConflict === "error" ? ownershipFor(current, false) : undefined,
+      precondition: current.info.managed
+        ? onConflict === "error"
+          ? { ifNoneMatch: true as const }
+          : { ifMatch: current.node.revision! }
+        : undefined,
+    };
+    return fileAction(
+      call,
+      {
+        action: onConflict === "overwrite" ? "file.edit" : "file.create",
+        serverUrl: current.state.config.url,
+        root: current.root.name,
+        baseId: current.inspection.binding!.id,
+        directory: false,
+        name: current.target.split("/").at(-1)!,
+        pathAfter: current.target,
+        pathBefore: onConflict === "overwrite" ? current.target : null,
+        itemId: onConflict === "overwrite" && current.info.stableIds ? current.node.id : null,
+        revisionBefore: onConflict === "overwrite" ? current.node.revision : null,
+        size: body.size,
+        writeOptions,
+        detail: templateId ? { template: templateId } : undefined,
+      },
+      () =>
+        current.root.put(
+          current.target,
+          body,
+          { ...writeOptions, metadata: { activity: currentActivityId() } },
+          AbortSignal.timeout(EDITOR_TRANSFER_TIMEOUT_MS),
+        ),
+      async (_tx, node) => {
+        if (node.root !== current.root.name || node.path !== current.target || node.directory || node.size !== body.size)
+          throw new FilesError("unavailable", 503);
+        return { itemAfterId: current.info.stableIds ? node.id : null, revisionAfter: node.revision, size: node.size };
+      },
     );
   }
 
@@ -730,6 +763,7 @@ export function createFilesService(
       !sameUploadExecution(session.execution ?? null, row.execution)
     )
       throw new FilesError("upload_changed", 409);
+    if (session.state === "committed" && !session.result) throw new FilesError("upload_changed", 409);
     if (session.result) uploadResult(current, row, session.result);
   }
   /** A commit whose response was lost is recognised from Filegate's session record; repeats are idempotent. */
@@ -761,7 +795,7 @@ export function createFilesService(
     }
     if (session.received !== session.size) throw new FilesError("upload_incomplete");
     signal?.throwIfAborted();
-    const node = await pendingMigration("files.upload_session", () => root.commitSession(sessionId));
+    const node = await uploadAction(row.id, () => root.commitSession(sessionId));
     const result = uploadResult(current, row, node);
     await uploads.finish(row.id, "committed", node);
     return result;
@@ -776,6 +810,7 @@ export function createFilesService(
     if (row.server_url !== current.state.config.url) throw new FilesError("configuration_changed", 409);
     if (!sameUploadExecution(row.execution, executionFor(current))) throw new FilesError("upload_changed", 409);
     await checkUploadTarget(current);
+    await uploads.history(row.id);
     if (row.state === "open" && !uploadSessionId(row)) row = await ensureUploadSession(current, row);
     return { row, current };
   }
@@ -792,7 +827,7 @@ export function createFilesService(
     if (!uploadSessionId(row)) {
       // Filegate retains creation keys for seven days. Never recreate an ambiguous old transfer after GC.
       if (Date.now() - row.created_at.getTime() >= UPLOAD_RECOVERY_MS || !row.write_options) throw new FilesError("receipt_unknown", 409);
-      const created = await pendingMigration("files.upload_session", () =>
+      const created = await uploadAction(row.id, () =>
         current.root.createSession(joinPath(current.target, current.name), row.size, {
           ...row.write_options,
           idempotencyKey: row.id,
@@ -802,11 +837,13 @@ export function createFilesService(
       );
       checkUploadSession(current, { ...row, filegate_session_id: created.session.id }, created.session);
       await uploads.attachSession(row.id, created.session);
-      row = { ...row, filegate_session_id: created.session.id };
+      if (created.session.state !== "open") await uploads.finish(row.id, created.session.state, created.session.result ?? null);
+      row = { ...row, filegate_session_id: created.session.id, state: created.session.state, result: created.session.result ?? null };
     }
     return row;
   }
   async function openUpload(current: Awaited<ReturnType<typeof writableParent>>, row: Upload): Promise<UploadSession> {
+    await uploads.history(row.id);
     if (row.state !== "open")
       return {
         id: row.id,
@@ -1254,18 +1291,21 @@ export function createFilesService(
         ownership: existing ? undefined : ownershipFor(current, false),
         precondition: current.info.managed ? (existing ? { ifMatch: existing.revision! } : { ifNoneMatch: true as const }) : undefined,
       };
-      const row = await uploads.reservePrivate({
-        id: input.idempotencyKey,
-        base_id: current.inspection.binding!.id,
-        user_id: current.state.self.user.id,
-        root: current.inspection.candidate.root,
-        server_url: current.state.config.url,
-        path: current.relative,
-        size: input.size,
-        write_options: writeOptions,
-        expected_revision: input.expectedRevision ?? null,
-        execution: executionFor(current),
-      });
+      const row = await uploads.reservePrivate(
+        {
+          id: input.idempotencyKey,
+          base_id: current.inspection.binding!.id,
+          user_id: current.state.self.user.id,
+          root: current.inspection.candidate.root,
+          server_url: current.state.config.url,
+          path: current.relative,
+          size: input.size,
+          write_options: writeOptions,
+          expected_revision: input.expectedRevision ?? null,
+          execution: executionFor(current),
+        },
+        { call, target, previous: existing },
+      );
       return openUpload(current, row);
     },
     async uploadLease(call: UserFilesCall, input: { baseId: string; id: string }): Promise<UploadLease> {
@@ -1556,14 +1596,14 @@ export function createFilesService(
     },
     async createFromBytes(
       call: UserFilesCall,
-      input: { baseId: string; path: string },
+      input: { baseId: string; path: string; templateId?: string },
       bytes: Uint8Array<ArrayBuffer>,
     ): Promise<EntryResult> {
       const actor = call.actor;
       if (bytes.byteLength > TEMPLATE_LIMIT) throw new FilesError("preview_too_large", 400);
       const current = await writableParent(actor, input.baseId, input.path);
       const target = joinPath(current.target, current.name);
-      const node = await writeBytes({ ...current, target }, new Blob([bytes]), "error");
+      const node = await writeBytes(call, { ...current, target }, new Blob([bytes]), "error", input.templateId);
       return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, current.relative, node) };
     },
     /** A new document starts in the administrator's format; the extension is appended here. */
@@ -1579,7 +1619,7 @@ export function createFilesService(
       } catch (error) {
         if (!(error instanceof FilegateError && error.status === 404)) throw error;
       }
-      const node = await writeBytes({ ...current, target }, await documentTemplate(extension), "error");
+      const node = await writeBytes(call, { ...current, target }, await documentTemplate(extension), "error");
       return { base: current.inspection.summary, entry: fileEntry(current.inspection.summary, relative, node) };
     },
     async editorFileInfo(token: string, id: string, requestId: string | null = null) {
@@ -1641,7 +1681,7 @@ export function createFilesService(
         )
           return { conflict: true };
         try {
-          const node = await writeBytes(latest, body, "overwrite");
+          const node = await writeBytes(latest.call, latest, body, "overwrite");
           const modified = wopiTimestamp(node.modified);
           if (!modified) throw new FilesError("unavailable", 503);
           return { modified };
@@ -1667,7 +1707,7 @@ export function createFilesService(
         return;
       }
       try {
-        await pendingMigration("files.upload_session", () => current.root.abortSession(sessionId));
+        await uploadAction(row.id, () => current.root.abortSession(sessionId));
       } catch (error) {
         // An abort may race a commit. Only a retained terminal receipt proves the outcome.
         const receipt = await privateReceipt(current.root, row, sessionId);
@@ -1746,9 +1786,14 @@ export function createFilesService(
       if (!sessionId) throw new FilesError("receipt_unknown", 409);
       const session = await privateReceipt(current.root, row, sessionId);
       checkUploadSession(current, row, session);
-      if (session.state === "committed" && session.result)
+      if (session.state === "committed" && session.result) {
+        await uploads.finish(row.id, "committed", session.result);
         return { state: "completed" as const, entry: uploadResult(current, row, session.result) };
-      if (session.state === "aborted" || session.state === "expired") return { state: "aborted" as const };
+      }
+      if (session.state === "aborted" || session.state === "expired") {
+        await uploads.finish(row.id, session.state, null);
+        return { state: "aborted" as const };
+      }
       return { state: "open" as const };
     },
     async capabilityUpload(

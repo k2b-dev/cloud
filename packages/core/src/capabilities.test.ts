@@ -22,7 +22,7 @@ import {
   type User,
 } from "@k2b/cloud/contracts";
 import * as accessService from "@k2b/cloud/server";
-import { accessRevision } from "@k2b/cloud/server";
+import { accessRevision, type RequestAuthority } from "@k2b/cloud/server";
 import { accountsAppService, audit } from "@k2b/cloud/services";
 import * as taskRuntime from "./ai-chat-tasks-runtime";
 import { aiCapabilities } from "./capabilities";
@@ -47,7 +47,14 @@ const user: User = {
   managesGroupIds: [],
 };
 
+const authority: RequestAuthority = {
+  actor: { kind: "user", user },
+  accessSubject: { type: "user", userId: user.id },
+  credentialKind: "session",
+  scopes: [],
+};
 const context: CapabilityExecutionContext = {
+  authority,
   actor: { kind: "user", user },
   accessSubject: { type: "user", userId: user.id },
   user,
@@ -262,7 +269,7 @@ describe("Core AI capabilities", () => {
     expect(await operation.review({ ...input, expectedAccessRevision: "0".repeat(64) }, context)).toMatchObject({ ok: false });
     expect(update).not.toHaveBeenCalled();
     expect(await operation.run(input, context)).toMatchObject({ ok: true, data: { data: { changed: true } } });
-    expect(update).toHaveBeenCalledWith(skill.id, "AbC234", context.accessSubject, "read", input.expectedAccessRevision);
+    expect(update).toHaveBeenCalledWith(skill.id, "AbC234", context.accessSubject, "read", input.expectedAccessRevision, authority);
     expect(operation.input.safeParse({ ...input, confirmed: true }).success).toBe(false);
     const { accessId: _accessId, ...newGrant } = input;
     expect(operation.input.safeParse({ ...newGrant, principal: { type: "public" } }).success).toBe(false);
@@ -288,7 +295,10 @@ describe("Core AI capabilities", () => {
       "ai.tasks.list",
       "entities.search",
       "geo.availability",
+      "map.style",
       "place.search",
+      "route.calculate",
+      "route.update",
     ];
     const actions = [
       "ai.chat.message",
@@ -315,7 +325,7 @@ describe("Core AI capabilities", () => {
         .filter((query) => query.openWorld)
         .map((query) => query.localId)
         .sort(),
-    ).toEqual(["address.autocomplete", "address.geocode", "address.reverse", "place.search"]);
+    ).toEqual(["address.autocomplete", "address.geocode", "address.reverse", "place.search", "route.calculate", "route.update"]);
     expect(manifest.actions.map((action) => action.localId).sort()).toEqual(actions);
     expect(manifest.actions.every((action) => action.openWorld === false)).toBe(true);
     expect(
@@ -488,7 +498,7 @@ describe("Core AI capabilities", () => {
       context,
     );
 
-    expect(list).toHaveBeenCalledWith(context.accessSubject);
+    expect(list).toHaveBeenCalledWith(context.accessSubject, { authority });
     expect(listed).toMatchObject({
       ok: true,
       data: {
@@ -502,6 +512,37 @@ describe("Core AI capabilities", () => {
       data: { data: { skillId: skill.shortId, path: "references/style.md", content: "Keep the report concise." } },
     });
     expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  test("Skill readers retain scoped authority and hide denied app content", async () => {
+    const restricted: RequestAuthority = { ...authority, credentialKind: "oauth", scopes: ["other:read"] };
+    const scopedContext = { ...context, authority: restricted };
+    const list = spyOn(aiSkills, "list").mockImplementation(async (_subject, options) =>
+      options?.authority === restricted ? [] : [skill],
+    );
+    const get = spyOn(aiSkills, "getByShortId").mockImplementation(async (_id, _subject, _permission, received) =>
+      received === restricted ? null : skill,
+    );
+    const write = spyOn(aiSkills, "update");
+    const results = [
+      await aiCapabilities.queries["ai.skills.list"].run({ query: "", limit: 20 }, scopedContext),
+      await aiCapabilities.queries["ai.skill.read"].run({ id: skill.shortId }, scopedContext),
+      await aiCapabilities.queries["ai.skill.reference.read"].run({ skillId: skill.shortId, path: "references/style.md" }, scopedContext),
+      await aiCapabilities.queries["ai.skill.access.read"].run({ skillId: skill.shortId }, scopedContext),
+      await aiCapabilities.actions["ai.skill.update"].review!(
+        { skillId: skill.shortId, expectedRevision: 1, instructions: "Changed." },
+        scopedContext,
+      ),
+      await aiCapabilities.actions["ai.skill.update"].run(
+        { skillId: skill.shortId, expectedRevision: 1, instructions: "Changed." },
+        scopedContext,
+      ),
+    ];
+    expect(list).toHaveBeenCalledWith(context.accessSubject, { authority: restricted });
+    for (const call of get.mock.calls) expect(call[3]).toBe(restricted);
+    expect(JSON.stringify(results)).not.toContain(skill.name);
+    expect(JSON.stringify(results)).not.toContain(skill.instructions);
+    expect(write).not.toHaveBeenCalled();
   });
 
   test("includes source app metadata in discovery and reads", async () => {
@@ -533,13 +574,18 @@ describe("Core AI capabilities", () => {
 
   test("reviews and executes Skill mutations through the permission-aware service", async () => {
     const get = spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
-    spyOn(aiSkills, "create").mockResolvedValue(skill);
-    spyOn(aiSkills, "update").mockResolvedValue({ ...skill, description: "Updated description.", revision: 2 });
-    spyOn(aiSkills, "setReference").mockResolvedValue({ ...skill, revision: 2 });
+    const create = spyOn(aiSkills, "create").mockResolvedValue(skill);
+    const update = spyOn(aiSkills, "update").mockResolvedValue({ ...skill, description: "Updated description.", revision: 2 });
+    const setReference = spyOn(aiSkills, "setReference").mockResolvedValue({ ...skill, revision: 2 });
     const setReferences = spyOn(aiSkills, "setReferences").mockResolvedValue({ ...skill, revision: 2 });
-    spyOn(aiSkills, "removeReference").mockResolvedValue({ ...skill, references: [], referenceCount: 0, revision: 2 });
-    spyOn(aiSkills, "setEnabled").mockResolvedValue(false);
-    spyOn(aiSkills, "delete").mockResolvedValue(true);
+    const removeReference = spyOn(aiSkills, "removeReference").mockResolvedValue({
+      ...skill,
+      references: [],
+      referenceCount: 0,
+      revision: 2,
+    });
+    const setEnabled = spyOn(aiSkills, "setEnabled").mockResolvedValue(false);
+    const remove = spyOn(aiSkills, "delete").mockResolvedValue(true);
     spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
 
     const updateReview = await aiCapabilities.actions["ai.skill.update"].review!(
@@ -583,6 +629,10 @@ describe("Core AI capabilities", () => {
       "ai.skill.delete": await aiCapabilities.actions["ai.skill.delete"].run({ skillId: skill.shortId }, idempotentContext),
     };
 
+    for (const mutation of [create, update, setReference, setReferences, removeReference, setEnabled, remove]) {
+      expect(mutation).toHaveBeenCalledTimes(1);
+      expect(mutation.mock.calls[0]?.at(-1)).toBe(authority);
+    }
     for (const [localId, result] of Object.entries(results)) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
@@ -595,15 +645,20 @@ describe("Core AI capabilities", () => {
         localId === "ai.skill.delete" ? undefined : [{ type: "core.ai.skill", id: skill.shortId, title: skill.name }],
       );
     }
-    expect(setReferences).toHaveBeenCalledWith(skill.id, context.accessSubject, {
-      skillId: skill.shortId,
-      expectedRevision: 1,
-      references: [
-        { path: "references/style.md", content: "Keep it concise." },
-        { path: "references/tone.md", content: "Use a direct tone." },
-      ],
-    });
-    expect(get).toHaveBeenCalledWith(skill.shortId, context.accessSubject, "admin");
+    expect(setReferences).toHaveBeenCalledWith(
+      skill.id,
+      context.accessSubject,
+      {
+        skillId: skill.shortId,
+        expectedRevision: 1,
+        references: [
+          { path: "references/style.md", content: "Keep it concise." },
+          { path: "references/tone.md", content: "Use a direct tone." },
+        ],
+      },
+      authority,
+    );
+    expect(get).toHaveBeenCalledWith(skill.shortId, context.accessSubject, "admin", authority);
   });
 
   test("writes the request id of an irreversible Skill delete into the audit row", async () => {

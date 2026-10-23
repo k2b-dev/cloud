@@ -7,9 +7,8 @@ The application owns the content and which regions are open.
 For browser printing, mark the complete readable content with `data-print-region`, or provide an export hint through Cloud Layout `printHint`. See [Browser printing](/en/ui/layout/print) for the region and fallback contract.
 
 The sidebar and `Main` share one base surface, white in the light theme,
-separated by space. A Detail
-column is part of that surface, with no fill, frame, or shadow. The bottom
-drawer uses the subtle surface.
+separated by space. A Detail column is part of that surface, with no fill or
+frame and a subtle leading shadow. The bottom drawer uses the subtle surface.
 Keep region wrappers transparent. A view that fills `Main`—a canvas, graph,
 editor, or empty state—is `Main`'s surface and draws no radius or border of its
 own. Placeholders in `Main` draw no box, and new views add no inset cards or
@@ -89,12 +88,17 @@ object navigation precedes view controls in both reading and keyboard order.
 Callers without an explicit slot retain the automatic head. Individual parts may be islands.
 
 For a split list/reader page, set `Head.mobilePane` to the list region's ID.
-Below 48rem, the head and its shared Details control appear only while that
-region is active. `Main.mobilePane` remains the single selection source; the
-server and hydrated page use the same region markers. Unsplit Mains, desktop,
-and tablet keep their head. A reader must provide its own visible way back and
-a Details control with `aria-controls={appWorkspaceDetailElementId(detailId)}`;
-closing details returns focus to that control while the head is hidden.
+Below 48rem, the head appears only while that region is active; while no
+object is available it shows neither the shared Details control nor room for
+it. `Main.mobilePane` remains
+the single selection source; the server and hydrated page use the same region
+markers. Unsplit Mains, desktop, and tablet keep their head. A reader must
+provide its own visible way back and a Details control with
+`aria-controls={appWorkspaceDetailElementId(detailId)}`; closing details
+returns focus to that control while the head is hidden.
+
+Where a place has no views, `views` may hold a plain title instead, such as a
+folder name. On phones it keeps the same inset from the edge as the view strip.
 
 Give the chips `showValue`, keep secondary actions quiet, and put the one filled
 action in `primary`.
@@ -427,13 +431,17 @@ minimum plus the Detail width token plus an 8 px inset:
 | `lg` (480 px) | 808 px |
 | `xl` (544 px) | 872 px |
 
-An open waiting drawer uses `--k2b-shadow-side` to cast a soft shadow toward
-the covered content. The token mirrors the phone sheet: a leftward shadow
-in light and dark, with no change to the drawer size or Main.
+An open waiting drawer rounds its top-left corner with `--k2b-radius-surface`.
+Its `--k2b-shadow-side` shadow extends toward the covered content and above the
+panel, continuing around that corner in light and dark. The drawer size and
+Main stay unchanged.
 
-The column has no fill, frame, radius, or shadow; it shares the workspace
-surface. Its top, right, and bottom inset is 8 px. This replaces the earlier
-floating-detail appearance.
+The column shares the workspace surface without its own fill, frame, or radius.
+A subtle 24 px shadow extends to its left, from the workspace's top to its
+bottom. Over the final 96 px it becomes lighter while retaining a visible
+edge. The panel content keeps its 8 px top, right, and bottom inset. This
+paint does not move content or alter the resize handle; it disappears when
+Detail closes or becomes a drawer or phone sheet.
 
 A waiting Detail stays mounted and `open` stays true. Its **Details** button
 in the head controls it through `aria-controls` and `aria-expanded`. The head
@@ -1263,6 +1271,13 @@ Parse/serialize use a URI-encoded JSON string; normalize accepts a decoded objec
 
 `appWorkspaceDetailElementId` returns the Detail region's DOM id for
 `aria-controls`. Pass the same stable `id` as `AppWorkspace.Detail`.
+
+With `Detail.onOpen`, a responsive layout that hides a focused Details control
+moves focus to a visible, enabled control for the same Detail in the same
+workspace. Application controls participate through this `aria-controls`
+reference. An open `phone="page"` Detail receives focus on its title instead.
+The transfer does not open or close the panel. Moving focus elsewhere takes
+precedence.
 
 ## Accessibility
 

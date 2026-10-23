@@ -14,6 +14,7 @@ import {
   ChatSnapshotSchema,
   ConversationPageSchema,
   ConversationSchema,
+  type CreateConversationSchema,
   CreateOutcomeSchema,
   MemberPageSchema,
   MemberPreviewSchema,
@@ -37,7 +38,7 @@ type MessagePage = z.infer<typeof MessagePageSchema>;
 type ChangesPage = z.infer<typeof ChangesPageSchema>;
 type Summary = Extract<z.infer<typeof ChatLiveEventSchema>, { type: "summary" }>;
 export type ChatStoreApi = {
-  create(input: { members: MemberPrincipal[]; name?: string; allowDuplicate?: boolean }): Promise<z.infer<typeof CreateOutcomeSchema>>;
+  create(input: z.input<typeof CreateConversationSchema>): Promise<z.infer<typeof CreateOutcomeSchema>>;
   updateDetails(id: string, patch: { name?: string | null; icon?: string | null; purpose?: string | null }): Promise<Conversation>;
   members(id: string, query: { q?: string; cursor?: string }): Promise<z.infer<typeof MemberPageSchema>>;
   previewMembers(id: string, members: MemberPrincipal[]): Promise<z.infer<typeof MemberPreviewSchema>>;

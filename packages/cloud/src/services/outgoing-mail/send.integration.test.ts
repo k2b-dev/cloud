@@ -514,7 +514,12 @@ suiteFor("database", "nats")("outgoing mail acceptance and Core delivery", () =>
         const expired = await accept();
         await sql`UPDATE outgoing_mail.messages SET created_at = now() - INTERVAL '15 days' WHERE id = ${content.id}::uuid`;
         await sql`UPDATE outgoing_mail.messages SET created_at = now() - INTERVAL '40 days' WHERE id = ${expired.id}::uuid`;
-        expect(await (await routes.request("/retention")).json()).toEqual({ contentDays: 90, recordDays: 365 });
+        const unreadable = {
+          "outgoing_mail.content_retention_days": false,
+          "outgoing_mail.record_retention_days": false,
+        };
+        const previous = { contentDays: 90, recordDays: 365, unreadable };
+        expect(await (await routes.request("/retention")).json()).toEqual(previous);
         await retainOutgoingMail();
         expect((await outgoingMailMessages.read(content.id))?.text_body).toBe(input.text);
         expect(await outgoingMailMessages.read(expired.id)).toBeDefined();
@@ -525,11 +530,11 @@ suiteFor("database", "nats")("outgoing mail acceptance and Core delivery", () =>
           body: JSON.stringify(next),
         });
         expect(saved.status).toBe(200);
-        expect(await saved.json()).toEqual(next);
-        expect(await (await routes.request("/retention")).json()).toEqual(next);
+        expect(await saved.json()).toEqual({ ...next, unreadable });
+        expect(await (await routes.request("/retention")).json()).toEqual({ ...next, unreadable });
         expect(
           await sql<{ metadata: unknown }[]>`SELECT metadata FROM audit.events WHERE action = 'outgoing_mail.retention.update'`,
-        ).toEqual([{ metadata: { old: { contentDays: 90, recordDays: 365 }, new: next } }]);
+        ).toEqual([{ metadata: { old: previous, new: next } }]);
         await retainOutgoingMail();
         expect((await outgoingMailMessages.read(content.id))?.text_body).toBeNull();
         expect(await outgoingMailMessages.read(expired.id)).toBeUndefined();

@@ -691,6 +691,12 @@ export const bottleneckCandidateSchema = z.object({
   title: z.string().min(1),
   /** Repository-relative `path:line` of the code that owns the cost. */
   location: z.string(),
+  /** The complete source line, with surrounding whitespace removed. */
+  anchor: z
+    .string()
+    .refine((value) => !/[\r\n]/.test(value), "Anchor must be one non-empty source line")
+    .trim()
+    .min(1),
   /** A key of timeMetrics(result); its value from this run ranks the candidate. */
   metric: z.string().min(1),
   evidence: z.string().min(1),
@@ -700,7 +706,7 @@ export type BottleneckCandidate = z.infer<typeof bottleneckCandidateSchema>;
 
 /**
  * Validates candidates against the repository and this run, then ranks them by the
- * measured time of their metric. Refuses a candidate without a real file:line or
+ * measured time of their metric. Refuses a blank or changed source line, a candidate without a real file:line or
  * without a measured number, fewer than `top` candidates, and a list that mixes
  * server and browser metrics.
  */
@@ -714,9 +720,15 @@ export function rankBottlenecks(metrics: Map<string, number>, candidates: unknow
       throw new Error(`Bottleneck "${candidate.title}" location must be repository-relative`);
     const path = join(repository, file!);
     if (!existsSync(path)) throw new Error(`Bottleneck "${candidate.title}" location does not exist: ${file}`);
-    const lines = readFileSync(path, "utf8").split("\n").length;
-    if (Number(line) < 1 || Number(line) > lines)
-      throw new Error(`Bottleneck "${candidate.title}" line ${line} is outside ${file} (${lines} lines)`);
+    const lines = readFileSync(path, "utf8").split("\n");
+    if (Number(line) < 1 || Number(line) > lines.length)
+      throw new Error(`Bottleneck "${candidate.title}" line ${line} is outside ${file} (${lines.length} lines)`);
+    const source = lines[Number(line) - 1]!.trim();
+    if (!source) throw new Error(`Bottleneck "${candidate.title}" location points to a blank line: ${candidate.location}`);
+    if (source !== candidate.anchor)
+      throw new Error(
+        `Bottleneck "${candidate.title}" source anchor no longer matches ${candidate.location}; check the code and update the reference`,
+      );
     const value = metrics.get(candidate.metric);
     if (value === undefined || !Number.isFinite(value))
       throw new Error(`Bottleneck "${candidate.title}" has no measured number in this run for ${candidate.metric}`);

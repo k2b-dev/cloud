@@ -4,6 +4,7 @@ import {
   editComposerSession,
   newComposerSession,
   observeComposerRevision,
+  sameComposerSubmission,
   sendBesideComposer,
 } from "./composer-session";
 
@@ -66,4 +67,13 @@ test("a composer in conflict sends nothing beside it", async () => {
   expect(await sendBesideComposer(session, { send: count, hasContent: () => true, save: count })).toBe(false);
   expect(calls).toBe(0);
   expect(session.conflict).toBe(true);
+});
+
+test("accepted submission recognizes restored content without discarding newer text or replacement files", () => {
+  const file = new File(["original"], "note.txt");
+  const sent = { message: "Sent text", files: [file], modelProfileId: "standard" };
+  expect(sameComposerSubmission({ message: "Sent text", files: [file] }, sent)).toBe(true);
+  expect(sameComposerSubmission({ ...sent, message: "Sent text\nNew text" }, sent)).toBe(false);
+  expect(sameComposerSubmission({ ...sent, files: [new File(["other"], "note.txt")] }, sent)).toBe(false);
+  expect(sameComposerSubmission({ message: "Sent text" }, sent)).toBe(false);
 });
