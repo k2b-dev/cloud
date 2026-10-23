@@ -5,7 +5,7 @@ section: Operations
 order: 1130
 description: Build a standalone application image and connect it to a Cloud deployment.
 tags: [build, docker, deployment]
-updated: 2026-10-21
+updated: 2026-10-22
 ---
 
 # Build and deploy
@@ -14,6 +14,17 @@ The Cloud build creates one self-contained Bun bundle for one application.
 
 It emits the server, Solid island chunks, application CSS, static assets, and
 optional application-specific build output.
+
+## Updating sharing controls
+
+Applications rebuilt with the current Cloud package include service accounts
+and agents in their shared permission picker and access CLI by default. Deploy
+the rebuilt applications to update these surfaces; existing grants do not
+change. Update Core before the consuming applications to provide the directory
+kind and status filters. The permission editor searches active accounts for new
+grants and keeps existing grant rows visible. An application with a documented
+user-backed workflow can keep `allowServiceAccounts={false}`. See
+[resource authorization](/en/docs/identity/authorization).
 
 ## Build a standalone application
 
