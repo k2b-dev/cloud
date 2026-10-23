@@ -88,6 +88,7 @@ export {
   paginate,
   paginateItems,
   password,
+  recursiveServiceAccountGroupIdsSubquery,
   resolveDisplayNames,
   services,
   tryCatch,

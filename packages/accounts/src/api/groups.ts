@@ -9,6 +9,7 @@ import {
   CreateGroupSchema,
   createPagination,
   ErrorResponseSchema,
+  GroupManagerInputSchema,
   GroupMemberInputSchema,
   MessageResponseSchema,
   PaginationQuerySchema,
@@ -52,6 +53,7 @@ type GroupRelationMutation = (config: {
   provider: "local" | "ipa";
   userId?: string;
   groupId?: string;
+  serviceAccountId?: string;
 }) => Promise<Result<unknown>>;
 
 const handleGroupRelation = async (
@@ -72,10 +74,11 @@ const handleGroupRelation = async (
       provider: group.provider,
       userId: type === "user" ? principalId : undefined,
       groupId: type === "group" ? principalId : undefined,
+      serviceAccountId: type === "service_account" ? principalId : undefined,
     });
     if (!result.ok) return result;
     return ok({
-      message: `${type === "user" ? "User" : "Group"} "${principalId}" ${verbPhrase}.`,
+      message: `${type === "user" ? "User" : type === "group" ? "Group" : "Service account"} "${principalId}" ${verbPhrase}.`,
     });
   });
 };
@@ -140,7 +143,8 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Groups"],
       summary: "Add member to group",
-      description: "Add a user or group as a member. Admins and group managers can perform this action where allowed.",
+      description:
+        "Add a user, group, or active standalone/agent account as a local group member. Admins and group managers can perform this action where allowed.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Member added"),
@@ -159,7 +163,7 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Groups"],
       summary: "Remove member from group",
-      description: "Remove a user or group member. Admins and group managers can perform this action where allowed.",
+      description: "Remove a user, group, or service account member. Admins and group managers can perform this action where allowed.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(MessageResponseSchema, "Member removed"),
@@ -188,7 +192,7 @@ const app = new Hono<AuthContext>()
       },
     }),
     v("param", GroupIdParamSchema),
-    v("json", GroupMemberInputSchema),
+    v("json", GroupManagerInputSchema),
     (c) => handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.manager.add, "added as manager"),
   )
   .delete(
@@ -207,7 +211,7 @@ const app = new Hono<AuthContext>()
       },
     }),
     v("param", GroupIdParamSchema),
-    v("json", GroupMemberInputSchema),
+    v("json", GroupManagerInputSchema),
     (c) => handleGroupRelation(c, c.req.valid("param").id, c.req.valid("json"), accountsService.group.manager.remove, "removed as manager"),
   )
   // All routes below require admin role

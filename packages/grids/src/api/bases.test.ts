@@ -77,6 +77,19 @@ const requireDelegatedServiceAccount =
     await next();
   };
 
+const requireMachineRead =
+  (kind: "standalone" | "agent"): MiddlewareHandler<AuthContext> =>
+  async (c, next) => {
+    c.set("actor", {
+      kind: "service_account",
+      serviceAccount: { ...resourceServiceAccount, kind, appId: null, resourceType: null, resourceId: null },
+      delegatedUser: null,
+      scopes: ["grids:read"],
+    });
+    c.set("accessSubject", { type: "service_account", serviceAccountId: resourceServiceAccount.id });
+    await next();
+  };
+
 describe("Grids bases API", () => {
   beforeEach(() => {
     listVisibleParams = null;
@@ -130,62 +143,73 @@ describe("Grids bases API", () => {
   });
 
   test("rejects base creation from read-only and resource-bound credentials", async () => {
+    const create = spyOn(gridsService.base, "create");
     const request = {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "Forbidden base" }),
     };
 
-    expect((await createBasesApi({ requireAuthenticated: requireDelegatedServiceAccount(["read"]) }).request("/", request)).status).toBe(
-      403,
-    );
+    for (const kind of ["standalone", "agent"] as const) {
+      const response = await createBasesApi({ requireAuthenticated: requireMachineRead(kind) }).request("/", request);
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ code: "FORBIDDEN", message: "The API credential does not grant the required Grids scope." });
+    }
     expect((await createBasesApi({ requireAuthenticated: requireServiceAccount(["grids:*"]) }).request("/", request)).status).toBe(403);
+    expect(create).not.toHaveBeenCalled();
   });
 
-  test("creates a Base with document defaults through the canonical field", async () => {
-    let createInput: unknown = null;
-    spyOn(gridsService.base, "create").mockImplementation(async (input) => {
-      createInput = input;
-      return {
-        ok: true,
-        data: {
-          id: "44444444-4444-4444-8444-444444444444",
-          shortId: "BASE01",
-          name: input.name,
-          description: input.description ?? null,
-          documentDefaults: input.documentDefaults ?? {},
-          createdBy: user.id,
-          deletedAt: null,
-          createdAt: "2026-08-23T00:00:00.000Z",
-          updatedAt: "2026-08-23T00:00:00.000Z",
-        },
+  for (const [actor, authenticate] of [
+    ["user", requireAuthenticated],
+    ["delegated full key", requireDelegatedServiceAccount([])],
+    ["delegated legacy read scope", requireDelegatedServiceAccount(["grids:read"])],
+  ] as const) {
+    test(`${actor} creates a Base with document defaults through the canonical field`, async () => {
+      let createInput: unknown = null;
+      const create = spyOn(gridsService.base, "create").mockImplementation(async (input) => {
+        createInput = input;
+        return {
+          ok: true,
+          data: {
+            id: "44444444-4444-4444-8444-444444444444",
+            shortId: "BASE01",
+            name: input.name,
+            description: input.description ?? null,
+            documentDefaults: input.documentDefaults ?? {},
+            createdBy: user.id,
+            deletedAt: null,
+            createdAt: "2026-08-23T00:00:00.000Z",
+            updatedAt: "2026-08-23T00:00:00.000Z",
+          },
+        };
+      });
+
+      const documentDefaults = {
+        legalName: "Example GmbH",
+        address: "  Main Street 1\nBuilding B ",
+        postalCode: "89073",
+        city: "Ulm",
+        countryCode: "DE",
+        taxId: "12/345/67890",
+        vatId: "DE123456789",
+        accountName: "Example GmbH",
       };
-    });
+      const response = await createBasesApi({ requireAuthenticated: authenticate }).request("/", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Invoices", documentDefaults }),
+      });
 
-    const documentDefaults = {
-      legalName: "Example GmbH",
-      address: "  Main Street 1\nBuilding B ",
-      postalCode: "89073",
-      city: "Ulm",
-      countryCode: "DE",
-      taxId: "12/345/67890",
-      vatId: "DE123456789",
-      accountName: "Example GmbH",
-    };
-    const response = await createBasesApi({ requireAuthenticated }).request("/", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: "Invoices", documentDefaults }),
+      expect(response.status).toBe(201);
+      expect(create.mock.calls[0]?.[1]).toBe(user.id);
+      expect(createInput).toEqual({
+        name: "Invoices",
+        description: null,
+        documentDefaults,
+      });
+      expect(await response.json()).toMatchObject({ documentDefaults });
     });
-
-    expect(response.status).toBe(201);
-    expect(createInput).toEqual({
-      name: "Invoices",
-      description: null,
-      documentDefaults,
-    });
-    expect(await response.json()).toMatchObject({ documentDefaults });
-  });
+  }
 
   test("updating structured document defaults still requires Base admin grants", async () => {
     const baseId = "44444444-4444-4444-8444-444444444444";

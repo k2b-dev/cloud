@@ -75,9 +75,10 @@ const FIELD_TYPE_DETAILS: Record<string, FieldReferenceDetails> = {
   },
   principal: {
     config: '{ "cardinality": "multiple" }',
-    recordValue: '[{ "type": "user", "id": "<user-uuid>" }, { "type": "group", "id": "<group-uuid>" }]',
+    recordValue:
+      '[{ "type": "user", "id": "<user-uuid>" }, { "type": "group", "id": "<group-uuid>" }, { "type": "service_account", "id": "<account-uuid>" }]',
     notes:
-      "Stores Cloud users and groups as typed references. The server rejects identities outside the writing actor's discoverable account scope.",
+      "Stores Cloud users, groups, and service accounts as typed references. The server rejects identities outside the writing actor's discoverable account scope.",
   },
   percent: {
     config: '{ "range": "percent", "decimals": 2 }',

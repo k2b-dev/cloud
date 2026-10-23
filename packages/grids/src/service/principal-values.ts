@@ -17,14 +17,14 @@ const principalValueMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      signInRequired: "Sign in to select users or groups.",
+      signInRequired: "Selecting identities requires a user-backed account directory.",
       accountUnavailable: "The current account is unavailable.",
-      selectionUnavailable: ({ field }: { field: string }) => `Field “${field}”: a selected user or group is unavailable.`,
+      selectionUnavailable: ({ field }: { field: string }) => `Field “${field}”: a selected identity is unavailable.`,
     },
     de: {
-      signInRequired: "Melde dich an, um Benutzer oder Gruppen auszuwählen.",
+      signInRequired: "Die Auswahl von Identitäten benötigt ein benutzergebundenes Kontoverzeichnis.",
       accountUnavailable: "Das aktuelle Konto ist nicht verfügbar.",
-      selectionUnavailable: ({ field }) => `Im Feld „${field}“ ist ein ausgewählter Benutzer oder eine ausgewählte Gruppe nicht verfügbar.`,
+      selectionUnavailable: ({ field }) => `Im Feld „${field}“ ist eine ausgewählte Identität nicht verfügbar.`,
     },
   },
 });
@@ -83,7 +83,7 @@ export const buildPrincipalLabelCache = async (
   const actor = await actorForUser(actorId, deps);
   if (!actor) return {};
   const labels: Record<string, string> = {};
-  for (const type of ["user", "group"] as const) {
+  for (const type of ["user", "group", "service_account"] as const) {
     // Label hydration is presentational. Keep it to one bounded directory
     // query per kind; additional values remain "Private" instead of causing
     // query fan-out on wide result pages.
@@ -92,12 +92,14 @@ export const buildPrincipalLabelCache = async (
     const result = await deps.listEntities({
       actor,
       kinds: [type],
-      ...(type === "user" ? { userIds: ids } : { groupIds: ids }),
+      ...(type === "user" ? { userIds: ids } : type === "group" ? { groupIds: ids } : { serviceAccountIds: ids }),
       pagination: { page: 1, perPage: ids.length },
     });
     for (const item of result.items) {
       if (item.kind === "user") labels[item.user.id] = item.user.displayName || item.user.uid;
       if (item.kind === "group") labels[item.group.id] = item.group.name;
+      if (item.kind === "service_account" && ids.includes(item.serviceAccount.id))
+        labels[item.serviceAccount.id] = item.serviceAccount.name;
     }
   }
   return labels;
@@ -123,29 +125,24 @@ export const validatePrincipalValuesForActor = async (
   const actor = await actorForUser(actorId, deps);
   if (!actor) return fail(err.forbidden(messages.accountUnavailable));
 
-  const users = new Set<string>();
-  const groups = new Set<string>();
-  for (const entry of entries) {
-    for (const value of entry.values) (value.type === "user" ? users : groups).add(value.id);
-  }
   const visible = new Set<string>();
-  const resolve = async (type: "user" | "group", ids: string[]) => {
+  for (const type of ["user", "group", "service_account"] as const) {
+    const ids = [...new Set(entries.flatMap((entry) => entry.values.filter((value) => value.type === type).map((value) => value.id)))];
     for (let offset = 0; offset < ids.length; offset += 100) {
       const batch = ids.slice(offset, offset + 100);
       const result = await deps.listEntities({
         actor,
         kinds: [type],
-        ...(type === "user" ? { userIds: batch } : { groupIds: batch }),
+        ...(type === "user" ? { userIds: batch } : type === "group" ? { groupIds: batch } : { serviceAccountIds: batch }),
         pagination: { page: 1, perPage: batch.length },
       });
       for (const item of result.items) {
         if (item.kind === "user") visible.add(`user:${item.user.id}`);
         if (item.kind === "group") visible.add(`group:${item.group.id}`);
+        if (item.kind === "service_account") visible.add(`service_account:${item.serviceAccount.id}`);
       }
     }
-  };
-  await resolve("user", [...users]);
-  await resolve("group", [...groups]);
+  }
 
   for (const entry of entries) {
     if (entry.values.some((value) => !visible.has(`${value.type}:${value.id}`))) {
