@@ -397,6 +397,9 @@ describe("Notebook on the shared text editor", () => {
         data.setData("text/plain", "def f():\n    return 1");
         document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
       });
+      // HTML paste can first load its parser; assert the completed document,
+      // including the unchanged fence and indentation, after the real input lands.
+      await waitForText(page, "def f():\n    return 1");
       expect(await text(page)).toBe("```python\ndef f():\n    return 1\n```");
     } finally {
       await close();

@@ -12,8 +12,13 @@ const buildHarness = async () => {
   const build = await Bun.build({
     entrypoints: [resolve(import.meta.dir, "shared-text-editor.browser-harness.tsx")],
     target: "browser",
-    format: "iife",
-    conditions: ["browser"],
+    // Keep deferred Notebook extensions deferred, as in the application's island
+    // build. An IIFE eagerly parses every diagram module on each test navigation.
+    format: "esm",
+    splitting: true,
+    minify: true,
+    naming: { entry: "harness.[ext]", chunk: "chunk-[hash].[ext]", asset: "asset-[hash].[ext]" },
+    conditions: ["browser", "production"],
     plugins: [
       {
         name: "solid-shared-text-editor-test",
@@ -37,7 +42,7 @@ const buildHarness = async () => {
     ],
   });
   if (!build.success) throw new AggregateError(build.logs, "Shared editor harness build failed");
-  return build.outputs[0]!.text();
+  return new Map(build.outputs.map((output) => [`/${basename(output.path)}`, output]));
 };
 
 const buildCss = async (entry: string) => {
@@ -55,7 +60,7 @@ export const startNotebookEditorFixture = async (port = 0) => {
   const iconCss = await Bun.file(resolve(fonts, "tabler.css")).text();
   const iconFile = /tabler-icons-[\w-]+\.woff2/.exec(iconCss)?.[0];
   if (!iconFile) throw new Error("Missing UI icon font asset");
-  const bundle = await buildHarness();
+  const scripts = await buildHarness();
   const css =
     (await buildCss(resolve(import.meta.dir, "../../../../../../../styles.css"))) +
     (await buildCss(resolve(import.meta.dir, "../../../../styles/app.css"))) +
@@ -71,12 +76,13 @@ export const startNotebookEditorFixture = async (port = 0) => {
       if (path.startsWith("/fonts/") && basename(path) === path.slice("/fonts/".length))
         return new Response(Bun.file(resolve(fonts, "fonts", basename(path))));
       if (path === "/fixture-table-action" && request.method === "POST") return tableServer.handle(request);
-      if (path === "/harness.js") return new Response(bundle, { headers: { "content-type": "application/javascript; charset=utf-8" } });
+      const script = scripts.get(path);
+      if (script) return new Response(script);
       if (path === "/styles.css") return new Response(css, { headers: { "content-type": "text/css; charset=utf-8" } });
       return new Response(
         '<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
           '<script>document.documentElement.className=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.lang=new URLSearchParams(location.search).get("locale")||"en";</script><link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" style="margin:0">' +
-          '<div id="root" style="display:flex;width:100%;height:100dvh;min-width:0"></div><script src="/harness.js"></script></body></html>',
+          '<div id="root" style="display:flex;width:100%;height:100dvh;min-width:0"></div><script type="module" src="/harness.js"></script></body></html>',
         { headers: { "content-type": "text/html" } },
       );
     },
