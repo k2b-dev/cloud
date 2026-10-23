@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 import {
   historyActivity,
   historyBase,
@@ -359,6 +359,16 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
   const { context, tab, errors } = await open(390, "light");
   try {
     await tab.locator(".filesv2-history-row").first().waitFor();
+    await tab.locator(".filesv2-history-head__filters .k2b-filter-chip").first().click();
+    await tab.locator(".k2b-filter-chip__option").filter({ hasText: "Team Vertrieb" }).click();
+    await settled(tab);
+    const chipsFit = await tab.locator(".filesv2-history-head__filters .k2b-filter-chip").evaluateAll((chips) =>
+      chips.slice(0, 4).every((chip) => {
+        const rect = chip.getBoundingClientRect();
+        return rect.left >= 15 && rect.right <= 375;
+      }),
+    );
+    expect(chipsFit).toBe(true);
     const head = await tab.evaluate(() => {
       const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
       const search = rect(".filesv2-history-search");
