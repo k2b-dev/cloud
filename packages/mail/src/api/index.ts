@@ -114,6 +114,7 @@ import {
   updateSenderIdentityTransportInputSchema,
 } from "../contracts";
 import {
+  DRAFT_DOCUMENT_EXPECTED_USER_QUERY,
   draftDocumentAdmissionSchema,
   draftDocumentRestSchema,
   draftDocumentSaveSchema,
@@ -789,6 +790,16 @@ const resolveCommentParam = resolveMailboxResourceParam("comments", "commentId",
 const resolveSavedViewParam = resolveMailboxResourceParam("savedViews", "viewId", "Saved view");
 const resolveComposeTemplateParam = resolveMailboxResourceParam("composeTemplates", "templateId", "Compose template");
 const resolveScheduledSendParam = resolveMailboxResourceParam("deliveries", "scheduledSendId", "Scheduled send");
+
+const draftDocumentAccountParameters = [
+  {
+    in: "query" as const,
+    name: DRAFT_DOCUMENT_EXPECTED_USER_QUERY,
+    required: false,
+    schema: { type: "string" as const, format: "uuid" },
+    description: "Required for browser session requests; must match the authenticated user. Optional for other credentials.",
+  },
+];
 
 const mailOperationsApi = new Hono<MailApiContext>()
   .use("/mailboxes/:mailboxId/drafts/:draftId/document", requireDraftDocumentAccount)
@@ -2739,6 +2750,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
       summary: "Apply an anchored draft table action",
       description:
         "Requires the current generation and synchronized input. An accepted or unknown publication must be reconciled before another action; never automatically resubmit it.",
+      parameters: draftDocumentAccountParameters,
       ...requiresAuth,
       responses: { 200: jsonResponse(draftTableActionResponseSchema, "Publication and persistence outcome") },
     }),
@@ -2767,6 +2779,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
     describeRoute({
       tags: ["Mail"],
       summary: "Read a shared draft session",
+      parameters: draftDocumentAccountParameters,
       ...requiresAuth,
       responses: { 200: jsonResponse(draftDocumentSessionSchema, "Fresh replay and separately committed snapshot") },
     }),
@@ -2789,6 +2802,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
     describeRoute({
       tags: ["Mail"],
       summary: "Publish a shared draft update",
+      parameters: draftDocumentAccountParameters,
       ...requiresAuth,
       responses: { 200: jsonResponse(draftDocumentAdmissionSchema, "Admission and durable persistence outcome") },
     }),
@@ -2819,9 +2833,10 @@ const mailOperationsApi = new Hono<MailApiContext>()
     "/mailboxes/:mailboxId/drafts/:draftId/document/rest",
     describeRoute({
       tags: ["Mail"],
-      summary: "Recover a device document after its send boundary",
+      summary: "Recover a device document after sending or discard",
       description:
         "Preserves the full device text including deletions. Repeat with the same generation, clientId and state after a lost answer.",
+      parameters: draftDocumentAccountParameters,
       ...requiresAuth,
       responses: {
         200: jsonResponse(
@@ -2858,6 +2873,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
     describeRoute({
       tags: ["Mail"],
       summary: "Persist a shared draft projection",
+      parameters: draftDocumentAccountParameters,
       ...requiresAuth,
       responses: { 200: jsonResponse(draftDocumentSaveSchema, "Committed snapshot and matching revision and generation") },
     }),

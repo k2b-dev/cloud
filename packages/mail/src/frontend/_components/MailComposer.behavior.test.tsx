@@ -282,6 +282,8 @@ describe("MailComposer signature choice", () => {
   };
 
   test("shared projection preserves an open empty Cc and its unfinished query without republishing remote input", async () => {
+    const offline = await import("@k2b/cloud/browser/shared-text");
+    const generations = spyOn(offline, "listSharedTextOfflineGenerations").mockResolvedValue([]);
     const base = draftEditableContentInputSchema.strip().parse(initialDraft);
     const document = createDraftDocument(base);
     const bytes = Y.encodeStateAsUpdate(document);
@@ -310,7 +312,7 @@ describe("MailComposer signature choice", () => {
     localStorage.setItem("cloud:mail:shared:Usr001:Draft1:1:remember", "no");
     const settle = async () => {
       await Bun.sleep(0);
-      const socket = OfflineWebSocket.instances.find((socket) => socket.url?.endsWith("/document/socket"));
+      const socket = OfflineWebSocket.instances.find((socket) => socket.url && new URL(socket.url).pathname.endsWith("/document/socket"));
       if (socket?.readyState === 0) {
         socket.open();
         socket.message({ type: "replayReady", payload: { docId: "Draft1", generation: "1", cursor, peerId: "peer1" } });
@@ -327,7 +329,7 @@ describe("MailComposer signature choice", () => {
       expect(cc).not.toBeNull();
       cc.value = "unfinished recipient";
       cc.dispatchEvent(new Event("input", { bubbles: true }));
-      const socket = OfflineWebSocket.instances.find((socket) => socket.url?.endsWith("/document/socket"))!;
+      const socket = OfflineWebSocket.instances.find((socket) => socket.url && new URL(socket.url).pathname.endsWith("/document/socket"))!;
       const send = spyOn(socket, "send");
       const vector = Y.encodeStateVector(document);
       writeLocalDraftHeaders(document, base, { ...base, subject: "Peer subject" });
@@ -348,6 +350,7 @@ describe("MailComposer signature choice", () => {
       expect(requests.some((path) => path.endsWith("/lease"))).toBe(false);
       send.mockRestore();
     } finally {
+      generations.mockRestore();
       document.destroy();
     }
   });
