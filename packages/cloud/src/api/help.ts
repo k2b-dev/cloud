@@ -1,6 +1,7 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { type AuthContext, auth, getLocale } from "../server";
 import { buildHelpDocumentPayload } from "../server/help-payload";
+import { appAccessAuthority } from "../services/app-access";
 import { createHelpReader, type HelpReaderFactory } from "../services/help";
 import type { HelpSearchPayload } from "../shared/help";
 import type { renderHelpMarkdown } from "../shared/markdown";
@@ -24,16 +25,23 @@ export const createHelpRoutes = (dependencies: HelpRouteDependencies = {}) => {
       const query = c.req.query("q")?.trim().slice(0, 200) ?? "";
       const payload: HelpSearchPayload = {
         locale,
-        ids: (await reader(locale, c.get("actor")).search({ query, appId: c.req.param("appId"), limit: 25 })).map(
-          (document) => document.documentId,
-        ),
+        ids: (
+          await reader(locale, c.get("actor"), { authority: appAccessAuthority(c) }).search({
+            query,
+            appId: c.req.param("appId"),
+            limit: 25,
+          })
+        ).map((document) => document.documentId),
       };
       return c.json(payload);
     })
     .get("/help/v1/:appId/documents/:documentId", async (c) => {
       const locale = getLocale(c);
       const { t } = helpApiMessages.resolve([locale]);
-      const document = await reader(locale, c.get("actor")).read({ appId: c.req.param("appId"), documentId: c.req.param("documentId") });
+      const document = await reader(locale, c.get("actor"), { authority: appAccessAuthority(c) }).read({
+        appId: c.req.param("appId"),
+        documentId: c.req.param("documentId"),
+      });
       if (!document) return c.json({ code: "HELP_NOT_FOUND", message: t.notFound }, 404);
       const payload = buildHelpDocumentPayload(document, c.req.header("User-Agent") ?? "", dependencies.renderMarkdown);
       return c.json(payload);

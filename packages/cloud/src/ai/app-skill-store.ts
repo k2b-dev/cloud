@@ -79,7 +79,7 @@ const reconcileApp = async (app: AppRegistryEntry, tx: TransactionSQL): Promise<
     { skills: unknown }[]
   >`SELECT skills FROM ai.app_skill_catalogs WHERE app_id=${app.id} AND manifest_hash=${manifest}`;
   if (!catalog) return false; // Publication may still be in flight: keep the last known state.
-  const roles = appAudienceRoles(app.nav);
+  const roles = app.access === undefined ? appAudienceRoles(app.nav) : undefined;
   const roleArray = roles === undefined ? null : toPgTextArray([...roles]);
   const [state] = await tx<{ current: boolean }[]>`SELECT
     EXISTS(SELECT 1 FROM ai.app_skills WHERE app_id=${app.id}) AND

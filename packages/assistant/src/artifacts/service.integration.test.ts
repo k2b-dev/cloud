@@ -1253,7 +1253,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         sentences: { approval: "Write {input.value}" },
         fields: [{ path: "input.value", label: "Value" }],
       });
-      expect(wording).toHaveBeenCalledWith("demo", "write", "en");
+      expect(wording).toHaveBeenCalledWith("demo", "write", "en", null);
       expect(execute).not.toHaveBeenCalled();
       await expect(runtimeCapabilities.resolve(denied.id, { approved: true }, stranger, caller)).rejects.toMatchObject({
         code: "NOT_FOUND",

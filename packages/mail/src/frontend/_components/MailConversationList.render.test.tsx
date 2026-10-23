@@ -71,40 +71,41 @@ describe("Mail conversation list", () => {
   test("wraps only the list scrollport in pull-to-refresh and keeps the header outside it", () => {
     const html = renderList();
     const wrapper = html.indexOf('class="k2b-pull-to-refresh flex-1"');
-    const search = html.indexOf('role="search"');
+    const heading = html.indexOf("data-mail-list-heading");
     const port = html.indexOf('data-scroll-preserve="mail-list-Box001"');
 
     expect(wrapper).toBeGreaterThan(-1);
-    expect(search).toBeLessThan(wrapper);
+    expect(heading).toBeGreaterThan(-1);
+    expect(heading).toBeLessThan(wrapper);
     expect(port).toBeGreaterThan(wrapper);
     expect(html.match(/class="k2b-pull-to-refresh /g)).toHaveLength(1);
     expect(html).toContain('data-state="idle"');
     expect(html).toContain("Needs action");
   });
 
-  test("keeps the list heading for focus and performance, with search controls and no duplicate summary", () => {
+  test("keeps the semantic list heading and puts its shown count after the rows", () => {
     const html = renderList({
       requestUrl: `/app/mail/Box001?${new URLSearchParams({ search: JSON.stringify({ expression: { type: "local_tag_id", tagId: "Tag001" }, sort: "newest" }) })}`,
     });
     expect(html).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="sr-only"[^>]*>Needs action<\/h1>/);
-    expect(html).toContain('aria-label="Search filters"');
+    expect(html).not.toContain('role="search"');
+    expect(html).toContain("data-mail-list-count");
     expect(html).not.toContain("mail-search-summary");
     expect(html).not.toContain('aria-label="Choose list view"');
   });
 
-  test("names a folder in a visible heading where the sidebar is out of view, and leaves a view's name to its tab", () => {
+  test("keeps the list heading semantic; the workspace head names folders when needed", () => {
     const folder = renderList({ requestUrl: "/app/mail/Box001?folder=Fld001", title: "Archive", namedBy: "sidebar" });
-    // The class is visible by default; only the 64 rem container query in app.css hides it beside the sidebar.
-    expect(folder).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="mail-list-heading [^"]*"[^>]*>Archive<\/h1>/);
+    // Visible naming now belongs to the workspace head.
+    expect(folder).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="sr-only"[^>]*>Archive<\/h1>/);
     expect(renderList({ namedBy: "tabs" })).toMatch(/<h1[^>]*data-mail-list-heading[^>]*class="sr-only"[^>]*>Needs action<\/h1>/);
   });
 
-  test("keeps a folder heading visible at every width when no sidebar row names it", () => {
+  test("keeps a semantic folder heading when no sidebar row names it", () => {
     const folder = renderList({ requestUrl: "/app/mail/Box001?folder=Quiet1", title: "Quiet", namedBy: null });
     const headingClass = folder.match(/<h1[^>]*data-mail-list-heading[^>]*class="([^"]*)"[^>]*>Quiet<\/h1>/)?.[1];
-    expect(headingClass).toBe("truncate text-base font-semibold text-primary");
+    expect(headingClass).toBe("sr-only");
     expect(headingClass).not.toContain("mail-list-heading");
-    expect(headingClass).not.toContain("sr-only");
   });
 
   test("explains a failed search instead of showing service text", () => {

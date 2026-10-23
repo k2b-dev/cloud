@@ -255,6 +255,7 @@ describe("served plugin routes", () => {
       entry("mail", ["mail"]),
       entry("core", ["apps", "account"]),
       entry("weather"),
+      { ...entry("secret", ["secret-command"]), access: { kind: "roles", roles: ["admin"] } },
     ]);
     const list = new Hono().route("/cli/plugins", cliPluginListRoutes);
     try {
