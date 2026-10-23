@@ -45,6 +45,7 @@ import { CHECK_LIMITS, type CheckReport, checkHash } from "./html/check-contract
 import { appChecks } from "./html/check-service";
 import { HttpPrepare } from "./http-contracts";
 import { HttpError, httpService } from "./http-service";
+import { machineFixtureSchema, machineIntegrationCases } from "./machine.integration-cases";
 import { migrateArtifacts } from "./migrate";
 import { artifacts } from "./service";
 import { STUDIO_EVAL_CASE_MS, STUDIO_EVAL_CASES } from "./studio-eval-cases";
@@ -95,6 +96,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   const editor = testIdentity("00000000-0000-4000-8000-000000000003");
   const stranger = testIdentity("00000000-0000-4000-8000-000000000004");
   const source = { entry: "main.js", files: [{ path: "main.js", content: "export default () => 1" }] };
+  machineIntegrationCases(owner);
   let id = "";
   afterAll(async () => {
     await sql.close();
@@ -136,6 +138,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
     await sql`CREATE TABLE audit.events(id bigserial PRIMARY KEY,created_at timestamptz DEFAULT now(),action text,outcome text,
       actor_user_id uuid,actor_uid text,actor_provider text,actor_roles text[],target_type text,target_id text,target_label text,
       target_provider text,reason text,error_code text,error_message text,request_id text,metadata jsonb)`;
+    await machineFixtureSchema();
     await migrateArtifacts();
     await migrateArtifacts();
     id = (await artifacts.create({ title: "Analysis", source }, owner)).id;

@@ -135,6 +135,8 @@ export default function Admin(props: { initial: Awaited<ReturnType<typeof artifa
       await prompts.dialog<void>(
         () => (
           <StudioPermissions
+            artifactId={id}
+            administrative
             entries={entries}
             loadProjects={() => artifactClient.admin.projects(id)}
             grant={(principal, level) => artifactClient.admin.grant(id, principal, level)}

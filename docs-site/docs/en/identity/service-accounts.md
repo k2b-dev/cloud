@@ -38,6 +38,9 @@ The request contract does not change. A standalone account authenticates as a
 `resourceType`, or `resourceId`. See
 [Request identity](/en/docs/identity/authentication).
 
+For Studio execution and its separate effect rights, see
+[Run Studio apps with a machine identity](/en/docs/identity/studio-machine-execution).
+
 ## Create the account
 
 Administrators create standalone accounts through Core's administrator API:

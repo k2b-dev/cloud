@@ -23,6 +23,7 @@ import {
 } from "./database-runtime";
 import { safeQuery } from "./database-sql";
 import { CHECK_LIMITS } from "./html/check-contracts";
+import { machineDataRight } from "./machine-authority";
 import { CloudError } from "./runtime/errors";
 import { type ArtifactIdentity, requireArtifact, user } from "./service";
 
@@ -43,7 +44,7 @@ function admin(identity: ArtifactIdentity) {
 async function config() {
   return { url: await app.settings.get("assistant.rsql_url"), token: await app.settings.get("assistant.rsql_api_token") };
 }
-function connection(c: { url: string; token: string }, signal?: AbortSignal, streaming = false) {
+function connection(c: { url: string; token: string }, signal?: AbortSignal, streaming = false, authorize?: () => Promise<void>) {
   if (!c.url || !c.token) throw new DatabaseError("DB_NOT_CONFIGURED", 409, "The app database service is not configured.");
   const address = new URL(c.url);
   if (!["http:", "https:"].includes(address.protocol) || address.username || address.password || address.search || address.hash)
@@ -53,6 +54,8 @@ function connection(c: { url: string; token: string }, signal?: AbortSignal, str
     token: c.token,
     fetch: Object.assign(
       async (input: RequestInfo | URL, init?: RequestInit) => {
+        await authorize?.();
+        signal?.throwIfAborted();
         const deadline = new AbortController();
         const timer = streaming ? setTimeout(() => deadline.abort(), 15000) : undefined;
         const timeout = streaming ? deadline.signal : AbortSignal.timeout(15000);
@@ -151,6 +154,7 @@ type CheckTable = z.infer<typeof CheckTable>;
 export const artifactDatabase = {
   /** Stable source definitions, never row counts or namespace identity. */
   async checkDefinitions(id: string, identity: ArtifactIdentity, signal?: AbortSignal, transaction?: SQL): Promise<CheckTable[]> {
+    user(identity);
     const read = async (db: SQL) => {
       const { row } = await requireArtifact(db, id, identity, "read");
       const [mapping] = await db<
@@ -175,6 +179,7 @@ export const artifactDatabase = {
     return transaction ? read(transaction) : sql.begin(read);
   },
   async copyForCheck(from: string, to: string, identity: ArtifactIdentity, signal: AbortSignal, transaction: SQL): Promise<string[]> {
+    user(identity);
     const tables = await this.checkDefinitions(from, identity, signal, transaction);
     const [original] = await transaction<
       { namespace: string; connected: boolean }[]
@@ -243,6 +248,7 @@ export const artifactDatabase = {
     return schemaOnly ? [`Database copied as schema only: more than ${CHECK_LIMITS.rows} rows or ${CHECK_LIMITS.copyBytes} bytes.`] : [];
   },
   async status(id: string, identity: ArtifactIdentity, signal?: AbortSignal) {
+    user(identity);
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
@@ -272,6 +278,7 @@ export const artifactDatabase = {
     });
   },
   async reset(id: string, expectedGeneration: string | null, identity: ArtifactIdentity, expectedDataRevision?: string | null) {
+    user(identity);
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
@@ -290,6 +297,7 @@ export const artifactDatabase = {
     });
   },
   async clear(id: string, expectedGeneration: string, expectedDataRevision: string, identity: ArtifactIdentity, signal?: AbortSignal) {
+    user(identity);
     signal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(15000)]);
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
@@ -333,6 +341,7 @@ export const artifactDatabase = {
     });
   },
   async export(id: string, identity: ArtifactIdentity, signal?: AbortSignal) {
+    user(identity);
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
@@ -372,6 +381,7 @@ export const artifactDatabase = {
     });
   },
   async connect(id: string, identity: ArtifactIdentity, signal?: AbortSignal, requireManage = false) {
+    user(identity);
     const publicId = id;
     // Persist the intended namespace before any remote effect. A failed call
     // can be retried, and deletion can always find a partially created DB.
@@ -410,6 +420,7 @@ export const artifactDatabase = {
       const flat = FlatDatabaseRequest.parse(input);
       return this.runtime(id, flat, identity, signal);
     }
+    user(identity);
     const req = DatabaseRequest.parse(input);
     if (mode === "inspect" && !["tables.list", "schema.get", "rows.list", "query"].includes(req.operation))
       throw new DatabaseError("DB_SQL_UNSUPPORTED");
@@ -521,8 +532,20 @@ export const artifactDatabase = {
     return sql.begin(async (db) => {
       await databaseConfigLock(db);
       const resource = await requireArtifact(db, id, identity, "read");
+      await machineDataRight(
+        db,
+        resource.row.id,
+        resource.row.short_id,
+        identity,
+        "database",
+        !["query", "list", "get"].includes(req.operation),
+      );
       id = resource.row.id;
-      const upstream = connection(await config(), signal);
+      const upstream = connection(await config(), signal, false, async () => {
+        if (identity.actor.kind !== "service_account" || identity.actor.delegatedUser !== null) return;
+        await requireArtifact(db, resource.row.short_id, identity, "read");
+        await machineDataRight(db, id, resource.row.short_id, identity, "database", !["query", "list", "get"].includes(req.operation));
+      });
       const [mapping] = await db<
         { namespace: string; connected: boolean }[]
       >`SELECT namespace,connected FROM assistant.artifact_databases WHERE artifact_id=${id}::uuid`;
@@ -552,7 +575,7 @@ export const artifactDatabase = {
         );
       let schema = TableSchema.parse(result(await client.tables.get(req.table)));
       const missing = ["created_by", "updated_by"].filter((name) => !schema.columns.some((column) => column.name === name));
-      if (missing.length) {
+      if (missing.length && (identity.actor.kind !== "service_account" || identity.actor.delegatedUser !== null)) {
         await markDataMutation(id);
         result(await client.tables.update(req.table, { add_columns: missing.map((name) => ({ name, type: "text" })) }));
         schema = TableSchema.parse(result(await client.tables.get(req.table)));
@@ -573,7 +596,10 @@ export const artifactDatabase = {
         );
       else if (req.operation === "get") output = await get(req.id);
       else {
-        const requester = user(identity).id;
+        const requester =
+          identity.actor.kind === "service_account" && identity.actor.delegatedUser === null
+            ? `service_account:${identity.actor.serviceAccount.id}`
+            : user(identity).id;
         const previous = req.operation === "insert" ? null : await get(req.id);
         checkRowWrite(tableWrite(schema), requester, resource.permission === "admin", req.operation, previous);
         if (req.operation !== "insert" && !previous) return req.operation === "delete" ? false : null;

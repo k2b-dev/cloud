@@ -179,4 +179,21 @@ export async function migrateArtifacts() {
     checked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY(user_id,conversation_id,resource_key,hash)
   )`;
+  await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_machine_rights (
+    access_id UUID PRIMARY KEY REFERENCES auth.access(id) ON DELETE CASCADE,
+    rights JSONB NOT NULL DEFAULT '{}', revision UUID NOT NULL DEFAULT gen_random_uuid()
+  )`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_machine_secrets (
+    artifact_id UUID NOT NULL REFERENCES assistant.artifacts(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, origin TEXT NOT NULL, header TEXT NOT NULL, prefix TEXT NOT NULL,
+    encrypted TEXT NOT NULL, revision UUID NOT NULL,
+    PRIMARY KEY(artifact_id,name)
+  )`.simple();
+  await sql`CREATE TABLE IF NOT EXISTS assistant.artifact_machine_runs (
+    id UUID PRIMARY KEY, artifact_id UUID NOT NULL REFERENCES assistant.artifacts(id) ON DELETE CASCADE,
+    principal_id UUID NOT NULL, credential_id TEXT NOT NULL, version INTEGER NOT NULL,
+    operation TEXT NOT NULL, status TEXT NOT NULL, error_code TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(), finished_at TIMESTAMPTZ
+  )`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS artifact_machine_runs_created ON assistant.artifact_machine_runs(created_at)`.simple();
 }

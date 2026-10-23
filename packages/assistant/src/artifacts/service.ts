@@ -15,6 +15,7 @@ import {
   buildAccessPrincipalCondition,
   createAccess,
   deleteAccess,
+  ensureManagerRemains,
   getAccess,
   hasPermission,
   type PermissionLevel,
@@ -41,6 +42,7 @@ import {
   PublicationNote,
 } from "./contracts";
 import { databaseConfigLock } from "./database-lock";
+import { machineDataRight, machineIdentity, machineRights } from "./machine-authority";
 import { validateArtifact } from "./runtime/compile";
 import { checkStorageBudget } from "./storage-budget";
 import { STORAGE_FILE_MAX_BYTES, StorageRequest } from "./storage-contracts";
@@ -50,6 +52,8 @@ export type ArtifactIdentity = {
   client?: string | null;
   actor: AuthContext["Variables"]["actor"];
   accessSubject: AccessSubject;
+  machineExecution?: { version: number };
+  machineCredential?: { reference: string; isCurrent: () => Promise<boolean> };
   conversationId?: string;
   administrative?: boolean;
 };
@@ -123,8 +127,14 @@ export function user(identity: ArtifactIdentity) {
     throw new ArtifactError("ACCESS_DENIED");
   return actor;
 }
+const notMachine = (identity: ArtifactIdentity) => identity.actor.kind !== "service_account" || identity.actor.delegatedUser !== null;
 function predicate(identity: ArtifactIdentity) {
-  user(identity);
+  if (identity.actor.kind !== "service_account" || identity.actor.delegatedUser !== null) user(identity);
+  else if (
+    identity.accessSubject.type !== "service_account" ||
+    identity.accessSubject.serviceAccountId !== identity.actor.serviceAccount.id
+  )
+    throw new ArtifactError("ACCESS_DENIED");
   const match = buildAccessPrincipalCondition({
     subject: identity.accessSubject,
     columns: {
@@ -153,17 +163,32 @@ async function accessibleLinkedProjects(db: SQL, subject: AccessSubject, artifac
 
 export async function requireArtifact(db: SQL, id: string, identity: ArtifactIdentity, required: PermissionLevel) {
   CodeResourceId.parse(id);
+  if (!identity.actor) throw new ArtifactError("ACCESS_DENIED");
+  const machine = identity.actor.kind === "service_account" && identity.actor.delegatedUser === null;
   const match = predicate(identity);
   // Serialize authorization with changes to grants, revisions and deletion.
   const [row] = await db<ArtifactRow[]>`SELECT * FROM assistant.artifacts WHERE short_id=${id} FOR UPDATE`;
   if (!row) throw new ArtifactError("NOT_FOUND");
+  // Revalidate after waiting for the resource lock, immediately before use.
+  const credential = machine ? await machineIdentity(identity, id, required) : null;
+  if (machine && identity.machineExecution) {
+    if (row.published_version !== identity.machineExecution.version) throw new ArtifactError("CONFLICT");
+    if (!(await machineRights(db, row.id, row.short_id, identity)).execute) throw new ArtifactError("ACCESS_DENIED");
+  }
   id = row.id;
   const [grant] = await db<{ permission: PermissionLevel }[]>`SELECT a.permission
     FROM auth.access a JOIN assistant.artifact_access link ON link.access_id=a.id
     WHERE link.artifact_id=${id}::uuid AND ${match}
+    AND (${notMachine(identity)} OR a.service_account_id IS NOT NULL)
     ORDER BY CASE a.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END DESC LIMIT 1`;
   let permission = identity.administrative && hasRole(user(identity), "admin") ? ("admin" as const) : (grant?.permission ?? "none");
-  if (!hasPermission(permission, required) && required === "read" && row.published_revision !== null) {
+  if (credential && identity.actor.kind === "service_account") {
+    const cap = (scopes: readonly string[]): PermissionLevel =>
+      scopes.includes("admin") ? "admin" : scopes.includes("write") ? "write" : scopes.includes("read") ? "read" : "none";
+    for (const ceiling of [cap(credential.scopes), cap(identity.actor.scopes)])
+      if (!hasPermission(ceiling, permission)) permission = ceiling;
+  }
+  if (!machine && !hasPermission(permission, required) && required === "read" && row.published_revision !== null) {
     if ((await accessibleLinkedProjects(db, identity.accessSubject, id)).length) permission = "read";
   }
   if (!hasPermission(permission, required)) throw new ArtifactError("ACCESS_DENIED");
@@ -346,6 +371,7 @@ export const artifacts = {
           WHERE project.artifact_id=artifact.id AND ${projectMatch}))))`;
   },
   async list(identity: ArtifactIdentity, page = 1, search = "", pageSize = 30) {
+    user(identity);
     z.number().int().min(1).max(100000).parse(page);
     z.string().max(500).parse(search);
     z.number().int().min(1).max(100).parse(pageSize);
@@ -489,9 +515,15 @@ export const artifacts = {
     z.enum(["read", "admin"]).parse(level);
     if (principal.type === "public" && !PUBLIC_APP_SHARING) throw new ArtifactError("PUBLIC_SHARING_OFF");
     if (principal.type === "public" && level !== "read") throw new ArtifactError("PUBLIC_READ_ONLY");
-    if (principal.type === "service_account") throw new ArtifactError("INVALID_INPUT");
+
     return sql.begin(async (db) => {
-      id = (await requireArtifact(db, id, identity, "admin")).row.id;
+      const { row } = await requireArtifact(db, id, identity, "admin");
+      id = row.id;
+      if (!notMachine(identity) && !(await machineRights(db, id, row.short_id, identity)).sharing) throw new ArtifactError("ACCESS_DENIED");
+      if (principal.type === "service_account") {
+        const { validateMachineGrant } = await import("./machine-service");
+        await validateMachineGrant(db, row.short_id, principal.serviceAccountId);
+      }
       await checkAccessRevision(db, id, expectedAccessRevision);
       const access = await createAccess({ principal, permission: level }, db);
       if (!access.ok) throw new ArtifactError("INVALID_INPUT");
@@ -512,18 +544,20 @@ export const artifacts = {
     z.enum(["read", "admin"]).nullable().parse(level);
     z.uuid().parse(accessId);
     return sql.begin(async (db) => {
-      id = (await requireArtifact(db, id, identity, "admin")).row.id;
+      const { row } = await requireArtifact(db, id, identity, "admin");
+      id = row.id;
+      if (!notMachine(identity) && !(await machineRights(db, id, row.short_id, identity)).sharing) throw new ArtifactError("ACCESS_DENIED");
       await checkAccessRevision(db, id, expectedAccessRevision);
       const [grant] = await db<{ permission: PermissionLevel; public: boolean }[]>`SELECT a.permission,
         (a.user_id IS NULL AND a.group_id IS NULL AND a.service_account_id IS NULL AND NOT a.authenticated_only) AS public FROM auth.access a
         JOIN assistant.artifact_access link ON link.access_id=a.id WHERE link.artifact_id=${id}::uuid AND a.id=${accessId}::uuid`;
       if (!grant) throw new ArtifactError("NOT_FOUND");
       if (grant.public && level !== null && level !== "read") throw new ArtifactError("PUBLIC_READ_ONLY");
-      if (grant.permission === "admin" && level !== "admin") {
-        const [count] = await db<{ n: number }[]>`SELECT count(*)::int AS n FROM auth.access a
-          JOIN assistant.artifact_access link ON link.access_id=a.id WHERE link.artifact_id=${id}::uuid AND a.permission='admin'`;
-        if (count!.n <= 1) throw new ArtifactError("LAST_MANAGER");
-      }
+      const links = await db<{ access_id: string }[]>`SELECT access_id FROM assistant.artifact_access WHERE artifact_id=${id}::uuid`;
+      const current = await Promise.all(links.map((link) => getAccess({ id: link.access_id }, db)));
+      const before = await resolveDisplayNames(current.filter((entry) => entry !== null));
+      const after = before.flatMap((entry) => (entry.id === accessId ? (level ? [{ ...entry, permission: level }] : []) : [entry]));
+      if (!ensureManagerRemains({ before, after }).ok) throw new ArtifactError("LAST_MANAGER");
       if (level) await updateAccess({ id: accessId, permission: level }, db);
       else await deleteAccess({ id: accessId }, db);
       return { updated: true };
@@ -550,6 +584,7 @@ export const artifacts = {
     return transaction ? publish(transaction) : sql.begin(publish);
   },
   async storageState(id: string, identity: ArtifactIdentity, scope: "shared" | "user" = "shared") {
+    user(identity);
     const storageUser = scope === "user" ? user(identity).id : null;
     return sql.begin(async (db) => {
       const { row } = await requireArtifact(db, id, identity, scope === "user" ? "read" : "admin");
@@ -572,6 +607,7 @@ export const artifacts = {
     expectedStorageRevision?: number,
     scope: "shared" | "user" = "shared",
   ) {
+    user(identity);
     z.enum(["files", "kv", "all"]).parse(area);
     const storageUser = scope === "user" ? user(identity).id : null;
     return sql.begin(async (db) => {
@@ -587,6 +623,7 @@ export const artifacts = {
   async storageFileLimit(id: string, key: string, identity: ArtifactIdentity, management = false) {
     const previous = await sql.begin(async (db) => {
       const resource = await requireArtifact(db, id, identity, management ? "admin" : "read");
+      await machineDataRight(db, resource.row.id, resource.row.short_id, identity, "storage", true);
       const [file] = await db<{ bytes: number }[]>`SELECT bytes FROM assistant.artifact_storage
         WHERE artifact_id=${resource.row.id}::uuid AND area='files' AND user_id IS NULL AND key=${key}`;
       return Number(file?.bytes ?? 0);
@@ -636,6 +673,14 @@ export const artifacts = {
       // App use includes its runtime data effects. Code administration remains
       // separate. Lock the resource so quota checks and writes serialize.
       const { row } = await requireArtifact(db, id, identity, management && request.scope === "shared" ? "admin" : "read");
+      await machineDataRight(
+        db,
+        row.id,
+        row.short_id,
+        identity,
+        "storage",
+        request.operation === "write" || request.operation === "delete",
+      );
       id = row.id;
       if (expected?.storageRevision !== undefined && Number(row.storage_revision) !== expected.storageRevision)
         throw new ArtifactError("CONFLICT");
@@ -691,6 +736,7 @@ export const artifacts = {
     });
   },
   async projects(id: string, identity: ArtifactIdentity) {
+    user(identity);
     return sql.begin(async (db) => {
       id = (await requireArtifact(db, id, identity, "admin")).row.id;
       const links = await db<
@@ -705,6 +751,7 @@ export const artifacts = {
     });
   },
   async projectApps(projectReference: string, identity: ArtifactIdentity, page = 1, search = "", available = false) {
+    user(identity);
     z.string().min(1).max(80).parse(projectReference);
     z.number().int().min(1).max(100000).parse(page);
     z.string().max(500).parse(search);
@@ -733,6 +780,7 @@ export const artifacts = {
     return { items: rows.slice(0, 30), hasNext: rows.length > 30, page };
   },
   async linkProject(id: string, projectReference: string, linked: boolean, identity: ArtifactIdentity) {
+    user(identity);
     z.string().min(1).max(80).parse(projectReference);
     const project = z.uuid().safeParse(projectReference).success
       ? await aiProjects.get(projectReference, identity.accessSubject, "admin")
