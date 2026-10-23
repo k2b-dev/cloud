@@ -42,7 +42,7 @@ import { openChannelDialog } from "./ChannelDialogs";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
-import ChatList, { channelLine } from "./ChatList";
+import ChatList from "./ChatList";
 import ChatSharedSection from "./ChatSharedSection";
 import ChatThreadColumn from "./ChatThreadColumn";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
@@ -1512,7 +1512,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         replyHint={replyHint}
                         unreadHint={unreadHint}
                         memberCount={current().memberCount}
-                        subtitle={current().channel ? channelLine(current(), t()) : undefined}
+                        subtitle={current().channel ? t().subscribers({ count: current().memberCount }) : undefined}
                         items={items()}
                         hasOlder={openChat()?.hasOlder ?? false}
                         hasNewer={openChat()?.hasNewer ?? false}
