@@ -794,6 +794,11 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
           const gap = primary.x - (cancel.x + cancel.width);
           expect(gap).toBeGreaterThanOrEqual(0);
           expect(gap).toBeLessThanOrEqual(12);
+          const footerRight = await dialog.locator(".k2b-panel-dialog__footer").evaluate((el) => {
+            const style = getComputedStyle(el);
+            return el.getBoundingClientRect().right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth);
+          });
+          expect(Math.abs(primary.x + primary.width - footerRight)).toBeLessThanOrEqual(1);
         } else {
           expect(primary.height).toBeGreaterThanOrEqual(44);
           expect(cancel.height).toBeGreaterThanOrEqual(44);
@@ -802,7 +807,9 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
             dialog.locator('[data-field="start"] .k2b-combobox__input'),
             dialog.locator('[data-field="duration"] .k2b-input-shell'),
           ]) {
-            expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+            const height = (await control.boundingBox())!.height;
+            expect(height).toBeGreaterThanOrEqual(44);
+            expect(height).toBeLessThanOrEqual(45);
           }
         }
         expect(

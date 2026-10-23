@@ -190,6 +190,8 @@
 .spaces-time-block-form { width: 100%; }
 .spaces-time-block-fields { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 10px; }
 .spaces-time-block-fields > * { min-width: 0; }
+.k2b-ui .spaces-time-block-dialog [data-field="date"] .k2b-date-trigger { padding-inline-end: 28px; }
+.k2b-ui .spaces-time-block-dialog [data-field="date"] .k2b-date-trigger__icon { display: none; }
 .spaces-time-block-hint { min-height: 18px; margin-top: 4px; font-size: .78125rem; color: var(--ui-text-dimmed); }
 .k2b-ui .spaces-time-block-dialog .k2b-panel-dialog__footer { justify-content: flex-end; }
 .k2b-ui .spaces-time-block-dialog .k2b-panel-dialog__footer > .spaces-time-block-submit { min-width: 132px; }
@@ -199,7 +201,7 @@
   .k2b-ui .spaces-time-block-dialog .k2b-panel-dialog__footer > button { flex: 1; min-height: 44px; font-size: .9375rem; }
   .k2b-ui .spaces-time-block-dialog .k2b-panel-dialog__footer > .spaces-time-block-submit { flex: 2; }
   .k2b-ui .spaces-time-block-dialog .spaces-time-block-fields :is(.k2b-date-trigger, .k2b-combobox__input, .k2b-input-shell) { min-height: 44px; font-size: .9375rem; }
-  .k2b-ui .spaces-time-block-dialog .spaces-time-block-fields input { min-height: 44px; font-size: .9375rem; }
+  .k2b-ui .spaces-time-block-dialog .spaces-time-block-fields input { min-height: 42px; font-size: .9375rem; }
   .spaces-time-block-fields { grid-template-columns: 1fr 1fr; }
   .spaces-time-block-fields > :first-child { grid-column: 1 / -1; }
 }
