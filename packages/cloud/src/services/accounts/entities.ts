@@ -11,7 +11,10 @@ type DbRow = Record<string, unknown>;
 type SqlFragment = any;
 
 export type EntityListParams = {
-  visibility: { type: "directory" } | { type: "self_and_effective_groups"; userId: string };
+  visibility:
+    | { type: "directory" }
+    | { type: "self_and_effective_groups"; userId: string }
+    | { type: "directory_shares"; serviceAccountId: string };
   search?: string;
   kinds?: EntityKind[];
   provider?: UserProvider;
@@ -432,7 +435,17 @@ export const list = async (
   const visibilityCondition =
     params.visibility.type === "directory"
       ? sql`TRUE`
-      : sql`(
+      : params.visibility.type === "directory_shares"
+        ? sql`EXISTS (
+            SELECT 1 FROM auth.directory_shares share
+            JOIN auth.service_accounts recipient ON recipient.id = share.recipient_id
+            WHERE recipient.id = ${params.visibility.serviceAccountId}::uuid
+              AND recipient.kind IN ('standalone', 'agent') AND recipient.status = 'active'
+              AND ((entity_rows.kind = 'user' AND share.user_id = entity_rows.id)
+                OR (entity_rows.kind = 'group' AND share.group_id = entity_rows.id)
+                OR (entity_rows.kind = 'service_account' AND share.service_account_id = entity_rows.id))
+          )`
+        : sql`(
           (kind = 'user' AND id = ${params.visibility.userId}::uuid)
           OR (
             kind = 'group'
