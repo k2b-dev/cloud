@@ -5,7 +5,7 @@ section: Contributing
 order: 1311
 description: Record repeatable page weight and cold-load timings from isolated production bundles.
 tags: [contributing, performance, testing, ssr]
-updated: 2026-10-20
+updated: 2026-10-23
 ---
 
 # Measure production page performance
@@ -894,6 +894,62 @@ a delayed response followed by rapid Back/Forward reversal and Reload.
 Server, hydrated, and settled geometry agree. The existing guards also cover
 retained document/sidebar identity and mailbox URL parity. These correctness
 checks do not change the measured checkpoint or remove its timing limitations.
+
+### Recorded retained-workspace results (22–23 October 2026)
+
+The exact compact-head base `3a471767b` was measured first. Every run used
+Chromium desktop and throttled phone, five samples per interaction/profile,
+`--interactions mailbox-switch,folder-switch --loads none`, and three warm
+server requests. All completed 20 server scenarios and 20 browser samples
+without reported errors. Four extra trace samples per run are excluded.
+
+Each pair is mailbox / folder median in milliseconds; ratios are within-run.
+
+| Stage | Desktop, ms | Ratio | Phone, ms | Ratio |
+| --- | ---: | ---: | ---: | ---: |
+| Exact base | 884.6 / 477.8 | 1.85 | 3,190.0 / 1,578.9 | 2.02 |
+| Retained presentation, initial | 1,255.2 / 461.8 | 2.72 | 3,387.1 / 1,778.9 | 1.90 |
+| Retained presentation, repeat | 1,123.9 / 508.4 | 2.21 | 2,855.9 / 1,720.4 | 1.66 |
+| Frame-batched fades | 818.6 / 475.5 | 1.72 | 3,114.1 / 1,677.9 | 1.86 |
+| Overlapped metadata | 700.0 / 523.2 | 1.34 | 2,876.1 / 1,799.8 | 1.60 |
+| Bounded candidate enrichment | 692.5 / 429.7 | 1.61 | 3,146.2 / 1,551.0 | 2.03 |
+| Positional row reuse, discarded | 771.1 / 662.0 | 1.16 | 3,996.7 / 1,733.5 | 2.31 |
+| Four-step repeat | 582.5 / 412.5 | 1.41 | 2,650.4 / 1,808.2 | 1.47 |
+| Shared row context | 543.0 / 415.7 | 1.31 | 2,408.9 / 1,586.6 | 1.52 |
+
+These are mixed observations on a shared host with 24 logical CPUs. Boundary
+one-minute loads ranged from 23.48 to 58.40; an intervening base observation
+exceeded 70.
+Fixture digests match; the destinations remain 50 mailbox rows versus 37 folder
+rows, with about 119 ms more phone transfer for the mailbox. No isolated causal
+estimate follows from these runs. Retaining presentation and batching fades
+had profile regressions. Row reuse was discarded because both mailbox medians
+regressed; its desktop ratio passed while the folder median slowed.
+
+Sharing the row context avoids repeating folder resolution for each state
+field read. Its mailbox medians improved 38.6% desktop and 24.5% phone against
+base, with a closer phone ratio. Desktop still exceeds the 1.20 ratio target
+by 44.2 ms and the preferred 300 ms absolute target. Warm mailbox-route medians
+changed from 224.0 ms at base to 154.3 ms after metadata overlap and 79.7 ms
+after candidate enrichment. The diagnostic list plan fell from 126.3 to 65.4 ms:
+flags and attachments enrich 51 selected candidates. Visibility joins the target
+mailbox but still scans shared conversation-message rows. Response bodies stay
+56,775 / 32,591 B. The server gain did not consistently improve browser ratios. The row-context
+run observed a 181.2 ms warm route despite unchanged server code.
+
+Outputs under `.local/mail-perf/`: `mail-switch-base-3a471767b`,
+`mail-switch-step1-retained`, `mail-switch-step1-retained-repeat`,
+`mail-switch-step2-fades`, `mail-switch-step3-overlap`,
+`mail-switch-step4-candidates`, `mail-switch-step1-row-slots`,
+`mail-switch-final-profile` and `mail-switch-step1-row-context`. Only
+`mail-switch-final-profile`'s four excluded traces also
+capture CPU profiles and scripts. They identify repeated row-state getter
+work and closed-menu construction; inclusive sampled costs overlap.
+
+A further repeat stopped during fixture seeding: PostgreSQL reported
+`No space left on device`. It produced no browser samples and is excluded.
+Its runtime was removed. The recorded results above remain valid; no later
+repeat establishes that the desktop target has been met.
 
 ### Rank bottlenecks
 
