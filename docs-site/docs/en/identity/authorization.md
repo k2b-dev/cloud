@@ -504,6 +504,13 @@ retries. The caller explains why editing stopped and provides recovery.
 Re-enable editing after reading the canonical list; old failed changes and
 their retries are then cleared.
 
+### Confirm access changes
+
+A `beforeChange` confirmation keeps its opener focusable so Cancel can return
+to it. The editor prevents another change while confirmation is pending and
+disables controls once saving begins. If editing stops or the editor closes
+before confirmation finishes, the pending change is not sent.
+
 ### Restrict editor levels by principal
 
 `PermissionEditor` from `@k2b/cloud/access/ui` accepts either an `allowedLevels`

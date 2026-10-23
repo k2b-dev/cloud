@@ -236,7 +236,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     display: { displayName: string; avatarHash?: string | null; serviceAccountKind?: ServiceAccountKind },
     choice?: ResolvedLevel,
   ) => {
-    if (disposed || grantPending() || updateMut.loading() || revokeMut.loading()) return;
+    if (!canStart()) return;
     const key = principalKey(principal);
     if (entries.some((entry) => principalKey(entry.principal) === key)) {
       // A retry or selection for a principal already in the list has nothing left to add.
@@ -299,7 +299,9 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   const updateMut = mutation.create<LevelChange | null, LevelChange>({
     mutation: async (data) => {
       const entry = entries.find((entry) => entry.id === data.accessId);
-      if (entry && props.beforeChange && !(await props.beforeChange(entry, data.permission))) return null;
+      if (!entry || disposed || !canEdit()) return null;
+      if (props.beforeChange && !(await props.beforeChange(entry, data.permission))) return null;
+      if (disposed || !canEdit()) return null;
       setUpdating(data);
       setFeedback(data.accessId, undefined);
       await props.updateAccess(data.accessId, data.permission, data.scope);
@@ -313,7 +315,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     },
     onError: (err) => {
       const change = updating();
-      if (change) failure(change.accessId, err, () => void updateMut.mutate(change));
+      if (change) failure(change.accessId, err, () => startUpdate(change));
       else prompts.error(err.message);
     },
     onFinally: () => {
@@ -323,6 +325,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
 
   const revokeMut = mutation.create<string | null, AccessEntry>({
     mutation: async (entry) => {
+      if (disposed || !canEdit()) return null;
       const displayName = labelOf(entry);
       const confirmed = props.beforeChange
         ? await props.beforeChange(entry, null)
@@ -330,7 +333,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
             title: t().removeAccess,
             variant: "danger",
           });
-      if (!confirmed) return null;
+      if (!confirmed || disposed || !canEdit()) return null;
       setRevoking(entry.id);
       setFeedback(entry.id, undefined);
       await props.revokeAccess(entry.id);
@@ -344,14 +347,23 @@ export default function PermissionEditor(props: PermissionEditorProps) {
     },
     onError: (err) => {
       const entry = entries.find((entry) => entry.id === revoking());
-      if (entry) failure(entry.id, err, () => void revokeMut.mutate(entry));
+      if (entry) failure(entry.id, err, () => startRevoke(entry));
       else prompts.error(err.message);
     },
     onFinally: () => {
       if (!disposed) setRevoking(null);
     },
   });
-  const busy = () => grantPending() || updateMut.loading() || revokeMut.loading();
+  // Confirmation holds the operation lock, but its opener must stay focusable until the dialog returns focus.
+  const saving = () => grantPending() || updating() !== null || revoking() !== null;
+  const busy = () => saving() || updateMut.loading() || revokeMut.loading();
+  const canStart = () => !disposed && canEdit() && !busy();
+  const startUpdate = (change: LevelChange): void => {
+    if (canStart()) void updateMut.mutate(change);
+  };
+  const startRevoke = (entry: AccessEntry): void => {
+    if (canStart()) void revokeMut.mutate(entry);
+  };
   let editorRoot: HTMLDivElement | undefined;
   let principalPickerHost: HTMLDivElement | undefined;
   const focusPrincipalPicker = () => {
@@ -362,8 +374,9 @@ export default function PermissionEditor(props: PermissionEditorProps) {
   // A removed row takes its focused button along; continue at the neighbouring row, else the principal search.
   const focusAfterRemoval = (index: number) => {
     queueMicrotask(() => {
+      if (disposed || busy()) return;
       const active = document.activeElement;
-      if (disposed || busy() || (active && active !== document.body && active.isConnected)) return;
+      if (active && active !== document.body && active.isConnected) return;
       const removes = Array.from(editorRoot?.querySelectorAll<HTMLButtonElement>("button[data-access-remove]") ?? []);
       const next = [removes[index], removes[index - 1]].find((button) => button && !button.disabled);
       (next ?? editorRoot?.querySelector<HTMLInputElement>('input[role="combobox"]:enabled'))?.focus();
@@ -434,8 +447,9 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                   allowServiceAccounts={props.allowServiceAccounts}
                   placeholder={props.placeholder}
                   signedIn={props.signedIn}
-                  disabled={busy()}
+                  disabled={saving()}
                   onSelect={(principal, display) => {
+                    if (!canStart()) return;
                     setDraft({ principal, display });
                     setDraftLevel(allowed(principal)[0]?.key ?? "read");
                   }}
@@ -447,10 +461,11 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                   variant="input"
                   style={{ "font-size": "15px" }}
                   align="start"
-                  disabled={busy()}
+                  disabled={saving()}
                   class="w-full font-normal"
                   aria-label={t().clearSelection({ name: selection().display.displayName })}
                   onClick={() => {
+                    if (!canStart()) return;
                     setDraft(undefined);
                     focusPrincipalPicker();
                   }}
@@ -464,18 +479,18 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           <Select
             aria-label={t().newPermission}
             value={draftLevel}
-            disabled={busy()}
+            disabled={saving()}
             options={allowed(draft()?.principal ?? { type: "user", userId: "" }).map((option) => ({
               value: option.key,
               label: option.label,
             }))}
             onValueChange={(value) => {
-              if (value) setDraftLevel(value);
+              if (value && canStart()) setDraftLevel(value);
             }}
           />
           <Button
             style={{ "font-size": "15px" }}
-            disabled={!draft() || busy()}
+            disabled={!draft() || saving()}
             loading={grantPending()}
             onClick={() => {
               const selection = draft();
@@ -494,7 +509,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           {(state) => (
             <div role="alert" class="text-sm text-danger">
               {state().message}{" "}
-              <Button variant="text" disabled={busy()} onClick={() => state().retry?.()}>
+              <Button variant="text" disabled={saving()} onClick={() => state().retry?.()}>
                 {t().retry}
               </Button>
             </div>
@@ -522,16 +537,14 @@ export default function PermissionEditor(props: PermissionEditorProps) {
                 pending={entry.id === pending()}
                 updating={updatingRow(entry.id)}
                 revoking={entry.id === revoking()}
-                disabled={busy()}
+                disabled={saving()}
                 lastManager={entry.id === lastManagerId()}
                 allowed={allowed(entry.principal)}
                 singlePicker={allowed(entry.principal).length === 1}
                 onUpdatePermission={(option) => {
-                  if (!busy()) void updateMut.mutate({ accessId: entry.id, permission: option.level, scope: option.scope });
+                  startUpdate({ accessId: entry.id, permission: option.level, scope: option.scope });
                 }}
-                onRevoke={() => {
-                  if (!busy()) void revokeMut.mutate(entry);
-                }}
+                onRevoke={() => startRevoke(entry)}
               />
             );
           }}
@@ -553,7 +566,7 @@ export default function PermissionEditor(props: PermissionEditorProps) {
           placeholder={props.placeholder}
           signedIn={props.signedIn}
           readOnly={grantPending()}
-          disabled={updateMut.loading() || revokeMut.loading()}
+          disabled={updating() !== null || revoking() !== null}
           onSelect={(principal, display) => void grant(principal, display)}
         />
       </Show>

@@ -3,6 +3,7 @@ import { createSignal, Show } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
+import type { GrantableLevel } from "./PermissionEditor";
 
 const waitFor = async (condition: () => boolean, label: string) => {
   for (let attempt = 0; attempt < 200; attempt += 1) {
@@ -1105,23 +1106,36 @@ describe("PermissionEditor pending controls", () => {
     return;
   }
 
-  const deferred = () => {
-    let resolve!: () => void;
+  const deferred = <T = void,>() => {
+    let resolve!: (value: T) => void;
     let reject!: (error: Error) => void;
-    const promise = new Promise<void>((yes, no) => {
+    const promise = new Promise<T>((yes, no) => {
       resolve = yes;
       reject = no;
     });
-    return { promise, resolve, reject };
+    return {
+      promise,
+      resolve,
+      reject,
+      // Await the controlled continuation before asserting the mutation's resulting state.
+      settle: async (value: T) => {
+        resolve(value);
+        await promise;
+      },
+    };
   };
 
-  const setup = async () => {
+  const setup = async (
+    options: { expanded?: boolean; beforeChange?: (entry: AccessEntry, next: GrantableLevel | null) => Promise<boolean> } = {},
+  ) => {
     const dom = createDomTestHarness();
     installPopoverApi(dom);
     const { default: PermissionEditor } = await import("./PermissionEditor");
     const { prompts } = await import("@k2b/ui");
     const update = deferred();
     const revoke = deferred();
+    const [canEdit, setCanEdit] = createSignal(true);
+    const writes: string[] = [];
     const originalConfirm = prompts.confirm;
     const originalError = prompts.error;
     const errors: string[] = [];
@@ -1133,6 +1147,9 @@ describe("PermissionEditor pending controls", () => {
     const dispose = render(
       () => (
         <PermissionEditor
+          expanded={options.expanded}
+          beforeChange={options.beforeChange}
+          canEdit={canEdit()}
           initialEntries={[
             grant("manager", { type: "user", userId: "mara" }, "admin", "Mara Lind"),
             grant("lea", { type: "user", userId: "lea" }, "read", "Lea Sommer"),
@@ -1141,23 +1158,31 @@ describe("PermissionEditor pending controls", () => {
           grantAccess={async () => {
             throw new Error("Not used");
           }}
-          updateAccess={() => update.promise}
-          revokeAccess={() => revoke.promise}
+          updateAccess={(id) => {
+            writes.push(`update:${id}`);
+            return update.promise;
+          }}
+          revokeAccess={(id) => {
+            writes.push(`revoke:${id}`);
+            return revoke.promise;
+          }}
         />
       ),
       dom.root,
     );
     const rows = Array.from(dom.root.querySelectorAll<HTMLElement>(".group\\/access-row"));
-    const triggers = rows.map((row) => row.querySelector<HTMLButtonElement>("button.k2b-select-chip")!);
+    const pickerSelector = options.expanded ? 'button[role="combobox"]' : "button.k2b-select-chip";
+    const triggers = rows.map((row) => row.querySelector<HTMLButtonElement>(pickerSelector)!);
+    const removes = rows.map((row) => row.querySelector<HTMLButtonElement>('button[aria-label^="Remove "]')!);
     const assertControls = (disabled: boolean) => {
       rows.forEach((row, index) => {
-        expect(row.querySelector("button.k2b-select-chip") === triggers[index]!).toBe(true);
+        expect(row.querySelector(pickerSelector) === triggers[index]!).toBe(true);
         expect(triggers[index]!.disabled).toBe(disabled);
         expect(row.querySelector("span.cursor-default")).toBeNull();
       });
     };
     const chooseEdit = () =>
-      Array.from(rows[1]!.querySelectorAll<HTMLButtonElement>("[role=menuitemradio]"))
+      Array.from(rows[1]!.querySelectorAll<HTMLButtonElement>("[role=menuitemradio], [role=option]"))
         .find((item) => item.textContent?.startsWith("Edit"))!
         .click();
     return {
@@ -1166,6 +1191,10 @@ describe("PermissionEditor pending controls", () => {
       revoke,
       rows,
       triggers,
+      removes,
+      writes,
+      setCanEdit,
+      dispose,
       errors,
       assertControls,
       chooseEdit,
@@ -1177,6 +1206,109 @@ describe("PermissionEditor pending controls", () => {
       },
     };
   };
+
+  for (const expanded of [false, true]) {
+    for (const action of ["update", "revoke"] as const) {
+      test(`${expanded ? "expanded" : "compact"}: ${action} confirmation keeps controls enabled but blocks duplicate writes through saving`, async () => {
+        const confirmation = deferred<boolean>();
+        const confirmations: (GrantableLevel | null)[] = [];
+        const view = await setup({
+          expanded,
+          beforeChange: (_entry, next) => {
+            confirmations.push(next);
+            return confirmation.promise;
+          },
+        });
+        const attempt = () => {
+          view.chooseEdit();
+          view.removes[1]!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        };
+        try {
+          if (action === "update") view.chooseEdit();
+          else view.removes[1]!.click();
+          expect(confirmations).toEqual([action === "update" ? "write" : null]);
+          view.assertControls(false);
+          expect(view.removes[1]!.disabled).toBe(false);
+          expect(view.dom.root.querySelector<HTMLInputElement>('input[role="combobox"]')!.disabled).toBe(false);
+          expect(view.rows.every((row) => !row.hasAttribute("aria-busy"))).toBe(true);
+          attempt();
+          expect(confirmations).toHaveLength(1);
+          expect(view.writes).toEqual([]);
+
+          await confirmation.settle(true);
+          expect(view.writes).toEqual([`${action}:lea`]);
+          view.assertControls(true);
+          expect(view.removes[1]!.disabled).toBe(true);
+          attempt();
+          expect(confirmations).toHaveLength(1);
+          expect(view.writes).toEqual([`${action}:lea`]);
+          await view[action].settle();
+          expect(view.triggers[2]!.disabled).toBe(false);
+          expect(view.writes).toEqual([`${action}:lea`]);
+        } finally {
+          view.done();
+        }
+      });
+    }
+  }
+
+  for (const action of ["update", "revoke"] as const) {
+    test(`an expanded ${action} retry cannot bypass another row's confirmation lock`, async () => {
+      const firstConfirmation = deferred<boolean>();
+      const nextConfirmation = deferred<boolean>();
+      let confirmations = 0;
+      const view = await setup({
+        expanded: true,
+        beforeChange: () => (++confirmations === 1 ? firstConfirmation.promise : nextConfirmation.promise),
+      });
+      try {
+        if (action === "update") view.chooseEdit();
+        else view.removes[1]!.click();
+        await firstConfirmation.settle(true);
+        expect(view.writes).toEqual([`${action}:lea`]);
+        view[action].reject(new Error("Could not save access"));
+        await view[action].promise.catch(() => {});
+        const retry = view.dom.root.querySelector<HTMLButtonElement>('[role="alert"] button')!;
+        expect(retry).not.toBeNull();
+        view.removes[2]!.click();
+        expect(confirmations).toBe(2);
+        expect(retry.disabled).toBe(false);
+        retry.click();
+        expect(confirmations).toBe(2);
+        expect(view.writes).toEqual([`${action}:lea`]);
+        await nextConfirmation.settle(false);
+        expect(view.writes).toEqual([`${action}:lea`]);
+      } finally {
+        view.done();
+      }
+    });
+
+    for (const invalidation of ["permission revoked", "disposed"] as const) {
+      test(`${action} does not write when ${invalidation} before confirmation resolves`, async () => {
+        const confirmation = deferred<boolean>();
+        let confirmations = 0;
+        const view = await setup({
+          beforeChange: () => {
+            confirmations += 1;
+            return confirmation.promise;
+          },
+        });
+        try {
+          if (action === "update") view.chooseEdit();
+          else view.removes[1]!.click();
+          expect(confirmations).toBe(1);
+          expect(view.writes).toEqual([]);
+          if (invalidation === "disposed") view.dispose();
+          else view.setCanEdit(false);
+          await confirmation.settle(true);
+          expect(view.writes).toEqual([]);
+          expect(confirmations).toBe(1);
+        } finally {
+          view.done();
+        }
+      });
+    }
+  }
 
   test("a pending update keeps every picker and shows progress and the chosen level only on its row", async () => {
     const view = await setup();

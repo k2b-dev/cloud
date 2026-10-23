@@ -966,6 +966,13 @@ convention still needs a check or a test.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
 
+### Confirmation disabled its own focus-return target
+
+- **What happened:** Canceling an access-removal dialog sometimes left focus on the page instead of the Remove button ([#1767](https://github.com/k2b-dev/cloud/issues/1767)).
+- **Root cause:** Mutation loading disabled the opener while awaiting confirmation; the dialog's focus-return frame could run before history cleanup resolved the callback.
+- **Error class:** Confirmation and saving share a disabled state.
+- **Guard:** PermissionEditor keeps its operation lock during confirmation but disables controls only for the write. Browser regressions hold confirmation across focus return and check that Cancel restores the exact opener without a write. Queued focus callbacks check disposal before reading the document.
+
 ### A notice check treated control icons as prose
 
 - **What happened:** The notice check rejected the Close control's icon size ([#1754](https://github.com/k2b-dev/cloud/issues/1754)).

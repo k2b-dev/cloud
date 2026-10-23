@@ -280,9 +280,10 @@ describe("PermissionEditor group coverage in a browser", () => {
   });
 });
 
-const openHarness = async (width: number) => {
+const openHarness = async (width: number, confirmation?: "immediate" | "delayed") => {
   const tab = await browser.newPage({ viewport: { width, height: 800 }, reducedMotion: "reduce" });
-  await tab.clock.setFixedTime(new Date("2026-10-17T12:00:00.000Z"));
+  // Confirmation cases observe native focus-return frames and use only fixed fixture timestamps.
+  if (!confirmation) await tab.clock.setFixedTime(new Date("2026-10-17T12:00:00.000Z"));
   const origin = "https://permission-editor.test";
   await tab.route(`${origin}/**`, (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -293,13 +294,48 @@ const openHarness = async (width: number) => {
       body: `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui"><div id="root" style="padding:16px;max-width:48rem"></div></body></html>`,
     });
   });
-  await tab.goto(origin);
+  await tab.goto(confirmation ? `${origin}/?confirmation=${confirmation}` : origin);
   await tab.addScriptTag({ content: harness });
   await settled(tab);
   return tab;
 };
 
 describe("PermissionEditor pending layout and focus", () => {
+  for (const confirmation of ["immediate", "delayed"] as const) {
+    test(`${confirmation} confirmation: cancellation returns focus while beforeChange is still pending`, async () => {
+      const tab = await openHarness(390, confirmation);
+      try {
+        const opener = tab.getByRole("button", { name: "Remove Lea Sommer", exact: true });
+        await opener.focus();
+        await opener.press("Enter");
+        await tab.waitForFunction(() => document.documentElement.dataset.confirming === "true");
+        expect(await opener.isEnabled()).toBe(true);
+        if (confirmation === "delayed") {
+          expect(await tab.locator("dialog[open]").count()).toBe(0);
+          expect(await opener.evaluate((element) => element === document.activeElement)).toBe(true);
+          await tab.evaluate(() => document.dispatchEvent(new Event("open-access-confirmation")));
+        }
+        const dialog = tab.getByRole("dialog", { name: "Confirm access", exact: true });
+        await dialog.waitFor();
+        expect(await opener.isEnabled()).toBe(true);
+        await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+        await tab.waitForFunction(() => document.documentElement.dataset.confirmationClosed === "true");
+        // Dialog close schedules focus once. The callback must remain unresolved across that actual frame.
+        await tab.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+        expect(await opener.isEnabled()).toBe(true);
+        expect(await opener.evaluate((element) => element === document.activeElement)).toBe(true);
+        expect(await tab.evaluate(() => document.documentElement.dataset.confirming)).toBe("true");
+        expect(await tab.evaluate(() => Number(document.documentElement.dataset.writes ?? 0))).toBe(0);
+        await tab.evaluate(() => document.dispatchEvent(new Event("settle-access-confirmation")));
+        await tab.waitForFunction(() => document.documentElement.dataset.confirming === undefined);
+        expect(await tab.evaluate(() => Number(document.documentElement.dataset.writes ?? 0))).toBe(0);
+        expect(await opener.evaluate((element) => element === document.activeElement)).toBe(true);
+      } finally {
+        await tab.close();
+      }
+    });
+  }
+
   for (const width of [390, 1280]) {
     test(`${width} px: a pending update keeps every control, box, and keyboard return target`, async () => {
       const tab = await openHarness(width);

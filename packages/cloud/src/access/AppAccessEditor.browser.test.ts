@@ -427,6 +427,8 @@ describe("App access through real browser controls and same-origin transport", (
       await dialog.waitFor({ state: "hidden" });
       expect(posts(transport)).toHaveLength(0);
       expect(await level(page, "Anna Muster").textContent()).toBe("Zugriff verwalten");
+      await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "combobox");
+      expect(await level(page, "Anna Muster").evaluate((element) => document.activeElement === element)).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await page.close();
