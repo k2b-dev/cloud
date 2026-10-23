@@ -303,3 +303,8 @@ export const installOverviewAlerts = async (sql: TransactionSQL): Promise<void> 
   await sql`CREATE INDEX ON pulse.notification_outbox(dispatch_kind,seq)`.simple();
   await sql`CREATE INDEX ON pulse.notification_outbox(dispatch_kind,base_id,seq) WHERE dispatch_kind='fanout'`.simple();
 };
+
+/** Source ownership is durable authorization metadata, independent of activity retention. */
+export const installAgentSourceOwnership = async (sql: TransactionSQL): Promise<void> => {
+  await sql`ALTER TABLE pulse.sources ADD COLUMN created_by_subject TEXT`.simple();
+};

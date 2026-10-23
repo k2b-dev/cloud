@@ -86,7 +86,10 @@ const waitFor = async (condition: () => boolean, timeoutMs = 1_000) => {
 };
 const mount = async (
   options: {
+    embedded?: boolean;
     conflict?: boolean;
+    loseFirstCreate?: boolean;
+    replayedDraft?: AiConversation["draft"];
     project?: boolean;
     newChat?: boolean;
     content?: AiConversation["draft"]["content"];
@@ -168,12 +171,13 @@ const mount = async (
         events.push("create");
         creates.push(JSON.parse(String(init.body)));
         await options.createGate;
+        if (options.loseFirstCreate && creates.length === 1) return Response.json({ message: "Response lost" }, { status: 502 });
         return Response.json({
           ...conversation,
           id: "new001",
           shortId: "new001",
           projectId: options.project ? project.id : null,
-          draft: { content: [], revision: 0, updatedAt: null },
+          draft: options.replayedDraft ?? { content: [], revision: 0, updatedAt: null },
         });
       }
       if (url.pathname.endsWith("/draft") && init?.method === "PUT") {
@@ -204,6 +208,7 @@ const mount = async (
     () => (
       <LocaleProvider locale="de">
         <Workspace
+          embedded={options.embedded}
           userId="user01"
           cloudUrl="http://localhost"
           status={{ ok: true, enabled: true, defaultModelId: "standard", visionModelConfigured: false, error: null, models }}
@@ -254,7 +259,7 @@ const mount = async (
     [...dom.root.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
       (row) => row.querySelector("strong")?.textContent === "Neue Aufgabe",
     );
-  await waitFor(() => Boolean(row()));
+  await waitFor(() => (options.embedded ? !input.disabled : Boolean(row())));
   const choose = () => row()!.click();
   return {
     ...dom,
@@ -338,7 +343,7 @@ test("a project composer creates a chat without navigating, saves there, and ret
   h.choose();
   await waitFor(() => openCommand.mock.calls.length === 1);
   expect(events).toEqual(["create", "save", "open"]);
-  expect(h.creates).toEqual([{ title: "Neuer Chat", projectId: "Proj01" }]);
+  expect(h.creates).toEqual([{ title: "Neuer Chat", projectId: "Proj01", requestId: expect.any(String) }]);
   expect(h.saves).toEqual([{ expectedRevision: 0, content: [{ type: "text", text: "Plan" }] }]);
   expect(openCommand).toHaveBeenCalledWith(
     "spaces.task.compose",
@@ -546,3 +551,77 @@ test("Escape while the app link resolves saves the live draft again, so a reload
   expect(h.saves[1]).toEqual({ expectedRevision: 5, content: [{ type: "text", text: "Plan /" }] });
   expect(h.input.value).toBe("Plan /");
 });
+
+test("a lost creation response keeps its identity when the edited draft retries", async () => {
+  const h = await mount({ newChat: true, loseFirstCreate: true });
+  h.choose();
+  await waitFor(() => h.creates.length === 1 && Boolean(h.status()));
+  h.input.value = "Later edits /";
+  h.input.setSelectionRange(h.input.value.length, h.input.value.length);
+  h.input.dispatchEvent(new Event("input", { bubbles: true }));
+  h.input.click();
+  await waitFor(() => Boolean(h.row()));
+  h.choose();
+  await waitFor(() => h.creates.length === 2 && h.saves.length > 0);
+  expect(h.creates[1]).toEqual(h.creates[0]);
+  expect(h.creates[0]).toMatchObject({ requestId: expect.any(String) });
+  expect(JSON.stringify(h.saves)).toContain("Later edits");
+});
+
+test("the panel live guard holds a dirty composer and an in-flight save until confirmation", async () => {
+  let release!: () => void;
+  const saveGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const h = await mount({ embedded: true, saveGate });
+  const canLeave = () => {
+    const detail = { allowed: true };
+    h.window.dispatchEvent(new h.window.CustomEvent("cloud.panel.before-leave", { detail }));
+    return detail.allowed;
+  };
+  try {
+    expect(canLeave()).toBe(false);
+    h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    [...h.root.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.trim() === "Entwürfe speichern")!
+      .click();
+    await waitFor(() => events.includes("save"));
+    expect(canLeave()).toBe(false);
+    release();
+    await waitFor(canLeave);
+    expect(h.saves).toHaveLength(1);
+  } finally {
+    release();
+  }
+});
+
+for (const project of [false, true]) {
+  test(`a create replay preserves local and remote drafts without saving over the remote revision (project: ${project})`, async () => {
+    const h = await mount({
+      embedded: true,
+      newChat: !project,
+      project,
+      loseFirstCreate: true,
+      replayedDraft: { content: [{ type: "text", text: "Remote draft B" }], revision: 1, updatedAt: now },
+    });
+    h.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    const leave = { allowed: true };
+    h.window.dispatchEvent(new h.window.CustomEvent("cloud.panel.before-leave", { detail: leave }));
+    expect(leave.allowed).toBe(false);
+    [...h.root.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.trim() === "Entwürfe speichern")!
+      .click();
+    await waitFor(() => h.creates.length === 1 && Boolean(h.root.textContent?.includes("Erstellen der Unterhaltung ist unklar")));
+    const retry = [...h.root.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Erstellen erneut versuchen",
+    );
+    expect(retry).toBeDefined();
+    retry!.click();
+    await waitFor(() => h.root.textContent?.includes("Der gespeicherte Entwurf wurde geändert.") ?? false);
+    expect(h.input.value).toBe("Plan /");
+    expect(h.root.textContent).toContain("Remote draft B");
+    expect(h.creates).toHaveLength(2);
+    expect(h.creates[1]).toEqual(h.creates[0]);
+    expect(h.saves).toHaveLength(0);
+  });
+}

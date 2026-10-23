@@ -1,7 +1,7 @@
 import { sql } from "bun";
 import type { MailRetention } from "../../contracts/outgoing-mail";
 import { toPgUuidArray } from "../postgres";
-import { get } from "../settings";
+import { get, read } from "../settings";
 import { deleteMailObjects } from "./attachments";
 import { messageAttachmentRefs } from "./messages";
 
@@ -38,6 +38,18 @@ export const readMailRetention = async (): Promise<MailRetention> => ({
   contentDays: await get<number>(MAIL_RETENTION_KEYS[0]),
   recordDays: await get<number>(MAIL_RETENTION_KEYS[1]),
 });
+export const readMailRetentionSettings = async (db?: typeof sql) => {
+  const content = await read(MAIL_RETENTION_KEYS[0], db);
+  const record = await read(MAIL_RETENTION_KEYS[1], db);
+  return {
+    contentDays: Number(content.value),
+    recordDays: Number(record.value),
+    unreadable: {
+      [MAIL_RETENTION_KEYS[0]]: content.stored === "unreadable",
+      [MAIL_RETENTION_KEYS[1]]: record.stored === "unreadable",
+    },
+  };
+};
 export const retainOutgoingMail = async (signal?: AbortSignal): Promise<void> => {
   const { contentDays, recordDays } = await readMailRetention();
   const deadline = Date.now() + 5 * 60_000;

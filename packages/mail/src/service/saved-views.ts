@@ -63,7 +63,7 @@ const withCurrentReferences = async (views: SavedConversationView[], db: SqlClie
   const [folders, tags] = await Promise.all([
     publicResources.publicIds(
       "folders",
-      references.map((reference) => (reference.type === "folder_id" ? reference.folderId : null)),
+      references.map((reference) => (reference.type !== "local_tag_id" ? reference.folderId : null)),
       db,
     ),
     publicResources.publicIds(
@@ -77,7 +77,7 @@ const withCurrentReferences = async (views: SavedConversationView[], db: SqlClie
     filter: {
       ...view.filter,
       expression: replaceMailSearchReferences(view.filter.expression, (reference) =>
-        (reference.type === "folder_id" ? folders.has(reference.folderId) : tags.has(reference.tagId))
+        (reference.type !== "local_tag_id" ? folders.has(reference.folderId) : tags.has(reference.tagId))
           ? reference
           : MAIL_SEARCH_MATCHES_NOTHING,
       ),
@@ -166,7 +166,7 @@ const validateFilterReferences = async (params: {
     const node = nodes.pop()!;
     if (node.type === "and" || node.type === "or") nodes.push(...node.expressions);
     else if (node.type === "not") nodes.push(node.expression);
-    else if (node.type === "folder_id") folderIds.add(node.folderId);
+    else if ("folderId" in node && node.folderId) folderIds.add(node.folderId);
     else if (node.type === "assignee" && node.userId) userIds.add(node.userId);
   }
   for (const folderId of folderIds) {

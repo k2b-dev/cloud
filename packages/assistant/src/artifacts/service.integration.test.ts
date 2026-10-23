@@ -20,6 +20,7 @@ import { defineCapabilities } from "@k2b/cloud/contracts";
 import { type AuthContext, accessRevision } from "@k2b/cloud/server";
 import { secrets } from "@k2b/cloud/services";
 import { approvalReviewDigest, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
+import * as settingsService from "@k2b/cloud/services/settings";
 import { ok } from "@k2b/stdlib";
 import { sql } from "bun";
 import { Hono } from "hono";
@@ -1253,7 +1254,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         sentences: { approval: "Write {input.value}" },
         fields: [{ path: "input.value", label: "Value" }],
       });
-      expect(wording).toHaveBeenCalledWith("demo", "write", "en");
+      expect(wording).toHaveBeenCalledWith("demo", "write", "en", null);
       expect(execute).not.toHaveBeenCalled();
       await expect(runtimeCapabilities.resolve(denied.id, { approved: true }, stranger, caller)).rejects.toMatchObject({
         code: "NOT_FOUND",
@@ -2911,19 +2912,23 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
         return Response.json({ data: [] });
       },
     });
-    const settings = spyOn(app.settings, "get").mockImplementation(
-      async (key) =>
-        ({
-          "assistant.storage_total_mib": 250,
-          "assistant.storage_file_mib": 50,
-          "assistant.rsql_url": upstream.url.origin,
-          "assistant.rsql_api_token": "secret-fixture",
-        })[key],
-    );
-    const writes = spyOn(app.settings, "set").mockResolvedValue();
+    const settings = spyOn(app.settings, "read").mockImplementation(async (key) => ({
+      stored: "readable" as const,
+      value: {
+        "assistant.storage_total_mib": 250,
+        "assistant.storage_file_mib": 50,
+        "assistant.rsql_url": upstream.url.origin,
+        "assistant.rsql_api_token": "secret-fixture",
+      }[key],
+    }));
+    const writes = spyOn(settingsService, "set").mockResolvedValue();
     try {
       await expect(artifactDatabase.settings(owner)).rejects.toMatchObject({ code: "ACCESS_DENIED" });
-      expect(await artifactDatabase.settings(administrator)).toEqual({ url: upstream.url.origin, tokenSet: true });
+      expect(await artifactDatabase.settings(administrator)).toEqual({
+        url: upstream.url.origin,
+        tokenSet: true,
+        unreadable: { "assistant.rsql_url": false, "assistant.rsql_api_token": false },
+      });
       expect(await artifactDatabase.configure({ url: upstream.url.origin }, administrator, true)).toEqual({ connected: true });
       expect(writes).not.toHaveBeenCalled();
       await expect(artifactDatabase.configure({ url: "", token: "" }, administrator)).rejects.toMatchObject({ code: "DB_SERVER_IN_USE" });

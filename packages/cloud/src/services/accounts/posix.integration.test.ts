@@ -50,6 +50,20 @@ suite("isolated Linux identity migration and provisioning", () => {
     await disposable?.drop();
   });
 
+  test.each(["foreign ciphertext", "invalid configuration"])("%s Linux configuration requires explicit replacement", async (kind) => {
+    if (kind === "invalid configuration") await set("linux.identity_config", "fictional-invalid-json", db);
+    const [initial] = await db`SELECT value FROM settings.entries WHERE key='linux.identity_config'`;
+    const ciphertext = kind === "foreign ciphertext" ? "fictional-unreadable-ciphertext" : initial!.value;
+    await db`UPDATE settings.entries SET value=${ciphertext}, updated_at='2026-01-02T03:04:05Z' WHERE key='linux.identity_config'`;
+    expect((await service.overview(admin)).config.unreadable).toBe(true);
+    await expect(service.configure(admin, { ...config, enabled: false })).rejects.toMatchObject({ code: "setting_unreadable" });
+    const [row] = await db`SELECT value, updated_at FROM settings.entries WHERE key='linux.identity_config'`;
+    expect(row!.value).toBe(ciphertext);
+    expect(row!.updated_at.toISOString()).toBe("2026-01-02T03:04:05.000Z");
+    await service.configure(admin, { ...config, enabled: false }, { replaceUnreadable: true });
+    expect((await service.overview(admin)).config.unreadable).toBe(false);
+  });
+
   test("local creation and guest promotion assign attributes through the real provider", async () => {
     const actor = { userId: admin.id, roles: admin.roles };
     const created = await localUsers.create({ data: { email: "new@example.test" }, profile: "user", accountExpires: null, actor });
