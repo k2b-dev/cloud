@@ -90,30 +90,34 @@ test("refuses an output with a cld manifest and a foreign extra file untouched",
   expect(await readFile(join(out, "keep.txt"), "utf8")).toBe("keep");
 });
 
-test("refuses earlier-looking outputs containing the module or references, including path aliases", async () => {
-  const out = join(workspace, "protected");
-  await mkdir(join(out, "references"), { recursive: true });
-  const pkg = JSON.stringify({ cld: { manifest: "manifest.json" } });
-  const source = await readFile(join(workspace, "module.ts"), "utf8");
-  await writeFile(join(out, "package.json"), pkg);
-  await writeFile(join(out, "cli.js"), source);
-  await writeFile(join(out, "references", "index.md"), "# Protected\n");
-  await symlink(out, join(workspace, "protected-alias"));
-  await symlink(join(workspace, "module.ts"), join(out, "manifest.json"));
-  for (const [module, references, output] of [
-    [join(out, "cli.js"), "references", out],
-    ["module.ts", join(out, "references"), out],
-    [join(workspace, "protected-alias", "cli.js"), "references", out],
-    [join(out, "manifest.json"), "references", out],
-  ] as const) {
+test.each(["module", "references", "directory-alias", "module-alias"] as const)(
+  "refuses an earlier-looking output containing protected %s input",
+  async (scenario) => {
+    const out = join(workspace, `protected-${scenario}`);
+    const alias = join(workspace, `protected-alias-${scenario}`);
+    await mkdir(join(out, "references"), { recursive: true });
+    const pkg = JSON.stringify({ cld: { manifest: "manifest.json" } });
+    const source = await readFile(join(workspace, "module.ts"), "utf8");
+    await writeFile(join(out, "package.json"), pkg);
+    await writeFile(join(out, "cli.js"), source);
+    await writeFile(join(out, "references", "index.md"), "# Protected\n");
+    await symlink(out, alias);
+    await symlink(join(workspace, "module.ts"), join(out, "manifest.json"));
+    const cases = {
+      module: [join(out, "cli.js"), "references", out],
+      references: ["module.ts", join(out, "references"), out],
+      "directory-alias": [join(alias, "cli.js"), "references", out],
+      "module-alias": [join(out, "manifest.json"), "references", out],
+    } as const;
+    const [module, references, output] = cases[scenario];
     const result = await runArgs([module, "--references", references, "--out", output]);
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("Refusing --out");
     expect(await readFile(join(out, "package.json"), "utf8")).toBe(pkg);
     expect(await readFile(join(out, "cli.js"), "utf8")).toBe(source);
     expect(await readFile(join(out, "references", "index.md"), "utf8")).toBe("# Protected\n");
-  }
-});
+  },
+);
 
 test("prints usage with --help", async () => {
   const result = await run(join(workspace, "unused"), "--help");
