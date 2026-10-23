@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| A sideways scroller without an overflow cue | A row with a hidden scrollbar cuts its last controls at a hard edge, so people cannot tell that more follow. | Test: UI `workspace-head-row.browser.test.ts` checks that overflowing head filters fade at the edge that hides chips. |
 | A shared slot assumes its usual child | The phone head returns the view strip's padding with a negative margin; a plain title in that slot touches the edge, and a disabled Details button keeps a 100 px reservation in a list head whose reader owns Details. | Test: UI `workspace-head-pane.browser.test.ts` checks the title inset and the hidden unavailable control in SSR and after hydration, and that available, unbound and unsplit heads keep the shared control. |
 | Unretried runtime downloads fail healthy CI jobs | Starting Playwright through `npx` or compiling the Bun baseline can fail the merge queue during a transient registry outage. | Check: `ci-runtime-downloads` requires the shared Playwright startup helper. Tests: `scripts/ci-runtime-downloads.test.ts` covers bounded download retries, startup recovery, diagnostics and exhaustion. |
 | A CI check imports an unbuilt workspace package | A fresh job installs dependencies but the check runner loads rules that import the UI package before its exported files exist. | Test: `scripts/nightly-ui-build.test.ts` requires every Nightly job that runs repository checks to build UI first. |
@@ -966,6 +967,13 @@ convention still needs a check or a test.
 - **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
+### Wrapped head filters hid chips behind a hard edge
+
+- **What happened:** In Spaces at 1194 px and on iPad, Status, Sort, and Group stopped at a hard edge in the head's second row, with no sign that more chips followed.
+- **Root cause:** The filter group scrolls sideways with a hidden scrollbar, but unlike the view strip it was not marked as a fading scrollport.
+- **Error class:** A sideways scroller without a visible overflow cue hides controls.
+- **Guard:** `workspace-head-row.browser.test.ts` ("chips that scroll on their own row fade at the edge that hides them") checks the fade at both ends of an overflowing filter row.
 
 ## Add a lesson
 
