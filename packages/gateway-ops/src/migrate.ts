@@ -1,7 +1,6 @@
 import { sql } from "bun";
 
 export const migrate = async (): Promise<void> => {
-  await sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`.simple();
   await sql`CREATE SCHEMA IF NOT EXISTS gateway`.simple();
   console.log("  ✓ gateway schema");
 

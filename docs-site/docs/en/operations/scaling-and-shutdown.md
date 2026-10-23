@@ -5,7 +5,7 @@ section: Operations
 order: 1150
 description: Run multiple application instances and shut them down without losing work.
 tags: [scaling, lifecycle, shutdown]
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Scaling and shutdown
@@ -94,14 +94,40 @@ waits live in the Assistant process, so a poll or an approval that reaches
 another replica marks the call lost. This limit belongs to the Code Mode host
 work in [#47](https://github.com/k2b-dev/cloud/issues/47).
 
-A per-process limit protects one process, not the service behind it. With
-several replicas, Gotenberg, Filegate, the SMTP relay, model providers and
-Postgres see the limit once per replica: two Core replicas run up to 16 AI
-turns and 24 SMTP sessions. Every replica also opens its own Postgres pool of
-up to 10 connections, plus the extra pools in the table. Size those services
-for the replica count. A shared budget is tracked in
-[#1626](https://github.com/k2b-dev/cloud/issues/1626). Live updates allow 16
-sockets per viewer on each replica. Workflow slots also count per replica; see
+PDF rendering and outgoing SMTP have installation-wide admission budgets in
+Valkey: **2 Gotenberg requests** and **8 SMTP sessions**, shared across apps,
+replicas, immediate mail, bulk mail, and profile test sends. These preserve the
+previous single-process PDF and immediate SMTP limits as the baseline, rather
+than multiplying them by the replica count. Keep the same `SYNC_NAMESPACE` and
+Valkey service on every replica. During the upgrade, older replicas do not take
+these slots; the fleet budget applies once all callers run this release.
+
+Admission makes one attempt without queuing and uses the operation's existing
+deadline. Gotenberg saturation or unavailable Valkey returns `busy`; Notebooks
+and Tools return HTTP 503. SMTP saturation leaves mail queued with a visible
+busy error and the existing retry policy; profile test sends return 503. A slot
+is released after response consumption or SMTP transport cleanup. If a process
+crashes, its slot expires after twice the operation timeout, allowing time for
+cancelled sockets to close. Local PDF counters remain in place to bound each
+process's memory.
+
+The other limits in the table deliberately remain per process:
+
+- AI turn workers bound active conversations, tools, and approval waits; they
+  do not count model requests or tokens. Configure provider quotas for the
+  combined load of the replicas and all other model clients.
+- Notification workers bound delivery orchestration; their email uses the
+  shared SMTP budget. Push delivery has its own provider retries.
+- Files' four upload places reject overload before reading request bodies and
+  bound process memory and query-pool use. They are not a Filegate capacity
+  setting; size Filegate for concurrent transfers across all replicas.
+- Mail's four provider jobs per kind bound local worker occupancy. Distributed
+  mailbox leases serialize work on each remote mailbox, while separate
+  mailboxes can progress on different replicas.
+
+Every replica also opens its own Postgres pool of up to 10 connections, plus
+the extra pools in the table. Live updates allow 16 sockets per viewer on each
+replica. Workflow slots also count per replica; see
 [Emit events and start runs](/en/docs/automation/emit-events-and-start-runs).
 
 Where availability matters, run at least **two Mail replicas** from the release
@@ -200,25 +226,24 @@ Replicas of one application can boot together: setup runs on one replica at a
 time, and the later ones wait for it; see
 [Use lifecycle hooks](#use-lifecycle-hooks).
 
-A stopping process does not drain HTTP yet. On `SIGTERM` it runs its stop
-hooks, stops Sync, and exits while its HTTP server still accepts requests, and
-its readiness still reports ready. Requests that reach it during this time can
-fail when they need NATS. Requests in flight and open SSE streams are cut at
-exit. If the replica had not sent response headers yet, the gateway answers
-with `502` and `Retry-After: 3`. A response or SSE stream that had already
-started keeps its status and ends with a broken body, so the client must retry
-or reconnect. Live sockets close and reconnect. Graceful HTTP shutdown is
-tracked in
-[#1625](https://github.com/k2b-dev/cloud/issues/1625).
+On `SIGTERM` or `SIGINT`, an application immediately changes readiness to
+HTTP 503 and closes HTTP admission. Bun stops accepting new connections and
+lets current responses finish for up to **30 seconds**, matching the existing
+worker drain deadline. At that deadline, Cloud forcibly closes remaining
+connections, including SSE streams and WebSockets; the native request signal
+cancels request work. Only after HTTP has drained or been closed does Cloud run
+lifecycle stop hooks and release its dependencies, ending with Sync.
 
-Until then:
+An unfinished response body can still break at the deadline, so streaming
+clients must reconnect. A request without response headers can still become a
+gateway 502 when its connection is forced closed. Drain at the ingress before
+sending `SIGTERM` when endpoint propagation would otherwise send new traffic
+to the departing replica; new connections to its closed listener cannot be
+served. Readiness is 503 as soon as shutdown begins, including requests on an
+existing connection that reach the handler during shutdown.
 
-- drain at the ingress: take the replica out of the service before it receives
-  `SIGTERM`, for example with a Kubernetes `preStop` delay that is longer than
-  the endpoint update. This stops new connections; connections a gateway
-  already holds can still reach the replica until it exits;
-- size the termination window; see
-  [Set the termination window](#set-the-termination-window).
+Allow time for both HTTP and subsequent background cleanup; see
+[Set the termination window](#set-the-termination-window).
 
 ## Use lifecycle hooks
 
@@ -245,9 +270,14 @@ logging `waiting for setup on another replica`. If a replica crashes or is
 stopped during setup, its turn expires after about a minute. A replica that
 loses its turn during setup fails its start and restarts, so setup runs again.
 
+Core provisions the installation-wide `pgcrypto` extension before other apps
+start. Application migrations rely on that prerequisite instead of racing to
+create it. Standalone apps using that same database inherit the prerequisite;
+start the updated Core first on a fresh database.
+
 `start` begins workers and subscriptions.
 
-`stop` releases them. Cloud calls it on `SIGTERM` and `SIGINT`, then stops
+`stop` releases them. Cloud calls it after HTTP draining on `SIGTERM` and `SIGINT`, then stops
 notification registration, the runtime watcher, and the registry heartbeat.
 
 ## Drain background work
@@ -278,6 +308,7 @@ The process exits after lifecycle shutdown finishes. Give the container enough
 termination time for:
 
 - request draining at the ingress;
+- up to 30 seconds for HTTP responses, followed by background worker draining;
 - current database transactions;
 - worker lease release;
 - tracked tasks;
