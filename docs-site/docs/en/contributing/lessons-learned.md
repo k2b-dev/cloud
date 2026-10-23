@@ -952,6 +952,13 @@ convention still needs a check or a test.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
 
+## Skipped Pulse cache tests must not require infrastructure
+
+- **What happened:** The focused Pulse suite failed while loading a skipped dashboard-cache integration file without Valkey configured.
+- **Root cause:** The suite callback read the infrastructure URL during collection, before the skip took effect.
+- **Error class:** Eager test setup defeats optional infrastructure gates.
+- **Guard:** Initialize cache clients in `beforeAll`; run the file without infrastructure to verify skipping and with the configured test target to verify cache behavior.
+
 ## Add a lesson
 
 A fix pull request answers "How do we prevent this next time?" and adds its

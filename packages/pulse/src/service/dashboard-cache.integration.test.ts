@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { RedisClient } from "bun";
 import { requireInfraUrl, suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { DASHBOARD_CACHE_BYTES, DASHBOARD_CACHE_ENTRIES } from "../dashboard-contracts";
@@ -6,8 +6,12 @@ import { createDashboardCache, type DashboardSnapshot } from "./dashboard-cache"
 
 suiteFor("valkey")("bounded dashboard result cache", () => {
   const namespace = `test:pulse:dashboards:${crypto.randomUUID()}`;
-  const a = createDashboardCache({ url: requireInfraUrl("valkey"), namespace }),
+  let a: ReturnType<typeof createDashboardCache>;
+  let b: ReturnType<typeof createDashboardCache>;
+  beforeAll(() => {
+    a = createDashboardCache({ url: requireInfraUrl("valkey"), namespace });
     b = createDashboardCache({ url: requireInfraUrl("valkey"), namespace });
+  });
   const snapshot: DashboardSnapshot = {
     at: "2026-10-22T12:00:00Z",
     from: "2026-10-21T12:00:00Z",
