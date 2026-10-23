@@ -222,6 +222,8 @@ class World {
     const m = this.models.get(id)!;
     return ConversationSchema.parse({
       threads: 0,
+      channel: false,
+      member: true,
       id,
       name: m.name,
       icon: m.icon,

@@ -46,10 +46,13 @@ export const projectMessage = (
   system: row.kind === "system" ? SystemMessageSchema.parse({ code: row.system_code, params: row.system_params }) : null,
   createdAt: row.created_at.toISOString(),
 });
-export const deletedPeople = async (db: typeof sql, ids: string[]) => {
+export const deletedPeople = async (db: typeof sql, ids: string[], type: "user" | "service_account" = "user") => {
   const unique = [...new Set(ids)];
   if (!unique.length) return new Set<string>();
-  const found = await db<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ANY(${toPgUuidArray(unique)}::uuid[])`;
+  const found =
+    type === "user"
+      ? await db<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ANY(${toPgUuidArray(unique)}::uuid[])`
+      : await db<{ id: string }[]>`SELECT id FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(unique)}::uuid[])`;
   const existing = new Set(found.map((row) => row.id));
   return new Set(unique.filter((id) => !existing.has(id)));
 };
@@ -84,16 +87,24 @@ export const messageViews = async (db: typeof sql, rows: MessageRow[], conversat
   const replies = new Map(originals.map((row) => [String(row.seq), projectMessage(row, conversationId)]));
   const projected = rows.map((row) => projectMessage(row, conversationId, row.thread_id ? threads.get(row.thread_id)! : null));
   const all = [...projected, ...replies.values()];
-  const deleted = await deletedPeople(
-    db,
-    all.flatMap((message) => [
-      ...(message.author.type === "user" ? [message.author.id] : []),
-      ...systemPeople(message.system).map((person) => person.id),
-    ]),
+  const absent = await Promise.all(
+    (["user", "service_account"] as const).map((type) =>
+      deletedPeople(
+        db,
+        all.flatMap((message) => [
+          ...(message.author.type === type ? [message.author.id] : []),
+          ...systemPeople(message.system)
+            .filter((person) => (person.type ?? "user") === type)
+            .map((person) => person.id),
+        ]),
+        type,
+      ),
+    ),
   );
+  const deleted = new Set(absent.flatMap((ids) => [...ids]));
   const former = messages({ locale }).formerAccount;
   for (const message of all) {
-    if (message.author.type === "user" && deleted.has(message.author.id)) message.author.name = former;
+    if (deleted.has(message.author.id)) message.author.name = former;
     for (const person of systemPeople(message.system)) if (deleted.has(person.id)) person.name = former;
   }
   return projected.map((message, index) => {
@@ -114,8 +125,13 @@ export const messageViews = async (db: typeof sql, rows: MessageRow[], conversat
     return { ...message, systemText: message.system ? renderSystemMessage(message.system, message.author.name, locale) : null };
   });
 };
-export const personSnapshots = async (db: typeof sql, ids: string[]) => {
-  const rows = await db<{ id: string; name: string }[]>`SELECT id, COALESCE(NULLIF(display_name, ''), uid) AS name
+export const personSnapshots = async (db: typeof sql, ids: string[], type: "user" | "service_account" = "user") => {
+  const rows =
+    type === "service_account"
+      ? await db<
+          { id: string; name: string; type: "service_account" }[]
+        >`SELECT id, name, 'service_account' AS type FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(ids)}::uuid[])`
+      : await db<{ id: string; name: string; type?: "service_account" }[]>`SELECT id, COALESCE(NULLIF(display_name, ''), uid) AS name
     FROM auth.users WHERE id = ANY(${toPgUuidArray(ids)}::uuid[])`;
   return ids.map((id) => {
     const row = rows.find((row) => row.id === id);
@@ -136,10 +152,7 @@ export const appendMessage = async (
   affected: readonly string[] = [],
 ) => {
   const author = subjectPrincipal(context.accessSubject);
-  const [snapshot] =
-    author.type === "user"
-      ? await personSnapshots(db, [author.id])
-      : await db<{ id: string; name: string }[]>`SELECT id, name FROM auth.service_accounts WHERE id = ${author.id}::uuid`;
+  const [snapshot] = await personSnapshots(db, [author.id], author.type);
   if (!snapshot) throw new Error("Chat message has no author");
   const [head] = await db<{ seq_head: bigint | string; rev: bigint | string }[]>`UPDATE chat.conversations
     SET seq_head = seq_head + 1, rev = rev + 1, changed_rev = rev + 1,

@@ -191,7 +191,8 @@ export const startChatHarness = async () => {
   const readViews: { chat: string; seq: number; thread: string }[] = [];
   const posted: { chat: string; clientId: string; body: string; thread?: string; replyTo?: string; refs?: CloudResourceRef[] }[] = [];
 
-  const principalId = (principal: MemberPrincipal) => (principal.type === "user" ? principal.userId : principal.groupId);
+  const principalId = (principal: MemberPrincipal) =>
+    principal.type === "user" ? principal.userId : principal.type === "group" ? principal.groupId : principal.serviceAccountId;
   const makeMember = (principal: MemberPrincipal, permission: Permission, addedAt: string): Member => {
     const id = principalId(principal);
     const group = principal.type === "group" ? groups.get(id) : undefined;
@@ -471,6 +472,8 @@ export const startChatHarness = async () => {
     chats.set(id, {
       conversation: {
         threads: 0,
+        channel: false,
+        member: true,
         id,
         name: options.name ?? null,
         icon: null,

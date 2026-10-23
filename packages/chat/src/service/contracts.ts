@@ -44,7 +44,34 @@ const IconSchema = z
   .nullable()
   .optional();
 const metadata = { name: clearedText(80), icon: IconSchema, purpose: clearedText(300) };
+export const ServiceAccountPrincipalSchema = z.strictObject({
+  type: z.literal("service_account"),
+  serviceAccountId: z.uuid().transform((id) => id.toLowerCase()),
+});
+export const DiscoveryPrincipalSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("group"), groupId: z.uuid().transform((id) => id.toLowerCase()) }),
+  z.strictObject({ type: z.literal("authenticated") }),
+]);
+export const DiscoveryEntrySchema = z.strictObject({ principal: DiscoveryPrincipalSchema, permission: z.enum(["read", "write"]) });
+export const DiscoveryEntriesSchema = z
+  .array(DiscoveryEntrySchema)
+  .max(MEMBER_PAGE_SIZE)
+  .refine(
+    (entries) =>
+      new Set(entries.map((entry) => (entry.principal.type === "group" ? entry.principal.groupId : "authenticated"))).size ===
+      entries.length,
+  );
+export const DiscoveryUpdateSchema = z.strictObject({ entries: DiscoveryEntriesSchema, name: clearedText(80), purpose: clearedText(300) });
+export const DiscoveryStateSchema = z.object({
+  entries: z.array(DiscoveryEntrySchema.extend({ accessId: z.uuid(), displayName: z.string() })),
+  allowAuthenticated: z.boolean(),
+  audienceCount: z.number().int().nonnegative(),
+});
+export const DiscoveryOptionsSchema = z.object({ allowAuthenticated: z.boolean() });
+export const DiscoveryPreviewSchema = z.object({ audienceCount: z.number().int().nonnegative(), includesAuthenticated: z.boolean() });
+
 export const MemberPrincipalSchema = z.discriminatedUnion("type", [
+  ServiceAccountPrincipalSchema,
   z.strictObject({ type: z.literal("user"), userId: z.uuid().transform((id) => id.toLowerCase()) }),
   z.strictObject({ type: z.literal("group"), groupId: z.uuid().transform((id) => id.toLowerCase()) }),
 ]);
@@ -55,7 +82,10 @@ const members = z
   .transform((principals) => {
     const seen = new Set<string>();
     return principals.filter((principal) => {
-      const key = principal.type + ":" + (principal.type === "user" ? principal.userId : principal.groupId);
+      const key =
+        principal.type +
+        ":" +
+        (principal.type === "user" ? principal.userId : principal.type === "group" ? principal.groupId : principal.serviceAccountId);
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -68,6 +98,7 @@ export const CreateConversationSchema = z.strictObject({
     .transform((id) => id.toLowerCase())
     .optional(),
   ...metadata,
+  discovery: DiscoveryEntriesSchema.optional(),
   members: members.default([]),
   allowDuplicate: z.boolean().default(false),
 });
@@ -116,6 +147,7 @@ export const PeopleQuerySchema = z.strictObject({
     })
     .optional(),
 });
+export const ChannelQuerySchema = z.object({ q: z.string().trim().max(100).optional(), cursor: PeopleQuerySchema.shape.cursor });
 export const PeoplePageSchema = z.object({
   items: z.array(z.object({ id: z.uuid(), displayName: z.string() })),
   nextCursor: z.string().nullable(),
@@ -193,6 +225,8 @@ export const ReadAllOutcomeSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("done"), marked: z.number().int(), more: z.boolean() }),
 ]);
 export const ConversationSchema = z.object({
+  channel: z.boolean(),
+  member: z.boolean(),
   threads: z.number().int().min(0).max(MAX_THREADS),
   unread: z.number().int().min(0).max(UNREAD_CAP),
   read: ReadStateSchema.nullable(),
@@ -221,6 +255,7 @@ export const ConversationPageSchema = z.object({ items: z.array(ConversationSche
 export const MemberSchema = z.object({
   accessId: z.uuid(),
   principal: MemberPrincipalSchema,
+  serviceAccountKind: z.enum(["standalone", "agent", "resource_bound", "user_delegated"]).optional(),
   displayName: z.string(),
   avatarHash: z.string().nullable().optional(),
   guest: z.boolean(),
@@ -233,7 +268,7 @@ export const MemberPageSchema = z.object({
   items: z.array(MemberSchema),
   nextCursor: z.string().nullable(),
   managers: z.number().int().nonnegative(),
-  /** The access subject's direct user membership, independent of search and pagination. */
+  /** The access subject's direct membership, independent of search and pagination. */
   self: z.object({ accessId: z.uuid(), permission: PermissionSchema, active: z.boolean() }).nullable(),
 });
 export const MemberPreviewSchema = z.object({
@@ -245,8 +280,9 @@ export const ChangeSchema = z.object({ added: z.number().int() });
 export const MemberRemovalSchema = z.object({ success: z.literal(true), keptThroughGroup: z.boolean() });
 export const SuccessSchema = z.object({ success: z.literal(true) });
 
-const personSnapshot = z.object({ id: z.uuid(), name: z.string() });
+const personSnapshot = z.object({ id: z.uuid(), name: z.string(), type: z.literal("service_account").optional() });
 export const SystemMessageSchema = z.discriminatedUnion("code", [
+  z.object({ code: z.literal("discovery_changed"), params: z.object({ count: z.number().int().nonnegative() }) }),
   z.strictObject({
     code: z.literal("thread_created"),
     params: z.strictObject({ thread: z.strictObject({ id: ThreadIdSchema, name: z.string() }) }),

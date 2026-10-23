@@ -8,6 +8,8 @@ const noThreads = { general: { unread: 0, lastMessage: null }, items: [] };
 
 const conversation = ConversationSchema.parse({
   threads: 0,
+  channel: false,
+  member: true,
   id: "abcdef",
   name: "Chat",
   title: "Chat",

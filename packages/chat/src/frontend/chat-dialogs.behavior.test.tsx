@@ -38,6 +38,8 @@ const personId = "22222222-2222-4222-8222-222222222222";
 const now = "2026-10-12T10:30:00.000Z";
 const conversation: Conversation = {
   threads: 0,
+  channel: false,
+  member: true,
   id: "Chat01",
   name: "Planning",
   title: "Planning",

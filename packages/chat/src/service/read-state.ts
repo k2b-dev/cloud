@@ -7,6 +7,8 @@ import {
   type ChatContext,
   capPermission,
   messages,
+  personalChannelKey,
+  principalCondition,
   readableMemberCondition,
   requireConversation,
   subjectPrincipal,
@@ -37,11 +39,18 @@ export type ReadProjection = {
   joined_seq: string | bigint | null;
   unread: number;
   threads: number;
+  channel: boolean;
+  member: boolean;
 };
 /** Production and EXPLAIN use this same bounded, index-backed count and snapshot revision. */
 export const unreadQuery = (db: typeof sql, subject: AccessSubject, conversationIds: readonly string[]) => {
   const self = subjectPrincipal(subject);
-  return db`SELECT c.id AS conversation_id, c.short_id, c.rev, (SELECT count(*)::int FROM chat.threads t WHERE t.conversation_id = c.id) AS threads, p.last_read_seq, p.unread_from_seq, p.joined_seq,
+  return db`SELECT c.id AS conversation_id, c.short_id, c.rev,
+    EXISTS(SELECT 1 FROM chat.conversation_access ca WHERE ca.conversation_id = c.id AND ca.role = 'discoverable') AS channel,
+    EXISTS(SELECT 1 FROM chat.conversation_access ca JOIN auth.access a ON a.id = ca.access_id
+      WHERE ca.conversation_id = c.id AND ca.role = 'member' AND ${principalCondition(subject, db)}
+        AND a.permission IN ('read', 'write', 'admin')) AS member,
+    (SELECT count(*)::int FROM chat.threads t WHERE t.conversation_id = c.id) AS threads, p.last_read_seq, p.unread_from_seq, p.joined_seq,
     CASE WHEN NOT EXISTS (SELECT 1 FROM chat.threads t WHERE t.conversation_id = c.id) THEN
       CASE WHEN p.conversation_id IS NOT NULL AND c.seq_head > ${readStartSql(db)} THEN
         (SELECT count(*)::int FROM (SELECT seq FROM chat.messages m
@@ -54,7 +63,9 @@ export const unreadQuery = (db: typeof sql, subject: AccessSubject, conversation
       AND p.principal_type = ${self.type} AND p.principal_id = ${self.id}::uuid
     WHERE c.id = ANY(${toPgUuidArray([...conversationIds])}::uuid[])`;
 };
-export const projectRead = (row: ReadProjection): { read: ReadState | null; unread: number; threads: number } => ({
+export const projectRead = (
+  row: ReadProjection,
+): { read: ReadState | null; unread: number; threads: number; channel: boolean; member: boolean } => ({
   read:
     row.joined_seq === null
       ? null
@@ -65,6 +76,8 @@ export const projectRead = (row: ReadProjection): { read: ReadState | null; unre
         },
   unread: row.unread,
   threads: row.threads,
+  channel: row.channel,
+  member: row.member,
 });
 const update = async (
   db: typeof sql,
@@ -89,8 +102,7 @@ const update = async (
   return { conversationId: row.short_id, ...state.read, unread: state.unread, asOfRev: Number(row.rev), threads };
 };
 const publish = async (db: typeof sql, context: ChatContext, data: z.infer<typeof ReadUpdateSchema>) => {
-  if (context.accessSubject.type !== "user") return false;
-  await chatLive.publish(db, { key: `p:${context.accessSubject.userId}`, data: { type: "read", ...data } });
+  await chatLive.publish(db, { key: personalChannelKey(context.accessSubject), data: { type: "read", ...data } });
   return true;
 };
 type ParticipantRow = {

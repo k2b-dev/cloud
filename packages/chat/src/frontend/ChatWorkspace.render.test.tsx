@@ -19,6 +19,8 @@ const now = "2026-10-12T10:30:00.000Z";
 const viewerId = "11111111-1111-4111-8111-111111111111";
 const conversation: NonNullable<ChatWorkspaceProps["open"]>["conversation"] = {
   threads: 0,
+  channel: false,
+  member: true,
   id: "Chat01",
   name: "Delivery board",
   title: "Delivery board",

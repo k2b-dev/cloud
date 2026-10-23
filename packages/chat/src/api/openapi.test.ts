@@ -17,6 +17,12 @@ test("publishes every conversation operation with typed request and response sch
   const spec = SpecSchema.parse(await generateSpecs(app));
   for (const [path, method] of [
     ["/people", "get"],
+    ["/channels", "get"],
+    ["/channels/options", "get"],
+    ["/channels/preview", "post"],
+    ["/conversations/{conversation}/discovery", "get"],
+    ["/conversations/{conversation}/discovery", "put"],
+    ["/conversations/{conversation}/join", "post"],
     ["/conversations/read-all", "post"],
     ["/conversations/{conversation}/read", "post"],
     ["/conversations/{conversation}/unread", "post"],
@@ -43,7 +49,7 @@ test("publishes every conversation operation with typed request and response sch
     const operation = spec.paths[`/api/chat${path}`]?.[method];
     expect(operation).toBeDefined();
     expect(operation?.responses[method === "post" && path === "/conversations" ? "201" : "200"]).toBeDefined();
-    if (["post", "patch"].includes(method)) expect(operation?.requestBody).toBeDefined();
+    if (["post", "patch", "put"].includes(method) && !path.endsWith("/join")) expect(operation?.requestBody).toBeDefined();
     if (path.includes("{conversation}")) expect(operation?.parameters?.length).toBeGreaterThanOrEqual(1);
   }
 });

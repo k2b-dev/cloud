@@ -300,6 +300,44 @@ links, autolinks and bare URLs. URLs longer than 2,048 characters are excluded.
 The shared list reads the messages themselves, so deleting a message removes
 its items from subsequent reads.
 
+## Chat channels after the upgrade
+
+The Chat API supports channels with a name, purpose, and discovery audience.
+The operator setting `chat.discoverable_authenticated` defaults to `true`.
+Disable it to remove discovery through the “all signed-in accounts” audience;
+existing subscriptions keep their membership. This audience includes guests
+and service accounts. No new database migration is required for channels.
+
+To create a channel, include `discovery` in `POST /api/chat/conversations`:
+an array of `{ principal, permission }` entries. A principal is
+`{ type: "group", groupId }` or `{ type: "authenticated" }`; permission is
+`read` or `write`. The audience supports up to 100 distinct entries.
+`GET /api/chat/channels/options` returns `allowAuthenticated`.
+`POST /api/chat/channels/preview` accepts the audience array and returns
+`audienceCount` and `includesAuthenticated`. Pass `?conversation=<ID>` to
+preview an existing channel as its manager.
+
+`GET /api/chat/channels` accepts a search term `q` and an opaque `cursor`.
+It returns up to 50 channels in name order as `{ items, nextCursor }`.
+Conversation responses include `channel` and `member`, so clients can show
+whether a channel is already subscribed. `POST /api/chat/conversations/:conversation/join`
+subscribes with the audience's permission. The existing `leave` operation
+unsubscribes. Joining and leaving publish membership hints without adding
+subscription messages to the timeline.
+
+Managers read and replace the audience through `GET` and `PUT`
+`/api/chat/conversations/:conversation/discovery`. A replacement accepts
+`{ entries, name?, purpose? }`; changing entries writes a `discovery_changed`
+system message. Empty entries remove discovery while keeping members.
+Channels require a nonempty name and purpose. Channels cannot create threads,
+and chats with existing threads cannot become channels (`THREADS_UNAVAILABLE`).
+
+Member inputs also accept `{ type: "service_account", serviceAccountId }`.
+Standalone and agent accounts can read, write, and manage according to their
+membership. Resource-bound accounts can be added to their own conversation.
+Member responses include `serviceAccountKind`; an active standalone or agent
+manager can receive management when another member leaves.
+
 ## AI provider upgrade: nessi 0.15
 
 Cloud now uses nessi 0.15. Before rolling out the updated runtime, review these
