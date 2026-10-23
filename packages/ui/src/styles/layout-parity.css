@@ -3842,14 +3842,17 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 }
 
 /* Content with its own heads hides the shell's header; from the press on a tab
-   the header stands in its place as the next page's frame, and the content
-   goes. */
+   the header stands above it as the next page's frame, and the content is
+   hidden. */
 .k2b-ui .k2b-mobile-shell[data-k2b-content-heads]:not([data-k2b-switching]) > .k2b-mobile-shell__header {
   display: none;
 }
 
-.k2b-ui .k2b-mobile-shell[data-k2b-content-heads][data-k2b-switching] > .k2b-mobile-shell__main {
-  display: none;
+/* The content keeps its place, so the footer under the finger never moves
+   between the press and the click that ends the tap. */
+.k2b-ui .k2b-mobile-shell[data-k2b-content-heads][data-k2b-switching] > .k2b-mobile-shell__main,
+.k2b-ui .k2b-mobile-shell[data-k2b-content-heads][data-k2b-switching] > .k2b-mobile-shell__main * {
+  visibility: hidden !important;
 }
 
 .k2b-ui .k2b-mobile-shell__main {

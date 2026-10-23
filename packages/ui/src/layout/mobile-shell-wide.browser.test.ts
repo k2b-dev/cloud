@@ -16,8 +16,8 @@ import { AppWorkspace, MobileShell, TabBar, TextInput } from ${JSON.stringify(re
 
 const levels = new URLSearchParams(location.search).get("levels");
 const items = [
-  { id: "start", label: "Start", title: "Example Cloud", icon: "ti ti-home", href: "#start" },
-  { id: "tasks", label: "Tasks", icon: "ti ti-checkbox", href: "#tasks", current: true },
+  { id: "start", label: "Start", title: "Example Cloud", icon: "ti ti-home", href: "/start" },
+  { id: "tasks", label: "Tasks", icon: "ti ti-checkbox", href: "/tasks", current: true },
 ];
 const rows = (count) => Array.from({ length: count }, (_, index) => {
   const row = document.createElement("p");
@@ -36,7 +36,7 @@ render(
           title: "Example Cloud",
           items: [{ ...items[0], title: "Start" }],
           sections: [{ title: "Apps", items: items.slice(1) }],
-          footer: [{ id: "settings", label: "Settings", icon: "ti ti-settings", href: "#settings" }],
+          footer: [{ id: "settings", label: "Settings", icon: "ti ti-settings", href: "/settings" }],
         });
       },
       get header() {
@@ -209,6 +209,32 @@ describe("AppWorkspace levels in a MobileShell", () => {
       }
     } finally {
       await page.context().close();
+    }
+  }, 30_000);
+
+  test("a press on a tab shows the next page's frame without moving the tab under the finger", async () => {
+    for (const [width, height, selector] of [
+      [390, 844, '.k2b-tab-bar a[data-tab="start"]'],
+      [1366, 1024, '.k2b-mobile-shell__sidebar a[data-tab="start"]'],
+    ] as const) {
+      const page = await open(width, height, "task");
+      try {
+        const result = await page.evaluate((selector) => {
+          const link = document.querySelector<HTMLElement>(selector)!;
+          const before = link.getBoundingClientRect().top;
+          link.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, isPrimary: true, button: 0 }));
+          const shell = document.querySelector<HTMLElement>(".k2b-mobile-shell")!;
+          return {
+            switching: shell.hasAttribute("data-k2b-switching"),
+            moved: link.getBoundingClientRect().top - before,
+            header: getComputedStyle(document.querySelector(".k2b-mobile-shell__header")!).display,
+            content: getComputedStyle(document.querySelector(".k2b-mobile-shell__main")!).visibility,
+          };
+        }, selector);
+        expect(result).toEqual({ switching: true, moved: 0, header: "flex", content: "hidden" });
+      } finally {
+        await page.context().close();
+      }
     }
   }, 30_000);
 });
