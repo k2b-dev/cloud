@@ -5,7 +5,7 @@ import { session } from "@k2b/cloud/services/session";
 import { buildProjectedUser } from "@k2b/cloud/services/session/user";
 import { stubRouterInfrastructure } from "../../../../../scripts/fixtures/no-transform";
 
-test("log retention saves explicitly replace unreadable values", async () => {
+test("log retention saves do not implicitly replace unreadable values", async () => {
   const limit = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
   // The compression router guard may have imported ./api first, so the real limiter can still run.
   const infrastructure = stubRouterInfrastructure();
@@ -30,7 +30,7 @@ test("log retention saves explicitly replace unreadable values", async () => {
     });
     expect(response.status).toBe(200);
     expect(write).toHaveBeenCalledTimes(1);
-    expect(write).toHaveBeenCalledWith("logs.retention_days", 14, undefined, { replaceUnreadable: true });
+    expect(write).toHaveBeenCalledWith("logs.retention_days", 14, undefined, { replaceUnreadable: false });
   } finally {
     for (const spy of [write, authenticate, clock, limit, ...infrastructure]) spy.mockRestore();
   }
