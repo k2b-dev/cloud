@@ -35,8 +35,7 @@ both. Safari can suggest **iPhone** or **iPad**, but cannot identify the exact
 model. Android browsers may report a model name or number.
 
 The pairing dialog closes through **Close** or the X. Outside taps, downward
-drags and Escape leave it open. After a connection failure, use **Retry
-pairing**. If the app reloaded, choose **Add Cloud** and paste the same link to
+drags and Escape leave it open. After a connection failure, retry the pairing. If the app reloaded, choose **Add Cloud** and paste the same link to
 resume the saved pairing. If it expired, start a new pairing in Cloud.
 
 A browser sign-in can show the browser and system, approximate place, network

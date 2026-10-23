@@ -213,7 +213,8 @@ test("an app switch leaves a visible recoverable state without discarding edits"
     });
     expect(await page.getByRole("alert").textContent()).toContain("unterbrochen");
     expect(await page.getByLabel("Gerätename", { exact: true }).inputValue()).toBe("Mein Name");
-    await page.getByRole("button", { name: "Kopplung erneut versuchen", exact: true }).click();
+    expect(await page.getByRole("button", { name: "Kopplung erneut versuchen", exact: true }).count()).toBe(0);
+    await page.getByRole("button", { name: "Cloud vertrauen und koppeln" }).click();
     await page.locator(".auth-comparison").waitFor();
   });
 });

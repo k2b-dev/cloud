@@ -205,7 +205,8 @@ links intended for another app origin. After you trust the Cloud, progress is
 shown while connecting and pairing. Network requests time out after 30 seconds.
 If a claim may already have reached Cloud, the app checks its status first.
 It retries the claim with the saved key only when Cloud still reports it as
-pending. **Retry pairing** checks again after an interruption; **Use another
+pending. **Retry pairing** checks a saved enrollment after an interruption;
+before enrollment starts, choose **Trust Cloud and pair** again. **Use another
 link** starts over after an error.
 The PWA removes its fragment from browser history before contacting the Cloud.
 

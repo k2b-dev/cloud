@@ -91,7 +91,7 @@ export const authMessages = i18n.define({
       browserName: "Browser",
       browserOnSystem: ({ browser, os }: { browser: string; os: string }) => `${browser} on ${os}`,
       deviceNameHelp: "Suggestion from your browser. Check it and change it if needed.",
-      pairingInterrupted: "Pairing was interrupted. Return to the Cloud window to confirm, or retry here.",
+      pairingInterrupted: "Pairing was interrupted. Check the current step and continue here.",
       pairingOffline: "You are offline. Pairing continues when the connection returns; you can also retry.",
       retryPairing: "Retry pairing",
       savedPairing: "An unfinished pairing is saved on this device. Paste the same link to resume, or start again in Cloud if it expired.",
@@ -365,7 +365,7 @@ export const authMessages = i18n.define({
       browserName: "Browser",
       browserOnSystem: ({ browser, os }: { browser: string; os: string }) => `${browser} auf ${os}`,
       deviceNameHelp: "Vorschlag deines Browsers. Prüfe den Namen und passe ihn bei Bedarf an.",
-      pairingInterrupted: "Die Kopplung wurde unterbrochen. Bestätige im Cloud-Fenster oder versuche es hier erneut.",
+      pairingInterrupted: "Die Kopplung wurde unterbrochen. Prüfe den aktuellen Schritt und fahre hier fort.",
       pairingOffline: "Du bist offline. Die Kopplung geht weiter, sobald die Verbindung zurück ist. Du kannst es auch erneut versuchen.",
       retryPairing: "Kopplung erneut versuchen",
       savedPairing:

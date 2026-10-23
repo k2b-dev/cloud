@@ -435,19 +435,20 @@ export function Pairing(props: { auth: Authenticator; link?: string; close: () =
             </Button>
           </Show>
           <Show when={payload() && error() && !busy() && !confirmed()}>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                abort = new AbortController();
-                stopped = false;
-                nextPoll = 0;
-                setError("");
-                if (enrollment) void inspect();
-                else void claim();
-              }}
-            >
-              {t().retryPairing}
-            </Button>
+            <Show when={enrollment}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  abort = new AbortController();
+                  stopped = false;
+                  nextPoll = 0;
+                  setError("");
+                  void inspect();
+                }}
+              >
+                {t().retryPairing}
+              </Button>
+            </Show>
             <Button
               variant="secondary"
               onClick={() => {
