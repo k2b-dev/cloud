@@ -1214,6 +1214,15 @@ or `scripts/` changed. At its end, it lists every process that crashed on the
 runner; see
 [When WebKit reports an internal error](#when-webkit-reports-an-internal-error).
 
+CI and nightly start the Playwright server through `.github/start-playwright.sh`.
+It installs the exact catalog version with up to three attempts, then starts
+the server without an npm download. A failed start prints the container logs
+and recreates the container, with up to three attempts and a 120-second
+readiness wait each. The `ci-runtime-downloads` check rejects inline
+`run-server` commands in workflow steps; use the helper when adding a job.
+The standalone CLI test's Bun runtime prefetch also gets three attempts before
+the tests start. Each download attempt is limited to 120 seconds.
+
 The nightly workflow repeats the integration suites against PostgreSQL 15, the
 oldest supported version, and runs the longer acceptance checks that are too
 slow for every pull request. Its `browser-smoke` job builds the Core, gateway,
