@@ -162,7 +162,7 @@ describe("local group machine management UI", () => {
         dom.cleanup();
       };
       expect(dom.root.textContent).toContain("Named worker");
-      expect(dom.root.textContent).toContain(kind === "agent" ? "Agent" : "Standalone");
+      expect(dom.root.textContent).toContain(kind === "agent" ? "Agent" : "Service account");
       const remove = dom.root.querySelector<HTMLButtonElement>('button[aria-label="Remove Named worker"]');
       expect(remove).not.toBeNull();
       remove!.click();
