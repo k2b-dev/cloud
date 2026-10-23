@@ -112,7 +112,7 @@ export function ThreadRows(props: RowsProps): JSX.Element {
         <Show when={props.system}>
           <AppWorkspace.SidebarItem
             depth={1}
-            href={`/app/chat/c/${props.chatId}/threads`}
+            href={`${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(props.chatId)}/threads`}
             navigation="enhanced"
             onNavigate={(event) => props.onOverview?.(event)}
             icon="ti ti-list"
@@ -194,7 +194,7 @@ export function ThreadPicker(
                   {
                     label: t().allThreadCount({ count: props.total ?? props.threads?.items.length ?? 0 }),
                     icon: "ti ti-list",
-                    href: `/app/chat/c/${props.chatId}/threads`,
+                    href: `${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(props.chatId)}/threads`,
                     action: () => props.onOverview?.(),
                   },
                 ],

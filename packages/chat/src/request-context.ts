@@ -19,7 +19,7 @@ export const chatRequestContext = <Env extends AuthContext>(c: Context<Env>): Ch
     actor: c.get("actor"),
     accessSubject,
     locale: getLocale(c),
-    credentialScopes: scopes,
+    credentialScopes: c.get("credentialScopes"),
     requestId: c.req.header("x-request-id"),
     credentialPrincipal: principal + suffix,
     caller: {

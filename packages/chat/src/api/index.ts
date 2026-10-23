@@ -342,7 +342,7 @@ const app = new Hono<AuthContext>()
       summary: "List chat threads, including archived threads",
       ...requiresAuth,
       description:
-        "System chats inspect at most 100 candidate threads per page, ordered by thread ID. Reader visibility, open/done/unread and q filters apply within that page. Follow nextCursor even when items is empty. Names and descriptions come from the item reader. resource.status is the Space column ID, or null for a note; done follows completedAt. Regular chats retain their activity/archive ordering.",
+        "System chats inspect at most 100 candidate threads per page, ordered by latest activity with thread-ID ties. Reader visibility, open/done/unread and q filters apply within that page. Follow nextCursor even when items is empty. Names and descriptions come from the item reader. resource.status is the Space column ID, or null for a note; done follows completedAt. Regular chats retain their activity/archive ordering.",
       responses: {
         200: jsonResponse(ThreadListSchema, "Authorized thread page"),
         404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Conversation not readable"),

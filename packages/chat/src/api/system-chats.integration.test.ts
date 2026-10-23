@@ -212,8 +212,13 @@ suite("system chats use caller-authorized readers", () => {
       `/messages?thread=${secret.id}`,
       `/shared?thread=${secret.id}`,
       `/messages/${message.id}`,
+      `/messages/${message.id}/reactions`,
     ])
       expect((await f.request(guest.headers, `/${chat.id}${path}`)).status).toBe(404);
+    for (const method of ["PUT", "DELETE"])
+      expect(
+        (await f.request(guest.headers, `/${chat.id}/messages/${message.id}/reactions/${encodeURIComponent("👍")}`, method)).status,
+      ).toBe(404);
     expect(
       (await f.request(guest.headers, `/${chat.id}/messages`, "POST", { clientId: "bad-reply", body: "reply", replyTo: message.id }))
         .status,
@@ -224,6 +229,56 @@ suite("system chats use caller-authorized readers", () => {
       { ordering_key: string }[]
     >`SELECT ordering_key FROM events.outbox WHERE app_id = 'chat' AND payload::text LIKE ${`%${message.id}%`}`;
     expect(outbox.map((row) => row.ordering_key).sort()).toEqual([`s:${chat.id}:${secret.id}`, `t:${chat.id}:${secret.id}`]);
+  });
+
+  test("system item messages project each viewer's reactions and publish only an item-scoped hint", async () => {
+    const owner = await f.person(),
+      reader = await f.person();
+    const id = testShortId(),
+      item = testShortId();
+    for (const person of [owner, reader]) {
+      grant(person, "spaces.space", id, { name: "Project", permission: person === owner ? "write" : "read" });
+      grant(person, "spaces.item", item, { title: "Discuss", kind: "task", spaceId: id });
+    }
+    const chat = await open(owner, id);
+    await open(reader, id);
+    const discussion = await thread(owner, chat.id, item);
+    const message = MessageViewSchema.parse(
+      await (
+        await f.request(owner.headers, `/${chat.id}/messages`, "POST", {
+          clientId: "system-reactions",
+          body: "Discuss this item",
+          thread: discussion.id,
+        })
+      ).json(),
+    );
+    expect(message.reactions).toEqual([]);
+    const path = `/${chat.id}/messages/${message.id}/reactions/${encodeURIComponent("👍")}`;
+    expect((await f.request(reader.headers, path, "PUT")).status).toBe(204);
+    const own = [{ emoji: "👍", count: 1, own: true }];
+    for (const person of [owner, reader]) {
+      const expected = person === reader ? own : [{ emoji: "👍", count: 1, own: false }];
+      const single = MessageViewSchema.parse(await (await f.request(person.headers, `/${chat.id}/messages/${message.id}`)).json());
+      expect(single.reactions).toEqual(expected);
+      const snapshot = ChatSnapshotSchema.parse(
+        await (await f.request(person.headers, `/${chat.id}/snapshot?thread=${discussion.id}`)).json(),
+      );
+      expect(snapshot.page.items.find((row) => row.id === message.id)?.reactions).toEqual(expected);
+      const page = MessagePageSchema.parse(await (await f.request(person.headers, `/${chat.id}/messages?thread=${discussion.id}`)).json());
+      expect(page.items.find((row) => row.id === message.id)?.reactions).toEqual(expected);
+      const changes = ChangesPageSchema.parse(await (await f.request(person.headers, `/${chat.id}/changes?afterRev=0`)).json());
+      expect(changes.messages.find((row) => row.id === message.id)?.reactions).toEqual(expected);
+    }
+    const events = await sql<{ ordering_key: string; payload: unknown }[]>`SELECT ordering_key, payload FROM events.outbox
+      WHERE app_id = 'chat' AND ordering_key = ${`t:${chat.id}:${discussion.id}`}`;
+    const hint = events.find((row) => JSON.stringify(row.payload).includes('"reactions"'));
+    expect(hint).toBeDefined();
+    expect(JSON.stringify(hint!.payload)).not.toContain('"own"');
+    expect(JSON.stringify(hint!.payload)).not.toContain('"people"');
+    expect((await f.request(reader.headers, path, "DELETE")).status).toBe(204);
+    expect(MessageViewSchema.parse(await (await f.request(reader.headers, `/${chat.id}/messages/${message.id}`)).json()).reactions).toEqual(
+      [],
+    );
   });
 
   test("caches for 60 seconds, closes all reads after expiration/revocation, and closes on app failure", async () => {

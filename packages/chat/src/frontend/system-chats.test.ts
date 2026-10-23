@@ -7,6 +7,8 @@ const at = "2026-10-14T12:00:00.000Z";
 const conversation = ConversationSchema.parse({
   id: "System",
   kind: "system",
+  channel: false,
+  member: false,
   resource: { type: "spaces.space", id: "Space1" },
   name: "Space",
   title: "Space",

@@ -26,7 +26,7 @@ const until = async (condition: () => boolean) => {
 };
 const load = async (
   options: BrowserContextOptions,
-  address: { chat?: string; thread?: string; threadsPage?: boolean; panel?: string } = {},
+  address: { chat?: string; thread?: string; threadsPage?: boolean; panel?: string; embedded?: boolean } = {},
   setup?: (page: Page) => Promise<void>,
 ) => {
   const context = await browser.newContext(options);
@@ -50,14 +50,18 @@ const load = async (
   page.on("pageerror", (error) => errors.push(error.message));
   try {
     await setup?.(page);
+    const basePath = address.embedded ? "/app/chat/panel" : "/app/chat";
     const path = address.chat
-      ? `/app/chat/c/${address.chat}${address.threadsPage ? "/threads" : address.thread ? `/t/${address.thread}` : ""}${address.panel ? "?panel=info" : ""}`
-      : "/app/chat";
+      ? `${basePath}/c/${address.chat}${address.threadsPage ? "/threads" : address.thread ? `/t/${address.thread}` : ""}${address.panel ? "?panel=info" : ""}`
+      : basePath;
     await page.goto(new URL(path, harness.url).href);
-    await page.evaluate((props) => {
-      document.documentElement.lang = "de";
-      window.mountChat(props, "de");
-    }, harness.props(address));
+    await page.evaluate(
+      (props) => {
+        document.documentElement.lang = "de";
+        window.mountChat(props, "de");
+      },
+      { ...harness.props(address), embedded: address.embedded },
+    );
     await page.locator(".chat-workspace").waitFor();
     await settled(page);
     return { page, errors };
@@ -522,6 +526,32 @@ test("notebook rows and note heads use their own icon, link and membership; read
       "/app/notebooks/notes/Note01",
     );
     expect(await page.locator(".chat-resource-head__mobile").getByText("Offen", { exact: true }).count()).toBe(0);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
+test("system item directory and info keep their links inside the universal panel", async () => {
+  const { chat, threads } = seed();
+  const { page, errors } = await load(desktop, { chat, threadsPage: true, embedded: true });
+  try {
+    const directory = page.locator(".chat-threads-page .chat-system-directory");
+    const row = directory.locator(`[data-thread="${threads[0]}"]`);
+    await row.waitFor();
+    const overview = page
+      .locator(".k2b-app-workspace__sidebar .chat-system-chats")
+      .getByRole("link", { name: "Alle 7 Threads", exact: true });
+    await overview.waitFor();
+    expect(await overview.getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/threads`);
+    expect(await row.getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/t/${threads[0]}`);
+    await row.click();
+    await page.waitForURL(`**/app/chat/panel/c/${chat}/t/${threads[0]}`);
+    const info = page.getByRole("link", { name: "Chat-Info", exact: true });
+    expect(await info.getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/t/${threads[0]}?panel=info`);
+    expect(await page.locator(".chat-conversation__back").getByRole("link").getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/threads`);
+    await info.click();
+    await page.getByText("3 Mitglieder: alle mit Zugriff auf den Space. Zugriff änderst du dort.").waitFor();
+    expect(errors).toEqual([]);
   } finally {
     await page.context().close();
   }

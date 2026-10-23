@@ -10,9 +10,12 @@ updated: 2026-10-23
 
 # Chat system conversations
 
-Chat's backend can attach a conversation to a Space or notebook and a thread
-to a task, event, or note. This slice adds the API. It does not add navigation
-in Spaces or Notebooks, migrate comments, or publish item-change events.
+Chat attaches a conversation to a Space or notebook and a thread to a task,
+event, or note. The Chat app lists these conversations under **Spaces and
+Notebooks**. Their item directory and message links work in the full page
+and below `/app/chat/panel` in the universal panel. This does not add
+navigation in Spaces or Notebooks, migrate comments, or publish item-change
+events.
 
 ## Open a conversation
 
@@ -26,6 +29,9 @@ All paths below start with `/api/chat`.
 | `GET /conversations/:conversation/threads` | Authorized threads, with optional `filter=open\|done\|unread`, `q`, and `cursor`. |
 
 System conversations have `kind: "system"` and a container `resource` ref.
+Their message views include the same viewer-specific `reactions` as ordinary
+chat messages. Reaction live events carry a refresh hint on the item thread
+key; clients read the current reactions over HTTP.
 Item threads have `resource: { ref, kind, status, done, href }`. Their current
 name, description, and open link come from the reader. `status` is the Space
 column ID, or `null` for notes. `done` follows the reader's `completedAt`;
@@ -50,7 +56,8 @@ Container discovery requests at most 100 Spaces and 100 notebooks. Pass the
 returned `spacesCursor` and `notebooksCursor` independently to continue each
 source. A container's `conversation` is `null` until someone opens it.
 
-A system thread page inspects at most 100 candidates in thread-ID order.
+A system thread page inspects at most 100 candidates by latest activity,
+with the thread ID breaking ties.
 Visibility, search, and state filters apply within that page. Follow a non-null
 `nextCursor` even when `items` is empty. Ordinary chats retain their existing
 activity and archive ordering.

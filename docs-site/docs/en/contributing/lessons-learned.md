@@ -23,6 +23,7 @@ convention still needs a check or a test.
 
 | Class | What goes wrong | Current guard |
 | --- | --- | --- |
+| Feature slices leave incomplete view contracts | A merge leaves older fixtures or links without the new projection fields or navigation root. | Tests: Chat system-chat unit fixtures and the panel browser case cover channel fields and item, overview, back, and info links. |
 | Bounded batches hide unbounded request work | A reader limits concurrency but traverses every item or repeats nested scans for each container. | Tests: Chat `system-chats.integration.test.ts` asserts total reader calls for selected histories, shared summary budgets, and fully hidden read-all pages, including continuation. |
 | New live keys have no discovery path | Existing viewers cannot receive the first event on a key they do not yet follow or have permission cached for. | Test: Chat `live.integration.test.ts` opens two viewers with warm container caches and no item decision, requires a metadata-free refresh hint, and checks authorized HTTP discovery and denied payload delivery. |
 | An aggregate exceeds the request budget | A recursive count keeps a request busy without a usable answer. | Test: Chat `service/channels.integration.test.ts` checks overlapping and cyclic groups, a bounded SQL timeout, a visible unavailable response, and restoration of the surrounding transaction. |
@@ -971,6 +972,13 @@ convention still needs a check or a test.
 - **Root cause:** Its fixture added two days to the real clock, then used fixed UTC times while asserting summer local times.
 - **Error class:** A relative calendar fixture with an unpinned clock changes its timezone offset.
 - **Guard:** The Venue clarity suite pins and restores the system clock for every case. The shift-leaving assertion was reproduced with the clock set to 23 October 2026 and passes with the deterministic suite fixture.
+
+## Combining chat navigation and projection contracts
+
+- **What happened:** After merging chat features, a system-chat fixture lacked required channel fields, and overview links escaped the panel.
+- **Root cause:** Existing fixtures and newly added links still followed the older view contract.
+- **Error class:** Independent feature slices leave incomplete projections or hard-coded navigation roots at their intersection.
+- **Guard:** System-chat unit fixtures include channel state. The system-chat browser suite checks item, overview, back, and info links inside the panel.
 
 ## Add a lesson
 

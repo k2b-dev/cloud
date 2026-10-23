@@ -1433,7 +1433,7 @@ export const startChatHarness = async () => {
     systemRequests,
     setSystem: (id: string, ref: CloudResourceRef) => {
       const chat = chats.get(id)!;
-      chat.conversation = { ...chat.conversation, kind: "system", resource: ref, summaryCursor: null };
+      chat.conversation = { ...chat.conversation, kind: "system", channel: false, member: false, resource: ref, summaryCursor: null };
       containers.set(`${ref.type}:${ref.id}`, { ref, name: chat.conversation.title, chat: id });
     },
     emptyContainer: (ref: CloudResourceRef, name: string) => containers.set(`${ref.type}:${ref.id}`, { ref, name, chat: null }),
