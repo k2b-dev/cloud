@@ -124,7 +124,7 @@ The `filegate-facade` repository check prevents SDK access outside the facade.
 The activity classification test detects new service methods and migration
 keys that have not been reviewed.
 
-The file inspector sends the revision it displayed when restoring a version in
+The file inspector and Activity send the revision they displayed when restoring a version in
 place. Files compares it again under its publication lock and returns
 `version_restore_changed` (409) if it changed; reload before retrying. This check
 coordinates Cloud writes. Filegate does not provide a conditional restore, so
