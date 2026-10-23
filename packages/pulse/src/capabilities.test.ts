@@ -4,7 +4,13 @@ import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { UniversalSearchDataSchema, UniversalSearchInputSchema } from "@k2b/cloud/contracts";
 import { ok } from "@k2b/stdlib";
 import { pulseCapabilities } from "./capabilities";
-import { BaseListDataSchema, BaseReadInputSchema, SourceReadInputSchema } from "./capability-contracts";
+import {
+  BaseListDataSchema,
+  BaseReadInputSchema,
+  INGEST_CAPABILITY_MAX_BYTES,
+  IngestWriteInputSchema,
+  SourceReadInputSchema,
+} from "./capability-contracts";
 import { savedQueries } from "./service/saved-queries";
 import { adminFixtureIdentity } from "./store/admin-identity.test-fixture";
 import { fixturePolicy } from "./store/base-store.test-fixture";
@@ -25,6 +31,10 @@ test("declares SQL and saved query capabilities with base and source readers", (
   expect(Object.keys(pulseCapabilities.actions).sort()).toEqual([
     "alert.delete",
     "alert.save",
+    "base.clear_data",
+    "base.create",
+    "base.delete",
+    "ingest.write",
     "saved_query.delete",
     "saved_query.save",
     "source.create",
@@ -111,4 +121,47 @@ test("delete capability returns its declared receipt when the service returns no
   } finally {
     remove.mockRestore();
   }
+});
+
+test("agent writes have bounded inputs and destructive base actions always ask", () => {
+  for (const key of ["base.clear_data", "base.delete"] as const) {
+    expect(pulseCapabilities.actions[key].destructive).toBe(true);
+    expect(pulseCapabilities.actions[key].openWorld).toBe(false);
+    expect("approval" in pulseCapabilities.actions[key]).toBe(false);
+    expect(pulseCapabilities.actions[key].idempotency).toBe("required");
+    expect(pulseCapabilities.actions[key].input.safeParse({ baseId: "Base01" }).success).toBe(false);
+  }
+  for (const key of ["base.create", "ingest.write"] as const) {
+    expect(pulseCapabilities.actions[key].approval).toBe("rememberable");
+    expect(pulseCapabilities.actions[key].destructive).toBe(false);
+    expect(pulseCapabilities.actions[key].openWorld).toBe(false);
+  }
+  const input = { baseId: "Base01", sourceId: "Source", expectedRevision: 1, batch: { events: [{ kind: "page_view" }] } };
+  expect(IngestWriteInputSchema.safeParse(input).success).toBe(true);
+  const tooLarge = {
+    ...input,
+    batch: { events: Array.from({ length: 8 }, () => ({ kind: "page_view", payload: { text: "é".repeat(15000) } })) },
+  };
+  expect(new TextEncoder().encode(JSON.stringify(tooLarge)).byteLength).toBeGreaterThan(INGEST_CAPABILITY_MAX_BYTES);
+  expect(IngestWriteInputSchema.safeParse(tooLarge).success).toBe(false);
+  expect(IngestWriteInputSchema.safeParse({ ...input, batch: { events: [{ kind: "page_view", sourceId: "Other1" }] } }).success).toBe(
+    false,
+  );
+});
+
+test("ingest.write accepts exactly 192 KiB and rejects one additional byte", () => {
+  const input = {
+    baseId: "Base01",
+    sourceId: "Source",
+    expectedRevision: 1,
+    batch: { events: Array.from({ length: 4 }, () => ({ kind: "page_view", payload: { text: "" } })) },
+  };
+  const remaining = INGEST_CAPABILITY_MAX_BYTES - new TextEncoder().encode(JSON.stringify(input)).byteLength;
+  input.batch.events.forEach((event, index) => {
+    event.payload.text = "x".repeat(Math.floor(remaining / 4) + (index < remaining % 4 ? 1 : 0));
+  });
+  expect(new TextEncoder().encode(JSON.stringify(input)).byteLength).toBe(INGEST_CAPABILITY_MAX_BYTES);
+  expect(IngestWriteInputSchema.safeParse(input).success).toBe(true);
+  input.batch.events[0]!.payload.text += "x";
+  expect(IngestWriteInputSchema.safeParse(input).success).toBe(false);
 });

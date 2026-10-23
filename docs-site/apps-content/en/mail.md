@@ -463,6 +463,10 @@ New messages, replies, and forwards start with the sender's default; a personal
 default takes precedence over the mailbox default. Choose another signature or
 **No signature**. Switching the sender switches to that sender's default.
 
+Tables in formatted messages also have readable columns and rows in the
+plain-text alternative. Links keep their destinations. Plain-format signatures
+and snippets preserve their table structure too.
+
 Signatures stay separate from the editable text. Preview and the sent message
 show the signature after your text. When you write above a quoted reply or a
 forwarded message, the signature goes between your text and that message. The
