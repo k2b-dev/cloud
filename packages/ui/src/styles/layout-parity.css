@@ -4097,7 +4097,7 @@ html:has(.k2b-mobile-shell) .k2b-field__error {
 
 /* ------------------------------------------------- levels in a touch app */
 
-/* `AppWorkspace.Main` levels inside a `MobileShell` (`scroll={false}`): each
+/* The levels of an AppWorkspace Main inside a MobileShell (`scroll={false}`): each
    level is a page of the app with the shell's head, flat on its own surface.
    Below 64rem of window width one level shows at a time, the deepest selected
    one with its back step, as on a phone; from 64rem the levels stand side by
