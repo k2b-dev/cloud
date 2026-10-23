@@ -1,4 +1,4 @@
-import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import "../../../../scripts/fixtures/authorization-preload";
 import { expect, spyOn, test } from "bun:test";
@@ -7,7 +7,7 @@ import * as pdfModule from "@k2b/cloud/services/pdf";
 import { sql } from "bun";
 import api from ".";
 
-databaseSuite()("PDF route admission and idle timeout", () => {
+suiteFor("database", "valkey")("PDF route admission and idle timeout", () => {
   test("slow rendering returns localized 504 and denied oversized requests never parse their body", async () => {
     const [notebook] = await sql<{ id: string; short_id: string }[]>`INSERT INTO notebooks.notebooks (short_id, name)
       VALUES (${testShortId()}, 'PDF route fixture') RETURNING id, short_id`;

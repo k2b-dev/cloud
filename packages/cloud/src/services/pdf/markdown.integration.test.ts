@@ -4,7 +4,7 @@ import { requireInfraUrl, suiteFor } from "../../../../../scripts/fixtures/test-
 import type { GotenbergConfig } from "./gotenberg";
 import { MARKDOWN_PDF_TEMPLATE_IDS, renderMarkdownToPdfWithConfig } from "./markdown";
 
-suiteFor("gotenberg")("Markdown PDF presets in Gotenberg", () => {
+suiteFor("gotenberg", "valkey")("Markdown PDF presets in Gotenberg", () => {
   let config: GotenbergConfig;
 
   beforeAll(() => {

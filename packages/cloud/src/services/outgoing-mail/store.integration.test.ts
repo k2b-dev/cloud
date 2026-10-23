@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { smtpSink } from "../../../../../scripts/fixtures/smtp-sink";
-import { databaseSuite, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
+import { suiteFor, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../../core/src/migrate/core/audit";
 import { migrate } from "../../../../core/src/migrate/core/outgoing-mail";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../../_internal/process-identity";
@@ -36,7 +36,7 @@ const app = (id: string, declared = true): AppRegistryEntry => ({
   baseUrl: "http://test",
   platformPermissions: declared ? ["mail:send"] : [],
 });
-databaseSuite()("outgoing mail store and delivery", () => {
+suiteFor("database", "valkey")("outgoing mail store and delivery", () => {
   let originalTargets: string | undefined;
   beforeEach(() => {
     originalTargets = process.env.OUTGOING_MAIL_ALLOWED_TARGETS;
