@@ -14,7 +14,7 @@ Wetter verwaltet gespeicherte Orte und zeigt aktuelles Wetter, stündliche und t
 - **Gespeicherter Ort:** Eine Stadt, die mit Name, Bundesland, Breiten- und Längengrad in deinem Konto gespeichert ist.
 - **Vorhersage:** Die Seite eines Orts zeigt das aktuelle Wetter, stündliche Werte, die tägliche Vorhersage und das Regenradar.
 - **Anzeigelink:** Die Anzeige öffnet eine öffentliche Monitoransicht, die sich automatisch aktualisiert.
-- **Administration:** Personen mit Administratorrechten legen Ausweichkoordinaten für Widgets, die Speicherdauer und den Geocodierungs-Endpunkt fest.
+- **Administration:** Personen mit Administratorrechten legen Ausweichkoordinaten für Widgets, die Speicherdauer fest. Orte und Karten in Core verwaltet die Städtesuche und ihr Budget.
 :::
 
 ## Wetter verwenden {icon="route"}

@@ -1,5 +1,5 @@
 import type { NotebookPresenceParticipant, User } from "@k2b/cloud/contracts";
-import { auth, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, auth, getLocale, guardAppAccessSocket } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { CursorMismatchError, RetentionGapError, type TopicEvent, type TopicLiveEvent } from "@k2b/sync";
 import { retry } from "@k2b/sync/retry";
@@ -1172,8 +1172,9 @@ export const drainNotebookConnections = async (): Promise<void> => {
   });
 };
 
-const app = new Hono().get(
+const app = new Hono<AuthContext>().get(
   "/",
+  auth.requireRole("*"),
   upgradeWebSocket(async (c) => {
     // Read the session from the forwarded cookie. Never accept it from a
     // client message: that would require handing the httpOnly token to the
@@ -1204,7 +1205,7 @@ const app = new Hono().get(
       return closing;
     };
 
-    return {
+    return guardAppAccessSocket(c, "notebooks", {
       onOpen(_, ws) {
         ctx = createContext(ws.raw as ServerWebSocket<unknown>, sessionToken, locale);
         if (stoppingConnections) {
@@ -1262,7 +1263,7 @@ const app = new Hono().get(
       async onClose() {
         await close();
       },
-    };
+    });
   }),
 );
 

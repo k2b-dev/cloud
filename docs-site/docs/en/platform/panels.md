@@ -5,7 +5,7 @@ section: Platform services
 order: 588
 description: Offer an authorized application page beside the current Cloud app.
 tags: [panels, applications, layout, ssr]
-updated: 2026-10-19
+updated: 2026-10-21
 ---
 
 # Offer a panel
@@ -16,9 +16,56 @@ tabs, loading feedback, and focus return. The application owns the page, its
 routes, data, and authorization. Built-in and third-party applications use the
 same contract.
 
-Core's Help is the first provider: every signed-in reader has Help in this
-slot. It uses the same `panel`, `PanelLayout`, and context APIs as any other
-application.
+Core's Help is available to every signed-in reader. Installed Chat and
+Assistant applications also offer their existing conversation workspaces in
+the slot, subject to their normal route and conversation permissions. All
+three use the same `panel`, `PanelLayout`, and context APIs as other applications.
+
+Chat keeps text drafts per reader and conversation in the current browser tab.
+Panel and full view synchronize their saved text. If both edit before synchronization,
+Chat preserves the local text and shows the competing saved text for an explicit choice.
+Loading a conversation does not prevent closing the panel.
+Assistant saves drafts and uploaded references through its existing conversation
+service. Switching providers, closing, and opening the full view retain saved
+drafts; unfinished uploads, conflicting drafts, and unconfirmed sends keep the
+current provider open with recovery controls. Pending resource insertion and image
+preparation are protected too. A browser storage error keeps recovery controls
+visible and pauses Chat editing and sending until storage works again, so an unread
+or uncleared stored draft cannot be overwritten or reappear after sending. It does
+not prevent leaving when there is no unsaved work. Chat also keeps
+the current conversation open while preparing a send; if preparation fails, the
+text returns to the composer.
+Both composers become editable only
+after their leave guard and draft restoration are ready. If a send or queue response
+is lost, Assistant offers a status check and a retry of the same submission. When
+its status remains unknown, **Leave despite unclear message status** requires
+confirmation. Leaving does not cancel or retry the message. The confirmation
+explains which local text and attachments will be discarded; other drafts and
+unfinished uploads or saves remain protected. An unconfirmed conversation creation
+keeps its original request identity and waits for an explicit retry. If another tab
+has since saved a draft in that conversation, Assistant shows both drafts for the
+reader to resolve instead of replacing the saved draft. A second local draft in
+that conversation is saved before retrying creation. If it cannot be saved or
+changes during the retry, both local drafts stay protected until resolved.
+An empty creation attempt can be
+abandoned with a separate explanation in the same exit dialog; this does not delete
+a conversation that may already exist. A nonempty new draft remains protected. A definitive creation refusal clears the old
+attempt and offers an explicit new attempt while retaining that draft. Network and
+server failures continue to retry the same creation identity.
+Assistant's ordinary autosave does not display a warning card. A blocked attempt to
+leave shows the save controls until the work is saved. An unclear send locks only
+its own conversation; the notice links back to it while other conversations remain usable.
+On phones, reopen the sheet after
+a page reload. Browser termination and forced native navigation cannot guarantee
+recovery of unsaved work.
+
+Assistant starts without choosing an unrelated recent conversation. Its
+conversation selector stays inside the panel, and **Open full view** opens the
+current conversation in the application window. Application commands in Assistant's
+composer are available in the full view. A shared page reference enters
+the draft only through **Attach current view**, after the existing resource
+reader checks access. Later host context changes never reassign that attachment
+or an already submitted turn.
 
 ## Declare and serve the page
 
@@ -114,6 +161,48 @@ phone header. A single provider has a title instead of tabs; use its app action
 or the shortcut to open it. Tab arrows and Home/End move focus; click, Enter,
 or Space activates a provider. Switching unloads the old iframe, leaving only
 one provider loaded.
+
+### Protect unfinished work
+
+An editable provider can prevent the slot from removing its current page:
+
+```ts
+import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+
+const dispose = onPanelBeforeLeave(() =>
+  draftsAreSaved() && !hasUnconfirmedSends() && !hasPendingUploads()
+);
+// Call dispose when the editor unmounts.
+```
+
+Register before enabling editing. Cloud calls the guard synchronously in the
+current same-origin provider window, so it sees the latest input rather than a
+previously posted busy flag. Registered guards apply even while the separate
+`PanelRuntime` island is still loading. Return `true` only when the page can be restored
+safely. A `false` result, exception, or non-boolean result keeps the current
+provider open. If several guards are registered, all must allow leaving.
+Providers without guards keep their existing behavior.
+
+The guard covers slot-controlled close, provider switch, search retarget,
+reload, and viewport or phone-history transitions that would unload the
+provider. Ordinary same-origin links from a guarded panel also pass through
+this check, including links to the full application. Modified clicks,
+downloads, explicit targets, form submissions, and script navigation retain
+their browser or application behavior. If such navigation has already replaced
+the provider with a cross-origin document, the old guards no longer exist;
+Cloud allows closing, switching, or retrying that frame.
+
+When a guard blocks a change, Cloud shows a notice and a button that returns
+focus to the provider. Save, retry, conflict resolution, and send confirmation
+remain the application's responsibility. After resolving them, the reader
+requests the change again. Cloud never queues the blocked destination or
+discards work automatically. `openPanel()` still returns whether the opening
+request was accepted; `true` does not mean that a guarded switch completed.
+
+Keep normal draft persistence and native `beforeunload` protection as well.
+The guard cannot prevent hard navigation, closing a tab, browser termination,
+or a security-driven removal. Native unload prompts are browser best effort.
+Context withdrawal takes effect immediately and cannot be vetoed.
 
 Ctrl+J, or Cmd+J on Apple devices, opens or closes the panel. It also closes the
 panel from inside a provider. Escape closes it when focus is inside the slot or

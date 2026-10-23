@@ -35,7 +35,6 @@ export const guardedServerRoots = [
   "packages/pulse/src/",
   "packages/notebooks/src/",
   "packages/gateway-ops/src/health-webhooks.ts",
-  "packages/cloud/src/server/services/geo.ts",
   "packages/assistant/src/artifacts/database.ts",
   // The shared transport behind the HTTP endpoints above: node:http there must keep its pinned lookup.
   "packages/cloud/src/services/allowed-network-fetch.ts",

@@ -714,8 +714,9 @@ the supplied rows; copy includes all rows in that order, not just the scroll win
 as escaped tab-separated text with column headings. Copy data prefixes text and
 headings starting with `=`, `+`, `-`, `@`, tab or carriage return with an apostrophe
 to guard spreadsheet formulas, then quotes tabs, carriage returns, newlines and
-quotes. A cell whose `sortValue(row)` returns a number keeps its numeric text,
-including negative values, without the apostrophe. Clipboard failures appear inline.
+quotes. Only plain formatted numbers, currencies and percentages skip the
+apostrophe. The copied string determines this, regardless of `sortValue(row)`;
+values with units or compact suffixes stay text. Clipboard failures appear inline.
 
 `ChartExplorerControlsProps<C>` requires `explorer` and `title`; optional `steps`
 are ordered `{ key, label }` entries, optional `series` entries are

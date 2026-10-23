@@ -6,6 +6,8 @@ import {
   type CloudResourceView,
   capabilityPage,
   defineCapabilities,
+  type GeoProvenance,
+  GeoProvenanceSchema,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
   UniversalSearchInputSchema,
@@ -27,13 +29,6 @@ const unavailable = <T>(t: WeatherMessages): CapabilityInvocationResult<T> =>
     status: 500,
   });
 
-const citySearchUnavailable = <T>(t: WeatherMessages, code?: string): CapabilityInvocationResult<T> =>
-  fail({
-    code: code === "WEATHER_CITY_SEARCH_NOT_CONFIGURED" ? code : "WEATHER_CITY_SEARCH_UNAVAILABLE",
-    message: code === "WEATHER_CITY_SEARCH_NOT_CONFIGURED" ? t.capabilityCitySearchNotConfigured : t.capabilityCitySearchUnavailable,
-    status: 500,
-  });
-
 const LocationSchema = z
   .object({
     id: WeatherLocationIdSchema,
@@ -41,6 +36,7 @@ const LocationSchema = z
     state: z.string().trim().min(1).max(120).nullable(),
     lat: z.number().finite().min(-90).max(90),
     lon: z.number().finite().min(-180).max(180),
+    provenance: GeoProvenanceSchema.optional(),
     links: z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional(),
   })
   .strict();
@@ -89,30 +85,17 @@ const ForecastInputSchema = z
   })
   .strict();
 
-const CitySearchInputSchema = z
-  .object({
-    query: z.string().trim().min(1).max(120).describe("German city name to geocode; this searches city candidates, not saved locations."),
-    limit: z.number().int().min(1).max(25).default(10).describe("Maximum number of city candidates to return."),
-  })
-  .strict();
-
-const CitySearchDataSchema = z
-  .array(
-    z
-      .object({
-        name: z.string().trim().min(1).max(160),
-        lat: z.number().finite().min(-90).max(90),
-        lon: z.number().finite().min(-180).max(180),
-        country: z.string().trim().min(1).max(16).optional(),
-        state: z.string().trim().min(1).max(160).optional(),
-      })
-      .strict(),
-  )
-  .max(25);
-
 const LocationCreateInputSchema = z
   .object({
-    name: z.string().trim().min(1).max(120).describe("Display name; normally copy name from the chosen Search German cities result."),
+    provenance: GeoProvenanceSchema.optional().describe(
+      "Retain the chosen Core address suggestion provenance when saving its coordinates.",
+    ),
+    name: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .describe("Display name; normally copy city from the chosen core.address.autocomplete suggestion."),
     state: z
       .string()
       .trim()
@@ -159,12 +142,20 @@ const requireUserId = (context: CapabilityExecutionContext): Result<string> =>
 
 const locationHref = (locationId: string): string => `/app/weather/${locationId}`;
 
-const mapLocation = (location: { id: string; name: string; state: string | null; lat: number; lon: number }) => ({
+const mapLocation = (location: {
+  id: string;
+  name: string;
+  state: string | null;
+  lat: number;
+  lon: number;
+  provenance?: GeoProvenance | null;
+}) => ({
   id: location.id,
   name: location.name.trim().slice(0, 120),
   state: location.state?.trim().slice(0, 120) || null,
   lat: location.lat,
   lon: location.lon,
+  ...(location.provenance ? { provenance: location.provenance } : {}),
 });
 
 const locationPageResult = <T>(page: Paginated<unknown>, data: T, refs?: CapabilityResult<T>["refs"]): CapabilityInvocationResult<T> =>
@@ -379,22 +370,6 @@ const runForecast = async (input: z.infer<typeof ForecastInputSchema>, context: 
   }
 };
 
-const runCitySearch = async (input: z.infer<typeof CitySearchInputSchema>, context: CapabilityExecutionContext) => {
-  const { t } = resolveWeatherMessages(context.locale);
-  try {
-    const result = await weatherService.location.city.list({
-      pagination: { page: 1, perPage: input.limit },
-      signal: context.signal,
-      filter: { query: input.query, country: "DE" },
-    });
-    if (!result.ok) return citySearchUnavailable(t, result.error.code);
-    const data = CitySearchDataSchema.safeParse(result.data.items.slice(0, input.limit));
-    return data.success ? ok({ data: data.data }) : citySearchUnavailable(t);
-  } catch {
-    return citySearchUnavailable(t);
-  }
-};
-
 const capabilityAuditActor = (context: CapabilityExecutionContext): AuditActor =>
   context.actor.kind === "user"
     ? {
@@ -488,7 +463,7 @@ export const weatherCapabilities = defineCapabilities({
     "location.search": {
       title: "Search saved weather locations",
       description:
-        "Find an owned saved location by name or state when its ID is unknown. Use returned weather.location refs with location.read, forecast.current, or forecast.get; use city.search for unsaved places.",
+        "Find an owned saved location by name or state when its ID is unknown. Use returned weather.location refs with location.read, forecast.current, or forecast.get; use core.address.autocomplete for unsaved places.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -524,7 +499,7 @@ export const weatherCapabilities = defineCapabilities({
     "forecast.current": {
       title: "Get current weather",
       description:
-        "Get current conditions for a saved location ID from location.list/search or explicit coordinates from city.search. Use forecast.get when hourly or daily outlooks are needed. Units are °C, km/h, mm, hPa, and metres.",
+        "Get current conditions for a saved location ID from location.list/search or explicit coordinates from core.address.autocomplete. Use forecast.get when hourly or daily outlooks are needed. Units are °C, km/h, mm, hPa, and metres.",
       input: ForecastInputSchema,
       data: CurrentWeatherSchema,
       openWorld: true,
@@ -533,26 +508,18 @@ export const weatherCapabilities = defineCapabilities({
     "forecast.get": {
       title: "Get weather forecast",
       description:
-        "Get current conditions plus hourly and daily outlooks for a saved location ID from location.list/search or explicit coordinates from city.search. Use forecast.current for current conditions only. Units are °C, km/h, mm, and sunshine minutes.",
+        "Get current conditions plus hourly and daily outlooks for a saved location ID from location.list/search or explicit coordinates from core.address.autocomplete. Use forecast.current for current conditions only. Units are °C, km/h, mm, and sunshine minutes.",
       input: ForecastInputSchema,
       data: WeatherDataSchema,
       openWorld: true,
       run: runForecast,
     },
-    "city.search": {
-      title: "Search German cities",
-      description:
-        'Specialized geocoding path: find German city candidates and coordinates. To save one, copy the chosen name, optional state, lat, and lon into Save weather location; city results are not weather.location refs. If city search is unavailable, use forecast.current or forecast.get with source.kind = "coordinates" and known coordinates.',
-      input: CitySearchInputSchema,
-      data: CitySearchDataSchema,
-      openWorld: true,
-      run: runCitySearch,
-    },
   },
   actions: {
     "location.create": {
       title: "Save weather location",
-      description: "Save one weather location for the current user from explicit coordinates, commonly copied from Search German cities.",
+      description:
+        "Save one weather location for the current user from explicit coordinates, commonly copied from core.address.autocomplete.",
       input: LocationCreateInputSchema,
       data: LocationSchema,
       destructive: false,

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { CAPABILITY_DISCOVERY_TIMEOUT_MS } from "../_internal/capability-timeout";
-import { listCapabilities } from "../_internal/registry";
+import { type listApps, listCapabilities } from "../_internal/registry";
 import { type CapabilityDispatchParams, dispatchCapability } from "../api/capabilities";
 import {
   CloudResourceRefSchema,
@@ -12,6 +12,7 @@ import {
 } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { RequestAuthority } from "../server";
+import { discoverableAppEntries } from "../services/app-discovery";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { LOCALE_HEADER } from "../shared/locale";
 import { CODE_SOURCE_TOOLS } from "./code-source-contracts";
@@ -66,6 +67,7 @@ const studioReader = async (input: {
 export type AiRecentResourceDependencies = {
   store?: Pick<AiConversationService, "listRecentSentResourceRefs">;
   listRegistry?: () => Promise<CapabilityRegistryEntry[]>;
+  listApps?: typeof listApps;
   dispatch?: (params: CapabilityDispatchParams) => Promise<Response>;
   skills?: Pick<typeof aiSkills, "list">;
   studioReader?: typeof studioReader;
@@ -119,10 +121,14 @@ export const listAiRecentResources = async (input: {
   const skillIds = candidates.flatMap(({ ref }) => (ref.type === "core.ai.skill" ? [ref.id] : []));
   // Exactly the sent Skills, so a large Skill catalog never pushes one out; failing, they are left out like a reader.
   const skills = skillIds.length
-    ? withinBudget(signal, () => (deps.skills ?? aiSkills).list(input.authority.accessSubject, { shortIds: skillIds })).catch(() => [])
+    ? withinBudget(signal, () =>
+        (deps.skills ?? aiSkills).list(input.authority.accessSubject, { shortIds: skillIds, authority: input.authority }),
+      ).catch(() => [])
     : Promise.resolve([]);
   const registry = candidates.some(({ ref }) => ref.type !== "core.ai.skill" && ref.type !== "assistant.artifact")
-    ? withinBudget(signal, deps.listRegistry ?? listCapabilities).catch(() => [])
+    ? withinBudget(signal, async () =>
+        discoverableAppEntries(input.authority, await (deps.listRegistry ?? listCapabilities)(), deps.listApps),
+      ).catch(() => [])
     : Promise.resolve([]);
   const resources = await Promise.all(
     candidates.map(async (candidate): Promise<AiRecentResource | null> => {
