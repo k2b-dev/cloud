@@ -65,7 +65,9 @@ or relation filters:
 - full user accounts can search the account directory;
 - guest accounts can find only themselves and their direct or recursively
   inherited groups;
-- anonymous callers and userless service accounts cannot search identities.
+- standalone and agent accounts with a `read` scope find only exact entries
+  an administrator has shared through [Directory access](/en/docs/identity/directory-shares);
+- anonymous and resource-bound callers cannot search identities.
 
 A group result contains the group's identity, not its members. A guest who
 shares a group with another user cannot discover that user through entity
