@@ -33,6 +33,7 @@ import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { notebookWorkspaceMessages } from "../../messages";
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { caretFormat, insertTable, sameCaretFormat } from "./editor-actions";
+import { keepReadingPosition } from "./reading-position";
 import { slashCommandsExtension } from "./slash-commands";
 import { createNotebookTableStructure, NOTE_EDITOR_MAX_LENGTH, type UnknownTableAction } from "./table-structure";
 
@@ -131,6 +132,13 @@ function Harness() {
   const [view, setView] = createSignal<EditorView>();
   const [controls, setControls] = createSignal<TextEditorControls>();
   const [rich, setRich] = createSignal(true);
+  let scrollPort: HTMLDivElement | undefined;
+  const changeRichMode = (next: boolean) => {
+    const current = view();
+    const restore = current && scrollPort ? keepReadingPosition(current, scrollPort) : null;
+    setRich(next);
+    if (restore) queueMicrotask(() => current?.dom.isConnected && restore());
+  };
   const [readOnly, setReadOnly] = createSignal(false);
   const [unknown, setUnknown] = createSignal<UnknownTableAction | null>(null);
   const [format, setFormat] = createSignal(caretFormat(EditorState.create()), { equals: sameCaretFormat });
@@ -236,7 +244,7 @@ function Harness() {
       dispose: () => dispose(),
       text: () => ytext.toString(),
       editorText: () => view()?.state.doc.toString() ?? "",
-      setRich,
+      setRich: changeRichMode,
       setReadOnly,
       setOnline(value) {
         online = value;
@@ -304,12 +312,12 @@ function Harness() {
             </NoticeCard>
           )}
         </Show>
-        <ScrollArea class="relative min-h-0 flex-1" onPaste={onPaste}>
+        <ScrollArea ref={scrollPort} class="relative min-h-0 flex-1" onPaste={onPaste}>
           <TextEditor
             label={t.editorSurface}
             initialValue={ytext.toString()}
             mode={rich() ? "formatted" : "source"}
-            onModeChange={(mode) => setRich(mode === "formatted")}
+            onModeChange={(mode) => changeRichMode(mode === "formatted")}
             readOnly={readOnly()}
             presentation={() => []}
             toolbar={false}

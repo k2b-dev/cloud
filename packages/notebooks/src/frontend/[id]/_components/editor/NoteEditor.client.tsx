@@ -835,7 +835,12 @@ function EditorInstance(
   ytext.observe(onTextUpdate);
 
   const changeRichMode = (next: boolean) => {
+    const view = editorView();
+    const restore = view && scrollPort ? keepReadingPosition(view, scrollPort) : null;
     setRichMode(next);
+    // Reactive presentation compartments settle before the next paint. The
+    // outer scroll area must follow the same text as tables change height.
+    if (restore) queueMicrotask(() => !disposed && restore());
     writeSettings(props.notebookId, { richMode: next ? "rich" : "source" });
   };
   const onToggleRich = () => changeRichMode(!richMode());

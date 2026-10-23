@@ -470,6 +470,54 @@ describe("Notebook on the shared text editor", () => {
     }
   });
 
+  for (const device of [desktop, phone]) {
+    test(`switching views keeps the selected paragraph in a long note at ${device.viewport?.width}px`, async () => {
+      const doc = Array.from(
+        { length: 60 },
+        (_, index) =>
+          `# Section ${index}\n\n| A | B |\n| --- | --- |\n| one | two |\n\nParagraph ${index} with selected words and **formatting**.\n`,
+      ).join("\n");
+      const { page, close } = await open({ doc, device });
+      try {
+        await page.evaluate(() => window.noteHarness.placeCaret("Paragraph 40 with selected words", 18));
+        await page.keyboard.down("Shift");
+        for (let index = 0; index < 14; index++) await page.keyboard.press("ArrowRight");
+        await page.keyboard.up("Shift");
+        const paragraph = page.locator(".cm-line").filter({ hasText: "Paragraph 40 with" }).first();
+        await paragraph.scrollIntoViewIfNeeded();
+        await paragraph.evaluate((line) => {
+          const port = line.closest(".k2b-scroll-area")!;
+          port.scrollTop += line.getBoundingClientRect().top - port.getBoundingClientRect().top;
+        });
+        await page.evaluate(() => window.noteHarness.settle());
+        const before = await paragraph.evaluate((line) => ({
+          top: line.getBoundingClientRect().top,
+          height: line.getBoundingClientRect().height,
+          selection: document.getSelection()?.toString(),
+          scroll: line.closest(".k2b-scroll-area")!.scrollTop,
+        }));
+        expect(before.scroll).toBeGreaterThan(0);
+        expect(before.selection).toBe("selected words");
+        for (const rich of [false, true]) {
+          await page.evaluate((rich) => window.noteHarness.setRich(rich), rich);
+          await page.evaluate(() => window.noteHarness.settle());
+          await settled(page);
+          const after = await paragraph.evaluate((line) => ({
+            top: line.getBoundingClientRect().top,
+            selection: document.getSelection()?.toString(),
+          }));
+          expect(await text(page)).toBe(doc);
+          expect(after.selection).toBe(before.selection);
+          // Font metrics differ between presentations; the same text must stay
+          // at the viewport edge, within one line rather than a screen away.
+          expect(Math.abs(after.top - before.top)).toBeLessThan(before.height);
+        }
+      } finally {
+        await close();
+      }
+    });
+  }
+
   test("inserting a table continues in its first header cell; formula and column completions stay in the cell", async () => {
     const { page, close } = await open({ doc: "Intro" });
     try {
