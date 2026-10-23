@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, type Page, devices as playwrightDevices } from "playwright";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import { startNotebookEditorFixture } from "./shared-text-editor.browser-fixture";
 
 let browser: Browser;
@@ -35,7 +35,7 @@ const open = async (options: { doc?: string; device?: BrowserContextOptions } = 
   const url = new URL(server.url.href);
   if (options.doc) url.searchParams.set("doc", options.doc);
   await page.goto(url.href);
-  await page.waitForFunction(() => "noteHarness" in window && !!document.querySelector(".cm-content"));
+  await page.waitForFunction(() => window.noteHarness?.ready());
   return {
     page,
     errors,
@@ -207,8 +207,16 @@ describe("Notebook on the shared text editor", () => {
       // The insert-table button turns into the shared table menu at the same place.
       expect(await toolbarButton(page, "Insert table").count()).toBe(0);
       await toolbarButton(page, "Edit table").click();
-      for (const item of ["Row above", "Row below", "Column left", "Column right", "Delete row", "Delete column"])
+      for (const item of [
+        "Insert row above",
+        "Insert row below",
+        "Insert column left",
+        "Insert column right",
+        "Delete row",
+        "Delete column",
+      ])
         expect(await page.getByRole("menuitem", { name: new RegExp(`^${item}(?:\\s*Enter)?$`) }).isVisible()).toBe(true);
+      await settled(page);
       await checkAlignmentGlyphs(page);
       const menuWidth = await page.locator(".k2b-ste-table-menu:visible").evaluate((element) => ({
         actual: element.getBoundingClientRect().width,
@@ -231,8 +239,8 @@ describe("Notebook on the shared text editor", () => {
       const before = await text(page);
       await cell(page, 1, 1).click();
       await toolbarButton(page, "Edit table").click();
-      await page.getByRole("menuitem", { name: "Column right", exact: true }).click();
-      await page.waitForFunction(() => document.querySelectorAll('.k2b-ste-table tr:first-child [data-c="3"]').length === 1);
+      await page.getByRole("menuitem", { name: "Insert column right", exact: true }).click();
+      await page.waitForFunction(() => document.querySelectorAll('.k2b-ste-cell[data-r="0"][data-c="3"]').length === 1);
       expect(await page.evaluate(() => window.noteHarness.posts())).toBe(1);
       expect(await text(page)).toContain("| --- | ---: | --- | ---: |");
       // Formulas still evaluate against their columns by name.
@@ -250,15 +258,20 @@ describe("Notebook on the shared text editor", () => {
       await page.evaluate(() => window.noteHarness.setOnline(false));
       await cell(page, 2, 1).click();
       await toolbarButton(page, "Edit table").click();
-      expect(await page.getByRole("menuitem", { name: "Column right", exact: true }).getAttribute("aria-disabled")).toBe("true");
+      expect(await page.getByRole("menuitem", { name: "Insert column right", exact: true }).getAttribute("aria-disabled")).toBe("true");
       expect(await page.getByRole("menuitem", { name: "Delete row" }).getAttribute("aria-disabled")).toBe("true");
-      expect(await page.getByRole("menuitem", { name: "Row below" }).getAttribute("aria-disabled")).not.toBe("true");
-      expect(await page.getByRole("menu", { name: "Edit table" }).getByText("Reconnect to insert in the middle").isVisible()).toBe(true);
+      expect(await page.getByRole("menuitem", { name: /^Insert row below(?:\s*Enter)?$/ }).getAttribute("aria-disabled")).not.toBe("true");
+      expect(
+        await page
+          .getByRole("menu", { name: "Edit table" })
+          .getByText("Reconnect to insert, move, delete, align or change the header. You can still type and append a row.", { exact: true })
+          .isVisible(),
+      ).toBe(true);
       await page.keyboard.press("Escape");
       // Reconnecting re-enables the menu without another document change.
       await page.evaluate(() => window.noteHarness.setOnline(true));
       await toolbarButton(page, "Edit table").click();
-      expect(await page.getByRole("menuitem", { name: "Column right", exact: true }).getAttribute("aria-disabled")).not.toBe("true");
+      expect(await page.getByRole("menuitem", { name: "Insert column right", exact: true }).getAttribute("aria-disabled")).not.toBe("true");
       expect(await page.evaluate(() => window.noteHarness.posts())).toBe(0);
     } finally {
       await close();
@@ -280,11 +293,29 @@ describe("Notebook on the shared text editor", () => {
       await page.evaluate(() => window.noteHarness.setServer("unknown"));
       await cell(page, 1, 1).click();
       await toolbarButton(page, "Edit table").click();
-      await page.getByRole("menuitem", { name: "Column left", exact: true }).click();
+      try {
+        await page.getByRole("menuitem", { name: "Insert column left", exact: true }).click({ timeout: 1_000 });
+      } catch (cause) {
+        throw new Error(
+          `Missing column action after rejection: ${JSON.stringify(
+            await page.evaluate(() => ({
+              active: document.activeElement?.outerHTML,
+              triggers: [...document.querySelectorAll(".k2b-ste-table-tool, .k2b-ste-cell-menu")].map((node) => node.outerHTML),
+              menus: [...document.querySelectorAll(".k2b-ste-table-menu")].map((node) => ({
+                open: node.matches(":popover-open"),
+                html: node.outerHTML,
+              })),
+              posts: window.noteHarness.posts(),
+              doc: window.noteHarness.text(),
+            })),
+          )}`,
+          { cause },
+        );
+      }
       await page.getByText("Table change not confirmed yet").waitFor();
       await cell(page, 1, 1).click();
       await toolbarButton(page, "Edit table").click();
-      expect(await page.getByRole("menuitem", { name: "Column left", exact: true }).getAttribute("aria-disabled")).toBe("true");
+      expect(await page.getByRole("menuitem", { name: "Insert column left", exact: true }).getAttribute("aria-disabled")).toBe("true");
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: "Stop waiting" }).click();
       await page.getByText("Table change not confirmed yet").waitFor({ state: "detached" });
@@ -504,9 +535,12 @@ describe("Notebook on the shared text editor", () => {
     try {
       await cell(page, 1, 1).tap();
       await toolbarButton(page, "Edit table").tap();
-      await page.locator(".k2b-gesture-menu__sheet-menu").getByRole("menuitem", { name: "Row below" }).waitFor();
+      await page
+        .locator(".k2b-gesture-menu__sheet-menu")
+        .getByRole("menuitem", { name: /^Below(?:\s*Enter)?$/ })
+        .waitFor();
       expect(
-        await page.locator(".k2b-gesture-menu__sheet-menu").getByRole("menuitem", { name: "Column right", exact: true }).isVisible(),
+        await page.locator(".k2b-gesture-menu__sheet-menu").getByRole("menuitem", { name: "Insert right", exact: true }).isVisible(),
       ).toBe(true);
     } finally {
       await close();
@@ -560,11 +594,34 @@ describe("Notebook on the shared text editor", () => {
   test("approved WAVE1 right-click and grips use identical menus, including local Markdown", async () => {
     const { page, errors, close } = await open();
     try {
+      await page.evaluate(() => {
+        const events: { type: string; buttons: number; target: string | null }[] = [];
+        Reflect.set(window, "nativeMenuEvents", events);
+        for (const type of ["pointerdown", "pointerup", "mousedown", "mouseup", "contextmenu", "beforetoggle", "toggle"])
+          document.addEventListener(
+            type,
+            (event) => {
+              if (event.target instanceof HTMLElement)
+                events.push({ type, buttons: event instanceof MouseEvent ? event.buttons : 0, target: event.target.className });
+            },
+            true,
+          );
+      });
       await cell(page, 1, 0).click({ button: "right" });
       const entries = page.locator('[role="menu"]:visible [role^="menuitem"]');
-      await entries.first().waitFor();
+      try {
+        await entries.first().waitFor({ timeout: 1_000 });
+      } catch (cause) {
+        throw new Error(
+          `Native context menu disappeared: ${JSON.stringify(await page.evaluate(() => Reflect.get(window, "nativeMenuEvents")))}`,
+          {
+            cause,
+          },
+        );
+      }
       const labels = await entries.allTextContents();
       expect(labels.some((label) => label.includes("Edit as Markdown"))).toBe(true);
+      await settled(page);
       const menuWidth = await page.locator('[role="menu"]:visible').evaluate((element) => element.getBoundingClientRect().width);
       const rem = await page.evaluate(() => Number.parseFloat(getComputedStyle(document.documentElement).fontSize));
       expect(menuWidth).toBe(18 * rem);
@@ -588,6 +645,7 @@ describe("Notebook on the shared text editor", () => {
     try {
       await cell(page, 1, 0).click();
       const before = await text(page);
+      await settled(page);
       const proseTop = await page.getByText("After the table.", { exact: true }).evaluate((element) => element.getBoundingClientRect().top);
       await page.keyboard.press("Shift+F10");
       await page.getByRole("menuitem", { name: "Edit as Markdown", exact: true }).click();
@@ -637,19 +695,23 @@ describe("Notebook on the shared text editor", () => {
     const { page, close } = await open({ doc, device: { ...phone, viewport: { width: 390, height: 844 } } });
     try {
       const wrap = page.locator(".k2b-ste-table");
+      await settled(page);
       const top = await page.getByText("After", { exact: true }).evaluate((element) => element.getBoundingClientRect().top);
       await cell(page, 1, 0).tap();
       expect(await page.getByRole("button", { name: "+ Row", exact: true }).isVisible()).toBe(true);
+      await settled(page);
       expect(await page.getByText("After", { exact: true }).evaluate((element) => element.getBoundingClientRect().top)).toBe(top);
       const start = await cell(page, 1, 0).evaluate((element) => element.getBoundingClientRect().left);
       await wrap.evaluate((element) => {
         element.scrollLeft = 260;
       });
+      await settled(page);
       expect(Math.abs((await cell(page, 1, 0).evaluate((element) => element.getBoundingClientRect().left)) - start)).toBeLessThan(1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await toolbarButton(page, "Table").tap();
-      const item = page.locator(".k2b-gesture-menu__sheet-menu").getByRole("menuitem", { name: "Row below" });
+      const item = page.locator(".k2b-gesture-menu__sheet-menu").getByRole("menuitem", { name: /^Below(?:\s*Enter)?$/ });
       await item.waitFor();
+      await settled(page);
       expect((await item.boundingBox())!.height).toBeGreaterThanOrEqual(44);
       await checkAlignmentGlyphs(page);
       const frame = page.locator(".k2b-bottom-sheet-frame:has(.k2b-ste-align-choice)");
@@ -796,6 +858,7 @@ describe("Notebook on the shared text editor", () => {
               );
             }
             if (deviceName === "desktop") {
+              await settled(page);
               const box = await suggestion.boundingBox();
               if (!box) throw new Error("The slash suggestion has no pointer target");
               await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -834,6 +897,42 @@ describe("Notebook on the shared text editor", () => {
       });
     }
   }
+
+  for (const [deviceName, device] of [
+    ["desktop", desktop],
+    ["phone", { ...phone, viewport: { width: 390, height: 844 } }],
+  ] as const) {
+    test(`the first Enter followed immediately by typing preserves its newline on ${deviceName}`, async () => {
+      const { page, close } = await open({ doc: "Intro", device });
+      try {
+        await page.evaluate(() => window.noteHarness.placeCaret("Intro", 5));
+        // No wait or injected edit between the native keys: a late focus-only
+        // update must not cancel Android's pending Enter and join these lines.
+        await page.keyboard.press("Enter");
+        await page.keyboard.type("Kept");
+        await waitForText(page, "Intro\nKept");
+        expect(await text(page)).toBe("Intro\nKept");
+        expect(await page.evaluate(() => window.noteHarness.editorText())).toBe("Intro\nKept");
+        expect(await page.locator(".cm-content").evaluate((element) => document.activeElement === element)).toBe(true);
+      } finally {
+        await close();
+      }
+    });
+  }
+
+  test("phone Enter keeps the Notebook list keymap before immediate typing", async () => {
+    const { page, close } = await open({ doc: "- First", device: { ...phone, viewport: { width: 390, height: 844 } } });
+    try {
+      await page.evaluate(() => window.noteHarness.placeCaret("First", 5));
+      await page.keyboard.press("Enter");
+      await page.keyboard.type("Next");
+      await waitForText(page, "- First\n- Next");
+      expect(await text(page)).toBe("- First\n- Next");
+      expect(await page.evaluate(() => window.noteHarness.editorText())).toBe("- First\n- Next");
+    } finally {
+      await close();
+    }
+  });
 
   test("keyboard-picked slash commands open the same size picker", async () => {
     const { page, close } = await open({ doc: "Intro" });

@@ -55,7 +55,7 @@ import {
   NoteTableActionErrorSchema,
   NoteTableActionRequestSchema,
   NoteTableActionResponseSchema,
-} from "../lib/table-actions";
+} from "@/lib/table-actions";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
 import { InvalidActivityCursorError, NOTEBOOK_ACTIVITY_ACTIONS } from "../service/activity";
@@ -2198,7 +2198,7 @@ const app = new Hono<AuthContext>()
         actor: getNotebookActivityActor(c),
         signal: c.req.raw.signal,
       });
-      if (result.ok) return c.json(result.data);
+      if (result.ok) return respond(c, ok(result.data));
       const t = messages(c);
       const copy = {
         table_action_access_denied: t.accessDenied,
@@ -2213,16 +2213,17 @@ const app = new Hono<AuthContext>()
         table_action_persist_failed: t.tableActionPersistFailed,
         table_action_outcome_unknown: t.tableActionOutcomeUnknown,
       };
-      return c.json(
+      return respond(
+        c,
+        { ok: false, error: copy[result.code], code: result.code, status: result.status },
         {
-          message: copy[result.code],
-          code: result.code,
-          accepted: result.accepted,
-          cursor: result.cursor,
-          receipt: result.receipt,
-          focus: result.focus,
+          errorDetails: {
+            accepted: result.accepted,
+            cursor: result.cursor,
+            receipt: result.receipt,
+            focus: result.focus,
+          },
         },
-        result.status,
       );
     },
   )

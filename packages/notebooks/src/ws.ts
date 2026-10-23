@@ -1,7 +1,7 @@
 import type { NotebookPresenceParticipant, User } from "@k2b/cloud/contracts";
 import { auth, getLocale } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
-import { fromBase64 } from "@k2b/cloud/shared-text";
+import { createTrustedTextAwareness, fromBase64, InvalidSharedTextAwarenessError } from "@k2b/cloud/shared-text";
 import { ConflictError, CursorMismatchError, RetentionGapError, type TopicEvent, type TopicLiveEvent } from "@k2b/sync";
 import { retry } from "@k2b/sync/retry";
 import type { ServerWebSocket } from "bun";
@@ -10,7 +10,7 @@ import { upgradeWebSocket } from "hono/bun";
 import { z } from "zod";
 import { SHORT_ID_REGEX } from "./lib/short-id";
 import { isPermissionInvalidation, notebooksWorkspace, toPublicWorkspaceEvent } from "./lib/workspace-events";
-import { notebooksYjs } from "./lib/yjs";
+import { getNotebookPresenceColor, notebooksYjs } from "./lib/yjs";
 import { notebooksService } from "./service";
 import { PRESENCE_HEARTBEAT_INTERVAL_MS } from "./service/presence";
 import { yjsSnapshotWorker } from "./service/yjs-snapshot-worker";
@@ -130,6 +130,8 @@ type WsContext = {
   restoreRevision: string | null;
   canWrite: boolean;
   peerId: string;
+  trustedAwareness: ReturnType<typeof createTrustedTextAwareness> | null;
+  awarenessUserId: string | null;
   streamAbort: AbortController | null;
   snapshotInterval: ReturnType<typeof setInterval> | null;
   presenceHeartbeatInterval: ReturnType<typeof setInterval> | null;
@@ -188,6 +190,8 @@ const createContext = (socket: ServerWebSocket<unknown>, sessionToken: string | 
   noteAccessWatchAbort: null,
   canWrite: false,
   peerId: crypto.randomUUID(),
+  trustedAwareness: null,
+  awarenessUserId: null,
   streamAbort: null,
   snapshotInterval: null,
   presenceHeartbeatInterval: null,
@@ -425,6 +429,20 @@ const leaveCurrentNote = async (ctx: WsContext) => {
   stopPresenceHeartbeat(ctx);
   stopLiveStream(ctx);
   if (noteId) {
+    const removal = ctx.trustedAwareness?.remove();
+    ctx.trustedAwareness = null;
+    ctx.awarenessUserId = null;
+    if (removal) {
+      try {
+        await createYjsAwarenessTopic().publish({
+          tenantId: noteId,
+          data: { kind: "awareness", payload: toBase64(removal), originNodeId: NODE_ID, originPeerId: ctx.peerId },
+        });
+      } catch (error) {
+        // Remote awareness also expires on the protocol's existing timeout.
+        log.warn("Failed to leave cursor presence", { noteId, error: String(error) });
+      }
+    }
     unregisterPresenceMember(ctx, noteId);
     try {
       await notebooksService.presence.leave({
@@ -1120,7 +1138,12 @@ const handleReplayRequest = async (ctx: WsContext, payload: z.infer<typeof Repla
   // has been delivered (see `startLiveStream`). Sending it earlier would let
   // the client publish edits while catch-up is still streaming.
   startLiveStream(ctx, dbNoteId, payload.noteId, { after: replayCursor, storedBase: !clientCursor }, (cursor) => {
-    send(ctx.socket, WS_TYPE.replayReady, { noteId: payload.noteId, cursor, restoreRevision: snapshot.restoreRevision });
+    send(ctx.socket, WS_TYPE.replayReady, {
+      noteId: payload.noteId,
+      cursor,
+      restoreRevision: snapshot.restoreRevision,
+      peerId: ctx.peerId,
+    });
   });
   startAccessRefresh(ctx);
   if (ctx.noteNotebookId) startNoteAccessWatch(ctx, ctx.noteNotebookId);
@@ -1183,12 +1206,40 @@ const handleAwarenessPublish = async (ctx: WsContext, payload: z.infer<typeof Aw
     return;
   }
 
+  if (!(await revalidateNoteAccess(ctx)) || !ensureJoinedNote(ctx, payload.noteId) || !ctx.user) return;
+  if (ctx.awarenessUserId !== null && ctx.awarenessUserId !== ctx.user.id) {
+    await fatal(ctx, ERROR_CODE.sessionExpired, ctx.messages.sessionExpired, payload.noteId);
+    return;
+  }
   const awarenessTopic = createYjsAwarenessTopic();
+  if (!ctx.trustedAwareness) {
+    // Reserve a broker sequence using an empty awareness update. Sequences are
+    // unique across pods; the upper range cannot collide with Yjs uint32 IDs.
+    const reservation = await awarenessTopic.publish({
+      tenantId: ctx.noteId!,
+      data: { kind: "awareness", payload: "AA==", originNodeId: NODE_ID, originPeerId: ctx.peerId },
+    });
+    if (!ensureJoinedNote(ctx, payload.noteId) || ctx.phase !== "joined") return;
+    ctx.trustedAwareness = createTrustedTextAwareness({
+      clientId: 2 ** 32 + reservation.streamSequence,
+      textName: "codemirror",
+      user: { userId: ctx.user.id, name: ctx.user.displayName, color: getNotebookPresenceColor(ctx.user.id) },
+    });
+    ctx.awarenessUserId = ctx.user.id;
+  }
+  let trusted: Uint8Array;
+  try {
+    trusted = ctx.trustedAwareness.publish(fromBase64(payload.payload));
+  } catch (error) {
+    if (!(error instanceof InvalidSharedTextAwarenessError)) throw error;
+    warn(ctx.socket, ERROR_CODE.invalidPayload, ctx.messages.invalidMessage, payload.noteId);
+    return;
+  }
   await awarenessTopic.publish({
     tenantId: ctx.noteId!,
     data: {
       kind: "awareness",
-      payload: payload.payload,
+      payload: toBase64(trusted),
       originNodeId: NODE_ID,
       originPeerId: ctx.peerId,
     },

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import * as T from "@k2b/ui/text-editor/model";
 import * as Y from "yjs";
+import { createStructuralFixture } from "../../../scripts/fixtures/shared-text-history";
 import { captureTextAnchor, resolveTextAnchor } from "../src/shared-text/anchors";
-import { createStructuralFixture } from "../src/shared-text/structural-history.test-fixture";
 import { captureTableAction, planTableAction } from "../src/shared-text/table-actions";
 
 test("Redo cannot retarget a row accepted after column Undo", async () => {

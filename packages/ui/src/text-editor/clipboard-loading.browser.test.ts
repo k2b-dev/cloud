@@ -63,7 +63,12 @@ const paste = (page: Page, html = "<b>pasted</b>") =>
     const data = new DataTransfer();
     data.setData("text/plain", "pasted");
     if (html) data.setData("text/html", html);
+    const selection = document.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+    Reflect.set(window, "clipboardRangeBeforeLoad", range);
+    const before = { caret: window.sharedEditorHarness?.caret(), start: range?.startOffset, end: range?.endOffset };
     document.activeElement!.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+    return before;
   }, html);
 
 for (const outcome of ["apply", "peer-edit", "selection-change", "read-only", "load-failure"] as const) {
@@ -91,7 +96,7 @@ for (const outcome of ["apply", "peer-edit", "selection-change", "read-only", "l
       const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
       await cell.click();
       await page.keyboard.press("End");
-      await paste(page);
+      const beforePaste = await paste(page);
       await request;
       expect(await page.evaluate(() => window.sharedEditorHarness.text())).not.toContain("pasted");
       if (outcome === "peer-edit") await page.evaluate(() => window.sharedEditorHarness.remote(0, "peer "));
@@ -99,7 +104,24 @@ for (const outcome of ["apply", "peer-edit", "selection-change", "read-only", "l
       if (outcome === "read-only") await page.evaluate(() => window.sharedEditorHarness.readOnly(true));
       release();
       if (outcome === "apply") {
-        await page.waitForFunction(() => window.sharedEditorHarness.text().includes("Paperpasted"));
+        await page.waitForFunction(
+          () => window.sharedEditorHarness.text().includes("pasted") || window.sharedEditorHarness.errors().length > 0,
+        );
+        const afterPaste = await page.evaluate(() => {
+          const selection = document.getSelection();
+          const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+          const previous: Range | null = Reflect.get(window, "clipboardRangeBeforeLoad");
+          return {
+            caret: window.sharedEditorHarness.caret(),
+            start: range?.startOffset,
+            end: range?.endOffset,
+            sameStart: range?.startContainer === previous?.startContainer,
+            sameEnd: range?.endContainer === previous?.endContainer,
+            errors: window.sharedEditorHarness.errors(),
+          };
+        });
+        expect(afterPaste.errors, JSON.stringify({ beforePaste, afterPaste })).toEqual([]);
+        expect(await page.evaluate(() => window.sharedEditorHarness.text())).toContain("Paper**pasted**");
         expect(await page.evaluate(() => window.sharedEditorHarness.errors())).toEqual([]);
       } else {
         await page.waitForFunction(() => window.sharedEditorHarness.errors().includes("recovery:pasted"));
@@ -141,8 +163,9 @@ test("public tableGrid composition lazily loads its HTML paste parser", async ()
     await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
     await page.keyboard.press("End");
     await paste(page);
-    await page.waitForFunction(() => window.clipboardGrid.text().includes("Paperpasted"));
+    await page.waitForFunction(() => window.clipboardGrid.text().includes("pasted") || window.clipboardGrid.errors().length > 0);
     expect(await page.evaluate(() => window.clipboardGrid.errors())).toEqual([]);
+    expect(await page.evaluate(() => window.clipboardGrid.text())).toContain("Paper**pasted**");
     expect(errors).toEqual([]);
   } finally {
     await context.close();

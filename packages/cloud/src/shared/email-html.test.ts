@@ -23,9 +23,7 @@ describe("email HTML sanitizer", () => {
     expect(sanitizeEmailHtml('<table><tr><th align="center">A</th><td align="right" onclick="alert(1)">B</td></tr></table>')).toBe(
       '<table><tr><th align="center">A</th><td align="right">B</td></tr></table>',
     );
-    expect(sanitizeEmailHtml('<del><a href="javascript:alert(1)">old</a></del><script>alert(1)</script>')).toBe(
-      "<del><a>old</a></del>",
-    );
+    expect(sanitizeEmailHtml('<del><a href="javascript:alert(1)">old</a></del><script>alert(1)</script>')).toBe("<del><a>old</a></del>");
   });
 
   test("keeps phone links like web and mail links", () => {

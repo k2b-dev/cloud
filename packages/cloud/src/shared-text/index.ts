@@ -1,4 +1,5 @@
 export { captureTextAnchor, resolveTextAnchor } from "./anchors";
+export { createTrustedTextAwareness, InvalidSharedTextAwarenessError } from "./awareness";
 export { compareStreamCursor, maxStreamCursor, parseStreamCursor } from "./cursor";
 export {
   applySharedTextEvent,

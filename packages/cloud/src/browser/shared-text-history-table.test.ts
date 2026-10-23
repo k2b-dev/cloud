@@ -1,9 +1,9 @@
 import { expect, spyOn, test } from "bun:test";
 import * as T from "@k2b/ui/text-editor/model";
 import * as Y from "yjs";
+import { createStructuralFixture } from "../../../../scripts/fixtures/shared-text-history";
 import { captureTextAnchor, resolveTextAnchor } from "../shared-text/anchors";
 import { fromBase64, toBase64 } from "../shared-text/events";
-import { createStructuralFixture } from "../shared-text/structural-history.test-fixture";
 import type { SharedTextSyncEvent } from "../shared-text/types";
 import { createSharedTextActionHistory } from "./shared-text-history";
 

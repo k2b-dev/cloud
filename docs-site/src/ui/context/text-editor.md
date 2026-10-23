@@ -38,8 +38,8 @@ Open the same menu from a row or column grip, by right-clicking a cell, or
 with Shift+F10 or the context-menu key while a cell has focus.
 Arrow keys enter a table from the adjacent text line; Tab from prose leaves
 the editor instead of entering every cell.
-The menu names the active cell and groups row, column, alignment and table
-actions. On phones the table toolbar button opens a sheet with two columns of
+The menu names the active row and column and keeps its target cell outlined.
+It groups row, column, alignment and table actions. On phones the table toolbar button opens a sheet with two columns of
 44-pixel touch targets; it occupies at most 62% of the viewport and scrolls
 inside that space. The sheet stays open after moving a row or column. Read-only tables expose only copying;
 formula previews keep their rendered values when selected.

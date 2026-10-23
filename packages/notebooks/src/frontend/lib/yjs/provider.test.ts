@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { encoding } from "@k2b/stdlib";
-import { Awareness } from "y-protocols/awareness";
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate, removeAwarenessStates } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { notebooksWorkspace } from "../../../lib/workspace-events";
 import { notebooksYjs } from "../../../lib/yjs";
@@ -1406,4 +1406,109 @@ test("delayed echoes stop at the existing payload budget with every pending byte
     awareness.destroy();
     doc.destroy();
   }
+});
+
+describe("trusted awareness transport", () => {
+  test("publishes only its own state, filters its server echo and preserves trusted remote identity", () => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    const remoteDoc = new Y.Doc();
+    remoteDoc.clientID = 2 ** 32 + 15;
+    const remote = new Awareness(remoteDoc);
+    const ownServerDoc = new Y.Doc();
+    ownServerDoc.clientID = 2 ** 32 + 14;
+    const ownServer = new Awareness(ownServerDoc);
+    const provider = createYjsProvider({ doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost" });
+    const publishes = (socket: FakeWebSocket) =>
+      socket.sent.map((value) => JSON.parse(value)).filter((value) => value.type === notebooksYjs.wsType.awarenessPublish);
+    try {
+      awareness.setLocalStateField("cursor", { anchor: { tname: "codemirror" }, head: { tname: "codemirror" } });
+      provider.connect();
+      const socket = FakeWebSocket.instances.at(-1)!;
+      socket.open();
+      socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0", peerId: "own-peer" } });
+      expect(publishes(socket)).toHaveLength(1);
+      const peerUpdate = (state: Awareness, peerId: string) =>
+        socket.message({
+          type: notebooksYjs.wsType.awarenessPush,
+          payload: {
+            noteId: NOTE_ID,
+            updates: [{ originPeerId: peerId, payload: encoding.toBase64(encodeAwarenessUpdate(state, [state.clientID])) }],
+          },
+        });
+      ownServer.setLocalState({ user: { userId: "alice", name: "Alice", color: "#61afef" } });
+      peerUpdate(ownServer, "own-peer");
+      expect(awareness.getStates().has(ownServer.clientID)).toBe(false);
+      const trustedUser = { userId: "bob", name: "Server Bob", color: "#98c379" };
+      const cursor = { anchor: { tname: "codemirror", assoc: -1 }, head: { tname: "codemirror", assoc: 0 } };
+      remote.setLocalState({ user: trustedUser, cursor });
+      peerUpdate(remote, "other-peer");
+      expect(awareness.getStates().get(remote.clientID)).toEqual({ user: trustedUser, cursor });
+      expect(publishes(socket)).toHaveLength(1);
+      removeAwarenessStates(awareness, [remote.clientID], "timeout");
+      expect(publishes(socket)).toHaveLength(1);
+      // A mixed timeout/local batch must never serialize the remote client's removal.
+      awareness.emit("update", [{ added: [], updated: [doc.clientID], removed: [remote.clientID] }, "timeout"]);
+      expect(publishes(socket)).toHaveLength(2);
+      const observedDoc = new Y.Doc();
+      const observed = new Awareness(observedDoc);
+      try {
+        observed.setLocalState(null);
+        applyAwarenessUpdate(observed, encoding.fromBase64(publishes(socket).at(-1)!.payload.payload), "remote");
+        expect([...observed.meta.keys()].filter((id) => id !== observedDoc.clientID)).toEqual([doc.clientID]);
+      } finally {
+        observed.destroy();
+        observedDoc.destroy();
+      }
+      awareness.setLocalState(null);
+      expect(publishes(socket)).toHaveLength(3);
+      provider.dispose();
+      expect(publishes(socket)).toHaveLength(3);
+    } finally {
+      provider.dispose();
+      awareness.destroy();
+      doc.destroy();
+      remote.destroy();
+      remoteDoc.destroy();
+      ownServer.destroy();
+      ownServerDoc.destroy();
+    }
+  });
+
+  test("reconnect republishes the current cursor and uses the new connection echo identity", () => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    const provider = createYjsProvider({ doc, awareness, noteId: NOTE_ID, appUrl: "http://localhost" });
+    try {
+      const cursor = { anchor: { tname: "codemirror" }, head: { tname: "codemirror" } };
+      awareness.setLocalState({ cursor });
+      provider.connect();
+      let socket = FakeWebSocket.instances.at(-1)!;
+      socket.open();
+      socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0", peerId: "first-peer" } });
+      socket.close();
+      socket.onclose?.({ code: 1006, reason: "offline" });
+      provider.reconnectNow();
+      socket = FakeWebSocket.instances.at(-1)!;
+      socket.open();
+      socket.message({ type: notebooksYjs.wsType.replayReady, payload: { noteId: NOTE_ID, restoreRevision: "0", peerId: "second-peer" } });
+      const publishes = socket.sent
+        .map((value) => JSON.parse(value))
+        .filter((value) => value.type === notebooksYjs.wsType.awarenessPublish);
+      expect(publishes).toHaveLength(1);
+      const receiverDoc = new Y.Doc();
+      const receiver = new Awareness(receiverDoc);
+      try {
+        applyAwarenessUpdate(receiver, encoding.fromBase64(publishes[0].payload.payload), "remote");
+        expect(receiver.getStates().get(doc.clientID)).toEqual({ cursor });
+      } finally {
+        receiver.destroy();
+        receiverDoc.destroy();
+      }
+    } finally {
+      provider.dispose();
+      awareness.destroy();
+      doc.destroy();
+    }
+  });
 });

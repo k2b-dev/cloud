@@ -64,12 +64,7 @@ const createMarked = (
 // headers choose the locale, and `markdownInfoBlocks()` returns one extension
 // for every locale that shares a catalog, so the cache stays bounded.
 const instances = new Map<MarkedExtension, Map<string, Marked>>();
-const markedFor = (
-  profile: MarkdownProfile,
-  links: LinkStyle = "widget",
-  locale?: string,
-  output: MarkdownOutput = "cloud",
-): Marked => {
+const markedFor = (profile: MarkdownProfile, links: LinkStyle = "widget", locale?: string, output: MarkdownOutput = "cloud"): Marked => {
   const infoBlocks = markdownInfoBlocks({ locale });
   const byStyle = instances.get(infoBlocks) ?? new Map<string, Marked>();
   instances.set(infoBlocks, byStyle);

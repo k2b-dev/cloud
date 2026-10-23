@@ -81,19 +81,19 @@ else
           [...h.menu().querySelectorAll("[role^='menuitem'] .k2b-dropdown__copy > span")].map((node) => node.textContent);
         const inventory = labels();
         expect(inventory).toEqual([
-          "Row above",
-          "Row below",
+          "Insert row above",
+          "Insert row below",
           "Move row up",
           "Move row down",
           "Delete row",
-          "Column left",
-          "Column right",
+          "Insert column left",
+          "Insert column right",
           "Move column left",
           "Move column right",
-          "Delete column",
           "Left",
           "Center",
           "Right",
+          "Delete column",
           "Header row",
           "Edit as Markdown",
           "Copy table",
@@ -101,9 +101,9 @@ else
           "Delete table",
         ]);
         expect([...h.menu().querySelectorAll(".k2b-dropdown__label")].map((node) => node.textContent)).toEqual([
-          "Row 1, Name",
-          "Rows",
-          "Columns",
+          "Row 1 · Column “Name”",
+          "Row 1",
+          "Column “Name”",
           "Alignment",
           "Table",
         ]);
@@ -149,23 +149,24 @@ else
       try {
         h.open();
         expect(h.dialogCore.isOpen()).toBe(true);
-        expect(h.item("Move row up").disabled).toBe(true);
-        const down = h.item("Move row down");
+        expect(h.item("Move up").disabled).toBe(true);
+        const down = h.item("Move down");
         down.click();
         await Promise.resolve();
         expect(h.dialogCore.isOpen()).toBe(true);
-        expect(h.item("Move row down").disabled).toBe(true);
-        expect(h.item("Move row up").disabled).toBe(false);
+        expect(h.item("Move down").disabled).toBe(true);
+        expect(h.item("Move up").disabled).toBe(false);
         expect(h.cell(2, 0).textContent).toBe("Paper");
-        h.item("Move column right").click();
+        expect(h.menu().querySelectorAll(".k2b-dropdown__label")[1]!.textContent).toBe("Row 2");
+        h.item("Move right").click();
         await Promise.resolve();
         expect(h.dialogCore.isOpen()).toBe(true);
-        expect(h.item("Move column right").disabled).toBe(true);
-        expect(h.item("Move column left").disabled).toBe(false);
-        h.item("Move row up").click();
+        expect(h.item("Move right").disabled).toBe(true);
+        expect(h.item("Move left").disabled).toBe(false);
+        h.item("Move up").click();
         await Promise.resolve();
         expect(h.cell(1, 1).textContent).toBe("Paper");
-        expect(h.item("Move row up").disabled).toBe(true);
+        expect(h.item("Move up").disabled).toBe(true);
       } finally {
         await h.cleanup();
       }

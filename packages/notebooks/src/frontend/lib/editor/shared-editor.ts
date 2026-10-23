@@ -21,7 +21,8 @@ import { type TextEditorControls, tableHost } from "@k2b/ui/text-editor";
 import { displayCell, findTables, gridLine, rowCount, type Table } from "@k2b/ui/text-editor/model";
 import { createEffect, untrack } from "solid-js";
 import type { Awareness } from "y-protocols/awareness";
-import * as Y from "yjs";
+import type * as Y from "yjs";
+import { resolveTextCursor } from "./relative-cursor";
 
 /**
  * Reactive extensions as compartments of the one shared view. Each accessor
@@ -167,7 +168,7 @@ export const tableCellPresence = (ytext: Y.Text, awareness: Awareness): Extensio
           if (client === doc.clientID || !peer || !cursor || typeof cursor !== "object" || !("head" in cursor)) continue;
           let head: number | null = null;
           try {
-            const position = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(cursor.head), doc);
+            const position = resolveTextCursor(ytext, cursor.head);
             if (position?.type === ytext) head = position.index;
           } catch {
             // Awareness can arrive before the document update it refers to.

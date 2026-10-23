@@ -75,3 +75,32 @@ test("Gate 1 oracle includes extra visible cells even when email drops them", ()
 test("Gate 1: adversarial9 compares structural no-op against canonical state", async () => {
   assertGate(await runGate1Case(9, "adversarial"));
 });
+
+for (const seed of [24, 33, 36])
+  for (const profile of ["realistic", "adversarial"] as const)
+    test(`Gate 1: native restoration keeps its original cell across peer boundary changes, ${profile} seed ${seed}`, async () => {
+      assertGate(await runGate1Case(seed, profile));
+    });
+
+test("Gate 1: independent alignment Undo survives a later peer row, realistic256", async () => {
+  assertGate(await runGate1Case(256, "realistic"));
+});
+
+test("Gate 1: row Undo refuses dependent column tails without settled damage, realistic4572", async () => {
+  const result = await runGate1Case(4572, "realistic");
+  assertGate(result);
+  expect(result.coverage.historyRefusals).toBeGreaterThan(0);
+  expect(result.coverage.settledBroken).toBe(0);
+});
+
+for (const seed of [488, 813])
+  test(`Gate 1: a changed inverse target stays recoverable, realistic${seed}`, async () => {
+    const result = await runGate1Case(seed, "realistic");
+    assertGate(result);
+    expect(result.coverage.historyRefusals).toBeGreaterThan(0);
+    expect(result.coverage.settledBroken).toBe(0);
+  });
+
+test("Gate 1: alignment inverse follows an independent inserted column, adversarial97", async () => {
+  assertGate(await runGate1Case(97, "adversarial"));
+});

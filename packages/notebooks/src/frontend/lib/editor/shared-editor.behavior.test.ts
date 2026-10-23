@@ -91,6 +91,14 @@ describe("Notebook shared editor adapter", () => {
       expect(marked.getAttribute("data-peer")).toBe("Paul");
       expect(marked.style.getPropertyValue("--pc")).toBe("#0a7");
       expect(dom.root.querySelectorAll("[data-peer]")).toHaveLength(1);
+      const roots = [...ydoc.share.keys()];
+      for (const tname of ["unknown-one", "unknown-two", "unknown-three"]) {
+        peer.setLocalStateField("cursor", { head: { tname, type: null, item: null, assoc: 0 } });
+        applyAwarenessUpdate(awareness, encodeAwarenessUpdate(peer, [peerDoc.clientID]), "remote");
+        await frames();
+        expect(dom.root.querySelectorAll("[data-peer]")).toHaveLength(0);
+        expect([...ydoc.share.keys()]).toEqual(roots);
+      }
       peer.setLocalStateField("cursor", null);
       applyAwarenessUpdate(awareness, encodeAwarenessUpdate(peer, [peerDoc.clientID]), "remote");
       await frames();

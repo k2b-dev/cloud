@@ -5,15 +5,15 @@ import {
   planStructuralInverse,
   prepareStructuralHistory,
   type SharedTextStructuralHistory,
-} from "../../../../../../cloud/src/shared-text/structural-history";
-import { planTableAction, prepareTableActionFocus } from "../../../../../../cloud/src/shared-text/table-actions";
+} from "../../packages/cloud/src/shared-text/structural-history";
+import { planTableAction, prepareTableActionFocus } from "../../packages/cloud/src/shared-text/table-actions";
 import {
   decodeTableActionIntent,
   decodeTableFocus,
   encodeTableFocus,
   NOTE_TABLE_ACTION_MAX_LENGTH,
   NoteTableActionRequestSchema,
-} from "../../../../lib/table-actions";
+} from "../../packages/notebooks/src/lib/table-actions";
 
 const Input = z.object({ session: z.uuid(), state: z.string(), request: NoteTableActionRequestSchema });
 

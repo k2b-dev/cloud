@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { type Browser, type BrowserContextOptions, devices } from "playwright";
-import { browserName, launchBrowser } from "../../test/browser";
+import { browserName, launchBrowser, settled } from "../../test/browser";
 import type {} from "../../test/text-editor-component-harness";
 
 let browser: Browser;
@@ -29,6 +29,7 @@ beforeAll(async () => {
               configFile: false,
               presets: [typescript, [solid, { generate: "dom", hydratable: false }]],
             });
+            if (!result?.code) throw new Error(`Could not compile ${path}`);
             return { contents: result.code, loader: "js" };
           });
         },
@@ -71,6 +72,13 @@ for (const [name, options] of Object.entries(profiles))
         page.on("pageerror", (error) => errors.push(error.message));
         await page.goto(server.url.href);
         const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
+        await cell.waitFor();
+        await settled(page);
+        const tableWidth = await cell.evaluate((element) => {
+          const wrapper = element.closest(".k2b-ste-table")!;
+          return { available: wrapper.clientWidth, table: wrapper.querySelector("table")!.getBoundingClientRect().width };
+        });
+        expect(tableWidth.table).toBeGreaterThanOrEqual(tableWidth.available - (name === "desktop" ? 32 : 0));
         await cell.click();
         await cell.evaluate((el) => {
           const range = document.createRange();
@@ -120,11 +128,96 @@ for (const [name, options] of Object.entries(profiles))
         await page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]').click();
         await page.keyboard.press("Shift+F10");
         const center = page.getByRole("menuitemradio", { name: "Mitte" });
+        await center.waitFor();
+        await settled(page);
+        const activeCell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
+        const targetOutline = await activeCell.evaluate((element) => {
+          const style = getComputedStyle(element);
+          return { style: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+        });
+        expect(targetOutline.style).toBe("solid");
+        expect(targetOutline.width).toBeGreaterThan(0);
+        const alignment = await center.evaluate((button) => {
+          const section = button.closest(".k2b-dropdown__section")!;
+          const label = section.querySelector(".k2b-dropdown__label")!.getBoundingClientRect();
+          const choices = section.querySelector(".k2b-dropdown__row")!.getBoundingClientRect();
+          return {
+            labelRight: label.right,
+            choicesLeft: choices.left,
+            labelCenter: label.top + label.height / 2,
+            choicesCenter: choices.top + choices.height / 2,
+          };
+        });
+        expect(alignment.labelRight).toBeLessThanOrEqual(alignment.choicesLeft);
+        expect(Math.abs(alignment.labelCenter - alignment.choicesCenter)).toBeLessThan(1);
         await center.click();
         expect(await page.evaluate(() => window.sharedComponentHarness.view.state.doc.toString())).toContain("| :---: |");
         await page.keyboard.press("Escape");
         await page.locator("#outside").click();
         expect(await page.locator(".k2b-ste-floating-menu").count()).toBe(0);
+        await page.waitForFunction(() => {
+          const cell = document.querySelector('.k2b-ste-cell[data-r="1"][data-c="0"]');
+          return cell && getComputedStyle(cell).outlineStyle === "none";
+        });
+        expect(await activeCell.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("none");
+      } finally {
+        await context.close();
+      }
+    });
+    test("local table source keeps Markdown rows unwrapped and preserves the space below", async () => {
+      const context = await browser.newContext(options);
+      try {
+        const page = await context.newPage();
+        await page.goto(`${server.url.href}?mockup`);
+        const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
+        await cell.waitFor();
+        await settled(page);
+        const following = page.getByText("Viele Grüße", { exact: true });
+        const top = await following.evaluate((element) => element.getBoundingClientRect().top + scrollY);
+        await cell.click();
+        await page.keyboard.press("Shift+F10");
+        await page.getByRole("menuitem", { name: "Als Markdown bearbeiten", exact: true }).click();
+        const source = page.locator(".k2b-ste-table-source");
+        await source.waitFor();
+        await settled(page);
+        expect(await source.locator(".cm-content").evaluate((element) => getComputedStyle(element).whiteSpace)).toBe("pre");
+        expect(await following.evaluate((element) => element.getBoundingClientRect().top + scrollY)).toBe(top);
+        if (name === "phone")
+          expect(await source.locator(".k2b-ste-source-body").evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+        await source.getByRole("button", { name: name === "phone" ? "Fertig" : "Als Tabelle anzeigen", exact: true }).click();
+        await source.waitFor({ state: "detached" });
+        expect(await cell.isVisible()).toBe(true);
+      } finally {
+        await context.close();
+      }
+    });
+    test("the add-column control stays beyond the last column of a wide table", async () => {
+      const context = await browser.newContext(options);
+      try {
+        const page = await context.newPage();
+        await page.goto(server.url.href);
+        await page.waitForFunction(() => !!window.sharedComponentHarness);
+        await page.evaluate(() => {
+          const columns = Array.from({ length: 10 }, (_, index) => `Long column heading ${index + 1}`);
+          const doc = `| ${columns.join(" | ")} |\n| ${columns.map(() => "---").join(" | ")} |\n| ${columns.join(" | ")} |`;
+          const view = window.sharedComponentHarness.view;
+          view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
+        });
+        const wrapper = page.locator(".k2b-ste-table");
+        await wrapper.waitFor();
+        await settled(page);
+        expect(await wrapper.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+        const add = wrapper.locator(".k2b-ste-addColumn");
+        if (name === "phone") expect(await add.isVisible()).toBe(false);
+        else {
+          const gap = await wrapper.evaluate((element) => {
+            const table = element.querySelector("table")!.getBoundingClientRect();
+            const add = element.querySelector(".k2b-ste-addColumn")!.getBoundingClientRect();
+            return add.left - table.right;
+          });
+          expect(gap).toBeGreaterThanOrEqual(0);
+          expect(gap).toBeLessThan(1);
+        }
       } finally {
         await context.close();
       }

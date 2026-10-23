@@ -43,6 +43,12 @@ const toErrorResponse = (result: AnyResult): [ApiErrorBody, number] => {
   return [{ message: "Internal server error", code: "INTERNAL" }, 500];
 };
 
+/** Add explicitly selected transport recovery fields without changing the error envelope. */
+export async function respond<D extends Record<string, unknown>, S extends LegacyErrorStatus>(
+  c: Context,
+  resultOrFn: ResultOrFn<LegacyErrorResult<S>>,
+  options: { errorDetails: D },
+): Promise<JsonTypedResponse<Omit<D, keyof ApiErrorBody> & ApiErrorBody, S>>;
 export async function respond<E extends ServiceError>(
   c: Context,
   resultOrFn: ResultOrFn<Result<never, E>>,
@@ -71,15 +77,17 @@ export async function respond<T>(
 export async function respond<T>(
   c: Context,
   resultOrFn: ResultOrFn<AnyResult<T>>,
-  successStatus: SuccessStatus = 200,
+  statusOrOptions: SuccessStatus | { errorDetails: Record<string, unknown> } = 200,
 ): Promise<JsonTypedResponse<T, SuccessStatus> | ApiErrorResponse> {
   const result = typeof resultOrFn === "function" ? await resultOrFn() : await resultOrFn;
 
   if (!result.ok) {
     const [body, status] = toErrorResponse(result);
-    return c.json(body, status as ApiErrorStatus) as ApiErrorResponse;
+    const details = typeof statusOrOptions === "object" ? statusOrOptions.errorDetails : {};
+    return c.json({ ...details, ...body, code: body.code }, status as ApiErrorStatus) as ApiErrorResponse;
   }
 
+  const successStatus = typeof statusOrOptions === "number" ? statusOrOptions : 200;
   return c.json(result.data, successStatus as 200 | 201) as JsonTypedResponse<T, SuccessStatus>;
 }
 

@@ -230,6 +230,11 @@ validate? })` to reverse one of that actor's structural actions. `receiptCursor`
 identifies its retained event. The service checks the actor, document revision,
 surviving targets and publication head. An expired receipt or changed target
 rejects without changing content. Redo reverses the receipt produced by Undo.
+An alignment inverse also checks later retained actions on its original column.
+Another actor's accepted alignment remains authoritative, even if subsequent
+formatting returned the column to the same visible value. Alignment of a
+different column and independent row insertion do not block the inverse.
+If the required retained interval is unavailable, the inverse refuses to run.
 
 Undo retains an inserted column when other edits depend on it, including
 input (including whitespace) or alignment. Their text and alignment keep the original column target.
@@ -239,6 +244,8 @@ Undo, Redo rejects without changing the canonical document. Ordinary typing
 continues to use the supplied Yjs UndoManager. Native Undo/Redo refuses to
 restore input into a row or column whose identities were removed or reassigned
 by a structural action; it leaves the document and history step unchanged.
+It also checks the projected text grammar: surviving delimiter identities alone
+do not prove that another writer's text will remain in its original cell.
 The controller follows identities restored by its own native reversals, so
 independent ordinary input steps remain undoable.
 
@@ -512,3 +519,57 @@ before applying it with origin `replay:<cursor>`. Malformed updates raise
 and transport. `parseStreamCursor`, `compareStreamCursor`, and
 `maxStreamCursor` validate and compare resource-bound cursors; cursors from
 different logs cannot be compared.
+
+## Cursor presence
+
+Keep transient cursor presence off the retained document log. For a transport
+using the Yjs awareness wire format, `createTrustedTextAwareness` from
+`@k2b/cloud/shared-text` owns one authorized connection's identity and clock.
+Pass `{ clientId, textName, user: { userId, name, color } }` from the server.
+`textName` names the shared text root used by this editor. Allocate a
+unique `clientId` for each connection across all application instances, in
+the safe-integer range starting at `2 ** 32`, separate from Yjs document IDs.
+An existing Sync topic can reserve an ID with an empty awareness publication
+(`AA==`): add `2 ** 32` to its returned `streamSequence`. Keep that topic's
+sequence across process and broker restarts.
+
+Authorize document access before each `publish(bytes)` call and apply the
+transport's existing payload limits. The method accepts exactly one local
+state with an optional relative-position `cursor: { anchor, head }` or null.
+Both positions must name `textName`, with a null or absent `type`; item IDs,
+null items, and association values retain their Yjs meaning. It returns an
+awareness update with the server identity, connection ID, and `writerId` copied
+from the connection's bound input ID. Use `writerId` only to associate document
+clock changes with cursor activity; it grants no identity or access authority.
+Relative cursor positions retain their document IDs. Consumers resolve positions
+only against the editor's existing text root. Invalid input throws
+`InvalidSharedTextAwarenessError`. Call `remove()` on leave or disconnect and
+publish its returned bytes when non-null.
+
+The browser publishes only its local awareness state, including on reconnect.
+Return the connection's peer ID in the replay-ready response and include it
+as the origin of cursor updates, so the browser can skip its own rewritten
+echo. Remote timeout removals stay local. A new connection receives a fresh
+server ID; the standard awareness timeout also clears abandoned cursors.
+
+### Preserve the awareness topic across restarts
+
+Operators must preserve the awareness topic and its JetStream sequence state
+across application and broker restarts. Restore that broker state when moving
+the installation. Ordinary WebSocket reconnects reuse browser document and
+awareness lifetimes.
+
+If administrative deletion and recreation is necessary:
+
+1. Stop all application producers and keep document connections unavailable.
+2. Retire every existing editor document and awareness instance, including
+   suspended tabs and other clients that could reconnect later. Require fresh
+   editor instances before those clients can connect again. A WebSocket-only
+   reconnect or waiting for cursor expiry does not complete this step.
+3. Recreate the topic, then restart producers and admit only fresh client
+   document and awareness instances.
+
+Do not recreate the topic while clients from its previous lifetime can return.
+If that client retirement cannot be enforced, preserve the existing broker
+state and postpone recreation. This transport does not provide a topic-epoch
+handshake that retires existing clients automatically.

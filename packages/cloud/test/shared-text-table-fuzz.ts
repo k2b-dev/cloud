@@ -22,6 +22,7 @@ import { inspectTableStructure, repairTables } from "@k2b/ui/text-editor/model";
 import * as Y from "yjs";
 import { renderComposeContent } from "../../mail/src/service/compose-renderer";
 import { createSharedTextActionHistory } from "../src/browser/shared-text-history";
+import { SharedTextNativeHistoryError } from "../src/browser/shared-text-history-validation";
 import { sanitizeEmailHtml } from "../src/shared/email-html";
 import { renderMarkdownSync } from "../src/shared/markdown";
 import {
@@ -29,6 +30,7 @@ import {
   captureTableAction,
   fromBase64,
   planTableAction,
+  resolveTextAnchor,
   SHARED_TEXT_NAME,
   type SharedTextSaveInput,
   type SharedTextSnapshotRequest,
@@ -41,6 +43,7 @@ import {
   toBase64,
 } from "../src/shared-text";
 import { bindDocuments, createDoc } from "../src/shared-text/documents";
+import { SharedTextInverseDependencyError } from "../src/shared-text/structural-history";
 
 export type Profile = "realistic" | "adversarial" | "append-undo" | "anchors";
 const LIMIT = 2_097_152; // Existing document UTF-16 contract, not a harness cap.
@@ -134,6 +137,7 @@ const counters = () => ({
   redo: 0,
   retainedColumns: 0,
   noOpUndo: 0,
+  historyRefusals: 0,
   jobs: 0,
   repairPlans: 0,
   repairPublications: 0,
@@ -333,13 +337,88 @@ class ScheduleCase {
 
   bindInverse(replica: number) {
     this.replicas[replica]!.receipt.setInverseHandler(async (request) => {
-      const result = await this.documents.inverse(DOC, {
-        actor: { kind: "user", id: `replica-${replica}` },
-        actionId: request.actionId,
-        receiptCursor: request.receiptCursor,
-        restoreRevision: REVISION,
-        maxLength: LIMIT,
-      });
+      const before = (await this.documents.read(DOC))!;
+      const beforeEvents = this.events.length;
+      let result: Awaited<ReturnType<typeof this.documents.inverse>>;
+      try {
+        result = await this.documents.inverse(DOC, {
+          actor: { kind: "user", id: `replica-${replica}` },
+          actionId: request.actionId,
+          receiptCursor: request.receiptCursor,
+          restoreRevision: REVISION,
+          maxLength: LIMIT,
+        });
+      } catch (error) {
+        if (!(error instanceof SharedTextInverseDependencyError)) throw error;
+        const receipt = this.events.find((entry) => entry.cursor === request.receiptCursor)?.data.history;
+        const doc = createDoc(before);
+        try {
+          const text = doc.getText(SHARED_TEXT_NAME);
+          const tables = T.findTables(text.toString());
+          const changed = receipt?.schemas?.some((schema) => {
+            const table = tables.find((table) => table.lines[0]!.to === resolveTextAnchor(text, fromBase64(schema.header)));
+            return (
+              !table ||
+              table.columns !== schema.hyphens.length ||
+              table.lines.length - 2 !== schema.rows.length ||
+              schema.hyphens.some(
+                (anchor, index) =>
+                  resolveTextAnchor(text, fromBase64(anchor)) !==
+                  table.lines[1]!.cells[index]!.from + table.lines[1]!.cells[index]!.text.indexOf("-"),
+              ) ||
+              schema.rows.some(
+                (anchor, index) =>
+                  resolveTextAnchor(text, fromBase64(anchor)) !== (table.lines[index + 2]!.pipes[0] ?? table.lines[index + 2]!.from),
+              )
+            );
+          });
+          const removed = Y.createDeleteSetFromStructStore(doc.store);
+          const patchChanged = receipt?.patches.some((patch) => {
+            if (patch.added) {
+              const run = patch.added;
+              if (
+                (removed.clients.get(run.client) ?? []).some((cut) => cut.clock < run.clock + run.length && cut.clock + cut.len > run.clock)
+              )
+                return true;
+              if (!patch.removed) {
+                const from = Y.createAbsolutePositionFromRelativePosition(
+                  new Y.RelativePosition(null, null, Y.createID(run.client, run.clock), 0),
+                  doc,
+                  false,
+                );
+                const last = Y.createAbsolutePositionFromRelativePosition(
+                  new Y.RelativePosition(null, null, Y.createID(run.client, run.clock + run.length - 1), 0),
+                  doc,
+                  false,
+                );
+                return !from || !last || text.toString().slice(from.index, last.index + 1) !== patch.inserted;
+              }
+            }
+            const left = patch.left === null ? -1 : resolveTextAnchor(text, fromBase64(patch.left));
+            const right = patch.right === null ? text.length : resolveTextAnchor(text, fromBase64(patch.right));
+            return left === null || right === null || text.toString().slice(left + 1, right) !== patch.inserted;
+          });
+          const alignmentChanged =
+            receipt?.alignmentColumns?.length &&
+            this.events.some(
+              (entry) =>
+                entry.sequence > sequence(request.receiptCursor) &&
+                entry.data.actor?.id !== `replica-${replica}` &&
+                entry.data.history?.alignmentColumns?.some((column) => receipt.alignmentColumns!.includes(column)),
+            );
+          this.check(
+            error.reason === "alignment" ? alignmentChanged : error.reason === "patch" ? patchChanged : changed,
+            "history.refusalWithoutDependency",
+            { reason: error.reason, receipt: request.receiptCursor },
+          );
+        } finally {
+          doc.destroy();
+        }
+        const after = (await this.documents.read(DOC))!;
+        this.check(after.text === before.text && toBase64(after.state!) === toBase64(before.state!), "history.refusalMutatedCanonical");
+        this.check(this.events.length === beforeEvents, "history.refusalPublished");
+        throw error;
+      }
       if (result.status !== "edited") throw new Error(`Structural inverse failed: ${result.status}`);
       for (const packet of [...this.packets].filter((packet) => packet.to === replica && packet.entry.sequence <= sequence(result.cursor)))
         this.deliver(packet);
@@ -531,7 +610,50 @@ class ScheduleCase {
     const retainedBefore = this.coverage.retainedColumns;
     const fromSize = redo ? r.receipt.redoDepth() : r.receipt.undoDepth();
     const toSize = redo ? r.receipt.undoDepth() : r.receipt.redoDepth();
-    const item = await (redo ? r.receipt.redo() : r.receipt.undo());
+    const localBefore = this.text(replica);
+    const beforeEvents = this.events.length;
+    const pendingBefore = this.outbox.map((packet) => ({ packet, bytes: toBase64(packet.update), base: packet.baseCursor }));
+    let item: Awaited<ReturnType<typeof r.receipt.undo>>;
+    try {
+      item = await (redo ? r.receipt.redo() : r.receipt.undo());
+    } catch (error) {
+      // A typed, proven dependency is a visible rejected request, never a
+      // successful/no-op Undo. Keep its exact intent/frame and every pending
+      // byte; accepted tokens and target/convergence oracles stay unchanged.
+      if (
+        !(structural && error instanceof SharedTextInverseDependencyError) &&
+        !(!structural && error instanceof SharedTextNativeHistoryError && error.reason === "dependency")
+      )
+        throw error;
+      (redo ? r.redo : r.undo).push(frame);
+      this.check(
+        this.text(replica) === localBefore && toBase64(Y.encodeStateVector(r.doc)) === toBase64(vector),
+        "history.refusalMutatedLocal",
+      );
+      this.check(
+        (redo ? r.receipt.redoDepth() : r.receipt.undoDepth()) === fromSize &&
+          (redo ? r.receipt.undoDepth() : r.receipt.redoDepth()) === toSize,
+        "history.refusalConsumedFrame",
+      );
+      this.check(!r.receipt.hasPending() && this.events.length === beforeEvents, "history.refusalPendingOrPublished");
+      this.check(
+        this.outbox.length === pendingBefore.length &&
+          pendingBefore.every(
+            ({ packet, bytes, base }, index) =>
+              this.outbox[index] === packet && toBase64(packet.update) === bytes && packet.baseCursor === base,
+          ),
+        "history.refusalLostPending",
+      );
+      this.trace.push({
+        historyRecoveryRequired: replica,
+        direction: redo ? "redo" : "undo",
+        reason: error.reason,
+        frame,
+        text: localBefore,
+      });
+      this.coverage.historyRefusals++;
+      return;
+    }
     this.check(item, "history.missingItem", frame);
     this.check(
       (redo ? r.receipt.redoDepth() : r.receipt.undoDepth()) === fromSize - 1 &&

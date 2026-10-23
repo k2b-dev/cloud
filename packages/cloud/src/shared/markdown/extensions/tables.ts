@@ -81,9 +81,7 @@ export function tablesExtension(plain = false): MarkedExtension {
             return `<${tag}${attribute}>${content}</${tag}>`;
           };
           const header = token.header.map((cell, column) => cellHtml(cell, "th", column)).join("");
-          const rows = token.rows
-            .map((row) => `<tr>${row.map((cell, column) => cellHtml(cell, "td", column)).join("")}</tr>`)
-            .join("");
+          const rows = token.rows.map((row) => `<tr>${row.map((cell, column) => cellHtml(cell, "td", column)).join("")}</tr>`).join("");
           return `<table><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table>`;
         }
 

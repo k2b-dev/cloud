@@ -1,12 +1,12 @@
 import { expect } from "bun:test";
-import type { MenuAction } from "@k2b/ui/text-editor";
-import * as T from "@k2b/ui/text-editor/model";
 import * as Y from "yjs";
-import { createSharedTextActionHistory } from "../browser/shared-text-history";
-import { bindDocuments, createDoc } from "./documents";
-import { applySharedTextEvent, fromBase64, SHARED_TEXT_NAME } from "./events";
-import { captureTableAction, planTableAction } from "./table-actions";
-import type { SharedTextStoredState, SharedTextSyncEvent } from "./types";
+import { createSharedTextActionHistory } from "../../packages/cloud/src/browser/shared-text-history";
+import { bindDocuments, createDoc } from "../../packages/cloud/src/shared-text/documents";
+import { applySharedTextEvent, fromBase64, SHARED_TEXT_NAME } from "../../packages/cloud/src/shared-text/events";
+import { captureTableAction, planTableAction } from "../../packages/cloud/src/shared-text/table-actions";
+import type { SharedTextStoredState, SharedTextSyncEvent } from "../../packages/cloud/src/shared-text/types";
+import * as T from "../../packages/ui/src/text-editor/markdown-table";
+import type { MenuAction } from "../../packages/ui/src/text-editor/table";
 
 export const createStructuralFixture = (source = "| Header |\n| --- |\n| Original |") => {
   let stored: SharedTextStoredState = { text: source, state: null, cursor: null, restoreRevision: "0" };

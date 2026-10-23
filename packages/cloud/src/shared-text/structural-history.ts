@@ -6,6 +6,13 @@ import { fromBase64, toBase64 } from "./events";
 import { TableActionRejectedError } from "./table-actions";
 import type { SharedTextChange } from "./types";
 
+/** Proven later schema/row dependency; caller preserves the rejected history step. */
+export class SharedTextInverseDependencyError extends TableActionRejectedError {
+  constructor(readonly reason: "schema" | "row_scaffold" | "patch" | "alignment") {
+    super();
+  }
+}
+
 type Run = { client: number; clock: number; length: number };
 type Patch = {
   left: string | null;
@@ -19,6 +26,8 @@ type Patch = {
 export type SharedTextStructuralHistory = {
   patches: Patch[];
   column?: { header: string; hyphen: string };
+  /** Separator-only format actions depend on the complete original column alignment. */
+  alignmentColumns?: string[];
   tables: string[];
   retained?: boolean;
   inverseOf?: string;
@@ -71,6 +80,14 @@ export const prepareStructuralHistory = (text: Y.Text, changes: readonly SharedT
     deleted: runs(text, change.from, change.to),
     ...(change.recreate ? { recreate: true as const } : {}),
   }));
+  const alignmentColumns =
+    patches.length && patches.every((patch) => patch.removed + patch.inserted === ":")
+      ? tables.flatMap((table) =>
+          table.lines[1]!.cells.filter((cell) => changes.some((change) => change.from >= cell.from && change.to <= cell.to)).map((cell) =>
+            anchor(text, cell.from + cell.text.indexOf("-")),
+          ),
+        )
+      : [];
   const affected = tables
     .filter((table) => changes.some((change) => change.from <= table.to && change.to >= table.from))
     .map((table) => anchor(text, table.lines[0]!.to));
@@ -84,6 +101,7 @@ export const prepareStructuralHistory = (text: Y.Text, changes: readonly SharedT
       shift += change.insert.length - (change.to - change.from);
     });
     const result: SharedTextStructuralHistory = { patches, tables: affected };
+    if (alignmentColumns.length) result.alignmentColumns = alignmentColumns;
     result.schemas = T.findTables(text.toString())
       .filter((table) => affected.some((header) => resolve(text, header) === table.lines[0]!.to))
       .map((table) => ({
@@ -169,18 +187,43 @@ export const planStructuralInverse = (
     // cells to different headers. Until identity-aware column restoration is
     // available, that changed target visibly rejects without consuming history.
     const tables = T.findTables(source);
-    for (const schema of record.schemas ?? []) {
+    // Alignment changes affect only separator colons. New/deleted body rows do
+    // not change those fixed targets; retain all column/schema and patch-ID
+    // checks below. Other restorations still require the original row set.
+    const alignmentOnly = record.patches.every((patch) => {
+      if (patch.recreate || patch.removed + patch.inserted !== ":") return false;
+      const left = patch.left === null ? null : resolve(text, patch.left);
+      const right = patch.right === null ? null : resolve(text, patch.right);
+      return (
+        left !== null &&
+        right !== null &&
+        tables.some((table) =>
+          table.lines[1]!.cells.some(
+            (cell) =>
+              left >= cell.from - 1 &&
+              right <= cell.to &&
+              (record.schemas ?? []).some(
+                (schema) =>
+                  resolve(text, schema.header) === table.lines[0]!.to &&
+                  schema.hyphens.some((hyphen) => resolve(text, hyphen) === cell.from + cell.text.indexOf("-")),
+              ),
+          ),
+        )
+      );
+    });
+    for (const schema of alignmentOnly ? [] : (record.schemas ?? [])) {
       const table = tables.find((table) => table.lines[0]!.to === resolve(text, schema.header));
       if (
         !table ||
         table.columns !== schema.hyphens.length ||
-        table.lines.length - 2 !== schema.rows.length ||
+        (!alignmentOnly && table.lines.length - 2 !== schema.rows.length) ||
         schema.hyphens.some(
           (value, index) => resolve(text, value) !== table.lines[1]!.cells[index]!.from + table.lines[1]!.cells[index]!.text.indexOf("-"),
         ) ||
-        schema.rows.some((value, index) => resolve(text, value) !== (table.lines[index + 2]!.pipes[0] ?? table.lines[index + 2]!.from))
+        (!alignmentOnly &&
+          schema.rows.some((value, index) => resolve(text, value) !== (table.lines[index + 2]!.pipes[0] ?? table.lines[index + 2]!.from)))
       )
-        return reject();
+        throw new SharedTextInverseDependencyError("schema");
     }
   }
   const deleted = Y.createDeleteSetFromStructStore(text.doc!.store);
@@ -188,7 +231,7 @@ export const planStructuralInverse = (
     if (patch.added && !patch.removed) {
       const run = patch.added;
       if (deleted.clients.get(run.client)?.some((range) => range.clock < run.clock + run.length && range.clock + range.len > run.clock))
-        return reject();
+        throw new SharedTextInverseDependencyError("patch");
       const at = (clock: number) =>
         Y.createAbsolutePositionFromRelativePosition(
           new Y.RelativePosition(null, null, Y.createID(run.client, clock), 0),
@@ -197,16 +240,29 @@ export const planStructuralInverse = (
         );
       const from = at(run.clock),
         last = at(run.clock + run.length - 1);
-      if (from?.type !== text || last?.type !== text || source.slice(from.index, last.index + 1) !== patch.inserted) return reject();
-      return { from: from.index, to: last.index + 1, insert: "" };
+      if (from?.type !== text || last?.type !== text || source.slice(from.index, last.index + 1) !== patch.inserted)
+        throw new SharedTextInverseDependencyError("patch");
+      // A peer can extend an inserted row with a new column AFTER this run's
+      // last pipe. Removing only our run would attach that tail to the previous
+      // row (or separator). It is a dependency, not an empty independent row.
+      const end = last.index + 1;
+      if (
+        (patch.inserted.startsWith("\n") || patch.inserted.startsWith("\r")) &&
+        end < source.length &&
+        source[end] !== "\n" &&
+        source[end] !== "\r"
+      )
+        throw new SharedTextInverseDependencyError("row_scaffold");
+      return { from: from.index, to: end, insert: "" };
     }
     const left = patch.left === null ? -1 : resolve(text, patch.left);
     const right = patch.right === null ? text.length : resolve(text, patch.right);
-    if (left === null || right === null || right <= left || source.slice(left + 1, right) !== patch.inserted) return reject();
+    if (left === null || right === null || right <= left || source.slice(left + 1, right) !== patch.inserted)
+      throw new SharedTextInverseDependencyError("patch");
     if (patch.added) {
       const run = patch.added;
       if (deleted.clients.get(run.client)?.some((range) => range.clock < run.clock + run.length && range.clock + range.len > run.clock))
-        return reject();
+        throw new SharedTextInverseDependencyError("patch");
       const first = Y.createRelativePositionFromTypeIndex(text, left + 1).item;
       const last = Y.createRelativePositionFromTypeIndex(text, right - 1).item;
       if (
@@ -215,7 +271,7 @@ export const planStructuralInverse = (
         last?.client !== run.client ||
         last.clock !== run.clock + run.length - 1
       )
-        return reject();
+        throw new SharedTextInverseDependencyError("patch");
     }
     return { from: left + 1, to: right, insert: patch.removed, ...(patch.recreate ? { recreate: true as const } : {}) };
   });

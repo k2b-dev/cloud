@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import * as T from "@k2b/ui/text-editor/model";
 import * as Y from "yjs";
+import { createStructuralFixture } from "../../../../scripts/fixtures/shared-text-history";
 import { captureTextAnchor, resolveTextAnchor } from "./anchors";
 import { createDoc } from "./documents";
-import { createStructuralFixture } from "./structural-history.test-fixture";
 import {
   captureTableAction,
   captureTableFocus,
@@ -293,3 +293,82 @@ for (const action of [
       f.destroy();
     }
   });
+
+test("independent alignment Undo preserves appended peer row and input", async () => {
+  const f = createStructuralFixture("| A | B |\n| --- | --- |\n| x | y |");
+  try {
+    await f.action(f.own, "alignRight");
+    await f.action(f.own, "alignLeft");
+    await f.action(f.peer, "rowBelow");
+    let table = T.findTables(f.peer.text.toString())[0]!;
+    f.peer.text.insert(T.gridLine(table, 2)!.cells[1]!.from, "PEER");
+    expect((await f.accept(f.peer)).status).toBe("accepted");
+    await f.own.history.undo();
+    table = T.findTables((await f.canonical()).text!)[0]!;
+    expect(table.lines[1]!.cells[0]!.text).toBe("---:");
+    expect(T.gridLine(table, 2)!.cells[1]!.text).toBe("PEER");
+    await f.own.history.redo();
+    table = T.findTables((await f.canonical()).text!)[0]!;
+    expect(table.lines[1]!.cells[0]!.text).toBe(":---");
+    expect(T.gridLine(table, 2)!.cells[1]!.text).toBe("PEER");
+  } finally {
+    f.destroy();
+  }
+});
+
+test("row Undo cannot leave a later peer column tail on the separator", async () => {
+  const f = createStructuralFixture("| A | B |\n| --- | --- |\n| x | y |");
+  try {
+    await f.action(f.own, "rowBelow", 0, true, 0);
+    await f.action(f.peer, "colRight", 1);
+    const before = (await f.canonical()).text;
+    if (before === null) throw new Error("Missing canonical table text");
+    const publications = f.events.length;
+    const depth = f.own.history.undoDepth();
+    await expect(f.own.history.undo()).rejects.toMatchObject({ reason: "row_scaffold" });
+    expect((await f.canonical()).text).toBe(before);
+    expect(f.own.text.toString()).toBe(before);
+    expect(f.events).toHaveLength(publications);
+    expect(f.own.history.undoDepth()).toBe(depth);
+    expect(f.own.history.hasPending()).toBe(false);
+    expect(T.inspectTableStructure(before).extraCells).toBe(false);
+    expect(T.findTables(before)[0]!.columns).toBe(3);
+  } finally {
+    f.destroy();
+  }
+});
+
+for (const cycle of [false, true])
+  test(`alignment Undo cannot change later peer alignment depending on its marker, cycle=${cycle}`, async () => {
+    const f = createStructuralFixture("| A | B |\n| --- | --- |\n| x | y |");
+    try {
+      await f.action(f.own, "alignLeft", 0);
+      await f.action(f.peer, "alignCenter", 0);
+      if (cycle) await f.action(f.peer, "alignLeft", 0);
+      const before = (await f.canonical()).text;
+      const depth = f.own.history.undoDepth();
+      const publications = f.events.length;
+      await expect(f.own.history.undo()).rejects.toMatchObject({ reason: "alignment" });
+      expect((await f.canonical()).text).toBe(before);
+      expect(f.own.history.undoDepth()).toBe(depth);
+      expect(f.own.history.hasPending()).toBe(false);
+      expect(f.events).toHaveLength(publications);
+      expect(T.findTables(before!)[0]!.align[0]).toBe(cycle ? "left" : "center");
+    } finally {
+      f.destroy();
+    }
+  });
+
+test("alignment Undo stays independent of peer alignment in another column", async () => {
+  const f = createStructuralFixture("| A | B |\n| --- | --- |\n| x | y |");
+  try {
+    await f.action(f.own, "alignLeft", 0);
+    await f.action(f.peer, "alignCenter", 1);
+    await f.own.history.undo();
+    expect(T.findTables((await f.canonical()).text!)[0]!.align).toEqual([null, "center"]);
+    await f.own.history.redo();
+    expect(T.findTables((await f.canonical()).text!)[0]!.align).toEqual(["left", "center"]);
+  } finally {
+    f.destroy();
+  }
+});

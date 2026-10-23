@@ -86,7 +86,7 @@ const readFocus = (value: unknown): TableFocusWitness | null => {
       typeof column.right !== "string"
     )
       return null;
-    const body =
+    const body: TableFocusWitness["row"] | null =
       row.kind === "body" &&
       typeof row.beforeBreak === "string" &&
       typeof row.inside === "string" &&

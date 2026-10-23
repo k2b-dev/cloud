@@ -211,7 +211,11 @@ beforeAll(async () => {
     },
     websocket: {
       open(socket) {
-        socket.send(JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01" } }));
+        // Match the SSR snapshot's lineage; a missing revision correctly makes
+        // the real provider end editing instead of accepting a stale writer.
+        socket.send(
+          JSON.stringify({ type: notebooksYjs.wsType.replayReady, payload: { noteId: "note01", cursor: null, restoreRevision: "0" } }),
+        );
       },
       message() {},
     },

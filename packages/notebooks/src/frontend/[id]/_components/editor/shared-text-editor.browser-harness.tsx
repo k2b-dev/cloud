@@ -177,7 +177,11 @@ function Harness() {
           }),
         ],
   );
-  extensions.add(() => (rich() ? editor.customLightInit() : editor.rawLightInit()));
+  extensions.add(() => {
+    const dark = document.documentElement.classList.contains("dark");
+    if (rich()) return dark ? editor.customDarkInit() : editor.customLightInit();
+    return dark ? editor.rawDarkInit() : editor.rawLightInit();
+  });
   extensions.add(editor.noteScroller);
   extensions.add(() => (rich() ? [] : [lineNumbers(), notebookSourceFormulasExtension({ locale: () => locale })]));
   extensions.add(() =>
@@ -220,6 +224,15 @@ function Harness() {
 
   onMount(() => {
     window.noteHarness = {
+      ready: () => {
+        const current = view();
+        return !!(
+          current?.dom.isConnected &&
+          controls() &&
+          !current.dom.closest("[hidden]") &&
+          current.dom.closest(".k2b-text-editor")?.getAttribute("aria-busy") === "false"
+        );
+      },
       dispose: () => dispose(),
       text: () => ytext.toString(),
       editorText: () => view()?.state.doc.toString() ?? "",
@@ -258,11 +271,15 @@ function Harness() {
         return insertTable(current, { rows, cols }, locale);
       },
       placeCaret(text, offset) {
+        if (!window.noteHarness.ready()) throw new Error("Editor runtime is not ready");
         const current = view();
         const from = current?.state.doc.toString().indexOf(text) ?? -1;
         if (!current || from < 0) throw new Error(`Missing caret target: ${text}`);
-        current.dispatch({ selection: { anchor: from + offset } });
         current.focus();
+        if (!current.hasFocus) throw new Error("Caret placement did not focus the visible editor");
+        // Record native focus in the selection transaction. Browser tests also
+        // cover Enter followed immediately by typing on Android.
+        current.dispatch({ selection: { anchor: from + offset } });
       },
       async settle() {
         for (let frame = 0; frame < 4; frame++) await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -341,6 +358,7 @@ function Harness() {
 }
 
 export type NoteHarness = {
+  ready: () => boolean;
   dispose: () => void;
   text: () => string;
   editorText: () => string;

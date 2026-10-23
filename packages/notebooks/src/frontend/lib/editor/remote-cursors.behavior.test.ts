@@ -16,8 +16,10 @@ const mount = async (seedCursors = false, text = "Collaborative notes") => {
   const Y = await import("yjs");
   const { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate } = await import("y-protocols/awareness");
   const { yCollab } = await import("y-codemirror.next");
+  const { createTrustedTextAwareness } = await import("@k2b/cloud/shared-text");
   const { REMOTE_CARET_IDLE_CLASS, remoteCursors } = await import("./remote-cursors");
   jest.useFakeTimers();
+  jest.setSystemTime(new Date("2026-10-01T10:00:00.000Z"));
   const doc = new Y.Doc();
   const ytext = doc.getText("codemirror");
   ytext.insert(0, text);
@@ -28,8 +30,10 @@ const mount = async (seedCursors = false, text = "Collaborative notes") => {
     Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
     const text = remoteDoc.getText("codemirror");
     const remoteAwareness = new Awareness(remoteDoc);
-    remoteAwareness.setLocalStateField("user", { name, color });
-    const publish = () => applyAwarenessUpdate(awareness, encodeAwarenessUpdate(remoteAwareness, [remoteDoc.clientID]), "remote");
+    const serverId = 2 ** 32 + (name === "Ada" ? 1 : 2);
+    const trusted = createTrustedTextAwareness({ clientId: serverId, textName: "codemirror", user: { userId: name, name, color } });
+    const publish = () =>
+      applyAwarenessUpdate(awareness, trusted.publish(encodeAwarenessUpdate(remoteAwareness, [remoteDoc.clientID])), "remote");
     const setCursor = (head: number, anchor = head) => {
       const cursor = {
         anchor: Y.createRelativePositionFromTypeIndex(text, anchor),
@@ -46,7 +50,7 @@ const mount = async (seedCursors = false, text = "Collaborative notes") => {
       return element!;
     };
     const idle = async () => (await caret()).classList.contains(REMOTE_CARET_IDLE_CLASS);
-    return { doc: remoteDoc, text, awareness: remoteAwareness, publish, setCursor, caret, idle };
+    return { doc: remoteDoc, serverId, text, awareness: remoteAwareness, publish, setCursor, caret, idle };
   };
 
   const ada = remote("Ada", "#ff0000");
@@ -85,6 +89,7 @@ const mount = async (seedCursors = false, text = "Collaborative notes") => {
       grace.doc.destroy();
       dom.cleanup();
       jest.useRealTimers();
+      jest.setSystemTime();
     },
   };
 };
@@ -140,16 +145,18 @@ describe("remote cursors", () => {
   });
 
   test("remote typing reactivates the label even when the relative cursor is unchanged", async () => {
-    const { view, applyRemoteUpdate, ada, grace, cleanup } = await mount();
+    const { view, awareness, applyRemoteUpdate, ada, grace, cleanup } = await mount();
     try {
-      const cursor = ada.setCursor(2);
+      const cursor = ada.setCursor(ada.text.length);
+      expect(ada.serverId).not.toBe(ada.doc.clientID);
+      expect(awareness.getStates().get(ada.serverId)?.writerId).toBe(ada.doc.clientID);
       grace.setCursor(10);
       jest.advanceTimersByTime(3_000);
       expect(await ada.idle()).toBe(true);
       expect(await grace.idle()).toBe(true);
-      ada.text.insert(0, "New ");
+      ada.text.insert(ada.text.length, "!");
       applyRemoteUpdate();
-      expect(view.state.doc.toString()).toBe("New Collaborative notes");
+      expect(view.state.doc.toString()).toBe("Collaborative notes!");
       expect(JSON.stringify(ada.awareness.getLocalState()?.cursor)).toBe(JSON.stringify(cursor));
       expect(await ada.idle()).toBe(false);
       expect(await grace.idle()).toBe(true);
@@ -386,15 +393,15 @@ describe("remote cursors", () => {
     }
   });
 
-  test("uses the default name and color when user metadata is missing", async () => {
+  test("uses server name and color when browser user metadata is missing", async () => {
     const { view, ada, cleanup } = await mount();
     try {
       ada.awareness.setLocalStateField("user", null);
       ada.setCursor(2);
       await settle();
       const caret = view.dom.querySelector<HTMLElement>(".cm-remoteCaret");
-      expect(caret?.style.getPropertyValue("--remote-color")).toBe("#30bced");
-      expect(caret?.querySelector(".cm-remoteCaretLabel")?.textContent).toBe("Anonymous");
+      expect(caret?.style.getPropertyValue("--remote-color")).toBe("#ff0000");
+      expect(caret?.querySelector(".cm-remoteCaretLabel")?.textContent).toBe("Ada");
     } finally {
       cleanup();
     }
@@ -409,9 +416,35 @@ describe("remote cursors", () => {
       applyRemoteUpdate();
       const position = Y.createRelativePositionFromTypeIndex(text, 3);
       ada.awareness.setLocalStateField("cursor", { anchor: position, head: position });
-      ada.publish();
+      expect(() => ada.publish()).toThrow("Invalid shared text awareness update");
       await settle();
       expect(view.dom.querySelector(".cm-remoteCaret")).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+  test("ignores legacy foreign-root cursors without creating document roots", async () => {
+    const { view, awareness, ada, cleanup } = await mount();
+    try {
+      const roots = [...awareness.doc.share.keys()];
+      ada.setCursor(2);
+      expect(await ada.idle()).toBe(false);
+      for (const tname of ["foreign-one", "foreign-two", "foreign-three"]) {
+        const position = { tname, type: null, item: null, assoc: 0 };
+        awareness.getStates().set(ada.serverId, { user: { name: "Ada", color: "#ff0000" }, cursor: { anchor: position, head: position } });
+        awareness.emit("change", [{ added: [], updated: [ada.serverId], removed: [] }, "remote"]);
+        await settle();
+        expect(view.dom.querySelector(".cm-remoteCaret")).toBeNull();
+        expect([...awareness.doc.share.keys()]).toEqual(roots);
+      }
+      awareness.getStates().set(ada.serverId, { cursor: null });
+      awareness.emit("change", [{ added: [], updated: [ada.serverId], removed: [] }, "remote"]);
+      await settle();
+      expect([...awareness.doc.share.keys()]).toEqual(roots);
+      awareness.getStates().delete(ada.serverId);
+      awareness.emit("change", [{ added: [], updated: [], removed: [ada.serverId] }, "timeout"]);
+      await settle();
+      expect([...awareness.doc.share.keys()]).toEqual(roots);
     } finally {
       cleanup();
     }

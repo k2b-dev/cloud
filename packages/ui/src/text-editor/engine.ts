@@ -1,7 +1,7 @@
 import { standardKeymap } from "@codemirror/commands";
 import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, type Extension, Prec, Text } from "@codemirror/state";
-import { drawSelection, EditorView, keymap, placeholder } from "@codemirror/view";
+import { drawSelection, EditorView, keymap, placeholder, runScopeHandlers } from "@codemirror/view";
 import { clipboardLoading } from "./clipboard-loading";
 import { commands } from "./format";
 import { formattedView } from "./formatted";
@@ -124,6 +124,27 @@ export function createTextEditor(options: TextEditorOptions) {
       ],
     }),
   });
+  // CM's Android DOM-input deferral can lose a physical Enter when the next
+  // EditContext update arrives before its animation frame. Run the public
+  // keymap synchronously only for that reliable, non-composing key event.
+  const enter = (event: KeyboardEvent) => {
+    if (
+      event.target !== view.contentDOM ||
+      event.key !== "Enter" ||
+      event.keyCode !== 13 ||
+      event.isComposing ||
+      view.composing ||
+      event.defaultPrevented ||
+      !/Android/.test(view.dom.ownerDocument.defaultView?.navigator.userAgent ?? "") ||
+      !("editContext" in view.contentDOM && view.contentDOM.editContext)
+    )
+      return;
+    if (runScopeHandlers(view, event, "editor")) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  };
+  view.contentDOM.addEventListener("keydown", enter, true);
   return {
     view,
     /** Also re-reads `presentation`, so a host can refresh it, e.g. after a theme change. */
@@ -132,7 +153,10 @@ export function createTextEditor(options: TextEditorOptions) {
       view.dispatch({ effects: labelSlot.reconfigure(EditorView.contentAttributes.of({ "aria-label": label })) }),
     setReadOnly: (readOnly: boolean) =>
       view.dispatch({ effects: readOnlySlot.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]) }),
-    destroy: () => view.destroy(),
+    destroy: () => {
+      view.contentDOM.removeEventListener("keydown", enter, true);
+      view.destroy();
+    },
   };
 }
 export type TextEditorController = ReturnType<typeof createTextEditor>;

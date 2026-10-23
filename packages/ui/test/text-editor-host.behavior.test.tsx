@@ -78,6 +78,7 @@ if (isServer) {
           <TextEditor
             label="Note"
             initialValue="Intro"
+            maxLength={2_097_152}
             presentation={() => []}
             toolbar={false}
             onReady={(value) => {

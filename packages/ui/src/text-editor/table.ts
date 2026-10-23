@@ -28,7 +28,7 @@ import {
   Text,
 } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, keymap, ViewPlugin, WidgetType } from "@codemirror/view";
-import { inspectClipboard, parseClipboardHtml } from "./clipboard";
+import { convertClipboardHtml, inspectClipboard, parseClipboardHtml } from "./clipboard";
 import { clipboardLoading } from "./clipboard-loading";
 import { type InlineFormat, inlineFormat } from "./format";
 import { markdownLanguage } from "./language";
@@ -106,6 +106,7 @@ export const tableHost = Facet.define<TableHost, TableHost | null>({ combine: (v
 
 type Active = { index: number; r: number; c: number; composing: boolean };
 const active = new WeakMap<EditorView, Active>();
+const pendingContextMenus = new WeakMap<EditorView, AbortController>();
 
 /**
  * What the focused cell's DOM was last synced to: the cell text and its start
@@ -635,7 +636,6 @@ export const editTableSource = (view: EditorView, wrap: HTMLElement) => {
           },
           ...historyKeymap,
         ]),
-        EditorView.lineWrapping,
         EditorView.contentAttributes.of({ "aria-label": labels.edit }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
@@ -647,6 +647,8 @@ export const editTableSource = (view: EditorView, wrap: HTMLElement) => {
     }),
   });
   const done = button(labels.done, apply);
+  done.className = "k2b-button";
+  done.dataset.size = "sm";
   bar.append(status, done);
   overlay.append(bar, body, error);
   const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -1438,7 +1440,10 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
     const grid = (html ? htmlTableGrid(html) : null) ?? T.parseTsv(text);
     const { r, c } = pos();
     if (grid?.length) pasteGrid(view, wrap, r, c, grid);
-    else document.execCommand("insertText", false, text.replace(/\s*\r?\n\s*/g, " "));
+    else {
+      const inline = (html && convertClipboardHtml(html, false)?.markdown) || text;
+      document.execCommand("insertText", false, inline.replace(/\s*\r?\n\s*/g, " "));
+    }
   });
   el.addEventListener("pointerenter", () => {
     wrap.querySelectorAll<HTMLElement>(".k2b-ste-columnMenu").forEach((grip, column) => {
@@ -1447,8 +1452,35 @@ const wire = (view: EditorView, el: HTMLElement, wrap: HTMLElement) => {
   });
   el.addEventListener("contextmenu", (event) => {
     event.preventDefault();
+    pendingContextMenus.get(view)?.abort();
     el.focus({ preventScroll: true });
-    wrap.dispatchEvent(new CustomEvent("k2b-ste-cell-menu", { bubbles: true, detail: { cell: el, x: event.clientX, y: event.clientY } }));
+    const open = () => {
+      if (el.isConnected)
+        wrap.dispatchEvent(
+          new CustomEvent("k2b-ste-cell-menu", { bubbles: true, detail: { cell: el, x: event.clientX, y: event.clientY } }),
+        );
+    };
+    // WebKit fires contextmenu on right-button down. Opening a native popover
+    // then lets that same press dismiss it on release. Chrome fires after up.
+    if (event.button === 2 && (event.buttons & 2) !== 0) {
+      const pending = new AbortController();
+      pendingContextMenus.set(view, pending);
+      const cancel = () => {
+        pending.abort();
+        if (pendingContextMenus.get(view) === pending) pendingContextMenus.delete(view);
+      };
+      el.ownerDocument.addEventListener(
+        "mouseup",
+        (release) => {
+          if (release.button !== 2) return;
+          cancel();
+          open();
+        },
+        { signal: pending.signal },
+      );
+      el.ownerDocument.addEventListener("pointercancel", cancel, { signal: pending.signal, once: true });
+      el.ownerDocument.defaultView?.addEventListener("blur", cancel, { signal: pending.signal, once: true });
+    } else open();
   });
   el.addEventListener("keydown", (event) => {
     if (event.defaultPrevented) return; // A host completion/snippet handled this key.
@@ -1742,6 +1774,8 @@ export const tableGrid = (): Extension => [
     view.dom.ownerDocument.addEventListener("selectionchange", selection);
     return {
       destroy() {
+        pendingContextMenus.get(view)?.abort();
+        pendingContextMenus.delete(view);
         view.dom.ownerDocument.removeEventListener("selectionchange", selection);
         syncs.delete(view);
         missingCells.delete(view);

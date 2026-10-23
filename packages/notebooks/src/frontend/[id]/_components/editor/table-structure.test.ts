@@ -3,7 +3,7 @@ import { fromBase64, planTableAction, prepareTableActionFocus } from "@k2b/cloud
 import type { MenuAction, TableTarget } from "@k2b/ui/text-editor";
 import { findTables, gridLine } from "@k2b/ui/text-editor/model";
 import * as Y from "yjs";
-import { createStructuralFixture } from "../../../../../../cloud/src/shared-text/structural-history.test-fixture";
+import { createStructuralFixture } from "../../../../../../../scripts/fixtures/shared-text-history";
 import {
   decodeTableActionIntent,
   decodeTableFocus,

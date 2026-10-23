@@ -1,7 +1,7 @@
 /** Builds the actual Notebook editor composition from source with fictional data. */
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createBrowserTableServer } from "./shared-text-editor.browser-server";
+import { createBrowserTableServer } from "../../../../../../../scripts/fixtures/notebooks-text-editor-browser";
 
 const buildHarness = async () => {
   // Resolve from the directory: `[id]` in a filesystem path is not a URL segment.

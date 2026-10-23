@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import * as Y from "yjs";
+import { createStructuralFixture } from "../../../scripts/fixtures/shared-text-history";
 import { createSharedTextActionHistory } from "../src/browser/shared-text-history";
-import { createStructuralFixture } from "../src/shared-text/structural-history.test-fixture";
 
 test("whole-text replacement remains reversible after its own independent deletion was undone", async () => {
   const doc = new Y.Doc();

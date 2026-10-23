@@ -311,7 +311,7 @@ describe("sync ended editor recovery", () => {
     const instance = editor.providers[0]!;
     setSystemTime(new Date("2026-10-01T10:00:00.000Z"));
     const { opts } = instance;
-    expect(opts.awareness.getLocalState()?.user.userId).toBe("User01");
+    expect(opts.awareness.getLocalState()?.user).toBeUndefined();
     const syncStates: SyncStateEventDetail[] = [];
     const locations: PresenceLocationsEventDetail[] = [];
     const active: Array<string | null> = [];

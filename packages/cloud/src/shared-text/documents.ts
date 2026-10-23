@@ -8,6 +8,7 @@ import {
   planStructuralInverse,
   prepareIngressHistory,
   prepareStructuralHistory,
+  SharedTextInverseDependencyError,
   type SharedTextStructuralHistory,
 } from "./structural-history";
 import { TableActionRejectedError } from "./table-actions";
@@ -83,6 +84,7 @@ export const bindDocuments = <Saved, Context>(
     },
     update: (current: {
       text: string;
+      cursor: string | null;
       restoreRevision: string;
       contributors: SharedTextContributor[];
       state(): Uint8Array;
@@ -119,7 +121,13 @@ export const bindDocuments = <Saved, Context>(
         return { status: "syncFailed", error: new Error("Shared text has unresolved update dependencies") };
       const ytext = doc.getText(SHARED_TEXT_NAME);
       const text = ytext.toString();
-      const next = await update({ text, restoreRevision: stored.restoreRevision, contributors, state: () => Y.encodeStateAsUpdate(doc) });
+      const next = await update({
+        text,
+        cursor: target,
+        restoreRevision: stored.restoreRevision,
+        contributors,
+        state: () => Y.encodeStateAsUpdate(doc),
+      });
       let changes: readonly SharedTextChange[];
       if (maxLength === undefined) {
         if (typeof next !== "string") throw new TypeError("edit must return text");
@@ -244,6 +252,21 @@ export const bindDocuments = <Saved, Context>(
             current.restoreRevision !== options.restoreRevision
           )
             throw new TableActionRejectedError();
+          const alignmentColumns = receipt.history.alignmentColumns;
+          if (alignmentColumns?.length && current.cursor && current.cursor !== options.receiptCursor) {
+            try {
+              for await (const later of events(docId, options.receiptCursor, current.cursor, options.signal)) {
+                const actor = later.data.actor;
+                const other = !actor || actor.kind !== options.actor.kind || actor.id !== options.actor.id;
+                if (other && later.data.history?.alignmentColumns?.some((column) => alignmentColumns.includes(column)))
+                  throw new SharedTextInverseDependencyError("alignment");
+              }
+            } catch (error) {
+              if (error instanceof SharedTextInverseDependencyError) throw error;
+              options.signal?.throwIfAborted();
+              throw new TableActionRejectedError();
+            }
+          }
           const copy = new Y.Doc();
           try {
             Y.applyUpdate(copy, current.state());

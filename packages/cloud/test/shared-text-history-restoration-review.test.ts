@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import * as Y from "yjs";
-import { createStructuralFixture } from "../src/shared-text/structural-history.test-fixture";
+import { createStructuralFixture } from "../../../scripts/fixtures/shared-text-history";
 
 test("a held deletion is not falsely confirmed after a peer deletes and restores its column", async () => {
   const f = createStructuralFixture("| A | B |\n| --- | --- |\n| x | y |");

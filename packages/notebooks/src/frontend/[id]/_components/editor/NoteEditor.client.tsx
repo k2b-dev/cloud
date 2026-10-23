@@ -36,7 +36,7 @@ import {
 import { createNotebookTablePresentation, notebookSourceFormulasExtension } from "../../../lib/editor/shared-tables";
 import { pressMissedEditor } from "../../../lib/editor/surface-press";
 import { consumeInitialTitleSelection, handleSoftNoteNavigationRequests, type SoftNavigationResult } from "../../../lib/soft-navigation";
-import { getNotebookPresenceColor, yjs } from "../../../lib/yjs";
+import { yjs } from "../../../lib/yjs";
 import { isolateYjsHistory } from "../../../lib/yjs/history";
 import { notebookWorkspaceMessages } from "../../messages";
 import {
@@ -451,8 +451,8 @@ function EditorInstance(
   }
   const awareness = new Awareness(doc);
 
-  const color = getNotebookPresenceColor(props.userId);
-  awareness.setLocalStateField("user", { userId: props.userId, name: props.displayName, color });
+  // The websocket supplies the authenticated identity for remote cursor presence.
+  awareness.setLocalStateField("cursor", null);
 
   // One shared editor view; Notebook extensions reconfigure their own compartments of it.
   const extensions = createDynamicExtensions();
@@ -914,11 +914,13 @@ function EditorInstance(
     }
 
     const at = target === "end" ? view.state.doc.length : 0;
+    // Record focus in the selection transaction. A later focus-only update can
+    // otherwise clear Android's deferred first Enter before it is applied.
+    view.focus();
     view.dispatch({
       selection: { anchor: at },
       scrollIntoView: scroll,
     });
-    view.focus();
     return true;
   };
 
@@ -938,8 +940,8 @@ function EditorInstance(
     const firstLine = view.state.doc.line(1);
     const marker = /^#\s+/.exec(firstLine.text);
     const from = firstLine.from + (marker?.[0].length ?? 0);
-    view.dispatch({ selection: { anchor: from, head: firstLine.to }, scrollIntoView: true });
     view.focus();
+    view.dispatch({ selection: { anchor: from, head: firstLine.to }, scrollIntoView: true });
     return true;
   };
 

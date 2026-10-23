@@ -532,12 +532,15 @@ if (!databaseName) {
       const firstEdit = await publishTo(firstEditId, "FIRST-EDIT-WITHOUT-ENQUEUE");
       // Stable keyset ordering does not change when snapshot saves update timestamps.
       const firstPage = await notes.listSnapshotCursors({ limit: 2 });
-      const secondPage = await notes.listSnapshotCursors({ limit: 5, after: firstPage.at(-1)!.noteId });
-      expect(new Set([...firstPage, ...secondPage].map((row) => row.noteId)).size).toBe(7);
+      // Includes the four restore/receipt fixtures above as well as the seven
+      // snapshot fixtures. Exhaust the second page, rather than checking a prefix.
+      const secondPage = await notes.listSnapshotCursors({ limit: 9, after: firstPage.at(-1)!.noteId });
+      expect(new Set([...firstPage, ...secondPage].map((row) => row.noteId)).size).toBe(11);
+      expect(await notes.listSnapshotCursors({ limit: 2, after: secondPage.at(-1)!.noteId })).toEqual([]);
       expect([...firstPage, ...secondPage].map((row) => row.noteId)).toEqual([...firstPage, ...secondPage].map((row) => row.noteId).sort());
       const { yjsSnapshotWorker: reconcilingWorker } = await import("./yjs-snapshot-worker");
       // The lagging note is queued; the unanchored ones are anchored in place.
-      expect(await reconcilingWorker.reconcile()).toMatchObject({ checked: 7, queued: 1 });
+      expect(await reconcilingWorker.reconcile()).toMatchObject({ checked: 11, queued: 1 });
       try {
         await reconcilingWorker.start();
         const deadline = Date.now() + 20_000;
@@ -571,7 +574,7 @@ if (!databaseName) {
       } finally {
         blankDoc.destroy();
       }
-      expect(await reconcilingWorker.reconcile()).toMatchObject({ checked: 7, queued: 0 });
+      expect(await reconcilingWorker.reconcile()).toMatchObject({ checked: 11, queued: 0 });
 
       // Even marker-only recovery invalidates connected readers through the
       // existing workspace event; an unchanged Markdown body is not sufficient.

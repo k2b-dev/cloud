@@ -5,7 +5,7 @@ section: Contributing
 order: 1305
 description: Name the error class of each bug and the guard that catches that class next time, and read the incidents that taught each class.
 tags: [contributing, testing, quality]
-updated: 2026-10-22
+updated: 2026-10-23
 ---
 
 # Lessons learned
@@ -25,6 +25,8 @@ convention still needs a check or a test.
 | --- | --- | --- |
 | Selection escapes a nested editor | Native Select All can select the outer note even while a table cell has focus. Replacing the selection then replaces the whole note. | Tests: UI `text-editor.browser.test.ts` scopes Select All to a numeric cell; Notebooks `shared-text-editor.browser.test.ts` checks cell focus, unchanged surrounding Markdown, and recalculated formulas. The cell handles Select All explicitly. |
 | Local structural Undo loses its recovery owner | Late input can arrive after the column author has undone the insertion and closed the editor. A browser-only undo filter cannot protect that write. | Shared text stores structural provenance in the retained log, validates inverses and delayed ingress before acknowledgement, and preserves rejected input for recovery. Server regression tests cover closed-author input, alignment and appended rows after Undo/Redo. |
+| Undo changes the meaning of surviving text | Restoring or deleting an ordinary character next to a delimiter can move another writer's input to a different cell, even when the original boundary characters survive. | Tests: Cloud `shared-text-history-context-review.test.ts` and `shared-text-history-escape-review.test.ts` require preserved peer cell targets or an unchanged refusal; `shared-text-history-validation.test.ts` compares projected effects with native Yjs Undo/Redo. |
+| Deferred input is cancelled by a newer editor update | Android EditContext can apply the next typed character before a deferred Enter runs, joining two intended lines. | Tests: Notebooks `shared-text-editor.browser.test.ts` sends native Enter immediately followed by typing and checks the newline, list keymap, and slash command in the actual shared editor. |
 | Prose normalization alters pasted source code | Converting a code clipboard as prose collapses indentation or blank lines and can interpret tabs as table separators. | Test: UI `text-editor-paste.behavior.test.ts` covers plain and HTML-only source, line wrappers, whitespace-preserving styles, and fenced, indented and inline code destinations. |
 | Acknowledgement races a document replacement | A publication can be valid when submitted but belong to a retired document version when echoed to a browser. | Tests: Notebooks `ws-lineage.test.ts` and `restore-ack.test.ts` verify authoritative delivery under the row lock and restoration against accepted live content; `yjs-snapshot.integration.test.ts` covers the real SQL-lock/NATS ordering. |
 | Extra table cells disappear in email | The editor shows every cell, but GFM email rendering truncates rows to the header width. | Test: Mail `compose-table-check.test.ts` requires the preview/send renderer to reject extra cells, including signatures, and accept a corrected table without losing its text. Plain text and fenced code stay unchanged. |

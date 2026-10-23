@@ -3,7 +3,7 @@ import type { Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { clipboard } from "@k2b/stdlib/solid";
 import { createEffect, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
-import { Button } from "../actions/Button";
+import { Button, IconButton } from "../actions/Button";
 import { Dropdown, type DropdownAction, type DropdownChoice, type DropdownItem, type DropdownPosition } from "../actions/Dropdown";
 import { SegmentedControl } from "../actions/SegmentedControl";
 import { Toolbar } from "../actions/Toolbar";
@@ -152,13 +152,13 @@ export function TableSizePicker(props: TableSizePickerProps) {
   };
   return (
     <>
-      <Button
+      <IconButton
         ref={trigger}
         variant="ghost"
         class={props.class}
         size={props.size ?? "sm"}
         disabled={props.disabled}
-        aria-label={t().insertTable}
+        label={t().insertTable}
         aria-haspopup="dialog"
         aria-controls={id}
         aria-expanded={expanded()}
@@ -167,7 +167,7 @@ export function TableSizePicker(props: TableSizePickerProps) {
         onClick={() => void open()}
       >
         <i class="ti ti-table" aria-hidden="true" />
-      </Button>
+      </IconButton>
       <div
         ref={popup}
         id={id}
@@ -271,7 +271,13 @@ export function TextEditor(props: TextEditorProps) {
   const [missingSeparator, setMissingSeparator] = createSignal(false);
   const [active, setActive] = createSignal(false);
   const [documentRevision, setDocumentRevision] = createSignal(0);
+  const [phoneMenu, setPhoneMenu] = createSignal(false);
   const [platform, setPlatform] = createSignal<KeyboardPlatform>("other");
+  createEffect(() => {
+    const target = cell();
+    target?.setAttribute("data-active", "");
+    onCleanup(() => target?.removeAttribute("data-active"));
+  });
   let disposed = false;
   onCleanup(() => {
     disposed = true;
@@ -325,7 +331,7 @@ export function TextEditor(props: TextEditorProps) {
   let menuOpen = false;
   let pointerAnchor: { left: string; top: string } | undefined;
   let floatingTrigger: HTMLButtonElement | undefined;
-  let tableTrigger: HTMLButtonElement | undefined;
+  const tableTriggers = new Set<HTMLButtonElement>();
   let frame = 0;
   const [menuPosition, setMenuPosition] = createSignal({ left: "0px", top: "0px" });
   let root!: HTMLDivElement;
@@ -405,9 +411,34 @@ export function TextEditor(props: TextEditorProps) {
     moveColLeft: "alt+arrowleft",
     moveColRight: "alt+arrowright",
   };
+  const shortActionLabels = {
+    rowAbove: "menuAbove",
+    rowBelow: "menuBelow",
+    moveRowUp: "menuUp",
+    moveRowDown: "menuDown",
+    deleteRow: "menuDelete",
+    colLeft: "menuInsertLeft",
+    colRight: "menuInsertRight",
+    moveColLeft: "menuMoveLeft",
+    moveColRight: "menuMoveRight",
+    deleteCol: "menuDelete",
+  } as const;
+  const menuRow = () => {
+    documentRevision();
+    return t().menuRow(Number(cell()?.dataset.r ?? 0));
+  };
+  const menuColumn = () => {
+    documentRevision();
+    const column = Number(cell()?.dataset.c ?? 0);
+    const header = cell()?.closest(".k2b-ste-table")?.querySelector<HTMLElement>(`.k2b-ste-cell[data-r="0"][data-c="${column}"]`);
+    return t().menuColumn(header?.dataset.raw || t().column(column + 1));
+  };
+  const menuHeading = () => `${menuRow()} · ${menuColumn()}`;
   const actionItem = (action: keyof typeof actionIcons, choice?: Pick<DropdownChoice, "choice" | "checked" | "class" | "ariaLabel">) =>
     ({
-      label: t()[action],
+      get label() {
+        return phoneMenu() && action in shortActionLabels ? t()[shortActionLabels[action as keyof typeof shortActionLabels]] : t()[action];
+      },
       icon: `ti ti-${actionIcons[action]}`,
       get disabled() {
         return actionDisabled(action);
@@ -435,7 +466,9 @@ export function TextEditor(props: TextEditorProps) {
   };
   const copyItems = (): DropdownAction[] => [
     {
-      label: t().copyTable,
+      get label() {
+        return phoneMenu() && !props.readOnly ? t().menuCopy : t().copyTable;
+      },
       icon: "ti ti-copy",
       get disabled() {
         return copying();
@@ -446,7 +479,9 @@ export function TextEditor(props: TextEditorProps) {
       },
     },
     {
-      label: t().copyMarkdown,
+      get label() {
+        return phoneMenu() && !props.readOnly ? t().menuMarkdown : t().copyMarkdown;
+      },
       icon: "ti ti-markdown",
       get disabled() {
         return copying();
@@ -466,18 +501,21 @@ export function TextEditor(props: TextEditorProps) {
     return [
       {
         get sectionLabel() {
-          documentRevision();
-          return cell()?.getAttribute("aria-label") ?? t().tableMenu;
+          return menuHeading();
         },
         items: [],
       },
       {
-        sectionLabel: t().rows,
+        get sectionLabel() {
+          return menuRow();
+        },
         items: (["rowAbove", "rowBelow", "moveRowUp", "moveRowDown", "deleteRow"] as const).map((action) => actionItem(action)),
       },
       {
-        sectionLabel: t().columns,
-        items: (["colLeft", "colRight", "moveColLeft", "moveColRight", "deleteCol"] as const).map((action) => actionItem(action)),
+        get sectionLabel() {
+          return menuColumn();
+        },
+        items: (["colLeft", "colRight", "moveColLeft", "moveColRight"] as const).map((action) => actionItem(action)),
       },
       {
         sectionLabel: t().alignment,
@@ -491,6 +529,7 @@ export function TextEditor(props: TextEditorProps) {
           }),
         ),
       },
+      { items: [actionItem("deleteCol")] },
       {
         sectionLabel: t().table,
         items: [
@@ -545,7 +584,7 @@ export function TextEditor(props: TextEditorProps) {
               ? undefined
               : (close) => (
                   <div class="k2b-ste-table-sheet-heading">
-                    <span>{cell()?.getAttribute("aria-label") ?? t().tableMenu}</span>
+                    <span>{menuHeading()}</span>
                     <Button variant="ghost" onClick={close}>
                       {t().done}
                     </Button>
@@ -563,7 +602,10 @@ export function TextEditor(props: TextEditorProps) {
           <Dropdown.Trigger
             ref={(element) => {
               if (floating) floatingTrigger = element;
-              else tableTrigger = element;
+              else {
+                tableTriggers.add(element);
+                onCleanup(() => tableTriggers.delete(element));
+              }
             }}
             class={
               floating
@@ -598,7 +640,10 @@ export function TextEditor(props: TextEditorProps) {
     if (disposed) return;
     // A host toolbar sits outside this root. Native popover focus moves before
     // its toggle callback, but Dropdown already exposes its synchronous state.
-    if (menuOpen || tableTrigger?.getAttribute("aria-expanded") === "true" || floatingTrigger?.getAttribute("aria-expanded") === "true")
+    if (
+      menuOpen ||
+      [...tableTriggers, floatingTrigger].some((trigger) => trigger?.isConnected && trigger.getAttribute("aria-expanded") === "true")
+    )
       return;
     const focused = document.activeElement;
     setLocalSource(focused instanceof HTMLElement && !!focused.closest(".k2b-ste-table-source"));
@@ -647,6 +692,11 @@ export function TextEditor(props: TextEditorProps) {
   };
   onMount(() => {
     setPlatform(keyboardPlatform());
+    const menuMedia = window.matchMedia("(max-width: 47.999rem)");
+    const menuViewport = () => setPhoneMenu(menuMedia.matches);
+    menuViewport();
+    menuMedia.addEventListener("change", menuViewport);
+    onCleanup(() => menuMedia.removeEventListener("change", menuViewport));
     // A standalone editor has no binding history; collaboration supplies its own instead.
     const nativeHistory = !props.host?.undo;
     editor = createTextEditor({
@@ -686,7 +736,7 @@ export function TextEditor(props: TextEditorProps) {
           structural: t().markdownStructural,
           applying: t().applyingTable,
           applyFailed: t().markdownApplyFailed,
-          done: t().showTable,
+          done: phoneMenu() ? t().done : t().showTable,
           discard: t().discardMarkdown,
           continue: t().continueMarkdown,
           line: t().markdownLine,
@@ -756,6 +806,7 @@ export function TextEditor(props: TextEditorProps) {
       }
       queueMicrotask(() => {
         if (disposed || !cell()?.isConnected) return;
+        const tableTrigger = [...tableTriggers].find((trigger) => trigger.isConnected);
         const trigger =
           (window.matchMedia("(max-width: 47.999rem)").matches && tableTrigger?.isConnected ? tableTrigger : undefined) ?? floatingTrigger;
         trigger?.click();
@@ -916,11 +967,11 @@ export function TextEditor(props: TextEditorProps) {
                         <Show
                           when={command === "table" && mode() === "formatted" && cell()?.isConnected}
                           fallback={
-                            <Button
+                            <IconButton
                               class="k2b-ste-tool"
                               variant="ghost"
                               size="sm"
-                              aria-label={t()[command]}
+                              label={t()[command]}
                               tooltip={
                                 shortcuts[command]
                                   ? `${t()[command]} (${formatShortcut(shortcuts[command] ?? "", { platform: platform(), locale: locale() }).label})`
@@ -931,7 +982,7 @@ export function TextEditor(props: TextEditorProps) {
                               onClick={() => runFormat(command)}
                             >
                               <i class={`ti ti-${icon}`} aria-hidden="true" />
-                            </Button>
+                            </IconButton>
                           }
                         >
                           {menu(false)}
@@ -1002,9 +1053,9 @@ export function TextEditor(props: TextEditorProps) {
               </Show>
             </div>
             <Show when={notice()}>
-              <Button size="sm" variant="ghost" aria-label={t().dismiss} onClick={() => setNotice(undefined)}>
+              <IconButton size="sm" variant="ghost" label={t().dismiss} onClick={() => setNotice(undefined)}>
                 <i class="ti ti-x" aria-hidden="true" />
-              </Button>
+              </IconButton>
             </Show>
           </div>
         </Show>

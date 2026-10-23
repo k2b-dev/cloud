@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import * as Y from "yjs";
+import { createStructuralFixture } from "../../../../scripts/fixtures/shared-text-history";
 import { fromBase64 } from "../shared-text/events";
-import { createStructuralFixture } from "../shared-text/structural-history.test-fixture";
 import { createSharedTextActionHistory } from "./shared-text-history";
 
 const append = async (f: ReturnType<typeof createStructuralFixture>, value: string, actionId: string, peer = false) => {

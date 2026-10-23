@@ -1,10 +1,10 @@
 import { expect, spyOn, test } from "bun:test";
 import { ConflictError, type TopicPublish } from "@k2b/sync";
 import * as Y from "yjs";
+import { createStructuralFixture } from "../../../../scripts/fixtures/shared-text-history";
 import { captureTextAnchor, resolveTextAnchor } from "./anchors";
 import { bindDocuments, createDoc } from "./documents";
 import { applySharedTextEvent, SHARED_TEXT_NAME, sharedTextNodeId, toBase64 } from "./events";
-import { createStructuralFixture } from "./structural-history.test-fixture";
 import type { SharedTextSaveInput, SharedTextStoredState, SharedTextSyncEvent } from "./types";
 
 const fixture = () => {

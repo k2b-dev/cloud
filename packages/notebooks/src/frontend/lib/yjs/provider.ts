@@ -111,6 +111,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
   let workspaceGeneration = 0;
   const activeWorkspaceId = opts.workspace?.notebookId ?? null;
   let replayReady = false;
+  let awarenessPeerId: string | null = null;
   let restoreRevision: string | null = opts.initialRestoreRevision ?? null;
   let localStateSent = false;
   let needsFullResync = false;
@@ -308,9 +309,8 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     if (isDisposed || isTerminated) return;
     if (origin === "remote") return;
     if (!replayReady) return;
-    const changedClients = added.concat(updated).concat(removed);
-    if (changedClients.length === 0) return;
-    sendAwarenessPublish(awarenessProtocol.encodeAwarenessUpdate(awareness, changedClients));
+    if (!added.includes(doc.clientID) && !updated.includes(doc.clientID) && !removed.includes(doc.clientID)) return;
+    sendAwarenessPublish(awarenessProtocol.encodeAwarenessUpdate(awareness, [doc.clientID]));
   };
 
   const normalizeError = (payload: unknown): YjsProviderError => {
@@ -459,7 +459,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
 
   const handleReplayReadyMessage = (msg: ProviderMessage): boolean => {
     if (msg.type !== WS_TYPE.replayReady) return false;
-    const payload = (msg.payload ?? {}) as { noteId?: unknown; cursor?: unknown; restoreRevision?: unknown };
+    const payload = (msg.payload ?? {}) as { noteId?: unknown; cursor?: unknown; restoreRevision?: unknown; peerId?: unknown };
     // A socket can still deliver queued messages after a terminal error; the editor must stay stopped.
     if (payload.noteId !== activeNoteId || isTerminated) return true;
     if (
@@ -476,6 +476,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       return true;
     }
     restoreRevision = payload.restoreRevision;
+    awarenessPeerId = typeof payload.peerId === "string" ? payload.peerId : null;
     replayReady = true;
     if (typeof payload.cursor === "string") lastCursor = payload.cursor;
     // Reading works again, but with edits still unsent only their echo proves that storage accepts writes,
@@ -486,6 +487,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
     }
     opts.onReady?.();
     sendLocalStateIfNeeded();
+    sendAwarenessPublish(awarenessProtocol.encodeAwarenessUpdate(awareness, [doc.clientID]));
     return true;
   };
 
@@ -514,7 +516,14 @@ export function createYjsProvider(opts: YjsProviderOptions) {
       historyIncomplete?: unknown;
       snapshot?: unknown;
       restoreRevision?: unknown;
-      updates?: Array<{ cursor?: unknown; payload?: unknown; actionId?: unknown; retainedColumn?: unknown; restoreRevision?: unknown }>;
+      updates?: Array<{
+        cursor?: unknown;
+        payload?: unknown;
+        originPeerId?: unknown;
+        actionId?: unknown;
+        retainedColumn?: unknown;
+        restoreRevision?: unknown;
+      }>;
     };
 
     if (isTerminated || payload.noteId !== activeNoteId || !Array.isArray(payload.updates)) return true;
@@ -585,6 +594,7 @@ export function createYjsProvider(opts: YjsProviderOptions) {
             pendingChanged();
           }
         } else {
+          if (awarenessPeerId !== null && update.originPeerId === awarenessPeerId) continue;
           awarenessProtocol.applyAwarenessUpdate(awareness, encoding.fromBase64(update.payload), "remote");
         }
       } catch {

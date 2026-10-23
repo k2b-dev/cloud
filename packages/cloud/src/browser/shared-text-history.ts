@@ -1,5 +1,7 @@
+import * as T from "@k2b/ui/text-editor/model";
 import * as Y from "yjs";
 import { captureTextAnchor, resolveTextAnchor } from "../shared-text/anchors";
+import { captureTableFocus, resolveTableFocus, type TableFocusWitness } from "../shared-text/table-actions";
 
 export type SharedTextInverseRequest = {
   action: "undo" | "redo";
@@ -9,8 +11,15 @@ export type SharedTextInverseRequest = {
   cancel: (reason: unknown) => void;
 };
 type NativeFrame = Y.UndoManager["undoStack"][number];
-type Boundary = { left: Uint8Array | null; right: Uint8Array | null };
-type TextFrame = { kind: "text"; item: NativeFrame; boundaries: Boundary[]; liveInsertions: NativeFrame["insertions"] };
+type CellBoundary = { focus: TableFocusWitness; left: Uint8Array | null; right: Uint8Array };
+type Boundary = { left: Uint8Array | null; right: Uint8Array | null; cell?: CellBoundary };
+type TextFrame = {
+  kind: "text";
+  item: NativeFrame;
+  boundaries: Boundary[];
+  liveInsertions: NativeFrame["insertions"];
+  baseline: Uint8Array | null;
+};
 type Frame = TextFrame | { kind: "structure"; cursor: string };
 
 // UndoManager deliberately skips effectless native frames. A remote structural
@@ -50,14 +59,65 @@ export const createSharedTextActionHistory = (doc: Y.Doc, history: Y.UndoManager
   const observe = (event: Y.YTextEvent) => {
     deletedBoundaries = [];
     let at = 0;
+    // Content neighbors may be removed/restored by another native manager.
+    // Relax only inside the SAME still-live physical cell scaffold, never for
+    // an operation deleting table syntax (including delimiter escapes) or a
+    // vanished row/column. Reviving a backslash can escape a still-live pipe.
+    // Y.Text's changes.deleted is always empty. Its public transaction delete
+    // set is the actual deleted content, before transaction cleanup/GC.
+    let contentOnly = true;
+    Y.iterateDeletedStructs(event.transaction, event.transaction.deleteSet, (item) => {
+      if (!(item instanceof Y.Item)) {
+        contentOnly = false;
+        return;
+      }
+      if (item.parent !== text) return;
+      const content = item.content;
+      if (!(content instanceof Y.ContentString) || ["|", "\\", "\n", "\r"].some((value) => content.str.includes(value)))
+        contentOnly = false;
+    });
+    const tables = contentOnly && event.delta.some((delta) => delta.delete) ? T.findTables(text.toString()) : [];
+    const captureCell = (at: number): CellBoundary | undefined => {
+      for (const table of tables) {
+        const index = table.lines.findIndex((line) => at >= line.from && at <= line.to);
+        if (index < 0 || index === 1) continue;
+        const line = table.lines[index]!;
+        for (let column = 0; column < table.columns; column++) {
+          const left = line.leadingPipe ? line.pipes[column] : column === 0 ? line.from - 1 : line.pipes[column - 1];
+          const right = (line.leadingPipe ? line.pipes[column + 1] : line.pipes[column]) ?? line.to;
+          if (left === undefined || at <= left || at > right || right >= text.length) continue;
+          try {
+            const row = index === 0 ? 0 : index - 1;
+            return {
+              focus: captureTableFocus(text, {
+                tableFrom: table.from,
+                rowFrom: line.from,
+                columnFrom: table.lines[0]!.cells[column]!.from,
+                row,
+                column,
+              }),
+              left: left < 0 ? null : captureTextAnchor(text, left),
+              right: captureTextAnchor(text, right),
+            };
+          } catch {
+            return undefined;
+          }
+        }
+      }
+      return undefined;
+    };
     for (const delta of event.delta) {
-      if (delta.retain) at += delta.retain;
+      if (delta.retain) {
+        at += delta.retain;
+      }
       if (delta.insert) at += typeof delta.insert === "string" ? delta.insert.length : 1;
-      if (delta.delete)
+      if (delta.delete) {
         deletedBoundaries.push({
           left: at > 0 ? captureTextAnchor(text, at - 1) : null,
           right: at < text.length ? captureTextAnchor(text, at) : null,
+          cell: captureCell(at),
         });
+      }
     }
   };
   text.observe(observe);
@@ -70,8 +130,60 @@ export const createSharedTextActionHistory = (doc: Y.Doc, history: Y.UndoManager
     };
     // Later edits merged into this SAME native frame may delete its earlier
     // boundary. Their newer outer boundary still protects the whole reversal.
-    if (left === null && !removedHere(boundary.left)) return false;
-    if (right === null && !removedHere(boundary.right)) return false;
+    if ((left === null && !removedHere(boundary.left)) || (right === null && !removedHere(boundary.right))) {
+      const cell = boundary.cell;
+      const tables = cell ? T.findTables(text.toString()) : [];
+      let target = cell && resolveTableFocus(text, cell.focus);
+      if (cell && !target) {
+        // Inserting a column on the left adds a delimiter BEFORE the original
+        // hyphen; it does not replace that column. Native content history can
+        // follow this insertion only while the original hyphen/right edge and
+        // strict table/row witnesses survive. Server action witnesses stay fixed.
+        const hyphen = resolveTextAnchor(text, cell.focus.column.hyphen);
+        const oldLeft = resolveTextAnchor(text, cell.focus.column.left);
+        for (const table of tables) {
+          const separator = table.lines[1]!;
+          const column = separator.cells.findIndex((cell) => hyphen !== null && hyphen >= cell.from && hyphen < cell.to);
+          if (column < 0) continue;
+          const left = separator.leadingPipe ? separator.pipes[column] : column === 0 ? table.lines[0]!.to : separator.pipes[column - 1];
+          if (
+            left === undefined ||
+            oldLeft === null ||
+            oldLeft > left ||
+            (oldLeft !== table.lines[0]!.to && !separator.pipes.includes(oldLeft))
+          )
+            continue;
+          target = resolveTableFocus(text, {
+            ...cell.focus,
+            column: { ...cell.focus.column, left: captureTextAnchor(text, left) },
+          });
+          if (target) break;
+        }
+      }
+      const tableFrom = target?.tableFrom;
+      const table = target && tables.find((table) => table.from === tableFrom);
+      const line = table && target && T.gridLine(table, target.row);
+      if (!cell || !target || !line) return false;
+      const edgeLeft = line.leadingPipe ? line.pipes[target.column] : target.column === 0 ? line.from - 1 : line.pipes[target.column - 1];
+      const edgeRight = (line.leadingPipe ? line.pipes[target.column + 1] : line.pipes[target.column]) ?? line.to;
+      const oldLeft = cell.left ? resolveTextAnchor(text, cell.left) : -1;
+      if (
+        edgeLeft === undefined ||
+        oldLeft === null ||
+        oldLeft < line.from - 1 ||
+        oldLeft > edgeLeft ||
+        (oldLeft !== line.from - 1 && !line.pipes.includes(oldLeft)) ||
+        resolveTextAnchor(text, cell.right) !== edgeRight
+      )
+        return false;
+      // A deleted neighbor's ordinary fallback must still lie INSIDE that
+      // original column and row. Merely finding a same-looking cell is unsafe.
+      return [boundary.left, boundary.right].every((bytes) => {
+        if (!bytes) return false;
+        const position = Y.createAbsolutePositionFromRelativePosition(Y.decodeRelativePosition(bytes), doc, false);
+        return position?.type === text && position.index > edgeLeft && position.index <= edgeRight;
+      });
+    }
     if (left !== null && right !== null && right <= left) return false;
     if (boundary.left !== null || boundary.right !== null || !text.length) return true;
     // Whole-text replacements have no external boundaries. They are safe only
@@ -160,7 +272,13 @@ export const createSharedTextActionHistory = (doc: Y.Doc, history: Y.UndoManager
   let pending: { id: string; resolve(): void; reject(reason: unknown): void; direction?: "undo" | "redo"; frame?: Frame } | null = null;
   const added = ({ stackItem }: { stackItem: NativeFrame }) => {
     if (moving) return;
-    undo.push({ kind: "text", item: stackItem, boundaries: [...deletedBoundaries], liveInsertions: stackItem.insertions });
+    undo.push({
+      kind: "text",
+      item: stackItem,
+      boundaries: [...deletedBoundaries],
+      liveInsertions: stackItem.insertions,
+      baseline: Y.encodeStateVector(doc),
+    });
     redo.length = 0;
     notify();
   };
@@ -182,8 +300,11 @@ export const createSharedTextActionHistory = (doc: Y.Doc, history: Y.UndoManager
   history.on("stack-item-updated", updated);
   history.on("stack-cleared", cleared);
   // Existing input frames have no captured deletion context. Such restoration
-  // is unavailable; insertion-only Undo still uses its native identity guard.
-  undo.push(...history.undoStack.map((item) => ({ kind: "text" as const, item, boundaries: [], liveInsertions: item.insertions })));
+  // is unavailable. Insertion-only Undo requires no pre-registration redone
+  // chains; validation refuses unknown live correspondence before mutation.
+  undo.push(
+    ...history.undoStack.map((item) => ({ kind: "text" as const, item, boundaries: [], liveInsertions: item.insertions, baseline: null })),
+  );
   const cancel = (id: string, reason: unknown) => {
     if (pending?.id !== id) return;
     const action = pending;
@@ -220,6 +341,8 @@ export const createSharedTextActionHistory = (doc: Y.Doc, history: Y.UndoManager
       }
       return frame;
     }
+    const { validateNativeHistory } = await import("./shared-text-history-validation");
+    if (disposed || pending || from.at(-1) !== frame) throw new Error("The input history frame is unavailable");
     // Public UndoManager events preserve CodeMirror selection metadata. Never
     // pop another input frame if the referenced native step became unavailable.
     const stack = direction === "undo" ? history.undoStack : history.redoStack;
@@ -234,6 +357,7 @@ export const createSharedTextActionHistory = (doc: Y.Doc, history: Y.UndoManager
       !hasUncovered(frame.item.deletions, frame.item.insertions)
     )
       throw new Error("The input history frame is unavailable");
+    validateNativeHistory(text, frame.item, frame.liveInsertions, frame.baseline);
     moving = true;
     try {
       const result = direction === "undo" ? history.undo() : history.redo();
@@ -241,7 +365,13 @@ export const createSharedTextActionHistory = (doc: Y.Doc, history: Y.UndoManager
       from.pop();
       const replacement = (direction === "undo" ? history.redoStack : history.undoStack).at(-1);
       if (replacement) {
-        to.push({ kind: "text", item: replacement, boundaries: [...deletedBoundaries], liveInsertions: replacement.insertions });
+        to.push({
+          kind: "text",
+          item: replacement,
+          boundaries: [...deletedBoundaries],
+          liveInsertions: replacement.insertions,
+          baseline: frame.baseline,
+        });
         refreshRestorations(replacement.insertions);
       }
       notify();
