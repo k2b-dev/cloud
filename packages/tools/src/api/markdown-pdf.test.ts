@@ -138,6 +138,7 @@ describe("Markdown to PDF API", () => {
     const cases: Array<[Error, number, string]> = [
       [new MarkdownPdfError("external_asset_unsupported", "Custom CSS cannot load external resources."), 422, "external_asset_unsupported"],
       [new GotenbergRenderError("not_configured", "secret URL"), 503, "renderer_not_configured"],
+      [new GotenbergRenderError("busy", "busy"), 503, "renderer_busy"],
       [new GotenbergRenderError("bad_response", "secret upstream body", 500), 502, "renderer_failed"],
       [new GotenbergRenderError("timeout", "timeout"), 504, "renderer_timeout"],
     ];

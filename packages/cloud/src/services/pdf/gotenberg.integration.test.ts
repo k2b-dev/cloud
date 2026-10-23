@@ -7,7 +7,7 @@ import { renderTemplatePdfPreview } from "./template-preview";
 
 const TITLE = "Rechnung RE-2026-000042 – Müller & Söhne </title><b>";
 
-suiteFor("gotenberg")("PDF document title in Gotenberg", () => {
+suiteFor("gotenberg", "valkey")("PDF document title in Gotenberg", () => {
   let config: GotenbergConfig;
 
   beforeAll(() => {
