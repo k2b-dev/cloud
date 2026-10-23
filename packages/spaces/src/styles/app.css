@@ -163,13 +163,14 @@
 .spaces-pwa-task__aside[data-tone="danger"] { color: var(--k2b-danger-text); }
 .spaces-pwa-task__quiet { margin: 0; padding-left: 3.25rem; color: var(--k2b-text-muted); font-size: .875rem; }
 .spaces-pwa-task__checklist { margin: 0; padding: 0; list-style: none; }
-/* The checklist spans the full width: the box sits in the title's check column, the slot at the end keeps its place. */
-.spaces-pwa-task__section:has(> .spaces-pwa-task__checklist) { padding-left: 0; }
-.spaces-pwa-task__section:has(> .spaces-pwa-task__checklist) > h4 { padding-left: 3.25rem; }
+/* Each item: the box centred in a 2.75 rem column, the label, and a slot at the end that keeps its place for the
+   spinner or Retry. */
 .spaces-pwa-task__checklist li { display: grid; min-height: 44px; grid-template-columns: minmax(0, 1fr) 2.75rem; align-items: center; }
-.k2b-ui .spaces-pwa-task__checklist .k2b-check { min-height: 44px; align-items: center; gap: .5rem; padding-left: .7rem; }
-.k2b-ui .spaces-pwa-task__checklist .k2b-check__label { font-weight: 400; }
+.k2b-ui .spaces-pwa-task__checklist .k2b-check { min-height: 44px; align-items: center; gap: .5rem; }
+.k2b-ui .spaces-pwa-task__checklist .k2b-check__control { width: 1.375rem; height: 1.375rem; margin: 0 .6875rem; border-radius: .375rem; font-size: .9375rem; }
+.k2b-ui .spaces-pwa-task__checklist .k2b-check__label { font-size: 1rem; font-weight: 400; line-height: 1.5rem; }
 .spaces-pwa-task__checklist li[data-done] .k2b-check__label { color: var(--k2b-text-muted); }
+.spaces-pwa-task__section:has(> .spaces-pwa-task__checklist) { gap: 0; }
 .spaces-pwa-task__slot { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; color: var(--k2b-text-muted); }
 .k2b-ui .spaces-pwa-task__retry { width: 2.75rem; height: 2.75rem; color: var(--k2b-danger-text); }
 .spaces-pwa-task__sk { height: .875rem; margin: .9rem 0; width: 70%; }
