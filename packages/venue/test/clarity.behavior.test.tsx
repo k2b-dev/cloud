@@ -130,7 +130,7 @@ describe("Venue clarity behavior", () => {
     return;
   }
 
-  // UTC fixture times and Berlin labels must share the same daylight-saving offset.
+  // Keep relative fixture days and their Berlin offset independent of the calendar.
   beforeEach(() => setSystemTime(new Date("2026-09-28T10:00:00.000Z")));
   afterEach(() => setSystemTime());
 
