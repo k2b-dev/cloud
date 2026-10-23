@@ -8,7 +8,6 @@ import {
   type PermissionLevel,
   type Result,
   ratelimit,
-  type ServiceError,
   updateAccess,
 } from "@k2b/cloud/server";
 import { audit, toPgUuidArray } from "@k2b/cloud/services";
