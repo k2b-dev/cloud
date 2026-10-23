@@ -81,6 +81,7 @@ describe("Shared Cloud elements", () => {
       await page.getByRole("menuitem", { name: "Share a Cloud element" }).click();
       await page.locator('input[role="combobox"]').fill("Inventory");
       await page.getByRole("option", { name: /Inventory hall 3/ }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Add", exact: true }).click();
       await page.locator(".k2b-chat-composer").getByText("Inventory hall 3").waitFor();
       await page.keyboard.press("Enter");
       await until(() => harness.posted.some((post) => post.refs?.length === 1));

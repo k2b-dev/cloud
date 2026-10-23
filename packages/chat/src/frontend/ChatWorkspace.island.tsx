@@ -762,7 +762,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   onMount(() => setCards(createResourceCards()));
   const pickResource = async () => {
     const item = await openCloudResourcePicker({ title: t().shareResource, requireReader: true });
-    return item ? { ref: item.ref, title: item.title, icon: item.icon } : null;
+    return item ? { ref: item.ref, title: item.title, icon: item.icon ?? item.appIcon } : null;
   };
 
   // A message goes to the open thread; in "All threads" to General. A reply goes to its original's thread.
