@@ -723,6 +723,18 @@ setup lock. Restart old and new replicas of one app one at a time until all
 run this release. Keep Core first: it creates the shared schemas other
 applications need.
 
+### Pulse agent telemetry actions
+
+Pulse adds `base.create`, `base.clear_data`, `base.delete`, and `ingest.write`
+to its capability catalog. The existing base creation policy and base grants
+apply. Creation and ingest support remembered approval; clearing and deletion
+ask every time. Source creation and update keep their existing approval rules.
+The schema update records the creating access subject on new sources. Existing
+source tokens and API writes continue working; sources without a recorded
+creator need a new source for `ingest.write`. No data backfill is required.
+Website collectors keep tokens in their backend secret store and send through
+the existing HTTP ingest endpoint. See [Pulse](/en/apps/pulse#track-a-website-from-its-backend).
+
 ### Prepare Pulse's new data store
 
 This update deletes all existing Pulse data without confirmation: bases,
