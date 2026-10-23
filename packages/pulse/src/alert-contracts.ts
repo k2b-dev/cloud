@@ -3,6 +3,8 @@ import { z } from "zod";
 export const ALERT_MAX_KEYS = 100;
 export const ALERT_MIN_INTERVAL_SECONDS = 300;
 export const ALERT_MAX_EXECUTION_MS = 10_000;
+// Twenty rules × twelve checks; edits and replacements spend the same budget.
+export const ALERT_CHECKS_PER_HOUR = 240;
 export const ALERT_STATES = ["ok", "pending", "firing", "no_data", "error"] as const;
 export type AlertStateName = (typeof ALERT_STATES)[number];
 export type AlertSeverity = "warn" | "critical";

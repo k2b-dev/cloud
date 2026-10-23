@@ -2,6 +2,8 @@ import type { CapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import { getCapabilityCatalogApp, listCapabilityCatalog } from "@k2b/cloud/capabilities/server";
 import type { CapabilityActionManifest, CapabilityManifest, CapabilityQueryManifest } from "@k2b/cloud/contracts";
 
+import type { RequestAuthority } from "@k2b/cloud/server";
+
 const CATALOG_PAGE_SIZE = 25;
 
 export type CapabilityAppSummary = {
@@ -65,9 +67,13 @@ const parseCursor = (url: URL): string | undefined => {
   return value && value.length <= 80 ? value : undefined;
 };
 
-export async function loadCapabilityApps(url: URL, locale?: string): Promise<CapabilityAppsPage> {
+export async function loadCapabilityApps(
+  url: URL,
+  locale?: string,
+  authority: RequestAuthority | null = null,
+): Promise<CapabilityAppsPage> {
   const cursor = parseCursor(url);
-  const catalog = await listCapabilityCatalog({ cursor, limit: CATALOG_PAGE_SIZE, locale });
+  const catalog = await listCapabilityCatalog({ cursor, limit: CATALOG_PAGE_SIZE, locale, authority });
   if (!catalog.ok) return { apps: [], cursor };
 
   return {
@@ -89,10 +95,11 @@ export async function loadCapabilityWorkspace(
   appId: string,
   readers: { list?: CatalogReader; get?: AppReader } = {},
   locale?: string,
+  authority: RequestAuthority | null = null,
 ): Promise<LoadedCapabilityWorkspace> {
   const [catalog, selectedCatalog] = await Promise.all([
-    loadAllCapabilityCatalogApps((options) => (readers.list ?? listCapabilityCatalog)({ ...options, locale })),
-    (readers.get ?? getCapabilityCatalogApp)(appId, locale),
+    loadAllCapabilityCatalogApps((options) => (readers.list ?? listCapabilityCatalog)({ ...options, locale, authority })),
+    (readers.get ?? getCapabilityCatalogApp)(appId, locale, authority),
   ]);
   const selectedEntry = selectedCatalog.ok ? selectedCatalog.data : null;
   const apps = [...catalog, ...(selectedEntry && !catalog.some((entry) => entry.appId === appId) ? [selectedEntry] : [])]

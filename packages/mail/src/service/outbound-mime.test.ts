@@ -28,6 +28,49 @@ describe("outbound MIME", () => {
     expect(parsed.html).not.toContain(">ts<");
   });
 
+  test("keeps table cells and rows separate in the plain-text MIME alternative", async () => {
+    const body =
+      "Before\n\n| Item | Quantity | Note |\n| --- | --- | --- |\n| Chair | 2 | [Details](https://example.test/chair) |\n| Desk | 1 | |\n\nAfter";
+    const rendered = renderComposeContent({
+      body,
+      format: "markdown",
+      customCss: "",
+      renderLiquid: false,
+      context: {
+        actor: { display_name: "Ada", email: "ada@example.test" },
+        mailbox: { name: "Support", description: "" },
+        sender: { display_name: "Support", email: "support@example.test", reply_to: "" },
+        message: { subject: "Order", to: ["reader@example.test"], cc: [] },
+      },
+    });
+    if (!rendered.ok) throw new Error(rendered.error.message);
+    const snapshot = outboundDraftSnapshotSchema.parse({
+      revision: 1,
+      from: { name: "Support", address: "support@example.test" },
+      to: [{ name: null, address: "reader@example.test" }],
+      cc: [],
+      bcc: [],
+      replyTo: null,
+      envelopeFrom: null,
+      subject: "Order",
+      body,
+      format: "markdown",
+      renderedHtml: rendered.data.html,
+      renderedText: rendered.data.text,
+    });
+    const parsed = await simpleParser(
+      await buildMimeSource({ snapshot, messageId: "<table@example.test>", date: new Date("2026-01-02T03:04:05.000Z") }),
+    );
+    expect(parsed.text).toMatch(/Item +Quantity +Note/);
+    expect(parsed.text).toMatch(/Chair +2 +Details \[https:\/\/example.test\/chair\]/);
+    expect(parsed.text).toMatch(/\nDesk +1(?: +)?\n/);
+    expect(parsed.text).toMatch(/^Before\n\n/);
+    expect(parsed.text).toMatch(/\n\nAfter$/);
+    expect(parsed.html).toContain("<table");
+    expect(parsed.html).toContain(">Chair</span></td>");
+    expect(parsed.html).toContain(">Desk</span></td>");
+  });
+
   test("builds a stable threaded multipart message without exposing Bcc", async () => {
     const snapshot = outboundDraftSnapshotSchema.parse({
       revision: 3,

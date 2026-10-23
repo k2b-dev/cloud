@@ -1,5 +1,6 @@
 import { type AiProjectFile, type AiProjectKnowledge, type AiProjectReference, aiProjects, aiSkills } from "@k2b/cloud/ai";
-import { type ArtifactIdentity, artifacts } from "./artifacts/service";
+import type { RequestAuthority } from "@k2b/cloud/server";
+import { artifacts } from "./artifacts/service";
 
 export type AssistantProjectContextSnapshot = {
   projectId: string;
@@ -11,7 +12,7 @@ export type AssistantProjectContextSnapshot = {
 };
 
 export const loadAssistantProjectContextSnapshot = async (
-  identity: ArtifactIdentity,
+  identity: RequestAuthority,
   projectId: string,
 ): Promise<AssistantProjectContextSnapshot | null> => {
   const subject = identity.accessSubject;
@@ -22,7 +23,7 @@ export const loadAssistantProjectContextSnapshot = async (
     aiProjects.listFiles(project.id, subject),
     aiProjects.listReferences(project.id, subject),
     artifacts.projectApps(project.id, identity),
-    aiSkills.projectSkills(project.id, subject),
+    aiSkills.projectSkills(project.id, subject, { authority: identity }),
   ]);
   return {
     projectId,

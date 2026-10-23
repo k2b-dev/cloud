@@ -1,6 +1,7 @@
 import type { ClientRequest, IncomingMessage } from "node:http";
 import { type RequestOptions, request } from "node:https";
 import { resolvePublicNetworkAddresses } from "./network-security";
+import { awaitNetworkOperation, readNetworkResponse } from "./network-transport";
 
 export type PublicHttpInput = {
   url: string;
@@ -24,29 +25,21 @@ export async function requestPublicHttps(
   const url = new URL(input.url);
   if (url.protocol !== "https:" || url.username || url.password) throw new Error("HTTPS_REQUIRED");
   input.signal.throwIfAborted();
-  let cancelLookup = () => {};
-  const addresses = await Promise.race([
-    dependencies.resolve(url.hostname),
-    new Promise<never>((_, reject) => {
-      cancelLookup = () => reject(new Error("HTTP_CANCELLED"));
-      input.signal.addEventListener("abort", cancelLookup, { once: true });
-      if (input.signal.aborted) cancelLookup();
-    }),
-  ]).finally(() => input.signal.removeEventListener("abort", cancelLookup));
+  let addresses: Awaited<ReturnType<typeof resolvePublicNetworkAddresses>>;
+  try {
+    addresses = await awaitNetworkOperation(dependencies.resolve(url.hostname), input.signal);
+  } catch (error) {
+    if (input.signal.aborted) throw new Error("HTTP_CANCELLED");
+    throw error;
+  }
   input.signal.throwIfAborted();
   const target = addresses[0]!;
-  return new Promise<{ status: number; headers: Record<string, string>; body: Uint8Array }>((resolve, reject) => {
-    let settled = false;
-    const fail = () => finish(undefined);
-    const finish = (value?: { status: number; headers: Record<string, string>; body: Uint8Array }, code = "HTTP_FAILED") => {
-      if (settled) return;
-      settled = true;
-      input.signal.removeEventListener("abort", abort);
-      if (value) resolve(value);
-      else reject(new Error(code));
-    };
-    const outgoing = dependencies.request(
-      {
+  try {
+    return await readNetworkResponse<{ status: number; headers: Record<string, string>; body: Uint8Array }>({
+      request: dependencies.request,
+      signal: input.signal,
+      body: input.body,
+      options: {
         hostname: target.address,
         family: target.family,
         port: url.port || 443,
@@ -56,7 +49,7 @@ export async function requestPublicHttps(
         method: input.method,
         headers: { ...input.headers, host: url.host, "accept-encoding": "identity" },
       },
-      (incoming) => {
+      read: (incoming, finish, fail) => {
         const status = incoming.statusCode ?? 0;
         const headers: Record<string, string> = {};
         for (const name of ["content-type", "retry-after", "etag", "last-modified"]) {
@@ -65,42 +58,32 @@ export async function requestPublicHttps(
         }
         // A redirect never receives a second request or exposes a Location token.
         if (status >= 300 && status < 400 && status !== 304) {
-          incoming.destroy();
           finish({ status, headers, body: new Uint8Array() });
           return;
         }
         if (incoming.headers["content-encoding"] && incoming.headers["content-encoding"] !== "identity") {
-          incoming.destroy();
-          fail();
+          fail(new Error("HTTP_FAILED"));
           return;
         }
         if (Number(incoming.headers["content-length"]) > input.maxBytes) {
-          finish(undefined, "HTTP_TOO_LARGE");
-          incoming.destroy();
+          fail(new Error("HTTP_TOO_LARGE"));
           return;
         }
         const chunks: Uint8Array[] = [];
         let bytes = 0;
         incoming.on("data", (chunk: Buffer) => {
-          if (settled) return;
+          if (incoming.destroyed) return;
           bytes += chunk.byteLength;
           if (bytes > input.maxBytes) {
-            finish(undefined, "HTTP_TOO_LARGE");
-            incoming.destroy();
+            fail(new Error("HTTP_TOO_LARGE"));
           } else chunks.push(chunk);
         });
         incoming.on("end", () => finish({ status, headers, body: Buffer.concat(chunks, bytes) }));
-        incoming.on("error", fail);
-        incoming.on("aborted", fail);
       },
-    );
-    const abort = () => {
-      outgoing.destroy();
-      fail();
-    };
-    outgoing.on("error", fail); // Never expose errors containing injected headers.
-    input.signal.addEventListener("abort", abort, { once: true });
-    if (input.signal.aborted) abort();
-    else outgoing.end(input.body);
-  });
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "HTTP_TOO_LARGE") throw error;
+    // Never expose errors containing injected headers.
+    throw new Error("HTTP_FAILED");
+  }
 }
