@@ -194,3 +194,34 @@ describe("Mail search URL state", () => {
     });
   });
 });
+
+test("scoped flags round-trip and stale scope becomes match-nothing without widening or losing NOT", () => {
+  const expression: MailSearchExpression = {
+    type: "or",
+    expressions: [
+      { type: "unread", folderId: "Fold01" },
+      { type: "not", expression: { type: "flagged", folderId: "Fold02" } },
+      { type: "unread" },
+      { type: "flagged", folderId: null },
+    ],
+  };
+  const state = { expression, sort: "newest" as const };
+  const serialized = serializeMailSearchState(state);
+  if (!serialized.ok) throw new Error(serialized.error);
+  expect(
+    parseMailSearchState(new URL(`https://cloud.test/app/mail/Box001?${new URLSearchParams({ search: serialized.value })}`)).state,
+  ).toEqual(state);
+  expect(mailSearchReferences(expression)).toEqual([
+    { type: "unread", folderId: "Fold01" },
+    { type: "flagged", folderId: "Fold02" },
+  ]);
+  expect(replaceMailSearchReferences(expression, () => MAIL_SEARCH_MATCHES_NOTHING)).toEqual({
+    type: "or",
+    expressions: [
+      MAIL_SEARCH_MATCHES_NOTHING,
+      { type: "not", expression: MAIL_SEARCH_MATCHES_NOTHING },
+      { type: "unread" },
+      { type: "flagged", folderId: null },
+    ],
+  });
+});

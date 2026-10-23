@@ -8,6 +8,7 @@ export type { CreateApiClientConfig } from "./api-client";
 export { api as apiClient } from "./api-client";
 export { appAssetPath } from "./app-assets";
 export type { AppContext } from "./app-context";
+export { clientIp, clientIpBucket } from "./client-ip";
 export { defineHelp, defineHelpCollection, type HelpCollection, type HelpDefinition, type HelpDefinitionDocument } from "./help";
 export { DEFAULT_LOCALE, getLocale, LOCALE_COOKIE, LOCALE_HEADER, locale, preferredLocale, resolveLocale } from "./locale";
 export type {
@@ -40,6 +41,7 @@ export {
   v,
   validator,
 } from "./middleware";
+export { guardAppAccessSocket } from "./middleware/app-access";
 export { RateLimitError, type RateLimiter, type RateLimiterConfig, type RateLimitResult, ratelimit } from "./ratelimit";
 export { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS, setRequestTimeout } from "./request-timeout";
 export type {

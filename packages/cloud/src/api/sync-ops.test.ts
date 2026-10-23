@@ -4,6 +4,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { generateKeyPair } from "jose";
 import { UserSchema } from "../contracts/shared";
 import type { AuthContext } from "../server";
+import { AppAccessDeniedError } from "../server/middleware/app-access";
 import { syncInvocationOperation } from "../services/identity/invocation-operations";
 import { signInvocationToken } from "../services/identity/invocation-token";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
@@ -53,6 +54,7 @@ const mount = (dependencies: Parameters<typeof createSyncOpsProxyRoutes>[0] = {}
     createSyncOpsProxyRoutes({
       authenticate: authenticate(),
       withActiveSigner,
+      signInvocation: signInvocationToken,
       getApp: async (id) => ({ id, name: id, description: "", icon: "ti ti-box", baseUrl: "http://app-mail:3000", routes: [] }),
       ...dependencies,
     }),
@@ -243,4 +245,21 @@ test("forwards read-only DLQ page and detail queries through the invocation allo
   expect(forwarded[0]).toContain("/_internal/sync/dead-letters/queue/work?limit=20&cursor=42");
   expect(forwarded[1]).toContain("/_internal/sync/dead-letters/job/work/message?sequence=42");
   expect((await routes.request("/api/admin/sync/mail/dead-letters/other/work")).status).toBe(404);
+});
+
+test("refused app issuance returns a recoverable 403 before Sync dispatch", async () => {
+  let dispatched = false;
+  const routes = mount({
+    signInvocation: async () => {
+      throw new AppAccessDeniedError({ id: "mail" });
+    },
+    fetch: async () => {
+      dispatched = true;
+      return Response.json({});
+    },
+  });
+  const response = await routes.request("/api/admin/sync/mail/resources");
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: "app_access_denied", app: "mail" });
+  expect(dispatched).toBe(false);
 });

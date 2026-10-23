@@ -326,3 +326,14 @@ Useful alerts include:
 
 Alert on sustained conditions. A single failed request is not deployment
 health.
+
+## Recover unreadable log retention
+
+Gateway Ops log settings show a warning if `logs.retention_days` cannot be
+read. Select **Replace stored value: Retention (days)** before saving a new
+period, or ask the operator to restore access. A failed save keeps the dialog
+and entered period open. The log-retention GET returns `unreadable`; its PUT
+requires `replaceUnreadable: true` to replace an unreadable saved period and
+otherwise returns HTTP 409 `setting_unreadable`. After this response, the
+dialog refreshes the warning and replacement choice while keeping the entered
+period.
