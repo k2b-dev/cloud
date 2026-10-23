@@ -395,19 +395,30 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         setMarker(before.marker);
         paused = before.paused;
       }
-      toast.error(t().readStateFailed, { action: { label: t().retry, onClick: () => void markUnread(id, from) } });
+      // An action answers once: its message closes, so a second press cannot repeat it.
+      const failed = toast.error(t().readStateFailed, {
+        action: {
+          label: t().retry,
+          onClick: () => {
+            failed.dismiss();
+            void markUnread(id, from);
+          },
+        },
+      });
       return;
     }
-    toast(t().markedUnreadFrom({ name: from.authorName.split(" ")[0] ?? from.authorName }), {
+    const done = toast(t().markedUnreadFrom({ name: from.authorName.split(" ")[0] ?? from.authorName }), {
       iconClass: "ti ti-mail",
       action: {
         label: t().undo,
-        onClick: () =>
+        onClick: () => {
+          done.dismiss();
           void undoUnread(id, {
             ...before,
             lastReadSeq:
               thread === null ? (result?.lastReadSeq ?? null) : (result?.threads.find((entry) => entry.id === thread)?.lastReadSeq ?? null),
-          }),
+          });
+        },
       },
     });
   };

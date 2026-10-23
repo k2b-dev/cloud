@@ -800,6 +800,8 @@ describe("ChatWorkspace browser read state", () => {
         expect(await marker(page).count()).toBe(0);
         expect(harness.props({ chat }).open!.conversation.read!.unreadFromSeq).toBe(null);
         await failed.getByRole("button", { name: "Try again", exact: true }).click();
+        // An action closes its message, so it cannot run twice.
+        await failed.waitFor({ state: "detached" });
         await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === 5);
         await marker(page).waitFor();
         expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(
@@ -812,6 +814,7 @@ describe("ChatWorkspace browser read state", () => {
         await done.waitFor();
         if (name === "desktop") await row(page, name, chat).locator('[data-unread="count"]').waitFor();
         await done.getByRole("button", { name: "Undo", exact: true }).click();
+        await done.waitFor({ state: "detached" });
         await until(() => harness.props({ chat }).open!.conversation.read!.unreadFromSeq === null);
         await marker(page).waitFor({ state: "detached" });
         expect(harness.props({ chat }).open!.conversation.unread).toBe(0);
