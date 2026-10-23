@@ -35,9 +35,10 @@ microclimate. Provider data can change as newer observations arrive.
 | Rain radar and display | Visual views for near-term rain and shared screens |
 | Current-weather widget | A compact dashboard view using saved or configured coordinates |
 
-City search allows public Geo endpoints and the shipped `geo` host by default;
-the operator can replace this list with `GEO_ALLOWED_TARGETS` in the Weather
-container when another internal Geo host is needed.
+City search uses Core’s Geoapify EU service. Sign in and type at least three
+characters to receive up to five German city suggestions. Searches count
+against the configured geo budgets; forecasts for known coordinates remain
+available without the geo service.
 
 Location search currently covers German cities. A saved location stays in the
 user's account until the user removes it. Weather may reuse cached provider
@@ -73,12 +74,11 @@ cld capabilities query weather forecast.get \
   --json
 ```
 
-City search requires a Geo API URL in Weather settings. If it is empty,
-`weather.city.search` returns `WEATHER_CITY_SEARCH_NOT_CONFIGURED` (500) and
-asks an administrator to configure it. A Geo service failure returns
-`WEATHER_CITY_SEARCH_UNAVAILABLE` (500). In both cases, forecasts still work
-with known coordinates: call `weather.forecast.current` or
-`weather.forecast.get` with `source.kind = "coordinates"`, as shown above.
+For an unsaved city, call Core's `address.autocomplete` with
+`{"text":"Ulm","type":"city","countryCode":"DE"}`. Choose a suggestion and pass
+its `point.lat` and `point.lon` to the forecast Query. The former
+`weather.city.search` Query is removed. Core returns configuration and budget
+errors with recovery details; forecasts still work with known coordinates.
 
 Run `cld capabilities catalog --json` to inspect the live schemas and safety
 metadata. Run `cld capabilities query --help` for the current invocation
@@ -87,7 +87,7 @@ authorization.
 
 ## Deployment requirements
 
-`PUT /api/weather/admin/settings` accepts `{ updates, replaceUnreadable: ["weather.geo_url"] }` to explicitly replace unreadable saved settings; every listed key must be a Weather setting included in `updates`.
+`PUT /api/weather/admin/settings` accepts `{ updates, replaceUnreadable: ["weather.default_lat"] }` to explicitly replace unreadable saved settings; every listed key must be a Weather setting included in `updates`.
 
 See [Deployment requirements](/en/docs/operations/deployment-requirements) for
 this app’s startup prerequisites, optional integrations, configuration and

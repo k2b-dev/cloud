@@ -1,5 +1,5 @@
 import { type AuthContext, getDateConfig, getLocale, getUserBackedActor } from "@k2b/cloud/server";
-import { Layout } from "@k2b/cloud/ssr";
+import { Layout, PanelLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { chatMessages } from "../messages";
 import { chatService, loadChatView } from "../service";
@@ -7,9 +7,11 @@ import ChatWorkspace from "./ChatWorkspace.island";
 
 /**
  * `/app/chat`, a chat (`/c/:chat`), one of its threads (`/c/:chat/t/:thread`), each with a message deep link (`/m/:message`),
- * and the phone's thread page (`/c/:chat/threads`): the full view with the authorized snapshot.
+ * and the phone's thread page (`/c/:chat/threads`): the full view with the authorized snapshot. The universal panel
+ * serves the same addresses below `/app/chat/panel`.
  */
 export default ssr<AuthContext>(async (c) => {
+  const embedded = c.req.path === "/app/chat/panel" || c.req.path.startsWith("/app/chat/panel/");
   const locale = getLocale(c);
   const { t } = chatMessages.resolve([locale]);
   const accessSubject = c.get("accessSubject");
@@ -27,6 +29,31 @@ export default ssr<AuthContext>(async (c) => {
   );
   // Without access the page names neither the chat nor whether it exists.
   const title = channelsPage ? t.browseChannels : chatId ? (view.open?.conversation.title ?? t.noAccessTitle) : undefined;
+  const workspace = () => (
+    <ChatWorkspace
+      embedded={embedded}
+      channelsPage={channelsPage}
+      channelQuery={channelQuery}
+      channelPage={channelResult?.ok ? channelResult.data : null}
+      cursor={view.cursor}
+      sidebar={view.sidebar}
+      open={view.open}
+      chatId={chatId}
+      view={thread}
+      threadsPage={chatId !== null && c.req.path.endsWith("/threads")}
+      guest={getUserBackedActor(c)?.profile === "guest"}
+      panel={chatId && view.open && c.req.query("panel") === "info" ? "info" : null}
+      viewerId={accessSubject.userId}
+      dateConfig={getDateConfig(c)}
+      now={new Date().toISOString()}
+    />
+  );
+  if (embedded)
+    return () => (
+      <PanelLayout c={c} title={title ?? t.appName}>
+        {workspace()}
+      </PanelLayout>
+    );
   return () => (
     <Layout
       c={c}
@@ -37,22 +64,7 @@ export default ssr<AuthContext>(async (c) => {
         ...(title ? [{ title }] : []),
       ]}
     >
-      <ChatWorkspace
-        channelsPage={channelsPage}
-        channelQuery={channelQuery}
-        channelPage={channelResult?.ok ? channelResult.data : null}
-        cursor={view.cursor}
-        sidebar={view.sidebar}
-        open={view.open}
-        chatId={chatId}
-        view={thread}
-        threadsPage={chatId !== null && c.req.path.endsWith("/threads")}
-        guest={getUserBackedActor(c)?.profile === "guest"}
-        panel={chatId && view.open && c.req.query("panel") === "info" ? "info" : null}
-        viewerId={accessSubject.userId}
-        dateConfig={getDateConfig(c)}
-        now={new Date().toISOString()}
-      />
+      {workspace()}
     </Layout>
   );
 });

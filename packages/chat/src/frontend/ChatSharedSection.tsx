@@ -88,6 +88,8 @@ export default function ChatSharedSection(props: {
   };
   const restart = () => {
     generation++;
+    // A new list does not wait for loads of the old one; those finish without changing anything.
+    chain = Promise.resolve();
     refreshQueued = false;
     setItems([]);
     setCursor(null);

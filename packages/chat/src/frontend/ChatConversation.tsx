@@ -59,6 +59,7 @@ export type ChatFeedItem = {
 export type ChatConversationProps = {
   /** The chat's own commands at the end of the header, such as its info. */
   actions?: JSX.Element;
+  listHref?: string;
   chatId: string;
   title: string;
   memberCount: number;
@@ -76,7 +77,7 @@ export type ChatConversationProps = {
   /** Each part of a chat keeps its own draft. */
   draftKey?: string;
   /** Replaces the composer, for example where the reader cannot write. */
-  notice?: JSX.Element;
+  composerNotice?: JSX.Element;
   placeholder?: string;
   /** Who the composer writes to, such as a thread; the chat's title by default. */
   target?: string;
@@ -98,6 +99,7 @@ export type ChatConversationProps = {
   canWrite: boolean;
   /** One quiet line above the field, such as why the reader cannot write. */
   hint?: string;
+  notice?: JSX.Element;
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: (text: string, refs: readonly CloudResourceRef[]) => boolean | Promise<boolean>;
@@ -234,7 +236,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
       <header class="chat-conversation__header">
         <span class="chat-conversation__back">
           <IconButtonLink
-            href={props.backHref ?? "/app/chat"}
+            href={props.backHref ?? props.listHref ?? "/app/chat"}
             navigation="enhanced"
             onNavigate={props.onBack}
             label={props.backHref ? t().backToThreads : t().backToChats}
@@ -268,6 +270,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         </Show>
         <div class="chat-conversation__actions">{props.actions}</div>
       </header>
+      {props.notice}
       <VirtualFeed
         class="chat-conversation__feed"
         items={props.items}
@@ -368,10 +371,10 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         }
       </VirtualFeed>
       <Show
-        when={!props.notice}
+        when={!props.composerNotice}
         fallback={
           <div class="chat-conversation__notice" role="status">
-            {props.notice}
+            {props.composerNotice}
           </div>
         }
       >

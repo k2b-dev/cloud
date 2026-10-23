@@ -28,6 +28,7 @@ export default function ChatList(props: {
   channelsActive?: boolean;
   chatsActions?: JSX.Element;
   onDiscover?: (navigation: LinkNavigateEvent) => Promise<void>;
+  basePath?: string;
   activeId: string | null;
   viewerId: string;
   dateConfig: DateContext;
@@ -50,7 +51,7 @@ export default function ChatList(props: {
         return (
           <>
             <AppWorkspace.SidebarItem
-              href={chatHref(row.id)}
+              href={`${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(row.id)}`}
               navigation="enhanced"
               onNavigate={(navigation) => props.onOpen(row.id, navigation)}
               // With its threads shown, the open thread's row carries the selection, not the chat's.
@@ -118,7 +119,7 @@ export default function ChatList(props: {
             <Show when={expanded() ? props.threads : undefined}>
               {(threads) => (
                 <div class="chat-list__threads">
-                  <ThreadRows {...threads()} chatId={row.id} unread={row.unread} />
+                  <ThreadRows {...threads()} chatId={row.id} basePath={props.basePath} unread={row.unread} />
                 </div>
               )}
             </Show>
@@ -140,7 +141,7 @@ export default function ChatList(props: {
       <AppWorkspace.SidebarSection title={t().channels}>
         {rows(true)}
         <AppWorkspace.SidebarItem
-          href="/app/chat/channels"
+          href={`${props.basePath ?? "/app/chat"}/channels`}
           navigation="enhanced"
           onNavigate={props.onDiscover}
           active={props.channelsActive}
