@@ -293,12 +293,16 @@ for (const reference of [conversation.shortId, conversation.id]) {
     { ...conversation, allowedTools: ["chart"] },
     { ...conversation, projectId: "project" },
   ]) {
-    for (const path of ["/runtime/check/start", "/tools/code_list"]) {
+    for (const path of ["/runtime/check/start", "/runtime/check/capability", "/tools/code_list"]) {
       test(`${path} denies ${reference}: ${denied === null ? "missing" : denied.archivedAt ? "archived" : denied.projectId ? "unreadable Project" : "tool excluded"}`, async () => {
         state.start.mockRestore();
         state.short.mockResolvedValue(denied);
         state.uuid.mockResolvedValue(denied);
-        const response = await request(path, { conversationId: reference, input: path.endsWith("start") ? { files } : {} });
+        const response = await request(path, {
+          conversationId: reference,
+          input: path.endsWith("start") ? { files } : {},
+          ...(path.endsWith("capability") ? { name: "demo.read" } : {}),
+        });
         expect(response.status).toBe(403);
         if (path.includes("/tools/"))
           expect(await response.json()).toEqual({ ok: false, error: { code: "ACCESS_DENIED", message: "Conversation access denied." } });

@@ -48,6 +48,7 @@ const relationTables: Record<string, RelationTable> = {
   displayInheritedFromFolderId: "folders",
   activeFolderIds: "folders",
   unreadFolderIds: "folders",
+  flaggedFolderIds: "folders",
   sentFolderId: "folders",
   draftsFolderId: "folders",
   conversationId: "conversations",

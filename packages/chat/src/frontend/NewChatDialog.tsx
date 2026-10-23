@@ -6,6 +6,7 @@ import { chatMessages } from "../messages";
 import type { ExistingMatchSchema } from "../service/contracts";
 import { type ChatDialogStore, DialogActions, DialogError, errorMessage, useChatMessages } from "./chat-dialog";
 import { listTime } from "./chat-format";
+import { createIntent } from "./create-intent";
 import MemberPicker, { type ChosenMember } from "./MemberPicker";
 
 type Match = z.infer<typeof ExistingMatchSchema>;
@@ -40,6 +41,14 @@ export function NewChatDialog(
   const [name, setName] = createSignal("");
   const [matches, setMatches] = createSignal<readonly Match[] | null>(null);
   const [busy, setBusy] = createSignal(false);
+  const intent = createIntent(`${props.viewerId}:new`, (saved) => {
+    setChosen(saved.chosen);
+    setName(saved.input.name ?? "");
+  });
+  const cancel = () => {
+    intent.clear();
+    props.close();
+  };
   props.setDismissHandler(() => {
     if (!busy()) props.close();
   });
@@ -51,14 +60,21 @@ export function NewChatDialog(
     setBusy(true);
     setError("");
     try {
-      const result = await props.store.create({
-        members: chosen().map((member) => member.principal),
-        ...(name().trim() ? { name: name().trim() } : {}),
-        ...(allowDuplicate ? { allowDuplicate } : {}),
-      });
+      const result = await props.store.create(
+        intent.begin(
+          {
+            members: chosen().map((member) => member.principal),
+            ...(name().trim() ? { name: name().trim() } : {}),
+            ...(allowDuplicate ? { allowDuplicate } : {}),
+          },
+          chosen(),
+        ),
+      );
+      intent.clear();
       if (result.outcome === "created") props.close(result.conversation.id);
       else setMatches(result.matches);
     } catch (failure) {
+      intent.failed(failure);
       setError(errorMessage(failure, t().requestFailed));
     } finally {
       setBusy(false);
@@ -83,7 +99,7 @@ export function NewChatDialog(
               chosen={chosen()}
               excluded={[{ type: "user", userId: props.viewerId }]}
               people={props.store.people}
-              disabled={busy()}
+              disabled={busy() || !!intent.pending()}
               onChange={setChosen}
             />
             <Show when={chosen().length === 0}>
@@ -95,7 +111,7 @@ export function NewChatDialog(
               maxLength={80}
               value={name}
               onValueChange={setName}
-              disabled={busy()}
+              disabled={busy() || !!intent.pending()}
             />
           </form>
         }
@@ -107,7 +123,13 @@ export function NewChatDialog(
               <For each={found()}>
                 {(match) => (
                   <li>
-                    <Button variant="ghost" align="start" class="chat-match" disabled={busy()} onClick={() => props.close(match.id)}>
+                    <Button
+                      variant="ghost"
+                      align="start"
+                      class="chat-match"
+                      disabled={busy() || !!intent.pending()}
+                      onClick={() => props.close(match.id)}
+                    >
                       <span class="min-w-0 flex-1 truncate">{match.title}</span>
                       <Show when={match.archived}>
                         <StatusBadge tone="neutral" variant="text" icon="ti ti-archive" label={t().archived} />
@@ -123,6 +145,11 @@ export function NewChatDialog(
           </div>
         )}
       </Show>
+      <Show when={intent.pending() && !busy()}>
+        <p class="text-sm text-dimmed" role="status">
+          {t().createRecovery}
+        </p>
+      </Show>
       <Show when={error()}>
         <DialogError message={error()} />
       </Show>
@@ -131,11 +158,11 @@ export function NewChatDialog(
           when={matches()}
           fallback={
             <>
-              <Button variant="secondary" disabled={busy()} onClick={() => props.close()}>
+              <Button variant="secondary" disabled={busy()} onClick={cancel}>
                 {t().cancel}
               </Button>
               <Button type="submit" form="chat-new" loading={busy()}>
-                {t().startChat}
+                {intent.pending() ? t().retry : t().startChat}
               </Button>
             </>
           }
@@ -144,19 +171,25 @@ export function NewChatDialog(
             <>
               <Button
                 variant="secondary"
-                disabled={busy()}
+                disabled={busy() || !!intent.pending()}
                 onClick={() => {
+                  if (intent.pending()) return;
                   setMatches(null);
                   setError("");
                 }}
               >
                 {t().back}
               </Button>
+              <Show when={intent.pending()}>
+                <Button variant="secondary" disabled={busy()} onClick={cancel}>
+                  {t().cancel}
+                </Button>
+              </Show>
               <Button variant="secondary" loading={busy()} onClick={() => void create(true)}>
-                {t().createAnyway}
+                {intent.pending() ? t().retry : t().createAnyway}
               </Button>
               {/* The most recently active match is the one the person most likely means. */}
-              <Button disabled={busy()} onClick={() => props.close(found()[0]?.id)}>
+              <Button disabled={busy() || !!intent.pending()} onClick={() => props.close(found()[0]?.id)}>
                 {t().openExisting}
               </Button>
             </>

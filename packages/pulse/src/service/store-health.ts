@@ -2,15 +2,22 @@ import { accounts, logger, notifications } from "@k2b/cloud/services";
 import { createPgOutbox } from "@k2b/cloud/services/outbox";
 import { sql } from "bun";
 import { app } from "../config";
-import { requireBaseAccess } from "./access-control";
-import { type BaseNotice, notificationLocale } from "./base-notifications";
+import { hasAnyBaseAdminAccess, requireBaseAccess } from "./access-control";
+import { type BaseNotice, enqueueBaseNotice, notificationLocale } from "./base-notifications";
 
 const log = logger("pulse:store-health");
 type Notice =
   | { kind: "storageThresholdReached"; data: { baseName: string; threshold: number } }
   | { kind: "storeDiskLow"; data: { freePercent: number } }
   | { kind: "storeUnavailable"; data: Record<string, never> };
-type NoticeRow = (Notice | BaseNotice) & { id: string; attempts: number; user_id: string; locale: string; base_id: string | null };
+type NoticeRow = (Notice | BaseNotice) & {
+  id: string;
+  attempts: number;
+  user_id: string;
+  locale: string;
+  base_id: string | null;
+  event_id: string | null;
+};
 export const notificationOutbox = createPgOutbox<NoticeRow>({
   table: "pulse.notification_outbox",
   name: "pulse:notifications",
@@ -19,12 +26,17 @@ export const notificationOutbox = createPgOutbox<NoticeRow>({
   where: { dispatch_kind: "delivery" },
   reconcileIntervalMs: 10_000,
   publish: async (row) => {
-    if (
-      (row.kind === "alert" || row.kind === "source_stale") &&
-      (!row.base_id || !(await requireBaseAccess(row.base_id, { id: row.user_id }, "admin")).ok)
-    )
-      return;
-    const options = { recipient: { userId: row.user_id }, idempotencyKey: row.id, locale: row.locale };
+    if (row.kind === "storeUnavailable") {
+      if (!(await hasAnyBaseAdminAccess(row.user_id)) && !(await accounts.users.get({ id: row.user_id }))?.roles.includes("admin")) return;
+    } else if (row.base_id) {
+      if (!(await requireBaseAccess(row.base_id, { id: row.user_id }, "admin")).ok) return;
+    } else if (row.kind === "alert" || row.kind === "source_stale" || row.kind === "storageThresholdReached") return;
+    else if (!(await accounts.users.get({ id: row.user_id }))?.roles.includes("admin")) return;
+    const options = {
+      recipient: { userId: row.user_id },
+      idempotencyKey: row.kind === "storeUnavailable" && row.event_id ? `${row.event_id}:${row.user_id}` : row.id,
+      locale: row.locale,
+    };
     switch (row.kind) {
       case "alert":
         await notifications.send(app.notifications.alert, { ...options, data: row.data });
@@ -56,11 +68,12 @@ const cloudAdmins = async (): Promise<string[]> => {
     if (!result.pagination.has_next) return ids;
   }
 };
-const enqueue = async (db: typeof sql, ids: string[], notice: Notice, locale: string) => {
+const enqueue = async (db: typeof sql, ids: string[], notice: Notice, locale: string, eventId: string | null = null) => {
   if (!ids.length) return;
   for (const id of ids)
-    await db`INSERT INTO pulse.notification_outbox(kind,user_id,data,locale)
-    VALUES(${notice.kind},${id}::uuid,(${JSON.stringify(notice.data)}::jsonb #>> '{}')::jsonb,${locale})`;
+    await db`INSERT INTO pulse.notification_outbox(kind,user_id,data,locale,event_id)
+    VALUES(${notice.kind},${id}::uuid,(${JSON.stringify(notice.data)}::jsonb #>> '{}')::jsonb,${locale},${eventId}::uuid)
+    ON CONFLICT(event_id,user_id) DO NOTHING`;
 };
 
 /** Called only after the failed store transaction has rolled back. The singleton row serializes replicas. */
@@ -74,7 +87,15 @@ export const recordStoreOutage = async (now: Date, database = sql, locale?: stri
     const opened = await tx`INSERT INTO pulse.store_instance(singleton,outage_started_at) VALUES(true,${now})
     ON CONFLICT(singleton) DO UPDATE SET outage_started_at=EXCLUDED.outage_started_at
     WHERE pulse.store_instance.outage_started_at IS NULL RETURNING singleton`;
-    if (opened.length) await enqueue(tx, admins, { kind: "storeUnavailable", data: {} }, language);
+    if (opened.length) {
+      const eventId = crypto.randomUUID();
+      await enqueue(tx, admins, { kind: "storeUnavailable", data: {} }, language, eventId);
+      // One durable fanout per configured base. Recipient expansion uses the
+      // existing 500-user cursor and rechecks current grants at delivery time.
+      await tx`INSERT INTO pulse.notification_outbox(id,event_id,kind,base_id,user_id,data,locale,dispatch_kind)
+        SELECT gen_random_uuid(),${eventId}::uuid,'storeUnavailable',id,NULL,'{}'::jsonb,${language},'fanout'
+        FROM pulse.bases WHERE deletion_started_at IS NULL`;
+    }
   });
 };
 
@@ -107,13 +128,9 @@ export const recordStorageThreshold = async (baseId: string, usage: number, now:
   const exceeded = usage >= Number(prior.storage_bytes);
   await db`UPDATE pulse.base_stores SET storage_exceeded_at=CASE WHEN ${exceeded} THEN coalesce(storage_exceeded_at,${now}) ELSE NULL END WHERE base_id=${baseId}::uuid`;
   if (exceeded && !prior.storage_exceeded_at) {
-    // Pulse has no group-expansion helper. Notify direct user administrators only.
-    const admins = await db<
-      { user_id: string }[]
-    >`SELECT DISTINCT a.user_id FROM pulse.base_access ba JOIN auth.access a ON a.id=ba.access_id WHERE ba.base_id=${baseId}::uuid AND a.permission='admin' AND a.user_id IS NOT NULL`;
-    await enqueue(
+    await enqueueBaseNotice(
       db,
-      admins.map((a) => a.user_id),
+      baseId,
       { kind: "storageThresholdReached", data: { baseName: prior.name, threshold: Number(prior.storage_bytes) } },
       locale,
     );

@@ -16,7 +16,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
     { href: "/admin/settings?tab=general", icon: "ti-app-window", label: t.general },
     { href: "/admin/outgoing-mail", icon: "ti-mail", label: t.outgoingMail },
     { href: "/admin/settings?tab=pdf-rendering", icon: "ti-file-type-pdf", label: t.pdfRendering },
-    { href: "/admin/settings?tab=places", icon: "ti-map-pin", label: t.placesAndAddresses },
+    { href: "/admin/places-and-maps", icon: "ti-map-2", label: t.placesAndMaps },
     { href: "/admin/settings?tab=email-templates", icon: "ti-template", label: t.emailTemplates },
     { href: "/admin/settings?tab=security", icon: "ti-shield-lock", label: t.security },
     { href: "/admin/settings?tab=legal", icon: "ti-file-text", label: t.legal },

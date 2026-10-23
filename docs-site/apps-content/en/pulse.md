@@ -523,6 +523,29 @@ once per outage; a successful disk measurement closes the outage. Delivery
 follows notification preferences. A failed or throttled scrape waits for its
 next scheduled attempt.
 
+### Maintenance admission and health delivery in this release
+
+Maintenance SQL shares one fleet-wide NATS lease, beside the three SQL reader
+slots. Every admitted maintenance query has a server execution deadline and
+an HTTP deadline within its 40-second lease. After an interrupted answer,
+Pulse observes cancellation before releasing the slot; if cancellation cannot
+be confirmed, the slot remains held until its lease expires. The next owner
+first cancels remaining queries from that maintenance lane and observes their
+termination before submitting SQL. ClickHouse also limits each maintenance
+submission to one concurrent query for the service user, fencing delayed
+requests from a stopped replica. Active ingest can defer maintenance; ingest
+retains its own settings. Admission waits at most five seconds; busy
+lifecycle and rollup work is rescheduled without spending its failure budget. Bounded ingest batches retain their separate admission path.
+The memory budget remains one 1 GB maintenance query, three reader profiles,
+and the documented reserve for ingestion and ClickHouse background work.
+
+Store-outage and base-storage notices now reach base administrators through
+direct, group, and general grants. Delivery expands recipients in 500-user
+pages and checks their current access again before sending. A store outage
+uses one event identity across bases and Cloud administrators, so a person
+with several grants receives one notification for that outage. Cloud disk
+notices continue to go to current Cloud administrators.
+
 ## Retention and complete metric hours
 
 Raw retention allows 1–730 days by default; Cloud administrators can raise the
