@@ -736,7 +736,14 @@ export type AiTurnSweepResult = {
 };
 
 export type AiConversationService = {
+  getDraftSubmission(input: {
+    conversationId: string;
+    ownerUserId: string;
+    revision: number;
+  }): Promise<{ messageId: string; turnId: string | null } | null>;
   createConversation(input: {
+    /** Stable identity for one logical creation; replay never creates a replacement. */
+    requestId?: string;
     ownerUserId: string;
     title?: string;
     description?: string;
