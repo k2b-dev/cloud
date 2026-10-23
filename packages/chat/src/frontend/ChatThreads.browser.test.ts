@@ -120,8 +120,29 @@ describe("Chat threads on a desktop", () => {
       await chip.waitFor();
       expect(await page.locator(".k2b-message-row__origin", { hasText: "General" }).count()).toBeGreaterThan(0);
       await page.getByRole("textbox", { name: "Message to General" }).fill("For everyone");
+      // The send names its thread from its first frame, so the chip adds no line when the server confirms it.
+      await page.evaluate(() => {
+        const seen: { chip: boolean; height: number }[] = [];
+        (window as unknown as { ownRow: typeof seen }).ownRow = seen;
+        new MutationObserver(() => {
+          const row = [...document.querySelectorAll(".k2b-message-row[data-own]")]
+            .filter((element) => element.querySelector(".k2b-message-row__text")?.textContent?.trim() === "For everyone")
+            .at(-1);
+          if (row) seen.push({ chip: row.querySelector(".k2b-message-row__origin") !== null, height: row.getBoundingClientRect().height });
+        }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+      });
       await page.keyboard.press("Enter");
       await until(() => harness.posted.some((post) => post.body === "For everyone"));
+      // The stored row may show beside the send for a moment (#1753); the last one is the send.
+      await page
+        .locator(".k2b-message-row[data-own]", { has: page.getByText("For everyone", { exact: true }) })
+        .last()
+        .locator(".k2b-message-row__origin", { hasText: "General" })
+        .waitFor();
+      const frames = await page.evaluate(() => (window as unknown as { ownRow: { chip: boolean; height: number }[] }).ownRow);
+      expect(frames.length).toBeGreaterThan(0);
+      expect(frames.every((frame) => frame.chip)).toBe(true);
+      expect(new Set(frames.map((frame) => frame.height)).size).toBe(1);
       expect(harness.posted.find((post) => post.body === "For everyone")).toEqual(
         expect.not.objectContaining({ thread: expect.anything() }),
       );
@@ -191,6 +212,52 @@ describe("Chat threads on a desktop", () => {
     }
   }, 30_000);
 
+  test("in a chat without threads, admins create the first one from the chat's info", async () => {
+    const chat = harness.addChat({
+      members: [viewer, nora, tobias],
+      name: "Lab",
+      count: 4,
+      end: new Date(chatTestNow.getTime() - 3_600_000),
+    });
+    const { page, errors } = await load(desktop, { chat });
+    try {
+      // Without threads, the chat looks as before: no thread rows and no picker.
+      await page.getByRole("feed").getByText("Yes, at 7. Two boxes are damaged.", { exact: true }).waitFor();
+      expect(await page.locator(".chat-thread-picker").count()).toBe(0);
+      expect(await threadRow(page, "general").count()).toBe(0);
+      await page.getByRole("link", { name: "Chat info", exact: true }).click();
+      await page.locator("#k2b-workspace-detail-chat-info").getByRole("button", { name: "Actions for Lab", exact: true }).click();
+      await page.getByRole("menuitem", { name: /^New thread/ }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByLabel("Name").fill("Samples");
+      await dialog.getByRole("button", { name: "Create", exact: true }).click();
+      await page.waitForURL(/\/t\/[^/?]+(\?panel=info)?$/);
+      await page.locator(".chat-thread-picker", { hasText: "Samples" }).waitFor();
+      await threadRow(page, "general").waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("switching from a chat without threads to one with threads keeps the conversation on screen", async () => {
+    const { chat } = seed();
+    const plain = harness.addChat({ members: [viewer, nora], count: 3, end: new Date(chatTestNow.getTime() - 7_200_000) });
+    for (const width of [1440, 2000]) {
+      const { page, errors } = await load({ viewport: { width, height: 900 } }, { chat: plain });
+      try {
+        await page.getByRole("feed").getByText("Yes, at 7. Two boxes are damaged.", { exact: true }).waitFor();
+        await sidebar(page).locator(`a[href="/app/chat/c/${chat}"]`).first().click();
+        await page.waitForURL(`**/c/${chat}`);
+        await page.getByRole("feed").getByText("Problems: update 1", { exact: true }).waitFor();
+        await page.getByRole("textbox", { name: "Message to General" }).waitFor();
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 45_000);
+
   test("rename and archive in the head; archived threads stay readable, Undo and Restore bring them back", async () => {
     const { chat, updates, old } = seed();
     const { page, errors } = await load(desktop, { chat, thread: updates });
@@ -211,6 +278,8 @@ describe("Chat threads on a desktop", () => {
       await toast.waitFor();
       expect(harness.thread(chat, updates)?.archived).toBe(true);
       await toast.getByRole("button", { name: "Undo", exact: true }).click();
+      // The action closes its message, which then covers nothing.
+      await toast.waitFor({ state: "detached" });
       await page.waitForURL(`**/t/${updates}`);
       await until(() => harness.thread(chat, updates)?.archived === false);
 
@@ -316,6 +385,24 @@ describe("Chat threads on a phone", () => {
       await page.locator(".chat-conversation__thread-name", { hasText: "Problems" }).waitFor();
       await page.getByRole("link", { name: "Back to the threads", exact: true }).click();
       await page.waitForURL(`**/c/${chat}/threads`);
+      await threads.getByText("Problems", { exact: true }).waitFor();
+      // Back from the thread page leads to the chats.
+      await page.getByRole("link", { name: "Back to chats", exact: true }).click();
+      await page.locator(".chat-list-page").waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a thread opened by its address returns to its chat's thread page, not to the chats", async () => {
+    const { chat, problems } = seed();
+    const { page, errors } = await load(phone, { chat, thread: problems });
+    try {
+      await page.getByRole("link", { name: "Back to the threads", exact: true }).click();
+      await page.waitForURL(`**/c/${chat}/threads`);
+      await page.locator(".chat-threads-page").getByText("Updates", { exact: true }).waitFor();
+      expect(await page.locator(".chat-list-page").isVisible()).toBe(false);
       expect(errors).toEqual([]);
     } finally {
       await page.context().close();

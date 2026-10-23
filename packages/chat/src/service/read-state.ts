@@ -41,7 +41,7 @@ export type ReadProjection = {
 /** Production and EXPLAIN use this same bounded, index-backed count and snapshot revision. */
 export const unreadQuery = (db: typeof sql, subject: AccessSubject, conversationIds: readonly string[]) => {
   const self = subjectPrincipal(subject);
-  return db`SELECT c.id AS conversation_id, c.short_id, c.rev, (SELECT count(*)::int FROM chat.threads t WHERE t.conversation_id = c.id AND t.archived_at IS NULL) AS threads, p.last_read_seq, p.unread_from_seq, p.joined_seq,
+  return db`SELECT c.id AS conversation_id, c.short_id, c.rev, (SELECT count(*)::int FROM chat.threads t WHERE t.conversation_id = c.id) AS threads, p.last_read_seq, p.unread_from_seq, p.joined_seq,
     CASE WHEN NOT EXISTS (SELECT 1 FROM chat.threads t WHERE t.conversation_id = c.id) THEN
       CASE WHEN p.conversation_id IS NOT NULL AND c.seq_head > ${readStartSql(db)} THEN
         (SELECT count(*)::int FROM (SELECT seq FROM chat.messages m
@@ -128,8 +128,10 @@ const parse = <T>(schema: z.ZodType<T>, input: unknown, context: ChatContext): R
 type Input = ChatContext & { conversationId: string };
 const advanceThreads = async (db: typeof sql, context: ChatContext, id: string, seq: number, thread: string) => {
   const self = subjectPrincipal(context.accessSubject);
-  return db<{ thread_id: string }[]>`INSERT INTO chat.thread_reads AS tr (principal_type, principal_id, thread_id, last_read_seq)
-    SELECT ${self.type}, ${self.id}::uuid, t.id, ${seq} FROM chat.threads t
+  return db<
+    { thread_id: string }[]
+  >`INSERT INTO chat.thread_reads AS tr (principal_type, principal_id, conversation_id, thread_id, last_read_seq)
+    SELECT ${self.type}, ${self.id}::uuid, t.conversation_id, t.id, ${seq} FROM chat.threads t
     WHERE t.conversation_id = ${id}::uuid AND ${thread === "all" ? db`true` : db`t.short_id = ${thread}`}
     ON CONFLICT (principal_type, principal_id, thread_id) DO UPDATE SET
       last_read_seq = GREATEST(COALESCE(tr.last_read_seq, EXCLUDED.last_read_seq), EXCLUDED.last_read_seq),
@@ -207,8 +209,8 @@ const markUnread = async (input: Input & { input: unknown }) => {
       const base = Math.max(Number(thread?.last_read_seq ?? 0), Number(row.joined_seq));
       const changed = from >= 1 && from <= base && from !== Number(thread?.unread_from_seq ?? 0);
       if (changed)
-        await db`INSERT INTO chat.thread_reads (principal_type, principal_id, thread_id, unread_from_seq)
-        VALUES (${self.type}, ${self.id}::uuid, ${message.thread_id}::uuid, ${from})
+        await db`INSERT INTO chat.thread_reads (principal_type, principal_id, conversation_id, thread_id, unread_from_seq)
+        VALUES (${self.type}, ${self.id}::uuid, ${allowed.data.id}::uuid, ${message.thread_id}::uuid, ${from})
         ON CONFLICT (principal_type, principal_id, thread_id) DO UPDATE SET unread_from_seq = EXCLUDED.unread_from_seq`;
       const data = await update(db, input, allowed.data.id, changed ? [message.thread_id] : []);
       if (created || changed) published = await publish(db, input, data);

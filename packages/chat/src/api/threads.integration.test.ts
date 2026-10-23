@@ -11,6 +11,7 @@ import {
   ConversationSchema,
   MAX_THREADS,
   MESSAGE_PAGE_SIZE,
+  MemberPageSchema,
   MessagePageSchema,
   MessageViewSchema,
   ReadAllOutcomeSchema,
@@ -191,7 +192,8 @@ suite("chat threads API", () => {
       archived: true,
       description: null,
     });
-    expect((await detail(owner, chat.shortId)).threads).toBe(1);
+    // Archived threads still count, so a chat whose last active thread is archived keeps its thread controls.
+    expect((await detail(owner, chat.shortId)).threads).toBe(2);
     expect((await list(owner, chat.shortId)).items.map((row) => row.id)).toEqual([b.id, a.id]);
     expect((await f.request(owner.headers, `/${chat.shortId}/threads`, "POST", { name: "RENAMED" })).status).toBe(409);
     const rejected = await f.request(owner.headers, `/${chat.shortId}/messages`, "POST", {
@@ -364,6 +366,28 @@ suite("chat threads API", () => {
     const onlyThread = await f.request(reader.headers, "/read-all", "POST", { confirmed: true });
     expect(ReadAllOutcomeSchema.parse(await onlyThread.json())).toMatchObject({ outcome: "done", marked: 1, more: false });
     expect((await list(reader, chat.shortId)).items.every((row) => row.unread === 0)).toBeTrue();
+  });
+
+  test("a thread's read state ends with the membership: after removal and a new invitation nothing old is unread", async () => {
+    const owner = await f.person(),
+      member = await f.person();
+    const chat = await f.fixture(owner, [{ person: member, permission: "write" }]);
+    const a = await create(owner, chat.shortId, "A");
+    const first = await send(owner, chat.shortId, { thread: a.id });
+    await send(owner, chat.shortId, { thread: a.id });
+    expect((await f.request(member.headers, `/${chat.shortId}/unread`, "POST", { message: first.id })).status).toBe(200);
+    const stored = async () =>
+      (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM chat.thread_reads WHERE principal_id = ${member.id}::uuid`)[0]!
+        .count;
+    expect(await stored()).toBe(1);
+    const members = MemberPageSchema.parse(await (await f.request(owner.headers, `/${chat.shortId}/members`)).json()).items;
+    const access = members.find((entry) => entry.principal.type === "user" && entry.principal.userId === member.id)!.accessId;
+    expect((await f.request(owner.headers, `/${chat.shortId}/members/${access}`, "DELETE")).status).toBe(200);
+    expect(await stored()).toBe(0);
+    const invited = await f.request(owner.headers, `/${chat.shortId}/members`, "POST", { members: [{ type: "user", userId: member.id }] });
+    expect(invited.status).toBe(200);
+    expect((await list(member, chat.shortId)).items.map((row) => row.unread)).toEqual([0]);
+    expect((await detail(member, chat.shortId)).unread).toBe(0);
   });
 
   test("without General text mark unread falls back to the latest incoming thread message; no participant means no unread", async () => {
