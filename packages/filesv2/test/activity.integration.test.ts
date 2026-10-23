@@ -6,6 +6,7 @@ import { accountIdentities } from "@k2b/cloud/services";
 import { Filegate, FilegateError, type WriteOptions } from "@k2b/filegate";
 import { sql } from "bun";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
+import { migrate as migrateAudit } from "../../core/src/migrate/core/audit";
 import { filesCapabilities } from "../src/capabilities";
 import type { Configuration } from "../src/contracts";
 import { bindings } from "../src/data/bases";
@@ -107,6 +108,7 @@ suite("Files activity with real storage", () => {
     await sql`CREATE TABLE IF NOT EXISTS auth.users(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),uid text,provider text,profile text,admin boolean,account_expires timestamptz)`.simple();
     await sql`CREATE TABLE IF NOT EXISTS auth.access(id uuid PRIMARY KEY DEFAULT gen_random_uuid())`.simple();
     await migrate();
+    await migrateAudit();
     await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS display_name text, ADD COLUMN IF NOT EXISTS avatar_hash text`.simple();
     if (testActor.kind !== "user") throw new Error("expected user fixture");
     actor = { ...testActor, user: { ...testActor.user, id: Bun.randomUUIDv7(), uid: "alice" } };

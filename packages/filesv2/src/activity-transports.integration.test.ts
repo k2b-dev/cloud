@@ -75,7 +75,7 @@ suiteFor("database")("history projection through API, CLI and Assistant", () => 
     const f = fixture();
     const page = await apiPage();
     expect(page.items).toHaveLength(1);
-    expect(page.items[0]?.before).toEqual({ visibility: "disappearance", name: "old", path: `${home}/old`, directory: true, publicBaseId });
+    expect(page.items[0]?.before).toEqual({ visibility: "disappearance", name: "old", path: `${home}/old`, relativePath: "old", directory: true, publicBaseId });
     expect(page.items[0]?.after.visibility).toBe("full");
     expect(JSON.stringify(page)).not.toContain("must-not-escape");
     const capability = await filesCapabilities.queries["activity.list"].run({}, context);

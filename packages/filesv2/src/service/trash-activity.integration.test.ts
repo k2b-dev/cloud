@@ -709,15 +709,19 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
     const file = await fixture(`transfer-pending-${phase}.txt`);
     const journal = await pendingTrash(file);
     if (phase === "restoring") {
-      await trash.finish(journal.id, "trashed", await root().stat(file.target));
-      await trash.restoring(journal.id, file.path, await root().stat(file.target), config.url, {
+      await root().mkdir(`${home}/trash`);
+      await root().transfer(file.target, "cloud", `${home}/${journal.trashed}`, { move: true, onConflict: "error" });
+      const trashed = await root().stat(`${home}/${journal.trashed}`);
+      await trash.finish(journal.id, "trashed", trashed);
+      await trash.restoring(journal.id, file.path, trashed, config.url, {
         call: callFor("restore"),
         basePath: home,
       });
     }
     await sql`UPDATE filesv2.trash SET error_code='transfer_pending' WHERE id=${journal.id}::uuid`;
     const before = await rows();
-    await purge(service, file);
+    const path = phase === "restoring" ? journal.trashed : file.path;
+    await service.adminDelete(callFor("purge"), { area: "cloud", kind: "users", name: "alice", path, confirmPath: `${home}/${path}` });
     expect(await trash.get(journal.id, bindingId)).toMatchObject({ state: phase, error_code: "transfer_pending" });
     for (const entry of before) expect(await history(entry.id)).toEqual(entry);
   });
@@ -773,7 +777,7 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
       }
       const before = await onlyRow();
       await purge(service, file);
-      expect(await sql`SELECT state FROM filesv2.trash WHERE id=${journal.id}::uuid`).toMatchObject([{ state: "pending" }]);
+      expect((await sql`SELECT state FROM filesv2.trash WHERE id=${journal.id}::uuid`)[0]).toMatchObject({ state: "pending" });
       expect(await history(before.id)).toEqual(before);
       if (otherId) {
         await sql`UPDATE filesv2.trash SET base_id=${bindingId}::uuid WHERE id=${journal.id}::uuid`;
@@ -1000,11 +1004,13 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
     await recover(tracked.transport);
     const entry = await onlyRow();
     expect(entry).toMatchObject({ state: "unclear", finished_at: null });
-    await expect(tracked.service.retry(testCall(administrator), entry.operation_id!)).rejects.toMatchObject({
-      code: "operation_unresolved",
-    });
+    // A durable successful deletion receipt survives the audit transaction
+    // rollback; retry completes the journal without repeating the deletion.
+    expect(await tracked.service.retry(testCall(administrator), entry.operation_id!)).toMatchObject({ state: "complete" });
     expect(tracked.deletes()).toBe(1);
-    expect(await operations.get(entry.operation_id!)).toMatchObject({ state: "pending" });
+    expect(await operations.get(entry.operation_id!)).toMatchObject({ state: "complete", receipt: { deleted: true } });
+    expect(await history(entry.id)).toMatchObject({ state: "done" });
+    expect(await sql`SELECT id FROM audit.events WHERE action='filesv2.delete'`).toHaveLength(1);
   });
 
   test("a lost purge response remains unclear; retry never repeats delete or deletes a replacement", async () => {
