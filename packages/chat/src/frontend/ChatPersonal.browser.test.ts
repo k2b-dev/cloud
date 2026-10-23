@@ -41,12 +41,18 @@ const start = async (phone: boolean, locale: string, path = "/app/chat") => {
     },
     { locale },
   );
-  await page.goto(new URL(path, harness.url).href);
-  await page
-    .getByRole("button", { name: chatMessages.resolve([locale]).t.newChat, exact: true })
-    .filter({ visible: true })
-    .waitFor();
-  return { page, context, errors };
+  try {
+    await page.goto(new URL(path, harness.url).href);
+    await page
+      .getByRole("button", { name: chatMessages.resolve([locale]).t.newChat, exact: true })
+      .filter({ visible: true })
+      .waitFor();
+    return { page, context, errors };
+  } catch (error) {
+    console.error("Chat startup failed", { url: page.url(), errors });
+    await context.close();
+    throw error;
+  }
 };
 const visible = (page: Page) => page.locator(".chat-list-page:visible, .k2b-app-workspace__sidebar-desktop:visible");
 const actions = async (page: Page, title: string, locale: string) => {
@@ -85,6 +91,34 @@ for (const phone of [false, true]) {
         await visible(page).getByRole("button", { name: t.allChats, exact: true }).click();
         await visible(page).getByText("Design room", { exact: true }).waitFor();
         expect(await order(page)).toEqual(["Design room", "Delivery room"]);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 30_000);
+
+    test("panel archive preserves its route through reload, chat and full-view navigation", async () => {
+      const chat = add("Archived panel chat", 2);
+      harness.archive(chat, true);
+      const { page, context, errors } = await start(phone, locale, "/app/chat/panel/archive?filter=unread");
+      try {
+        const row = visible(page).getByRole("link", { name: /Archived panel chat/ });
+        await row.waitFor();
+        expect(await row.getAttribute("href")).toBe(`/app/chat/panel/c/${chat}?filter=unread&list=archive`);
+        await page.reload();
+        await row.waitFor();
+        await settled(page);
+        await row.click();
+        await page.waitForURL(`**/app/chat/panel/c/${chat}?filter=unread&list=archive`);
+        const header = page.locator(".chat-conversation__header");
+        await header.getByRole("link", { name: t.openFullView, exact: true }).waitFor();
+        expect(await header.getByRole("link", { name: t.openFullView, exact: true }).getAttribute("href")).toBe(
+          `/app/chat/c/${chat}?filter=unread&list=archive`,
+        );
+        if (phone) {
+          await header.getByRole("link", { name: t.backToChats, exact: true }).click();
+          await page.waitForURL("**/app/chat/panel/archive?filter=unread");
+        }
         expect(errors).toEqual([]);
       } finally {
         await context.close();

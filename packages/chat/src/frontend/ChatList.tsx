@@ -10,8 +10,6 @@ import { lastMessageLine, listTime } from "./chat-format";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 
-export const chatHref = (id: string, message?: string | null) => `/app/chat/c/${id}${message ? `/m/${message}` : ""}`;
-
 /** What a row shows of its unread state: the count, a dot for a chat marked unread without new messages, or nothing. */
 const unreadMark = (row: Conversation): number | true | undefined =>
   row.unread > 0 ? row.unread : row.read?.unreadFromSeq != null ? true : undefined;

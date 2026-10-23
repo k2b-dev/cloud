@@ -454,16 +454,17 @@ export const startChatHarness = async (options: { autoMount?: boolean } = {}) =>
         return bun.upgrade(request, { data: undefined }) ? undefined : new Response("upgrade failed", { status: 400 });
       if (url.pathname === "/__props") {
         const target = new URL(url.searchParams.get("path") ?? "/app/chat", "https://chat.test");
-        const match = /^\/app\/chat\/c\/([^/]+)(?:\/m\/([^/]+))?/.exec(target.pathname);
-        return Response.json(
-          viewProps({
+        const match = /^\/app\/chat(?:\/panel)?\/c\/([^/]+)(?:\/m\/([^/]+))?/.exec(target.pathname);
+        return Response.json({
+          ...viewProps({
             chat: match?.[1],
             message: match?.[2],
             panel: target.searchParams.get("panel") ?? undefined,
-            archived: target.pathname === "/app/chat/archive" || target.searchParams.get("list") === "archive",
+            archived: target.pathname.endsWith("/archive") || target.searchParams.get("list") === "archive",
             filter: target.searchParams.get("filter") === "unread" ? "unread" : "all",
           }),
-        );
+          embedded: target.pathname === "/app/chat/panel" || target.pathname.startsWith("/app/chat/panel/"),
+        });
       }
       if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });

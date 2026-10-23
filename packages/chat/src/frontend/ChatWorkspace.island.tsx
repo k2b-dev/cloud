@@ -1,3 +1,4 @@
+import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
 import { type LinkNavigateEvent, listenPopState, navigate, refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
@@ -6,11 +7,13 @@ import {
   announce,
   Button,
   Dropdown,
+  dialogCore,
   FilterToggle,
   IconButton,
   IconButtonLink,
   InlineGuidance,
   type MessageRowStatus,
+  NoticeCard,
   Placeholder,
   prompts,
   ScrollArea,
@@ -36,23 +39,26 @@ import { openAddPeopleDialog } from "./AddPeopleDialog";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
-import ChatList, { chatHref } from "./ChatList";
+import ChatList from "./ChatList";
+import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
-import { panelHref, parseRoute, type Route } from "./route";
+import { panelHref as conversationHref, parseRoute, type Route } from "./route";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Store = ReturnType<typeof createChatStore>;
 type Sends = ReturnType<typeof createChatSends>;
 
 export type ChatWorkspaceProps = {
-  /** The live cursor the server read before every part of this snapshot. */
+  /** The same workspace served without the Cloud shell in its provider route. */
+  embedded?: boolean;
   archived?: boolean;
   filter?: "all" | "unread";
   collapsed?: z.infer<typeof SidebarPreferencesSchema>["collapsed"];
+  /** The live cursor the server read before every part of this snapshot. */
   cursor: string;
   sidebar: z.infer<typeof ConversationPageSchema>;
   open: { conversation: Conversation; page: z.infer<typeof MessagePageSchema>; focus: string | null } | null;
@@ -87,6 +93,8 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>): OpenChat =>
  * Below 64 rem the list and a chat are separate pages.
  */
 export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
+  const basePath = props.embedded ? "/app/chat/panel" : "/app/chat";
+  const panelHref = (id: string, info: "info" | null, message?: string | null) => conversationHref(id, info, message, basePath);
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const [route, setRoute] = createSignal<Route>({ chatId: props.chatId, messageId: props.open?.focus ?? null, panel: props.panel });
@@ -110,7 +118,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const retainedUnread = new Set<string>();
   let listIntent = 0;
   let pendingListIntent: number | null = null;
-  const listHref = (path = archived() ? "/app/chat/archive" : "/app/chat") => {
+  const listHref = (path = archived() ? `${basePath}/archive` : basePath) => {
     const url = new URL(path, "https://chat.invalid");
     if (filter() === "unread") url.searchParams.set("filter", "unread");
     if (archived() && url.pathname.includes("/c/")) url.searchParams.set("list", "archive");
@@ -125,12 +133,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // The latest open whose snapshot is still loading; an older one that a newer navigation superseded no longer counts.
   let openToken = 0;
   let pendingOpen = 0;
+  let pendingSends = 0;
   // The outbox changes its entries in place; this counts its changes so the history reads them again.
   const [sendsVersion, setSendsVersion] = createSignal(0);
   // The list keeps its order while messages arrive elsewhere; it sorts again on the reader's own actions.
   const [order, setOrder] = createSignal<readonly string[]>(props.sidebar.items.map((row) => row.id));
   const [now, setNow] = createSignal(new Date(props.now));
   const drafts = new Map<string, string>();
+  const savedTexts = new Map<string, string>();
+  const [draftConflicts, setDraftConflicts] = createSignal<Record<string, string>>({});
   const [draft, setDraft] = createSignal("");
   const draftError = createMemo(() => {
     const body = draft();
@@ -139,6 +150,120 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       ? t().messageInvalidCharacters
       : t().messageTooLong({ limit: MESSAGE_MAX_CODE_POINTS.toLocaleString(locale()) });
   });
+  const [draftStorageFailed, setDraftStorageFailed] = createSignal(false);
+  const [composerReady, setComposerReady] = createSignal(!props.embedded);
+  const unsavedDrafts = new Set<string>();
+  let savedDrafts: ReturnType<typeof chatDrafts> | undefined;
+  const readDraft = (id: string) => {
+    if (drafts.has(id)) return drafts.get(id)!;
+    try {
+      if (!savedDrafts) throw new Error("Draft storage unavailable");
+      const text = savedDrafts.read(id);
+      drafts.set(id, text);
+      savedTexts.set(id, text);
+      return text;
+    } catch {
+      setDraftStorageFailed(true);
+      return "";
+    }
+  };
+  const changeDraft = (text: string) => {
+    const id = route().chatId;
+    setDraft(text);
+    if (!id) return;
+    drafts.set(id, text);
+    unsavedDrafts.add(id);
+    try {
+      if (!savedDrafts) throw new Error("Draft storage unavailable");
+      savedDrafts.write(id, text, savedTexts.get(id) ?? "");
+      savedTexts.set(id, text);
+      unsavedDrafts.delete(id);
+    } catch (error) {
+      if (error instanceof ChatDraftConflict) setDraftConflicts((all) => ({ ...all, [id]: error.saved }));
+      else setDraftStorageFailed(true);
+    }
+  };
+  const retryDraftStorage = () => {
+    try {
+      savedDrafts = chatDrafts(props.viewerId, window.sessionStorage);
+      for (const id of unsavedDrafts) {
+        try {
+          const text = drafts.get(id)!;
+          savedDrafts.write(id, text, savedTexts.get(id) ?? "");
+          savedTexts.set(id, text);
+          unsavedDrafts.delete(id);
+        } catch (error) {
+          if (error instanceof ChatDraftConflict) setDraftConflicts((all) => ({ ...all, [id]: error.saved }));
+          else throw error;
+        }
+      }
+      const id = route().chatId;
+      if (id && !drafts.has(id)) {
+        const text = savedDrafts.read(id);
+        drafts.set(id, text);
+        savedTexts.set(id, text);
+      }
+      if (id) setDraft(drafts.get(id) ?? "");
+      if (props.embedded) savedDrafts.select(id);
+      setDraftStorageFailed(false);
+    } catch {
+      setDraftStorageFailed(true);
+    }
+  };
+  const resolveDraftConflict = (id: string, useSaved: boolean) => {
+    if (!savedDrafts) return;
+    try {
+      const expected = draftConflicts()[id];
+      if (expected === undefined) return;
+      const saved = savedDrafts.read(id);
+      // A newer edit requires a fresh choice; never overwrite text absent from the displayed comparison.
+      if (saved !== expected) {
+        setDraftConflicts((all) => ({ ...all, [id]: saved }));
+        return;
+      }
+      if (useSaved) {
+        drafts.set(id, saved);
+        savedTexts.set(id, saved);
+        unsavedDrafts.delete(id);
+        if (route().chatId === id) setDraft(saved);
+      } else {
+        const local = drafts.get(id) ?? "";
+        savedDrafts.write(id, local, expected);
+        savedTexts.set(id, local);
+        unsavedDrafts.delete(id);
+      }
+      setDraftConflicts((all) => {
+        const next = { ...all };
+        delete next[id];
+        return next;
+      });
+    } catch (error) {
+      if (error instanceof ChatDraftConflict) setDraftConflicts((all) => ({ ...all, [id]: error.saved }));
+      else setDraftStorageFailed(true);
+    }
+  };
+  const draftNotice = () => (
+    <>
+      <Show when={draftStorageFailed()}>
+        <NoticeCard tone="danger" title={t().draftNotSaved} detail={t().draftNotSavedDescription}>
+          <Button variant="ghost" onClick={retryDraftStorage}>
+            {t().retry}
+          </Button>
+        </NoticeCard>
+      </Show>
+      <Show when={route().chatId && draftConflicts()[route().chatId!] !== undefined}>
+        <NoticeCard tone="warning" title={t().draftChangedElsewhere} detail={t().draftChangedElsewhereDescription}>
+          <pre class="max-h-32 overflow-auto whitespace-pre-wrap">{draftConflicts()[route().chatId!]}</pre>
+          <Button variant="secondary" onClick={() => resolveDraftConflict(route().chatId!, true)}>
+            {t().useSavedDraft}
+          </Button>
+          <Button variant="ghost" onClick={() => resolveDraftConflict(route().chatId!, false)}>
+            {t().keepLocalDraft}
+          </Button>
+        </NoticeCard>
+      </Show>
+    </>
+  );
   // A stored message keeps the key of the send it came from, so its row is not replaced when it arrives.
   const sendKeys = new Map<string, string>();
   let store: Store | undefined;
@@ -170,7 +295,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const noAccess = () => route().chatId !== null && openChat() === null;
   const breadcrumbs = (title?: string) => [
     { title: t().start, href: "/" },
-    title ? { title: t().appName, href: listHref(archived() ? "/app/chat/archive" : "/app/chat") } : { title: t().appName },
+    title ? { title: t().appName, href: listHref(archived() ? `${basePath}/archive` : basePath) } : { title: t().appName },
     ...(title ? [{ title }] : []),
   ];
   // The trail names the chat in the address. It follows live renames and lost access, and keeps its last title while
@@ -363,7 +488,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const applyListUrl = (url: URL, refresh = false) =>
     loadList(async () => {
       const token = ++listIntent;
-      const nextArchived = url.pathname === "/app/chat/archive" || url.searchParams.get("list") === "archive";
+      const nextArchived = url.pathname === `${basePath}/archive` || url.searchParams.get("list") === "archive";
       const nextFilter = url.searchParams.get("filter") === "unread" ? "unread" : "all";
       // A newer intent must also undo a pending request whose target has not reached the signals yet.
       const changed = nextArchived !== archived() || nextFilter !== filter();
@@ -388,14 +513,18 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     });
   const changeList = async (next: "all" | "unread" | "archive") => {
     if (!store || listLoading() || listPending()) return;
+    if (next === "archive" && pendingSends > 0) {
+      toast(t().sendPreparing);
+      return;
+    }
     if ((!archived() && filter() === next) || (next === "archive" && archived() && filter() === "all" && !route().chatId)) return;
     setListError(null);
     const path =
       next === "archive"
-        ? "/app/chat/archive"
+        ? `${basePath}/archive`
         : next === "unread" && archived()
-          ? `/app/chat/archive${filter() === "unread" ? "" : "?filter=unread"}`
-          : `/app/chat${next === "unread" ? "?filter=unread" : ""}`;
+          ? `${basePath}/archive${filter() === "unread" ? "" : "?filter=unread"}`
+          : `${basePath}${next === "unread" ? "?filter=unread" : ""}`;
     const url = new URL(path, location.href);
     try {
       const token = await applyListUrl(url);
@@ -405,7 +534,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         next !== "archive" && current.chatId
           ? listHref(panelHref(current.chatId, current.panel, current.messageId))
           : url.pathname + url.search;
-      if (next === "archive") await open({ chatId: null, messageId: null, panel: null });
+      if (next === "archive" && (await open({ chatId: null, messageId: null, panel: null })) !== "applied") return;
       if (token === listIntent) navigate(target, { scroll: "preserve" });
     } catch {
       setListError(t().listFailed);
@@ -494,17 +623,27 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
   };
   const applyRoute = (next: Route) => {
-    const previous = route().chatId;
-    if (previous) drafts.set(previous, draft());
     setRoute(next);
     setPanel(next.panel);
-    setDraft(next.chatId ? (drafts.get(next.chatId) ?? "") : "");
+    setDraft(next.chatId ? readDraft(next.chatId) : "");
     setNow(new Date());
     sortRows();
+    if (props.embedded) {
+      try {
+        if (!savedDrafts) throw new Error("Draft storage unavailable");
+        savedDrafts.select(next.chatId);
+      } catch {
+        setDraftStorageFailed(true);
+      }
+    }
   };
   /** Loads the chat's snapshot before the address changes; only an applied open may change it. */
-  const open = async (next: Route): Promise<"applied" | "superseded" | "failed"> => {
+  const open = async (next: Route): Promise<"applied" | "superseded" | "failed" | "blocked"> => {
     if (!store) return "failed";
+    if (pendingSends > 0 && next.chatId !== route().chatId) {
+      toast(t().sendPreparing);
+      return "blocked";
+    }
     if (pendingOpen === 0 && route().chatId === next.chatId && route().messageId === next.messageId && route().panel !== next.panel) {
       setRoute(next);
       setPanel(openChat() ? next.panel : null);
@@ -562,7 +701,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const depth = listDepth();
     if (depth > 0) history.go(-depth);
     else if ((await open({ chatId: null, messageId: null, panel: null })) === "applied")
-      navigation.push(listHref(archived() ? "/app/chat/archive" : "/app/chat"), { scroll: "preserve" });
+      navigation.push(listHref(archived() ? `${basePath}/archive` : basePath), { scroll: "preserve" });
   };
 
   const openInfo = (navigation?: LinkNavigateEvent) => {
@@ -584,12 +723,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     if (pendingOpen !== 0) return;
     const id = route().chatId;
     if (!id || panel() === null) return;
+    const messageId = route().messageId;
+    // Reflect the close action immediately; history traversal may deliver popstate later.
+    setPanel(null);
     if (infoFromChat()) {
       history.back();
       return;
     }
-    const messageId = route().messageId;
-    setPanel(null);
     setRoute({ chatId: id, messageId, panel: null });
     if (navigation) navigation.push(listHref(panelHref(id, null, messageId)), { scroll: "preserve" });
     else navigate(listHref(panelHref(id, null, messageId)), { scroll: "preserve" });
@@ -601,7 +741,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const fromList = route().chatId === null;
     if ((await open({ chatId: id, messageId: null, panel: null })) !== "applied") return;
     const chosen = store?.openConversation?.conversation;
-    const listPath = chosen?.archived ? "/app/chat/archive" : "/app/chat";
+    const listPath = chosen?.archived ? `${basePath}/archive` : basePath;
     const target = new URL(panelHref(id, null), location.href);
     if (chosen?.archived) target.searchParams.set("list", "archive");
     // The chat has opened successfully. A failed list refresh must not leave the address naming the previous chat.
@@ -652,14 +792,55 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   const send = async (text: string): Promise<boolean> => {
     const current = openChat();
-    if (!current || !outbox || !MessageBodySchema.safeParse(text).success) return false;
-    if (current.hasNewer) await store?.loadLatest();
-    outbox.send(current.id, text);
-    feed?.scrollToEnd();
-    return true;
+    if (
+      !current ||
+      !outbox ||
+      !MessageBodySchema.safeParse(text).success ||
+      draftStorageFailed() ||
+      draftConflicts()[current.id] !== undefined ||
+      pendingOpen !== 0
+    )
+      return false;
+    // The composer has cleared its draft, but the outbox does not own it until history is ready.
+    pendingSends++;
+    try {
+      if (current.hasNewer) await store?.loadLatest();
+      outbox.send(current.id, text);
+      feed?.scrollToEnd();
+      return true;
+    } finally {
+      pendingSends--;
+    }
   };
 
   onMount(() => {
+    try {
+      savedDrafts = chatDrafts(props.viewerId, window.sessionStorage);
+    } catch {
+      setDraftStorageFailed(true);
+    }
+    if (route().chatId) setDraft(readDraft(route().chatId!));
+    const storageChanged = (event: StorageEvent) => {
+      if (!savedDrafts) return;
+      try {
+        if (event.storageArea !== window.sessionStorage) return;
+        for (const id of drafts.keys()) {
+          if (event.key !== null && event.key !== savedDrafts.key(id)) continue;
+          const text = savedDrafts.read(id);
+          if (unsavedDrafts.has(id)) {
+            if (text !== savedTexts.get(id)) setDraftConflicts((all) => ({ ...all, [id]: text }));
+            continue;
+          }
+          drafts.set(id, text);
+          savedTexts.set(id, text);
+          if (route().chatId === id) setDraft(text);
+        }
+      } catch {
+        setDraftStorageFailed(true);
+      }
+    };
+    window.addEventListener("storage", storageChanged);
+    onCleanup(() => window.removeEventListener("storage", storageChanged));
     phone = window.matchMedia("(max-width: 47.999rem)");
     const live = createChatStore({
       viewerId: props.viewerId,
@@ -703,8 +884,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
     const box = createChatSends({ post: createChatSendsApi() });
     outbox = box;
+    onCleanup(onPanelBeforeLeave(() => !box.unsent() && unsavedDrafts.size === 0 && !dialogCore.isOpen() && pendingSends === 0));
+    setComposerReady(true);
     const leave = (event: BeforeUnloadEvent) => {
-      if (box.unsent()) {
+      if (box.unsent() || unsavedDrafts.size > 0 || pendingSends > 0) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -734,6 +917,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           .then((token) => (token === null ? "superseded" : open(next)))
           .then((result) => {
             if (result === "failed") refreshCurrentPath();
+            if (result === "blocked") {
+              const current = route();
+              navigate(listHref(current.chatId ? panelHref(current.chatId, current.panel, current.messageId) : undefined), {
+                replace: true,
+                scroll: "preserve",
+              });
+            }
           })
           .catch(() => refreshCurrentPath());
       }),
@@ -741,12 +931,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     // The way up from a chat goes back to the list in place; a list opened before the chat is the previous entry.
     onCleanup(
       layout.handleUp((href) => {
-        if (!["/app/chat", "/app/chat/archive"].includes(new URL(href, location.href).pathname) || !route().chatId) return false;
+        if (![basePath, `${basePath}/archive`].includes(new URL(href, location.href).pathname) || !route().chatId) return false;
         const depth = listDepth();
         if (depth > 0) history.go(-depth);
         else
           void open({ chatId: null, messageId: null, panel: null }).then(
-            (result) => result === "applied" && navigate(listHref(archived() ? "/app/chat/archive" : "/app/chat")),
+            (result) => result === "applied" && navigate(listHref(archived() ? `${basePath}/archive` : basePath)),
           );
         return true;
       }),
@@ -764,6 +954,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       box.dispose();
       live.dispose();
     });
+    if (props.embedded) {
+      try {
+        const selected = props.chatId ?? savedDrafts?.selection();
+        if (props.chatId) savedDrafts?.select(props.chatId);
+        else if (selected) {
+          void open({ chatId: selected, messageId: null, panel: null }).then((result) => {
+            if (result === "applied") navigate(panelHref(selected, null), { replace: true, scroll: "manual" });
+          });
+        }
+      } catch {
+        setDraftStorageFailed(true);
+      }
+    }
   });
 
   const pinnedRows = () =>
@@ -778,7 +981,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const list = (entries: () => readonly Conversation[], pinned = false): JSX.Element => (
     <ChatList
       rows={entries()}
-      href={(id) => listHref(chatHref(id))}
+      href={(id) => listHref(panelHref(id, null))}
       activeId={openChat()?.id ?? null}
       viewerId={props.viewerId}
       dateConfig={props.dateConfig}
@@ -803,7 +1006,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
 
   const archiveLink = () => (
     <AppWorkspace.SidebarItem
-      href="/app/chat/archive"
+      href={`${basePath}/archive`}
       navigation="enhanced"
       active={archived()}
       icon="ti ti-archive"
@@ -902,151 +1105,183 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     </>
   );
   return (
-    <AppWorkspace mobileSurface="flush" class="chat-workspace h-full">
-      <AppWorkspace.Sidebar label={t().chats}>
-        <AppWorkspace.SidebarDesktop>
-          <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">{listContent(false)}</AppWorkspace.SidebarBody>
-          <AppWorkspace.SidebarFooter>{archiveLink()}</AppWorkspace.SidebarFooter>
-        </AppWorkspace.SidebarDesktop>
-      </AppWorkspace.Sidebar>
-      <AppWorkspace.Content>
-        <AppWorkspace.Main scroll={false} aria-busy={busy()}>
-          <Switch>
-            <Match when={openChat()?.id}>
-              {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
-              <Show when={openChat()?.id} keyed>
-                <Show when={conversation()}>
-                  {(current) => (
-                    <ChatConversation
-                      actions={
-                        <>
-                          <Show when={current().permission === "admin"}>
-                            <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
-                              <i class="ti ti-user-plus" aria-hidden="true" />
-                            </IconButton>
-                          </Show>
-                          <IconButtonLink
-                            label={t().chatInfo}
-                            href={listHref(panelHref(current().id, panel() === "info" ? null : "info", route().messageId))}
-                            navigation="enhanced"
-                            onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
-                            aria-expanded={panel() === "info"}
-                            aria-controls="k2b-workspace-detail-chat-info"
-                          >
-                            <i class="ti ti-info-circle" aria-hidden="true" />
-                          </IconButtonLink>
-                        </>
-                      }
-                      chatId={current().id}
-                      title={current().title}
-                      backHref={listHref(archived() ? "/app/chat/archive" : "/app/chat")}
-                      memberCount={current().memberCount}
-                      items={items()}
-                      hasOlder={openChat()?.hasOlder ?? false}
-                      hasNewer={openChat()?.hasNewer ?? false}
-                      onLoadOlder={() => store?.loadOlder() ?? Promise.resolve(false)}
-                      onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
-                      onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
-                      focusKey={focusKey()}
-                      canWrite={current().permission !== "read"}
-                      hint={
-                        current().permission === "read"
-                          ? t().readOnly
-                          : draftError()
-                            ? draftError()
-                            : liveStopped()
-                              ? t().liveStopped
-                              : waiting()
-                                ? t().messagesWaiting
-                                : undefined
-                      }
-                      draft={draft()}
-                      onDraftChange={setDraft}
-                      onSend={send}
-                      onBack={backToList}
-                      busy={busy()}
-                      dateConfig={props.dateConfig}
-                      now={now}
-                      controller={(controller) => {
-                        feed = controller;
-                      }}
-                      markerKey={marker()}
-                      onVisibleChange={reportVisible}
-                      onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
-                      // With the info open, Esc closes it first; the workspace owns that.
-                      onEscape={() => panel() === null && markOpenRead()}
-                    />
-                  )}
+    <>
+      <Show when={!openChat()}>{draftNotice()}</Show>
+      <Show when={props.embedded && !openChat()}>
+        <div class="flex shrink-0 justify-end p-1">
+          <IconButtonLink
+            href={listHref(
+              route().chatId ? conversationHref(route().chatId!, null, route().messageId) : archived() ? "/app/chat/archive" : "/app/chat",
+            )}
+            target={composerReady() ? undefined : "_top"}
+            label={t().openFullView}
+          >
+            <i class="ti ti-arrows-maximize" aria-hidden="true" />
+          </IconButtonLink>
+        </div>
+      </Show>
+      <AppWorkspace mobileSurface="flush" class={`chat-workspace ${props.embedded ? "flex-1 min-h-0" : "h-full"}`}>
+        <AppWorkspace.Sidebar label={t().chats}>
+          <AppWorkspace.SidebarDesktop>
+            <AppWorkspace.SidebarBody scrollPreserveKey="chat-sidebar">{listContent(false)}</AppWorkspace.SidebarBody>
+            <AppWorkspace.SidebarFooter>{archiveLink()}</AppWorkspace.SidebarFooter>
+          </AppWorkspace.SidebarDesktop>
+        </AppWorkspace.Sidebar>
+        <AppWorkspace.Content>
+          <AppWorkspace.Main scroll={false} aria-busy={busy()}>
+            <Switch>
+              <Match when={openChat()?.id}>
+                {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
+                <Show when={openChat()?.id} keyed>
+                  <Show when={conversation()}>
+                    {(current) => (
+                      <ChatConversation
+                        actions={
+                          <>
+                            <Show when={props.embedded}>
+                              <IconButtonLink
+                                href={listHref(conversationHref(current().id, null, route().messageId))}
+                                target={composerReady() ? undefined : "_top"}
+                                label={t().openFullView}
+                              >
+                                <i class="ti ti-arrows-maximize" aria-hidden="true" />
+                              </IconButtonLink>
+                            </Show>
+                            <Show when={current().permission === "admin"}>
+                              <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
+                                <i class="ti ti-user-plus" aria-hidden="true" />
+                              </IconButton>
+                            </Show>
+                            <IconButtonLink
+                              label={t().chatInfo}
+                              href={listHref(panelHref(current().id, panel() === "info" ? null : "info", route().messageId))}
+                              navigation="enhanced"
+                              onNavigate={(navigation) => (panel() === "info" ? closeInfo(navigation) : openInfo(navigation))}
+                              aria-expanded={panel() === "info"}
+                              aria-controls="k2b-workspace-detail-chat-info"
+                            >
+                              <i class="ti ti-info-circle" aria-hidden="true" />
+                            </IconButtonLink>
+                          </>
+                        }
+                        chatId={current().id}
+                        title={current().title}
+                        listHref={listHref(archived() ? `${basePath}/archive` : basePath)}
+                        memberCount={current().memberCount}
+                        items={items()}
+                        hasOlder={openChat()?.hasOlder ?? false}
+                        hasNewer={openChat()?.hasNewer ?? false}
+                        onLoadOlder={() => store?.loadOlder() ?? Promise.resolve(false)}
+                        onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
+                        onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
+                        focusKey={focusKey()}
+                        canWrite={
+                          composerReady() &&
+                          !busy() &&
+                          current().permission !== "read" &&
+                          !draftStorageFailed() &&
+                          draftConflicts()[current().id] === undefined
+                        }
+                        notice={draftNotice()}
+                        hint={
+                          current().permission === "read"
+                            ? t().readOnly
+                            : draftError()
+                              ? draftError()
+                              : liveStopped()
+                                ? t().liveStopped
+                                : waiting()
+                                  ? t().messagesWaiting
+                                  : undefined
+                        }
+                        draft={draft()}
+                        onDraftChange={changeDraft}
+                        onSend={send}
+                        onBack={backToList}
+                        busy={busy()}
+                        dateConfig={props.dateConfig}
+                        now={now}
+                        controller={(controller) => {
+                          feed = controller;
+                        }}
+                        markerKey={marker()}
+                        onVisibleChange={reportVisible}
+                        onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
+                        // With the info open, Esc closes it first; the workspace owns that.
+                        onEscape={() => panel() === null && markOpenRead()}
+                      />
+                    )}
+                  </Show>
                 </Show>
+              </Match>
+              <Match when={noAccess()}>
+                <Placeholder
+                  variant="panel"
+                  class="flex-1"
+                  icon="ti ti-lock"
+                  title={t().noAccessTitle}
+                  description={t().noAccessDescription}
+                />
+              </Match>
+              <Match when={rows().length === 0 && !archived() && filter() === "all"}>
+                <nav class="chat-list-page" aria-label={t().chats}>
+                  {listContent()}
+                </nav>
+                <div class="chat-select">
+                  <Placeholder
+                    variant="panel"
+                    class="flex-1"
+                    icon="ti ti-messages"
+                    title={t().noChatsTitle}
+                    description={t().noChatsDescription}
+                    action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
+                  />
+                </div>
+              </Match>
+              <Match when={true}>
+                <nav class="chat-list-page" aria-label={t().chats}>
+                  {listContent()}
+                </nav>
+                <div class="chat-select">
+                  <Placeholder
+                    variant="panel"
+                    class="flex-1"
+                    icon="ti ti-messages"
+                    title={t().selectChatTitle}
+                    description={t().selectChatDescription}
+                  />
+                </div>
+              </Match>
+            </Switch>
+          </AppWorkspace.Main>
+          <AppWorkspace.Detail
+            id="chat-info"
+            phone="page"
+            width="md"
+            open={panel() === "info" && conversation() !== null}
+            onClose={() => closeInfo()}
+          >
+            {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
+            <Show when={openChat()?.id} keyed>
+              <Show when={conversation()}>
+                {(current) => (
+                  <ChatInfoPanel
+                    conversation={current()}
+                    viewerId={props.viewerId}
+                    active={panel() === "info"}
+                    revision={(openChat()?.membershipRev ?? 0) + localBumps()}
+                    store={liveStore()}
+                    onClose={() => closeInfo()}
+                    onAddPeople={() => void addPeople()}
+                    onEditDetails={editDetails}
+                    onLeave={() => void leaveChat()}
+                  />
+                )}
               </Show>
-            </Match>
-            <Match when={noAccess()}>
-              <Placeholder
-                variant="panel"
-                class="flex-1"
-                icon="ti ti-lock"
-                title={t().noAccessTitle}
-                description={t().noAccessDescription}
-              />
-            </Match>
-            <Match when={rows().length === 0 && !archived() && filter() === "all"}>
-              <nav class="chat-list-page" aria-label={t().chats}>
-                {listContent()}
-              </nav>
-              <div class="chat-select">
-                <Placeholder
-                  variant="panel"
-                  class="flex-1"
-                  icon="ti ti-messages"
-                  title={t().noChatsTitle}
-                  description={t().noChatsDescription}
-                  action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
-                />
-              </div>
-            </Match>
-            <Match when={true}>
-              <nav class="chat-list-page" aria-label={t().chats}>
-                {listContent()}
-              </nav>
-              <div class="chat-select">
-                <Placeholder
-                  variant="panel"
-                  class="flex-1"
-                  icon="ti ti-messages"
-                  title={t().selectChatTitle}
-                  description={t().selectChatDescription}
-                />
-              </div>
-            </Match>
-          </Switch>
-        </AppWorkspace.Main>
-        <AppWorkspace.Detail
-          id="chat-info"
-          phone="page"
-          width="md"
-          open={panel() === "info" && conversation() !== null}
-          onClose={() => closeInfo()}
-        >
-          {/* One panel per chat, like its history: search and loaded members never carry over to the next chat. */}
-          <Show when={openChat()?.id} keyed>
-            <Show when={conversation()}>
-              {(current) => (
-                <ChatInfoPanel
-                  conversation={current()}
-                  viewerId={props.viewerId}
-                  active={panel() === "info"}
-                  revision={(openChat()?.membershipRev ?? 0) + localBumps()}
-                  store={liveStore()}
-                  onClose={() => closeInfo()}
-                  onAddPeople={() => void addPeople()}
-                  onEditDetails={editDetails}
-                  onLeave={() => void leaveChat()}
-                />
-              )}
             </Show>
-          </Show>
-        </AppWorkspace.Detail>
-      </AppWorkspace.Content>
-    </AppWorkspace>
+          </AppWorkspace.Detail>
+        </AppWorkspace.Content>
+      </AppWorkspace>
+    </>
   );
 }

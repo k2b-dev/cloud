@@ -30,3 +30,18 @@ test("panel links preserve a message deep link and round-trip through route pars
       panel,
     });
 });
+
+test("provider navigation stays below the panel route, including list, info and message history", () => {
+  for (const panel of ["info", null] as const) {
+    const href = panelHref("Chat01", panel, "Message001", "/app/chat/panel");
+    expect(href).toStartWith("/app/chat/panel/c/Chat01/m/Message001");
+    expect(parseRoute(new URL(href, "https://cloud.test"))).toEqual({ chatId: "Chat01", messageId: "Message001", panel });
+  }
+  expect(parseRoute(new URL("https://cloud.test/app/chat/panel"))).toEqual({ chatId: null, messageId: null, panel: null });
+  expect(parseRoute(new URL("https://cloud.test/app/chat/panel-other"))).toBeNull();
+});
+
+test("personal archive routes remain inside either full view or provider", () => {
+  for (const base of ["/app/chat", "/app/chat/panel"])
+    expect(parseRoute(new URL(`https://cloud.test${base}/archive?filter=unread`))).toEqual({ chatId: null, messageId: null, panel: null });
+});
