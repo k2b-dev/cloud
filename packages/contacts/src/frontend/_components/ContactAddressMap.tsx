@@ -33,7 +33,7 @@ export const addressText = (address: Pick<ContactAddress, "line1" | "postalCode"
  * One lookup per address id for the whole page: the detail panel remounts its address rows whenever it reselects
  * the contact, and parallel requests could each reach the paid geocoder before the first answer is stored.
  */
-const lookups = new Map<string, Promise<AddressMapView>>();
+const lookups = new Map<string, { addressKey: string; result: Promise<AddressMapView> }>();
 const requestLocation = async (bookId: string, contactId: string, addressId: string): Promise<AddressMapView> => {
   try {
     const response = await apiClient.books[":bookId"].contacts[":contactId"].addresses[":addressId"].locate.$post({
@@ -77,14 +77,16 @@ export default function ContactAddressMap(props: Props) {
   const locate = async (retry = false) => {
     setView({ kind: "locating" });
     if (retry) lookups.delete(props.address.id);
+    const { line1, postalCode, city, stateRegion, countryCode } = props.address;
+    const addressKey = JSON.stringify([props.bookId, props.contactId, line1, postalCode, city, stateRegion, countryCode]);
     let lookup = lookups.get(props.address.id);
-    if (!lookup) {
-      lookup = requestLocation(props.bookId, props.contactId, props.address.id);
+    if (!lookup || lookup.addressKey !== addressKey) {
+      lookup = { addressKey, result: requestLocation(props.bookId, props.contactId, props.address.id) };
       lookups.set(props.address.id, lookup);
     }
-    const next = await lookup;
+    const next = await lookup.result;
     // A failure may be retried; a stored answer comes back from the server without a new lookup.
-    if (next.kind === "failed") lookups.delete(props.address.id);
+    if (next.kind === "failed" && lookups.get(props.address.id) === lookup) lookups.delete(props.address.id);
     setView(next);
   };
 

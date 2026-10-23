@@ -1,7 +1,7 @@
 import type { GeoAvailabilityData } from "@k2b/cloud/contracts/geo";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { announce, Button, InlineGuidance, TextInput, useLocale } from "@k2b/ui";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact } from "../../service";
 import { resolveContactName } from "../../shared";
@@ -29,6 +29,23 @@ export default function ContactAddressEditor(props: Props) {
   const index = contact.addresses.findIndex((address) => address.id === props.addressId);
   const draft = contactToUpsertDraft(contact, contactRowLabels(t()));
   const [row, setRow] = createSignal(draft.addresses[index]!);
+  // The stored contract remains a two-letter code; people can edit its localized name or code.
+  const countries = createMemo(() => {
+    const names = new Intl.DisplayNames([locale()], { type: "region", fallback: "none" });
+    const entries: { code: string; label: string }[] = [];
+    for (let first = 65; first <= 90; first++)
+      for (let second = 65; second <= 90; second++) {
+        const code = String.fromCharCode(first, second);
+        const label = names.of(code);
+        if (label) entries.push({ code, label });
+      }
+    return entries;
+  });
+  const [countryDraft, setCountryDraft] = createSignal<{ code: string; text: string }>();
+  const countryText = () =>
+    countryDraft()?.code === row().countryCode
+      ? countryDraft()!.text
+      : (countries().find((country) => country.code === row().countryCode.toUpperCase())?.label ?? row().countryCode);
   const [conflict, setConflict] = createSignal(false);
   let disposed = false;
   let heading: HTMLHeadingElement | undefined;
@@ -135,8 +152,13 @@ export default function ContactAddressEditor(props: Props) {
           label={t().focusedCountry}
           required
           placeholder={t().countryCodePlaceholder}
-          value={() => row().countryCode}
-          onValueChange={(value) => edit("countryCode", value)}
+          value={countryText}
+          onValueChange={(text) => {
+            const normalized = text.trim().toLocaleLowerCase(locale());
+            const code = countries().find((country) => country.label.toLocaleLowerCase(locale()) === normalized)?.code ?? text;
+            setCountryDraft({ code, text });
+            edit("countryCode", code);
+          }}
         />
       </fieldset>
       <div class="flex flex-wrap items-center gap-2">

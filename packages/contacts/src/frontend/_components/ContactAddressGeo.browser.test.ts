@@ -34,12 +34,14 @@ beforeEach(() => {
   });
 });
 
-const open = async (name: string, scenario: Scenario, width = 1440, query = ""): Promise<Page> => {
+const open = async (name: string, scenario: Scenario, width = 1440, query = "", theme: "light" | "dark" = "light"): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, timezoneId: "Europe/Berlin", reducedMotion: "reduce" });
-  await page.goto(`${harness.url(name, scenario)}${query}`);
-  await page.waitForFunction(() => "clientHeight" in window);
-  // Bring the navigated page forward: remote WebKit otherwise throttles frames used by actions and transitions.
+  const url = harness.url(name, scenario);
+  await page.context().addCookies([{ name: "theme", value: theme, url: new URL(url).origin }]);
   await page.bringToFront();
+  await page.goto(`${url}${query}`);
+  await page.waitForFunction(() => "clientHeight" in window);
+  // Activate before navigation so WebKit does not throttle fixture readiness or actions.
   return page;
 };
 const mapBox = (page: Page) => page.locator(".k2b-map-view").first().boundingBox();
@@ -75,9 +77,9 @@ test("a pending address keeps its reserved map place from the server render unti
   }
 });
 
-test("a failed lookup offers a retry in place; budget and missing setup ask nothing", async () => {
+test("a failed lookup offers a retry in place", async () => {
   harness.state.locate = "error";
-  let page = await open("failed", { view: "detail", contact: jana(null), availability: availability.configured });
+  const page = await open("failed", { view: "detail", contact: jana(null), availability: availability.configured });
   try {
     await page.getByText("Karte nicht geladen").waitFor();
     const before = await mapBox(page);
@@ -89,8 +91,10 @@ test("a failed lookup offers a retry in place; budget and missing setup ask noth
   } finally {
     await page.close();
   }
+});
 
-  page = await open("budget", { view: "detail", contact: jana(null), availability: availability.person });
+test("budget exhaustion keeps the reserved map without a lookup", async () => {
+  const page = await open("budget", { view: "detail", contact: jana(null), availability: availability.person });
   try {
     await page.getByText("Karte heute nicht verfügbar, ab 0:00 Uhr wieder").waitFor();
     expect((await mapBox(page))?.height).toBe(160);
@@ -98,14 +102,18 @@ test("a failed lookup offers a retry in place; budget and missing setup ask noth
     await page.close();
   }
 
-  page = await open("off", { view: "detail", contact: jana(null), availability: availability.off });
+  expect(harness.state.locateRequests).toBe(0);
+});
+
+test("missing setup offers address navigation without a lookup", async () => {
+  const page = await open("off", { view: "detail", contact: jana(null), availability: availability.off });
   try {
     expect(await page.locator(".k2b-map-view").count()).toBe(0);
     expect(await page.getByRole("link", { name: /Route planen/ }).getAttribute("href")).toContain("openstreetmap.org/search?query=");
   } finally {
     await page.close();
   }
-  expect(harness.state.locateRequests).toBe(2);
+  expect(harness.state.locateRequests).toBe(0);
 });
 
 test("the street field suggests after a pause, picks with the keyboard and marks later edits", async () => {
@@ -187,8 +195,10 @@ test.each(["cloud", "off"] as const)("address suggestions with %s availability s
   }
 });
 
-test("the focused address editor saves a picked point with its fields and only the addresses", async () => {
-  const page = await open("address", {
+// Submission/focus and persisted reload are separate boundaries. Both cases pick
+// and save through the real editor; the reload case keeps that full transition.
+test.each(["submission", "reload"] as const)("the focused address editor preserves a picked point through %s", async (boundary) => {
+  const page = await open(`address-${boundary}`, {
     view: "workspace",
     contact: jana(null),
     initialAddressId: jana().addresses[0]!.id,
@@ -200,8 +210,10 @@ test("the focused address editor saves a picked point with its fields and only t
   };
   try {
     await page.getByRole("form", { name: "Adresse bearbeiten" }).waitFor();
-    expect(await page.getByRole("dialog").count()).toBe(0);
-    expect(new URL(page.url()).searchParams.get("address")).toBe(jana().addresses[0]!.id);
+    if (boundary === "submission") {
+      expect(await page.getByRole("dialog").count()).toBe(0);
+      expect(new URL(page.url()).searchParams.get("address")).toBe(jana().addresses[0]!.id);
+    }
     const street = page.getByRole("combobox", { name: /Straße und Hausnummer/ });
     await street.fill("Frauenstr 28");
     await page.getByRole("option").nth(5).waitFor();
@@ -213,6 +225,14 @@ test("the focused address editor saves a picked point with its fields and only t
     await page.getByRole("button", { name: "Speichern" }).click();
     await (await saved).response();
     expect(harness.state.saves).toHaveLength(1);
+    await page.getByRole("heading", { name: "Jana Berger", exact: true }).waitFor();
+    if (boundary === "reload") {
+      await page.reload();
+      await page.getByText("Ulm-Wiblingen", { exact: false }).first().waitFor();
+      expect(await routeLatitude()).toBeCloseTo(48.40841, 5);
+      expect(harness.state.locateRequests).toBe(lookupsBeforeSave);
+      return;
+    }
     const body = harness.state.saves[0] as {
       expectedUpdatedAt: string;
       addresses: { line1: string; postalCode: string; city: string; location?: { point: { lat: number } } }[];
@@ -223,15 +243,10 @@ test("the focused address editor saves a picked point with its fields and only t
     expect(body.addresses).toHaveLength(1);
     expect(body.addresses[0]).toMatchObject({ line1: "Frauenstraße 28", postalCode: "89079", city: "Ulm-Wiblingen" });
     expect(body.addresses[0]!.location?.point.lat).toBeCloseTo(48.40841, 5);
-    await page.getByRole("heading", { name: "Jana Berger", exact: true }).waitFor();
     expect(new URL(page.url()).searchParams.has("address")).toBe(false);
     expect(new URL(page.url()).searchParams.get("contact")).toBe("jana");
     await page.getByText("Ulm-Wiblingen", { exact: false }).first().waitFor();
     await expectFocus(page.locator(`[data-contact-address-edit="${jana().addresses[0]!.id}"]`));
-    expect(await routeLatitude()).toBeCloseTo(48.40841, 5);
-    expect(harness.state.locateRequests).toBe(lookupsBeforeSave);
-    await page.reload();
-    await page.getByText("Ulm-Wiblingen", { exact: false }).first().waitFor();
     expect(await routeLatitude()).toBeCloseTo(48.40841, 5);
     expect(harness.state.locateRequests).toBe(lookupsBeforeSave);
   } finally {
@@ -246,31 +261,30 @@ const editAddress = async (page: Page) => {
 };
 const addressForm = (page: Page) => page.getByRole("form", { name: "Adresse bearbeiten" });
 
-test("saving a manually changed address looks up its new location and reload keeps that point", async () => {
-  const page = await open("workspace-manual-location", {
+test.each([false, true])("a manually changed address gets its new location (reload=%s)", async (reload) => {
+  const page = await open(`workspace-manual-location-${reload}`, {
     view: "workspace",
     contact: jana(found),
     initialAddressId: jana().addresses[0]!.id,
     availability: availability.configured,
   });
   try {
-    await addressForm(page).waitFor();
     const street = page.getByRole("combobox", { name: /Straße und Hausnummer/ });
     await street.fill("Frauenstraße 30");
     await street.press("Escape");
     harness.state.locate = { state: "located", location: { ...found, point: { lat: 49, lon: 10 } } };
-    harness.state.holdLocate = true;
+    harness.state.holdLocate = !reload;
+    const located = page.waitForResponse((response) => response.url().endsWith("/locate"));
     await page.getByRole("button", { name: "Speichern", exact: true }).click();
-    await page.locator('span[role="status"]', { hasText: "Karte lädt …" }).waitFor();
-    expect((await mapBox(page))?.height).toBe(160);
-    harness.releaseLocate();
-    const route = page.getByRole("link", { name: /Route planen/ });
-    await page.waitForFunction(() => document.querySelector('a[href*="49%2C10"]') !== null);
-    expect(await route.getAttribute("href")).toContain("49%2C10");
-    expect(harness.state.locateRequests).toBe(1);
-    await page.reload();
+    if (!reload) {
+      await page.locator('span[role="status"]', { hasText: "Karte lädt …" }).waitFor();
+      expect((await mapBox(page))?.height).toBe(160);
+      harness.releaseLocate();
+    }
+    expect((await located).ok()).toBe(true);
+    if (reload) await page.reload();
     await page.locator(".k2b-map-view__pin").waitFor();
-    expect(await route.getAttribute("href")).toContain("49%2C10");
+    expect(await page.getByRole("link", { name: /Route planen/ }).getAttribute("href")).toContain("49%2C10");
     expect(harness.state.locateRequests).toBe(1);
   } finally {
     harness.releaseLocate();
@@ -278,7 +292,7 @@ test("saving a manually changed address looks up its new location and reload kee
   }
 });
 
-test("workspace address URL renders the same fields on SSR and reload while retaining the list", async () => {
+test("opening the workspace address editor retains the existing list", async () => {
   const page = await open("workspace-navigation", { view: "workspace", contact: jana(found), availability: availability.configured });
   try {
     await page.evaluate(() => {
@@ -288,7 +302,21 @@ test("workspace address URL renders the same fields on SSR and reload while reta
     expect(await page.getByRole("dialog").count()).toBe(0);
     expect(await page.locator('[data-retained-row="yes"]').count()).toBe(1);
     expect(await page.locator('[data-contact-row][aria-current="true"]').count()).toBe(1);
+  } finally {
+    await page.close();
+  }
+});
+
+test("workspace address deep link renders the same fields on SSR and reload", async () => {
+  const page = await open("workspace-editor-reload", {
+    view: "workspace",
+    contact: jana(found),
+    initialAddressId: jana().addresses[0]!.id,
+    availability: availability.configured,
+  });
+  try {
     await page.reload();
+    await page.waitForFunction(() => "clientEditor" in window);
     await addressForm(page).waitFor();
     expect(await page.evaluate(() => Reflect.get(window, "serverEditor"))).toEqual(
       await page.evaluate(() => Reflect.get(window, "clientEditor")),
@@ -299,7 +327,7 @@ test("workspace address URL renders the same fields on SSR and reload while reta
   }
 });
 
-test("workspace back/forward and cancel retain contact, book and list filters", async () => {
+test("workspace back/forward retain the editor and restore contact focus", async () => {
   const page = await open(
     "workspace-history",
     { view: "workspace", contact: jana(found), availability: availability.configured },
@@ -314,6 +342,25 @@ test("workspace back/forward and cancel retain contact, book and list filters", 
     await expectFocus(page.locator(`[data-contact-address-edit="${jana().addresses[0]!.id}"]`));
     await page.goForward();
     await addressForm(page).waitFor();
+    expect(new URL(page.url()).searchParams.get("address")).toBe(jana().addresses[0]!.id);
+  } finally {
+    await page.close();
+  }
+});
+
+test("cancelling the address editor retains contact, book and list filters", async () => {
+  const page = await open(
+    "workspace-cancel",
+    {
+      view: "workspace",
+      contact: jana(found),
+      initialAddressId: jana().addresses[0]!.id,
+      availability: availability.configured,
+    },
+    1440,
+    "&search=Berger&tag_id=work&page=2",
+  );
+  try {
     await page.getByRole("button", { name: "Abbrechen", exact: true }).focus();
     await page.keyboard.press("Enter");
     await page.getByRole("heading", { name: "Jana Berger", exact: true }).waitFor();
@@ -373,8 +420,9 @@ test.each([500, 409] as const)("address ID after reorder preserves edits and rec
     await page.locator(`[data-contact-address-edit="${target.id}"]`).click();
     expect(await page.getByRole("textbox", { name: /Straße und Hausnummer/ }).inputValue()).toBe("Aktuelle Straße 7");
     harness.state.saveStatus = 200;
+    const saved = page.waitForResponse((response) => response.request().method() === "PATCH");
     await page.getByRole("button", { name: "Speichern", exact: true }).click();
-    await page.getByRole("heading", { name: "Jana Berger", exact: true }).waitFor();
+    expect((await saved).ok()).toBe(true);
     expect(harness.state.saves.at(-1)).toMatchObject({ expectedUpdatedAt: "2026-10-22T10:02:00.000Z" });
   } finally {
     await page.close();
@@ -434,64 +482,70 @@ test("changing contact cancels an outstanding address save without reopening the
   }
 });
 
-test.each([1440, 768, 390])("focused editor keeps the workspace placement and form dimensions at %s px", async (width) => {
-  const page = await open(
-    `workspace-size-${width}`,
-    { view: "workspace", contact: jana(found), availability: availability.configured },
-    width,
-  );
-  try {
-    if (width === 768) await page.locator("a[data-contact-row]").click();
-    await editAddress(page);
-    const form = addressForm(page);
-    expect(await page.getByRole("button", { name: "Zurück zum Kontakt", exact: true }).isVisible()).toBe(width < 768);
-    const geometry = await form.evaluate((element) => {
-      const style = getComputedStyle(element);
-      const inputs = [...element.querySelectorAll("input")].map((input) => input.getBoundingClientRect().toJSON());
-      const controls = [...element.querySelectorAll(".k2b-input-shell, .k2b-combobox__input")].map((control) => {
-        const box = control.getBoundingClientRect();
-        return { height: box.height, left: box.x };
+test.each([1440, 768, 390].flatMap((width) => (["light", "dark"] as const).map((theme) => ({ width, theme }))))(
+  "focused editor keeps workspace placement and form dimensions at $width px in $theme",
+  async ({ width, theme }) => {
+    const page = await open(
+      `workspace-size-${width}-${theme}`,
+      { view: "workspace", contact: jana(found), initialAddressId: jana().addresses[0]!.id, availability: availability.configured },
+      width,
+      "",
+      theme,
+    );
+    try {
+      const form = addressForm(page);
+      await form.waitFor();
+      expect(await page.getByRole("button", { name: "Zurück zum Kontakt", exact: true }).isVisible()).toBe(width < 768);
+      const geometry = await form.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const inputs = [...element.querySelectorAll("input")].map((input) => input.getBoundingClientRect().toJSON());
+        const controls = [...element.querySelectorAll(".k2b-input-shell, .k2b-combobox__input")].map((control) => {
+          const box = control.getBoundingClientRect();
+          return { height: box.height, left: box.x };
+        });
+        return {
+          width: element.getBoundingClientRect().width,
+          left: style.paddingLeft,
+          top: style.paddingTop,
+          gap: style.gap,
+          inputs,
+          controls,
+        };
       });
-      return {
-        width: element.getBoundingClientRect().width,
-        left: style.paddingLeft,
-        top: style.paddingTop,
-        gap: style.gap,
-        inputs,
-        controls,
-      };
-    });
-    expect(geometry.top).toBe("18px");
-    expect(geometry.gap).toBe("22px");
-    expect(geometry.controls.map((control) => control.height)).toEqual([38, 38, 38, 38, 38]);
-    expect(geometry.left).toBe(width < 768 ? "16px" : "28px");
-    if (width === 1440) expect(geometry.width).toBe(760);
-    if (width >= 768) {
-      const row = page.locator("a[data-contact-row]");
-      expect(await row.isVisible()).toBe(true);
-      expect(await row.locator(".contacts-list__contact-points").isVisible()).toBe(false);
-      const nameFits = await row
-        .getByText("Jana Berger", { exact: true })
-        .evaluate((element) => element.scrollWidth <= element.clientWidth);
-      expect(nameFits).toBe(true);
-      const listBox = await row.boundingBox();
-      const formBox = await form.boundingBox();
-      expect(listBox!.x + listBox!.width).toBeLessThanOrEqual(formBox!.x);
+      expect(geometry.top).toBe("18px");
+      expect(geometry.gap).toBe("22px");
+      expect(geometry.controls.map((control) => control.height)).toEqual([38, 38, 38, 38, 38]);
+      expect(geometry.left).toBe(width < 768 ? "16px" : "28px");
+      if (width === 1440) expect(geometry.width).toBe(760);
+      if (width >= 768) {
+        const row = page.locator("a[data-contact-row]");
+        expect(await row.isVisible()).toBe(true);
+        expect(await row.locator(".contacts-list__contact-points").isVisible()).toBe(false);
+        const nameFits = await row
+          .getByText("Jana Berger", { exact: true })
+          .evaluate((element) => element.scrollWidth <= element.clientWidth);
+        expect(nameFits).toBe(true);
+        const listBox = await row.boundingBox();
+        const formBox = await form.boundingBox();
+        const workspaceBox = await page.locator(".k2b-app-workspace").boundingBox();
+        expect(Math.abs(formBox!.x - workspaceBox!.x - 330)).toBeLessThanOrEqual(1);
+        expect(listBox!.x + listBox!.width).toBeLessThanOrEqual(formBox!.x);
+      }
+      if (width < 768) {
+        expect(geometry.width).toBe(width);
+        expect(geometry.controls[0]!.left).toBe(16);
+        const panel = await page.locator("#k2b-workspace-detail-contacts-detail-panel").boundingBox();
+        expect(panel?.y).toBe(0);
+        expect(panel?.height).toBe(900);
+        expect(geometry.inputs[2]!.y).toBeLessThan(geometry.inputs[3]!.y);
+        expect(geometry.inputs[3]!.y).toBeLessThan(geometry.inputs[4]!.y);
+      }
+      expect(await page.locator("[data-contact-row]").count()).toBe(1);
+    } finally {
+      await page.close();
     }
-    if (width < 768) {
-      expect(geometry.width).toBe(width);
-      expect(geometry.controls[0]!.left).toBe(16);
-      const panel = await page.locator("#k2b-workspace-detail-contacts-detail-panel").boundingBox();
-      expect(panel?.y).toBe(0);
-      expect(panel?.height).toBe(900);
-      expect(geometry.inputs[2]!.y).toBeLessThan(geometry.inputs[3]!.y);
-      expect(geometry.inputs[3]!.y).toBeLessThan(geometry.inputs[4]!.y);
-    }
-    expect(await page.locator("[data-contact-row]").count()).toBe(1);
-  } finally {
-    await page.close();
-  }
-});
+  },
+);
 
 test.each([1440, 768, 390])("reloading and closing an address editor restores the contact and focus at %s px", async (width) => {
   const page = await open(
@@ -619,6 +673,192 @@ test("URL reconciliation reads the current contact instead of reusing its stale 
     await page.getByText("Aktuelle Adresse 9", { exact: true }).waitFor();
     await editAddress(page);
     expect(await page.getByRole("textbox", { name: /Straße und Hausnummer/ }).inputValue()).toBe("Aktuelle Adresse 9");
+  } finally {
+    await page.close();
+  }
+});
+
+test.each([false, true])("focused desktop editing keeps book navigation keyboard accessible (collapsed=%s)", async (collapsed) => {
+  const addressId = jana().addresses[0]!.id;
+  const page = await open("workspace-book-menu", {
+    view: "workspace",
+    contact: jana(found),
+    initialAddressId: addressId,
+    availability: availability.off,
+  });
+  try {
+    // Exercise the shared controller's restored collapsed-state attribute in the focused overlay.
+    if (collapsed) await page.locator(".k2b-app-workspace").evaluate((root) => root.setAttribute("data-sidebar-collapsed", "true"));
+    const toggle = page.locator(".k2b-app-workspace__head-toggle");
+    await toggle.focus();
+    await toggle.press("Enter");
+    const sidebar = page.locator("#contacts-book-navigation");
+    expect(await sidebar.isVisible()).toBe(true);
+    expect(await sidebar.getByRole("link", { name: "Kunden", exact: true }).getByText("Kunden", { exact: true }).isVisible()).toBe(true);
+    expect(await sidebar.getByRole("link", { name: "Alle Kontakte", exact: true }).isVisible()).toBe(true);
+    await page.keyboard.press("Escape");
+    expect(await sidebar.isVisible()).toBe(false);
+    await expectFocus(toggle);
+    expect(new URL(page.url()).searchParams.get("address")).toBe(addressId);
+    expect(await addressForm(page).isVisible()).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+test("a narrow desktop host keeps the address deep link visible before and after hydration", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/entry.js", async (route) => {
+    await held;
+    await route.continue().catch(() => {});
+  });
+  try {
+    await page.goto(
+      harness.url("workspace-narrow-host", {
+        view: "workspace",
+        contact: jana(found),
+        initialAddressId: jana().addresses[0]!.id,
+        availability: availability.off,
+        hostWidth: 600,
+      }),
+      { waitUntil: "commit" },
+    );
+    const form = page.locator(".contacts-address-editor");
+    await form.waitFor({ state: "visible" });
+    const before = await form.boundingBox();
+    release();
+    await page.waitForFunction(() => "clientEditor" in window);
+    expect(await form.isVisible()).toBe(true);
+    expect(await form.boundingBox()).toEqual(before);
+  } finally {
+    release();
+    await page.close();
+  }
+});
+
+test("compact contact views preserve the address draft while filtering the actual list", async () => {
+  const page = await open("compact-views", {
+    view: "workspace",
+    contact: jana(found),
+    initialAddressId: jana().addresses[0]!.id,
+    availability: availability.off,
+  });
+  try {
+    const street = addressForm(page).getByRole("textbox", { name: /Straße und Hausnummer/ });
+    await street.fill("Ungespeicherte Straße 9");
+    const views = page.getByRole("navigation", { name: "Kontaktansichten", exact: true });
+    const filtered = page.waitForResponse(
+      (response) => response.url().includes("/books/team/contacts?") && response.url().includes("favorites=true"),
+    );
+    await views.getByRole("link", { name: /Favoriten/ }).click();
+    expect((await filtered).ok()).toBe(true);
+    await page.waitForFunction(() => new URL(location.href).searchParams.get("favorites") === "true");
+    expect(await street.inputValue()).toBe("Ungespeicherte Straße 9");
+    expect(new URL(page.url()).searchParams.get("address")).toBe(jana().addresses[0]!.id);
+    expect(await page.locator("[data-contact-row]").count()).toBe(0);
+    await views.getByRole("link", { name: /Alle/ }).click();
+    await page.locator("[data-contact-row]").waitFor();
+    expect(await street.inputValue()).toBe("Ungespeicherte Straße 9");
+    expect(harness.state.saves).toHaveLength(0);
+  } finally {
+    await page.close();
+  }
+});
+
+test("compact contact search filters without discarding the focused address draft", async () => {
+  const page = await open("compact-search", {
+    view: "workspace",
+    contact: jana(found),
+    initialAddressId: jana().addresses[0]!.id,
+    availability: availability.off,
+  });
+  try {
+    const street = addressForm(page).getByRole("textbox", { name: /Straße und Hausnummer/ });
+    await street.fill("Ungespeicherte Straße 9");
+    await page.locator(".contacts-results__compact-search > summary").click();
+    const search = page.locator(".contacts-results__compact-heading").getByRole("searchbox");
+    await search.fill("Kein Treffer");
+    await page.waitForFunction(() => new URL(location.href).searchParams.get("search") === "Kein Treffer");
+    expect(await street.inputValue()).toBe("Ungespeicherte Straße 9");
+    expect(await page.locator("[data-contact-row]").count()).toBe(0);
+    expect(new URL(page.url()).searchParams.get("address")).toBe(jana().addresses[0]!.id);
+    expect(harness.state.saves).toHaveLength(0);
+  } finally {
+    await page.close();
+  }
+});
+
+test.each([
+  ["Österreich", "AT"],
+  ["CH", "CH"],
+])("country text %s saves the canonical code %s", async (text, countryCode) => {
+  const page = await open(`country-${countryCode}`, {
+    view: "workspace",
+    contact: jana(found),
+    initialAddressId: jana().addresses[0]!.id,
+    availability: availability.off,
+  });
+  try {
+    const country = addressForm(page).getByRole("textbox", { name: "Land", exact: true });
+    expect(await country.inputValue()).toBe("Deutschland");
+    await country.fill(text!);
+    const saved = page.waitForResponse((response) => response.request().method() === "PATCH");
+    await page.getByRole("button", { name: "Speichern", exact: true }).click();
+    expect((await saved).ok()).toBe(true);
+    expect(harness.state.saves.at(-1)).toMatchObject({ addresses: [{ countryCode }] });
+  } finally {
+    await page.close();
+  }
+});
+
+test("compact Favorites preserves a search still inside its debounce window", async () => {
+  const page = await open("compact-search-view", {
+    view: "workspace",
+    contact: jana(found),
+    initialAddressId: jana().addresses[0]!.id,
+    availability: availability.off,
+  });
+  try {
+    await page.locator(".contacts-results__compact-search > summary").click();
+    const search = page.locator(".contacts-results__compact-heading").getByRole("searchbox");
+    await search.fill("Jana");
+    await page
+      .getByRole("navigation", { name: "Kontaktansichten", exact: true })
+      .getByRole("link", { name: /Favoriten/ })
+      .click();
+    await page.waitForFunction(() => {
+      const query = new URL(location.href).searchParams;
+      return query.get("favorites") === "true" && query.get("search") === "Jana";
+    });
+    expect(new URL(page.url()).searchParams.get("address")).toBe(jana().addresses[0]!.id);
+    expect(await addressForm(page).isVisible()).toBe(true);
+  } finally {
+    await page.close();
+  }
+});
+
+test("editing an address after an earlier lookup cannot reuse the old point", async () => {
+  const page = await open("changed-location-cache", {
+    view: "workspace",
+    contact: jana(null),
+    availability: availability.configured,
+  });
+  try {
+    await page.locator(".k2b-map-view__pin").waitFor();
+    expect(harness.state.locateRequests).toBe(1);
+    await editAddress(page);
+    await page.getByRole("combobox", { name: /Straße und Hausnummer/ }).fill("Neue Straße 9");
+    await page.keyboard.press("Escape");
+    harness.state.locate = { state: "located", location: { ...found, point: { lat: 49, lon: 10 } } };
+    const located = page.waitForResponse((response) => response.url().endsWith("/locate"));
+    await page.getByRole("button", { name: "Speichern", exact: true }).click();
+    expect((await located).ok()).toBe(true);
+    await page.waitForFunction(() => document.querySelector('a[href*="49%2C10"]') !== null);
+    expect(harness.state.locateRequests).toBe(2);
   } finally {
     await page.close();
   }

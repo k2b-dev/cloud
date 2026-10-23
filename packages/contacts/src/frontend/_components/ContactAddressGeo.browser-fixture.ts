@@ -11,6 +11,10 @@ import "./ssr-test-plugin";
 
 /** Fictional fixtures only. Jana Berger and her address appear in the approved mockup. */
 const now = "2026-10-22T10:00:00.000Z";
+// Contacts' configured app accent, including the derived variables supplied by Cloud's page shell.
+const contactsAccent =
+  "--app-accent:#4f46e5;--app-ink-light:#4f46e5;--app-ink-dark:#8e89ee;--app-selected-light:#f3f2fd;--app-selected-dark:#1a1c37;--app-selected-nav-light:#ededfc;--app-selected-nav-dark:#1c1d3d";
+
 const addressLocationKey = (address: Pick<ContactAddressInput, "line1" | "postalCode" | "city" | "stateRegion" | "countryCode">) =>
   [address.line1, address.postalCode, address.city, address.stateRegion, address.countryCode]
     .map((value) => (value ?? "").trim().toLowerCase().replace(/\s+/g, " "))
@@ -106,6 +110,8 @@ export const availability = {
 export type Scenario = {
   view: "detail" | "form" | "workspace";
   initialAddressId?: string | null;
+  /** A narrow application host beside another Cloud panel, independent of viewport width. */
+  hostWidth?: number;
   href?: string;
   contacts?: Contact[];
   readonly?: boolean;
@@ -265,7 +271,7 @@ export const startContactsGeoHarness = async () => {
         if (!scenario) return new Response("Unknown scenario", { status: 404 });
         const data = JSON.stringify({ ...scenario, props: detailProps(scenario) }).replaceAll("'", "&#39;");
         return new Response(
-          `<!doctype html><html lang="de" class="${request.headers.get("cookie")?.includes("theme=dark") ? "dark" : "light"}"><head><meta charset="utf-8"><link rel="stylesheet" href="/tabler/tabler-icons.min.css"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\n${fonts}</style></head><body class="k2b-ui"><main style="max-width:${scenario.view === "workspace" ? "none" : scenario.view === "detail" ? "640px" : "760px"};margin:0 auto;padding:${scenario.view === "workspace" ? 0 : 16}px;height:100dvh;display:flex;flex-direction:column"><div id="root" style="flex:1;min-height:0;display:flex;flex-direction:column" data-scenario='${data}'>${serverMarkup(scenario)}</div></main><script type="module" src="/entry.js"></script></body></html>`,
+          `<!doctype html><html lang="de" class="${request.headers.get("cookie")?.includes("theme=dark") ? "dark" : "light"}"><head><meta charset="utf-8"><link rel="stylesheet" href="/tabler/tabler-icons.min.css"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\n${fonts}</style></head><body class="k2b-ui app-accent-scope" style="${contactsAccent}"><main style="${scenario.hostWidth ? `width:${scenario.hostWidth}px;container:k2b-app-area / inline-size;` : ""}max-width:${scenario.view === "workspace" ? "none" : scenario.view === "detail" ? "640px" : "760px"};margin:0 auto;padding:${scenario.view === "workspace" ? 0 : 16}px;height:100dvh;display:flex;flex-direction:column"><div id="root" style="flex:1;min-height:0;display:flex;flex-direction:column" data-scenario='${data}'>${serverMarkup(scenario)}</div></main><script type="module" src="/entry.js"></script></body></html>`,
           { headers: { "Content-Type": "text/html" } },
         );
       }
@@ -308,6 +314,21 @@ export const startContactsGeoHarness = async () => {
       }
       if (url.pathname.startsWith("/fonts/")) return new Response(Bun.file(resolve(fontDirectory, basename(url.pathname))));
       if (url.pathname.startsWith("/tabler/")) return new Response(Bun.file(resolve(tabler, url.pathname.slice("/tabler/".length))));
+      if (url.pathname === "/api/contacts/books/team/contacts") {
+        const referrer = new URL(request.headers.get("referer") ?? "/", server.url);
+        const scenario = scenarios.get(referrer.searchParams.get("scenario") ?? "");
+        const query = (url.searchParams.get("q") ?? "").toLocaleLowerCase("de");
+        const people = scenario ? (scenario.contacts ?? [scenario.contact]) : [];
+        const contacts =
+          url.searchParams.get("favorites") === "true"
+            ? []
+            : people.filter((contact) => `${contact.firstName} ${contact.lastName}`.toLocaleLowerCase("de").includes(query));
+        return Response.json({
+          data: contacts,
+          favoriteKeys: [],
+          pagination: { total: contacts.length, page: 1, per_page: 30, total_pages: 1 },
+        });
+      }
       if (url.pathname === "/api/contacts/books/team/tags") return Response.json([]);
       const contactMatch = url.pathname.match(/^\/api\/contacts\/books\/team\/contacts\/([^/]+)$/);
       const contactId = contactMatch?.[1];
