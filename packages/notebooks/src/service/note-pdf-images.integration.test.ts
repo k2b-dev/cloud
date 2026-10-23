@@ -13,7 +13,11 @@ import * as attachments from "./attachments";
 import { buildNotePdfHtml, renderNotePdf } from "./note-pdf";
 import { notePdfImageBoxes, prepareNotePdfImages } from "./note-pdf-images";
 
-suiteFor("database", "gotenberg")("attached images in real note PDFs", () => {
+suiteFor(
+  "database",
+  "gotenberg",
+  "valkey",
+)("attached images in real note PDFs", () => {
   let notebook: { id: string; short_id: string };
   let foreign: { id: string; short_id: string };
   let config: GotenbergConfig;

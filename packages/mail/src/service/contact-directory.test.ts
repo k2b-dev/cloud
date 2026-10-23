@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import type { CapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
@@ -15,8 +15,9 @@ import {
   defineCapabilities,
   type User,
 } from "@k2b/cloud/contracts";
+import { SQL } from "bun";
 import { z } from "zod";
-import type { MailContactDirectoryConfig } from "../contact-directory-settings";
+import { MAIL_CONTACT_DIRECTORY_SETTING_KEYS, type MailContactDirectoryConfig } from "../contact-directory-settings";
 import type { MailRequestContext } from "./auth";
 import {
   type ContactDirectoryDependencies,
@@ -141,12 +142,34 @@ const context: MailRequestContext = {
   requestId: null,
 };
 
+const client = new SQL("postgres://localhost/unused_test");
+let lockQueries = 0;
+const tx = new Proxy(client, {
+  apply(_target, _receiver, [strings]) {
+    if (!strings.join("?").includes("pg_advisory_xact_lock")) throw new Error("Expected mapping transaction lock");
+    lockQueries++;
+    return Promise.resolve([]);
+  },
+});
+afterAll(() => client.close());
+
 const dependencies = (overrides: Partial<ContactDirectoryDependencies> = {}) => {
   const writes: Array<[string, string]> = [];
   const deps: ContactDirectoryDependencies = {
     listCatalog: async () => ({ ok: true, data: { protocolVersion: 2, apps: [catalogApp()], page: { hasMore: false } } }),
     getCatalogApp: async (appId) => ({ ok: true, data: appId === "crm" ? catalogApp() : null }),
     isAdmin: async () => true,
+    readSetting: async (key) => ({
+      value: new Map(
+        Object.entries(MAIL_CONTACT_DIRECTORY_SETTING_KEYS).map(([field, key]) => [
+          key,
+          Object.entries(crmConfig).find(([name]) => name === field)![1],
+        ]),
+      ).get(key)!,
+      stored: "readable",
+    }),
+    transaction: async (write) => write(tx),
+    invalidateSettings: async () => {},
     writeSetting: async (key, value) => {
       writes.push([key, value]);
     },
@@ -179,7 +202,41 @@ describe("Mail contact directory administration", () => {
   });
 
   test("stores a compatible third-party mapping through the settings seam", async () => {
-    const { deps, writes } = dependencies();
+    const previousLocks = lockQueries;
+    let inTransaction = false;
+    let committed = false;
+    const { deps, writes } = dependencies({
+      transaction: async (write) => {
+        inTransaction = true;
+        try {
+          return await write(tx);
+        } finally {
+          inTransaction = false;
+          committed = true;
+        }
+      },
+      invalidateSettings: async () => {
+        expect(committed).toBe(true);
+      },
+    });
+    const originalRead = deps.readSetting;
+    deps.readSetting = async (key, currentTx) => {
+      expect(inTransaction).toBe(true);
+      expect(lockQueries).toBe(previousLocks + 1);
+      expect(currentTx).toBe(tx);
+      return originalRead(key, currentTx);
+    };
+    const originalCatalog = deps.getCatalogApp;
+    deps.getCatalogApp = async (...args) => {
+      expect(inTransaction).toBe(true);
+      return originalCatalog(...args);
+    };
+    const originalWrite = deps.writeSetting;
+    deps.writeSetting = async (key, value, options, currentTx) => {
+      expect(inTransaction).toBe(true);
+      expect(currentTx).toBe(tx);
+      return originalWrite(key, value, options, currentTx);
+    };
     expect(await saveContactDirectory(context, { ...crmConfig, read: "", suggest: " customer.suggest " }, "en", deps)).toEqual({
       ok: true,
       config: { ...crmConfig, read: "" },
@@ -281,4 +338,31 @@ describe("request-local contact directory registration", () => {
     expect(calls).toBe(0);
     expect(Object.values(result).every((value) => value === null)).toBe(true);
   });
+});
+
+test("contact directory carries unreadable keys and never rewrites omitted fallbacks", async () => {
+  const key = MAIL_CONTACT_DIRECTORY_SETTING_KEYS.resolve;
+  const { deps, writes } = dependencies({
+    readSetting: async (setting) => ({
+      value:
+        setting === key
+          ? crmConfig.resolve
+          : new Map(
+              Object.entries(MAIL_CONTACT_DIRECTORY_SETTING_KEYS).map(([field, setting]) => [
+                setting,
+                Object.entries(crmConfig).find(([name]) => name === field)![1],
+              ]),
+            ).get(setting)!,
+      stored: setting === key ? "unreadable" : "readable",
+    }),
+  });
+  const view = await loadContactDirectoryAdmin(context, crmConfig, "en", deps);
+  expect(view.ok && view.data.unreadable?.[key]).toBe(true);
+  await expect(saveContactDirectory(context, crmConfig, "en", deps)).rejects.toMatchObject({ code: "setting_unreadable" });
+  expect(writes).toEqual([]);
+  expect((await saveContactDirectory(context, { appId: "crm" }, "en", deps)).ok).toBe(true);
+  expect(writes).toEqual([[MAIL_CONTACT_DIRECTORY_SETTING_KEYS.appId, "crm"]]);
+  writes.length = 0;
+  expect((await saveContactDirectory(context, { resolve: crmConfig.resolve, replaceUnreadable: [key] }, "en", deps)).ok).toBe(true);
+  expect(writes).toEqual([[key, crmConfig.resolve]]);
 });

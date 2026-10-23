@@ -14,6 +14,8 @@ import type {
   VenueDashboard,
 } from "../src/contracts";
 
+const fixtureNow = "2026-09-28T10:00:00.000Z";
+
 const flush = async () => {
   for (let index = 0; index < 20; index += 1) await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -130,14 +132,14 @@ describe("Venue clarity behavior", () => {
     return;
   }
 
-  // The UTC slot fixtures expect Berlin's summer offset, independent of the day this suite runs.
-  beforeEach(() => setSystemTime(new Date("2026-09-16T10:07:12.345Z")));
+  // Keep relative fixture days and their Berlin offset independent of the calendar.
+  beforeEach(() => setSystemTime(new Date(fixtureNow)));
   afterEach(() => setSystemTime());
 
   test("the sign-up dialog lists every shift of its window and loads the next one on request", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
-    const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
+    const today = dates.formatDateKey(new Date(fixtureNow), { timeZone: venue.timezone });
     const requested: URLSearchParams[] = [];
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = new URL(String(input instanceof Request ? input.url : input), "http://localhost");
@@ -174,7 +176,7 @@ describe("Venue clarity behavior", () => {
   test("the sign-up dialog groups free shifts by day, marks the viewer's own with Leave, and hides full ones until asked", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
-    const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
+    const today = dates.formatDateKey(new Date(fixtureNow), { timeZone: venue.timezone });
     const mine = slot(addDays(today, 1), "Lunch counter");
     const open = slot(addDays(today, 1), "Evening bar");
     const full = { ...slot(addDays(today, 2), "Brunch"), full: true, missingPeople: 0 };
@@ -242,7 +244,7 @@ describe("Venue clarity behavior", () => {
   test("taking a shift with the following weeks says how many it added, and that nothing changed when it added none", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
-    const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
+    const today = dates.formatDateKey(new Date(fixtureNow), { timeZone: venue.timezone });
     const lunch = slot(addDays(today, 1), "Lunch counter");
     // The server skips weeks the viewer already has or that are full and answers with the sign-ups it made.
     let created: ShiftAssignment[] = [];
@@ -298,7 +300,7 @@ describe("Venue clarity behavior", () => {
   test("taking a one-off shift uses plain signup even with the following weeks selected", async () => {
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
-    const today = dates.formatDateKey(new Date(), { timeZone: venue.timezone });
+    const today = dates.formatDateKey(new Date(fixtureNow), { timeZone: venue.timezone });
     const oneOff = slot(addDays(today, 1), "Special event");
     oneOff.template.date = oneOff.date;
     const posts: { path: string; body: unknown }[] = [];
@@ -340,6 +342,7 @@ describe("Venue clarity behavior", () => {
   });
 
   test("free time starts on a quarter hour and adds itself from the dialog footer", async () => {
+    setSystemTime(new Date("2026-09-28T10:07:12.345Z"));
     const dom = createDomTestHarness();
     const originalFetch = globalThis.fetch;
     const bodies: { startsAt: string; endsAt: string }[] = [];
@@ -359,7 +362,7 @@ describe("Venue clarity behavior", () => {
       add.click();
       await flush();
       const [body] = bodies;
-      expect(new Date(body!.startsAt).toISOString()).toBe("2026-09-16T10:15:00.000Z");
+      expect(new Date(body!.startsAt).toISOString()).toBe("2026-09-28T10:15:00.000Z");
       expect(new Date(body!.endsAt).getTime() - new Date(body!.startsAt).getTime()).toBe(2 * 60 * 60_000);
       expect(closes).toEqual([true]);
     } finally {
@@ -375,7 +378,7 @@ describe("Venue clarity behavior", () => {
     const bodies: unknown[] = [];
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       bodies.push(JSON.parse(String(init?.body)));
-      return Response.json({ venueId: "Cafe01", rating: 3, comment: null, createdAt: new Date().toISOString() }, { status: 201 });
+      return Response.json({ venueId: "Cafe01", rating: 3, comment: null, createdAt: new Date(fixtureNow).toISOString() }, { status: 201 });
     }) as typeof fetch;
 
     const { default: PublicFeedbackForm } = await import("../src/frontend/_components/PublicFeedbackForm.island");
@@ -469,7 +472,7 @@ describe("Venue clarity behavior", () => {
     const originalFetch = globalThis.fetch;
     let finishLeave: (response: Response) => void = () => {};
     const requests: string[] = [];
-    const lunch = slot(addDays(dates.formatDateKey(new Date(), { timeZone: venue.timezone }), 2), "Lunch counter");
+    const lunch = slot(addDays(dates.formatDateKey(new Date(fixtureNow), { timeZone: venue.timezone }), 2), "Lunch counter");
     const mine = [
       assignment(lunch, "user-1", "Alex Example"),
       { ...assignment(lunch, "user-1", "Alex Example"), id: "Asg-free", templateId: null, templateTitle: null, note: "Inventory count" },

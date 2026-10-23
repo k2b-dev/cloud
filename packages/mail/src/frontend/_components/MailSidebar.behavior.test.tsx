@@ -110,7 +110,7 @@ test.skipIf(isServer)("pin and hide save preferences, reorder rows and roll back
     pending[0]!.resolve(Response.json({ pinned: true, hidden: false }));
     press("Hide Sales");
     const hidden = () => dom.root.querySelector('[data-mailbox="Box002"][data-hidden="true"]');
-    expect(hidden()?.closest("section")?.textContent).toContain("Hidden mailboxes");
+    expect(hidden()?.closest(".mail-sidebar-hidden-mailboxes")?.textContent).toContain("Hidden mailboxes");
     await waitFor(() => pending.length === 2);
     expect(pending[1]?.json).toEqual({ hidden: true });
     pending[1]!.resolve(Response.json({ pinned: true, hidden: true }));

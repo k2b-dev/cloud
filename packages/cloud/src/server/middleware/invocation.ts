@@ -1,7 +1,12 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
+import { getApp } from "../../_internal/registry";
+import type { AppMeta } from "../../contracts/app";
+import { canUseApp } from "../../services/app-access";
+import { recordAppAccessDenied } from "../../services/app-access-metrics";
 import { type ResolvedInvocationAuthority, resolveInvocationAuthority } from "../../services/identity/invocation-actor";
 import { type CloudInvocationClaims, isInvocationJwtCandidate, verifyInvocationToken } from "../../services/identity/invocation-token";
+import { appAccessDeniedBody } from "./app-access";
 import type { AuthContext } from "./auth";
 
 export type InvocationExpectation = {
@@ -11,6 +16,7 @@ export type InvocationExpectation = {
 };
 
 type InvocationMiddlewareDependencies = {
+  getApp?: (appId: string) => Promise<Pick<AppMeta, "id" | "access"> | null>;
   verify?: typeof verifyInvocationToken;
   resolve?: typeof resolveInvocationAuthority;
 };
@@ -47,6 +53,11 @@ export const requireInvocation = (
     if (!claims) return reject(c);
     const authority = await (dependencies.resolve ?? resolveInvocationAuthority)(claims);
     if (!authority) return reject(c);
+    const app = await (dependencies.getApp ?? getApp)(expectation.targetAppId).catch(() => null);
+    if (!app || !(await canUseApp(authority, app))) {
+      if (app) recordAppAccessDenied(app.id);
+      return c.json(appAccessDeniedBody(app ?? { id: expectation.targetAppId }), 403);
+    }
     if (claims.schema_hash !== expectation.schemaHash) {
       return c.json({ code: "SCHEMA_MISMATCH", message: "The invocation schema no longer matches the target" }, 409);
     }

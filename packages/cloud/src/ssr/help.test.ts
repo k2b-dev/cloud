@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { Hono } from "hono";
-import type { AuthContext } from "../server";
+import type { AuthContext, RequestAuthority } from "../server";
 import * as helpService from "../services/help";
 import { getLayoutHelp, layoutHelpFailed, preloadLayoutHelp, preloadLayoutHelpArticle } from "./help";
 
@@ -59,7 +59,13 @@ for (const failed of [false, true]) {
 for (const state of ["article", "missing-or-hidden", "read-error"] as const) {
   test(`Help article preload uses the request viewer and locale: ${state}`, async () => {
     const { person } = await import("../_internal/define-app.test-fixture");
-    const actor = { kind: "user", user: person } as const;
+    const actor = { kind: "user", user: person, sessionKind: "app" } as const;
+    const authority: RequestAuthority = {
+      actor,
+      accessSubject: { type: "user", userId: person.id },
+      credentialKind: "session",
+      scopes: [],
+    };
     const read = async (input: { appId: string; documentId: string }) => {
       expect(input).toEqual({ appId: "spaces", documentId: "share" });
       if (state === "read-error") throw new Error("Fixture article read failed");
@@ -90,11 +96,14 @@ for (const state of ["article", "missing-or-hidden", "read-error"] as const) {
         .get("/", async (c) => {
           c.set("user", person);
           c.set("actor", actor);
+          c.set("accessSubject", authority.accessSubject);
+          c.set("credentialKind", authority.credentialKind);
+          c.set("credentialScopes", authority.scopes);
           return c.json(await preloadLayoutHelpArticle(c, "spaces", "share"));
         })
         .request("/", { headers: { "Accept-Language": "de", "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" } });
       expect(response.status).toBe(200);
-      expect(reader).toHaveBeenCalledWith("de", actor);
+      expect(reader).toHaveBeenCalledWith("de", actor, { authority });
       const result = await response.json();
       if (state === "article") {
         expect(result).toMatchObject({
