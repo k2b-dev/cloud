@@ -5,6 +5,7 @@ export const chatMessages = i18n.define({
   messages: {
     en: {
       systemChats: "Spaces and Notebooks",
+      unreadIncomplete: "Unread count is incomplete",
       systemChatsFailed: "Spaces and Notebooks could not be loaded.",
       systemChatsEmpty: "None yet. Once someone writes about a task, an event, or a note, its chat appears here.",
       space: "Space",
@@ -355,6 +356,7 @@ export const chatMessages = i18n.define({
     },
     de: {
       systemChats: "Spaces und Notebooks",
+      unreadIncomplete: "Ungelesene Nachrichten noch nicht vollständig gezählt",
       systemChatsFailed: "Spaces und Notebooks konnten nicht geladen werden.",
       systemChatsEmpty: "Noch keine. Sobald jemand an einer Aufgabe, einem Termin oder einer Notiz schreibt, erscheint der Chat hier.",
       space: "Space",

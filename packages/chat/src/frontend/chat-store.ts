@@ -293,6 +293,8 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   type Current = {
     view: OpenChat;
     metadataRev: number;
+    // Only a covering snapshot rules out unseen messages; live revisions can arrive with replay gaps.
+    snapshotRev: number;
     messages: Map<string, Message>;
     subscription: LiveSubscription | null;
     from: number | null;
@@ -369,7 +371,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const applyMessage = (chat: Current, message: Message) => {
     if (!active(chat) || message.conversationId !== chat.view.id) return;
     const known = chat.messages.get(message.id);
-    if ((chat.from === null || message.seq >= chat.from) && (known ? message.rev > known.rev : message.rev > chat.view.watermark))
+    if ((chat.from === null || message.seq >= chat.from) && (known ? message.rev > known.rev : message.rev > chat.snapshotRev))
       chat.messages.set(message.id, pendingReactions(chat, message));
     chat.view = { ...chat.view, watermark: Math.max(chat.view.watermark, message.rev), seqHead: Math.max(chat.view.seqHead, message.seq) };
     extendWindow(chat);
@@ -395,22 +397,25 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     if (row === null) noAccess(chat);
     else metadata(chat, row);
   };
-  const replaceMessages = async (chat: Current) => {
+  const replaceMessages = async (chat: Current, reconcileAccess = false) => {
+    // Access reconciliation supersedes pending reads, including reads that began
+    // while it was in flight. A delayed latest response must not restore revoked content.
+    if (reconcileAccess) chat.window++;
+    const window = chat.window;
     const watermark = chat.view.watermark;
     const page = await api.messages(chat.view.id, { thread: chat.view.view });
-    if (!active(chat)) return;
+    if (!active(chat) || chat.window !== window) return;
     if (page === null) return noAccess(chat);
     const conversation = await api.conversation(chat.view.id);
-    if (!active(chat)) return;
+    if (!active(chat) || chat.window !== window) return;
     if (conversation === null) return noAccess(chat);
     // Retain arrivals during this read, unless its lower revision proves a restore.
     const arrivals =
-      chat.view.conversation?.kind !== "system" && page.rev >= watermark
-        ? [...chat.messages.values()].filter((message) => message.rev > page.rev)
-        : [];
+      !reconcileAccess && page.rev >= watermark ? [...chat.messages.values()].filter((message) => message.rev > page.rev) : [];
     const currentConversation = chat.view.conversation;
     const keepMetadata = page.rev >= watermark && currentConversation !== null && currentConversation.rev > conversation.rev;
     // A restored chat can move back in revisions, so the replacement wins over the guard.
+    chat.snapshotRev = page.rev;
     chat.messages = new Map(page.items.map((message) => [message.id, pendingReactions(chat, MessageSchema.parse(message))]));
     chat.window++;
     // The page says which positions it covers for the open view, also between messages of other threads.
@@ -465,7 +470,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const resyncConversation = async (chat: Current) => {
     // A filtered delta cannot describe removals from the authorized window.
     if (chat.view.conversation?.kind === "system") {
-      await replaceMessages(chat);
+      await replaceMessages(chat, true);
       if (active(chat)) {
         chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
         await refreshThreads(chat);
@@ -601,10 +606,11 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           if (threadsChanged) {
             if (chat.view.conversation?.kind === "system") {
               await refreshThreads(chat);
-              if (active(chat) && events.some(({ data }) => data.type === "threads")) {
+              const hint = events.find(({ data }) => data.type === "threads" && data.conversationId === chat.view.id);
+              if (active(chat) && hint) {
                 if (chat.view.threadsStatus === "failed") throw new Error("Chat thread discovery failed");
                 chat.subscription?.close();
-                chat.subscription = subscribeConversation(chat, events.at(-1)!.cursor);
+                chat.subscription = subscribeConversation(chat, hint.cursor);
               }
             } else void refreshThreads(chat);
           }
@@ -655,6 +661,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       threadsAgain: false,
       readsAbort: new AbortController(),
       metadataRev: next.conversation.rev,
+      snapshotRev: next.page.rev,
       messages: new Map(next.page.items.map((message) => [message.id, MessageSchema.parse(message)])),
       subscription: null,
     };
@@ -799,14 +806,27 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: (events) =>
           sidebar(async () => {
-            for (const { data } of events) {
+            let discoveryCursor: string | undefined;
+            const warmed = new Set<string>();
+            for (const { data, cursor } of events) {
               if (data.type === "summary") await applySummary(data);
-              else if ((data.type === "membership" || data.type === "threads") && rows.some((row) => row.id === data.conversationId))
+              else if ((data.type === "membership" || data.type === "threads") && rows.some((row) => row.id === data.conversationId)) {
                 await refetchRow(data.conversationId);
+                if (data.type === "threads" && rows.some((row) => row.id === data.conversationId && row.kind === "system")) {
+                  discoveryCursor ??= cursor;
+                  if (!warmed.has(data.conversationId)) {
+                    // Summary pages are ordered by ID. Authorize recent items separately,
+                    // including newly created keys beyond the summary's candidate page.
+                    const list = await api.threads(data.conversationId, { short: "true" }, lifetime.signal);
+                    if (list === null) throw new Error("Chat thread discovery failed");
+                    warmed.add(data.conversationId);
+                  }
+                }
+              }
             }
-            if (!disposed && events.some(({ data }) => data.type === "threads")) {
+            if (!disposed && discoveryCursor !== undefined) {
               listSubscription.close();
-              listSubscription = subscribeList(events.at(-1)!.cursor);
+              listSubscription = subscribeList(discoveryCursor);
             }
           }),
         resync: () => sidebar(reloadSidebar),
@@ -1056,6 +1076,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           hasNewer: false,
         },
         metadataRev: 0,
+        snapshotRev: 0,
         messages: new Map(),
         subscription: null,
         from: null,

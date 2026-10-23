@@ -45,7 +45,7 @@ const message = (rev: number) =>
 const page = (rev: number) => ({ items: [{ ...message(rev), systemText: null }], rev, seqHead: rev, from: rev, to: rev });
 type Controls = {
   apply(data: unknown): Promise<void>;
-  applyBatch(data: unknown[]): Promise<void>;
+  applyBatch(data: unknown[], cursors?: string[]): Promise<void>;
   resync(): Promise<void>;
   revoked(): void;
   unavailable(): void;
@@ -57,7 +57,8 @@ class ManualConnection implements LiveConnection {
   subscribe<T>(channel: string, _scope: unknown, handlers: LiveSubscriptionHandlers<T>) {
     const controls: Controls = {
       apply: async (data) => handlers.apply([{ data: handlers.parse(data), cursor: "cursor" }]),
-      applyBatch: async (data) => handlers.apply(data.map((event) => ({ data: handlers.parse(event), cursor: "cursor" }))),
+      applyBatch: async (data, cursors) =>
+        handlers.apply(data.map((event, i) => ({ data: handlers.parse(event), cursor: cursors?.[i] ?? "cursor" }))),
       resync: handlers.resync,
       revoked: () => handlers.revoked?.("access_denied"),
       unavailable: handlers.unavailable,
@@ -1920,6 +1921,122 @@ test("a repeated All-thread receipt cursor fails instead of looping", async () =
   try {
     await expect(store.markRead(conversation.id, 1, "all")).rejects.toThrow("Repeated chat read cursor");
     expect(calls).toBe(2);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("system Jump to latest retains an acknowledged arrival newer than its snapshot", async () => {
+  const latest = deferred<ReturnType<typeof windowPage>>();
+  const { store, connection } = systemFixture({ messages: async () => latest.promise });
+  store.open({ cursor: "middle", conversation: systemConversation, threads: noThreads, view: "all", page: windowPage(1, 1, 5, 1) });
+  try {
+    const loading = store.loadLatest();
+    await connection.get("conversation").apply({ type: "message", message: message(6) });
+    latest.resolve(windowPage(1, 5));
+    await loading;
+    expect(store.openConversation).toMatchObject({ watermark: 6, seqHead: 6, hasNewer: false });
+    expect(store.openConversation?.messages.map((row) => row.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("system revocation reconciliation drops concurrent arrivals outside the authorized snapshot", async () => {
+  const latest = deferred<ReturnType<typeof windowPage>>();
+  const { store, connection } = systemFixture({ messages: async () => latest.promise });
+  try {
+    const loading = connection.get("conversation").resync();
+    await connection.get("conversation").apply({ type: "message", message: message(6) });
+    latest.resolve(windowPage(1, 5));
+    await loading;
+    expect(store.openConversation?.messages.map((row) => row.seq)).toEqual([1, 2, 3, 4, 5]);
+  } finally {
+    store.dispose();
+  }
+});
+
+for (const channel of ["conversation", "list"]) {
+  test(`${channel} batched discovery resumes at the first relevant hint, then deduplicates replay`, async () => {
+    const { store, connection } = systemFixture();
+    try {
+      const subscription = connection.get(channel);
+      const known = { ...message(3), rev: 30 };
+      const missed = { ...message(2), rev: 20 };
+      const event =
+        channel === "conversation" ? { type: "message", message: known } : chatLiveUpdates(conversation.id, known, "known", [])[1]!.data;
+      await subscription.applyBatch(
+        [
+          { type: "threads", conversationId: "Other1" },
+          { type: "threads", conversationId: conversation.id },
+          { type: "threads", conversationId: conversation.id },
+          event,
+        ],
+        ["5", "10", "25", "30"],
+      );
+      expect(connection.get(channel).cursor).toBe("10");
+      expect(subscription.closed).toBe(true);
+      await connection
+        .get(channel)
+        .applyBatch(channel === "conversation" ? [{ type: "message", message: missed }, event, event] : [event, event]);
+      if (channel === "conversation") expect(store.openConversation?.messages.map((row) => row.seq)).toEqual([1, 2, 3]);
+    } finally {
+      store.dispose();
+    }
+  });
+}
+
+test("sidebar discovery authorizes a recent thread outside the summary page before renewal", async () => {
+  const order: string[] = [];
+  const { store, connection } = systemFixture({
+    conversation: async () => {
+      order.push("summary:ids-1-100");
+      return systemConversation;
+    },
+    threads: async (_id, query) => {
+      order.push(`recent:${query?.short}`);
+      return noThreads;
+    },
+  });
+  try {
+    const original = connection.get("list");
+    await original.apply({ type: "threads", conversationId: conversation.id });
+    expect(order).toEqual(["summary:ids-1-100", "recent:true"]);
+    expect(original.closed).toBe(true);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("failed sidebar recent-thread authorization leaves discovery unacknowledged for retry", async () => {
+  const { store, connection } = systemFixture({
+    threads: async () => {
+      throw new Error("reader unavailable");
+    },
+  });
+  try {
+    const original = connection.get("list");
+    await expect(original.apply({ type: "threads", conversationId: conversation.id })).rejects.toThrow("reader unavailable");
+    expect(original.closed).toBe(false);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a latest response started before revocation cannot restore the superseded authorized window", async () => {
+  const latest = deferred<ReturnType<typeof windowPage>>();
+  let calls = 0;
+  const { store, connection } = systemFixture({
+    messages: async () => (++calls === 1 ? latest.promise : { ...windowPage(1, 5), items: [] }),
+  });
+  store.open({ cursor: "middle", conversation: systemConversation, threads: noThreads, view: "all", page: windowPage(1, 1, 5, 1) });
+  try {
+    const loading = store.loadLatest();
+    await connection.get("conversation").resync();
+    expect(store.openConversation?.messages).toEqual([]);
+    latest.resolve(windowPage(1, 5));
+    await loading;
+    expect(store.openConversation?.messages).toEqual([]);
   } finally {
     store.dispose();
   }

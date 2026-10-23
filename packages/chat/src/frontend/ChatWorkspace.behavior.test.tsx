@@ -264,7 +264,7 @@ describe("ChatWorkspace interactions", () => {
     if (!found) throw new Error(`Missing button ${label}`);
     return found;
   };
-  const mountVisibleUnread = async (phoneWidth: boolean) => {
+  const mountVisibleUnread = async (phoneWidth: boolean, permission: typeof conversation.permission = "write") => {
     const changes = new dom.window.EventTarget();
     const phone = {
       matches: phoneWidth,
@@ -281,7 +281,7 @@ describe("ChatWorkspace interactions", () => {
       ...message(1),
       author: { type: "user", id: "22222222-2222-4222-8222-222222222222", name: "Alex" },
     });
-    await mount(true, [conversation], "info", "en", "write", {
+    await mount(true, [conversation], "info", "en", permission, {
       page: { items: [unread], seqHead: 1, rev: 1, from: 1, to: 1 },
     });
     const feed = dom.root.querySelector<HTMLElement>(".k2b-virtual-feed__viewport")!;
@@ -305,24 +305,34 @@ describe("ChatWorkspace interactions", () => {
       expect(consoleErrors).toEqual([]);
     });
   }
-  test("automatic read failures leave a visible retry and recover", async () => {
-    const delegate = globalThis.fetch;
-    let fail = true;
-    globalThis.fetch = Object.assign(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input).endsWith("/read") && fail) return Response.json({ message: "Unavailable" }, { status: 503 });
-        return delegate(input, init);
-      },
-      { preconnect: delegate.preconnect },
-    );
-    await mountVisibleUnread(false);
-    expect(dom.root.textContent).toContain("The read state could not be changed.");
-    fail = false;
-    button("Try again").click();
-    await settle();
-    expect(dom.root.textContent).not.toContain("The read state could not be changed.");
-    expect(readPosts).toEqual([1]);
-  });
+  for (const permission of ["write", "read"] as const)
+    test(`automatic read failures leave a stable visible retry and recover for ${permission}`, async () => {
+      const delegate = globalThis.fetch;
+      let fail = true;
+      globalThis.fetch = Object.assign(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (String(input).endsWith("/read") && fail) return Response.json({ message: "Unavailable" }, { status: 503 });
+          return delegate(input, init);
+        },
+        { preconnect: delegate.preconnect },
+      );
+      await mountVisibleUnread(false, permission);
+      expect(dom.root.textContent).toContain("The read state could not be changed.");
+      const region = permission === "read" ? ".chat-conversation__notice" : ".k2b-chat-composer__hint";
+      const hint = dom.root.querySelector(region);
+      const feed = dom.root.querySelector(".chat-conversation__feed");
+      const preceding = feed?.previousElementSibling;
+      expect(hint?.textContent).toContain("The read state could not be changed.");
+      expect(hint?.textContent).toContain("Try again");
+      fail = false;
+      button("Try again").click();
+      await settle();
+      expect(dom.root.textContent).not.toContain("The read state could not be changed.");
+      expect(readPosts).toEqual([1]);
+      expect(dom.root.querySelector(region)).toBe(hint);
+      expect(dom.root.querySelector(".chat-conversation__feed")).toBe(feed);
+      expect(feed?.previousElementSibling).toBe(preceding);
+    });
 
   test("desktop info keeps reporting visible unread messages", async () => {
     await mountVisibleUnread(false);

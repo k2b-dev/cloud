@@ -53,26 +53,25 @@ const projectList = async (
   const after = db`(SELECT boundary.last_activity_at FROM chat.threads boundary
     WHERE boundary.conversation_id = ${conversationId}::uuid AND boundary.short_id = ${query.cursor ?? ""})`;
   const recent = db`SELECT id FROM chat.threads WHERE conversation_id = ${conversationId}::uuid ORDER BY last_activity_at DESC, short_id LIMIT 4`;
-  const rows = await db<ThreadRow[]>`SELECT * FROM chat.threads WHERE conversation_id = ${conversationId}::uuid
+  const rows = await db<
+    (ThreadRow & { recent: boolean })[]
+  >`SELECT *, ${system && query.short ? db`id IN (${recent})` : db`false`} AS recent
+    FROM chat.threads WHERE conversation_id = ${conversationId}::uuid
     AND ${onlyId ? db`short_id = ${onlyId}` : db`true`}
-    AND ${
-      system && query.short
-        ? db`(short_id = ${query.selected ?? ""} OR id IN (${recent}) OR id IN (
-      SELECT id FROM (${threadStates(db, input.accessSubject, conversationId)}) states WHERE unread > 0))`
-        : db`true`
-    }
     AND ${
       system && query.cursor ? db`(last_activity_at < ${after} OR (last_activity_at = ${after} AND short_id > ${query.cursor}))` : db`true`
     }
     ORDER BY ${
       system
         ? query.short
-          ? db`CASE WHEN short_id = ${query.selected ?? ""} THEN 0 WHEN id IN (${recent}) THEN 1 ELSE 2 END, last_activity_at DESC, short_id`
+          ? db`CASE WHEN short_id = ${query.selected ?? ""} THEN 0 ELSE 1 END, last_activity_at DESC, short_id`
           : db`last_activity_at DESC, short_id`
         : db`(archived_at IS NOT NULL), CASE WHEN archived_at IS NULL THEN last_activity_at END DESC,
       CASE WHEN archived_at IS NOT NULL THEN name END, short_id`
-    } LIMIT ${MAX_THREADS + 1}`;
+    } LIMIT ${system && query.short ? MAX_THREADS : MAX_THREADS + 1}`;
   const page = rows.slice(0, MAX_THREADS);
+  // Candidate selection bounds both authorization and unread SQL. Never calculate
+  // unread state for the whole directory just to choose a short refresh page.
   const visible = await visibleThreadPage(input, page);
   const states = await threadStates(
     db,
@@ -103,6 +102,14 @@ const projectList = async (
     general: { unread: states.find((state) => state.id === null)!.unread, lastMessage: previews.get(null) ?? null },
     ...(system ? { nextCursor: !query.short && rows.length > MAX_THREADS ? page.at(-1)!.short_id : null } : {}),
     items: visible
+      .filter(
+        ({ row }) =>
+          !system ||
+          !query.short ||
+          row.short_id === query.selected ||
+          row.recent ||
+          states.find((state) => state.id === row.id)!.unread > 0,
+      )
       .map(({ row, resource }) => {
         const state = states.find((state) => state.id === row.id)!;
         return {

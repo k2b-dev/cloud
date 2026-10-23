@@ -72,6 +72,8 @@ Visibility, search, and state filters apply within that page. Follow a non-null
 activity and archive ordering. `short=true` selects the four recent candidate
 threads, unread candidates, and optional `selected` thread within one
 100-candidate budget. The selected thread and recent candidates take priority.
+Candidate selection precedes item authorization and unread-state calculation;
+short refreshes never calculate unread state across the whole directory.
 The short selection has no continuation; use the directory for more threads.
 It never supplies an aggregate count. Automatic refresh reads this one short
 page, while explicit directory browsing follows cursors. Live directory
@@ -87,7 +89,9 @@ is counted once, on the first inspected page. Select the newest `lastMessage`
 across pages. Counts describe each request's current authorized view; changes
 between requests can change the totals. The sidebar and automatic conversation
 refresh use one bounded summary page and retain its partial marker; they do
-not exhaust summary continuations before rendering.
+not exhaust summary continuations before rendering. While a summary is partial,
+the row and section show `…` for an unknown count or `n+` for a lower bound.
+An incomplete zero does not mark the section as read, including for the open chat.
 
 The reader request budget is **302 calls**: two container-list calls, up to
 100 container readers per source, and 100 item readers shared across all
@@ -166,6 +170,19 @@ schemas. No additional environment variable or app workload credential is
 required for this request-driven slice.
 
 Thread discovery hints invalidate both the sidebar and the open directory.
-After the authorized short read warms item decisions, the client renews its
-existing live subscription from the hint cursor. Events committed during
-that read replay after renewal.
+Both sidebar discovery and the open conversation perform an authorized short
+thread read before renewing their existing live subscription. Summary reads
+alone cannot warm new item decisions beyond their ID-ordered candidate page.
+Renewal starts at the earliest relevant hint in the received batch. Events
+committed during discovery replay after renewal, even if a later known-key
+event in that batch has already advanced the live watermark.
+
+“Jump to latest” preserves authorized live arrivals newer than its snapshot.
+Access reconciliation instead replaces the authorized window and supersedes
+pending reads, so a delayed response cannot restore removed content.
+
+All-day event metadata uses the request time zone. Event ends are exclusive;
+the displayed range ends on the last included calendar day. A single-day
+event shows one date. Date-only task deadlines keep their calendar date.
+Automatic read failures appear with a retry in the existing composer hint or
+read-only status line, keeping the message viewport's layout stable.

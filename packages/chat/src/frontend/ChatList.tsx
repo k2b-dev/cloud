@@ -1,6 +1,6 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, Dropdown, Placeholder, useLocale } from "@k2b/ui";
+import { AppWorkspace, Dropdown, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
@@ -21,6 +21,26 @@ export const chatHref = (id: string, message?: string | null) => `/app/chat/c/${
 /** What a row shows of its unread state: the count, a dot for a chat marked unread without new messages, or nothing. */
 const unreadMark = (row: Conversation): number | true | undefined =>
   row.unread > 0 ? row.unread : row.read?.unreadFromSeq != null ? true : undefined;
+
+/** A partial authorized summary is a lower bound, even when its inspected page has no unread messages. */
+export function IncompleteUnread(props: { count: number }) {
+  const locale = useLocale();
+  const label = () => chatMessages.resolve([locale()]).t.unreadIncomplete;
+  return (
+    <StatusBadge
+      tone="neutral"
+      icon={null}
+      variant="text"
+      title={label()}
+      label={
+        <>
+          <span aria-hidden="true">{props.count > 0 ? `${props.count}+` : "…"}</span>
+          <span class="k2b-sr-only">{label()}</span>
+        </>
+      }
+    />
+  );
+}
 
 /**
  * The chats as navigation rows, newest activity first: title, the last message with its sender, the time, and the
@@ -129,9 +149,18 @@ export default function ChatList(props: {
                   <span class="chat-list__unread">
                     {/* The open chat is being read, so it shows no mark, unless the reader marked it unread on purpose. With its
                       threads shown, each thread carries its own count instead. */}
-                    <AppWorkspace.SidebarItemStatus
-                      unread={row.id === props.activeId && (expanded() || row.read?.unreadFromSeq == null) ? undefined : unreadMark(row)}
-                    />
+                    <Show
+                      when={row.summaryCursor != null}
+                      fallback={
+                        <AppWorkspace.SidebarItemStatus
+                          unread={
+                            row.id === props.activeId && (expanded() || row.read?.unreadFromSeq == null) ? undefined : unreadMark(row)
+                          }
+                        />
+                      }
+                    >
+                      <IncompleteUnread count={row.unread} />
+                    </Show>
                   </span>
                 </span>
               </AppWorkspace.SidebarItemMeta>

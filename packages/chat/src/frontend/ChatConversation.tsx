@@ -109,7 +109,7 @@ export type ChatConversationProps = {
   focusKey: string | null;
   canWrite: boolean;
   /** One quiet line above the field, such as why the reader cannot write. */
-  hint?: string;
+  hint?: JSX.Element;
   notice?: JSX.Element;
   draft: string;
   onDraftChange: (value: string) => void;

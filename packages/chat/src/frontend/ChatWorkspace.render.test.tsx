@@ -237,3 +237,139 @@ for (const locale of ["en", "de"])
       }
     });
   }
+
+const { default: ThreadMetadata } = await import("./ThreadMetadata");
+const { default: ChatList } = await import("./ChatList");
+const { default: ChatSystemChats } = await import("./ChatSystemChats");
+const renderChild = (locale: string, child: () => ReturnType<typeof createComponent>) =>
+  renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return child();
+      },
+    }),
+  );
+
+for (const locale of ["en", "de"]) {
+  for (const summaryCursor of ["", "Page02"]) {
+    test(`partial sidebar summaries stay visibly unknown in ${locale}, cursor ${JSON.stringify(summaryCursor)}`, () => {
+      const row = { ...conversation, kind: "system" as const, summaryCursor, unread: 0 };
+      const html = render(locale, { ...props(), sidebar: { items: [row], nextCursor: null } });
+      expect(html).toContain(locale === "de" ? "Ungelesene Nachrichten noch nicht vollständig gezählt" : "Unread count is incomplete");
+      expect(html).not.toContain("chat-system-chats--read");
+      expect(html).toContain("…");
+    });
+  }
+  test(`partial positive counts are lower bounds, including in an active chat in ${locale}`, () => {
+    const row = { ...conversation, kind: "system" as const, summaryCursor: "Page02", unread: 3 };
+    const list = {
+      activeId: row.id,
+      viewerId,
+      dateConfig: props().dateConfig,
+      now: () => new Date(now),
+      onOpen: () => {},
+      onMarkRead: () => {},
+      onMarkUnread: () => {},
+    };
+    const html = renderChild(locale, () =>
+      createComponent(ChatList, {
+        ...list,
+        rows: [row],
+        system: true,
+        hasMore: false,
+        onMore: () => {},
+      }),
+    );
+    expect(html).toContain("3+");
+    const section = renderChild(locale, () =>
+      createComponent(ChatSystemChats, {
+        list,
+        current: null,
+        updates: [row],
+        unavailableId: null,
+        expanded: false,
+        onExpanded: () => {},
+        onOpen: () => {},
+        state: { page: () => undefined, status: () => "ready", more: () => false, load: async () => {} },
+      }),
+    );
+    expect(section).toContain("3+");
+    expect(section).not.toContain("chat-system-chats--read");
+  });
+  test(`completed zero summaries keep the read section in ${locale}`, () => {
+    const row = { ...conversation, kind: "system" as const, summaryCursor: null, unread: 0 };
+    const html = render(locale, { ...props(), sidebar: { items: [row], nextCursor: null } });
+    expect(html).toContain("chat-system-chats--read");
+  });
+}
+
+for (const [zone, start, end, days] of [
+  ["Europe/Berlin", "2026-10-23T22:00:00.000Z", "2026-10-24T22:00:00.000Z", ["2026-10-24"]],
+  ["Europe/Berlin", "2026-10-23T22:00:00.000Z", "2026-10-25T23:00:00.000Z", ["2026-10-24", "2026-10-25"]],
+  ["America/Los_Angeles", "2026-10-24T07:00:00.000Z", "2026-10-25T07:00:00.000Z", ["2026-10-24"]],
+] as const) {
+  test(`all-day metadata uses calendar dates and inclusive end in ${zone}: ${end}`, () => {
+    const html = renderChild("en", () =>
+      createComponent(ThreadMetadata, {
+        dateConfig: { timeZone: zone, firstDayOfWeek: 1 },
+        resource: {
+          ref: { type: "spaces.item", id: "Item01" },
+          kind: "event",
+          startsAt: start,
+          endsAt: end,
+          allDay: true,
+          status: null,
+          done: false,
+          deadline: "2026-10-24",
+          deadlineAllDay: true,
+          href: "/app/spaces/Item01",
+        },
+      }),
+    );
+    const dates = [...html.matchAll(/datetime="([^"]+)"/g)].map((match) => match[1]!.slice(0, 10));
+    expect(dates).toEqual(["2026-10-24", ...days]);
+  });
+}
+
+test("timed events retain their exact instants, including their exclusive endpoint", () => {
+  const start = "2026-10-24T08:00:00.000Z",
+    end = "2026-10-24T09:00:00.000Z";
+  const html = renderChild("de", () =>
+    createComponent(ThreadMetadata, {
+      dateConfig: { timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+      resource: {
+        ref: { type: "spaces.item", id: "Item01" },
+        kind: "event",
+        status: null,
+        done: false,
+        startsAt: start,
+        endsAt: end,
+        allDay: false,
+        href: "/app/spaces/Item01",
+      },
+    }),
+  );
+  expect(html).toContain(`datetime="${start}"`);
+  expect(html).toContain(`datetime="${end}"`);
+  expect(html).toContain("10:00");
+  expect(html).toContain("11:00");
+});
+
+test("all-day events without an end keep their local start date", () => {
+  const html = renderChild("en", () =>
+    createComponent(ThreadMetadata, {
+      dateConfig: { timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+      resource: {
+        ref: { type: "spaces.item", id: "Item01" },
+        kind: "event",
+        status: null,
+        done: false,
+        startsAt: "2026-10-23T22:00:00.000Z",
+        allDay: true,
+        href: "/app/spaces/Item01",
+      },
+    }),
+  );
+  expect([...html.matchAll(/datetime="([^"]+)"/g)].map((match) => match[1]!.slice(0, 10))).toEqual(["2026-10-24"]);
+});

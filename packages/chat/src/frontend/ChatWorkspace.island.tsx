@@ -280,28 +280,33 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   const [readFailure, setReadFailure] = createSignal<{ run: () => Promise<unknown> | undefined }>();
   const [retryingRead, setRetryingRead] = createSignal(false);
+  const readNotice = () => (
+    <Show when={readFailure()}>
+      {(failure) => (
+        <span class="chat-read-status">
+          <span>{t().readStateFailed}</span>
+          <Button
+            variant="text"
+            size="xs"
+            class="chat-read-status__retry"
+            loading={retryingRead()}
+            onClick={async () => {
+              setRetryingRead(true);
+              try {
+                await changeRead(failure().run);
+              } finally {
+                setRetryingRead(false);
+              }
+            }}
+          >
+            {t().retry}
+          </Button>
+        </span>
+      )}
+    </Show>
+  );
   const draftNotice = () => (
     <>
-      <Show when={readFailure()}>
-        {(failure) => (
-          <NoticeCard tone="danger" title={t().readStateFailed}>
-            <Button
-              variant="ghost"
-              loading={retryingRead()}
-              onClick={async () => {
-                setRetryingRead(true);
-                try {
-                  await changeRead(failure().run);
-                } finally {
-                  setRetryingRead(false);
-                }
-              }}
-            >
-              {t().retry}
-            </Button>
-          </NoticeCard>
-        )}
-      </Show>
       <Show when={draftStorageFailed()}>
         <NoticeCard tone="danger" title={t().draftNotSaved} detail={t().draftNotSavedDescription}>
           <Button variant="ghost" onClick={retryDraftStorage}>
@@ -1639,7 +1644,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         backHref={threaded() ? threadsPageHref(current().id) : undefined}
                         draftKey={`${current().id}:${openChat()?.view ?? "all"}`}
                         notice={draftNotice()}
-                        composerNotice={notice()}
+                        composerNotice={
+                          notice() ? (
+                            <Show when={readFailure()} fallback={notice()}>
+                              {readNotice()}
+                            </Show>
+                          ) : undefined
+                        }
                         placeholder={placeholder()}
                         target={threaded() ? (openChat()?.view === "all" ? generalName() : viewTitle()) : undefined}
                         reply={
@@ -1683,7 +1694,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                           !draftStorageFailed() &&
                           draftConflicts()[draftId(route()) ?? ""] === undefined
                         }
-                        hint={draftError() ?? (liveStopped() ? t().liveStopped : waiting() ? t().messagesWaiting : undefined)}
+                        hint={
+                          <Show
+                            when={readFailure()}
+                            fallback={draftError() ?? (liveStopped() ? t().liveStopped : waiting() ? t().messagesWaiting : undefined)}
+                          >
+                            {readNotice()}
+                          </Show>
+                        }
                         draft={draft()}
                         onDraftChange={changeDraft}
                         onSend={send}

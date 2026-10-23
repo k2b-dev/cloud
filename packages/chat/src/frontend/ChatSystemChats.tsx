@@ -2,7 +2,7 @@ import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, InlineGuidance, Skeleton, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { chatMessages } from "../messages";
-import ChatList from "./ChatList";
+import ChatList, { IncompleteUnread } from "./ChatList";
 import { loadSystemChats, type SystemChatPage } from "./system-chats";
 
 /** Shared by the desktop sidebar and phone list; no browser request before hydration. */
@@ -68,11 +68,17 @@ export default function ChatSystemChats(props: {
     return [...rows.values()];
   });
   const unread = () => rows().reduce((sum, row) => sum + row.unread, 0);
+  const incomplete = () => rows().some((row) => row.summaryCursor != null);
   return (
     <AppWorkspace.SidebarSection
-      class={`chat-system-chats${unread() === 0 ? " chat-system-chats--read" : ""}`}
+      class={`chat-system-chats${unread() === 0 && !incomplete() ? " chat-system-chats--read" : ""}`}
       title={t().systemChats}
-      count={unread()}
+      count={incomplete() ? undefined : unread()}
+      actions={
+        <Show when={incomplete()}>
+          <IncompleteUnread count={unread()} />
+        </Show>
+      }
       collapsible
       open={props.expanded}
       onOpenChange={props.onExpanded}
