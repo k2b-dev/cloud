@@ -15,6 +15,7 @@ test("time-block review contract: revision tracks only the block's durable field
     id: "17010000-0000-4000-8000-000000000001",
     itemId: "Task01",
     ownerId: "17010000-0000-4000-8000-000000000002",
+    ownerKind: "user",
     title: "Plan work",
     ...interval,
     spaceId: "Space1",
@@ -42,6 +43,7 @@ test("time-block review contract: revision tracks only the block's durable field
     { id: "17010000-0000-4000-8000-000000000003" },
     { itemId: null },
     { ownerId: "17010000-0000-4000-8000-000000000004" },
+    { ownerKind: "service_account" },
     { title: "Other work" },
     { startsAt: "2030-03-14T09:15:00Z" },
     { endsAt: "2030-03-14T10:15:00Z" },
@@ -102,16 +104,14 @@ databaseSuite()("Time block backend review", () => {
     await sql`DELETE FROM spaces.item_assignees WHERE item_id = ${f.taskId}`;
     expect(await blocks.get({ id: data.id, reader: f.reader })).toMatchObject({
       ok: true,
-      data: { canWrite: false, canDelete: false },
+      data: { canWrite: false, canDelete: true },
     });
-    expect(await blocks.remove({ id: data.id, reader: f.reader })).toMatchObject({ ok: false, error: { status: 403 } });
     await sql`INSERT INTO spaces.item_assignees (item_id, user_id) VALUES (${f.taskId}, ${f.userId}::uuid)`;
     await sql`DELETE FROM spaces.space_access WHERE space_id = ${f.spaceId}`;
     expect(await blocks.get({ id: data.id, reader: f.reader })).toMatchObject({
       ok: true,
-      data: { taskState: "no_access", canWrite: false, canDelete: false },
+      data: { taskState: "no_access", canWrite: false, canDelete: true },
     });
-    expect(await blocks.remove({ id: data.id, reader: f.reader })).toMatchObject({ ok: false, error: { status: 403 } });
     await sql`DELETE FROM spaces.items WHERE id = ${f.taskId}`;
     expect(await blocks.get({ id: data.id, reader: f.reader })).toMatchObject({
       ok: true,

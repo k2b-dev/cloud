@@ -150,7 +150,7 @@ import { spacesPublicResources } from "./service/public-resources";
 import type { ReactionViewer } from "./service/reactions";
 import { CalendarReadLimitError } from "./service/recurrence";
 import * as taskWork from "./service/task-work";
-import { revisionForTimeBlock } from "./service/time-blocks";
+import { mayWriteOwnBlock, revisionForTimeBlock, timeBlockOwner } from "./service/time-blocks";
 import { isTaskOverdue } from "./task-overdue";
 import type { SpaceTimeBlock } from "./time-block-contracts";
 import { ClaimTaskSchema, ReleaseTaskSchema, TaskWorkSchema } from "./work-contracts";
@@ -2207,7 +2207,7 @@ const requireTimeBlock = async (
       context,
       err.forbidden(
         context.locale?.startsWith("de")
-          ? "Nur die zugewiesene Person kann ihren Zeitblock ändern."
+          ? "Nur das zugewiesene Konto kann seinen Zeitblock ändern."
           : "Only the assigned owner can change this time block",
       ),
     );
@@ -2284,7 +2284,7 @@ export const spacesCapabilities = defineCapabilities({
               to: "Ende des Zeitraums ausschließlich, höchstens 366 Tage nach from.",
               itemId: "Öffentliche Aufgaben-ID aus item.read oder task.list; erlaubt die Abfrage ohne Zeitraum.",
               spaceId: "Öffentliche Space-ID aus space.list; ohne Angabe werden alle lesbaren Spaces berücksichtigt.",
-              mine: "Nur Blöcke der Person hinter dem Aufruf; eigenständige Agenten vertreten keine Person.",
+              mine: "Nur eigene Blöcke des aufrufenden Benutzers, Dienstkontos oder Agenten.",
               cursor: "Fortsetzung aus page.nextCursor; Filter und Seitengröße unverändert lassen.",
               limit: "Höchstens 50 Blöcke je Seite, standardmäßig 25; page.nextCursor bis zum Ende folgen.",
             },
@@ -2294,10 +2294,11 @@ export const spacesCapabilities = defineCapabilities({
           ...spacesCapabilityPresentation.translations?.de?.actions,
           "time-block.create": {
             title: "Zeit für eine Aufgabe blocken",
-            description: "Als zuständige Person einen Zeitblock anlegen. Bei Wiederholung dieselbe Client-UUID verwenden.",
+            description:
+              "Als zugewiesener Benutzer, Dienstkonto oder Agent einen Zeitblock anlegen. Bei Wiederholung dieselbe Client-UUID verwenden.",
             input: {
               id: "Vom Client erzeugte UUID; bei erneutem Versuch dieselbe UUID und denselben Zeitraum verwenden.",
-              itemId: "Öffentliche Aufgaben-ID aus item.read oder task.list; die zugewiesene Person besitzt den neuen Block.",
+              itemId: "Öffentliche Aufgaben-ID aus item.read oder task.list; das zugewiesene Konto besitzt den neuen Block.",
               taskTitle: "Aktueller Aufgabentitel aus item.read; eine zwischenzeitliche Umbenennung erfordert eine neue Prüfung.",
               startsAt: "Beginn als Zeitpunkt mit UTC-Offset.",
               endsAt: "Ende als Zeitpunkt mit UTC-Offset, nach startsAt.",
@@ -2377,7 +2378,7 @@ export const spacesCapabilities = defineCapabilities({
     "time-block.list": {
       title: "List task time blocks",
       description:
-        "List readable time blocks for a task (itemId), a bounded interval, or both. Use mine for the current person's planning; follow page.nextCursor with unchanged filters and limit. Not a list of dependency blockers or events.",
+        "List readable time blocks for a task (itemId), a bounded interval, or both. Use mine for the current owner's planning; follow page.nextCursor with unchanged filters and limit. Not a list of dependency blockers or events.",
       input: TimeBlockListInputSchema,
       data: TimeBlockListDataSchema,
       openWorld: false,
@@ -2707,7 +2708,7 @@ export const spacesCapabilities = defineCapabilities({
     "time-block.create": {
       title: "Create task time block",
       description:
-        "Reserve an interval for a task as its assigned human owner. The initial title comes from the task; later titles are independent. Reuse the client UUID for safe retries. Independent agents do not impersonate people.",
+        "Reserve an interval for a task as its assigned owner (person, service account or agent). The initial title comes from the task; later titles are independent. Reuse the client UUID for safe retries. Agents own their blocks under their own identity.",
       input: TimeBlockCreateInputSchema,
       data: TimeBlockDataSchema,
       destructive: false,
@@ -2725,19 +2726,18 @@ export const spacesCapabilities = defineCapabilities({
                 : "Task title changed; read the task again before blocking time",
             ),
           );
-        const person =
-          context.actor.kind === "user"
-            ? context.actor.user
-            : context.actor.serviceAccount.kind === "user_delegated"
-              ? context.actor.delegatedUser
-              : null;
-        if (!person || !resolved.data.item.assignees?.some((entry) => entry.kind === "user" && entry.id === person.id))
+        const owner = timeBlockOwner(timeBlockReader(context));
+        if (
+          !owner ||
+          !mayWriteOwnBlock(timeBlockReader(context)) ||
+          !resolved.data.item.assignees?.some((entry) => entry.kind === owner.kind && entry.id === owner.id)
+        )
           return capabilityFail(
             context,
             err.forbidden(
               context.locale?.startsWith("de")
-                ? "Nur eine zugewiesene Person kann ihren Zeitblock anlegen."
-                : "Only the assigned person can create a time block",
+                ? "Nur ein zugewiesenes Konto kann seinen Zeitblock anlegen."
+                : "Only the assigned owner can create a time block",
             ),
           );
         if (isEvent(resolved.data.item)) return capabilityFail(context, err.badInput("Time blocks belong to tasks"));

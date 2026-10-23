@@ -90,6 +90,7 @@ describe("Spaces overview", () => {
       itemId: "Item01",
       spaceId: "Space1",
       ownerId: "00000000-0000-4000-8000-000000000001",
+      ownerKind: "user",
       ownerName: "Sofie",
       spaceName: "Launch",
       spaceColor: "#3b82f6",

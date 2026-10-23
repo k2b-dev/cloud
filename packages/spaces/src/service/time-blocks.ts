@@ -10,6 +10,7 @@ import {
   type UpdateTimeBlock,
   UpdateTimeBlockSchema,
 } from "../time-block-contracts";
+import type { WorkActor } from "../work-contracts";
 import {
   buildSpacePrincipalCondition,
   getActorsSpacePermissions,
@@ -27,6 +28,7 @@ export const revisionForTimeBlock = (block: SpaceTimeBlock): string =>
         id: block.id,
         itemId: block.itemId,
         ownerId: block.ownerId,
+        ownerKind: block.ownerKind,
         title: block.title,
         startsAt: block.startsAt,
         endsAt: block.endsAt,
@@ -38,9 +40,37 @@ export const readerForUser = (user: User): TimeBlockReader => ({
   subject: { type: "user", userId: user.id },
 });
 
-const ownerId = (reader: TimeBlockReader): string | null => {
-  const user = userFromActor(reader.actor);
-  return user && reader.subject.type === "user" && reader.subject.userId === user.id ? user.id : null;
+export const timeBlockOwner = (reader: TimeBlockReader): WorkActor | null => {
+  const { actor, subject } = reader;
+  if (actor.kind === "service_account" && actor.serviceAccount.kind !== "user_delegated") {
+    return subject.type === "service_account" &&
+      subject.serviceAccountId === actor.serviceAccount.id &&
+      permissionFromScopes(actor.scopes) !== "none"
+      ? { kind: "service_account", id: actor.serviceAccount.id }
+      : null;
+  }
+  const user = userFromActor(actor);
+  return user && subject.type === "user" && subject.userId === user.id ? { kind: "user", id: user.id } : null;
+};
+export const mayWriteOwnBlock = (reader: TimeBlockReader) =>
+  reader.actor.kind === "user" ||
+  reader.actor.serviceAccount.kind === "user_delegated" ||
+  ["write", "admin"].includes(permissionFromScopes(reader.actor.scopes));
+const owned = (reader: TimeBlockReader) => {
+  const owner = timeBlockOwner(reader);
+  return owner?.kind === "user"
+    ? sql`b.owner_id = ${owner.id}::uuid`
+    : owner
+      ? sql`b.owner_service_account_id = ${owner.id}::uuid`
+      : sql`false`;
+};
+const assignedToReader = (reader: TimeBlockReader) => {
+  const owner = timeBlockOwner(reader);
+  return owner?.kind === "user" ? sql`ia.user_id = ${owner.id}::uuid` : owner ? sql`ia.service_account_id = ${owner.id}::uuid` : sql`false`;
+};
+const isOwner = (row: BlockRow, reader: TimeBlockReader) => {
+  const owner = timeBlockOwner(reader);
+  return owner !== null && row.owner_id === owner.id && row.owner_kind === owner.kind;
 };
 
 /** Same grant, scope and binding rules as getActorsSpacePermissions, expressed in SQL for bounded paging. */
@@ -66,6 +96,7 @@ type BlockRow = {
   item_id: string | null;
   space_id: string | null;
   owner_id: string;
+  owner_kind: WorkActor["kind"];
   title: string;
   starts_at: Date;
   ends_at: Date;
@@ -80,17 +111,19 @@ type BlockRow = {
 };
 // Creation and every Space transfer save b.space_id atomically; keep calendar predicates on its indexed column.
 const projection = (reader: TimeBlockReader) => sql`
-  b.id, b.item_id, b.space_id, b.owner_id, b.title, b.starts_at, b.ends_at,
-  COALESCE(u.display_name, u.uid) AS owner_name, i.short_id AS item_short_id, s.short_id AS space_short_id,
+  b.id, b.item_id, b.space_id, COALESCE(b.owner_id, b.owner_service_account_id) AS owner_id,
+  CASE WHEN b.owner_id IS NOT NULL THEN 'user' ELSE 'service_account' END AS owner_kind, b.title, b.starts_at, b.ends_at,
+  COALESCE(u.display_name, u.uid, owner_account.name) AS owner_name, i.short_id AS item_short_id, s.short_id AS space_short_id,
   s.name AS space_name, s.color AS space_color, i.completed_at,
   (${mayReadSpace(reader, sql`b.space_id`)}) AS readable,
-  EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = b.item_id AND ia.user_id = b.owner_id) AS assigned
+  EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = b.item_id AND (ia.user_id = b.owner_id OR ia.service_account_id = b.owner_service_account_id)) AS assigned
 `;
 const joins = sql`FROM spaces.time_blocks b
-  JOIN auth.users u ON u.id = b.owner_id
+  LEFT JOIN auth.users u ON u.id = b.owner_id
+  LEFT JOIN auth.service_accounts owner_account ON owner_account.id = b.owner_service_account_id
   LEFT JOIN spaces.items i ON i.id = b.item_id
   LEFT JOIN spaces.spaces s ON s.id = b.space_id`;
-const visible = (reader: TimeBlockReader) => sql`(${mayReadSpace(reader, sql`b.space_id`)} OR b.owner_id = ${ownerId(reader)}::uuid)`;
+const visible = (reader: TimeBlockReader) => sql`(${mayReadSpace(reader, sql`b.space_id`)} OR ${owned(reader)})`;
 const map = (row: BlockRow, reader: TimeBlockReader): SpaceTimeBlock => ({
   id: row.id,
   itemId: row.readable ? row.item_short_id : null,
@@ -99,12 +132,13 @@ const map = (row: BlockRow, reader: TimeBlockReader): SpaceTimeBlock => ({
   startsAt: row.starts_at.toISOString(),
   endsAt: row.ends_at.toISOString(),
   ownerId: row.owner_id,
+  ownerKind: row.owner_kind,
   ownerName: row.owner_name,
   spaceName: row.readable ? row.space_name : null,
   spaceColor: row.readable ? row.space_color : null,
   taskState: !row.item_id ? "deleted" : !row.readable ? "no_access" : row.completed_at ? "done" : "open",
-  canWrite: row.owner_id === ownerId(reader) && Boolean(row.item_id) && row.readable && row.assigned,
-  canDelete: row.owner_id === ownerId(reader) && (!row.item_id || (row.readable && row.assigned)),
+  canWrite: isOwner(row, reader) && mayWriteOwnBlock(reader) && Boolean(row.item_id) && row.readable && row.assigned,
+  canDelete: isOwner(row, reader) && mayWriteOwnBlock(reader),
 });
 
 const readRow = async (id: string, reader: TimeBlockReader, db: SQL = sql): Promise<BlockRow | undefined> => {
@@ -123,7 +157,7 @@ const readTask = async (itemId: string, reader: TimeBlockReader, db: SQL = sql, 
     { id: string; space_id: string; title: string; starts_at: Date | null; ends_at: Date | null; assigned: boolean }[]
   >`
     SELECT i.id, i.space_id, i.title, i.starts_at, i.ends_at,
-      EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ia.user_id = ${ownerId(reader)}::uuid) AS assigned
+      EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ${assignedToReader(reader)}) AS assigned
     FROM spaces.items i WHERE i.id = ${itemId}::uuid ${lock ? sql`FOR UPDATE OF i` : sql``}`;
   if (!task) return fail(err.notFound("Task"));
   const [permission] = await getActorsSpacePermissions(task.space_id, [reader]);
@@ -193,7 +227,7 @@ export const list = async (params: {
     perPage = params.perPage ?? 100;
   if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(perPage) || perPage < 1 || perPage > 100)
     return fail(err.badInput("Invalid pagination"));
-  if (params.mine && !ownerId(reader)) return fail(err.forbidden("My work requires a user-backed actor"));
+  if (params.mine && !timeBlockOwner(reader)) return fail(err.forbidden("My work requires an authenticated owner"));
   if ((params.priorities?.length ?? 0) > 4 || (params.columnIds?.length ?? 0) > 100 || (params.tagIds?.length ?? 0) > 100)
     return fail(err.badInput("Too many task filters"));
   // Hidden task data must not influence filters (including counts) for an owner's no-access block.
@@ -205,7 +239,7 @@ export const list = async (params: {
     params.tagIds?.length;
   const assignment =
     params.assignedTo === "me"
-      ? sql`EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ia.user_id = ${ownerId(reader)}::uuid)`
+      ? sql`EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ${assignedToReader(reader)})`
       : params.assignedTo === "assigned"
         ? sql`EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id)`
         : params.assignedTo === "unassigned"
@@ -215,7 +249,7 @@ export const list = async (params: {
     ${hasRange ? sql`AND b.starts_at < ${params.to}::timestamptz AND b.ends_at > ${params.from}::timestamptz` : sql``}
     ${params.itemId ? sql`AND b.item_id = ${params.itemId}::uuid` : sql``}
     ${params.spaceId ? sql`AND b.space_id = ${params.spaceId}::uuid AND ${mayReadSpace(reader, sql`b.space_id`)}` : sql``}
-    ${params.mine ? sql`AND b.owner_id = ${ownerId(reader)}::uuid` : sql``}
+    ${params.mine ? sql`AND ${owned(reader)}` : sql``}
     ${params.type === "event" ? sql`AND false` : sql``}
     AND (b.item_id IS NULL OR (
     ${hasTaskFilters ? sql`${mayReadSpace(reader, sql`b.space_id`)} AND` : sql``}
@@ -236,9 +270,9 @@ export const list = async (params: {
   });
 };
 
-const matchesCreation = async (tx: SQL, itemId: string, userId: string, data: CreateTimeBlock): Promise<boolean> => {
+const matchesCreation = async (tx: SQL, itemId: string, owner: WorkActor, data: CreateTimeBlock): Promise<boolean> => {
   const [matching] = await tx`SELECT id FROM spaces.time_blocks WHERE id = ${data.id}::uuid
-    AND creation_item_id = ${itemId}::uuid AND creation_owner_id = ${userId}::uuid
+    AND creation_item_id = ${itemId}::uuid AND creation_owner_id = ${owner.id}::uuid AND creation_owner_kind = ${owner.kind}
     AND creation_starts_at = ${data.startsAt}::timestamptz AND creation_ends_at = ${data.endsAt}::timestamptz`;
   return Boolean(matching);
 };
@@ -256,21 +290,21 @@ export const create = async ({
 }): Promise<Result<SpaceTimeBlock>> => {
   const parsed = CreateTimeBlockSchema.safeParse(data);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid time block"));
-  const userId = ownerId(reader);
-  if (!userId) return fail(err.forbidden("Only an assigned person can plan their time"));
+  const owner = timeBlockOwner(reader);
+  if (!owner || !mayWriteOwnBlock(reader)) return fail(err.forbidden("Only an assigned owner can plan their time"));
   const result = await sql.begin(async (tx): Promise<Result<SpaceTimeBlock>> => {
     const task = await readTask(itemId, reader, tx, true);
     if (!task.ok) return task;
-    if (!task.data.assigned) return fail(err.forbidden("Only an assigned person can plan their time"));
-    if (expectedTaskTitle !== undefined && task.data.title !== expectedTaskTitle && !(await matchesCreation(tx, itemId, userId, data)))
+    if (!task.data.assigned) return fail(err.forbidden("Only an assigned owner can plan their time"));
+    if (expectedTaskTitle !== undefined && task.data.title !== expectedTaskTitle && !(await matchesCreation(tx, itemId, owner, data)))
       return fail(err.conflict("Task title changed; review it again"));
     const inserted = await tx`INSERT INTO spaces.time_blocks
-      (id, item_id, space_id, owner_id, title, starts_at, ends_at, creation_item_id, creation_owner_id, creation_starts_at, creation_ends_at)
-      VALUES (${data.id}::uuid, ${itemId}::uuid, ${task.data.space_id}::uuid, ${userId}::uuid, ${task.data.title},
-        ${data.startsAt}::timestamptz, ${data.endsAt}::timestamptz, ${itemId}::uuid, ${userId}::uuid,
+      (id, item_id, space_id, owner_id, owner_service_account_id, title, starts_at, ends_at, creation_item_id, creation_owner_id, creation_owner_kind, creation_starts_at, creation_ends_at)
+      VALUES (${data.id}::uuid, ${itemId}::uuid, ${task.data.space_id}::uuid, ${owner.kind === "user" ? owner.id : null}::uuid, ${owner.kind === "service_account" ? owner.id : null}::uuid, ${task.data.title},
+        ${data.startsAt}::timestamptz, ${data.endsAt}::timestamptz, ${itemId}::uuid, ${owner.id}::uuid, ${owner.kind},
         ${data.startsAt}::timestamptz, ${data.endsAt}::timestamptz) ON CONFLICT (id) DO NOTHING RETURNING id`;
     if (inserted.length === 0) {
-      if (!(await matchesCreation(tx, itemId, userId, data))) return fail(err.conflict("Time block ID already used with different input"));
+      if (!(await matchesCreation(tx, itemId, owner, data))) return fail(err.conflict("Time block ID already used with different input"));
     } else await publishSpaceChange(tx, { type: "item.updated", spaceId: task.data.space_id, itemId });
     const row = await readRow(data.id, reader, tx);
     return row ? ok(map(row, reader)) : fail(err.notFound("Time block"));
@@ -294,10 +328,10 @@ const mutate = async (params: {
     await tx`SELECT id FROM spaces.time_blocks WHERE id = ${params.id}::uuid FOR UPDATE`;
     const row = await readRow(params.id, params.reader, tx);
     if (!row) return fail(err.notFound("Time block"));
-    if (row.owner_id !== ownerId(params.reader)) return fail(err.forbidden("Only the assigned owner can change this time block"));
+    if (!isOwner(row, params.reader) || !mayWriteOwnBlock(params.reader))
+      return fail(err.forbidden("Only the assigned owner can change this time block"));
     if (!params.remove && (!row.item_id || !row.readable || !row.assigned))
       return fail(err.forbidden("Task assignment and access required"));
-    if (params.remove && row.item_id && (!row.readable || !row.assigned)) return fail(err.forbidden("Task assignment and access required"));
     if (params.expectedRevision !== undefined && revisionForTimeBlock(map(row, params.reader)) !== params.expectedRevision)
       return fail(err.conflict("Time block changed; review it again"));
     if (params.remove) await tx`DELETE FROM spaces.time_blocks WHERE id = ${params.id}::uuid`;
@@ -333,20 +367,40 @@ export const remove = async (params: { id: string; reader: TimeBlockReader; expe
   return result.ok ? ok() : result;
 };
 
-/** Caller holds the task lock. Still-assigned owners keep blocks; only a unique human successor is unambiguous. */
+/** Caller holds the task lock. Only one remaining assignee gives an unambiguous successor. */
 export const reconcileAssignees = async (tx: SQL, itemId: string): Promise<void> => {
-  // Keep the surviving Space reference current when the caller has transferred the task.
   await tx`UPDATE spaces.time_blocks b SET space_id = i.space_id FROM spaces.items i
     WHERE b.item_id = i.id AND i.id = ${itemId}::uuid AND b.space_id IS DISTINCT FROM i.space_id`;
-  const people = await tx<{ user_id: string }[]>`SELECT user_id FROM spaces.item_assignees
-    WHERE item_id = ${itemId}::uuid AND user_id IS NOT NULL ORDER BY user_id`;
-  if (people.length !== 1) return; // Zero/multiple human successors require a product decision.
-  const successor = people[0]!.user_id;
-  const moved = await tx<{ owner_id: string }[]>`SELECT DISTINCT owner_id FROM spaces.time_blocks
-    WHERE item_id = ${itemId}::uuid AND owner_id <> ${successor}::uuid`;
-  if (moved.length === 0) return;
-  await tx`UPDATE spaces.time_blocks SET owner_id = ${successor}::uuid WHERE item_id = ${itemId}::uuid AND owner_id <> ${successor}::uuid`;
-  await tx`INSERT INTO spaces.time_block_notifications (recipient_id, direction)
-    SELECT id, 'released' FROM unnest(${toPgUuidArray(moved.map((row) => row.owner_id))}::uuid[]) AS id`;
-  await tx`INSERT INTO spaces.time_block_notifications (recipient_id, direction) VALUES (${successor}::uuid, 'received')`;
+  const assignees = await tx<{ user_id: string | null; service_account_id: string | null }[]>`
+    SELECT user_id, service_account_id FROM spaces.item_assignees WHERE item_id = ${itemId}::uuid`;
+  const stillAssigned = sql`EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = b.item_id
+    AND (ia.user_id = b.owner_id OR ia.service_account_id = b.owner_service_account_id))`;
+  await tx`UPDATE spaces.time_blocks b SET assignment_detached = false
+    WHERE b.item_id = ${itemId}::uuid AND b.assignment_detached AND ${stillAssigned}`;
+  const successor = assignees.length === 1 ? assignees[0] : undefined;
+  if (!successor) {
+    // One durable notice per owner/removal episode, even for several blocks and retried task writes.
+    await tx`WITH retained AS (
+      UPDATE spaces.time_blocks b SET assignment_detached = true
+      WHERE b.item_id = ${itemId}::uuid AND NOT b.assignment_detached AND NOT ${stillAssigned}
+      RETURNING owner_id, owner_service_account_id
+    ) INSERT INTO spaces.time_block_notifications (recipient_id, recipient_service_account_id, direction, recipient_resource_id)
+      SELECT DISTINCT r.owner_id, r.owner_service_account_id, 'retained', a.resource_id
+      FROM retained r LEFT JOIN auth.service_accounts a ON a.id = r.owner_service_account_id AND a.kind = 'resource_bound'`;
+    return;
+  }
+  const moved = await tx<{ owner_id: string | null; owner_service_account_id: string | null }[]>`
+    SELECT DISTINCT b.owner_id, b.owner_service_account_id FROM spaces.time_blocks b
+    WHERE b.item_id = ${itemId}::uuid AND NOT ${stillAssigned}`;
+  if (!moved.length) return;
+  await tx`UPDATE spaces.time_blocks b SET owner_id = ${successor.user_id}::uuid,
+    owner_service_account_id = ${successor.service_account_id}::uuid, assignment_detached = false
+    WHERE b.item_id = ${itemId}::uuid AND NOT ${stillAssigned}`;
+  for (const previous of moved)
+    await tx`INSERT INTO spaces.time_block_notifications
+    (recipient_id, recipient_service_account_id, direction, recipient_resource_id) VALUES (${previous.owner_id}::uuid, ${previous.owner_service_account_id}::uuid, 'released',
+        (SELECT resource_id FROM auth.service_accounts WHERE id = ${previous.owner_service_account_id}::uuid AND kind = 'resource_bound'))`;
+  await tx`INSERT INTO spaces.time_block_notifications (recipient_id, recipient_service_account_id, direction, recipient_resource_id)
+    VALUES (${successor.user_id}::uuid, ${successor.service_account_id}::uuid, 'received',
+      (SELECT resource_id FROM auth.service_accounts WHERE id = ${successor.service_account_id}::uuid AND kind = 'resource_bound'))`;
 };

@@ -137,6 +137,8 @@ export function TimeBlocksSection(props: TaskProps & { blocks: SpaceTimeBlock[];
                 <Button size="sm" variant="ghost" disabled={busy() === block.id} onClick={() => void edit(block)}>
                   {t.edit}
                 </Button>
+              </Show>
+              <Show when={block.canDelete}>
                 <Dropdown.Root
                   items={[{ label: t.delete, icon: "ti ti-trash", action: () => void remove(block), disabled: busy() === block.id }]}
                 >

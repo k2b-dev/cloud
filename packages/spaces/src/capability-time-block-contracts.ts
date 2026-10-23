@@ -26,7 +26,7 @@ export const TimeBlockListInputSchema = z
     mine: z
       .boolean()
       .default(false)
-      .describe("Only blocks owned by the person backing the actor; independent agents cannot impersonate people."),
+      .describe("Only blocks owned by the current user or independent service account; delegated credentials act as their user."),
     cursor: z.string().min(1).max(256).optional().describe("Continuation cursor; keep every filter and limit unchanged."),
     limit: z
       .number()

@@ -160,10 +160,13 @@ blocks for one task. Each starts with the task title; changing a block's title
 later leaves the task and its other blocks unchanged.
 
 Everyone who can read the task sees its blocks. Only the assigned person who
-owns a block changes it. Blocks stay in your planning when the task is done or
+owns a block changes it. Agents and service accounts can also be assigned and
+own blocks. Blocks stay in your planning when the task is done or
 deleted; after deletion you can still remove your block. Replacing one owner
-with one new person moves the blocks to that person and notifies both in
-Cloud. Blocks do not become extra list or Kanban items and are not included
+with exactly one remaining assignee moves the blocks to that assignee and
+notifies both in Cloud. With no assignee or several possible successors, the
+blocks stay with their previous owner, who is notified and can only delete
+them. You can delete your own blocks even after losing access to the task. Blocks do not become extra list or Kanban items and are not included
 in iCal or CalDAV.
 
 From the CLI, list a task's blocks with `cld spaces blocks ls <task>`. Use

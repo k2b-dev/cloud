@@ -582,13 +582,18 @@ thereafter. Renaming a block never renames its task. Blocks are separate from
 events and task dependencies, stay out of list and Kanban item lists, and are
 excluded from iCal and CalDAV.
 
-Everyone who can read a task can see its blocks. Only the assigned human who
-owns a block can create or change their planning. A delegated user credential
-acts as that person; an independent agent has its own identity and cannot
-impersonate the owner. Completing or deleting the task preserves its blocks.
-After task deletion, the owner can still remove a block. Replacing one owner
-with one new person moves the blocks to the successor and sends Cloud
-notifications to both people.
+Everyone who can read a task can see its blocks. The assigned owner can create
+and change their own blocks. People, agents and service accounts follow the
+same rule; a delegated user credential acts as that person. Independent
+accounts need their own Space access and a credential with write scope.
+Completing or deleting a task preserves its blocks. If removing an owner
+leaves exactly one assignee, the blocks move to that assignee and both receive
+Cloud notifications. With no assignee or several possible successors, blocks
+stay with the previous owner, who is notified and may only delete them. If a
+later assignment change or claim leaves one assignee, that assignee receives
+the retained blocks.
+Owners may delete their blocks even after losing access to the task. Task and
+Space references are hidden from an owner who no longer has access.
 
 Open the task and choose **Block time**. If you are not assigned, choose
 **Assign to me** first; this needs permission to change the task. Choose a
@@ -635,10 +640,11 @@ pagination, a task with more than 100 blocks returns an error asking for it.
 Create requires a client UUID `id`, `startsAt` and `endsAt`; update accepts
 only the supplied `title`, `startsAt` and `endsAt`.
 
-Blocks report `taskState` as `open`, `done`, `deleted` or `no_access` and expose
+Blocks identify their owner with `ownerId` and `ownerKind` (`user` or
+`service_account`). They report `taskState` as `open`, `done`, `deleted` or `no_access` and expose
 `canWrite` for editing and `canDelete` for deletion. After task deletion, the
 owner may delete the block but cannot edit it. Lost task access or removal
-from the assignees currently prevents both actions. An owner retains their
+from the assignees also allows deletion only. An owner retains their
 block after losing task access; task and Space IDs, Space name and color are
 then hidden. Use these fields to show the
 saved planning without claiming access to its source task.

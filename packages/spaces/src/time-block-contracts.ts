@@ -10,12 +10,15 @@ export const SpaceTimeBlockSchema = z.object({
   startsAt: instant,
   endsAt: instant,
   ownerId: z.string().uuid(),
+  ownerKind: z.enum(["user", "service_account"]),
   ownerName: z.string(),
   spaceName: z.string().nullable(),
   spaceColor: z.string().nullable(),
   taskState: z.enum(["open", "done", "deleted", "no_access"]),
   canWrite: z.boolean().describe("Whether the owner may edit this block while assigned to its accessible task"),
-  canDelete: z.boolean().describe("Whether the owner may delete this block, including after its task was deleted"),
+  canDelete: z
+    .boolean()
+    .describe("Whether the owner may delete this block, including after task deletion, unassignment or loss of task access"),
 });
 export type SpaceTimeBlock = z.infer<typeof SpaceTimeBlockSchema>;
 export const CreateTimeBlockSchema = z

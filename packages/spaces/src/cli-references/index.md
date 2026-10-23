@@ -186,17 +186,18 @@ response. `show`, `set`, and `rm` take a block UUID, never a task's six-characte
 Read `canWrite` before editing and `canDelete` before deleting; a deleted
 task's block may allow deletion while refusing edits.
 
-Anyone who can read the task can read its blocks. Only the assigned human
-owner changes them. A user-delegated token acts as its person; an independent
-agent does not own or impersonate a person's planning. Blocks survive task
-completion and deletion; the owner can remove a block after its task is
-deleted. When one owner is replaced by one new person, that person's blocks
-move to the successor and both people receive Cloud notifications.
+Anyone who can read the task can read its blocks. Only the assigned owner
+changes them. People, agents and service accounts can own blocks; a delegated
+user token acts as its person. Independent accounts need their own Space
+access and write scope. Blocks survive task completion and deletion.
+Removing an owner transfers blocks to the sole remaining assignee and
+notifies both. If zero or several assignees remain, the previous owner is
+notified and keeps the blocks with deletion only, even without task access.
 
 A block returns `id`, public `itemId` and `spaceId` (nullable), `title`,
-`startsAt`, `endsAt`, `ownerId`, `ownerName`, nullable `spaceName` and
+`startsAt`, `endsAt`, `ownerId`, `ownerKind` (`user` or `service_account`), `ownerName`, nullable `spaceName` and
 `spaceColor`, `taskState` (`open`, `done`, `deleted`, `no_access`), and
-`canWrite`. Task and Space identifiers and presentation are hidden when the
+`canWrite` and `canDelete`. Task and Space identifiers and presentation are hidden when the
 owner no longer has access. Use the returned state and permission rather than
 inferring them from a task lookup. Range JSON is `{ items, total, page,
 perPage, hasNext }`; task JSON is an array; `show`/`add`/`set` return one block;

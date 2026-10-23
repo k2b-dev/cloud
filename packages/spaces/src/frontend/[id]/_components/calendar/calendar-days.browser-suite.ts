@@ -284,6 +284,7 @@ beforeAll(async () => {
           spaceId: "Space1",
           title: task.title,
           ownerId: READER,
+          ownerKind: "user",
           ownerName: "Mara",
           spaceName: "Team Logistik",
           spaceColor: "#8b5cf6",

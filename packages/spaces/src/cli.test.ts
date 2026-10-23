@@ -140,6 +140,7 @@ const timeBlock = {
   startsAt: "2026-10-23T08:00:00Z",
   endsAt: "2026-10-23T09:00:00Z",
   ownerId: USER_ID,
+  ownerKind: "user",
   ownerName: "Ada",
   spaceName: "Roadmap",
   spaceColor: "#3b82f6",

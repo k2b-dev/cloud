@@ -160,11 +160,14 @@ mit dem Aufgabentitel. Änderst du später den Titel eines Zeitblocks, bleiben
 die Aufgabe und ihre anderen Zeitblöcke unverändert.
 
 Alle, die die Aufgabe lesen können, sehen ihre Zeitblöcke. Nur die zugewiesene
-Person, der ein Zeitblock gehört, ändert ihn. Zeitblöcke bleiben erhalten,
+Person, der ein Zeitblock gehört, ändert ihn. Auch Agenten und Dienstkonten
+können zugewiesen sein und Zeitblöcke besitzen. Zeitblöcke bleiben erhalten,
 wenn du die Aufgabe erledigst oder löschst. Nach dem Löschen kannst du deinen
-Zeitblock weiterhin entfernen. Ersetzt eine neue Person die bisherige
-Eigentümerin oder den bisherigen Eigentümer, gehen die Zeitblöcke an diese
-Person; beide erhalten eine Cloud-Benachrichtigung. Zeitblöcke erscheinen
+Zeitblock weiterhin entfernen. Wird der bisherige Besitzer entfernt und bleibt
+genau eine Zuweisung, gehen die Blöcke an dieses Konto; beide erhalten eine
+Cloud-Benachrichtigung. Ohne eindeutigen Nachfolger bleiben sie beim bisherigen
+Besitzer. Dieser wird benachrichtigt und darf sie nur noch löschen, auch ohne
+Zugriff auf die Aufgabe. Zeitblöcke erscheinen
 nicht als zusätzliche Einträge in Liste oder Kanban und werden nicht über
 iCal oder CalDAV ausgegeben.
 

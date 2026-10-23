@@ -58,6 +58,7 @@ test("time-block list bounds come from calendar contract and escaped JSON envelo
     spaceId: "Space1",
     title: "\u0001".repeat(200),
     ownerId: id,
+    ownerKind: "user",
     ownerName: "\u0001".repeat(200),
     spaceName: "\u0001".repeat(100),
     spaceColor: "\u0001".repeat(100),

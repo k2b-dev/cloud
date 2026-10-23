@@ -772,6 +772,50 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
     });
 
   for (const width of [1440, 390])
+    regression(`removed owners can only delete retained blocks, including after task access loss at ${width}px`, async () => {
+      const f = await scene();
+      const n = Number(f.key.slice(4));
+      const inputs = [9600, 9700].map((base) => ({
+        id: uuid(base + n),
+        startsAt: "2030-03-14T10:00:00.000Z",
+        endsAt: "2030-03-14T10:45:00.000Z",
+      }));
+      for (const input of inputs)
+        await json(await request(f, `/${f.spaceId}/items/${f.taskId}/time-blocks`, { method: "POST", body: JSON.stringify(input) }));
+      // Release the fixture claim before removing all assignments through the real item API.
+      await json(
+        await request(f, `/${f.spaceId}/items/${f.taskId}/release`, {
+          method: "POST",
+          body: JSON.stringify({ claimId: uuid(n * 10 + 6), force: true }),
+        }),
+      );
+      await json(await request(f, `/${f.spaceId}/items/${f.taskId}`, { method: "PATCH", body: JSON.stringify({ assigneeIds: [] }) }));
+      expect(await blocks(f)).toMatchObject(inputs.map((input) => ({ id: input.id, canWrite: false, canDelete: true })));
+      let page = await open(f, true, width);
+      try {
+        const first = page.locator(`#time-block-${inputs[0]!.id}`);
+        await first.waitFor();
+        expect(await first.getByRole("button", { name: "Ändern", exact: true }).count()).toBe(0);
+        await first.getByRole("button", { name: "Termin-Aktionen", exact: true }).click();
+        await page.getByRole("menuitem", { name: "Termin löschen", exact: true }).click();
+        await waitFor(async () => (await request(f, `/blocks/${inputs[0]!.id}`)).status === 404);
+        await page.context().close();
+        await sql`DELETE FROM spaces.space_access WHERE space_id = ${f.spaceUuid}::uuid`;
+        const remaining = SpaceTimeBlockSchema.parse(await json(await request(f, `/blocks/${inputs[1]!.id}`)));
+        expect(remaining).toMatchObject({ itemId: null, spaceId: null, taskState: "no_access", canWrite: false, canDelete: true });
+        page = await open(f, false, width, "day", "/app/spaces?view=today");
+        await page.locator("button.spaces-overview-time-block").click();
+        await page.getByRole("button", { name: "Termin löschen", exact: true }).waitFor();
+        expect(await page.getByText("Du kannst diese Aufgabe nicht mehr öffnen.", { exact: false }).count()).toBeGreaterThan(0);
+        await shot(page, "14-retained-without-task-access");
+        await page.getByRole("button", { name: "Termin löschen", exact: true }).click();
+        await waitFor(async () => (await request(f, `/blocks/${inputs[1]!.id}`)).status === 404);
+      } finally {
+        await page.context().close();
+      }
+    });
+
+  for (const width of [1440, 390])
     regression(`real task detail, multiple blocks and dialog screenshots at ${width}px`, async () => {
       const f = await scene();
       let page = await open(f, true, width);

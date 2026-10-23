@@ -2505,6 +2505,7 @@ const timeBlock: SpaceTimeBlock = {
   startsAt: "2026-10-23T08:00:00.000Z",
   endsAt: "2026-10-23T09:00:00.000Z",
   ownerId: userId,
+  ownerKind: "user",
   ownerName: "Ada",
   spaceName: "Roadmap",
   spaceColor: "#3b82f6",
@@ -2575,7 +2576,7 @@ test("time-block reviews are complete, deterministic and refuse non-owners", asy
   expect(await action.review(input, userContext)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
 });
 
-test("time-block create review recognizes only the assigned person, including delegated user tokens", async () => {
+test("time-block create review recognizes assigned humans, including delegated user tokens", async () => {
   spyOn(spacesService.space, "get").mockResolvedValue(space);
   spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
   spyOn(spacesService.item, "get").mockResolvedValue({
@@ -2599,6 +2600,46 @@ test("time-block create review recognizes only the assigned person, including de
   };
   expect((await spacesCapabilities.actions["time-block.create"].review(input, delegated)).ok).toBeTrue();
   expect((await spacesCapabilities.actions["time-block.create"].review(input, serviceAccountContext)).ok).toBeFalse();
+});
+
+test("time-block create review allows an assigned agent under its own identity and denies unassigned or mismatched principals", async () => {
+  spyOn(spacesService.space, "get").mockResolvedValue(space);
+  spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+  const get = spyOn(spacesService.item, "get").mockResolvedValue({
+    ...task,
+    assignees: [{ id: serviceAccountId, kind: "service_account", displayName: "Planning agent", avatarHash: null }],
+  });
+  const agent: CapabilityExecutionContext = {
+    ...serviceAccountContext,
+    actor: {
+      ...serviceAccountContext.actor,
+      scopes: ["read", "write"],
+      serviceAccount: { ...serviceAccountContext.actor.serviceAccount, kind: "agent", appId: null, resourceType: null, resourceId: null },
+    },
+  };
+  const input = { itemId, taskTitle: task.title, id: timeBlock.id, startsAt: timeBlock.startsAt, endsAt: timeBlock.endsAt };
+  const action = spacesCapabilities.actions["time-block.create"];
+  const review = await action.review(input, agent);
+  expect(review.ok).toBeTrue();
+  if (!review.ok) throw new Error(review.error.message);
+  expect(CapabilityActionReviewSchema.safeParse(review.data).success).toBeTrue();
+  expect(await action.review(input, agent)).toEqual(review);
+  expect(await action.review(input, { ...agent, actor: { ...agent.actor, scopes: ["read"] } })).toMatchObject({
+    ok: false,
+    error: { code: "FORBIDDEN" },
+  });
+  expect(await action.review(input, { ...agent, accessSubject: userContext.accessSubject })).toMatchObject({
+    ok: false,
+    error: { code: "NOT_FOUND" },
+  });
+  get.mockResolvedValue({ ...task, assignees: [{ id: userId, kind: "user", displayName: "Ada", avatarHash: null }] });
+  expect(await action.review(input, agent)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+  // Matching UUIDs across principal kinds must not turn a human assignment into an agent assignment.
+  get.mockResolvedValue({
+    ...task,
+    assignees: [{ id: serviceAccountId, kind: "user", displayName: "Different principal", avatarHash: null }],
+  });
+  expect(await action.review(input, agent)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
 });
 
 test("time-block lists bind cursors to filters, page size and principal, without binding invocation provenance", async () => {

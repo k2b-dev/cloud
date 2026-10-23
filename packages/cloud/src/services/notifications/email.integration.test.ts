@@ -54,6 +54,7 @@ suiteFor("database", "nats")("notification email through outgoing mail", () => {
     await sql`CREATE TABLE settings.entries(key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`.simple();
     await sql`CREATE SCHEMA auth`.simple();
     await sql`CREATE TABLE auth.users(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), uid TEXT, display_name TEXT, mail TEXT)`.simple();
+    await sql`CREATE TABLE auth.service_accounts(id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT)`.simple();
     await migrateMail();
     await migrateAudit();
     await migrateNotifications();

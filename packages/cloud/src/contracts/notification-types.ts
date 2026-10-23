@@ -1,12 +1,14 @@
 import type { output, ZodType } from "zod";
 import { canonicalLocale, localeFallbackChain } from "../shared/locale";
+import type { CloudResourceRef } from "./capabilities";
 
-export type NotificationRecipientKind = "user" | "email";
+export type NotificationRecipientKind = "user" | "email" | "principal";
 
 /** Deployment channel packages extend this registry through module augmentation. */
 export interface NotificationChannelRegistry {
   email: true;
   browser: true;
+  inbox: true;
 }
 
 export type NotificationChannelId = Extract<keyof NotificationChannelRegistry, string>;
@@ -31,7 +33,7 @@ export const validateNotificationTargetHref = (value: string): `/${string}` => {
 export type NotificationPresentation = {
   title: string;
   body?: string;
-  /** Short text shown in the browser/OS notification, including the lock screen. Cloud passes it only to the browser channel; email, deployment channels, and notification history never receive it. */
+  /** Short text shown in the browser/OS notification, including the lock screen. Cloud passes it only to the browser channel; email, inbox, deployment channels, and notification history never receive it. */
   preview?: string;
   /** Stable app-chosen browser group key, namespaced by Cloud per application. */
   group?: string;
@@ -125,7 +127,11 @@ export type BoundNotificationMap<AppId extends string, N extends NotificationDef
     : never;
 };
 
-export type NotificationRecipient<R extends NotificationRecipientKind> = R extends "user" ? { userId: string } : { email: string };
+export type NotificationRecipient<R extends NotificationRecipientKind> = R extends "user"
+  ? { userId: string; serviceAccountId?: never; email?: never }
+  : R extends "principal"
+    ? { userId: string; serviceAccountId?: never; email?: never } | { serviceAccountId: string; userId?: never; email?: never }
+    : { email: string; userId?: never; serviceAccountId?: never };
 
 export type NotificationSendInput<D extends AnyBoundNotificationDefinition> =
   D extends BoundNotificationDefinition<string, string, infer R, infer S>
@@ -134,6 +140,8 @@ export type NotificationSendInput<D extends AnyBoundNotificationDefinition> =
         data: output<S>;
         idempotencyKey: string;
         sentBy?: string;
+        /** App-owned authorization boundary; required for a resource-bound service-account recipient. */
+        resource?: CloudResourceRef;
         /** Locale for final human-facing notification and email content. */
         locale?: string;
       }

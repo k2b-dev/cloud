@@ -181,7 +181,7 @@ export const change = async (params: {
         OR (${takenOver.actor.kind} = 'service_account' AND service_account_id = ${takenOver.actor.id}::uuid)
       )`;
     }
-    if (takenOver) await reconcileAssignees(tx, params.itemId);
+    if (takenOver || params.operation === "claim") await reconcileAssignees(tx, params.itemId);
     if (takenOver)
       await recordTakeOver(
         { spaceId: params.spaceId, itemId: params.itemId, itemTitle: item.title, actor: params.actor, claim: takenOver },
