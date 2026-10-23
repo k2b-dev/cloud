@@ -374,7 +374,9 @@ suite("chat threads API", () => {
     const chat = await f.fixture(owner, [{ person: member, permission: "write" }]);
     const a = await create(owner, chat.shortId, "A");
     const first = await send(owner, chat.shortId, { thread: a.id });
-    await send(owner, chat.shortId, { thread: a.id });
+    const second = await send(owner, chat.shortId, { thread: a.id });
+    // Only what was read can be marked unread again.
+    await read(member, chat.shortId, second.seq, a.id);
     expect((await f.request(member.headers, `/${chat.shortId}/unread`, "POST", { message: first.id })).status).toBe(200);
     const stored = async () =>
       (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM chat.thread_reads WHERE principal_id = ${member.id}::uuid`)[0]!
