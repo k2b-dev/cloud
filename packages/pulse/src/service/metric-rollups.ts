@@ -30,7 +30,7 @@ export const hourlyRollupSql = (database: string, prefix: string) => {
   const db = assertStoreName(database, prefix);
   return `INSERT INTO ${db}._rollups
     WITH
-    in_hour AS (SELECT series_id,ts,value FROM ${db}.samples WHERE ts>=fromUnixTimestamp64Milli({start:Int64}) AND ts<fromUnixTimestamp64Milli({end:Int64})),
+    in_hour AS (SELECT series_id,ts,argMax(src.value,src.version) AS value FROM ${db}._samples AS src WHERE ts>=fromUnixTimestamp64Milli({start:Int64}) AND ts<fromUnixTimestamp64Milli({end:Int64}) GROUP BY series_id,ts),
     ids AS (SELECT DISTINCT series_id FROM in_hour),
     raw_recent AS (SELECT src.series_id,argMax(src.value,(src.ts,src.version)) AS value,max(src.ts) AS ts FROM ${db}._samples src
       WHERE src.series_id IN ids AND src.ts<fromUnixTimestamp64Milli({start:Int64}) AND src.ts>=fromUnixTimestamp64Milli({rawFrom:Int64}) GROUP BY src.series_id),

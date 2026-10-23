@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, mock, setSystemTime, test } from "bun:test";
 import * as cloudServer from "@k2b/cloud/server";
+import { clientIpBucket } from "@k2b/cloud/server";
 import { redis } from "bun";
 import { Hono, type MiddlewareHandler } from "hono";
 import { valkeySuite } from "../../../scripts/fixtures/test-infra";
-import { publicUploadClientBucket } from "./public-upload-rate-limit";
 import { FilesError } from "./service/errors";
 
 let authCalls = 0;
@@ -70,7 +70,7 @@ suite("public inbox upload rate limits", () => {
   afterEach(async () => {
     try {
       for (const key of await keys()) {
-        if ([...ips].some((ip) => key.includes(`:ip:${ip}:`) || key.includes(`:${publicUploadClientBucket(ip)}:`))) await redis.del(key);
+        if ([...ips].some((ip) => key.includes(`:ip:${ip}:`) || key.includes(`:${clientIpBucket(ip)}:`))) await redis.del(key);
       }
     } finally {
       ips.clear();
@@ -120,9 +120,7 @@ suite("public inbox upload rate limits", () => {
     expect((await request(ip, `/inbox/${token}/api`, "GET")).status).toBe(429);
 
     const storedKeys = await keys();
-    expect(storedKeys.some((key) => key.startsWith(`filesv2:rate-limit:filesv2-public-upload:${publicUploadClientBucket(ip)}:`))).toBe(
-      true,
-    );
+    expect(storedKeys.some((key) => key.startsWith(`filesv2:rate-limit:filesv2-public-upload:${clientIpBucket(ip)}:`))).toBe(true);
     for (const secret of [token, secondToken]) {
       expect(storedKeys.every((key) => !key.includes(secret))).toBe(true);
     }
@@ -178,6 +176,11 @@ suite("public inbox upload rate limits", () => {
     }
     expect(authCalls).toBe(callsBeforeLimited);
     expectUpload(await request(otherNetworkIp, path), 119);
+    for (let i = 0; i < 10; i++) {
+      expect((await request(i % 2 === 0 ? firstIp : sameNetworkIp, `/inbox/${token}/api`, "GET")).status).toBe(200);
+    }
+    expect((await request(sameNetworkIp, `/inbox/${token}/api`, "GET")).status).toBe(429);
+    expect((await request(otherNetworkIp, `/inbox/${token}/api`, "GET")).status).toBe(200);
     const storedKeys = await keys();
     const bucket = `${prefix}:${subnet.toString(16)}::/64`;
     expect(storedKeys.some((key) => key.startsWith(`filesv2:rate-limit:filesv2-public-upload:ip6:${bucket}:`))).toBe(true);
