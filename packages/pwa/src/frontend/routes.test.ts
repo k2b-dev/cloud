@@ -124,6 +124,25 @@ describe("shell routes", () => {
     expect(await response.text()).toContain("Can't reach Example Cloud right now.");
   });
 
+  test("a launch resumes the validated remembered address, while tapping Start opens Start", async () => {
+    const headers = { Cookie: "pwa_session=test-session; pwa_last_address=" + encodeURIComponent("/pwa/spaces/demo/task?view=mine") };
+    let response = await request("/pwa/?launch", { headers });
+    expect(response.headers.get("location")).toBe("/pwa/_auth/session/launch?to=%2Fpwa%2Fspaces%2Fdemo%2Ftask%3Fview%3Dmine");
+    signIn();
+    response = await request("/pwa/?launch", { headers });
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/pwa/spaces/demo/task?view=mine");
+    response = await request("/pwa/", { headers });
+    expect(response.status).toBe(200);
+    expect(response.headers.getSetCookie().some((cookie) => cookie.startsWith("pwa_last_address=%2Fpwa%2F;"))).toBe(true);
+    for (const address of ["https://elsewhere.example/", "/pwa/_auth/session/renew", "/pwa/?pwa=ended", "/pwa/offline"]) {
+      const response = await request("/pwa/?launch", {
+        headers: { Cookie: "pwa_session=test-session; pwa_last_address=" + encodeURIComponent(address) },
+      });
+      expect(response.headers.get("location")).toBe("/pwa/");
+    }
+  });
+
   test("a web session never opens Start", async () => {
     signIn("web");
     const response = await request("/pwa/", { headers: { Cookie: "session_token=test-session" } });
@@ -179,6 +198,7 @@ describe("shell routes", () => {
     expect(html).toContain("Mia Muster");
     expect(html).toContain("mia.muster@example.test");
     expect(html).toContain("&quot;iPhone&quot;");
+    expect(html).toMatch(/<input[^>]*disabled[^>]*maxlength="80"/);
     expect(html).toMatch(/Cloud \d+\.\d+\.\d+/);
     expect(html).toContain('href="/pwa/"');
   });
@@ -211,7 +231,7 @@ describe("manifest", () => {
       id: "/pwa/",
       name: "Example Cloud",
       short_name: "Example Cloud",
-      start_url: "/pwa/",
+      start_url: "/pwa/?launch",
       scope: "/pwa/",
       display: "standalone",
       background_color: "#fafafa",

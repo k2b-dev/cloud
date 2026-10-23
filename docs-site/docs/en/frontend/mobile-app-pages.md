@@ -209,6 +209,60 @@ An app session resolves to the same `actor`, `accessSubject`, and
 carries `sessionKind: "app"`. Use `actor` for audit and `accessSubject` for
 grants, as on the web.
 
+## Restart at the last page
+
+Launching the Cloud-App from the Home Screen resumes its last successful page,
+including its path and query below `/pwa/`. Tapping Start still opens Start.
+Signing out of the app or completing a new pairing resets the destination to
+Start. If access to the remembered page has changed, that page shows its own
+403 or 404.
+
+The shell handles this for every part. It remembers the address in the
+`pwa_last_address` cookie: `Path=/pwa/`, `Secure`, `SameSite=Lax`,
+with the pairing's 150-day idle lifetime. Successful documents also update it
+when a part changes the address through browser history, as Spaces does for
+task selections and filters. It stores no credentials, fragments,
+auth endpoints, welcome states, or error pages. Without an app session, the
+launch bounce renews the session and validates the remembered destination.
+
+The manifest uses `/pwa/?launch` to distinguish a Home Screen launch from a
+Start link before rendering a page. Its existing `id: "/pwa/"` stays unchanged.
+Already installed apps need their browser to adopt the updated manifest. A
+browser that retains the old `/pwa/` start URL still opens Start while its app
+session is valid; without a session, it resumes through the launch bounce.
+Reinstalling adopts the new start URL when the browser does not update it.
+
+## Keep drafts
+
+Parts keep unsaved text with `pwaDrafts` from
+`@k2b/cloud/browser/pwa-drafts`. Key each field by the signed-in account's id
+and a stable field id, including the conversation or resource id when needed.
+Store only the text the person typed: no credentials, attachments, account
+objects, or server data.
+
+```ts
+import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
+
+// Restore after mounting, so SSR and the first browser render agree.
+const draft = pwaDrafts.read(accountId, "chat.composer:conversation-id");
+// On every input, including empty text:
+const kept = pwaDrafts.write(accountId, "chat.composer:conversation-id", text);
+// After a successful send/save, or an explicit discard:
+pwaDrafts.remove(accountId, "chat.composer:conversation-id");
+```
+
+An absent draft returns `undefined`; an empty draft returns `""`. Draft values
+are plain text in `localStorage` and survive the app being ended or reloaded.
+If `write` returns `false`, explain that this browser cannot keep the draft
+after the app closes. The helper protects the current document's text from
+automatic update reloads even then. Keep a failed save's draft and preserve any
+new text typed while a save or send was in flight.
+
+The shell uses this contract for the device name in Settings. The platform
+clears every account's app drafts on sign-out, a new pairing, or a server
+response that says the device was removed. Other browser storage is untouched.
+Parts do not need their own sign-out cleanup.
+
 ## Rules for parts
 
 - Serve pages only below `/pwa/<app-id>`, each in `PwaLayout` with
@@ -279,8 +333,27 @@ the server kept and say why.
 Controls that the server renders before their island runs stay disabled until
 then, because a tap on them would do nothing.
 
-There is no update prompt. Each tab tap and each link loads a page from the
-network, so a new release of the part reaches the phone with the next page.
+### Pick up updates
+
+Each tab tap and link loads a fresh document from the network. An open app
+also checks release identities through its existing session keepalive, on
+returning from the background and hourly while visible. It compares the
+page owner's build and Core's shared-asset build with those used to render
+the document; an unrelated part's release does not make this page stale.
+Unnamed development builds do not identify a release.
+
+On returning to the foreground with a new version, the app reloads the current
+address when no text field is focused, no unsaved typing or account draft
+remains, and no modal dialog is open. Otherwise it shows a persistent quiet
+**New version · Reload** notice (**Neue Version · Neu laden** in German) in
+the work area's toast rail. Its action reloads the current page; stored drafts
+restore after mounting. The hourly check offers the same notice and never
+interrupts work with an automatic reload. There is no extra polling.
+
+Parts use the draft helper for text they intend to save or send. For other
+text fields, automatic reloads also defer when input differs from the field's
+`defaultValue`; update that baseline after successfully saving. A field with
+focus always holds an automatic reload, even before the first keystroke.
 
 When the mobile app is not running, a request to a part still reaches the part,
 but without an app session it ends at Core's not-found page. Nobody can pair a

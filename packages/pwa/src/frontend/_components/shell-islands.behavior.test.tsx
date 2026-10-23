@@ -13,7 +13,7 @@ const waitFor = async (condition: () => boolean, label: string) => {
   throw new Error(`Timed out waiting for ${label}`);
 };
 
-type Route = (method: string, path: string, body: unknown) => Response | undefined;
+type Route = (method: string, path: string, body: unknown) => Response | Promise<Response> | undefined;
 const mockFetch = (route: Route) => {
   const calls: { method: string; path: string; body: unknown }[] = [];
   const spy = spyOn(globalThis, "fetch").mockImplementation(
@@ -80,7 +80,7 @@ const button = (dom: DomTestHarness, label: string) =>
   [...dom.document.querySelectorAll("button")].find((element) => element.textContent?.trim() === label) as HTMLButtonElement | undefined;
 const settings = () =>
   createComponent(modules!.PhoneSettings, {
-    account: { name: "Mia Muster" },
+    account: { id: "mia", name: "Mia Muster" },
     theme: "light",
     name: "iPhone",
     cloud: "Example Cloud",
@@ -89,6 +89,82 @@ const settings = () =>
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
+  test("pairing completion clears all app drafts only after it succeeds", async () => {
+    const { phoneAuth } = await import("../phone");
+    let paired = false;
+    const fetch = mockFetch(() =>
+      paired
+        ? Response.json({ state: "paired" })
+        : Response.json({ state: "waiting", code: "123456", account: { name: "Mia" }, expiresAt: "2026-10-23T12:00:00Z" }, { status: 202 }),
+    );
+    const page = mount(settings);
+    try {
+      page.dom.window.localStorage.setItem("cloud.pwa.draft:mia:chat", "one");
+      page.dom.window.localStorage.setItem("cloud.pwa.draft:other:chat", "two");
+      await phoneAuth.complete();
+      expect(page.dom.window.localStorage.length).toBe(2);
+      paired = true;
+      await phoneAuth.complete();
+      expect(page.dom.window.localStorage.length).toBe(0);
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+
+  test("a failed save keeps its draft, and saving does not erase newer typing", async () => {
+    let release!: (response: Response) => void;
+    let fail = true;
+    const fetch = mockFetch(() =>
+      fail
+        ? new Response(null, { status: 500 })
+        : new Promise<Response>((resolve) => {
+            release = resolve;
+          }),
+    );
+    const page = mount(settings);
+    try {
+      const input = page.dom.document.querySelector<HTMLInputElement>('input[maxlength="80"]')!;
+      input.value = "First name";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      button(page.dom, "Save")!.click();
+      await waitFor(() => fetch.calls.length === 1 && !button(page.dom, "Save")!.disabled, "failed save");
+      expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:pwa.settings.device-name")).toBe("First name");
+      fail = false;
+      button(page.dom, "Save")!.click();
+      await waitFor(() => fetch.calls.length === 2, "save in flight");
+      input.value = "Newer name";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      release(new Response(null, { status: 204 }));
+      await waitFor(() => page.dom.document.body.textContent?.includes("Name saved") ?? false, "first name saved");
+      expect(input.value).toBe("Newer name");
+      expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:pwa.settings.device-name")).toBe("Newer name");
+    } finally {
+      page.dispose();
+      fetch.restore();
+    }
+  });
+  test("Settings restores the account's plain-text draft, preserves empty text, and clears it only after a save", async () => {
+    const page = mount(settings, {
+      before: (dom) => {
+        dom.window.localStorage.setItem("cloud.pwa.draft:mia:pwa.settings.device-name", "Unfinished name");
+        dom.window.localStorage.setItem("cloud.pwa.draft:other:pwa.settings.device-name", "Other name");
+      },
+    });
+    try {
+      const input = page.dom.document.querySelector<HTMLInputElement>('input[maxlength="80"]')!;
+      await waitFor(() => input.value === "Unfinished name", "restored draft");
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:pwa.settings.device-name")).toBe("");
+      input.value = "Next name";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:mia:pwa.settings.device-name")).toBe("Next name");
+      expect(page.dom.window.localStorage.getItem("cloud.pwa.draft:other:pwa.settings.device-name")).toBe("Other name");
+    } finally {
+      page.dispose();
+    }
+  });
   test("Settings renames this phone, and saving needs a changed name", async () => {
     const fetch = mockFetch((method, path) =>
       method === "PATCH" && path === "/pwa/_auth/session" ? new Response(null, { status: 204 }) : undefined,
@@ -104,6 +180,7 @@ else {
       await waitFor(() => page.dom.document.body.textContent?.includes("Name saved") ?? false, "saved");
       expect(fetch.calls).toEqual([{ method: "PATCH", path: "/pwa/_auth/session", body: { name: "Mia's iPhone" } }]);
       expect(button(page.dom, "Save")!.disabled).toBe(true);
+      expect(page.dom.window.localStorage.length).toBe(0);
     } finally {
       page.dispose();
       fetch.restore();
@@ -164,6 +241,9 @@ else {
     );
     const page = mount(settings);
     try {
+      page.dom.window.localStorage.setItem("cloud.pwa.draft:mia:chat", "hello");
+      page.dom.window.localStorage.setItem("cloud.pwa.draft:other:chat", "other");
+      page.dom.window.localStorage.setItem("unrelated", "keep");
       const start = page.dom.window.history.length;
       button(page.dom, "Sign out of the app")!.click();
       await waitFor(() => !!page.dom.document.querySelector("dialog"), "confirmation");
@@ -176,6 +256,8 @@ else {
       confirm.click();
       await waitFor(() => page.replaced.length === 1, "pairing view");
       expect(page.replaced).toEqual(["/pwa/"]);
+      expect(page.dom.window.localStorage.length).toBe(1);
+      expect(page.dom.window.localStorage.getItem("unrelated")).toBe("keep");
       expect(fetch.calls).toEqual([{ method: "DELETE", path: "/pwa/_auth/session", body: undefined }]);
     } finally {
       page.dispose();
@@ -184,7 +266,9 @@ else {
   });
 
   test("the unavailable state renews once on its own and returns to Start, but never loops", async () => {
-    const fetch = mockFetch((_method, path) => (path === "/pwa/_auth/session/renew" ? Response.json({ renewed: true }) : undefined));
+    const fetch = mockFetch((_method, path) =>
+      path === "/pwa/_auth/session/renew" ? Response.json({ renewed: true, builds: {} }) : undefined,
+    );
     let page = mount(() => createComponent(modules!.Unavailable, {}), { url: "/pwa/?pwa=unavailable" });
     try {
       await waitFor(() => page.replaced.length === 1, "Start");
@@ -207,7 +291,7 @@ else {
   });
 
   test("a renewal that sets no cookies inside the rotation grace is tried once more after it, then returns to Start", async () => {
-    const answers = [Response.json({ renewed: false }), Response.json({ renewed: true })];
+    const answers = [Response.json({ renewed: false, builds: {} }), Response.json({ renewed: true, builds: {} })];
     const fetch = mockFetch((_method, path) => (path === "/pwa/_auth/session/renew" ? answers.shift() : undefined));
     const delays: (number | undefined)[] = [];
     const timeout = spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, delay?: number) => {
@@ -228,7 +312,9 @@ else {
   });
 
   test("a renewal that never sets cookies stays on the unavailable state", async () => {
-    const fetch = mockFetch((_method, path) => (path === "/pwa/_auth/session/renew" ? Response.json({ renewed: false }) : undefined));
+    const fetch = mockFetch((_method, path) =>
+      path === "/pwa/_auth/session/renew" ? Response.json({ renewed: false, builds: {} }) : undefined,
+    );
     const timeout = spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, delay?: number) =>
       window.setTimeout(callback, delay === 60_000 ? 5 : delay)) as never);
     const page = mount(() => createComponent(modules!.Unavailable, {}), { url: "/pwa/?pwa=unavailable" });

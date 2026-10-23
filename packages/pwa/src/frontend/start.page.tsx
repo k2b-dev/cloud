@@ -1,9 +1,11 @@
-import { PWA_AUTH_PATH, PWA_SCOPE } from "@k2b/cloud/contracts";
+import { PWA_AUTH_PATH, PWA_COOKIES, PWA_SCOPE } from "@k2b/cloud/contracts";
+import { rememberedPwaAddress } from "@k2b/cloud/contracts/pwa-location";
 import { type AuthContext, getLocale, getUserBackedActor } from "@k2b/cloud/server";
 import { appIconVersion } from "@k2b/cloud/services/branding/app-icon-source";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { getDisplayRuntimeContext, PwaLayout, visiblePwaParts } from "@k2b/cloud/ssr";
 import { createNavigation, IconButtonLink, installationPlatform, Navigation, Placeholder } from "@k2b/ui";
+import { getCookie } from "hono/cookie";
 import { ssr } from "../config";
 import { shellMessages } from "../messages";
 import PairingNotice from "./_components/PairingNotice.island";
@@ -25,6 +27,9 @@ export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = shellMessages.resolve([locale]);
   const cloud = c.get("settings")?.app?.name || "Cloud";
+
+  const remembered = rememberedPwaAddress(getCookie(c, PWA_COOKIES.lastAddress)) ?? PWA_SCOPE;
+  if (user && c.req.query("launch") !== undefined) return c.redirect(remembered, 302);
 
   if (user) {
     const parts = visiblePwaParts(getDisplayRuntimeContext(c).apps, user, locale);
@@ -77,7 +82,7 @@ export default ssr<AuthContext>(async (c) => {
       </PwaLayout>
     );
   }
-  if (!isWelcomeState(state)) return c.redirect(`${PWA_AUTH_PATH}/session/launch?to=${encodeURIComponent(PWA_SCOPE)}`, 302);
+  if (!isWelcomeState(state)) return c.redirect(`${PWA_AUTH_PATH}/session/launch?to=${encodeURIComponent(remembered)}`, 302);
 
   const icon = `/branding/pwa-icon-192.png?v=${await appIconVersion()}`;
   const platform = installationPlatform(c.req.header("User-Agent") ?? "", "", 0);

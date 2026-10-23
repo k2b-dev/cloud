@@ -1,17 +1,18 @@
+import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { PWA_LIMITS } from "@k2b/cloud/contracts";
 import type { CloudThemePreference } from "@k2b/cloud/shared";
 import { createPreferenceController } from "@k2b/cloud/ssr/preference-controller";
 import { ThemeCycleButton } from "@k2b/cloud/ssr/ThemeCycleButton";
 import { Avatar, Button, SegmentedControl, SettingsSection, TextInput, toast, useLocale } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { createSignal, onMount } from "solid-js";
 import { shellMessages } from "../../messages";
 import { phoneAuth } from "../phone";
 import SignOutButton from "./SignOutButton";
 
 export type PhoneSettingsProps = {
   /** The signed-in person, as the page read them. */
-  account: { name: string; mail?: string; avatar?: string };
+  account: { id: string; name: string; mail?: string; avatar?: string };
   theme: CloudThemePreference;
   /** This phone's name; empty when the request carries no device. */
   name: string;
@@ -31,16 +32,34 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
   const [saved, setSaved] = createSignal(props.name);
   const [error, setError] = createSignal<string>();
   const [saving, setSaving] = createSignal(false);
+  const [ready, setReady] = createSignal(false);
+
+  const field = "pwa.settings.device-name";
+  let nameInput: HTMLInputElement | undefined;
+  onMount(() => {
+    if (nameInput) nameInput.defaultValue = props.name;
+    const draft = pwaDrafts.read(props.account.id, field);
+    if (draft === props.name) pwaDrafts.remove(props.account.id, field);
+    setName(draft ?? props.name);
+    setReady(true);
+  });
+  let storageNoticeShown = false;
 
   const rename = async () => {
-    const value = name().trim();
+    const submitted = name();
+    const value = submitted.trim();
     if (!value || value.length > PWA_LIMITS.nameMaxLength) return setError(t().nameInvalid);
     setSaving(true);
     const answer = await phoneAuth.rename(value);
     setSaving(false);
     if (answer.status === 204) {
-      setName(value);
       setSaved(value);
+      if (nameInput) nameInput.defaultValue = value;
+      // A person can keep typing while a save is in flight. Only the submitted text was saved.
+      if (name() === submitted) {
+        setName(value);
+        pwaDrafts.remove(props.account.id, field);
+      }
       toast.success(t().nameSaved);
     } else if (answer.status === 401) reloadOnce("pwa-auth");
     else if (answer.status === 400) setError(t().nameInvalid);
@@ -83,8 +102,15 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
           <TextInput
             label={t().phoneName}
             value={name}
+            ref={nameInput}
+            disabled={!ready()}
             onValueChange={(value) => {
               setName(value);
+              if (value === saved()) pwaDrafts.remove(props.account.id, field);
+              else if (!pwaDrafts.write(props.account.id, field, value) && !storageNoticeShown) {
+                storageNoticeShown = true;
+                toast.error(t().draftUnavailable);
+              }
               setError(undefined);
             }}
             error={error()}

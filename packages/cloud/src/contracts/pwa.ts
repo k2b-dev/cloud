@@ -17,9 +17,10 @@ export const PWA_MANIFEST_PATH = "/pwa/manifest.webmanifest";
  */
 export const PWA_CANVAS_COLORS = { light: "#fafafa", dark: "#090d12" } as const;
 
-/** Cookie names. Only `pwa_session` reaches every application; the others use Core-only paths. */
+/** Cookie names. The session and last address reach parts; device and pairing secrets use Core-only paths. */
 export const PWA_COOKIES = {
   session: "pwa_session",
+  lastAddress: "pwa_last_address",
   device: "pwa_device",
   pairing: "pwa_pairing",
 } as const;
@@ -147,5 +148,7 @@ export const PwaCompleteResultSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("paired") }).strict(),
   z.object({ state: z.literal("waiting"), code: Code, account: Account, expiresAt: DateTime }).strict(),
 ]);
-export const PwaRenewResultSchema = z.object({ renewed: z.boolean(), otherAccount: Account.optional() }).strict();
+export const PwaRenewResultSchema = z
+  .object({ renewed: z.boolean(), otherAccount: Account.optional(), builds: z.record(z.string(), z.string()) })
+  .strict();
 export const PwaRenameSchema = z.object({ name: z.string().trim().min(1).max(PWA_LIMITS.nameMaxLength) }).strict();
