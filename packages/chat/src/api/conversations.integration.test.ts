@@ -1881,13 +1881,14 @@ suite("chat conversations, people, and directory groups", () => {
     expect(ConversationSchema.parse(await (await request(readerHeaders, `/${channel.id}`)).json()).unread).toBe(0);
     const viewer = { ...userContext(reader), id: "reader", scopes: [] };
     expect(await chatLiveChannels.list.keys({}, viewer)).toContain(`l:${channel.id}`);
+    // Access hints ({ a: true }) carry no data; the membership and summary events follow them.
     const hints = await sql<
-      { ordering_key: string; payload: { d: { type: string } } }[]
+      { ordering_key: string; payload: { a?: true; d?: { type: string } } }[]
     >`SELECT ordering_key, payload FROM events.outbox WHERE app_id = 'chat'
       AND ordering_key IN (${"c:" + channel.id}, ${"l:" + channel.id}, ${"p:" + reader}) ORDER BY seq`;
     for (const key of [`c:${channel.id}`, `l:${channel.id}`, `p:${reader}`])
-      expect(hints.some((row) => row.ordering_key === key && row.payload.d.type === "membership")).toBeTrue();
-    expect(hints.some((row) => row.ordering_key === `l:${channel.id}` && row.payload.d.type === "summary")).toBeTrue();
+      expect(hints.some((row) => row.ordering_key === key && row.payload.d?.type === "membership")).toBeTrue();
+    expect(hints.some((row) => row.ordering_key === `l:${channel.id}` && row.payload.d?.type === "summary")).toBeTrue();
     expect((await request(readerHeaders, `/${channel.id}/leave`, "POST", {})).status).toBe(200);
     expect(ConversationPageSchema.parse(await (await request(readerHeaders)).json()).items).toEqual([]);
     expect(await chatLiveChannels.list.keys({}, viewer)).not.toContain(`l:${channel.id}`);
