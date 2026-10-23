@@ -24,7 +24,7 @@ import { insertTestWorkflow } from "./workflow-test-fixture";
 
 // This phase owns Sync and real child processes. Never run it in the standard
 // shared-process suite, or against a development/production application database.
-const crashTest = testFor("database", "nats", "gotenberg");
+const crashTest = testFor("database", "nats", "gotenberg", "valkey");
 const budget = WORKFLOW_RUN_LEASE_MS + 5 * 90_000;
 let active: Promise<void> | undefined;
 afterEach(async () => {
