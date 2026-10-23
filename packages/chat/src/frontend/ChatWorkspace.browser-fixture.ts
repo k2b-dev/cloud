@@ -47,7 +47,14 @@ import type { ChatWorkspaceProps } from "./ChatWorkspace.island";
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageViewSchema>;
 type Person = { id: string; name: string };
-type ServiceAccount = { id: string; name: string; kind: "agent" | "standalone" };
+type ServiceAccount = {
+  id: string;
+  name: string;
+  kind: "agent" | "standalone" | "resource_bound" | "user_delegated";
+  status?: "active" | "disabled";
+  /** A resource-bound account's binding, as `app:type:id`. */
+  binding?: string;
+};
 type Group = { id: string; name: string; size: number };
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
@@ -688,7 +695,15 @@ export const startChatHarness = async () => {
             )
             .map((account) => ({
               kind: "service_account",
-              serviceAccount: { ...account, appId: null, resourceType: null, resourceId: null },
+              serviceAccount: {
+                id: account.id,
+                name: account.name,
+                kind: account.kind,
+                status: account.status ?? "active",
+                appId: account.binding?.split(":")[0] ?? null,
+                resourceType: account.binding?.split(":")[1] ?? null,
+                resourceId: account.binding?.split(":")[2] ?? null,
+              },
             })),
           ...[...people.values()]
             .filter((person) => kinds.includes("user") && !excludedUsers.includes(person.id) && person.name.toLowerCase().includes(search))
