@@ -1,6 +1,11 @@
 ---
 title: Machine group management
+navTitle: Machine group management
 description: Delegate local group membership changes without granting account administration.
+section: Identity and access
+order: 655
+tags: [identity, service-accounts, authorization]
+updated: 2026-10-23
 ---
 
 # Machine group management

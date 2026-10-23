@@ -1,6 +1,11 @@
 ---
 title: Operate machine group management
+navTitle: Operate machine group management
 description: Provision and revoke independent local group managers.
+section: Operations
+order: 655
+tags: [identity, service-accounts, authorization]
+updated: 2026-10-23
 ---
 
 # Operate machine group management

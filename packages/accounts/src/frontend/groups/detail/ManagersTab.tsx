@@ -162,7 +162,8 @@ export default function ManagersTab(props: ManagersTabProps) {
                         ? messages().agent
                         : messages().resourceBound;
                 const href = props.isAdmin ? `/app/accounts/service-accounts?search=${encodeURIComponent(serviceAccount.name)}` : undefined;
-                if (col.id === "type") return <span class="text-dimmed">{messages().serviceAccount}</span>;
+                if (col.id === "type")
+                  return <span class="text-dimmed">{serviceAccount.kind === "agent" ? messages().agent : messages().serviceAccount}</span>;
                 if (col.id === "name") {
                   const content = (
                     <>
@@ -179,6 +180,7 @@ export default function ManagersTab(props: ManagersTabProps) {
                   );
                 }
                 if (col.id === "detail") {
+                  if (serviceAccount.kind === "agent" || serviceAccount.kind === "standalone") return <span class="text-dimmed">—</span>;
                   const content = (
                     <span class="block truncate" title={serviceAccount.appId || messages().noAppId}>
                       {serviceAccount.appId || <span class="italic">{messages().noAppId}</span>}
@@ -192,7 +194,14 @@ export default function ManagersTab(props: ManagersTabProps) {
                     <span class="text-dimmed">{content}</span>
                   );
                 }
-                if (col.id === "access") return <Tag>{kindLabel}</Tag>;
+                if (col.id === "access")
+                  return (
+                    <Tag>
+                      {serviceAccount.kind === "agent" || serviceAccount.kind === "standalone"
+                        ? messages().machineManagementAccess
+                        : kindLabel}
+                    </Tag>
+                  );
                 if (col.id === "actions")
                   return props.canManage ? (
                     <RemoveMember

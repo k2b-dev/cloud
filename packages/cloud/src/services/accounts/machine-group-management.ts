@@ -34,7 +34,7 @@ export async function mutateMachineGroupMember(params: {
     return audit.recordResult({ action, target, metadata, requestId: params.requestId, result: denied() });
 
   return sql.begin(async (db) => {
-    // Account -> credential -> grant: deletion, disable and revoke serialize with this write.
+    // Account -> credential -> group -> grant matches the group deletion cascade.
     const [account] = await db`SELECT id FROM auth.service_accounts
       WHERE id = ${actor.serviceAccount.id}::uuid AND status = 'active' AND kind IN ('standalone','agent') FOR SHARE`;
     let allowed = Boolean(account);
@@ -45,11 +45,10 @@ export async function mutateMachineGroupMember(params: {
           AND scopes && ARRAY['write','admin']::text[] FOR SHARE`;
       allowed = Boolean(credential);
     }
-    const [grant] = allowed
-      ? await db`SELECT gm.group_id FROM auth.group_manager_service_accounts gm
-      JOIN auth.groups g ON g.id = gm.group_id
-      WHERE gm.group_id = ${params.id}::uuid AND gm.service_account_id = ${actor.serviceAccount.id}::uuid
-        AND g.provider = 'local' FOR SHARE OF gm, g`
+    const [group] = allowed ? await db`SELECT id FROM auth.groups WHERE id=${params.id}::uuid AND provider='local' FOR SHARE` : [];
+    const [grant] = group
+      ? await db`SELECT group_id FROM auth.group_manager_service_accounts
+        WHERE group_id=${params.id}::uuid AND service_account_id=${actor.serviceAccount.id}::uuid FOR SHARE`
       : [];
     let result: Result<void> = denied();
     if (grant) {

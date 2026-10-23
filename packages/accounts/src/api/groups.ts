@@ -140,6 +140,7 @@ const app = new Hono<AuthContext>()
   .post(
     "/:id/members",
     auth.requireRole("authenticated"),
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Groups"],
       summary: "Add member to group",
@@ -176,6 +177,7 @@ const app = new Hono<AuthContext>()
   .delete(
     "/:id/members",
     auth.requireRole("authenticated"),
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Groups"],
       summary: "Remove member from group",
@@ -212,6 +214,7 @@ const app = new Hono<AuthContext>()
   .post(
     "/:id/managers",
     auth.requireRole("admin"),
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Groups"],
       summary: "Add manager to group",
@@ -232,6 +235,7 @@ const app = new Hono<AuthContext>()
   .delete(
     "/:id/managers",
     auth.requireRole("admin"),
+    auth.requireOAuthScope("write", "admin"),
     describeRoute({
       tags: ["Groups"],
       summary: "Remove manager from group",

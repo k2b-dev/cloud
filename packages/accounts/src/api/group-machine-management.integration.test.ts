@@ -92,6 +92,32 @@ suite("direct machine group management", () => {
         expect((await call("DELETE")).status).toBe(401);
         await sql`UPDATE auth.service_accounts SET status='active' WHERE id=${machine!.id}::uuid`;
         expect((await call("DELETE")).status).toBe(200);
+
+        // Deletion owns the group before cascading into manager grants. A waiting
+        // membership write must not hold the grant and reverse that lock order.
+        expect((await grant("POST", other!.id)).status).toBe(200);
+        let pending: Promise<Response> | undefined;
+        try {
+          await sql.begin(async (db) => {
+            await db`SELECT id FROM auth.groups WHERE id=${other!.id}::uuid FOR UPDATE`;
+            const [deleting] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+            pending = Promise.resolve(call("POST", other!.id));
+            let blocked = false;
+            for (let attempt = 0; attempt < 100; attempt++) {
+              const [waiter] = await sql`SELECT pid FROM pg_stat_activity WHERE ${deleting!.pid}=ANY(pg_blocking_pids(pid))`;
+              if (waiter) {
+                blocked = true;
+                break;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            expect(blocked).toBe(true);
+            await db`DELETE FROM auth.groups WHERE id=${other!.id}::uuid`;
+          });
+          expect((await pending!).status).toBe(403);
+        } finally {
+          await pending;
+        }
         await sql`UPDATE auth.service_account_credentials SET status='revoked',revoked_at=now() WHERE id=${key.data.credential.id}::uuid`;
         expect((await call()).status).toBe(401);
         const audits = await sql<{ outcome: string; credential: string }[]>`SELECT outcome,metadata->>'credentialId' AS credential
