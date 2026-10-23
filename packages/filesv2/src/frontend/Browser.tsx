@@ -1479,7 +1479,6 @@ export default function Browser(props: {
                 {(searchHistory) => (
                   <Placeholder
                     class="filesv2-history-placeholder"
-                    variant="panel"
                     state="no-results"
                     icon="ti ti-search"
                     title={h().emptySearchTitle.replace("{query}", props.directory.query ?? "")}

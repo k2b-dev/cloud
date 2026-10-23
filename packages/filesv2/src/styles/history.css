@@ -733,3 +733,7 @@
     line-height: 2rem;
   }
 }
+
+@container files-browser (max-width: 40rem) {
+  .k2b-ui .filesv2-history-placeholder { padding: 48px 8px; }
+}
