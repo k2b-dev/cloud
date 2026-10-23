@@ -26,6 +26,8 @@ export const appApprovalMessages = i18n.define({
       identifier: "Email or username",
       identifierPlaceholder: "Email or username",
       signIn: "Sign in with app",
+      accountMismatch:
+        "Sign in with the account already open in this browser. If your session expired, open the sign-in page and start again.",
       signInHint: "Use an app already paired with this Cloud account. Without a paired app, use the alternative sign-in below.",
       waiting: "Compare this code with your app, then confirm there.",
       signedIn: "Signed in – continuing…",
@@ -150,6 +152,8 @@ export const appApprovalMessages = i18n.define({
       identifier: "E-Mail oder Kürzel",
       identifierPlaceholder: "E-Mail oder Kürzel",
       signIn: "Mit App anmelden",
+      accountMismatch:
+        "Melde dich mit dem Konto an, das in diesem Browser geöffnet ist. Falls deine Sitzung abgelaufen ist, öffne die Anmeldeseite und beginne erneut.",
       signInHint:
         "Nutze eine bereits mit diesem Cloud-Account gekoppelte App. Ohne gekoppelte App nutze die alternative Anmeldung darunter.",
       waiting: "Vergleiche diesen Code mit deiner App und bestätige dort.",

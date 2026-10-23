@@ -9,9 +9,11 @@ import { accounts, audit, authFlows, getFreeIpaConfig, logger, webauthn } from "
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import type { AuthNotificationSender } from "../services/auth-flows/notification-sender";
 import { legalConsent } from "../services/legal-consent";
-import { SessionEpochChangedError } from "../services/session";
+import { SessionAccountMismatchError, SessionEpochChangedError } from "../services/session";
 import * as categorySettings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
+
+import { accountMismatchResponse, confirmationRecoveryResponse } from "./auth/account-mismatch";
 
 const log = logger("auth");
 
@@ -33,7 +35,19 @@ const jsonError = (c: Context, message: string, status: 400 | 401 | 500 | 503) =
 /** Authentication routes: login, logout. */
 export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
   new Hono<AuthContext>()
+    .onError((error, c) => {
+      if (error instanceof SessionAccountMismatchError) return accountMismatchResponse(c);
+      throw error;
+    })
     .use(rateLimit())
+    .use(async (c, next) => {
+      if (
+        c.req.header("X-Cloud-Reauthenticate") === "1" &&
+        ["/admin-login", "/change-expired-password", "/password-reset/complete"].some((path) => c.req.path.endsWith(path))
+      )
+        return confirmationRecoveryResponse(c);
+      return next();
+    })
     .post(
       "/legal-consent",
       describeRoute({ tags: ["Auth"], summary: "Explicitly accept terms after sign-in; unlock the pending session" }),

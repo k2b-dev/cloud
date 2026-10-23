@@ -5,7 +5,7 @@ section: Accounts & sign-in
 order: 1084
 description: Connect Cloud to its trusted authenticator website and prepare a first sign-in.
 tags: [accounts, administration, authentication]
-updated: 2026-10-19
+updated: 2026-10-23
 ---
 
 # Set up app sign-in
@@ -82,7 +82,8 @@ requests; a pending browser request then expires.
 
 1. [Pair a device](/en/docs/accounts/devices#pair-a-device) with your account.
 2. On Cloud's login page, choose your account type if a selector is shown.
-   Login starts with app sign-in. FreeIPA starts with the password and Guest
+   Login starts with app sign-in unless this browser last used an email link.
+   FreeIPA starts with the password and Guest
    with email: choose **Use the app instead** there. Enter your username or an
    email that identifies one account.
 3. Keep the login page open and open your authenticator, or tap its
@@ -137,8 +138,14 @@ for accuracy and storage limits.
 ### Continue or use another method
 
 After a FreeIPA sign-in with the app, this browser opens FreeIPA with the app
-next time, until someone signs in there with a FreeIPA password again. The
-page chooses the method from the account type you select and from this
+next time, until someone signs in there with a FreeIPA password again. Login
+remembers a successful email link or code until the next app sign-in.
+**Confirm identity** uses the same choices as a normal visit and returns you
+to the action after a fresh sign-in with the same account. If an email link
+fails, **Back to sign in** lets you choose a method again without losing that
+destination.
+
+The page chooses the method from the account type you select and from this
 browser, never from the name you enter, so it does not reveal whether an
 account exists or which type it has.
 
