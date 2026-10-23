@@ -445,7 +445,10 @@ const rowAction = async (page: Page, name: string, chat: string, action: "Mark u
   await page.getByRole("menuitem", { name: action, exact: true }).click();
 };
 const readAllAction = async (page: Page, name: string) => {
-  await rows(page, name).locator(".k2b-app-workspace__sidebar-section-header").hover();
+  await rows(page, name)
+    .locator(".k2b-app-workspace__sidebar-section-header")
+    .filter({ has: page.getByRole("button", { name: "Actions for all chats", exact: true }) })
+    .hover();
   await rows(page, name).getByRole("button", { name: "Actions for all chats", exact: true }).click();
   await page.getByRole("menuitem", { name: "Mark all read", exact: true }).click();
 };

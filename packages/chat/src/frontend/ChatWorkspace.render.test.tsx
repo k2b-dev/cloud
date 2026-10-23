@@ -69,6 +69,21 @@ describe("ChatWorkspace server render", () => {
       expect(html).toContain(t.noChatsTitle);
       expect(html).toContain(t.noChatsDescription);
     });
+    test(`channel discovery renders its authorized initial page and membership in ${locale}`, () => {
+      const channel = { ...conversation, channel: true, purpose: "Decisions for the studio" };
+      const html = render(locale, {
+        ...props(),
+        channelsPage: true,
+        channelQuery: "studio",
+        channelPage: { items: [channel], nextCursor: null },
+      });
+      expect(html).toContain(t.browseChannels);
+      expect(html).toContain(t.discoverSubtitle);
+      expect(html).toContain(channel.purpose);
+      expect(html).toContain(t.subscribed);
+      expect(html).toContain('value="studio"');
+      expect(html).not.toContain(t.noChatsTitle);
+    });
     test(`list titles, sender previews, times and selection placeholder in ${locale}`, () => {
       const rows: ChatWorkspaceProps["sidebar"]["items"] = [
         {

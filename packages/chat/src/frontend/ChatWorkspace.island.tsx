@@ -35,6 +35,7 @@ import {
 } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
 import { openAddPeopleDialog } from "./AddPeopleDialog";
+import { openChannelDialog } from "./ChannelDialogs";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
@@ -43,8 +44,10 @@ import ChatSharedSection from "./ChatSharedSection";
 import ChatThreadColumn from "./ChatThreadColumn";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
 import ChatThreadsPage from "./ChatThreadsPage";
+import { createChannelApi } from "./channel-api";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
-import { createChatStore, type OpenChat } from "./chat-store";
+import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
+import DiscoverChannels from "./DiscoverChannels";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
@@ -62,6 +65,9 @@ type Sends = ReturnType<typeof createChatSends>;
 
 export type ChatWorkspaceProps = {
   /** The live cursor the server read before every part of this snapshot. */
+  channelsPage?: boolean;
+  channelQuery?: string;
+  channelPage?: z.infer<typeof ConversationPageSchema> | null;
   cursor: string;
   sidebar: z.infer<typeof ConversationPageSchema>;
   open: {
@@ -116,6 +122,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const [route, setRoute] = createSignal<Route>({
+    channels: props.channelsPage,
+    query: props.channelQuery,
     chatId: props.chatId,
     view: props.view,
     threads: props.threadsPage,
@@ -178,6 +186,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // the store already holds the next chat but the address does not name it yet.
   const trailTitle = createMemo<string | undefined>((previous) => {
     const id = route().chatId;
+    if (route().channels) return t().browseChannels;
     if (!id) return undefined;
     if (chat()?.id !== id) return previous;
     return conversation()?.title ?? t().noAccessTitle;
@@ -509,6 +518,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       route().chatId === next.chatId &&
       route().view === next.view &&
       route().threads === next.threads &&
+      route().channels === next.channels &&
       route().messageId === next.messageId &&
       route().panel !== next.panel
     ) {
@@ -646,6 +656,39 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const fromList = route().chatId === null;
     if ((await open(chatRoute(id))) === "applied") navigate(panelHref(id, null), { scroll: "preserve", state: { chatFromList: fromList } });
   };
+  const channelsApi = createChannelApi();
+  const [channelRevision, setChannelRevision] = createSignal(0);
+  // The SSR catalog seeds only the first mount. Returning later reads current membership and discovery.
+  let initialChannelPage = props.channelsPage ? props.channelPage : undefined;
+  const takeInitialChannelPage = () => {
+    const initial = initialChannelPage;
+    initialChannelPage = undefined;
+    return initial;
+  };
+  const discover = async (navigation: LinkNavigateEvent) => {
+    if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push();
+  };
+  const subscribe = async (id: string) => {
+    await channelsApi.join(id);
+    setChannelRevision((revision) => revision + 1);
+    await store?.refreshSidebar();
+    if (route().chatId === id) await open(route());
+  };
+  const editDiscovery = async () => {
+    const current = conversation();
+    if (!store || !current || current.permission !== "admin") return;
+    await openChannelDialog({
+      store,
+      viewerId: props.viewerId,
+      locale: locale(),
+      guest: props.guest,
+      conversation: current,
+      onSaved: async () => {
+        await store?.refreshSidebar();
+        if (route().chatId === current.id) await open(route());
+      },
+    });
+  };
   const newChat = async () => {
     if (!store) return;
     await openChosen(
@@ -688,10 +731,40 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     }
   };
 
+  const [unsubscribing, setUnsubscribing] = createSignal(false);
+  const unsubscribe = async () => {
+    const current = conversation();
+    if (!store || !current || unsubscribing()) return;
+    setUnsubscribing(true);
+    try {
+      try {
+        await store.leave(current.id);
+      } catch (error) {
+        if (!(error instanceof ChatRequestError) || error.status !== 409) throw error;
+        if (!(await openLeaveChatDialog({ store, conversation: current, viewerId: props.viewerId, locale: locale() }))) return;
+      }
+      await open(chatRoute(null, "all", { channels: true }));
+      navigate("/app/chat/channels", { replace: true });
+      const done = toast(t().unsubscribed({ name: current.title }), {
+        action: {
+          label: t().undo,
+          onClick: () => {
+            done.dismiss();
+            void subscribe(current.id).catch(() => toast.error(t().requestFailed));
+          },
+        },
+      });
+    } catch {
+      toast.error(t().requestFailed);
+    } finally {
+      setUnsubscribing(false);
+    }
+  };
+
   // Admins create, rename, archive, and restore threads; the server decides every request again.
   const createThread = async () => {
     const current = conversation();
-    if (!store || current?.permission !== "admin") return;
+    if (!store || current?.permission !== "admin" || current.channel) return;
     const thread = await openThreadDialog({
       store,
       chatId: current.id,
@@ -853,7 +926,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     // The way up from a chat goes back to the list in place; a list opened before the chat is the previous entry.
     onCleanup(
       layout.handleUp((href) => {
-        if (new URL(href, location.href).pathname !== "/app/chat" || !route().chatId) return false;
+        if (new URL(href, location.href).pathname !== "/app/chat" || (!route().chatId && !route().channels)) return false;
         const depth = listDepth();
         if (depth > 0) history.go(-depth);
         else void open(chatRoute(null)).then((result) => result === "applied" && navigate("/app/chat"));
@@ -878,6 +951,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const list = (): JSX.Element => (
     <ChatList
       rows={listRows()}
+      channelsActive={route().channels}
+      onDiscover={discover}
       activeId={openChat()?.id ?? null}
       viewerId={props.viewerId}
       dateConfig={props.dateConfig}
@@ -885,6 +960,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       hasMore={hasMore()}
       onOpen={openFromList}
       onMore={() => void store?.loadMoreSidebar()}
+      chatsActions={chatsActions()}
       onMarkRead={markRead}
       onMarkUnread={(id) => void markUnread(id)}
       threads={
@@ -907,9 +983,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
   /** The open part of the chat, as the head names it and the composer addresses it. */
   const viewTitle = () => viewName(openChat()?.view ?? "all", openChat()?.threads ?? null, t());
-  const openThread = () => threadOf(openChat()?.threads ?? null, openChat()?.view);
+  const openThread = () => (conversation()?.channel ? undefined : threadOf(openChat()?.threads ?? null, openChat()?.view));
   const threaded = () => chatHasThreads(conversation());
   // Where the reader cannot write, a quiet line replaces the composer and names why.
+  const [subscribing, setSubscribing] = createSignal(false);
+  const subscribeOpen = async (id: string) => {
+    setSubscribing(true);
+    try {
+      await subscribe(id);
+    } catch {
+      toast.error(t().requestFailed);
+    } finally {
+      setSubscribing(false);
+    }
+  };
   const notice = (): JSX.Element | undefined => {
     const current = conversation();
     if (!current) return undefined;
@@ -925,11 +1012,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           </Show>
         </>
       );
+    if (current.channel && !current.member)
+      return (
+        <Button loading={subscribing()} onClick={() => void subscribeOpen(current.id)}>
+          {t().subscribe}
+        </Button>
+      );
     if (current.permission === "read")
       return (
         <>
           <i class="ti ti-eye" aria-hidden="true" />
-          <span>{t().readOnlyIn({ title: current.title })}</span>
+          <span>{current.channel ? t().channelReadOnly : t().readOnlyIn({ title: current.title })}</span>
         </>
       );
     return undefined;
@@ -983,11 +1076,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
               {t().newChat}
             </AppWorkspace.SidebarItem>
-            <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
-              <Show when={listRows().length > 0} fallback={<Placeholder variant="inline" align="left" description={t().noneYet} />}>
-                {list()}
-              </Show>
-            </AppWorkspace.SidebarSection>
+            {list()}
           </AppWorkspace.SidebarBody>
         </AppWorkspace.SidebarDesktop>
       </AppWorkspace.Sidebar>
@@ -1027,6 +1116,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             </Show>
           </AppWorkspace.MainPane>
           <Switch>
+            <Match when={route().channels}>
+              <DiscoverChannels
+                initial={takeInitialChannelPage()}
+                query={route().query ?? ""}
+                onQuery={(query) => {
+                  setRoute({ ...route(), query });
+                  navigate(`/app/chat/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, { replace: true, scroll: "preserve" });
+                }}
+                revision={channelRevision()}
+                onSubscribe={subscribe}
+                onOpen={(id) => openChosen(id)}
+                onBack={backToList}
+              />
+            </Match>
             <Match when={route().threads && openChat()?.id && threaded() ? conversation() : null}>
               {(current) => (
                 <ChatThreadsPage
@@ -1059,6 +1162,24 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                           </Show>
                           <Show when={current().permission === "admin" && openThread() && !openThread()?.archived}>
                             <ThreadMenu onRename={() => void renameThread()} onArchive={() => void archiveThread()} />
+                          </Show>
+                          <Show when={current().channel && current().member}>
+                            <Dropdown.Root
+                              position="bottom-right"
+                              items={[
+                                {
+                                  label: t().unsubscribe,
+                                  icon: "ti ti-bell-off",
+                                  description: t().unsubscribeDescription,
+                                  disabled: unsubscribing(),
+                                  action: () => void unsubscribe(),
+                                },
+                              ]}
+                            >
+                              <Dropdown.Trigger iconOnly label={t().chatActions({ title: current().title })}>
+                                <i class="ti ti-dots" />
+                              </Dropdown.Trigger>
+                            </Dropdown.Root>
                           </Show>
                           {infoLink(current())}
                         </>
@@ -1127,7 +1248,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
                       onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
                       focusKey={focusKey()}
-                      canWrite={current().permission !== "read"}
+                      canWrite={current().permission !== "read" && current().member}
                       hint={draftError() ?? (liveStopped() ? t().liveStopped : waiting() ? t().messagesWaiting : undefined)}
                       draft={draft()}
                       onDraftChange={setDraft}
@@ -1161,32 +1282,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 description={t().noAccessDescription}
               />
             </Match>
-            <Match when={rows().length === 0}>
-              <Placeholder
-                variant="panel"
-                class="flex-1"
-                icon="ti ti-messages"
-                title={t().noChatsTitle}
-                description={t().noChatsDescription}
-                action={<Button onClick={() => void newChat()}>{t().newChat}</Button>}
-              />
-            </Match>
             <Match when={true}>
               <nav class="chat-list-page" aria-label={t().chats}>
                 <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
                   {t().newChat}
                 </AppWorkspace.SidebarItem>
-                <AppWorkspace.SidebarSection title={t().chats} actions={chatsActions()}>
-                  {list()}
-                </AppWorkspace.SidebarSection>
+                {list()}
               </nav>
               <div class="chat-select">
                 <Placeholder
                   variant="panel"
                   class="flex-1"
                   icon="ti ti-messages"
-                  title={t().selectChatTitle}
-                  description={t().selectChatDescription}
+                  title={rows().length ? t().selectChatTitle : t().noChatsTitle}
+                  description={rows().length ? t().selectChatDescription : t().noChatsDescription}
                 />
               </div>
             </Match>
@@ -1212,7 +1321,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   onClose={() => closeInfo()}
                   onAddPeople={() => void addPeople()}
                   onEditDetails={editDetails}
-                  onCreateThread={current().permission === "admin" ? () => void createThread() : undefined}
+                  onDiscovery={current().permission === "admin" ? () => void editDiscovery() : undefined}
+                  onCreateThread={!current().channel && current().permission === "admin" ? () => void createThread() : undefined}
                   shared={
                     <ChatSharedSection
                       chatId={current().id}
@@ -1226,7 +1336,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       onJump={jumpToShared}
                     />
                   }
-                  onLeave={() => void leaveChat()}
+                  onLeave={() => void (current().channel ? unsubscribe() : leaveChat())}
                 />
               )}
             </Show>

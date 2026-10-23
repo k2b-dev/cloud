@@ -2,7 +2,7 @@ import { type AuthContext, getDateConfig, getLocale, getUserBackedActor } from "
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import { chatMessages } from "../messages";
-import { loadChatView } from "../service";
+import { chatService, loadChatView } from "../service";
 import ChatWorkspace from "./ChatWorkspace.island";
 
 /**
@@ -14,6 +14,11 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = chatMessages.resolve([locale]);
   const accessSubject = c.get("accessSubject");
   if (accessSubject.type !== "user") return ssr.error(c, 403);
+  const channelsPage = /\/channels\/?$/.test(c.req.path);
+  const channelQuery = (c.req.query("q") ?? "").trim().slice(0, 100);
+  const channelResult = channelsPage
+    ? await chatService.channels.browse({ actor: c.get("actor"), accessSubject, locale, query: { q: channelQuery } }).catch(() => null)
+    : null;
   const chatId = c.req.param("chat") ?? null;
   const thread = c.req.param("thread") ?? "all";
   const view = await loadChatView(
@@ -21,7 +26,7 @@ export default ssr<AuthContext>(async (c) => {
     { conversationId: chatId ?? undefined, messageId: c.req.param("message"), thread },
   );
   // Without access the page names neither the chat nor whether it exists.
-  const title = chatId ? (view.open?.conversation.title ?? t.noAccessTitle) : undefined;
+  const title = channelsPage ? t.browseChannels : chatId ? (view.open?.conversation.title ?? t.noAccessTitle) : undefined;
   return () => (
     <Layout
       c={c}
@@ -33,6 +38,9 @@ export default ssr<AuthContext>(async (c) => {
       ]}
     >
       <ChatWorkspace
+        channelsPage={channelsPage}
+        channelQuery={channelQuery}
+        channelPage={channelResult?.ok ? channelResult.data : null}
         cursor={view.cursor}
         sidebar={view.sidebar}
         open={view.open}

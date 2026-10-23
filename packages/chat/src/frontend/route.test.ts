@@ -65,3 +65,22 @@ test("thread views, the phone's thread page, and their deep links round-trip", (
   });
   expect(parseRoute(new URL("https://cloud.test/app/chat/c/Chat01/threads/m/Message001"))).toBeNull();
 });
+
+test("channel discovery restores a bounded search without selecting a conversation", () => {
+  for (const pathname of ["/app/chat/channels", "/app/chat/channels/"]) {
+    const url = new URL(pathname, "https://cloud.test");
+    url.searchParams.set("q", "  Studio decisions  ");
+    url.searchParams.set("panel", "info");
+    expect(parseRoute(url)).toEqual({
+      channels: true,
+      query: "Studio decisions",
+      chatId: null,
+      view: "all",
+      threads: false,
+      messageId: null,
+      panel: null,
+    });
+    url.searchParams.set("q", "q".repeat(101));
+    expect(parseRoute(url)?.query).toHaveLength(100);
+  }
+});

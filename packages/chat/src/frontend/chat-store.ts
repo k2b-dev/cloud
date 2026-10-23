@@ -728,6 +728,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       await sidebar(reloadSidebar).catch(() => {});
       return result;
     },
+    refreshSidebar: () => sidebar(reloadSidebar),
     people: (search: string, signal?: AbortSignal) => api.people(search, undefined, signal),
     // Only the FIFO personal live channel applies write results; HTTP responses never change local state.
     markRead: (id: string, seq: number, thread?: ThreadView) => api.read(id, seq, thread),

@@ -4,6 +4,45 @@ export const chatMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      channelChoice: "Channel",
+      chatChoice: "Chat",
+      discoverSubtitle: "Channels you can subscribe to",
+      subscribe: "Subscribe",
+      subscribed: "Subscribed",
+      unsubscribe: "Unsubscribe",
+      unsubscribeDescription: "The channel disappears from your list.",
+      unsubscribed: ({ name }: { name: string }) => `Unsubscribed from “${name}”`,
+      channelReadOnly: "Only the editors write here.",
+      channelSearchEmpty: ({ query }: { query: string }) => `No results for “${query}”.`,
+      channelListFailed: "Channels could not be loaded.",
+
+      loadingChats: "Loading chats…",
+
+      leaveChannelDescription:
+        "You leave the channel. If it is still discoverable for you, you can read its history and join again. Your messages stay in the channel.",
+      removeChannelMemberDescription:
+        "Their direct membership ends. If this channel is still discoverable for them, they can read its history and join again. Their messages stay in the channel.",
+      delegatedAccount: "User-bound account",
+      resourceAccount: "Resource account",
+      standaloneAccount: "Service account",
+      agentAccount: "Agent",
+
+      findGroup: "Find a directory group",
+      discoveryAudience: ({ count }: { count: number }) => `${count.toLocaleString("en")} accounts can find this channel.`,
+      joiningPermission: "Permission after joining",
+
+      discoveryHistory:
+        "Everyone in this audience can read the entire history before joining. Existing members and their settings stay unchanged.",
+      authenticatedExplanation: "Includes guests and service accounts.",
+      removeDisabledAudience: "Remove this audience before saving further changes.",
+      discoverySettings: "Discoverability",
+      discoverableFor: "Discoverable by",
+      noChannels: "No channels found.",
+      searchChannels: "Search channels",
+      showMoreChannels: "Show more",
+      browseChannels: "Discover channels",
+      newChannel: "New channel",
+      channels: "Channels",
       newChat: "New chat",
       people: "People",
       guestPickerDescription: "You can add people you already share a chat with.",
@@ -125,7 +164,7 @@ export const chatMessages = i18n.define({
       channelNameRequired: "Give the channel a name.",
       channelPurposeRequired: "Describe the channel’s purpose.",
       authenticatedDiscoveryDisabled: "Discovery by all signed-in accounts is disabled.",
-      allAuthenticated: "All signed-in accounts",
+      allAuthenticated: "Everyone with a Cloud account",
       systemDiscoveryChanged: ({ actor }: { actor: string }) => `${actor} changed who can discover this channel.`,
       systemDiscoveryRemoved: ({ actor }: { actor: string }) => `${actor} removed discovery. Members keep their access.`,
       personalAccountRequired: "Create chats with a personal account.",
@@ -269,6 +308,45 @@ export const chatMessages = i18n.define({
       logs: "Logs",
     },
     de: {
+      channelChoice: "Kanal",
+      chatChoice: "Chat",
+      discoverSubtitle: "Kanäle, die du abonnieren kannst",
+      subscribe: "Abonnieren",
+      subscribed: "Abonniert",
+      unsubscribe: "Abbestellen",
+      unsubscribeDescription: "Der Kanal verschwindet aus deiner Liste.",
+      unsubscribed: ({ name }: { name: string }) => `„${name}“ abbestellt`,
+      channelReadOnly: "Nur die Redaktion schreibt hier.",
+      channelSearchEmpty: ({ query }: { query: string }) => `Nichts gefunden für „${query}“.`,
+      channelListFailed: "Die Kanäle konnten nicht geladen werden.",
+
+      loadingChats: "Chats werden geladen…",
+
+      leaveChannelDescription:
+        "Du verlässt den Kanal. Solange er für dich auffindbar ist, kannst du seinen Verlauf lesen und wieder beitreten. Deine Nachrichten bleiben im Kanal.",
+      removeChannelMemberDescription:
+        "Der direkte Mitgliedseintrag endet. Solange der Kanal für dieses Konto auffindbar ist, kann es den Verlauf lesen und wieder beitreten. Seine Nachrichten bleiben im Kanal.",
+      delegatedAccount: "Nutzergebundenes Konto",
+      resourceAccount: "Ressourcenkonto",
+      standaloneAccount: "Dienstkonto",
+      agentAccount: "Agent",
+
+      findGroup: "Verzeichnisgruppe suchen",
+      discoveryAudience: ({ count }: { count: number }) => `${count.toLocaleString("de")} Konten können diesen Kanal finden.`,
+      joiningPermission: "Recht für Beitretende",
+
+      discoveryHistory:
+        "Alle Auffindbaren können schon vor dem Beitritt den ganzen Verlauf lesen. Bestehende Mitglieder und ihre Einstellungen bleiben erhalten.",
+      authenticatedExplanation: "Schließt Gäste und Dienstkonten ein.",
+      removeDisabledAudience: "Entferne diese Zielgruppe, bevor du weitere Änderungen speicherst.",
+      discoverySettings: "Auffindbarkeit",
+      discoverableFor: "Auffindbar für",
+      noChannels: "Keine Kanäle gefunden.",
+      searchChannels: "Kanäle suchen",
+      showMoreChannels: "Weitere anzeigen",
+      browseChannels: "Kanäle entdecken",
+      newChannel: "Neuer Kanal",
+      channels: "Kanäle",
       newChat: "Neuer Chat",
       people: "Personen",
       guestPickerDescription: "Du kannst Personen hinzufügen, mit denen du schon einen Chat teilst.",
@@ -395,7 +473,7 @@ export const chatMessages = i18n.define({
       channelNameRequired: "Gib dem Kanal einen Namen.",
       channelPurposeRequired: "Beschreibe den Zweck des Kanals.",
       authenticatedDiscoveryDisabled: "Auffindbarkeit für alle Angemeldeten ist abgeschaltet.",
-      allAuthenticated: "Alle Angemeldeten",
+      allAuthenticated: "Alle mit einem Cloud-Konto",
       systemDiscoveryChanged: ({ actor }: { actor: string }) => `${actor} hat die Auffindbarkeit geändert.`,
       systemDiscoveryRemoved: ({ actor }: { actor: string }) =>
         `${actor} hat die Auffindbarkeit entfernt. Mitglieder behalten ihren Zugriff.`,
