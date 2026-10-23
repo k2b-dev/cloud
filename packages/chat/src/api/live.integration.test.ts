@@ -98,7 +98,7 @@ suite("Chat live delivery on two replicas", () => {
     return {
       socket,
       sub: (id: string, channel: string, scope: unknown, cursor?: string) =>
-        socket.send(JSON.stringify({ t: "sub", id, channel, scope, cursor })),
+        socket.send(JSON.stringify({ t: "sub", id, channel, scope, after: cursor })),
       frames: (id: string) => frames.filter(({ frame }) => frame.id === id),
       events: (id: string) =>
         frames.filter(({ frame }) => frame.id === id && frame.t === "event").flatMap(({ frame }) => (frame.data ? [frame.data] : [])),

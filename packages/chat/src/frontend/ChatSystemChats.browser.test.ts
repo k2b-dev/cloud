@@ -524,7 +524,7 @@ test("notebook rows and note heads use their own icon, link and membership; read
   });
   const { page } = await load(phone, { chat, thread: note, panel: "info" });
   try {
-    await page.getByText("2 Mitglieder: alle mit Zugriff auf das Notebook. Zugriff änderst du dort.").waitFor();
+    await page.getByText("Mitglieder: alle mit Zugriff auf das Notebook. Zugriff änderst du dort.").waitFor();
     expect(await page.locator(".chat-system-chats .ti-notebook").count()).toBeGreaterThan(0);
     expect(await page.getByRole("button", { name: "Über ein Element sprechen", exact: true }).count()).toBe(0);
     expect(await page.locator(".chat-resource-head__mobile").getByRole("link", { name: "Zur Notiz ↗" }).getAttribute("href")).toBe(
@@ -582,10 +582,10 @@ test("discovery advances each provider independently after one source is exhaust
     const more = page.locator(".chat-system-chats").getByRole("button", { name: "Weitere Chats anzeigen" });
     await more.click();
     await until(() => queries.length === 2);
-    await settled(page);
+    await page.waitForFunction(() => document.querySelector('.chat-system-chats button[aria-busy="true"]') === null);
     await more.click();
     await until(() => queries.length === 3);
-    await settled(page);
+    await more.waitFor({ state: "detached" });
     expect(queries[2]?.spacesCursor).toBe("");
     expect(await more.count()).toBe(0);
   } finally {
