@@ -1518,6 +1518,7 @@ export default function Browser(props: {
                         tree={view().view === "tree"}
                         pathBase={searching() ? folder() : null}
                         showModified={!searching()}
+                        timeZone={props.history?.env.timeZone}
                         opening={opening()}
                         currentPath={view().view === "tree" ? folder() : null}
                         selecting={selecting()}
