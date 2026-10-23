@@ -101,12 +101,17 @@ describe("Spaces overview", () => {
       canDelete: true,
     };
     for (const view of ["today", "upcoming"] as const) {
+      const startsAt = view === "upcoming" ? "2033-08-20T08:00:00.000Z" : block.startsAt;
       const html = render(null, "en", {
         view,
         items: [],
         counts: { mine: 0, today: 0, upcoming: 0 },
         timeBlocks: [
-          block,
+          {
+            ...block,
+            startsAt,
+            endsAt: view === "upcoming" ? "2033-08-20T09:00:00.000Z" : block.endsAt,
+          },
           {
             ...block,
             id: "00000000-0000-4000-8000-000000000102",
@@ -119,6 +124,12 @@ describe("Spaces overview", () => {
         timeBlockCounts: { today: 2, upcoming: 2 },
       });
       expect(html).toContain("Review launch plan");
+      const blockTime = [...html.matchAll(/<time\b[^>]*datetime="([^"]+)"[^>]*>([\s\S]*?)<\/time>/g)]
+        .find((match) => match[1] === startsAt)?.[2]
+        ?.replace(/<[^>]*>/g, "");
+      expect(blockTime).toContain("10:00");
+      expect(blockTime).toContain("11:00");
+      if (view === "upcoming") expect(blockTime).toContain("2033");
       expect(html).toContain(`href="/app/spaces/Space1?item=Item01&amp;block=${block.id}"`);
       expect(html).toContain("ti-circle-check");
       expect(html).toContain("Preserved planning");

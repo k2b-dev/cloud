@@ -360,16 +360,22 @@ export default function SpacesOverview(props: Props) {
           </span>
         </span>
         <time datetime={block.startsAt}>
-          {dates.formatDateTimeRelative(block.startsAt, props.dateConfig)}–{dates.formatTime(block.endsAt, props.dateConfig)}
+          {formatDeadline(block.startsAt, props.dateConfig)}–
+          {dates.formatDateKey(block.startsAt, props.dateConfig) === dates.formatDateKey(block.endsAt, props.dateConfig)
+            ? dates.formatTime(block.endsAt, props.dateConfig)
+            : formatDeadline(block.endsAt, props.dateConfig)}
         </time>
       </>
     );
     return block.itemId && block.spaceId ? (
-      <a class="spaces-overview-work-row" href={`/app/spaces/${block.spaceId}?item=${block.itemId}&block=${block.id}`}>
+      <a
+        class="spaces-overview-work-row spaces-overview-time-block"
+        href={`/app/spaces/${block.spaceId}?item=${block.itemId}&block=${block.id}`}
+      >
         {content}
       </a>
     ) : (
-      <button type="button" class="spaces-overview-work-row" onClick={() => void openOrphanTimeBlock(block)}>
+      <button type="button" class="spaces-overview-work-row spaces-overview-time-block" onClick={() => void openOrphanTimeBlock(block)}>
         {content}
       </button>
     );

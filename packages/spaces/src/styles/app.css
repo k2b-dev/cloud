@@ -61,6 +61,7 @@
   .k2b-ui .spaces-overview-mobile-activity { display: inline-flex !important; }
   .spaces-overview-work-row { grid-template-columns: auto minmax(0, 1fr) auto; }
   .spaces-overview-work-row :is(.spaces-overview-priority, time) { display: none; }
+  .spaces-overview-work-row.spaces-overview-time-block > time { display: block; grid-column: 2; grid-row: 2; white-space: normal; }
 }
 @media (max-width: 39.999rem) {
   .k2b-ui .spaces-overview-main { padding: 1rem; }
