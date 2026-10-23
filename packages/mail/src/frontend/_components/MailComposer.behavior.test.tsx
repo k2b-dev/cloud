@@ -347,6 +347,13 @@ describe("MailComposer signature choice", () => {
       expect(cc.value).toBe("unfinished recipient");
       expect(readDraftDocument(document).body).toContain(" peer");
       expect(send.mock.calls.filter(([raw]) => JSON.parse(raw).type === "syncPublish")).toHaveLength(0);
+      const view = EditorView.findFromDOM(dom.root.querySelector<HTMLElement>(".cm-editor")!)!;
+      expect(view.state.doc.toString()).toBe("Hello peer");
+      view.dispatch({ changes: { from: view.state.doc.length, insert: " local" }, userEvent: "input.type" });
+      const publications = send.mock.calls.map(([raw]) => JSON.parse(raw)).filter((packet) => packet.type === "syncPublish");
+      expect(publications).toHaveLength(1);
+      Y.applyUpdate(document, encoding.fromBase64(publications[0].payload.payload));
+      expect(readDraftDocument(document).body).toBe("Hello peer local");
       expect(requests.some((path) => path.endsWith("/lease"))).toBe(false);
       send.mockRestore();
     } finally {

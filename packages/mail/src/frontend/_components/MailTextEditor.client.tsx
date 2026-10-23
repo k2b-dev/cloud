@@ -247,7 +247,10 @@ export default function MailTextEditor(props: {
             : []),
         ]}
         onChange={(value) => {
-          if (!applying) props.onBodyInput(value);
+          // Yjs projects shared input to the composer. A CodeMirror callback
+          // can run before that projection during remote delivery; feeding it
+          // back as a local edit would insert the peer's text a second time.
+          if (!applying && !binding) props.onBodyInput(value);
         }}
         onReady={(value, nextControls) => {
           controls = nextControls;

@@ -1083,3 +1083,10 @@ updates that class's row in the table.
 - **Root cause:** The internal renderer enforced output size but did not reject the oversized input before template, Markdown and CSS work.
 - **Error class:** Performing expensive work before validating the owning application's input budget.
 - **Guard:** `compose-renderer.test.ts` submits one character beyond the draft body limit and asserts rejection before Markdown rendering. Existing output-size and complexity cases retain their original limits.
+
+### An editor callback republished remote draft text
+
+- **What happened:** A remote body change could be inserted again when CodeMirror reported it before the shared document projected its complete content to the composer.
+- **Root cause:** Both the Yjs projection and the editor callback wrote the shared body through the application's local edit path.
+- **Error class:** Feeding a remote projection back into a local writer.
+- **Guard:** The actual shared-composer DOM regression asserts zero publications for remote input, then exactly one publication for a local edit with the exact merged body. Shared bodies now project only through Yjs; exclusive drafts retain the editor callback.
