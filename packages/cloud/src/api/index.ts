@@ -124,6 +124,7 @@ export const createCoreApiRouter = (options: CoreApiOptions) => {
   return { api };
 };
 
+export { createAppAccessRoutes } from "./app-access";
 export {
   CLOUD_MCP_PATH,
   CLOUD_MCP_PROTECTED_RESOURCE_PATH,
@@ -132,5 +133,4 @@ export {
   createMcpRoutes,
   publicCloudOrigin,
 } from "./mcp";
-
 export { resolveCloudResourceHref } from "./resource-links";
