@@ -1,21 +1,34 @@
-import { navigate } from "@k2b/ssr/nav";
-import { type DateContext, dates } from "@k2b/stdlib";
+import { Link, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
+import type { DateContext } from "@k2b/stdlib";
 import { query as queries } from "@k2b/stdlib/solid";
 import { Button, IconButton, Placeholder, SegmentedControl, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OverviewView, OverviewWork } from "@/overview-contracts";
-import { formatDeadline } from "@/presentation/deadline";
-import { spacesMessages } from "@/service/messages";
-import { isTaskOverdue } from "@/task-overdue";
-import { isOwnClaim } from "../frontend/[id]/_components/shared/claim/claim";
 import { createRetryToasts } from "../frontend/lib/feedback";
-import { readResponseError } from "../frontend/lib/response";
 import { overviewMessages } from "../frontend/overview-messages";
+import { saveCompletion } from "./completion";
 import { myTasksMessages } from "./messages";
+import { workSchedule } from "./schedule";
 
-type WorkItem = OverviewWork["items"][number];
-type Props = { userId: string; initialView: OverviewView; initialWork: OverviewWork; dateConfig: DateContext };
+export type WorkItem = OverviewWork["items"][number];
+type Props = {
+  userId: string;
+  initialView: OverviewView;
+  initialWork: OverviewWork;
+  dateConfig: DateContext;
+  /** The short ID of the open task, marked in the list. */
+  selected?: string;
+  /** The address of a task, and of the list in a view; the open task keeps its place in the address. */
+  taskHref: (item: WorkItem, view: OverviewView) => string;
+  listHref: (view: OverviewView) => string;
+  /** Opens a task in place; without it a row is a link that loads the task's page. */
+  onOpen?: (item: WorkItem, event: LinkNavigateEvent) => void;
+  /** The person chose another view. */
+  onViewChange?: (view: OverviewView) => void;
+  /** A task was completed or reopened here; `done` is what the server kept. */
+  onCompletedChange?: (shortId: string, done: boolean) => void;
+};
 /** Where a checked-off row stood, so Undo puts it back there and only there. */
 type Place = { view: OverviewView; index: number };
 /**
@@ -24,17 +37,8 @@ type Place = { view: OverviewView; index: number };
  * had started when the last request ended; a read that starts later shows the server's state instead.
  */
 type Change = { item: WorkItem; place?: Place; done: boolean; saved: boolean; settled?: number };
-type Outcome = "saved" | "refused" | "failed";
 
 const VIEWS = ["mine", "today", "upcoming"] as const;
-const viewHref = (view: OverviewView) => (view === "mine" ? "/pwa/spaces" : `/pwa/spaces?view=${view}`);
-
-/** The overview carries no all-day flag; an all-day event runs from one local midnight to a later one. */
-const isAllDay = (start: Date, end: Date | null, dateConfig: DateContext) =>
-  end !== null &&
-  end > start &&
-  start.getTime() === dates.startOfDay(start, dateConfig).getTime() &&
-  end.getTime() === dates.startOfDay(end, dateConfig).getTime();
 
 /**
  * "My tasks" in the mobile app: the overview's views as a segmented control, and one flat row per task or event.
@@ -100,8 +104,10 @@ export default function MyTasks(props: Props) {
   const select = (next: OverviewView) => {
     if (next === view()) return;
     setView(next);
-    // The view is the page's state, not a step back; the address keeps it for a reload.
-    navigate(viewHref(next), { replace: true, scroll: "manual", viewTransition: false });
+    props.onViewChange?.(next);
+    // The view is the page's state, not a step back; the address keeps it, beside the open task, for a reload.
+    const open = props.selected ? items().find((item) => item.shortId === props.selected) : undefined;
+    navigate(open ? props.taskHref(open, next) : props.listHref(next), { replace: true, scroll: "manual", viewTransition: false });
   };
 
   /** Reads the list again; true when it did. */
@@ -115,40 +121,7 @@ export default function MyTasks(props: Props) {
     }
   };
 
-  /** The task's current claim, read only after a refusal; null when it has none or cannot be read. */
-  const currentClaim = async (item: WorkItem) => {
-    const response = await apiClient[":id"].items[":itemId"]
-      .$get({ param: { id: item.spaceShortId, itemId: item.shortId } })
-      .catch(() => null);
-    return response?.ok ? ((await response.json()).claim ?? null) : null;
-  };
-
-  /** A refusal that a retry cannot change: say why. */
-  const refused = (message: string): Outcome => {
-    toast.error(message);
-    return "refused";
-  };
-
-  /** Sets the item's completion. Each refusal is reported here; a failure is left to the caller. */
-  const save = async (item: WorkItem, completed: boolean, claimId?: string): Promise<Outcome> => {
-    const response = await apiClient[":id"].items[":itemId"].completed
-      .$post({ param: { id: item.spaceShortId, itemId: item.shortId }, json: { completed, claimId } })
-      // Offline or unreachable: the same Retry as a failed answer.
-      .catch(() => null);
-    if (!response) return "failed";
-    if (response.ok) return "saved";
-    if (response.status === 409 && completed && !claimId) {
-      // A claimed task: the person's own claim completes it, as on the web; someone else's is named.
-      const claim = await currentClaim(item);
-      if (claim && isOwnClaim(claim, props.userId)) return save(item, completed, claim.id);
-      if (claim) return refused(t.claimed({ title: item.title, name: claim.displayName }));
-    }
-    if (response.status === 403) return refused(t.notAllowed({ space: item.spaceName }));
-    if (response.status === 404) return refused(t.gone({ title: item.title }));
-    // Unfinished blockers; the server already words the reason in the person's language.
-    if (response.status === 409) return refused(await readResponseError(response, spacesMessages(locale()).completeBlockersFirst));
-    return "failed";
-  };
+  const save = (item: WorkItem, completed: boolean) => saveCompletion({ item, completed, userId: props.userId, locale: locale() });
 
   /** Brings the task's server state to the person's latest choice, one request at a time, then reads the list again. */
   const sync = async (id: string): Promise<void> => {
@@ -163,6 +136,7 @@ export default function MyTasks(props: Props) {
         const outcome = await save(change.item, target);
         if (outcome === "saved") {
           patch(id, { saved: target });
+          props.onCompletedChange?.(id, target);
           continue;
         }
         if (target) notices.get(id)?.dismiss();
@@ -224,28 +198,7 @@ export default function MyTasks(props: Props) {
     choose(item, false, place);
   };
 
-  const schedule = (item: WorkItem): { text: string; datetime: string; icon: string; overdue: boolean } | null => {
-    if (item.startsAt) {
-      const start = new Date(item.startsAt);
-      const end = item.endsAt ? new Date(item.endsAt) : null;
-      const time = dates.formatTime(start, props.dateConfig);
-      const range = isAllDay(start, end, props.dateConfig)
-        ? t.allDay
-        : end && dates.isSameDay(start, end, props.dateConfig)
-          ? `${time}–${dates.formatTime(end, props.dateConfig)}`
-          : time;
-      const text = dates.isToday(start, props.dateConfig) ? range : `${dates.formatDate(start, props.dateConfig)}, ${range}`;
-      return { text, datetime: item.startsAt, icon: "ti ti-clock", overdue: false };
-    }
-    if (!item.deadline) return null;
-    return {
-      text: formatDeadline(item.deadline, props.dateConfig),
-      datetime: item.deadline,
-      icon: "ti ti-calendar-due",
-      // The overview contains only open items and omits completedAt.
-      overdue: isTaskOverdue({ ...item, completedAt: null }, props.dateConfig),
-    };
-  };
+  const schedule = (item: WorkItem) => workSchedule(item, props.dateConfig, t.allDay);
 
   /** Each view reads a bounded list; the rest of its count stays on the web. */
   const hidden = () => {
@@ -299,7 +252,7 @@ export default function MyTasks(props: Props) {
             {(item) => {
               const when = () => schedule(item);
               return (
-                <li class="spaces-pwa__row">
+                <li class="spaces-pwa__row" aria-current={item.shortId === props.selected ? "true" : undefined}>
                   <Show
                     when={!item.startsAt}
                     fallback={
@@ -318,7 +271,12 @@ export default function MyTasks(props: Props) {
                       <i class="ti ti-circle" aria-hidden="true" />
                     </IconButton>
                   </Show>
-                  <div class="spaces-pwa__copy">
+                  <Link
+                    class="spaces-pwa__copy"
+                    href={props.taskHref(item, view())}
+                    scroll="preserve"
+                    onNavigate={props.onOpen ? (event) => props.onOpen?.(item, event) : undefined}
+                  >
                     <span class="spaces-pwa__title">{item.title}</span>
                     <span class="spaces-pwa__meta">
                       <span class="spaces-pwa__space">
@@ -338,7 +296,7 @@ export default function MyTasks(props: Props) {
                         )}
                       </Show>
                     </span>
-                  </div>
+                  </Link>
                 </li>
               );
             }}

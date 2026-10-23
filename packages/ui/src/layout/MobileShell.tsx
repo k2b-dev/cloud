@@ -1,22 +1,39 @@
-import { type JSX, onCleanup, onMount, Show } from "solid-js";
+import { For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { IconButton, IconButtonLink } from "../actions/Button";
 import ScrollArea from "./ScrollArea";
 import { installScrollFades } from "./scroll-fade";
+import type { TabBarItem } from "./TabBar";
 
 export type MobileShellProps = {
   /** Usually `MobileShell.Header`; it sits above the scroll area and pads the top safe area. */
-  header: JSX.Element;
+  header?: JSX.Element;
   /** Usually a `TabBar`; it sits below the scroll area and pads the bottom safe area itself. */
   footer?: JSX.Element;
+  /**
+   * Usually `MobileShell.Sidebar` with the footer's destinations and more. From 48rem of window width it stands at
+   * the start edge and the footer goes; below, it is not shown. The server renders both, so CSS alone decides.
+   */
+  sidebar?: JSX.Element;
   /** The page content, inside the shell's only scroll area. */
   children: JSX.Element;
+  /**
+   * `false` for content that brings its own heads and scroll areas, such as `AppWorkspace.Main` levels: it fills the
+   * main area without the shell's scroll area, and the header shows only as the frame of the next page while a tapped
+   * tab's page loads.
+   */
+  scroll?: boolean;
   class?: string;
 };
 
 export type MobileShellHeaderProps = {
   title: string;
-  /** A Back control before the title: a link with `href`, otherwise a button. */
-  back?: { href?: string; onClick?: () => void; label: string };
+  /** The title while the shell shows its sidebar, which already names the app; `title` by default. */
+  sidebarTitle?: string;
+  /**
+   * A Back control before the title: a link with `href`, otherwise a button. `withSidebar: false` hides it while the
+   * shell shows its sidebar, for a way back to a destination the sidebar lists.
+   */
+  back?: { href?: string; onClick?: () => void; label: string; withSidebar?: boolean };
   /** Controls after the title, such as a menu. */
   actions?: JSX.Element;
 };
@@ -156,15 +173,16 @@ const observeLinkTaps = (root: HTMLElement): (() => void) => {
 export function observeMobileShell(root: HTMLElement): () => void {
   const main = root.querySelector<HTMLElement>(":scope > .k2b-mobile-shell__main");
   const body = main?.querySelector<HTMLElement>(":scope > .k2b-mobile-shell__body");
-  if (!main || !body) return () => {};
+  if (!main) return () => {};
   const stopLinkTaps = observeLinkTaps(root);
-  const stopScrollFades = installScrollFades(body);
+  // Content with its own scroll areas keeps its own fades; the room a toast takes applies to the whole main area.
+  const stopScrollFades = body ? installScrollFades(body) : () => {};
   let frame = 0;
   const measure = () => {
     frame = 0;
     const footer = Math.max(0, root.getBoundingClientRect().bottom - main.getBoundingClientRect().bottom);
     document.body.style.setProperty(FOOTER_HEIGHT, `${footer}px`);
-    root.style.setProperty(TOAST_INSET, `${persistentToastInset(body)}px`);
+    root.style.setProperty(TOAST_INSET, `${persistentToastInset(body ?? main)}px`);
   };
   const schedule = () => {
     if (!frame) frame = requestAnimationFrame(measure);
@@ -200,10 +218,17 @@ function MobileShellRoot(props: MobileShellProps): JSX.Element {
   onMount(() => onCleanup(observeMobileShell(root)));
 
   return (
-    <div ref={root} class={props.class ? `k2b-mobile-shell ${props.class}` : "k2b-mobile-shell"}>
+    <div
+      ref={root}
+      class={props.class ? `k2b-mobile-shell ${props.class}` : "k2b-mobile-shell"}
+      data-k2b-content-heads={props.scroll === false ? "" : undefined}
+    >
+      {props.sidebar}
       {props.header}
       <main class="k2b-mobile-shell__main">
-        <ScrollArea class="k2b-mobile-shell__body">{props.children}</ScrollArea>
+        <Show when={props.scroll !== false} fallback={props.children}>
+          <ScrollArea class="k2b-mobile-shell__body">{props.children}</ScrollArea>
+        </Show>
       </main>
       {props.footer}
     </div>
@@ -218,7 +243,10 @@ function MobileShellHeader(props: MobileShellHeaderProps): JSX.Element {
           <Show
             when={back().href}
             fallback={
-              <IconButton class="k2b-mobile-shell__back" label={back().label} tooltip={false} onClick={() => back().onClick?.()}>
+              <IconButton
+                class="k2b-mobile-shell__back"
+                data-with-sidebar={back().withSidebar === false ? "false" : undefined}
+                label={back().label} tooltip={false} onClick={() => back().onClick?.()}>
                 <i class="ti ti-chevron-left" aria-hidden="true" />
               </IconButton>
             }
@@ -226,6 +254,7 @@ function MobileShellHeader(props: MobileShellHeaderProps): JSX.Element {
             {(href) => (
               <IconButtonLink
                 class="k2b-mobile-shell__back"
+                data-with-sidebar={back().withSidebar === false ? "false" : undefined}
                 href={href()}
                 label={back().label}
                 tooltip={false}
@@ -237,7 +266,12 @@ function MobileShellHeader(props: MobileShellHeaderProps): JSX.Element {
           </Show>
         )}
       </Show>
-      <h1 class="k2b-mobile-shell__title">{props.title}</h1>
+      <h1 class="k2b-mobile-shell__title">
+        <Show when={props.sidebarTitle !== undefined && props.sidebarTitle !== props.title} fallback={props.title}>
+          <span class="k2b-mobile-shell__title-narrow">{props.title}</span>
+          <span class="k2b-mobile-shell__title-wide">{props.sidebarTitle}</span>
+        </Show>
+      </h1>
       <Show when={props.actions}>
         <div class="k2b-mobile-shell__actions">{props.actions}</div>
       </Show>
@@ -245,11 +279,88 @@ function MobileShellHeader(props: MobileShellHeaderProps): JSX.Element {
   );
 }
 
+export type MobileShellSidebarItem = TabBarItem & {
+  /** A count after the label, such as unread messages; 0 shows nothing. */
+  count?: number;
+};
+
+export type MobileShellSidebarProps = {
+  /** Accessible name of the navigation landmark; usually the tab bar's. */
+  label: string;
+  /** The app's name in the sidebar's head. */
+  title: string;
+  /** Address of the app's logo before the name; decorative, the name says it. */
+  logo?: string;
+  /** Destinations at the top, such as Start. */
+  items: readonly MobileShellSidebarItem[];
+  /** Named groups below them, such as the apps; a group without items is left out. */
+  sections?: readonly { title: string; items: readonly MobileShellSidebarItem[] }[];
+  /** Destinations at the bottom edge, such as Settings. */
+  footer?: readonly MobileShellSidebarItem[];
+};
+
+function SidebarLink(props: { item: MobileShellSidebarItem }): JSX.Element {
+  return (
+    <a
+      href={props.item.href}
+      aria-current={props.item.current ? "page" : undefined}
+      data-tab={props.item.id}
+      data-k2b-title={props.item.title ?? props.item.label}
+    >
+      <i class={props.item.icon} aria-hidden="true" />
+      <span class="k2b-truncate-fade">{props.item.label}</span>
+      <Show when={props.item.count}>{(count) => <span class="k2b-mobile-shell__sidebar-count">{count()}</span>}</Show>
+    </a>
+  );
+}
+
 /**
- * The full-screen frame of a phone app: a header, one scroll area, and an optional footer such as a `TabBar`. While
- * it is mounted, the document itself never scrolls, pinch zoom and rubber-banding are off, and the toast rail sits
- * above the footer. Mount one per page, as the page's layout.
+ * The navigation of a touch app on a wide screen, in `MobileShell`'s `sidebar`: the app's name, then its destinations
+ * as 44 px rows with icon and label, the open one in the action colour. A press shows the item's page frame at once,
+ * as on a tab, and the row of a loading page pulses.
  */
-export const MobileShell = Object.assign(MobileShellRoot, { Header: MobileShellHeader });
+function MobileShellSidebar(props: MobileShellSidebarProps): JSX.Element {
+  const list = (items: readonly MobileShellSidebarItem[]) => (
+    <ul>
+      <For each={items}>
+        {(item) => (
+          <li>
+            <SidebarLink item={item} />
+          </li>
+        )}
+      </For>
+    </ul>
+  );
+  return (
+    <nav class="k2b-mobile-shell__sidebar" aria-label={props.label}>
+      <div class="k2b-mobile-shell__sidebar-head">
+        <Show when={props.logo}>{(logo) => <img src={logo()} alt="" width="32" height="32" />}</Show>
+        <span class="k2b-truncate-fade">{props.title}</span>
+      </div>
+      <div class="k2b-mobile-shell__sidebar-body">
+        {list(props.items)}
+        <For each={(props.sections ?? []).filter((section) => section.items.length > 0)}>
+          {(section) => (
+            <section>
+              <h2>{section.title}</h2>
+              {list(section.items)}
+            </section>
+          )}
+        </For>
+      </div>
+      <Show when={props.footer?.length}>
+        <div class="k2b-mobile-shell__sidebar-foot">{list(props.footer ?? [])}</div>
+      </Show>
+    </nav>
+  );
+}
+
+/**
+ * The full-screen frame of a phone app: a header, one scroll area, and an optional footer such as a `TabBar`. With a
+ * `sidebar`, a window of 48rem and wider shows the sidebar at the start edge instead of the footer, and the toast rail
+ * stays in the area beside it. While it is mounted, the document itself never scrolls, pinch zoom and rubber-banding
+ * are off, and the toast rail sits above the footer. Mount one per page, as the page's layout.
+ */
+export const MobileShell = Object.assign(MobileShellRoot, { Header: MobileShellHeader, Sidebar: MobileShellSidebar });
 
 export default MobileShell;
