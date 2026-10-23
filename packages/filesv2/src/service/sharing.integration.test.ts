@@ -329,6 +329,9 @@ suite("share authority, public privacy and durable inbox budgets", () => {
   test("hashes links, reveals their URL once, and keeps internal notes private", async () => {
     const share = await create({ note: "internal secret", publicNote: "hello visitors" });
     const saved = await shares.get(share.id);
+    const [stored] = await sql`SELECT jsonb_typeof(target_snapshots) AS snapshots_type,jsonb_typeof(items) AS items_type
+      FROM filesv2.shares WHERE id=${share.id}::uuid`;
+    expect(stored).toEqual({ snapshots_type: "array", items_type: "array" });
     expect(saved?.token_hash).toBe(shareTokenHash(token(share)));
     expect(JSON.stringify(saved)).not.toContain(token(share));
     expect((await service.listShares(testCall(actor))).items[0]?.url).toBeNull();

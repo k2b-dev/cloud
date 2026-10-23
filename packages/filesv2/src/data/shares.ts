@@ -48,7 +48,7 @@ export const shares = {
     const [row] = await db<
       ShareRow[]
     >`INSERT INTO filesv2.shares(token_hash,password_hash,kind,base_id,root,base_path,scope,items,title,note,public_note,owner_uid,owner_gid,created_by,created_by_name,expires_at,max_file_size,max_total_size,show_upload_names,server_url,target_snapshots)
-      VALUES(${input.token_hash},${input.password_hash},${input.kind},${input.base_id}::uuid,${input.root},${input.base_path},${input.scope},${input.items},${input.title},${input.note},${input.public_note},${input.owner_uid},${input.owner_gid},${input.created_by}::uuid,${input.created_by_name},${input.expires_at},${input.max_file_size},${input.max_total_size},${input.show_upload_names},${input.server_url},${input.target_snapshots === null ? null : JSON.stringify(input.target_snapshots)}::jsonb) RETURNING *`;
+      VALUES(${input.token_hash},${input.password_hash},${input.kind},${input.base_id}::uuid,${input.root},${input.base_path},${input.scope},${input.items},${input.title},${input.note},${input.public_note},${input.owner_uid},${input.owner_gid},${input.created_by}::uuid,${input.created_by_name},${input.expires_at},${input.max_file_size},${input.max_total_size},${input.show_upload_names},${input.server_url},${input.target_snapshots === null ? null : JSON.stringify(input.target_snapshots)}::text::jsonb) RETURNING *`;
     return normalize(row!);
   },
   /** An owner's management list never depends on retaining access to the old storage. */
