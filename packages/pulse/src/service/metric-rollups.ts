@@ -52,7 +52,7 @@ export const hourlyRollupSql = (database: string, prefix: string) => {
 };
 export const createHourlyRollup =
   ({ store = baseStore, database = sql, clock = store.clock }: { store?: IngestStore; database?: typeof sql; clock?: () => Date } = {}) =>
-  async (baseId?: string): Promise<{ buckets: number; done: boolean }> => {
+  async (baseId?: string): Promise<{ buckets: number; done: boolean; retryAfterMs?: number }> => {
     const connectedStore = { ...store, query: await store.prepare() };
     let failedHour: { baseId: string; hour: Date; now: Date; generation: string; revision: string } | undefined;
     try {
@@ -107,6 +107,11 @@ export const createHourlyRollup =
         return { buckets: 1, done: false };
       });
     } catch (error) {
+      if (failedHour && error instanceof Error && error.message === "MAINTENANCE_BUSY") {
+        await database`UPDATE pulse.metric_hours SET lease_until=greatest(lease_until,${new Date(clock().getTime() + 5_000)})
+          WHERE base_id=${failedHour.baseId}::uuid AND hour=${failedHour.hour} AND state='dirty'`;
+        return { buckets: 0, done: false, retryAfterMs: 5_000 };
+      }
       if (failedHour) {
         const failed = failedHour;
         await database.begin(async (tx) => {

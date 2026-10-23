@@ -224,7 +224,7 @@ export const createIngestWriter = ({
       writing = false;
     let resetGeneration = params.resetGeneration;
     try {
-      const connectedStore = { ...store, query: await store.prepare() };
+      const connectedStore = { ...store, query: await store.prepare("ingest") };
       const writable = await requireBaseWritable(params.baseId, database);
       if (!writable.ok) return writable;
       const inspected = await inspectBaseCheckpoint(params.baseId, connectedStore, database);

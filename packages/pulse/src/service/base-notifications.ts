@@ -4,6 +4,8 @@ import { sql } from "bun";
 import type { AlertSeverity, AlertStateName } from "../alert-contracts";
 
 export type BaseNotice =
+  | { kind: "storageThresholdReached"; data: { baseName: string; threshold: number } }
+  | { kind: "storeUnavailable"; data: Record<string, never> }
   | {
       kind: "alert";
       data: {

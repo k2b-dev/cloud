@@ -8,12 +8,16 @@ const messages = i18n.define({
       GEO_FORBIDDEN: "Sign in with a person, agent, or service account to use geo queries.",
       GEO_BUDGET_EXHAUSTED: "The geo budget is exhausted. Wait until resetsAt or ask an administrator to review the budget.",
       GEO_BUSY: "Geo queries are busy. Retry after retryAfterSeconds; if this persists, ask an administrator to check Valkey.",
-      GEO_LIMIT_EXCEEDED: "Reduce the named input to the reported limit.",
+      GEO_LIMIT_EXCEEDED:
+        "Reduce the named input to the reported limit. For reservationCredits, reduce stops or distanceAllowanceMeters, or ask an administrator to increase the budget; a reset alone will not help.",
       GEO_UNSUPPORTED_OPTION: "Choose supported options and one search area or address representation.",
+      GEO_COST_OVERRUN:
+        "The route exceeded the reference-distance allowance. Known costs were charged; later steps were stopped. Review costs before choosing a larger allowance and retrying.",
+      GEO_NO_ROUTE: "No route connects these stops with the chosen mode. Adjust the stops or travel mode.",
       GEO_ADDRESS_NOT_FOUND: "No plausible address was found. Check the address or add a city and country.",
       GEO_ADDRESS_AMBIGUOUS: "Several addresses are plausible. Ask the person to choose a candidate or refine the address.",
       GEO_PROVIDER_FAILED:
-        "The geo provider could not complete the request. Check costs before retrying; an administrator can check the key when adminHint is present.",
+        "The geo provider could not complete the request. Check costs before retrying; when adminHint is present, an administrator should follow its recovery instructions.",
     },
     de: {
       GEO_NOT_CONFIGURED: "Ein Administrator muss den Geoapify-Schlüssel in den Core-Einstellungen eintragen.",
@@ -21,12 +25,16 @@ const messages = i18n.define({
       GEO_BUDGET_EXHAUSTED: "Das Geo-Budget ist aufgebraucht. Warte bis resetsAt oder bitte einen Administrator, das Budget zu prüfen.",
       GEO_BUSY:
         "Geo-Abfragen sind ausgelastet. Versuche es nach retryAfterSeconds erneut. Hält das an, sollte ein Administrator Valkey prüfen.",
-      GEO_LIMIT_EXCEEDED: "Reduziere die genannte Eingabe auf die angegebene Grenze.",
+      GEO_LIMIT_EXCEEDED:
+        "Reduziere die genannte Eingabe auf die angegebene Grenze. Bei reservationCredits: weniger Stopps oder kleinerer distanceAllowanceMeters, oder ein höheres Budget durch den Administrator. Ein Reset allein hilft nicht.",
       GEO_UNSUPPORTED_OPTION: "Wähle unterstützte Optionen und genau ein Suchgebiet oder Adressformat.",
+      GEO_COST_OVERRUN:
+        "Die Route überschreitet den Referenz-Streckenrahmen. Bekannte Kosten wurden gebucht, weitere Schritte gestoppt. Prüfe die Kosten, bevor du mit einem größeren Rahmen erneut rechnest.",
+      GEO_NO_ROUTE: "Für diese Stopps und Verkehrsart wurde keine Route gefunden. Passe Stopps oder Verkehrsart an.",
       GEO_ADDRESS_NOT_FOUND: "Keine plausible Adresse gefunden. Prüfe die Adresse oder ergänze Ort und Land.",
       GEO_ADDRESS_AMBIGUOUS: "Mehrere Adressen sind plausibel. Lass die Person einen Vorschlag wählen oder die Adresse genauer angeben.",
       GEO_PROVIDER_FAILED:
-        "Der Geo-Anbieter konnte die Anfrage nicht abschließen. Prüfe vor einem neuen Versuch die Kosten. Bei adminHint kann ein Administrator den Schlüssel prüfen.",
+        "Der Geo-Anbieter konnte die Anfrage nicht abschließen. Prüfe vor einem neuen Versuch die Kosten. Bei adminHint sollte ein Administrator die dort genannten Schritte befolgen.",
     },
   },
 });

@@ -165,3 +165,19 @@ export const requireBaseWritable = async (baseId: string, db: typeof sql = sql):
       })
     : ok();
 };
+
+/** A shared store outage remains relevant while any active base is administered. */
+export const hasAnyBaseAdminAccess = async (userId: string): Promise<boolean> => {
+  const principalMatch = buildAccessPrincipalCondition({
+    subject: { type: "user", userId },
+    columns: {
+      userId: sql`a.user_id`,
+      groupId: sql`a.group_id`,
+      serviceAccountId: sql`a.service_account_id`,
+      authenticatedOnly: sql`a.authenticated_only`,
+    },
+  });
+  const rows = await sql`SELECT 1 FROM pulse.base_access ba JOIN pulse.bases b ON b.id=ba.base_id JOIN auth.access a ON a.id=ba.access_id
+    WHERE b.deletion_started_at IS NULL AND a.permission='admin' AND ${principalMatch} LIMIT 1`;
+  return rows.length > 0;
+};

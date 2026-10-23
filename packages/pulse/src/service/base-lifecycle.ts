@@ -143,7 +143,7 @@ const BASE_DATA_CLEAR_STEPS: Array<{ phase: string; run: (baseId: string, db: ty
 
 export const createBaseLifecycle =
   (configuredStore = baseStore) =>
-  async (baseId: string): Promise<{ done: boolean }> => {
+  async (baseId: string): Promise<{ done: boolean; retryAfterMs?: number }> => {
     const store = { ...configuredStore, query: await configuredStore.prepare() };
     const initial = await loadStoreRow(baseId);
     if (!initial || initial.state === "failed") return { done: true };
@@ -220,6 +220,7 @@ export const createBaseLifecycle =
     } catch (error) {
       if (error instanceof BaseOperationSuperseded) return { done: false };
       const code = storeErrorCode(error);
+      if (code === "MAINTENANCE_BUSY") return { done: false, retryAfterMs: 5_000 };
       await sql`UPDATE pulse.base_stores SET attempts=attempts+1,last_error=${code},last_error_at=now(),
       state=CASE WHEN attempts+1>=5 AND state<>'active' THEN 'failed' ELSE state END,updated_at=now()
       WHERE base_id=${baseId}::uuid AND state=${initial.state} AND operation IS NOT DISTINCT FROM ${initial.operation} AND (${operation === "reconcile"} OR updated_at::text=${initial.updated_at_version})`;
@@ -246,7 +247,8 @@ export const startPulseBaseJobs = async (run = runBaseLifecycle) => {
       },
     },
     async (context) => {
-      if (!(await run(context.input.baseId)).done) context.resubmit();
+      const result = await run(context.input.baseId);
+      if (!result.done) context.resubmit({ delayMs: result.retryAfterMs ?? 0 });
     },
   );
 };
