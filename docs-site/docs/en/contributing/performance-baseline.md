@@ -169,8 +169,9 @@ context allows service workers and performs these steps:
    for the initial islands, 500 ms of script quiet, and service-worker readiness.
    A welcome, unavailable, sign-in, or non-app page fails the profile.
 2. Run `tab-start-spaces`, `tab-spaces-start`, `tab-start-settings`, and
-   `tab-settings-start`, then repeat all four. These use touch taps (mouse clicks on the monitor) on the tab
-   bar and Start's header settings icon. Round 1 is the first visit; round 2
+   `tab-settings-start`, then repeat all four. These use touch taps (mouse clicks on the monitor) on the
+   navigation the width shows: the tab bar and Start's header settings icon on
+   a phone, the sidebar from 48 rem. Round 1 is the first visit; round 2
    is the revisit in this context.
 3. `history-back` and `history-forward`: return to Settings and Start,
    recording whether `pageshow.persisted` reports a back/forward cache restore.

@@ -443,7 +443,11 @@ export function installPwaProbe() {
     // A launch can arrive at Start or a restored place; the current tab names its title.
     const expectedTitle =
       record.title ??
-      (record.action === "navigation" ? document.querySelector('a[data-tab][aria-current="page"]')?.getAttribute("data-k2b-title") : null);
+      (record.action === "navigation"
+        ? [...document.querySelectorAll('a[data-tab][aria-current="page"]')]
+            .find((link) => link.getClientRects().length > 0)
+            ?.getAttribute("data-k2b-title")
+        : null);
     if (expectedTitle && record.titleAt === null) {
       const heading = document.querySelector(".k2b-mobile-shell__title");
       const shell = document.querySelector(".k2b-mobile-shell[data-k2b-switching]");
@@ -547,9 +551,10 @@ export function installPwaProbe() {
 
 type PwaOptions = { runs: number; deviceName: string; remote: boolean; results: PwaProfileResult[] };
 type PwaCapture = { documents: PwaDocument[]; statuses: Map<string, number>; errors: string[] };
-const startTab = 'a[data-tab="start"]';
-const spacesTab = 'a[data-tab="spaces"]';
-const settingsLink = '.k2b-mobile-shell__actions a[href="/pwa/settings"]';
+// The tab bar on a phone, the sidebar from 48rem: the shell renders both, and only the shown one is tapped.
+const startTab = 'a[data-tab="start"]:visible';
+const spacesTab = 'a[data-tab="spaces"]:visible';
+const settingsLink = ':is(.k2b-mobile-shell__actions a[href="/pwa/settings"], a[data-tab="settings"]):visible';
 
 export class Browsers {
   readonly engines = new Map<Engine, Browser>();
@@ -1100,7 +1105,8 @@ export class Browsers {
       const startTitle = await page.locator(startTab).getAttribute("data-k2b-title");
       if (!startTitle) throw new Error("Start tab has no page title");
       // Settings is titled with its link's label; tabs name their page's title.
-      const settingsTitle = await page.locator(settingsLink).getAttribute("aria-label");
+      const settingsTitle =
+        (await page.locator(settingsLink).getAttribute("data-k2b-title")) ?? (await page.locator(settingsLink).getAttribute("aria-label"));
       if (!settingsTitle) throw new Error("Settings link has no label");
       const tab = async (id: PwaStep["id"], round: PwaStep["round"], selector: string) => {
         const title = selector === settingsLink ? settingsTitle : await page.locator(selector).getAttribute("data-k2b-title");
