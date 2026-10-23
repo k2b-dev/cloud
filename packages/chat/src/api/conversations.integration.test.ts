@@ -1507,7 +1507,10 @@ suite("chat conversations, people, and directory groups", () => {
     ).toEqual([oldest.shortId]);
     const outsider = await cookie(await user());
     expect(ConversationPageSchema.parse(await (await request(outsider, `?ids=${oldest.shortId}`)).json()).items).toEqual([]);
-    for (const chat of chats) expect((await request(headers, `/${chat.shortId}/personal`, "PUT", { archived: true })).status).toBe(200);
+    // Seed pagination data without making an artificial burst of personal writes against the real user rate limit.
+    await sql`UPDATE chat.participants SET archived_at = now()
+      WHERE principal_type = 'user' AND principal_id = ${owner}::uuid
+        AND conversation_id = ANY(${toPgUuidArray(chats.map((chat) => chat.id))}::uuid[])`;
     expect(ConversationPageSchema.parse(await (await request(headers)).json()).items).toEqual([]);
     const archived = ConversationPageSchema.parse(await (await request(headers, "?archived=true")).json());
     const remainder = ConversationPageSchema.parse(
