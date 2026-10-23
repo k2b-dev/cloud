@@ -6,6 +6,7 @@ import type { z } from "zod";
 import { messagePreview, renderSystemMessage } from "../system-messages";
 import { type ChatContext, type ConversationRow, messages, subjectPrincipal } from "./access";
 import { type MessageSchema, type SystemMessage, SystemMessageSchema } from "./contracts";
+import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
 import { chatLiveUpdates } from "./live-updates";
 import { extractMessageLinks } from "./message-links";
@@ -48,16 +49,6 @@ export const projectMessage = (
   system: row.kind === "system" ? SystemMessageSchema.parse({ code: row.system_code, params: row.system_params }) : null,
   createdAt: row.created_at.toISOString(),
 });
-export const deletedPeople = async (db: typeof sql, ids: string[], type: "user" | "service_account" = "user") => {
-  const unique = [...new Set(ids)];
-  if (!unique.length) return new Set<string>();
-  const found =
-    type === "user"
-      ? await db<{ id: string }[]>`SELECT id FROM auth.users WHERE id = ANY(${toPgUuidArray(unique)}::uuid[])`
-      : await db<{ id: string }[]>`SELECT id FROM auth.service_accounts WHERE id = ANY(${toPgUuidArray(unique)}::uuid[])`;
-  const existing = new Set(found.map((row) => row.id));
-  return new Set(unique.filter((id) => !existing.has(id)));
-};
 const systemPeople = (system: SystemMessage | null) => {
   if (!system) return [];
   switch (system.code) {

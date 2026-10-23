@@ -196,6 +196,18 @@ suiteFor(
     expect((await f.request(await f.credential(owner), path(chat.shortId, message.id, "👍"), "PUT")).status).toBe(403);
   });
 
+  test("a reactor whose account was deleted is named a former account and still counts", async () => {
+    const owner = await f.person("Owner"),
+      reader = await f.person("Kept name");
+    const chat = await f.fixture(owner, [{ person: reader, permission: "read" }]);
+    const message = await send(owner, chat.shortId);
+    expect((await set(reader, chat.shortId, message.id)).status).toBe(204);
+    await sql`DELETE FROM auth.users WHERE id = ${reader.id}::uuid`;
+    const response = await list(owner, chat.shortId, message.id);
+    expect(response.items).toEqual([{ emoji: "👍", count: 1, own: false, people: ["Former account"] }]);
+    expect(JSON.stringify(response)).not.toContain("Kept name");
+  });
+
   test("uses principal labels when a reactor has no display name", async () => {
     const owner = await f.person(),
       reader = await f.person();

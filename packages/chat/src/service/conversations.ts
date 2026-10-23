@@ -58,9 +58,10 @@ import {
   UpdateConversationSchema,
   UpdateMemberSchema,
 } from "./contracts";
+import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
 import { publishMembership } from "./live-updates";
-import { appendMessage, deletedPeople, personSnapshots } from "./message-store";
+import { appendMessage, personSnapshots } from "./message-store";
 import { projectRead, type ReadProjection, unreadQuery } from "./read-state";
 import { deriveTitle, TITLE_NAME_LIMIT } from "./titles";
 
