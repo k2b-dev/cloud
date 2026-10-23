@@ -2147,9 +2147,10 @@ html {
   flex: 1 1 auto;
 }
 
-/* The filters move as one group; on their own row they scroll sideways.
-   Both scrollers keep room for focus rings in a padding that a negative
-   margin returns, so no ring is cut and nothing moves. */
+/* The filters move as one group; on their own row they scroll sideways and,
+   like the view strip, fade at an edge that hides chips. Both scrollers keep
+   room for focus rings in a padding that a negative margin returns, so no
+   ring is cut and nothing moves. */
 .k2b-ui .k2b-app-workspace__head-filters {
   gap: 0.375rem;
   overflow: auto hidden;
