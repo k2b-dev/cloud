@@ -22,6 +22,7 @@ const unreadMark = (row: Conversation): number | true | undefined =>
  */
 export default function ChatList(props: {
   rows: readonly Conversation[];
+  basePath?: string;
   activeId: string | null;
   viewerId: string;
   dateConfig: DateContext;
@@ -40,7 +41,7 @@ export default function ChatList(props: {
       <For each={props.rows}>
         {(row) => (
           <AppWorkspace.SidebarItem
-            href={chatHref(row.id)}
+            href={`${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(row.id)}`}
             navigation="enhanced"
             onNavigate={(navigation) => props.onOpen(row.id, navigation)}
             active={row.id === props.activeId}

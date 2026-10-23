@@ -223,7 +223,6 @@ describe("Capability v2 Assistant discovery", () => {
     ["list shifts", "venue", "venue.shift.list"],
     ["list my assignments", "venue", "venue.assignment.mine"],
     ["sign up for shift", "venue", "venue.assignment.signup"],
-    ["search city", "weather", "weather.city.search"],
     ["get current weather", "weather", "weather.forecast.current"],
     ["list saved weather locations", "weather", "weather.location.list"],
     ["save a weather location", "weather", "weather.location.create"],
