@@ -253,10 +253,12 @@ export default function Workspace(props: {
   const activityActions: HistoryActions = {
     loadVersion: createActivityVersionLoader(() => h().historyFailed),
     onContact: async ({ userId }) => {
+      const signal = workspace.navigationSignal();
       try {
-        if (!(await openCommand("chat.conversation.compose", { userId }))) toast.error(h().actionFailed);
+        const opened = await openCommand("chat.conversation.compose", { userId }, {}, signal);
+        if (!signal.aborted && !opened) toast.error(h().actionFailed);
       } catch (error) {
-        toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+        if (!signal.aborted) toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
       }
     },
     onOpen: openHistoryTarget,
