@@ -169,7 +169,7 @@ if (modules) {
           expect(signal?.aborted).toBe(false);
           if (leave === "navigation") {
             history.replaceState(null, "", "/app/contacts");
-            window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
+            dom.window.dispatchEvent(new dom.window.PopStateEvent("popstate"));
           } else {
             dispose();
             dispose = () => {};
