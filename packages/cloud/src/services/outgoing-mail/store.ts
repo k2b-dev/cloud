@@ -26,7 +26,7 @@ export class OutgoingMailError extends Error {
   constructor(
     public readonly code: MailErrorCode,
     message: string,
-    public readonly status: 400 | 403 | 404 | 409 | 502 = 400,
+    public readonly status: 400 | 403 | 404 | 409 | 502 | 503 = 400,
   ) {
     super(message);
   }

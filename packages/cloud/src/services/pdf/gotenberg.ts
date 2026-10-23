@@ -1,7 +1,9 @@
+import { DownstreamBusyError, downstreamBudget } from "../downstream-budget";
 import * as settings from "../settings";
 import { offlineHtml } from "./offline-html";
 
 export type GotenbergRenderErrorCode =
+  | "busy"
   | "bad_input"
   | "not_configured"
   | "html_too_large"
@@ -117,6 +119,7 @@ const abortSignal = (timeoutMs: number): AbortSignal => {
 
 const sanitizeFetchError = (error: unknown): GotenbergRenderError => {
   if (error instanceof GotenbergRenderError) return error;
+  if (error instanceof DownstreamBusyError) return new GotenbergRenderError("busy", "PDF renderer is busy; retry later.", 503);
   if (error instanceof DOMException && error.name === "TimeoutError") {
     return new GotenbergRenderError("timeout", "Gotenberg request timed out.");
   }
@@ -179,10 +182,14 @@ async function requestPdf(
   const headers = new Headers();
   const auth = basicAuthHeader(config);
   if (auth) headers.set("Authorization", auth);
+  const baseUrl = normalizeBaseUrl(config.url);
   const signal = options.signal ? AbortSignal.any([options.signal, abortSignal(config.timeoutMs)]) : abortSignal(config.timeoutMs);
+  let release: (() => void) | undefined;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
-    const response = await (options.fetch ?? fetch)(`${normalizeBaseUrl(config.url)}${route}`, {
+    release = await downstreamBudget.acquire({ downstream: "gotenberg", timeoutMs: config.timeoutMs, signal });
+    signal.throwIfAborted();
+    const response = await (options.fetch ?? fetch)(`${baseUrl}${route}`, {
       method: "POST",
       headers,
       body: form,
@@ -221,6 +228,7 @@ async function requestPdf(
     throw sanitizeFetchError(error);
   } finally {
     reader?.releaseLock();
+    release?.();
   }
 }
 
@@ -285,47 +293,12 @@ export const mergePdfsWithConfig = async (
     throw new GotenbergRenderError("bad_input", "At least one PDF file is required.");
   }
 
-  const baseUrl = normalizeBaseUrl(config.url);
   const form = new FormData();
   input.files.forEach((file, index) => {
     const filename = `${String(index + 1).padStart(6, "0")}.pdf`;
-    const bytes = file.pdf.buffer.slice(file.pdf.byteOffset, file.pdf.byteOffset + file.pdf.byteLength) as ArrayBuffer;
-    form.append("files", new Blob([bytes], { type: DEFAULT_PDF_CONTENT_TYPE }), filename);
+    form.append("files", new Blob([new Uint8Array(file.pdf)], { type: DEFAULT_PDF_CONTENT_TYPE }), filename);
   });
-
-  const headers = new Headers();
-  const authHeader = basicAuthHeader(config);
-  if (authHeader) headers.set("Authorization", authHeader);
-
-  const transport = options.fetch ?? fetch;
-  let response: Response;
-  try {
-    response = await transport(`${baseUrl}/forms/pdfengines/merge`, {
-      method: "POST",
-      headers,
-      body: form,
-      signal: abortSignal(config.timeoutMs),
-    });
-  } catch (error) {
-    throw sanitizeFetchError(error);
-  }
-
-  if (!response.ok) {
-    throw new GotenbergRenderError("bad_response", `Gotenberg returned HTTP ${response.status}.`, response.status);
-  }
-
-  const buffer = await response.arrayBuffer();
-  if (buffer.byteLength > config.maxPdfBytes) {
-    throw new GotenbergRenderError(
-      "pdf_too_large",
-      `PDF output is too large (${buffer.byteLength} bytes, limit ${config.maxPdfBytes} bytes).`,
-    );
-  }
-
-  return {
-    pdf: new Uint8Array(buffer),
-    contentType: response.headers.get("content-type") || DEFAULT_PDF_CONTENT_TYPE,
-  };
+  return requestPdf("/forms/pdfengines/merge", form, config, options);
 };
 
 export const getGotenbergConfig = async (): Promise<GotenbergConfig> => ({
