@@ -52,6 +52,17 @@ viewers show the random file name the renderer gave the upload.
 Cloud sends the HTML to Gotenberg with background printing and CSS page sizes
 enabled. The result contains PDF bytes and the returned content type.
 
+All render, merge, and embedding requests share two Gotenberg places across
+applications and replicas. Admission does not queue; saturation or unavailable
+Valkey raises `GotenbergRenderError` with code `busy` and status 503. Offer retry
+when a place is available. Preserve the `busy` code and HTTP 503 through
+rendering, merging, and template previews so callers can offer retry. The
+existing render timeout also bounds admission; `options.signal` cancels
+admission, the request, and response reading. Local application limits still
+protect process memory. See
+[Scaling and shutdown](/en/docs/operations/scaling-and-shutdown) for deployment
+requirements and upgrade behavior.
+
 ## HTML renders offline
 
 Cloud renders every HTML document, header, and footer offline, including
@@ -219,6 +230,7 @@ An empty file list fails with `bad_input`.
 
 | Code | Meaning |
 | --- | --- |
+| `busy` | Both shared renderer places are occupied, or admission is unavailable; retry later (503) |
 | `bad_input` | A PDF merge request has no files |
 | `not_configured` | The renderer URL or limits are invalid |
 | `html_too_large` | HTML exceeds the deployment limit |
