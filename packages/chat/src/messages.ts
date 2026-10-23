@@ -71,6 +71,8 @@ export const chatMessages = i18n.define({
       chooseSuccessor: "You are the last member who can manage this chat. Choose who manages it after you.",
       successor: "Successor",
 
+      createIntentChanged: "This create request was already used with different chat details.",
+      createRecovery: "Try again to open this chat. Your choices stay unchanged. Cancel to start over; the chat may already exist.",
       requestFailed: "The chat request failed. Try again.",
       today: "Today",
       yesterday: "Yesterday",
@@ -243,6 +245,9 @@ export const chatMessages = i18n.define({
       chooseSuccessor: "Du bist das letzte Mitglied, das diesen Chat verwalten kann. Wähle, wer ihn nach dir verwaltet.",
       successor: "Nachfolge",
 
+      createIntentChanged: "Diese Erstellanfrage wurde bereits mit anderen Chatdetails verwendet.",
+      createRecovery:
+        "Erneut versuchen, um diesen Chat zu öffnen. Die Auswahl bleibt gleich. Zum Neustart abbrechen; der Chat kann bereits bestehen.",
       requestFailed: "Die Chat-Anfrage ist fehlgeschlagen. Versuche es erneut.",
       today: "Heute",
       yesterday: "Gestern",

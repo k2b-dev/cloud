@@ -112,7 +112,7 @@ const PAGES: Record<string, { rows: string[]; next: string | null }> = {
   c2: { rows: Array.from({ length: 50 }, (_, index) => rowId(index + 51)), next: null },
 };
 const A = rowId(3);
-/** On page 2, filed in another folder than the one the list shows. */
+/** On page 2, with another placement the detail request may prefer. */
 const B = rowId(60);
 
 /** Polls an observable state with a bounded deadline. */
@@ -154,6 +154,7 @@ describe("Mail workspace conversation open", () => {
   let elsewhere: Set<string>;
   /** Conversations whose messages were moved to Archive on the server after the list loaded. */
   let moved: Set<string>;
+  let longThreads: Set<string>;
   /** The mailbox's tags on the server. */
   let mailboxTags: MailboxPageData["localTags"];
   /** Holds a detail response until the test releases it. */
@@ -169,12 +170,12 @@ describe("Mail workspace conversation open", () => {
       subject: `Subject ${id}`,
       unread: unread.has(id),
       unreadFolderIds: unread.has(id) ? [FOLDER] : [],
-      activeFolderIds: [id === B ? "Archive1" : FOLDER],
+      activeFolderIds: [FOLDER],
       sourceFolderId: id === B ? "Archive1" : id === A ? null : FOLDER,
       workStatus: null,
       revision: revisions.get(id) ?? 1,
       flagged: flagged.has(id),
-      messageCount: elsewhere.has(id) ? 2 : 1,
+      messageCount: longThreads.has(id) ? 101 : elsewhere.has(id) ? 2 : 1,
     });
   const listFor = (href: string): MailboxListView => {
     const url = new URL(href, "http://localhost");
@@ -210,7 +211,10 @@ describe("Mail workspace conversation open", () => {
       folderId: url.searchParams.has("view") ? null : FOLDER,
       query: resolveMailSearchRoute(url).query,
       search: resolveMailSearchRoute(url),
-      listItems: page.rows.map(row),
+      listItems: page.rows.map((id) => {
+        const item = row(id);
+        return url.searchParams.has("search") && elsewhere.has(id) ? { ...item, activeFolderIds: [FOLDER, "Archive1"] } : item;
+      }),
       listCursor: cursor,
       nextListCursor: page.next,
       listError: null,
@@ -223,19 +227,42 @@ describe("Mail workspace conversation open", () => {
       conversationId,
       localTags: mailboxTags,
       selectedSubject: `Subject ${conversationId}`,
-      detailMessages: [
-        // An older message, so the reader still opens on the conversation's own body.
-        ...(elsewhere.has(conversationId)
-          ? [{ ...message(`a-${conversationId}`, `Subject ${conversationId}`, "Filed away"), flags: ["\\Flagged"], folderId: "Archive1" }]
-          : []),
-        {
-          ...message(`m-${conversationId}`, `Subject ${conversationId}`, `Body of ${conversationId}`),
-          flags: [...(unread.has(conversationId) ? [] : ["\\Seen"]), ...(flagged.has(conversationId) ? ["\\Flagged"] : [])],
-          // B lies in Archive only, and the detail prefers the row's folder for each message.
-          folderId: conversationId === B || moved.has(conversationId) ? "Archive1" : FOLDER,
-        },
-        ...(reply ? [message(`r-${conversationId}`, `Subject ${conversationId}`, reply)] : []),
-      ],
+      conversationRowState: {
+        revision: revisions.get(conversationId) ?? 1,
+        messageCount: longThreads.has(conversationId) ? 101 : 1 + Number(elsewhere.has(conversationId)) + Number(Boolean(reply)),
+        activeFolderIds: [
+          ...new Set([
+            moved.has(conversationId) ? "Archive1" : FOLDER,
+            ...(elsewhere.has(conversationId) || conversationId === B ? ["Archive1"] : []),
+          ]),
+        ],
+        unreadFolderIds: [
+          ...(unread.has(conversationId) ? [conversationId === B || moved.has(conversationId) ? "Archive1" : FOLDER] : []),
+          ...(elsewhere.has(conversationId) ? ["Archive1"] : []),
+        ],
+        flaggedFolderIds: [...(flagged.has(conversationId) ? [FOLDER] : []), ...(elsewhere.has(conversationId) ? ["Archive1"] : [])],
+      },
+      detailMessages: longThreads.has(conversationId)
+        ? Array.from({ length: 100 }, (_, i) => message(`long-${i}`, `Subject ${conversationId}`, `Body of ${conversationId}`))
+        : [
+            // An older message, so the reader still opens on the conversation's own body.
+            ...(elsewhere.has(conversationId)
+              ? [
+                  {
+                    ...message(`a-${conversationId}`, `Subject ${conversationId}`, "Filed away"),
+                    flags: ["\\Flagged"],
+                    folderId: "Archive1",
+                  },
+                ]
+              : []),
+            {
+              ...message(`m-${conversationId}`, `Subject ${conversationId}`, `Body of ${conversationId}`),
+              flags: [...(unread.has(conversationId) ? [] : ["\\Seen"]), ...(flagged.has(conversationId) ? ["\\Flagged"] : [])],
+              // B also lies in Archive; the detail prefers the row's requested placement.
+              folderId: conversationId === B || moved.has(conversationId) ? "Archive1" : FOLDER,
+            },
+            ...(reply ? [message(`r-${conversationId}`, `Subject ${conversationId}`, reply)] : []),
+          ],
       conversationSummary: null,
       conversationDrafts: [],
       detailError: null,
@@ -306,6 +333,7 @@ describe("Mail workspace conversation open", () => {
     flagged = new Set();
     elsewhere = new Set();
     moved = new Set();
+    longThreads = new Set();
     mailboxTags = [];
     detailGate = new Map();
     detailStatus = () => 200;
@@ -707,6 +735,16 @@ describe("Mail workspace conversation open", () => {
     dispose();
     dispose = () => {};
     expect(detailSignals[0]?.aborted).toBe(true);
+  });
+
+  test("opening a 101-message thread marks an older unread message read even when every loaded body is seen", async () => {
+    longThreads.add(rowId(12));
+    mount();
+    unread.add(rowId(12));
+    open(rowId(12));
+    await until(() => actionRequests.length === 1, "the complete thread's auto mark-read");
+    expect(routeRequests[0]).toBe(`${folderPath}&conversation=${rowId(12)}`);
+    expect(actionRequests[0]!.body).toMatchObject({ kind: "change_state", change: { addFlags: ["seen"] }, sourceFolderId: FOLDER });
   });
 
   test("a message that arrived unread after the list loaded is marked read on open", async () => {
