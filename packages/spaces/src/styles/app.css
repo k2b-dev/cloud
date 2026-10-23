@@ -192,6 +192,7 @@
 .spaces-time-block-fields > * { min-width: 0; }
 .k2b-ui .spaces-time-block-dialog [data-field="date"] .k2b-date-trigger { padding-inline-end: 28px; }
 .k2b-ui .spaces-time-block-dialog [data-field="date"] .k2b-date-trigger__icon { display: none; }
+.k2b-ui .spaces-time-block-dialog [data-field="start"] .k2b-combobox__input > i:first-child { display: none; }
 .spaces-time-block-hint { min-height: 18px; margin-top: 4px; font-size: .78125rem; color: var(--ui-text-dimmed); }
 .k2b-ui .spaces-time-block-dialog .k2b-panel-dialog__footer { justify-content: flex-end; }
 .k2b-ui .spaces-time-block-dialog .k2b-panel-dialog__footer > .spaces-time-block-submit { min-width: 132px; }
