@@ -1,15 +1,25 @@
-import { beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "bun";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
+import * as registry from "../_internal/registry";
 import type { AppRegistryEntry } from "../contracts/registry";
+import type { RequestAuthority } from "../server";
 import { getRoles } from "../services/accounts/users";
 import { toPgTextArray } from "../services/postgres";
-import { aiAppSkills, reconcileAppSkills } from "./app-skill-store";
+import { buildProjectedUser } from "../services/session/user";
+import { aiAppSkills, reconcileAppSkills as applyAppSkills } from "./app-skill-store";
 import { type AppSkillDefinition, appSkillManifestHash, registerAppSkills, skill } from "./app-skills";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
 import { AiSkillAppForbiddenError, AiSkillInputError, AiSkillRevisionConflictError, aiSkills } from "./skills";
 import { aiConversations } from "./store";
+
+// Publication is tested against Postgres; the live app leases are an in-process fixture, without NATS.
+let liveApps: readonly AppRegistryEntry[] = [];
+const reconcileAppSkills = async (apps: readonly AppRegistryEntry[]) => {
+  liveApps = apps;
+  return applyAppSkills(apps);
+};
 
 const definition = (name: string, instructions = "Count each item.", references: Record<string, string> = {}): AppSkillDefinition =>
   skill({ markdown: `---\nname: ${name}\ndescription: Count inventory.\n---\n\n${instructions}\n`, references });
@@ -45,7 +55,123 @@ const cleanup = async (appIds: string[]) => {
 
 // Every ordinary scenario owns a distinct app id and skill name. Migration uses the mandated old seed mappings.
 databaseSuite()("app skills (integration)", () => {
-  beforeAll(migrateCloudAi);
+  let liveRegistry: ReturnType<typeof spyOn<typeof registry, "listApps">>;
+  beforeAll(async () => {
+    liveRegistry = spyOn(registry, "listApps").mockImplementation(async () => [...liveApps]);
+    await migrateCloudAi();
+  });
+  afterAll(() => liveRegistry?.mockRestore());
+
+  test("explicit Skill grants cannot bypass app access and effective phone roles stay restricted", async () => {
+    const subject = await user();
+    const source = definition(`access-${crypto.randomUUID()}`);
+    let entry = app([source]);
+    const actor = {
+      kind: "user" as const,
+      user: buildProjectedUser({ id: subject.userId, provider: "local", profile: "user", effective_admin: false }),
+    };
+    const authority: RequestAuthority = { actor, accessSubject: subject, credentialKind: "session", scopes: [] };
+    try {
+      entry = await publish(entry, [source]);
+      const installed = (await aiSkills.getByName(source.name, subject))!;
+      await aiSkills.admin.grantAccess(installed.id, { principal: { type: "user", userId: subject.userId }, permission: "admin" });
+      entry = await publish({ ...entry, access: { kind: "roles", roles: ["admin"] } }, [source]);
+      expect(await aiSkills.get(installed.id, subject, "read", authority)).toBeNull();
+      expect(await aiSkills.get(installed.id, subject)).toBeNull();
+      expect((await aiSkills.list(subject, { authority })).some((skill) => skill.id === installed.id)).toBe(false);
+      const fields = {
+        expectedRevision: installed.revision,
+        name: installed.name,
+        description: installed.description,
+        instructions: "Must not be written.",
+      };
+      expect(await aiSkills.update(installed.id, subject, fields, authority)).toBeNull();
+      expect(
+        await aiSkills.setReference(
+          installed.id,
+          subject,
+          { expectedRevision: installed.revision, path: "references/denied.md", content: "Must not be written." },
+          authority,
+        ),
+      ).toBeNull();
+      expect(await aiSkills.setEnabled(installed.id, subject, false, authority)).toBeNull();
+      expect(await aiSkills.listAccess(installed.id, subject, authority)).toBeNull();
+      expect(
+        await aiSkills.grantAccess(
+          installed.id,
+          subject,
+          { principal: { type: "authenticated" }, permission: "read" },
+          undefined,
+          authority,
+        ),
+      ).toBeNull();
+      expect(await aiSkills.delete(installed.id, subject, authority)).toBe(false);
+      const adminAuthority: RequestAuthority = {
+        ...authority,
+        actor: { kind: "user", user: { ...actor.user, roles: [...actor.user.roles, "admin"] } },
+      };
+      expect(await aiSkills.get(installed.id, subject, "read", adminAuthority)).not.toBeNull();
+      const updated = await aiSkills.update(installed.id, subject, { ...fields, instructions: installed.instructions }, adminAuthority);
+      expect(updated?.revision).toBe(installed.revision + 1);
+      expect(updated?.enabled).toBe(true);
+      expect(updated?.references).toEqual([]);
+      const restricted = { ...adminAuthority, credentialKind: "oauth" as const, scopes: ["other:read"] };
+      expect(await aiSkills.get(installed.id, subject, "read", restricted)).toBeNull();
+      expect(await aiSkills.update(installed.id, subject, { ...fields, expectedRevision: updated!.revision }, restricted)).toBeNull();
+      expect(await aiSkills.get(installed.id, subject, "read", { ...authority, actor: { ...actor, sessionKind: "app" } })).toBeNull();
+    } finally {
+      await cleanup([entry.id]);
+      await sql`DELETE FROM auth.users WHERE id=${subject.userId}::uuid`;
+    }
+  });
+
+  test("non-app Skills keep their existing manipulation permissions with restricted authority", async () => {
+    const subject = await user();
+    const authority: RequestAuthority = {
+      actor: {
+        kind: "user",
+        user: buildProjectedUser({ id: subject.userId, provider: "local", profile: "user", effective_admin: false }),
+        sessionKind: "app",
+      },
+      accessSubject: subject,
+      credentialKind: "oauth",
+      scopes: ["core:read"],
+    };
+    const skill = await aiSkills.create(
+      { subject, name: `personal-${crypto.randomUUID()}`, description: "Personal skill.", instructions: "Original." },
+      authority,
+    );
+    try {
+      const updated = await aiSkills.update(
+        skill.id,
+        subject,
+        { expectedRevision: 1, name: skill.name, description: skill.description, instructions: "Updated." },
+        authority,
+      );
+      expect(updated).toMatchObject({ source: null, permission: "admin", revision: 2, instructions: "Updated." });
+      const withReference = await aiSkills.setReference(
+        skill.id,
+        subject,
+        { expectedRevision: 2, path: "references/a.md", content: "Reference." },
+        authority,
+      );
+      expect(withReference?.revision).toBe(3);
+      expect(await aiSkills.setEnabled(skill.id, subject, false, authority)).toBe(false);
+      expect(await aiSkills.setEnabled(skill.id, subject, true, authority)).toBe(true);
+      const withoutReference = await aiSkills.removeReference(
+        skill.id,
+        subject,
+        { expectedRevision: 3, path: "references/a.md" },
+        authority,
+      );
+      expect(withoutReference?.revision).toBe(4);
+      expect(withoutReference?.references).toHaveLength(0);
+      expect(await aiSkills.delete(skill.id, subject, authority)).toBe(true);
+    } finally {
+      await aiSkills.admin.delete(skill.id);
+      await sql`DELETE FROM auth.users WHERE id=${subject.userId}::uuid`;
+    }
+  });
 
   test("app Skills keep relative links in storage and export and mount them on load", async () => {
     const subject = await user();
@@ -328,6 +454,61 @@ databaseSuite()("app skills (integration)", () => {
       await aiSkills.admin.delete(owned.id);
       await cleanup([entry.id]);
       await sql`DELETE FROM auth.users WHERE id=${subject.userId}::uuid`;
+    }
+  });
+
+  test("declared access admits guests and roleless accounts independently of the old Skill audience", async () => {
+    const guest = await user("guest");
+    const [sa] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.service_accounts(name, kind) VALUES (${`declared-skill-${crypto.randomUUID()}`}, 'agent') RETURNING id`;
+    const source = definition(`declared-${crypto.randomUUID()}`);
+    let entry = app([source], { href: "/inventory", section: "primary", requiresRoles: ["admin"] });
+    const guestAuthority: RequestAuthority = {
+      actor: { kind: "user", user: buildProjectedUser({ id: guest.userId, provider: "local", profile: "guest", effective_admin: false }) },
+      accessSubject: guest,
+      credentialKind: "session",
+      scopes: [],
+    };
+    const agentAuthority: RequestAuthority = {
+      actor: {
+        kind: "service_account",
+        delegatedUser: null,
+        scopes: ["read"],
+        serviceAccount: {
+          id: sa!.id,
+          name: "Fictional agent",
+          kind: "agent",
+          status: "active",
+          delegatedUserId: null,
+          appId: null,
+          resourceType: null,
+          resourceId: null,
+          createdBy: null,
+          createdAt: "2026-10-01T00:00:00Z",
+        },
+      },
+      accessSubject: { type: "service_account", serviceAccountId: sa!.id },
+      credentialKind: "api_key",
+      scopes: ["read"],
+    };
+    try {
+      entry = await publish({ ...entry, access: { kind: "signedIn" } }, [source]);
+      for (const authority of [guestAuthority, agentAuthority]) {
+        const skill = await aiSkills.getByName(source.name, authority.accessSubject, "read", authority);
+        expect(skill?.instructions).toBe(source.instructions);
+        expect((await aiSkills.list(authority.accessSubject, { authority })).some((item) => item.name === source.name)).toBe(true);
+      }
+      // Change the live declaration without waiting for Skill reconciliation.
+      liveApps = [{ ...entry, access: { kind: "roles", roles: ["admin"] } }];
+      for (const authority of [guestAuthority, agentAuthority]) {
+        expect(await aiSkills.getByName(source.name, authority.accessSubject, "read", authority)).toBeNull();
+        expect((await aiSkills.list(authority.accessSubject, { authority })).some((item) => item.name === source.name)).toBe(false);
+      }
+    } finally {
+      await cleanup([entry.id]);
+      await sql`DELETE FROM auth.service_accounts WHERE id=${sa!.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${guest.userId}::uuid`;
     }
   });
 

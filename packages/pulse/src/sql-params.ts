@@ -195,6 +195,43 @@ export const escapeSqlStringParameter = (value: string): string =>
     /[\\\0\b\f\n\r\t]/g,
     (character) => ({ "\\": "\\\\", "\0": "\\0", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t" })[character]!,
   );
+/** Expand only the tokenized two-argument helper; literals, identifiers and comments remain opaque. */
+const bucketEdits = (source: string, supplied: Record<string, string>, bindings: Map<string, SqlBinding>) => {
+  const tokens = scanSql(source).filter((token) => token.kind !== "whitespace" && token.kind !== "comment");
+  const edits = new Map<number, string>();
+  for (const [index, token] of tokens.entries()) {
+    if (
+      token.kind !== "word" ||
+      token.text.toLowerCase() !== "bucket" ||
+      tokens[index + 1]?.text !== "(" ||
+      tokens[index - 1]?.text === "."
+    )
+      continue;
+    const open = tokens[index + 1]!;
+    const close = tokens.findIndex((item, at) => at > index + 1 && item.text === ")" && item.depth === open.depth);
+    const commas = tokens.slice(index + 2, close).filter((item) => item.text === "," && item.depth === open.depth + 1);
+    const comma = commas[0];
+    const second = comma ? tokens.slice(tokens.indexOf(comma) + 1, close) : [];
+    if (commas.length !== 1 || !comma || tokens[index + 2] === comma || second.length !== 1 || second[0]?.kind !== "parameter")
+      throw new SqlInputError("SQL_ERROR", "Use bucket(timestamp, :interval) with a duration parameter", source, token.start);
+    const parameter = second[0]!;
+    const interval = /^([1-9]\d*)(s|m|h|d|w)$/.exec(supplied[parameter.text.slice(1)] ?? "");
+    if (!interval)
+      throw new SqlInputError("SQL_ERROR", "Bucket interval must be a positive duration in s, m, h, d or w", source, parameter.start);
+    const unit = interval[2]!;
+    const factor = unit === "m" ? 60 : unit === "h" ? 3600 : 1;
+    const value = Number(interval[1]) * factor;
+    if (!Number.isSafeInteger(value) || value > 4294967295)
+      throw new SqlInputError("SQL_ERROR", "Bucket interval exceeds UInt32", source, parameter.start);
+    let name = "pulse_bucket_" + index;
+    while (bindings.has(name)) name += "_";
+    bindings.set(name, { type: "UInt32", value: String(value) });
+    const fn = unit === "d" ? "toIntervalDay" : unit === "w" ? "toIntervalWeek" : "toIntervalSecond";
+    edits.set(token.start, "toStartOfInterval");
+    edits.set(parameter.start, `${fn}({${name}:UInt32}), {base_tz:String}`);
+  }
+  return edits;
+};
 export const prepareSql = (source: string, supplied: Record<string, string> = {}, timezone = "UTC") => {
   // The timezone becomes a type annotation, so check its syntax before interpolation.
   try {
@@ -207,13 +244,18 @@ export const prepareSql = (source: string, supplied: Record<string, string> = {}
   const bindings = new Map(
     checked.names.map((name) => [name, name === "base_tz" ? { type: "String", value: timezone } : bindSqlValue(supplied[name]!, timezone)]),
   );
+  // The helper always supplies the base zone as data, never as SQL text.
+  bindings.set("base_tz", { type: "String", value: timezone });
+  const edits = bucketEdits(checked.sql, supplied, bindings);
+  if (edits.size === 0 && !checked.names.includes("base_tz")) bindings.delete("base_tz");
   let sql = "",
     offset = 0;
   // Rescan the semicolon-stripped source to retain offsets even before comments.
   for (const token of scanSql(checked.sql)) {
-    if (token.kind !== "parameter") continue;
+    const edit = edits.get(token.start);
+    if (edit === undefined && token.kind !== "parameter") continue;
     const name = token.text.slice(1);
-    sql += checked.sql.slice(offset, token.start) + `{${name}:${bindings.get(name)!.type}}`;
+    sql += checked.sql.slice(offset, token.start) + (edit ?? `{${name}:${bindings.get(name)!.type}}`);
     offset = token.end;
   }
   sql += checked.sql.slice(offset);

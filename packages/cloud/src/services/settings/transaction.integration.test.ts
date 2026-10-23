@@ -26,6 +26,23 @@ const rowFor = async (key: string) => {
 };
 
 suite("settings writes inside a caller's transaction", () => {
+  test("adversarial email and template writes reject without replacing stored values", async () => {
+    for (const kind of ["email", "template"] as const) {
+      const key = probeKey();
+      const original = kind === "email" ? "a@example.test" : "Hello {{ name }}";
+      const invalid = kind === "email" ? "!@!." + "!.".repeat(100_000) + "@" : "{{{{#A}}}}" + "{{{{#a}}}}a".repeat(18_000);
+      registerSettings([{ key, kind, default: "", label: "Validation probe", description: "Test only.", group: "test" }]);
+      try {
+        await sql.begin((tx) => settings.set(key, original, tx));
+        await expect(sql.begin((tx) => settings.set(key, invalid, tx))).rejects.toThrow("Validation probe");
+        const [row] = await sql<{ value: string }[]>`SELECT value FROM settings.entries WHERE key=${key}`;
+        expect(await decryptValue(row!.value)).toBe(original);
+      } finally {
+        await sql`DELETE FROM settings.entries WHERE key=${key}`;
+      }
+    }
+  });
+
   test("inline image settings lose metadata before encryption; invalid containers cannot be written", async () => {
     const key = probeKey();
     registerSettings([{ key, kind: "image", default: "", label: "Photo probe", description: "Test only.", group: "test" }]);
