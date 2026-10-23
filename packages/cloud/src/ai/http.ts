@@ -70,6 +70,7 @@ export const AiToolPreloadSchema = z.union([
 ]);
 
 export const AiCreateConversationInputSchema = z.object({
+  requestId: z.uuid().optional(),
   title: z.string().trim().min(1).max(120).optional(),
   projectId: z.string().regex(AI_SHORT_ID_PATTERN).optional(),
   draft: AiInitialConversationDraftInputSchema.optional(),

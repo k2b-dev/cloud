@@ -14,6 +14,7 @@ export const migrate = async (): Promise<void> => {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `.simple();
+  await sql`ALTER TABLE weather_locations ADD COLUMN IF NOT EXISTS provenance JSONB`.simple();
   console.log("  ✓ weather_locations table");
 
   await sql`ALTER TABLE weather_locations ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();

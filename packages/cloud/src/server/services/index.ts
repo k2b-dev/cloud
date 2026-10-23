@@ -32,9 +32,7 @@ export {
   updateAccess,
 } from "./access";
 export { freeipa } from "./freeipa";
-export type { GeoPlace, GeoService } from "./geo";
 
-export { geo, geoService } from "./geo";
 export { paginateItems } from "./pagination";
 export { services } from "./services";
 

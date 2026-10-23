@@ -43,6 +43,7 @@ export type ChatFeedItem = {
 export type ChatConversationProps = {
   /** The chat's own commands at the end of the header, such as its info. */
   actions?: JSX.Element;
+  listHref?: string;
   chatId: string;
   title: string;
   memberCount: number;
@@ -57,6 +58,7 @@ export type ChatConversationProps = {
   canWrite: boolean;
   /** One quiet line above the field, such as why the reader cannot write. */
   hint?: string;
+  notice?: JSX.Element;
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: (text: string) => boolean | Promise<boolean>;
@@ -152,7 +154,13 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     <section ref={frame} class="chat-conversation" aria-label={props.title}>
       <header class="chat-conversation__header">
         <span class="chat-conversation__back">
-          <IconButtonLink href="/app/chat" navigation="enhanced" onNavigate={props.onBack} label={t().backToChats} tooltip={false}>
+          <IconButtonLink
+            href={props.listHref ?? "/app/chat"}
+            navigation="enhanced"
+            onNavigate={props.onBack}
+            label={t().backToChats}
+            tooltip={false}
+          >
             <i class="ti ti-chevron-left" aria-hidden="true" />
           </IconButtonLink>
         </span>
@@ -175,6 +183,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
         </Show>
         <div class="chat-conversation__actions">{props.actions}</div>
       </header>
+      {props.notice}
       <VirtualFeed
         class="chat-conversation__feed"
         items={props.items}

@@ -31,6 +31,7 @@ const emptyViewText = (view: ChatView, search: string, text: (value: string) => 
 };
 
 function AssistantAllChatsDialog(props: {
+  basePath?: string;
   close: () => void;
   initialView?: ChatView;
   openConversation: (conversation: AiConversation) => Promise<ConversationOpenResult>;
@@ -177,6 +178,7 @@ function AssistantAllChatsDialog(props: {
             }
           >
             <AssistantAllChatsList
+              basePath={props.basePath}
               conversations={result.data()!.items}
               archived={view() === "archived"}
               orderedByUse={view() === "done"}
@@ -221,11 +223,18 @@ export const openAssistantAllChatsDialog = (
   live: AssistantLiveHub,
   projects: () => readonly AiProject[] = () => [],
   initialView?: ChatView,
+  basePath?: string,
 ): Promise<void | undefined> =>
   dialogCore.open<void>(
     (close) => (
       <AssistantLiveProvider value={live}>
-        <AssistantAllChatsDialog close={() => close()} openConversation={openConversation} projects={projects} initialView={initialView} />
+        <AssistantAllChatsDialog
+          basePath={basePath}
+          close={() => close()}
+          openConversation={openConversation}
+          projects={projects}
+          initialView={initialView}
+        />
       </AssistantLiveProvider>
     ),
     panelDialogFixedOptions,
