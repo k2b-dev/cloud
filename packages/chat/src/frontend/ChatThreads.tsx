@@ -80,7 +80,11 @@ export function ThreadRows(props: RowsProps): JSX.Element {
         {row("general")}
         <For each={activeThreads(props.threads)}>{(thread) => row(thread.id)}</For>
         <Show when={props.archived && archivedThreads(props.threads).length > 0}>
-          <AppWorkspace.SidebarItem depth={1} icon={archiveOpen() ? "ti ti-chevron-down" : "ti ti-chevron-right"} onClick={() => setArchiveOpen((open) => !open)}>
+          <AppWorkspace.SidebarItem
+            depth={1}
+            icon={archiveOpen() ? "ti ti-chevron-down" : "ti ti-chevron-right"}
+            onClick={() => setArchiveOpen((open) => !open)}
+          >
             {t().archivedThreads({ count: archivedThreads(props.threads).length })}
           </AppWorkspace.SidebarItem>
           <Show when={archiveOpen()}>
@@ -133,7 +137,12 @@ export function ThreadPicker(
       items={[
         { items: [entry("all"), entry("general"), ...activeThreads(props.threads).map((thread) => entry(thread.id))] },
         ...(archivedThreads(props.threads).length
-          ? [{ sectionLabel: t().archivedThreads({ count: archivedThreads(props.threads).length }), items: archivedThreads(props.threads).map((thread) => entry(thread.id)) }]
+          ? [
+              {
+                sectionLabel: t().archivedThreads({ count: archivedThreads(props.threads).length }),
+                items: archivedThreads(props.threads).map((thread) => entry(thread.id)),
+              },
+            ]
           : []),
         ...(props.canAdmin ? [{ items: [{ label: t().newThread, icon: "ti ti-plus", action: () => props.onCreate() }] }] : []),
       ]}

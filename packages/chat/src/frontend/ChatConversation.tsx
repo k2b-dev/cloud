@@ -338,31 +338,31 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
           </div>
         }
       >
-      <div class="chat-conversation__composer">
-        <Chat.Composer
-          variant="conversation"
-          value={props.draft}
-          onValueChange={props.onDraftChange}
-          onSubmit={({ text }) => props.onSend(text)}
-          draftKey={props.draftKey ?? props.chatId}
-          reply={props.reply}
-          formatting
-          emoji={{ onOpen: setEmojiTarget, onPick: remember }}
-          placeholder={props.placeholder ?? t().composerPlaceholder({ title: props.title })}
-          inputLabel={t().composerLabel({ title: props.target ?? props.title })}
-          disabled={!props.canWrite}
-          hint={props.hint}
-        />
-        <EmojiPicker.Popover
-          anchor={emojiTarget()?.anchor}
-          recent={recent()}
-          onPick={(emoji) => {
-            emojiTarget()?.insert(emoji);
-            remember(emoji);
-          }}
-          onClose={() => setEmojiTarget(undefined)}
-        />
-      </div>
+        <div class="chat-conversation__composer">
+          <Chat.Composer
+            variant="conversation"
+            value={props.draft}
+            onValueChange={props.onDraftChange}
+            onSubmit={({ text }) => props.onSend(text)}
+            draftKey={props.draftKey ?? props.chatId}
+            reply={props.reply}
+            formatting
+            emoji={{ onOpen: setEmojiTarget, onPick: remember }}
+            placeholder={props.placeholder ?? t().composerPlaceholder({ title: props.title })}
+            inputLabel={t().composerLabel({ title: props.target ?? props.title })}
+            disabled={!props.canWrite}
+            hint={props.hint}
+          />
+          <EmojiPicker.Popover
+            anchor={emojiTarget()?.anchor}
+            recent={recent()}
+            onPick={(emoji) => {
+              emojiTarget()?.insert(emoji);
+              remember(emoji);
+            }}
+            onClose={() => setEmojiTarget(undefined)}
+          />
+        </div>
       </Show>
     </section>
   );

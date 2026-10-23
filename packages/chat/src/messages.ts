@@ -332,7 +332,8 @@ export const chatMessages = i18n.define({
       threadsUnavailable: "Kanäle unterstützen keine Threads.",
       threadArchived: "Stelle diesen Thread wieder her, bevor du eine Nachricht sendest.",
       systemThreadCreated: ({ actor, name }: { actor: string; name: string }) => `${actor} hat den Thread „${name}“ angelegt`,
-      systemThreadRenamed: ({ actor, from, to }: { actor: string; from: string; to: string }) => `${actor} hat „${from}“ in „${to}“ umbenannt`,
+      systemThreadRenamed: ({ actor, from, to }: { actor: string; from: string; to: string }) =>
+        `${actor} hat „${from}“ in „${to}“ umbenannt`,
       systemCreated: ({ actor }: { actor: string }) => `${actor} hat den Chat erstellt.`,
       systemRenamed: ({ actor, name }: { actor: string; name: string }) => `${actor} hat den Chat in „${name}“ umbenannt.`,
       systemRenamedWithDetails: ({ actor, name }: { actor: string; name: string }) =>
@@ -416,7 +417,8 @@ export const chatMessages = i18n.define({
       unreadElsewhere: "Ungelesen in anderen Threads",
       archivedThreads: ({ count }) => `Archiviert · ${count}`,
       newThreadTitle: ({ title }) => `Neuer Thread in ${title}`,
-      newThreadIntro: ({ count }) => `${count === 1 ? "Das 1 Mitglied sieht" : `Alle ${count} Mitglieder sehen`} ihn. Nur Admins können Threads anlegen.`,
+      newThreadIntro: ({ count }) =>
+        `${count === 1 ? "Das 1 Mitglied sieht" : `Alle ${count} Mitglieder sehen`} ihn. Nur Admins können Threads anlegen.`,
       renameThread: "Thread umbenennen",
       renameIntro: "Alle Mitglieder sehen Name und Beschreibung.",
       threadName: "Name",
@@ -435,7 +437,8 @@ export const chatMessages = i18n.define({
       archiveThread: "Thread archivieren",
       archiveThreadHint: "Der Verlauf bleibt lesbar, niemand kann mehr schreiben.",
       archiveConfirmTitle: ({ name }) => `„${name}“ archivieren?`,
-      archiveConfirmText: "Der Verlauf bleibt unter „Archiviert“ lesbar. Niemand kann mehr schreiben. Du kannst ihn jederzeit wiederherstellen.",
+      archiveConfirmText:
+        "Der Verlauf bleibt unter „Archiviert“ lesbar. Niemand kann mehr schreiben. Du kannst ihn jederzeit wiederherstellen.",
       archive: "Archivieren",
       threadArchivedToast: ({ name }) => `„${name}“ archiviert`,
       archiveFailed: "Der Thread konnte nicht archiviert werden.",

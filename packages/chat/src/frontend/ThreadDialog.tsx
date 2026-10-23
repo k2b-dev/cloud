@@ -132,12 +132,7 @@ export function ThreadDialog(
         <Button variant="secondary" disabled={busy()} onClick={() => props.close()}>
           {t().cancel}
         </Button>
-        <Button
-          type="submit"
-          form="chat-thread"
-          loading={busy()}
-          disabled={!name().trim() || duplicate() || unchanged()}
-        >
+        <Button type="submit" form="chat-thread" loading={busy()} disabled={!name().trim() || duplicate() || unchanged()}>
           {failed() ? t().retry : props.thread ? t().rename : t().create}
         </Button>
       </DialogActions>

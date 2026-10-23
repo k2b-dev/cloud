@@ -269,6 +269,36 @@ describe("Chat threads on a desktop", () => {
   }, 30_000);
 });
 
+describe("Chat threads in four columns", () => {
+  test("from a 1800 px window the threads move into their own column; the reading column keeps 760 px at the limit", async () => {
+    const { chat, problems, updates } = seed();
+    for (const width of [1800, 1799]) {
+      const wide = width >= 1800;
+      const { page, errors } = await load({ viewport: { width, height: 1000 } }, { chat, thread: problems });
+      try {
+        const column = page.locator(".chat-thread-column");
+        expect(await column.isVisible()).toBe(wide);
+        expect(await page.locator(".chat-list__threads").isVisible()).toBe(!wide);
+        expect(await page.locator(".chat-thread-picker").isVisible()).toBe(!wide);
+        // The head names the thread and its description in place of the chat's title and the picker.
+        expect(await page.locator(".chat-conversation__wide-title").isVisible()).toBe(wide);
+        if (wide) expect(await page.locator(".chat-conversation__wide-subtitle").innerText()).toBe("Report outages");
+        const item = await page.locator(".k2b-virtual-feed__item").first().boundingBox();
+        expect(item?.width).toBe(760);
+        if (wide) {
+          expect(await column.locator('[aria-current="page"]').getAttribute("data-thread")).toBe(problems);
+          await column.locator(`[data-thread="${updates}"]`).click();
+          await page.waitForURL(`**/t/${updates}`);
+          await page.locator(".chat-conversation__wide-name", { hasText: "Updates" }).waitFor();
+        }
+        expect(errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 45_000);
+});
+
 describe("Chat threads on a phone", () => {
   test("a chat with threads opens its thread page; a thread opens as its own page; back returns to the threads", async () => {
     const { chat, problems } = seed();

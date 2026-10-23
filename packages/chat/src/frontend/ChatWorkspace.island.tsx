@@ -27,8 +27,8 @@ import {
   type MessagePageSchema,
   type MessageSchema,
   type ReadUpdateSchema,
-  type ThreadListSchema,
   readStart,
+  type ThreadListSchema,
 } from "../service/contracts";
 import { renderSystemMessage } from "../system-messages";
 import { openAddPeopleDialog } from "./AddPeopleDialog";
@@ -36,26 +36,17 @@ import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
 import ChatList from "./ChatList";
+import ChatThreadColumn from "./ChatThreadColumn";
+import { ThreadMenu, ThreadPicker } from "./ChatThreads";
+import ChatThreadsPage from "./ChatThreadsPage";
 import { createChatSends, createChatSendsApi } from "./chat-sends";
 import { createChatStore, type OpenChat } from "./chat-store";
 import { openLeaveChatDialog } from "./LeaveChatDialog";
 import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { panelHref, parseRoute, type Route, threadsPageHref } from "./route";
-import ChatThreadColumn from "./ChatThreadColumn";
-import ChatThreadsPage from "./ChatThreadsPage";
-import { ThreadMenu, ThreadPicker } from "./ChatThreads";
 import { openThreadDialog } from "./ThreadDialog";
-import {
-  chatHasThreads,
-  isUnread,
-  messageThread,
-  threadHref,
-  threadOf,
-  type ThreadView,
-  viewName,
-  viewReadStart,
-} from "./threads";
+import { chatHasThreads, isUnread, messageThread, type ThreadView, threadHref, threadOf, viewName, viewReadStart } from "./threads";
 
 type ReadUpdate = z.infer<typeof ReadUpdateSchema>;
 
@@ -414,9 +405,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           void undoUnread(id, {
             ...before,
             lastReadSeq:
-              thread === null
-                ? (result?.lastReadSeq ?? null)
-                : (result?.threads.find((entry) => entry.id === thread)?.lastReadSeq ?? null),
+              thread === null ? (result?.lastReadSeq ?? null) : (result?.threads.find((entry) => entry.id === thread)?.lastReadSeq ?? null),
           }),
       },
     });
@@ -435,8 +424,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     },
   ) => {
     const restored = await changeRead(async () => {
-      if (before.unreadFrom === null)
-        return store?.markRead(id, before.lastReadSeq ?? Number.MAX_SAFE_INTEGER, before.thread ?? "general");
+      if (before.unreadFrom === null) return store?.markRead(id, before.lastReadSeq ?? Number.MAX_SAFE_INTEGER, before.thread ?? "general");
       const message = await store?.messageAt(id, before.unreadFrom);
       if (!message) throw new Error("The earlier unread boundary is gone");
       return store?.markUnread(id, message);
@@ -908,7 +896,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         ? t().replyHintIn({ name: viewName(item.thread ?? "general", openChat()?.threads ?? null, t()) })
         : t().replyHint;
   const unreadHint = (item: ChatFeedItem) =>
-    threaded() ? t().markUnreadThreadHint({ name: viewName(item.thread ?? "general", openChat()?.threads ?? null, t()) }) : t().markUnreadFromHereHint;
+    threaded()
+      ? t().markUnreadThreadHint({ name: viewName(item.thread ?? "general", openChat()?.threads ?? null, t()) })
+      : t().markUnreadFromHereHint;
   const infoLink = (current: Conversation) => (
     <IconButtonLink
       label={t().chatInfo}
@@ -951,7 +941,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               render and the first frame agree, and crossing the width moves nothing in the reading column. */}
           <Show when={threaded() && !route().threads ? conversation() : null}>
             {(current) => (
-              <AppWorkspace.MainPane id="chat-threads" label={t().threadsIn({ title: current().title })} class="chat-thread-pane" defaultSize={336} minSize={288} maxSize={480} scroll={false}>
+              <AppWorkspace.MainPane
+                id="chat-threads"
+                label={t().threadsIn({ title: current().title })}
+                class="chat-thread-pane"
+                defaultSize={336}
+                minSize={288}
+                maxSize={480}
+                scroll={false}
+              >
                 <ChatThreadColumn
                   conversation={current()}
                   threads={openChat()?.threads ?? null}
@@ -1011,18 +1009,18 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       titleExtra={
                         threaded() ? (
                           <>
-                          <span class="chat-conversation__thread-name">· {viewTitle()}</span>
-                          <span class="chat-conversation__picker">
-                            <ThreadPicker
-                              chatId={current().id}
-                              threads={openChat()?.threads ?? null}
-                              unread={current().unread}
-                              view={openChat()?.view ?? "all"}
-                              canAdmin={current().permission === "admin"}
-                              onSelect={(view) => void openView(current().id, view)}
-                              onCreate={() => void createThread()}
-                            />
-                          </span>
+                            <span class="chat-conversation__thread-name">· {viewTitle()}</span>
+                            <span class="chat-conversation__picker">
+                              <ThreadPicker
+                                chatId={current().id}
+                                threads={openChat()?.threads ?? null}
+                                unread={current().unread}
+                                view={openChat()?.view ?? "all"}
+                                canAdmin={current().permission === "admin"}
+                                onSelect={(view) => void openView(current().id, view)}
+                                onCreate={() => void createThread()}
+                              />
+                            </span>
                           </>
                         ) : undefined
                       }

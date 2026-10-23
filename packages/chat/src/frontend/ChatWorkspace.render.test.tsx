@@ -128,7 +128,9 @@ describe("ChatWorkspace server render", () => {
       test(`open ${permission} chat header and composer in ${locale}`, () => {
         const data = props();
         data.chatId = conversation.id;
-        data.open = { conversation: { ...conversation, permission }, page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+        data.open = {
+          conversation: { ...conversation, permission },
+          page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
           threads: { general: { unread: 0, lastMessage: null }, items: [] },
           focus: null,
         };

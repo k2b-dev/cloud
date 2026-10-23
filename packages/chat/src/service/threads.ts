@@ -164,12 +164,11 @@ const update = async (input: Input & { threadId: string; input: unknown }) => {
       archived_at = ${archived === undefined ? row.archived_at : archived ? (row.archived_at ?? new Date()) : null} WHERE id = ${row.id}::uuid`;
     // A new name shows as a quiet line in the thread, so its members know why it reads differently now.
     if (name !== undefined && name !== row.name)
-      await appendMessage(
-        db,
-        allowed.data,
-        input,
-        { kind: "system", system: { code: "thread_renamed", params: { from: row.name, to: name } }, threadId: row.id },
-      );
+      await appendMessage(db, allowed.data, input, {
+        kind: "system",
+        system: { code: "thread_renamed", params: { from: row.name, to: name } },
+        threadId: row.id,
+      });
     else await db`UPDATE chat.conversations SET rev = rev + 1, changed_rev = rev + 1 WHERE id = ${allowed.data.id}::uuid`;
     await publish(db, input.conversationId);
     return ok(await project(db, input, allowed.data.id, row.short_id));

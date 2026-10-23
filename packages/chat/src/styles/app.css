@@ -373,14 +373,14 @@
 
 /* From a 1800 px window, the threads of the open chat stand in a column of their own. Below, the list and the picker
    show them; the reading column keeps its width on both sides, so nothing rewraps at the limit. */
-.chat-thread-pane {
+.k2b-ui .k2b-app-workspace__main > .k2b-app-workspace__main-pane.chat-thread-pane {
   display: none;
 }
 .chat-list__preview[data-collapsed-only] {
   display: none;
 }
 @media (min-width: 1800px) {
-  .chat-thread-pane {
+  .k2b-ui .k2b-app-workspace__main > .k2b-app-workspace__main-pane.chat-thread-pane {
     display: flex;
   }
   .chat-conversation__picker,
@@ -399,7 +399,7 @@
     display: flex;
   }
   /* The open chat's row carries the selection again, like the shared selected row. */
-  .chat-list__open {
+  .k2b-ui .k2b-app-workspace__sidebar-item.chat-list__open {
     --k2b-text-muted: var(--k2b-text-secondary);
     color: var(--k2b-app-workspace-active);
     background: var(--k2b-app-workspace-selected);

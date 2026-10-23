@@ -157,7 +157,10 @@ export const createChatStoreApi = (): ChatStoreApi => {
 
     read: async (id, seq, thread) =>
       requiredResponse(
-        await client.conversations[":conversation"].read.$post({ param: { conversation: id }, json: { seq, ...(thread ? { thread } : {}) } }),
+        await client.conversations[":conversation"].read.$post({
+          param: { conversation: id },
+          json: { seq, ...(thread ? { thread } : {}) },
+        }),
         ReadUpdateSchema,
       ),
     markUnread: async (id, message) =>
@@ -190,9 +193,13 @@ export const createChatStoreApi = (): ChatStoreApi => {
         }),
         ChatSnapshotSchema,
       ),
-    threads: async (id) => parseResponse(await client.conversations[":conversation"].threads.$get({ param: { conversation: id } }), ThreadListSchema),
+    threads: async (id) =>
+      parseResponse(await client.conversations[":conversation"].threads.$get({ param: { conversation: id } }), ThreadListSchema),
     createThread: async (id, input) =>
-      requiredResponse(await client.conversations[":conversation"].threads.$post({ param: { conversation: id }, json: input }), ThreadSchema),
+      requiredResponse(
+        await client.conversations[":conversation"].threads.$post({ param: { conversation: id }, json: input }),
+        ThreadSchema,
+      ),
     updateThread: async (id, thread, patch) =>
       requiredResponse(
         await client.conversations[":conversation"].threads[":thread"].$patch({ param: { conversation: id, thread }, json: patch }),
@@ -424,7 +431,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       threads:
         message.thread === null
           ? { ...list, general: { ...list.general, unread: bump(list.general.unread) } }
-          : { ...list, items: list.items.map((thread) => (thread.id === message.thread ? { ...thread, unread: bump(thread.unread) } : thread)) },
+          : {
+              ...list,
+              items: list.items.map((thread) => (thread.id === message.thread ? { ...thread, unread: bump(thread.unread) } : thread)),
+            },
     };
   };
   const refreshThreads = async (chat: Current) => {
@@ -581,7 +591,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           ...list,
           items: list.items.map((thread) => {
             const next = touched.get(thread.id);
-            return next ? { ...thread, unread: next.unread, read: { lastReadSeq: next.lastReadSeq, unreadFromSeq: next.unreadFromSeq } } : thread;
+            return next
+              ? { ...thread, unread: next.unread, read: { lastReadSeq: next.lastReadSeq, unreadFromSeq: next.unreadFromSeq } }
+              : thread;
           }),
         },
       };

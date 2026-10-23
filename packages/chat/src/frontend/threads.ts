@@ -1,6 +1,13 @@
 import type { z } from "zod";
 import type { chatMessages } from "../messages";
-import { type ConversationSchema, type MessageSchema, type ReadStateSchema, readStart, type ThreadListSchema, type ThreadSchema } from "../service/contracts";
+import {
+  type ConversationSchema,
+  type MessageSchema,
+  type ReadStateSchema,
+  readStart,
+  type ThreadListSchema,
+  type ThreadSchema,
+} from "../service/contracts";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageSchema>;

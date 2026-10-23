@@ -5,8 +5,8 @@ import { createSignal, For, type JSX, Show } from "solid-js";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import type { ConversationSchema } from "../service/contracts";
-import { listTime } from "./chat-format";
 import { viewIcon } from "./ChatThreads";
+import { listTime } from "./chat-format";
 import { activeThreads, archivedThreads, type Thread, type ThreadList, type ThreadView, threadHref } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -87,14 +87,15 @@ export default function ChatThreadsPage(props: {
         </div>
       </header>
       <nav class="chat-threads-page__list" aria-label={t().threadsIn({ title: props.conversation.title })}>
-        <Show when={props.status !== "failed"} fallback={<ThreadsFailed message={t().threadsLoadFailed} retry={t().retry} onRetry={props.onRetry} />}>
+        <Show
+          when={props.status !== "failed"}
+          fallback={<ThreadsFailed message={t().threadsLoadFailed} retry={t().retry} onRetry={props.onRetry} />}
+        >
           {row("all", t().allThreads, props.conversation.unread, props.conversation.lastMessage, t().allThreadsHint)}
           {row("general", t().general, props.threads?.general.unread ?? 0, props.threads?.general.lastMessage ?? null, t().generalHint)}
           <For each={activeThreads(props.threads)}>{thread}</For>
           <Show when={props.status === "ready" && activeThreads(props.threads).length === 0}>
-            <p class="chat-threads-page__empty">
-              {props.conversation.permission === "admin" ? t().noThreadsYetAdmin : t().noThreadsYet}
-            </p>
+            <p class="chat-threads-page__empty">{props.conversation.permission === "admin" ? t().noThreadsYetAdmin : t().noThreadsYet}</p>
           </Show>
           <Show when={archivedThreads(props.threads).length > 0}>
             <AppWorkspace.SidebarItem
