@@ -2317,10 +2317,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         <Show when={props.reply}>
           {(reply) => (
             <div class="k2b-chat-composer__reply">
-              <Show
-                when={reply().onSelect}
-                fallback={<div class="k2b-message-row__quote">{replyQuote(reply())}</div>}
-              >
+              <Show when={reply().onSelect} fallback={<div class="k2b-message-row__quote">{replyQuote(reply())}</div>}>
                 {(select) => (
                   <button type="button" class="k2b-message-row__quote" onClick={() => select()()}>
                     {replyQuote(reply())}
