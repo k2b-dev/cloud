@@ -783,9 +783,12 @@ describe("ChatWorkspace browser read state", () => {
         const target = page.locator(`[data-key="${harness.messageId(chat, 5)}"]`);
         const own = page.locator(`[data-key="${harness.messageId(chat, 7)}"]`);
 
-        // Own messages never count as unread, so their menu has no such entry; "Copy text" is on every message.
+        // Own messages never count as unread, so their menu has no such entry; "Reply" and "Copy text" are on every message.
         const ownMenu = await openMessageMenu(page, name, own);
-        expect(await ownMenu.getByRole("menuitem").allInnerTexts()).toEqual([expect.stringContaining("Copy text")]);
+        expect(await ownMenu.getByRole("menuitem").allInnerTexts()).toEqual([
+          expect.stringContaining("Reply"),
+          expect.stringContaining("Copy text"),
+        ]);
         await page.keyboard.press("Escape");
         await ownMenu.waitFor({ state: "hidden" });
 

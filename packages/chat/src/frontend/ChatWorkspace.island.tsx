@@ -901,9 +901,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     return t().composerPlaceholder({ title: openChat()?.view === "all" ? t().general : viewTitle() });
   };
   const replyHint = (item: ChatFeedItem) =>
-    openChat()?.view === "all" && threaded()
-      ? t().replyHintIn({ name: viewName(item.thread ?? "general", openChat()?.threads ?? null, t()) })
-      : t().replyHint;
+    !threaded()
+      ? t().replyHintPlain
+      : openChat()?.view === "all"
+        ? t().replyHintIn({ name: viewName(item.thread ?? "general", openChat()?.threads ?? null, t()) })
+        : t().replyHint;
   const unreadHint = (item: ChatFeedItem) =>
     threaded() ? t().markUnreadThreadHint({ name: viewName(item.thread ?? "general", openChat()?.threads ?? null, t()) }) : t().markUnreadFromHereHint;
   const infoLink = (current: Conversation) => (
