@@ -45,6 +45,7 @@ const rowsFor = (subject: AccessSubject, config: GeoBudgetConfig, now: Date) => 
 };
 export const createGeoLedger = (db: SQL = sql) => ({
   async reserve(subject: AccessSubject, config: GeoBudgetConfig, cost: number, group: string, now: Date): Promise<GeoReservation> {
+    if (!Number.isSafeInteger(cost) || cost < 0) throw new Error("Invalid geo reservation");
     const rows = rowsFor(subject, config, now);
     await db.begin(async (tx) => {
       // Fixed order across upserts, updates, shares and settlement: Cloud first, person second.
@@ -64,8 +65,12 @@ export const createGeoLedger = (db: SQL = sql) => ({
   },
   async settle(reservation: GeoReservation, referenceCost: number) {
     const refund = reservation.cost - referenceCost;
-    if (refund < 0 || !Number.isSafeInteger(refund)) throw new Error("Invalid geo settlement");
+    if (!Number.isSafeInteger(referenceCost) || referenceCost < 0 || !Number.isSafeInteger(refund))
+      throw new Error("Invalid geo settlement");
     if (!refund) return;
+    // Negative refunds truthfully debit known routing overruns. Admission still uses the original
+    // bounded CAS transaction; future reservations see the overdrawn counters and are refused.
+    // Settle once per reservation, in the same fixed row order as admission.
     await db.begin(async (tx) => {
       for (const row of reservation.rows) {
         await tx`UPDATE geo.usage SET used=used-${refund} WHERE scope=${row.scope} AND subject=${row.subject} AND period=${row.period}`;
