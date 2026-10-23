@@ -172,7 +172,7 @@ export default function MailComposer(props: {
     if (!props.initialSeed) return;
     try {
       removeMailDraftSeed(localStorage, props.mailboxId, props.initialSeed.id);
-      localStorage.removeItem(draftKey(props.initialSeed.id));
+      localStorage.removeItem(draftSession.draftKey(props.initialSeed.id));
     } catch {
       // Expired local seed cleanup must never block leaving the composer.
     }
