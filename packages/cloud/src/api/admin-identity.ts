@@ -5,9 +5,11 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { listApps } from "../_internal/registry";
 import { CapabilityAppIdSchema } from "../contracts/capabilities";
+import { SaveServiceAccountAvatarSchema } from "../contracts/profile";
 import { AI_INFERENCE_SCOPE } from "../contracts/shared";
 import { type AuthContext, auth, err, respond, v } from "../server";
 import { noTransform } from "../server/middleware/no-transform";
+import { clearServiceAccountAvatar, getServiceAccountAvatarState, updateServiceAccountAvatar } from "../services/accounts/avatar";
 import { audit } from "../services/audit";
 import { getIdentitySigningKeyStatus, identityMetrics, revokeIdentitySigningKey, rewrapIdentitySigningKeys } from "../services/identity";
 import { WORKLOAD_SCOPES } from "../services/identity/workload-auth";
@@ -86,6 +88,11 @@ type IdentityAdminDependencies = {
   >;
   mandates: Pick<typeof mandates, "list">;
   audit: Pick<typeof audit, "record">;
+  avatars: {
+    state: typeof getServiceAccountAvatarState;
+    update: typeof updateServiceAccountAvatar;
+    clear: typeof clearServiceAccountAvatar;
+  };
 };
 
 const dependencies: IdentityAdminDependencies = {
@@ -97,6 +104,7 @@ const dependencies: IdentityAdminDependencies = {
   credentials: serviceAccountCredentials,
   mandates,
   audit,
+  avatars: { state: getServiceAccountAvatarState, update: updateServiceAccountAvatar, clear: clearServiceAccountAvatar },
 };
 
 const auditActor = (user: AuthContext["Variables"]["user"]) => ({
@@ -274,6 +282,69 @@ export const createAdminIdentityRoutes = (
             metadata: { serviceAccountId: account.id, serviceAccountKind: account.kind, status },
           });
           return ok({ ...account, status });
+        }),
+    )
+    // Every service account shows a robot drawn from its id until someone customises it or sets a photo.
+    .get(
+      "/service-accounts/:id/avatar",
+      describeRoute({ tags: ["Service accounts"], summary: "Read a standalone service account's picture: its robot or photo" }),
+      v("param", ServiceAccountParamsSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { id } = c.req.valid("param");
+          const account = await service.serviceAccounts.get({ id });
+          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          const state = await service.avatars.state({ id });
+          return state ? ok(state) : fail(err.notFound("Service account"));
+        }),
+    )
+    .put(
+      "/service-accounts/:id/avatar",
+      describeRoute({
+        tags: ["Service accounts"],
+        summary: "Set a standalone service account's picture: a photo, a customised robot, or which of them shows",
+      }),
+      v("param", ServiceAccountParamsSchema),
+      v("json", SaveServiceAccountAvatarSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { id } = c.req.valid("param");
+          const actor = c.get("user");
+          const account = await service.serviceAccounts.get({ id });
+          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          const updated = await service.avatars.update({ id, change: c.req.valid("json") });
+          if (!updated.ok)
+            return fail(updated.status === 409 ? { ...err.conflict("Picture"), message: updated.error } : err.badInput(updated.error));
+          await service.audit.record({
+            action: "service_account.avatar.update",
+            outcome: "allowed",
+            actor: auditActor(actor),
+            target: { type: "service_account", id: account.id, label: account.name },
+            metadata: { serviceAccountId: account.id, serviceAccountKind: account.kind, kind: updated.data.kind },
+          });
+          return ok(updated.data);
+        }),
+    )
+    .delete(
+      "/service-accounts/:id/avatar",
+      describeRoute({ tags: ["Service accounts"], summary: "Delete a standalone service account's photo; its robot shows again" }),
+      v("param", ServiceAccountParamsSchema),
+      async (c) =>
+        respond(c, async () => {
+          const { id } = c.req.valid("param");
+          const actor = c.get("user");
+          const account = await service.serviceAccounts.get({ id });
+          if (!account || !isStandaloneServiceAccountKind(account.kind)) return fail(err.notFound("Service account"));
+          const cleared = await service.avatars.clear({ id });
+          if (!cleared.ok) return fail(err.notFound("Service account"));
+          await service.audit.record({
+            action: "service_account.avatar.clear",
+            outcome: "allowed",
+            actor: auditActor(actor),
+            target: { type: "service_account", id: account.id, label: account.name },
+            metadata: { serviceAccountId: account.id, serviceAccountKind: account.kind },
+          });
+          return ok(cleared.data);
         }),
     )
     .post(

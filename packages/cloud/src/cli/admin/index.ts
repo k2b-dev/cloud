@@ -46,7 +46,7 @@ export default defineCliCommands({
     "ai usage": "Inspect AI runs and usage facets.",
     announcements: "Manage platform announcements and banners.",
     "app-credentials": "Manage per-application credentials for background work.",
-    agents: "Create, list, revoke, and re-key agent accounts with OAuth client credentials.",
+    agents: "Create, list, revoke, and re-key agent accounts with OAuth client credentials, and change their pictures.",
     "app-sign-in": "Manage app sign-in and pairing.",
     apps: "Inspect and remove registered apps.",
     documentation: "Manage the administration documentation website.",

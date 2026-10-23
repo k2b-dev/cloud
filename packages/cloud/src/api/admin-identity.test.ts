@@ -108,6 +108,11 @@ const dependencies = (overrides: Partial<Dependencies> = {}): Dependencies => ({
     }),
   },
   audit: { record: async () => undefined },
+  avatars: {
+    state: async () => null,
+    update: async () => ({ ok: false, error: "not stubbed", status: 400 }),
+    clear: async () => ({ ok: false, error: "not stubbed", status: 404 }),
+  },
   ...overrides,
 });
 

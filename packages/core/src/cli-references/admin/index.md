@@ -231,7 +231,7 @@ Run `cld admin <command> --help` for flags, filters, pagination, and confirmatio
 | Account categories | `accounts config get`, `accounts config set` |
 | Webhooks | `webhooks list`, `webhooks get`, `webhooks apply`, `webhooks create`, `webhooks update`, `webhooks test`, `webhooks delete` |
 | Metrics | `metrics status`, `metrics read`, `metrics catalogue`, `metrics tokens list`, `metrics tokens create`, `metrics tokens revoke` |
-| Agents | `agents create`, `agents ls`, `agents revoke`, `agents rotate-secret` |
+| Agents | `agents create`, `agents ls`, `agents revoke`, `agents rotate-secret`, `agents avatar show`, `agents avatar random`, `agents avatar set`, `agents avatar photo`, `agents avatar use`, `agents avatar delete-photo` |
 
 ## AI usage and feedback
 
@@ -337,6 +337,21 @@ at once. `rotate-secret` regenerates the client secret and updates the local
 profile; an agent addressed by name must match exactly one account. The same
 accounts are visible in the Accounts app and through
 `cld accounts service-accounts list --kind agent`.
+
+Every agent gets a robot picture drawn from its account ID, so it never shows a
+bare icon. Change it with the robot parts or replace it with a photo:
+
+```bash
+cld admin agents avatar show "Release agent" --json
+cld admin agents avatar set "Release agent" head=round color=teal antenna=dish
+cld admin agents avatar random "Release agent"
+cld admin agents avatar photo "Release agent" ./logo.png
+cld admin agents avatar use "Release agent" robot
+cld admin agents avatar delete-photo "Release agent" --yes
+```
+
+An unknown part or value lists the choices. A photo is a square PNG, JPEG, or
+WebP of at most 48 KiB; deleting it shows the robot again.
 
 ## Built-in Assistant Skills
 
