@@ -226,7 +226,9 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   // Another person's message gets its reaction line with its first reaction and keeps it, so removing one moves nothing.
   const hadReactions = new Set<string>();
   const reactionsOf = (item: ChatFeedItem) => {
-    if (!item.messageId || !props.reactions) return undefined;
+    if (!props.reactions) return undefined;
+    // The reader's own message reserves its line from the first frame, so it keeps its height once stored.
+    if (!item.messageId) return item.own ? [] : undefined;
     const list = props.reactions(item.messageId);
     if (list.length) hadReactions.add(item.key);
     else if (!item.own && !hadReactions.has(item.key)) return undefined;
