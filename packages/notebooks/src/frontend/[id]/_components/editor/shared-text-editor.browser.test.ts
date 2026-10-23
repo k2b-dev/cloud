@@ -233,6 +233,25 @@ describe("Notebook on the shared text editor", () => {
     }
   });
 
+  test("table plus controls append and focus their new row and column", async () => {
+    const { page, close } = await open();
+    try {
+      await cell(page, 1, 0).click();
+      await page.locator(".k2b-ste-addRow").click();
+      await page.waitForFunction(() => document.querySelectorAll(".k2b-ste-table tr").length === 4);
+      expect((await activeCell(page))?.split(",")[0]).toBe("3");
+      expect(await page.evaluate(() => window.noteHarness.posts())).toBe(0);
+      await page.locator(".k2b-ste-addColumn").click();
+      await page.waitForFunction(() => document.querySelector('.k2b-ste-cell[data-r="3"][data-c="3"]'));
+      expect(await activeCell(page)).toBe("3,3");
+      expect(await page.evaluate(() => window.noteHarness.posts())).toBe(1);
+      expect(await text(page)).toContain("| Design | 2 | =Hours*50 |");
+      expect(await text(page)).toContain("After the table.");
+    } finally {
+      await close();
+    }
+  });
+
   test("a column action runs on the server, arrives through the stream and is one undo step", async () => {
     const { page, close } = await open();
     try {
@@ -628,6 +647,19 @@ describe("Notebook on the shared text editor", () => {
       const menuWidth = await page.locator('[role="menu"]:visible').evaluate((element) => element.getBoundingClientRect().width);
       const rem = await page.evaluate(() => Number.parseFloat(getComputedStyle(document.documentElement).fontSize));
       expect(menuWidth).toBe(18 * rem);
+      const menuGeometry = await page.locator('[role="menu"]:visible').evaluate((menu) => {
+        const sections = [...menu.querySelectorAll(".k2b-dropdown__section")];
+        const pairs = sections.flatMap((section) => {
+          const rows = [...section.querySelectorAll(":scope > .k2b-dropdown__item")];
+          return rows.slice(1).map((row, index) => row.getBoundingClientRect().top - rows[index]!.getBoundingClientRect().bottom);
+        });
+        const first = menu.querySelector<HTMLElement>(".k2b-dropdown__item")!;
+        return { gaps: pairs, height: first.getBoundingClientRect().height, font: getComputedStyle(first).fontSize };
+      });
+      expect(menuGeometry.gaps.length).toBeGreaterThan(0);
+      expect(menuGeometry.gaps.every((gap) => Math.abs(gap) < 0.5)).toBe(true);
+      expect(menuGeometry.height).toBe(32);
+      expect(menuGeometry.font).toBe("13.5px");
       await page.keyboard.press("Escape");
       await page.locator(".k2b-ste-rowMenu").nth(1).click();
       await entries.first().waitFor();
@@ -687,6 +719,68 @@ describe("Notebook on the shared text editor", () => {
       await waitForText(page, "| Planning |");
       expect(await page.locator(".k2b-ste-table-source").count()).toBe(0);
       expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  });
+
+  test("tablet touch table menu keeps every alignment target at least 44 pixels", async () => {
+    const { page, close } = await open({ device: { ...phone, viewport: { width: 834, height: 1194 } } });
+    try {
+      await cell(page, 1, 0).tap();
+      await toolbarButton(page, "Table").tap();
+      const menu = page.locator(".k2b-ste-table-menu:visible");
+      await menu.waitFor();
+      await settled(page);
+      expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+      const targets = await menu
+        .locator(".k2b-ste-align-choice")
+        .evaluateAll((items) =>
+          items.map((item) => ({ width: item.getBoundingClientRect().width, height: item.getBoundingClientRect().height })),
+        );
+      expect(targets).toHaveLength(3);
+      expect(targets.every(({ width, height }) => width >= 44 && height >= 44)).toBe(true);
+      await menu.getByRole("menuitemradio", { name: "Center", exact: true }).tap();
+      await page.waitForFunction(() => window.noteHarness.text().includes(":---:"));
+    } finally {
+      await close();
+    }
+  });
+
+  test("phone table menu keeps Done reachable beside a long column name", async () => {
+    const name = "Long material description with dimensions, quantities and delivery details";
+    const doc = `| ${name} | Count |\n| --- | --- |\n| Paper | 4 |\n\nAfter`;
+    const { page, close } = await open({ doc, device: { ...phone, viewport: { width: 390, height: 844 } } });
+    try {
+      await cell(page, 1, 0).tap();
+      await toolbarButton(page, "Table").tap();
+      const heading = page.locator(".k2b-ste-table-sheet-heading");
+      await heading.waitFor();
+      await settled(page);
+      const title = heading.locator(":scope > span");
+      const titleBounds = (await title.boundingBox())!;
+      const done = heading.getByRole("button", { name: "Done", exact: true });
+      const doneBounds = (await done.boundingBox())!;
+      expect(titleBounds.x + titleBounds.width).toBeLessThanOrEqual(doneBounds.x);
+      expect(doneBounds.x + doneBounds.width).toBeLessThanOrEqual(390);
+      expect(doneBounds.height).toBeGreaterThanOrEqual(44);
+      const appearance = await done.evaluate((button) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--k2b-action)";
+        button.parentElement!.append(probe);
+        const expectedColor = getComputedStyle(probe).color;
+        probe.remove();
+        const style = getComputedStyle(button);
+        return { color: style.color, expectedColor, fontSize: style.fontSize };
+      });
+      expect(appearance.color).toBe(appearance.expectedColor);
+      expect(appearance.fontSize).toBe("14.5px");
+      expect(await title.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+      expect(await title.getAttribute("title")).toContain(name);
+      await done.tap();
+      await heading.waitFor({ state: "detached" });
+      expect(await activeCell(page)).toBe("1,0");
+      expect(await text(page)).toBe(doc);
     } finally {
       await close();
     }

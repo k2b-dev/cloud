@@ -584,7 +584,7 @@ export function TextEditor(props: TextEditorProps) {
               ? undefined
               : (close) => (
                   <div class="k2b-ste-table-sheet-heading">
-                    <span>{menuHeading()}</span>
+                    <span title={menuHeading()}>{menuHeading()}</span>
                     <Button variant="ghost" onClick={close}>
                       {t().done}
                     </Button>

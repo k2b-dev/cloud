@@ -151,7 +151,7 @@
  .k2b-ui .k2b-ste-table-add button { min-height: 44px; visibility: hidden; }
  .k2b-ui .k2b-ste-table[data-active-r] .k2b-ste-addRow { visibility: visible; }
  .k2b-ui .k2b-ste-table-add .k2b-ste-addColumn { display: none; }
- .k2b-ui .k2b-ste-table-source button { min-height: 44px; }
+ .k2b-ui .k2b-ste-table-source :is(button, .k2b-button) { min-height: 44px; }
 }
 .k2b-ui .k2b-ste-table table[data-sized] .k2b-ste-cell { width: 100%; }
 .k2b-ui .k2b-ste-table-tool:has(.ti-chevron-down) { width: auto; display: inline-flex; gap: 6px; }
@@ -173,7 +173,9 @@
 .k2b-ui .k2b-ste-announcement { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 /* One compact menu at every table trigger; touch keeps larger hit targets. */
-.k2b-ui .k2b-ste-table-menu { max-height: calc(100dvh - 24px); }
+.k2b-ui .k2b-ste-table-menu { max-height: calc(100dvh - 24px); gap: 0; border-radius: 10px; font-size: 13.5px; }
+.k2b-ui .k2b-ste-table-menu .k2b-dropdown__section { gap: 0; }
+.k2b-ui .k2b-ste-table-menu .k2b-dropdown__item { padding: 0 8px; font-size: inherit; }
 @media (pointer: coarse) {
   .k2b-ui .k2b-ste-table-menu .k2b-dropdown__item { min-height: 44px; }
 }
@@ -189,11 +191,12 @@
   .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame:has(.k2b-ste-align-choice), .k2b-ui .k2b-bottom-sheet-viewport:has(.k2b-ste-align-choice) { max-height: min(62dvh, var(--k2b-dialog-available-height)); }
   .k2b-ui .k2b-gesture-menu__sheet-menu:has(.k2b-ste-align-choice) .k2b-dropdown__section { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
   .k2b-ui .k2b-gesture-menu__sheet-menu:has(.k2b-ste-align-choice) :is(.k2b-dropdown__label, .k2b-dropdown__row, [data-danger="true"], .k2b-ste-header-choice) { grid-column: 1 / -1; }
-  .k2b-ui .k2b-gesture-menu__sheet-menu:has(.k2b-ste-align-choice) .k2b-dropdown__item { min-height: 44px; padding: 8px; font-size: 14px; background: var(--k2b-surface-muted); }
+  .k2b-ui .k2b-gesture-menu__sheet-menu:has(.k2b-ste-align-choice) .k2b-dropdown__item { min-height: 44px; padding: 0 12px; gap: 8px; border-radius: 10px; font-size: 14px; background: var(--k2b-surface-muted); }
   .k2b-ui .k2b-gesture-menu__sheet-menu:has(.k2b-ste-align-choice) .k2b-dropdown__label { padding: 6px 4px 2px; }
   .k2b-ui .k2b-gesture-menu__sheet-menu:has(.k2b-ste-align-choice) .k2b-kbd { display: none; }
-  .k2b-ui .k2b-ste-table-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px 8px; font-size: 14px; font-weight: 600; }
-  .k2b-ui .k2b-ste-table-sheet-heading button { min-height: 44px; }
+  .k2b-ui .k2b-ste-table-sheet-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px 8px; font-size: 14.5px; font-weight: 600; }
+  .k2b-ui .k2b-ste-table-sheet-heading > span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .k2b-ui .k2b-ste-table-sheet-heading .k2b-button { flex: none; min-height: 44px; font: inherit; color: var(--k2b-action); }
   .k2b-ui .k2b-gesture-menu__sheet-menu:has(.k2b-ste-align-choice) > .k2b-dropdown__section:first-child { display: none; }
   .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame:has(.k2b-ste-align-choice)::backdrop { backdrop-filter: none; background: rgb(0 0 0 / .1); }
 }
@@ -209,9 +212,13 @@
   .k2b-ui .k2b-gesture-menu__sheet-menu:has(.k2b-ste-align-choice) .k2b-ste-align-choice { width: 44px; min-width: 44px; min-height: 44px; padding: 0; }
 }
 
-.k2b-ui .k2b-ste-table-menu .k2b-dropdown__label { padding: 7px 8px 3px; font-size: 11.5px; font-weight: 600; }
+.k2b-ui .k2b-ste-table-menu .k2b-dropdown__label { padding: 7px 8px 3px; font-size: 11.5px; font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .k2b-ui .k2b-ste-table-menu .k2b-dropdown__section[data-divided="true"] { padding-top: 0; margin-top: 0; }
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-bottom-sheet-viewport:has(.k2b-ste-align-choice) .k2b-panel-dialog__body { gap: 0; padding-top: 0; padding-inline: 12px; }
   .k2b-ui .k2b-ste-table-sheet-heading { padding-bottom: 0; }
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-ste-table-menu .k2b-ste-align-choice { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
 }

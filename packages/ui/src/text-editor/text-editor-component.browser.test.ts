@@ -182,8 +182,17 @@ for (const [name, options] of Object.entries(profiles))
         await settled(page);
         expect(await source.locator(".cm-content").evaluate((element) => getComputedStyle(element).whiteSpace)).toBe("pre");
         expect(await following.evaluate((element) => element.getBoundingClientRect().top + scrollY)).toBe(top);
-        if (name === "phone")
+        if (name === "phone") {
           expect(await source.locator(".k2b-ste-source-body").evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+          const heights = await source
+            .locator("button:visible")
+            .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().height));
+          expect(heights.length).toBeGreaterThan(0);
+          expect(
+            heights.every((height) => height >= 44),
+            JSON.stringify(heights),
+          ).toBe(true);
+        }
         await source.getByRole("button", { name: name === "phone" ? "Fertig" : "Als Tabelle anzeigen", exact: true }).click();
         await source.waitFor({ state: "detached" });
         expect(await cell.isVisible()).toBe(true);

@@ -58,20 +58,37 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const paste = (page: Page, html = "<b>pasted</b>") =>
-  page.evaluate((html) => {
-    const data = new DataTransfer();
-    data.setData("text/plain", "pasted");
-    if (html) data.setData("text/html", html);
-    const selection = document.getSelection();
-    const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
-    Reflect.set(window, "clipboardRangeBeforeLoad", range);
-    const before = { caret: window.sharedEditorHarness?.caret(), start: range?.startOffset, end: range?.endOffset };
-    document.activeElement!.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
-    return before;
-  }, html);
+const paste = (page: Page, html = "<b>pasted</b>", pendingSelection = false) =>
+  page.evaluate(
+    ({ html, pendingSelection }) => {
+      const data = new DataTransfer();
+      data.setData("text/plain", "pasted");
+      if (html) data.setData("text/html", html);
+      const selection = document.getSelection();
+      if (pendingSelection) {
+        selection!.selectAllChildren(document.activeElement!);
+        selection!.collapseToEnd();
+      }
+      const range = selection?.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+      Reflect.set(window, "clipboardRangeBeforeLoad", range);
+      const before = { caret: window.sharedEditorHarness?.caret(), start: range?.startOffset, end: range?.endOffset };
+      document.activeElement!.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+      return before;
+    },
+    { html, pendingSelection },
+  );
 
-for (const outcome of ["apply", "peer-edit", "selection-change", "read-only", "load-failure"] as const) {
+for (const outcome of [
+  "pending-selection",
+  "apply",
+  "peer-edit",
+  "selection-change",
+  "programmatic-selection",
+  "focus-change",
+  "disposed",
+  "read-only",
+  "load-failure",
+] as const) {
   test(`deferred HTML paste: ${outcome}`, async () => {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -96,14 +113,29 @@ for (const outcome of ["apply", "peer-edit", "selection-change", "read-only", "l
       const cell = page.locator('.k2b-ste-cell[data-r="1"][data-c="0"]');
       await cell.click();
       await page.keyboard.press("End");
-      const beforePaste = await paste(page);
+      if (outcome === "pending-selection") {
+        await page.keyboard.press("Home");
+        await page.waitForFunction(() => window.sharedEditorHarness.caret() === window.sharedEditorHarness.text().indexOf("Paper"));
+      }
+      const beforePaste = await paste(page, "<b>pasted</b>", outcome === "pending-selection");
+      if (outcome === "pending-selection")
+        expect(beforePaste.caret).toBe(await page.evaluate(() => window.sharedEditorHarness.text().indexOf("Paper")));
       await request;
       expect(await page.evaluate(() => window.sharedEditorHarness.text())).not.toContain("pasted");
       if (outcome === "peer-edit") await page.evaluate(() => window.sharedEditorHarness.remote(0, "peer "));
       if (outcome === "selection-change") await page.keyboard.press("Home");
+      if (outcome === "programmatic-selection") await page.evaluate(() => window.sharedEditorHarness.selection(0));
+      if (outcome === "focus-change")
+        await page.evaluate(() => {
+          const button = document.createElement("button");
+          button.textContent = "Other control";
+          document.body.append(button);
+          button.focus();
+        });
+      if (outcome === "disposed") await page.evaluate(() => window.sharedEditorHarness.load("Replacement"));
       if (outcome === "read-only") await page.evaluate(() => window.sharedEditorHarness.readOnly(true));
       release();
-      if (outcome === "apply") {
+      if (outcome === "apply" || outcome === "pending-selection") {
         await page.waitForFunction(
           () => window.sharedEditorHarness.text().includes("pasted") || window.sharedEditorHarness.errors().length > 0,
         );
@@ -126,6 +158,7 @@ for (const outcome of ["apply", "peer-edit", "selection-change", "read-only", "l
       } else {
         await page.waitForFunction(() => window.sharedEditorHarness.errors().includes("recovery:pasted"));
         expect(await page.evaluate(() => window.sharedEditorHarness.text())).not.toContain("pasted");
+        if (outcome === "disposed") expect(await page.evaluate(() => window.sharedEditorHarness.text())).toBe("Replacement");
         if (outcome === "peer-edit") expect(await page.evaluate(() => window.sharedEditorHarness.text())).toStartWith("peer ");
       }
       expect(errors).toEqual([]);

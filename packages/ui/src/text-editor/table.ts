@@ -1661,22 +1661,25 @@ export const formatActiveCell = (view: EditorView, name: InlineFormat): boolean 
   return true;
 };
 
+const syncCellSelection = (view: EditorView, el = syncs.get(view)?.el) => {
+  const sync = syncs.get(view);
+  if (!el?.isConnected || document.activeElement !== el || sync?.el !== el || active.get(view)?.composing) return;
+  const [a, h] = selectionOffsets(el);
+  const map = T.cellDisplayMap(sync.base);
+  const position = (offset: number) => sync.desc.mapPos(sync.baseFrom + (map.offsets[offset] ?? sync.base.length), 1);
+  const anchor = position(a),
+    head = position(h);
+  if (anchor !== view.state.selection.main.anchor || head !== view.state.selection.main.head)
+    view.dispatch({ selection: { anchor, head } });
+  view.state.facet(tableHost)?.onCellSelection?.({ anchor, head });
+};
 const pendingSelection = new WeakSet<EditorView>();
 const queueCellSelection = (view: EditorView, el: HTMLElement) => {
   if (pendingSelection.has(view)) return;
   pendingSelection.add(view);
   queueMicrotask(() => {
     pendingSelection.delete(view);
-    const sync = syncs.get(view);
-    if (!el.isConnected || document.activeElement !== el || sync?.el !== el || active.get(view)?.composing) return;
-    const [a, h] = selectionOffsets(el);
-    const map = T.cellDisplayMap(sync.base);
-    const position = (offset: number) => sync.desc.mapPos(sync.baseFrom + (map.offsets[offset] ?? sync.base.length), 1);
-    const anchor = position(a),
-      head = position(h);
-    if (anchor !== view.state.selection.main.anchor || head !== view.state.selection.main.head)
-      view.dispatch({ selection: { anchor, head } });
-    view.state.facet(tableHost)?.onCellSelection?.({ anchor, head });
+    syncCellSelection(view, el);
   });
 };
 const atCellVisualEdge = (el: HTMLElement, down: boolean) => {
@@ -1759,7 +1762,7 @@ const decorate = (state: EditorState): DecorationSet =>
   );
 
 export const tableGrid = (): Extension => [
-  clipboardLoading((view) => view.state.facet(tableHost)),
+  clipboardLoading((view) => view.state.facet(tableHost), syncCellSelection),
   Prec.highest(
     keymap.of([
       { key: "ArrowDown", run: (view) => enterTable(view, true) },

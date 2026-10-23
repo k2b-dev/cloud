@@ -5,7 +5,7 @@ import type { TableHost } from "./table";
 /** Load the HTML sanitizer only when needed, before either paste consumer runs.
  * A delayed paste never overwrites edits made while its parser was loading.
  */
-export const clipboardLoading = (getHost: (view: EditorView) => TableHost | null) =>
+export const clipboardLoading = (getHost: (view: EditorView) => TableHost | null, syncSelection?: (view: EditorView) => void) =>
   ViewPlugin.define((view) => {
     let disposed = false;
     let pending = false;
@@ -27,6 +27,9 @@ export const clipboardLoading = (getHost: (view: EditorView) => TableHost | null
         host?.onRecovery(text || html);
         return;
       }
+      // Native selectionchange may still be queued when paste arrives. Let the
+      // cell publish that same caret before capturing the delayed paste target.
+      syncSelection?.(view);
       const clipboard = new DataTransfer();
       clipboard.setData("text/plain", text);
       clipboard.setData("text/html", html);
