@@ -12,6 +12,7 @@ export const app = defineApp({
     translations: {
       de: {
         name: "Assistent",
+        panelLabel: "Assistent",
         adminLinks: { "/admin/assistant": "Apps" },
         description: "KI-Assistent zum Schreiben, Überarbeiten, Zusammenfassen und Beantworten von Fragen.",
       },
@@ -87,6 +88,7 @@ export const app = defineApp({
     section: "primary",
     requiresAuth: true,
   },
+  panel: { href: "/app/assistant/panel", label: "Assistant", icon: "ti ti-sparkles" },
   openapi: "/api/assistant/openapi.json",
   routes: ["/api/assistant", "/app/assistant", "/public/assistant", "/admin/assistant"],
 });

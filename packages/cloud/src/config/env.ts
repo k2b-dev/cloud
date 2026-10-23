@@ -98,12 +98,6 @@ const registry = defineEnv({
     scope: "runtime",
     doc: "Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for outgoing mail SMTP and bounce IMAP connections; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup.",
   },
-  GEO_ALLOWED_TARGETS: {
-    schema: envList,
-    default: ["geo"],
-    scope: "runtime",
-    doc: "Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for Geo requests; unset allows public targets and `geo`, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup.",
-  },
 
   // Identity and OAuth
   CLOUD_IDENTITY_KEY_ENCRYPTION_KEY: {

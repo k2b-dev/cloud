@@ -10,6 +10,7 @@ import { ConversationStatusMeta } from "./conversation-status";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type Props = {
+  basePath?: string;
   conversations: AiConversation[];
   projects?: readonly AiProject[];
   archived?: boolean;
@@ -99,7 +100,7 @@ export default function AssistantAllChatsList(props: Props) {
               }
             >
               <Link
-                href={assistantConversationHref("/app/assistant", conversation.id)}
+                href={assistantConversationHref(props.basePath ?? "/app/assistant", conversation.id)}
                 scroll="manual"
                 onNavigate={(nav) => openConversation(conversation, nav)}
                 class="flex min-w-0 flex-1 items-center gap-3 text-left"
