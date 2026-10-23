@@ -294,8 +294,13 @@ test("settled waits for the throttled post it flushes", async () => {
     },
     timers: {
       now: () => 0,
-      setTimeout: (callback) => { scheduled = callback; return 1; },
-      clearTimeout: () => { scheduled = undefined; },
+      setTimeout: (callback) => {
+        scheduled = callback;
+        return 1;
+      },
+      clearTimeout: () => {
+        scheduled = undefined;
+      },
     },
   });
   try {
@@ -304,7 +309,9 @@ test("settled waits for the throttled post it flushes", async () => {
     reporter.seen(4, 6);
     expect(scheduled).toBeDefined();
     let finished = false;
-    const waiting = reporter.settled().then(() => { finished = true; });
+    const waiting = reporter.settled().then(() => {
+      finished = true;
+    });
     await settle();
     expect(posts).toEqual([3, 6]);
     expect(scheduled).toBeUndefined();
@@ -317,7 +324,6 @@ test("settled waits for the throttled post it flushes", async () => {
     reporter.dispose();
   }
 });
-
 
 test("an explicit read stays ahead of delayed live reads while a later unread mark can reset it", async () => {
   const f = fixture(3);

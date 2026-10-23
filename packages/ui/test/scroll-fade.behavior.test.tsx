@@ -3,6 +3,19 @@ import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
 
+// Compile the shared component graph before a test owns a DOM or starts its deadline.
+// A timed-out import otherwise keeps running and can restore globals during the next test.
+if (!isServer) {
+  const setup = createDomTestHarness();
+  try {
+    await import("../src/layout/AppWorkspace");
+    await import("../src/layout/DetailPanel");
+    await import("../src/layout/PanelDialog");
+  } finally {
+    setup.cleanup();
+  }
+}
+
 const nextFrame = async () => {
   await Promise.resolve();
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -149,14 +162,14 @@ if (!isServer)
       expect(body.dataset.scrollFade, "rtl end").toBe("bottom");
       setOrientation("vertical");
       await nextFrame();
-      expect(body.dataset.scrollFade).toBeUndefined();
+      expect(body.dataset.scrollFade, "vertical axis has no overflow").toBeUndefined();
       setOrientation("horizontal");
       await nextFrame();
       expect(body.dataset.scrollFade, "after axis restored").toBe("bottom");
       Object.defineProperty(body, "scrollWidth", { value: 200 });
       body.textContent = "Short";
       await nextFrame();
-      expect(body.dataset.scrollFade).toBeUndefined();
+      expect(body.dataset.scrollFade, "short horizontal content has no overflow").toBeUndefined();
     } finally {
       dispose();
       dom.cleanup();
@@ -259,14 +272,21 @@ if (!isServer)
       frames.set(++next, callback);
       return next;
     };
-    globalThis.cancelAnimationFrame = (id) => { frames.delete(id); };
+    globalThis.cancelAnimationFrame = (id) => {
+      frames.delete(id);
+    };
     const { installScrollFades } = await import("../src/layout/scroll-fade");
     dom.root.innerHTML = '<div data-scroll-fade-mode="both"><span>Unread</span></div>';
     const body = dom.root.firstElementChild as HTMLElement;
     let reads = 0;
     let height = 500;
     Object.defineProperties(body, {
-      scrollHeight: { get: () => { reads++; return height; } },
+      scrollHeight: {
+        get: () => {
+          reads++;
+          return height;
+        },
+      },
       clientHeight: { value: 200 },
     });
     const stop = installScrollFades(dom.root);

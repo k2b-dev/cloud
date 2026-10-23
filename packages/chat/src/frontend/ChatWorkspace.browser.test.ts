@@ -656,11 +656,12 @@ describe("ChatWorkspace browser read state", () => {
       const release = Promise.withResolvers<void>();
       try {
         await until(() => harness.subscribed(chat));
-        await page.evaluate(() => { document.hasFocus = () => false; });
+        await page.evaluate(() => {
+          document.hasFocus = () => false;
+        });
         for (let index = 1; index <= 40; index++) {
           harness.receive(chat, nora, `Unread arrival ${index}`);
-          if (index % 10 === 0)
-            await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+          if (index % 10 === 0) await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
         }
         await page.evaluate(() => {
           document.hasFocus = () => true;
@@ -672,7 +673,8 @@ describe("ChatWorkspace browser read state", () => {
           await release.promise;
           await route.continue();
         });
-        await page.route(`**/api/chat/conversations/${chat}/read`,
+        await page.route(
+          `**/api/chat/conversations/${chat}/read`,
           (route) => route.fulfill({ status: 503, json: { message: "Read is temporarily unavailable." } }),
           { times: 1 },
         );
@@ -698,99 +700,106 @@ describe("ChatWorkspace browser read state", () => {
       }
     }, 30_000);
 
-    for (const embedded of [false, true]) test(`an opening marker survives while a later unread gap can reload after resync on ${name} (${embedded ? "panel archive" : "full view"})`, async () => {
-      const chat = harness.addChat({ members: [viewer, nora], count: 8, unread: 4, end: harness.now() });
-      const openingRead = harness.props({ chat }).open!.conversation.read!;
-      const openingMarker = harness.messageId(chat, openingRead.lastReadSeq! + 1);
-      if (embedded) harness.archive(chat, true);
-      const { page, errors } = await load(options, { chat, ...(embedded ? { embedded: true, archived: true, filter: "unread" as const } : {}) });
-      try {
-        await until(() => harness.subscribed(chat));
-        await until(() => chatReads(chat).at(-1)?.seq === 8);
-        await page.evaluate(() => {
-          document.hasFocus = () => false;
+    for (const embedded of [false, true])
+      test(`an opening marker survives while a later unread gap can reload after resync on ${name} (${embedded ? "panel archive" : "full view"})`, async () => {
+        const chat = harness.addChat({ members: [viewer, nora], count: 8, unread: 4, end: harness.now() });
+        const openingRead = harness.props({ chat }).open!.conversation.read!;
+        const openingMarker = harness.messageId(chat, openingRead.lastReadSeq! + 1);
+        if (embedded) harness.archive(chat, true);
+        const { page, errors } = await load(options, {
+          chat,
+          ...(embedded ? { embedded: true, archived: true, filter: "unread" as const } : {}),
         });
-        // Recovery is independent of hidden-tab replay, which the burst cases cover separately.
-        // Confirm delivery while unfocused before forcing the expired-replay snapshot below.
-        for (let index = 1; index <= 60; index++) {
-          harness.receive(chat, nora, `Resync arrival ${index}`);
-          if (index % 10 === 0) await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+        try {
+          await until(() => harness.subscribed(chat));
+          await until(() => chatReads(chat).at(-1)?.seq === 8);
+          await page.evaluate(() => {
+            document.hasFocus = () => false;
+          });
+          // Recovery is independent of hidden-tab replay, which the burst cases cover separately.
+          // Confirm delivery while unfocused before forcing the expired-replay snapshot below.
+          for (let index = 1; index <= 60; index++) {
+            harness.receive(chat, nora, `Resync arrival ${index}`);
+            if (index % 10 === 0) await page.locator(`[data-key="${harness.messageId(chat, 8 + index)}"] .k2b-message-row__text`).waitFor();
+          }
+          await page.evaluate(() => {
+            Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+            document.hasFocus = () => true;
+            document.dispatchEvent(new Event("visibilitychange"));
+            window.dispatchEvent(new Event("focus"));
+          });
+          const newest = page.locator(`[data-key="${harness.messageId(chat, 68)}"] .k2b-message-row__text`);
+          await newest.waitFor();
+          expect((await newest.innerText()).trim()).toBe("Resync arrival 60");
+          await inFeed(page, `[data-key="${harness.messageId(chat, 68)}"]`);
+          await until(() => harness.subscribed(chat));
+          await page.route(
+            `**/api/chat/conversations/${chat}/changes?*`,
+            (route) => route.fulfill({ status: 409, json: { code: "RESYNC_REQUIRED", message: "Replay expired." } }),
+            { times: 1 },
+          );
+          // Keep the skipped range outside the replacement window; automatic older-page loading must not
+          // turn this snapshot-fallback scenario into an ordinary in-memory jump.
+          await page.route(`**/api/chat/conversations/${chat}/messages?before=*`, (route) =>
+            route.fulfill({ status: 503, json: { message: "Older history is unavailable." } }),
+          );
+          await settled(page);
+          const previousHeight = await page.locator(".k2b-virtual-feed__viewport").evaluate((element) => element.scrollHeight);
+          const replacement = page.waitForResponse(
+            (response) => response.url().includes(`/conversations/${chat}/messages`) && response.request().method() === "GET",
+          );
+          harness.resync(chat);
+          await replacement;
+          // The HTTP response precedes the store's metadata read and feed projection. Wait until the
+          // full 68-message window is actually replaced by the latest 50, so an old in-memory jump cannot win.
+          await page.waitForFunction(
+            (height) => document.querySelector(".k2b-virtual-feed__viewport")!.scrollHeight < height,
+            previousHeight,
+          );
+          await settled(page);
+          const jump = page.getByRole("button", { name: "New messages", exact: true });
+          await jump.waitFor();
+          await page.route(
+            `**/api/chat/conversations/${chat}/snapshot`,
+            (route) => route.fulfill({ status: 503, json: { message: "Snapshot is temporarily unavailable." } }),
+            { times: 1 },
+          );
+          const failed = page.waitForResponse(
+            (response) => response.url().includes(`/conversations/${chat}/snapshot`) && response.status() === 503,
+          );
+          await jump.click();
+          await failed;
+          await page.getByText(chatMessages.resolve(["en"]).t.openFailed, { exact: true }).waitFor();
+          expect(await jump.isVisible()).toBe(true);
+          expect(chatReads(chat).at(-1)!.seq).toBe(8);
+          // On a phone the error toast overlays the header. Dismiss it before using the same recovery control.
+          await page.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+          await page.getByText(chatMessages.resolve(["en"]).t.openFailed, { exact: true }).waitFor({ state: "detached" });
+          const reloaded = page.waitForResponse((response) => response.url().includes(`/conversations/${chat}/snapshot`) && response.ok());
+          await jump.click();
+          await reloaded;
+          await inFeed(page, `[data-key="${harness.messageId(chat, 9)}"]`);
+          const recovered = new URL(page.url());
+          expect(recovered.pathname).toBe(`/app/chat${embedded ? "/panel" : ""}/c/${chat}`);
+          expect(recovered.searchParams.get("list")).toBe(embedded ? "archive" : null);
+          expect(recovered.searchParams.get("filter")).toBe(embedded ? "unread" : null);
+          if (embedded) {
+            const fullView = new URL(
+              (await page.getByRole("link", { name: "Open full view", exact: true }).getAttribute("href"))!,
+              page.url(),
+            );
+            expect(fullView.pathname).toBe(`/app/chat/c/${chat}`);
+            expect(fullView.searchParams.get("list")).toBe("archive");
+            expect(fullView.searchParams.get("filter")).toBe("unread");
+          }
+          expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(openingMarker);
+          await until(() => chatReads(chat).at(-1)!.seq > 8);
+          expect(chatReads(chat).at(-1)!.seq).toBeLessThan(68);
+          expect(errors).toEqual([]);
+        } finally {
+          await page.context().close();
         }
-        await page.evaluate(() => {
-          Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
-          document.hasFocus = () => true;
-          document.dispatchEvent(new Event("visibilitychange"));
-          window.dispatchEvent(new Event("focus"));
-        });
-        const newest = page.locator(`[data-key="${harness.messageId(chat, 68)}"] .k2b-message-row__text`);
-        await newest.waitFor();
-        expect((await newest.innerText()).trim()).toBe("Resync arrival 60");
-        await inFeed(page, `[data-key="${harness.messageId(chat, 68)}"]`);
-        await until(() => harness.subscribed(chat));
-        await page.route(
-          `**/api/chat/conversations/${chat}/changes?*`,
-          (route) => route.fulfill({ status: 409, json: { code: "RESYNC_REQUIRED", message: "Replay expired." } }),
-          { times: 1 },
-        );
-        // Keep the skipped range outside the replacement window; automatic older-page loading must not
-        // turn this snapshot-fallback scenario into an ordinary in-memory jump.
-        await page.route(`**/api/chat/conversations/${chat}/messages?before=*`, (route) =>
-          route.fulfill({ status: 503, json: { message: "Older history is unavailable." } }),
-        );
-        await settled(page);
-        const previousHeight = await page.locator(".k2b-virtual-feed__viewport").evaluate((element) => element.scrollHeight);
-        const replacement = page.waitForResponse(
-          (response) => response.url().includes(`/conversations/${chat}/messages`) && response.request().method() === "GET",
-        );
-        harness.resync(chat);
-        await replacement;
-        // The HTTP response precedes the store's metadata read and feed projection. Wait until the
-        // full 68-message window is actually replaced by the latest 50, so an old in-memory jump cannot win.
-        await page.waitForFunction(
-          (height) => document.querySelector(".k2b-virtual-feed__viewport")!.scrollHeight < height,
-          previousHeight,
-        );
-        await settled(page);
-        const jump = page.getByRole("button", { name: "New messages", exact: true });
-        await jump.waitFor();
-        await page.route(
-          `**/api/chat/conversations/${chat}/snapshot`,
-          (route) => route.fulfill({ status: 503, json: { message: "Snapshot is temporarily unavailable." } }),
-          { times: 1 },
-        );
-        const failed = page.waitForResponse(
-          (response) => response.url().includes(`/conversations/${chat}/snapshot`) && response.status() === 503,
-        );
-        await jump.click();
-        await failed;
-        await page.getByText(chatMessages.resolve(["en"]).t.openFailed, { exact: true }).waitFor();
-        expect(await jump.isVisible()).toBe(true);
-        expect(chatReads(chat).at(-1)!.seq).toBe(8);
-        // On a phone the error toast overlays the header. Dismiss it before using the same recovery control.
-        await page.getByRole("button", { name: "Dismiss notification", exact: true }).click();
-        await page.getByText(chatMessages.resolve(["en"]).t.openFailed, { exact: true }).waitFor({ state: "detached" });
-        const reloaded = page.waitForResponse((response) => response.url().includes(`/conversations/${chat}/snapshot`) && response.ok());
-        await jump.click();
-        await reloaded;
-        await inFeed(page, `[data-key="${harness.messageId(chat, 9)}"]`);
-        const recovered = new URL(page.url());
-        expect(recovered.pathname).toBe(`/app/chat${embedded ? "/panel" : ""}/c/${chat}`);
-        expect(recovered.searchParams.get("list")).toBe(embedded ? "archive" : null);
-        expect(recovered.searchParams.get("filter")).toBe(embedded ? "unread" : null);
-        if (embedded) {
-          const fullView = new URL((await page.getByRole("link", { name: "Open full view", exact: true }).getAttribute("href"))!, page.url());
-          expect(fullView.pathname).toBe(`/app/chat/c/${chat}`);
-          expect(fullView.searchParams.get("list")).toBe("archive");
-          expect(fullView.searchParams.get("filter")).toBe("unread");
-        }
-        expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(openingMarker);
-        await until(() => chatReads(chat).at(-1)!.seq > 8);
-        expect(chatReads(chat).at(-1)!.seq).toBeLessThan(68);
-        expect(errors).toEqual([]);
-      } finally {
-        await page.context().close();
-      }
-    }, 30_000);
+      }, 30_000);
 
     test(`deep link beyond the read frontier waits for the gap on ${name}`, async () => {
       const chat = harness.addChat({ members: [viewer, nora], count: 150, unread: 98, end: harness.now() });
