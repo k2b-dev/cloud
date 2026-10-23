@@ -33,9 +33,14 @@ Their message views include the same viewer-specific `reactions` as ordinary
 chat messages. Reaction live events carry a refresh hint on the item thread
 key; clients read the current reactions over HTTP.
 Item threads have `resource: { ref, kind, status, done, href }`. Their current
-name, description, and open link come from the reader. `status` is the Space
-column ID, or `null` for notes. `done` follows the reader's `completedAt`;
-notes have `done: false`.
+name, description, and open link come from the reader. `status` is the column
+name resolved through the authorized `space.read` columns, or `null` when no
+label is available. `done` follows the reader's `completedAt`; notes have
+`done: false`. Optional `deadline`, `deadlineAllDay`, `assignees` (display
+names), `startsAt`, `endsAt`, and `allDay` retain the owning reader's task and
+event metadata. Missing fields stay absent; notes supply none of these task
+or event fields. Chat displays no numeric container membership count because
+these readers do not supply one.
 
 Opening requires container read access. Creating an item thread and sending
 messages require container write access. The item reader must also authorize
@@ -54,13 +59,24 @@ that position. Messages before the first open cannot be marked unread.
 
 Container discovery requests at most 100 Spaces and 100 notebooks. Pass the
 returned `spacesCursor` and `notebooksCursor` independently to continue each
-source. A container's `conversation` is `null` until someone opens it.
+source. Omit a source cursor for its first page, and pass the empty string
+for an exhausted source while advancing the other one. A container's
+`conversation` is `null` until someone opens it. Provider failures or malformed
+list responses fail discovery with `PROVIDER_UNAVAILABLE` (HTTP 500), so the
+client shows an error and retry instead of an empty or silently partial list.
 
 A system thread page inspects at most 100 candidates by latest activity,
 with the thread ID breaking ties.
 Visibility, search, and state filters apply within that page. Follow a non-null
 `nextCursor` even when `items` is empty. Ordinary chats retain their existing
-activity and archive ordering.
+activity and archive ordering. `short=true` selects the four recent candidate
+threads, unread candidates, and optional `selected` thread within one
+100-candidate budget. The selected thread and recent candidates take priority.
+The short selection has no continuation; use the directory for more threads.
+It never supplies an aggregate count. Automatic refresh reads this one short
+page, while explicit directory browsing follows cursors. Live directory
+refresh re-reads exactly the number of pages the reader already loaded,
+sequentially and with cancellation, preserving existing row nodes.
 
 Conversation summaries count only authorized item threads in the current
 candidate page. A non-null `summaryCursor` means the counts and preview are
@@ -69,7 +85,9 @@ including when the cursor is the empty string (no item candidates inspected
 yet). Add each page's `threads` and `unread`, capping unread at 100; General
 is counted once, on the first inspected page. Select the newest `lastMessage`
 across pages. Counts describe each request's current authorized view; changes
-between requests can change the totals.
+between requests can change the totals. The sidebar and automatic conversation
+refresh use one bounded summary page and retain its partial marker; they do
+not exhaust summary continuations before rendering.
 
 The reader request budget is **302 calls**: two container-list calls, up to
 100 container readers per source, and 100 item readers shared across all
@@ -83,6 +101,7 @@ latency when an owning application is slow.
 General and an individually selected thread authorize only the container and,
 for the latter, that item. Their snapshots contain only the selected thread's
 counts and list; `summaryCursor: ""` directs callers to the full summary read.
+The combined snapshot uses the bounded short thread selection.
 Aggregate history authorizes at most 50 candidate messages per request, change
 feeds 200, and shared history 32. These reads never enumerate all threads.
 Follow history `from`/`to`, change-feed `rev`/`more`, and shared `nextCursor`
@@ -99,7 +118,12 @@ An ordinary-chat page without a cursor retains its existing repeat behavior.
 For `POST /conversations/:conversation/read` with `thread: "all"`, repeat the
 same sequence with the returned non-null `summaryCursor` to advance remaining
 item pages. General and selected-thread read receipts describe their selection;
-read the conversation summary separately for aggregate counts.
+read the conversation summary separately for aggregate counts. System receipts
+are applied from authorized HTTP responses because they have no personal live
+event. The client follows All-thread read cursors sequentially at the same
+sequence and selection, rejects repeated cursors, and cancels pending work
+when the selection closes. Failed writes retain the existing read error and
+retry path.
 
 ## Access and runtime dependencies
 
@@ -140,3 +164,8 @@ whose authority belongs to the owning application.
 The OpenAPI document at `/api/chat/openapi.json` describes request and response
 schemas. No additional environment variable or app workload credential is
 required for this request-driven slice.
+
+Thread discovery hints invalidate both the sidebar and the open directory.
+After the authorized short read warms item decisions, the client renews its
+existing live subscription from the hint cursor. Events committed during
+that read replay after renewal.

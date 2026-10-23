@@ -52,14 +52,23 @@ const projectList = async (
   // Keep the timestamp in Postgres: converting it to Date would truncate the cursor's microseconds.
   const after = db`(SELECT boundary.last_activity_at FROM chat.threads boundary
     WHERE boundary.conversation_id = ${conversationId}::uuid AND boundary.short_id = ${query.cursor ?? ""})`;
+  const recent = db`SELECT id FROM chat.threads WHERE conversation_id = ${conversationId}::uuid ORDER BY last_activity_at DESC, short_id LIMIT 4`;
   const rows = await db<ThreadRow[]>`SELECT * FROM chat.threads WHERE conversation_id = ${conversationId}::uuid
     AND ${onlyId ? db`short_id = ${onlyId}` : db`true`}
+    AND ${
+      system && query.short
+        ? db`(short_id = ${query.selected ?? ""} OR id IN (${recent}) OR id IN (
+      SELECT id FROM (${threadStates(db, input.accessSubject, conversationId)}) states WHERE unread > 0))`
+        : db`true`
+    }
     AND ${
       system && query.cursor ? db`(last_activity_at < ${after} OR (last_activity_at = ${after} AND short_id > ${query.cursor}))` : db`true`
     }
     ORDER BY ${
       system
-        ? db`last_activity_at DESC, short_id`
+        ? query.short
+          ? db`CASE WHEN short_id = ${query.selected ?? ""} THEN 0 WHEN id IN (${recent}) THEN 1 ELSE 2 END, last_activity_at DESC, short_id`
+          : db`last_activity_at DESC, short_id`
         : db`(archived_at IS NOT NULL), CASE WHEN archived_at IS NULL THEN last_activity_at END DESC,
       CASE WHEN archived_at IS NOT NULL THEN name END, short_id`
     } LIMIT ${MAX_THREADS + 1}`;
@@ -92,7 +101,7 @@ const projectList = async (
   );
   return {
     general: { unread: states.find((state) => state.id === null)!.unread, lastMessage: previews.get(null) ?? null },
-    ...(system ? { nextCursor: rows.length > MAX_THREADS ? page.at(-1)!.short_id : null } : {}),
+    ...(system ? { nextCursor: !query.short && rows.length > MAX_THREADS ? page.at(-1)!.short_id : null } : {}),
     items: visible
       .map(({ row, resource }) => {
         const state = states.find((state) => state.id === row.id)!;
@@ -138,7 +147,14 @@ const read = async (input: Input, db: typeof sql) => {
   if (!ThreadQuerySchema.safeParse(input.query ?? {}).success) return fail(err.badInput(messages(input).invalidInput));
   const allowed = await requireConversation({ ...input, required: "read" }, db);
   if (!allowed.ok) return allowed;
-  return ok(await projectList(db, input, allowed.data.id, allowed.data.kind === "system" ? input.selectedThread : undefined));
+  return ok(
+    await projectList(
+      db,
+      input,
+      allowed.data.id,
+      allowed.data.kind === "system" && !ThreadQuerySchema.parse(input.query ?? {}).short ? input.selectedThread : undefined,
+    ),
+  );
 };
 /** The chat's threads; inside a caller's transaction with `db`, for example the snapshot's. */
 const list = (input: Input, db?: typeof sql) =>

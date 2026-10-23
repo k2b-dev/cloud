@@ -213,3 +213,27 @@ test("the panel keeps a chat's threads below the panel route; the full view open
   expect(html).toContain('href="/app/chat/c/Chat01/t/general"');
   expect(html).not.toContain('href="/app/chat/c/Chat01/threads"');
 });
+
+for (const locale of ["en", "de"])
+  for (const type of ["spaces.space", "notebooks.notebook"]) {
+    test(`system membership has no invented count in the list, header, overview and info: ${locale}, ${type}`, () => {
+      const system = { ...conversation, kind: "system" as const, resource: { type, id: "Space1" }, memberCount: 0 };
+      const data: ChatWorkspaceProps = {
+        ...props(),
+        chatId: system.id,
+        panel: "info",
+        sidebar: { items: [system], nextCursor: null },
+        open: {
+          conversation: system,
+          page: { items: [], seqHead: 0, rev: 1, from: 1, to: 0 },
+          threads: { general: { unread: 0, lastMessage: null }, items: [] },
+          focus: null,
+        },
+      };
+      for (const threadsPage of [false, true]) {
+        const html = render(locale, { ...data, threadsPage });
+        expect(html.match(/.{0,100}0 (?:members|Mitglieder).{0,100}/g)).toBeNull();
+        expect(html).toContain(locale === "de" ? "Mitglieder: alle mit Zugriff" : "Members: everyone with access");
+      }
+    });
+  }

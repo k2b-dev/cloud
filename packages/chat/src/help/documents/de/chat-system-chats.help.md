@@ -19,9 +19,11 @@ Der Chat eines Spaces oder Notebooks bringt seine Nachrichten zusammen. Jedes El
 
 Hier erscheinen nur Spaces und Notebooks, die bereits einen Chat haben. Ein leerer Abschnitt erklärt, wann ein Chat erscheint. Falls der Abschnitt nicht lädt, wähle **Erneut versuchen** neben dem Fehler.
 
-Die Liste zeigt die vier zuletzt aktiven Threads, alle ungelesenen und den offenen Thread. Wähle **Alle N Threads**, um weitere zu finden. Nutze **Threads suchen** und die Filter **Offen**, **Erledigt** oder **Ungelesen**. **Weitere Threads anzeigen** lädt die nächste Seite.
+Die Kurzliste zeigt zuletzt aktive, ungelesene und den offenen Thread innerhalb einer Seite. Wähle **Alle N Threads** oder **Alle Threads durchsuchen**, um weitere zu finden. Nutze **Threads suchen** und die Filter **Offen**, **Erledigt** oder **Ungelesen**. **Weitere Threads anzeigen** lädt die nächste Seite.
 
 Auf großen Bildschirmen bietet eine eigene Thread-Spalte dieselbe Suche und Filter. Auf dem Telefon führt der Zurück-Pfeil im Thread zur Thread-Übersicht.
+
+Wenn vorhanden, siehst du beim Element das Fälligkeitsdatum, zugewiesene Personen oder die Terminzeit. Fehlende Angaben bleiben ausgeblendet.
 
 ## Über ein Element schreiben {icon="message-plus"}
 

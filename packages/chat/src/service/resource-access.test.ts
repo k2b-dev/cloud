@@ -2,7 +2,15 @@ import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import { ServiceAccountSchema, UserSchema } from "@k2b/cloud/contracts";
 import { redis } from "bun";
 import type { ChatContext } from "./access";
-import { accessKey, cachedResource, contextPrincipal, type ResourceReaderDependencies, readerBatch, readResource } from "./resource-access";
+import {
+  accessKey,
+  cachedResource,
+  contextPrincipal,
+  type ResourceReaderDependencies,
+  readContainers,
+  readerBatch,
+  readResource,
+} from "./resource-access";
 
 const user = UserSchema.parse({
   id: "12345678-1234-4234-8234-123456789012",
@@ -161,4 +169,72 @@ test("batches no more than eight readers and preserves input order", async () =>
   });
   expect(result).toEqual(values);
   expect(peak).toBe(8);
+});
+
+test("container discovery distinguishes provider failure, malformed data, denial and empty pages", async () => {
+  await expect(
+    readContainers(context, "spaces.space", undefined, {
+      invoke: async () => {
+        throw new Error("offline");
+      },
+    }),
+  ).rejects.toThrow();
+  await expect(readContainers(context, "spaces.space", undefined, { invoke: async () => ({ data: {} }) })).rejects.toThrow();
+  expect(await readContainers(context, "spaces.space", undefined, { invoke: async () => null })).toEqual({ items: [], nextCursor: null });
+  expect(await readContainers(context, "spaces.space", undefined, { invoke: async () => ({ data: [] }) })).toEqual({
+    items: [],
+    nextCursor: null,
+  });
+});
+
+test("item readers project status names, due dates, assignee names and event timing without identifier fallbacks", async () => {
+  const item = { type: "spaces.item", id: "Item01" };
+  const deadline = "2026-11-01T09:00:00.000Z";
+  let kind: "task" | "event" = "task";
+  const dependencies: ResourceReaderDependencies = {
+    invoke: async (_app, capability) =>
+      capability === "space.read"
+        ? {
+            data: { id: "Space1", name: "Space", permission: "read", columns: [{ id: "Col001", name: "In progress" }] },
+            links: [{ rel: "open", href: "/space" }],
+          }
+        : {
+            data: {
+              id: item.id,
+              title: "Prepare",
+              kind,
+              spaceId: "Space1",
+              columnId: "Col001",
+              completedAt: null,
+              deadline,
+              deadlineAllDay: true,
+              assignees: [{ id: "opaque-person-id", displayName: "Nora" }],
+              startsAt: deadline,
+              endsAt: "2026-11-01T10:00:00.000Z",
+              allDay: false,
+            },
+            links: [{ rel: "open", href: "/item" }],
+          },
+  };
+  expect(await readResource(context, item, dependencies)).toMatchObject({
+    status: "In progress",
+    deadline,
+    deadlineAllDay: true,
+    assignees: ["Nora"],
+  });
+  cache.clear();
+  kind = "event";
+  expect(await readResource(context, item, dependencies)).toMatchObject({
+    startsAt: deadline,
+    endsAt: "2026-11-01T10:00:00.000Z",
+    allDay: false,
+  });
+  cache.clear();
+  const noLabel: ResourceReaderDependencies = {
+    invoke: async (app, capability, input, caller) =>
+      capability === "space.read"
+        ? { data: { id: "Space1", name: "Space", permission: "read" }, links: [{ rel: "open", href: "/space" }] }
+        : dependencies.invoke(app, capability, input, caller),
+  };
+  expect((await readResource(context, item, noLabel))?.status).toBeNull();
 });

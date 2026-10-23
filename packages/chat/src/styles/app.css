@@ -721,6 +721,26 @@
 .chat-system-directory__more {
   min-width: 12rem;
 }
+.chat-item-metadata {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--k2b-text-secondary);
+}
+.chat-item-metadata > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-resource-head__metadata {
+  min-width: 0;
+  max-width: 24rem;
+}
 .chat-resource-head__link {
   white-space: nowrap;
   margin-inline: 0.75rem;
@@ -733,6 +753,7 @@
 }
 @media (max-width: 47.999rem) {
   .chat-resource-head__status,
+  .chat-resource-head__metadata,
   .chat-resource-head__link {
     display: none;
   }
@@ -741,6 +762,7 @@
   }
   .chat-resource-head__mobile {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
     min-height: 2rem;

@@ -24,6 +24,16 @@ export const ResourceDecisionSchema = z.object({
   kind: z.enum(["task", "event", "note"]).nullable(),
   status: z.string().nullable(),
   done: z.boolean(),
+  columns: z
+    .array(z.object({ id: z.string(), name: z.string() }))
+    .max(100)
+    .optional(),
+  deadline: z.string().nullable().optional(),
+  deadlineAllDay: z.boolean().optional(),
+  assignees: z.array(z.string()).max(100).optional(),
+  startsAt: z.string().optional(),
+  endsAt: z.string().optional(),
+  allDay: z.boolean().optional(),
 });
 export type ResourceDecision = z.infer<typeof ResourceDecisionSchema>;
 const EnvelopeSchema = z.object({
@@ -43,16 +53,20 @@ export type ResourceReaderDependencies = {
 export const resourceReaderDependencies: ResourceReaderDependencies = {
   invoke: async (appId, capabilityId, input, caller) => {
     const result = await invokeCapabilityWithDataSchema({ appId, capabilityId, kind: "query", input }, z.unknown(), caller);
-    return result.ok ? EnvelopeSchema.parse(result.data) : null;
+    if (result.ok) return EnvelopeSchema.parse(result.data);
+    if (result.error.status === 403 || result.error.status === 404) return null;
+    throw new Error("Resource provider unavailable");
   },
 };
-export const readerBatch = async <T, U>(values: readonly T[], run: (value: T) => Promise<U>): Promise<U[]> => {
+export const readerBatch = async <T, U>(values: readonly T[], run: (value: T) => Promise<U>, signal?: AbortSignal): Promise<U[]> => {
   const results: U[] = [];
-  for (let offset = 0; offset < values.length; offset += READER_CONCURRENCY)
+  for (let offset = 0; offset < values.length; offset += READER_CONCURRENCY) {
+    signal?.throwIfAborted();
     results.push(...(await Promise.all(values.slice(offset, offset + READER_CONCURRENCY).map(run))));
+  }
   return results;
 };
-export const accessKey = (principal: string, ref: ResourceRef) => `chat:access:${principal}:${ref.type}:${ref.id}`;
+export const accessKey = (principal: string, ref: ResourceRef) => `chat:access:v2:${principal}:${ref.type}:${ref.id}`;
 export const contextPrincipal = (context: ChatContext) => {
   if (context.credentialPrincipal) return context.credentialPrincipal;
   const subject = context.accessSubject;
@@ -74,6 +88,10 @@ const ContainerDataSchema = z.object({
   name: z.string(),
   description: z.string().nullable().optional(),
   permission: z.enum(["read", "write", "manage", "admin"]),
+  columns: z
+    .array(z.object({ id: z.string(), name: z.string() }))
+    .max(100)
+    .optional(),
 });
 const ItemDataSchema = z.object({
   id: z.string(),
@@ -84,6 +102,15 @@ const ItemDataSchema = z.object({
   notebookId: z.string().optional(),
   columnId: z.string().nullable().optional(),
   completedAt: z.string().nullable().optional(),
+  deadline: z.string().nullable().optional(),
+  deadlineAllDay: z.boolean().optional(),
+  assignees: z
+    .array(z.object({ displayName: z.string() }))
+    .max(100)
+    .optional(),
+  startsAt: z.string().optional(),
+  endsAt: z.string().optional(),
+  allDay: z.boolean().optional(),
 });
 export const readResource = async (
   context: ChatContext,
@@ -92,6 +119,7 @@ export const readResource = async (
 ): Promise<ResourceDecision | null> => {
   const key = accessKey(contextPrincipal(context), ref);
   try {
+    context.caller?.signal?.throwIfAborted();
     const cached = await redis.get(key);
     if (cached !== null) return ResourceDecisionSchema.nullable().parse(JSON.parse(cached));
     // Live delivery has no interactive credential and may only consume an existing decision.
@@ -117,6 +145,7 @@ export const readResource = async (
           kind: null,
           status: null,
           done: false,
+          columns: data.columns,
         };
       }
     } else if (result && href && item.success) {
@@ -129,7 +158,8 @@ export const readResource = async (
             : ref.type === "notebooks.note" && data.notebookId
               ? { type: "notebooks.notebook" as const, id: data.notebookId }
               : null;
-        if (parent)
+        if (parent) {
+          const containerDecision = ref.type === "spaces.item" ? await readResource(context, parent, dependencies) : null;
           decision = {
             permission: "read",
             name: data.title,
@@ -137,9 +167,13 @@ export const readResource = async (
             href,
             container: parent,
             kind: ref.type === "notebooks.note" ? "note" : data.kind!,
-            status: data.columnId ?? null,
+            status: containerDecision?.columns?.find((column) => column.id === data.columnId)?.name ?? null,
+            ...(data.kind === "task" ? { deadline: data.deadline ?? null, deadlineAllDay: data.deadlineAllDay } : {}),
+            assignees: data.assignees?.map((person) => person.displayName),
+            ...(data.kind === "event" ? { startsAt: data.startsAt, endsAt: data.endsAt, allDay: data.allDay } : {}),
             done: data.completedAt != null,
           };
+        }
       }
     }
     await redis.set(key, JSON.stringify(decision), "EX", ACCESS_TTL_SECONDS);
@@ -155,23 +189,17 @@ export const readContainers = async (
   cursor?: string,
   dependencies = resourceReaderDependencies,
 ) => {
-  if (!context.caller) return { items: [], nextCursor: null };
-  try {
-    const [appId, localType] = type.split(".");
-    const result = await dependencies.invoke(
-      appId!,
-      `${localType}.list`,
-      { limit: RESOURCE_PAGE_SIZE, ...(cursor ? { cursor } : {}) },
-      context.caller,
-    );
-    const data = z.array(ContainerDataSchema).max(RESOURCE_PAGE_SIZE).safeParse(result?.data);
-    return data.success
-      ? {
-          items: data.data.map((entry) => ({ ref: { type, id: entry.id }, name: entry.name })),
-          nextCursor: result?.page?.nextCursor ?? null,
-        }
-      : { items: [], nextCursor: null };
-  } catch {
-    return { items: [], nextCursor: null };
-  }
+  if (!context.caller || cursor === "") return { items: [], nextCursor: null };
+  context.caller.signal?.throwIfAborted();
+  const [appId, localType] = type.split(".");
+  const result = await dependencies.invoke(
+    appId!,
+    `${localType}.list`,
+    { limit: RESOURCE_PAGE_SIZE, ...(cursor ? { cursor } : {}) },
+    context.caller,
+  );
+  // Null means an explicit provider denial; outages and malformed envelopes remain failures.
+  if (result === null) return { items: [], nextCursor: null };
+  const data = z.array(ContainerDataSchema).max(RESOURCE_PAGE_SIZE).parse(result.data);
+  return { items: data.map((entry) => ({ ref: { type, id: entry.id }, name: entry.name })), nextCursor: result.page?.nextCursor ?? null };
 };

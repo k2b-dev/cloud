@@ -177,6 +177,12 @@ const ThreadReadSchema = z.strictObject({
 });
 const LastMessageSchema = z.strictObject({ id: MessageIdSchema, author: AuthorSchema, preview: z.string(), createdAt: z.iso.datetime() });
 export const ThreadResourceSchema = z.strictObject({
+  deadline: z.string().nullable().optional(),
+  deadlineAllDay: z.boolean().optional(),
+  assignees: z.array(z.string()).max(100).optional(),
+  startsAt: z.string().optional(),
+  endsAt: z.string().optional(),
+  allDay: z.boolean().optional(),
   ref: CloudResourceRefSchema,
   kind: z.enum(["task", "event", "note"]),
   status: z.string().nullable(),
@@ -184,6 +190,8 @@ export const ThreadResourceSchema = z.strictObject({
   href: z.string(),
 });
 export const ThreadQuerySchema = z.strictObject({
+  short: z.literal("true").optional(),
+  selected: ThreadIdSchema.optional(),
   filter: z.enum(["open", "done", "unread"]).optional(),
   q: z.string().trim().max(100).optional(),
   cursor: ThreadIdSchema.optional(),
@@ -196,8 +204,8 @@ export const SystemChatParamSchema = z.object({
   resourceId: ShortIdSchema,
 });
 export const SystemChatQuerySchema = z.strictObject({
-  spacesCursor: z.string().min(1).max(256).optional(),
-  notebooksCursor: z.string().min(1).max(256).optional(),
+  spacesCursor: z.string().max(256).optional(),
+  notebooksCursor: z.string().max(256).optional(),
 });
 export const ThreadSchema = z.strictObject({
   resource: ThreadResourceSchema.nullable().optional(),

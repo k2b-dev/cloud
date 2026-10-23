@@ -29,6 +29,7 @@ import { MAX_MESSAGE_REFS } from "../service/contracts";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { dayLabel, messageTime, sameDay } from "./chat-format";
 import { followVisualViewport } from "./follow-viewport";
+import ThreadMetadata from "./ThreadMetadata";
 import type { Thread } from "./threads";
 
 /** One row of the history: a stored message, or one of the reader's own sends that the history does not hold yet. */
@@ -145,7 +146,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
   const resourceLabel = () =>
     props.resource?.kind === "note" ? t().goToNote : props.resource?.kind === "event" ? t().goToEvent : t().goToTask;
   const resourceKind = () => (props.resource?.kind === "note" ? t().note : props.resource?.kind === "event" ? t().event : t().task);
-  const resourceStatus = () => (props.resource?.done ? t().threadsDone : props.resource?.status);
+  const resourceStatus = () => props.resource?.status ?? (props.resource?.done ? t().threadsDone : null);
   const config = () => ({ ...props.dateConfig, locale: locale() });
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
   // Elements picked for the next message; they belong to the draft they were picked for.
@@ -293,6 +294,9 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
                   </span>
                 )}
               </Show>
+              <span class="chat-resource-head__metadata">
+                <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
+              </span>
               <span class="chat-resource-head__link">
                 <ButtonLink href={resource().href} variant="text" size="sm">
                   {resourceLabel()}
@@ -328,6 +332,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             <Show when={resourceStatus()}>
               {(status) => <StatusBadge tone={resource().done ? "ok" : "neutral"} label={status()} icon={null} />}
             </Show>
+            <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
             <ButtonLink href={resource().href} variant="text" size="xs">
               {resourceLabel()}
             </ButtonLink>

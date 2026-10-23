@@ -178,7 +178,15 @@ describe("ChatWorkspace interactions", () => {
         if (url.pathname === "/api/chat/conversations/Chat01/read" && init?.method === "POST") {
           const { seq } = JSON.parse(String(init.body));
           readPosts.push(seq);
-          return Response.json({ lastReadSeq: seq, unreadFromSeq: null, joinedSeq: 0 });
+          return Response.json({
+            conversationId: conversation.id,
+            lastReadSeq: seq,
+            unreadFromSeq: null,
+            joinedSeq: 0,
+            unread: 0,
+            asOfRev: 1,
+            threads: [],
+          });
         }
         if (url.pathname === "/api/chat/conversations/Chat01") return Response.json({ ...conversation, permission: "admin" });
         if (url.pathname === "/api/chat/conversations/Chat01/messages" && init?.method === "POST") {
@@ -297,6 +305,25 @@ describe("ChatWorkspace interactions", () => {
       expect(consoleErrors).toEqual([]);
     });
   }
+  test("automatic read failures leave a visible retry and recover", async () => {
+    const delegate = globalThis.fetch;
+    let fail = true;
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input).endsWith("/read") && fail) return Response.json({ message: "Unavailable" }, { status: 503 });
+        return delegate(input, init);
+      },
+      { preconnect: delegate.preconnect },
+    );
+    await mountVisibleUnread(false);
+    expect(dom.root.textContent).toContain("The read state could not be changed.");
+    fail = false;
+    button("Try again").click();
+    await settle();
+    expect(dom.root.textContent).not.toContain("The read state could not be changed.");
+    expect(readPosts).toEqual([1]);
+  });
+
   test("desktop info keeps reporting visible unread messages", async () => {
     await mountVisibleUnread(false);
     expect(dom.root.querySelector("#k2b-workspace-detail-chat-info")?.hasAttribute("hidden")).toBe(false);

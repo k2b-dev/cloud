@@ -31,6 +31,7 @@ const FrameSchema = z.object({
   t: z.string(),
   id: z.string().optional(),
   code: z.string().optional(),
+  cursor: z.string().optional(),
   data: ChatLiveEventSchema.optional(),
 });
 type Frame = z.infer<typeof FrameSchema>;
@@ -96,7 +97,8 @@ suite("Chat live delivery on two replicas", () => {
     });
     return {
       socket,
-      sub: (id: string, channel: string, scope: unknown) => socket.send(JSON.stringify({ t: "sub", id, channel, scope })),
+      sub: (id: string, channel: string, scope: unknown, cursor?: string) =>
+        socket.send(JSON.stringify({ t: "sub", id, channel, scope, cursor })),
       frames: (id: string) => frames.filter(({ frame }) => frame.id === id),
       events: (id: string) =>
         frames.filter(({ frame }) => frame.id === id && frame.t === "event").flatMap(({ frame }) => (frame.data ? [frame.data] : [])),
@@ -167,10 +169,6 @@ suite("Chat live delivery on two replicas", () => {
       const hidden = ThreadListSchema.parse(await (await f.request(denied.headers, `/${chat.id}/threads`)).json());
       expect(visible.items.map((thread) => thread.id)).toEqual([created.id]);
       expect(hidden.items).toEqual([]);
-      // A subscription after HTTP discovery must still enforce both cached decisions.
-      for (const socket of [a, b]) socket.sub("fresh", "conversation", { conversation: chat.id });
-      await ready(a, ["fresh"]);
-      await ready(b, ["fresh"]);
       const sent = MessageViewSchema.parse(
         await (
           await f.request(owner.headers, `/${chat.id}/messages`, "POST", {
@@ -180,14 +178,20 @@ suite("Chat live delivery on two replicas", () => {
           })
         ).json(),
       );
-      await until(() => a!.events("fresh").some((event) => event.type === "message" && event.message.id === sent.id));
-      const barrier = await send(owner, chat.id, "General barrier");
-      await until(() => b!.events("fresh").some((event) => event.type === "message" && event.message.id === barrier.id));
-      for (const channel of ["chat", "fresh"]) {
-        expect(b.events(channel).some((event) => event.type === "message" && event.message.id === sent.id)).toBeFalse();
-        expect(JSON.stringify(b.events(channel))).not.toContain("Private task");
-        expect(JSON.stringify(b.events(channel))).not.toContain("Private item payload");
+      // Renew the existing subscriptions at their hint cursors, as the store does after discovery.
+      // The item message was committed during the HTTP-to-renewal gap and must replay.
+      for (const socket of [a, b]) {
+        const cursor = socket.frames("chat").find(({ frame }) => frame.data?.type === "threads")?.frame.cursor;
+        expect(cursor).toBeString();
+        socket.socket.send(JSON.stringify({ t: "unsub", id: "chat" }));
+        socket.sub("chat", "conversation", { conversation: chat.id }, cursor);
       }
+      await until(() => a!.events("chat").some((event) => event.type === "message" && event.message.id === sent.id));
+      const barrier = await send(owner, chat.id, "General barrier");
+      await until(() => b!.events("chat").some((event) => event.type === "message" && event.message.id === barrier.id));
+      expect(b.events("chat").some((event) => event.type === "message" && event.message.id === sent.id)).toBeFalse();
+      expect(JSON.stringify(b.events("chat"))).not.toContain("Private task");
+      expect(JSON.stringify(b.events("chat"))).not.toContain("Private item payload");
       expect((await f.request(denied.headers, `/${chat.id}/messages/${sent.id}`)).status).toBe(404);
     } finally {
       a?.socket.close();

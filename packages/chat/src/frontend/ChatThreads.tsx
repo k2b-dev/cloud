@@ -118,7 +118,7 @@ export function ThreadRows(props: RowsProps): JSX.Element {
             onNavigate={(event) => props.onOverview?.(event)}
             icon="ti ti-list"
           >
-            {t().allThreadCount({ count: props.total ?? props.threads?.items.length ?? 0 })}
+            {props.total === undefined ? t().browseAllThreads : t().allThreadCount({ count: props.total })}
           </AppWorkspace.SidebarItem>
         </Show>
         <Show when={props.canAdmin}>
@@ -193,7 +193,7 @@ export function ThreadPicker(
               {
                 items: [
                   {
-                    label: t().allThreadCount({ count: props.total ?? props.threads?.items.length ?? 0 }),
+                    label: props.total === undefined ? t().browseAllThreads : t().allThreadCount({ count: props.total }),
                     icon: "ti ti-list",
                     href: `${props.basePath ?? "/app/chat"}/c/${encodeURIComponent(props.chatId)}/threads`,
                     action: () => props.onOverview?.(),

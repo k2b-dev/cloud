@@ -14,6 +14,7 @@ import {
   LeaveResultSchema,
   LeaveSchema,
   MAX_EXISTING_MATCHES,
+  MAX_THREADS,
   MarkUnreadSchema,
   MEMBER_PAGE_SIZE,
   MemberPageSchema,
@@ -803,11 +804,13 @@ export const startChatHarness = async () => {
         systemRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
         if (failingSystems-- > 0) return Response.json({ message: "Unavailable" }, { status: 503 });
         return Response.json({
-          items: [...containers.values()].map((item) => ({
-            ref: item.ref,
-            name: item.name,
-            conversation: item.chat ? (chats.get(item.chat)?.conversation ?? null) : null,
-          })),
+          items: [...containers.values()]
+            .filter((item) => url.searchParams.get(item.ref.type === "spaces.space" ? "spacesCursor" : "notebooksCursor") !== "")
+            .map((item) => ({
+              ref: item.ref,
+              name: item.name,
+              conversation: item.chat ? (chats.get(item.chat)?.conversation ?? null) : null,
+            })),
           spacesCursor: null,
           notebooksCursor: null,
         });
@@ -1057,6 +1060,16 @@ export const startChatHarness = async () => {
             const page = threadList(chat);
             if (chat.conversation.kind !== "system") return Response.json(page);
             systemRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+            if (url.searchParams.get("short") === "true") {
+              const selected = url.searchParams.get("selected");
+              const selectedItem = page.items.find((item) => item.id === selected);
+              const items = page.items.filter((item, index) => index < 4 || item.unread > 0 || item.id === selected);
+              return Response.json({
+                ...page,
+                items: [...(selectedItem ? [selectedItem] : []), ...items.filter((item) => item.id !== selected)].slice(0, MAX_THREADS),
+                nextCursor: null,
+              });
+            }
             const cursor = url.searchParams.get("cursor");
             const start = cursor ? page.items.findIndex((item) => item.id === cursor) + 1 : 0;
             const candidates = page.items.slice(start, start + systemThreadPageSize);
@@ -1138,6 +1151,7 @@ export const startChatHarness = async () => {
             );
             project(chat);
             deliver("conversation", id!, { type: "threads", conversationId: id });
+            deliver("list", id!, { type: "threads", conversationId: id });
             return Response.json(
               threadList(chat).items.find((entry) => entry.id === created.id),
               { status: 201 },
@@ -1159,6 +1173,7 @@ export const startChatHarness = async () => {
               publish(line);
             }
             deliver("conversation", id!, { type: "threads", conversationId: id });
+            deliver("list", id!, { type: "threads", conversationId: id });
             return Response.json(threadList(chat).items.find((entry) => entry.id === thread.id));
           }
           return Response.json({ code: "NOT_FOUND", message: "Thread not found." }, { status: 404 });

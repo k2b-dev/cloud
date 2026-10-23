@@ -58,7 +58,7 @@ import { openNewChatDialog } from "./NewChatDialog";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
 import { panelHref as conversationHref, parseRoute, type Route, threadsPageHref as threadsPageAddress } from "./route";
-import { containerIcon, openResourceThread, openSystemChat } from "./system-chats";
+import { containerIcon, openResourceThread, openSystemChat, systemMembers } from "./system-chats";
 
 import { openThreadDialog } from "./ThreadDialog";
 import {
@@ -114,6 +114,7 @@ const initialChat = (open: NonNullable<ChatWorkspaceProps["open"]>, view: Thread
   view,
   threads: open.threads,
   threadsStatus: "ready",
+  threadsRevision: 0,
   status: "live",
   conversation: open.conversation,
   messages: open.page.items,
@@ -277,8 +278,30 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       else setDraftStorageFailed(true);
     }
   };
+  const [readFailure, setReadFailure] = createSignal<{ run: () => Promise<unknown> | undefined }>();
+  const [retryingRead, setRetryingRead] = createSignal(false);
   const draftNotice = () => (
     <>
+      <Show when={readFailure()}>
+        {(failure) => (
+          <NoticeCard tone="danger" title={t().readStateFailed}>
+            <Button
+              variant="ghost"
+              loading={retryingRead()}
+              onClick={async () => {
+                setRetryingRead(true);
+                try {
+                  await changeRead(failure().run);
+                } finally {
+                  setRetryingRead(false);
+                }
+              }}
+            >
+              {t().retry}
+            </Button>
+          </NoticeCard>
+        )}
+      </Show>
       <Show when={draftStorageFailed()}>
         <NoticeCard tone="danger" title={t().draftNotSaved} detail={t().draftNotSavedDescription}>
           <Button variant="ghost" onClick={retryDraftStorage}>
@@ -507,8 +530,11 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           start,
           active: reading,
           // "All threads" reads every thread up to what the reader saw; a thread only itself.
-          post: (seq) =>
-            paused ? Promise.resolve() : store ? store.markRead(id, seq, view) : Promise.reject(new Error("Chat is not live yet")),
+          post: async (seq) => {
+            if (paused) return;
+            if (!store) throw new Error("Chat is not live yet");
+            if (!(await changeRead(() => store?.markRead(id, seq, view), key))) throw new Error("Chat read failed");
+          },
         }),
       };
     }),
@@ -529,12 +555,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     );
     if (range) reporter?.reporter.seen(range.first, range.last);
   };
-  const changeRead = async (work: () => Promise<unknown> | undefined) => {
+  const changeRead = async (work: () => Promise<unknown> | undefined, selection?: string) => {
     try {
       await work();
+      if (selection === undefined || selection === openKey()) setReadFailure(undefined);
       return true;
-    } catch {
-      toast.error(t().readStateFailed);
+    } catch (error) {
+      if (!(error instanceof Error && error.name === "AbortError") && (selection === undefined || selection === openKey()))
+        setReadFailure({ run: work });
       return false;
     }
   };
@@ -1294,7 +1322,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             view: route().threads ? null : (openChat()?.view ?? null),
             canAdmin: canCreateThread(),
             system: system(),
-            total: conversation()?.threads,
+            total: conversation()?.summaryCursor == null ? conversation()?.threads : undefined,
             creating: creatingThread(),
             onOverview: openOverview,
             onNavigate: (view: ThreadView, event: LinkNavigateEvent) => openView(openChat()!.id, view, event),
@@ -1462,7 +1490,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     basePath={basePath}
                     canCreate={canCreateThread()}
                     creating={creatingThread()}
-                    revision={openChat()?.watermark ?? 0}
+                    revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
                     threads={openChat()?.threads ?? null}
                     status={openChat()?.threadsStatus ?? "loading"}
                     view={openChat()?.view ?? "all"}
@@ -1504,7 +1532,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     basePath={basePath}
                     canCreate={canCreateThread()}
                     creating={creatingThread()}
-                    revision={openChat()?.watermark ?? 0}
+                    revision={(openChat()?.watermark ?? 0) + (openChat()?.threadsRevision ?? 0)}
                     threads={openChat()?.threads ?? null}
                     status={openChat()?.threadsStatus ?? "loading"}
                     viewerId={props.viewerId}
@@ -1585,7 +1613,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                                   basePath={basePath}
                                   canAdmin={canCreateThread()}
                                   system={system()}
-                                  total={current().threads}
+                                  total={current().summaryCursor == null ? current().threads : undefined}
                                   creating={creatingThread()}
                                   onOverview={openOverview}
                                   onSelect={(view) => void openView(current().id, view)}
@@ -1635,7 +1663,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                           system() && openThread()
                             ? current().title
                             : system()
-                              ? `${current().resource?.type === "notebooks.notebook" ? t().notebook : t().space} · ${t().members({ count: current().memberCount })}`
+                              ? systemMembers(current().resource?.type, t())
                               : current().channel
                                 ? t().subscribers({ count: current().memberCount })
                                 : undefined

@@ -19,7 +19,7 @@ import type { z } from "zod";
 import type { MemberSchema, PermissionSchema } from "../service/contracts";
 import { type ChatDialogStore, type Conversation, errorMessage, useChatMessages } from "./chat-dialog";
 import { MemberAvatar } from "./MemberPicker";
-import { containerIcon } from "./system-chats";
+import { containerIcon, systemMembers } from "./system-chats";
 
 type Member = z.infer<typeof MemberSchema>;
 type Permission = z.infer<typeof PermissionSchema>;
@@ -212,11 +212,7 @@ export default function ChatInfoPanel(props: {
             : (props.conversation.icon ?? (props.conversation.memberCount <= 2 ? "ti ti-user" : "ti ti-users"))
         }
         title={props.conversation.title}
-        subtitle={
-          system()
-            ? `${props.conversation.resource?.type === "notebooks.notebook" ? t().notebook : t().space} · ${t().members({ count: props.conversation.memberCount })}`
-            : t().members({ count: props.conversation.memberCount })
-        }
+        subtitle={system() ? systemMembers(props.conversation.resource?.type, t()) : t().members({ count: props.conversation.memberCount })}
         actions={
           <>
             <Show when={commands().length > 0}>
@@ -322,9 +318,7 @@ export default function ChatInfoPanel(props: {
         </Show>
         <Show when={system()}>
           <p class="chat-system-chats__membership">
-            {props.conversation.resource?.type === "notebooks.notebook"
-              ? t().systemNotebookMembers({ count: props.conversation.memberCount })
-              : t().systemSpaceMembers({ count: props.conversation.memberCount })}
+            {systemMembers(props.conversation.resource?.type, t())}. {t().systemAccessHint}
           </p>
         </Show>
         {/* The first member page owns this space. Showing shared items before it arrives would push them out of view. */}

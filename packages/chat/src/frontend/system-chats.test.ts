@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { ConversationSchema, ThreadSchema } from "../service/contracts";
-import { completeSystemSummary } from "./system-chats";
+import { loadSystemChats } from "./system-chats";
 import { chatHasThreads, systemThreadRows } from "./threads";
 
 const at = "2026-10-14T12:00:00.000Z";
@@ -57,70 +57,22 @@ test("short list is the activity-ordered union of four recent, unread and select
   ]);
 });
 
-test("summary continuations add counts and keep the latest message without counting General twice", async () => {
-  const original = globalThis.fetch;
-  const requests: string[] = [];
-  globalThis.fetch = Object.assign(
-    async (input: RequestInfo | URL) => {
-      requests.push(String(input));
-      return Response.json({
-        ...conversation,
-        threads: 3,
-        unread: 5,
-        summaryCursor: null,
-        lastMessage: {
-          thread: { id: "Thread", name: "Task" },
-          id: "Message001",
-          author: { id: "11111111-1111-4111-8111-111111111111", name: "Nora", type: "user" },
-          preview: "Latest",
-          createdAt: at,
-        },
-      });
-    },
-    { preconnect: original.preconnect },
-  );
-  try {
-    const result = await completeSystemSummary(conversation, new AbortController().signal);
-    expect(result).toMatchObject({ threads: 5, unread: 9, summaryCursor: null, lastMessage: { preview: "Latest" } });
-    expect(new URL(requests[0]!, "https://test.invalid").searchParams.get("summaryCursor")).toBe("Page01");
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-test("a budget-exhausted empty cursor starts the summary and caps unread at the public limit", async () => {
+test("loading a sidebar page does not exhaust any conversation summary", async () => {
   const original = globalThis.fetch;
   let calls = 0;
   globalThis.fetch = Object.assign(
     async () => {
       calls++;
-      return Response.json({ ...conversation, unread: 100, threads: 101, summaryCursor: null });
+      return calls === 1
+        ? Response.json({ items: [{ ref: conversation.resource, name: "Space", conversation }], spacesCursor: null, notebooksCursor: null })
+        : Response.json({ ...conversation, summaryCursor: null });
     },
     { preconnect: original.preconnect },
   );
   try {
-    expect(
-      await completeSystemSummary({ ...conversation, threads: 0, unread: 0, summaryCursor: "" }, new AbortController().signal),
-    ).toMatchObject({ threads: 101, unread: 100, summaryCursor: null });
+    const page = await loadSystemChats({}, new AbortController().signal);
     expect(calls).toBe(1);
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-test("repeated summary cursors fail visibly instead of looping", async () => {
-  const original = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = Object.assign(
-    async () => {
-      calls++;
-      return Response.json(conversation);
-    },
-    { preconnect: original.preconnect },
-  );
-  try {
-    await expect(completeSystemSummary(conversation, new AbortController().signal)).rejects.toThrow("Repeated chat summary cursor");
-    expect(calls).toBe(1);
+    expect(page.items[0]?.conversation?.summaryCursor).toBe("Page01");
   } finally {
     globalThis.fetch = original;
   }

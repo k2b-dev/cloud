@@ -793,6 +793,7 @@ test("openChat 404 replaces the current chat without leaking its details", async
     view: "all",
     threads: null,
     threadsStatus: "ready",
+    threadsRevision: 0,
     membershipRev: 0,
     status: "no-access",
     conversation: null,
@@ -1491,47 +1492,27 @@ test("read-all forwards continuation even when the preceding page marked no chat
   store.dispose();
 });
 
-test("system thread refresh follows empty cursor pages, orders activity, and totals only the complete list", async () => {
-  const system = {
-    ...conversation,
-    kind: "system" as const,
-    resource: { type: "spaces.space", id: "Space1" },
-    threads: 1,
-    summaryCursor: "",
-  };
-  const entry = (id: string, at: string, unread: number) => ({
-    id,
-    name: id,
-    description: null,
-    archived: false,
-    unread,
-    read: null,
-    lastMessage: null,
-    lastActivityAt: at,
-    createdAt: at,
-  });
-  const requested: (string | undefined)[] = [];
-  const { store } = fixture({
-    threads: async (_id, query) => {
-      requested.push(query?.cursor);
-      if (!query?.cursor)
-        return { general: { unread: 2, lastMessage: null }, items: [entry("Older1", "2026-10-12T00:00:00.000Z", 3)], nextCursor: "Older1" };
-      if (query.cursor === "Older1") return { general: { unread: 2, lastMessage: null }, items: [], nextCursor: "Hidden" };
-      return { general: { unread: 2, lastMessage: null }, items: [entry("Newer1", "2026-10-13T00:00:00.000Z", 4)], nextCursor: null };
+test("automatic system refresh reads one short page and never exhausts directory cursors", async () => {
+  const queries: unknown[] = [];
+  const { store } = systemFixture(
+    {
+      threads: async (_id, query) => {
+        queries.push(query);
+        return { ...noThreads, nextCursor: "Older1" };
+      },
     },
-  });
+    "Chosen",
+  );
   try {
-    store.open({ cursor: "cursor", conversation: system, threads: noThreads, page: page(1), view: "all" });
     await store.refreshThreads();
-    expect(requested).toEqual([undefined, "Older1", "Hidden"]);
-    expect(store.openConversation?.threads?.items.map((item) => item.id)).toEqual(["Newer1", "Older1"]);
-    expect(store.openConversation?.conversation).toMatchObject({ threads: 2, unread: 9, summaryCursor: null });
+    expect(queries).toEqual([{ short: "true", selected: "Chosen" }]);
+    expect(store.openConversation?.threads?.nextCursor).toBe("Older1");
   } finally {
     store.dispose();
   }
 });
 
-test("a failed continuation keeps the selected resource and is retryable; closing cancels a running refresh", async () => {
+test("a failed short read keeps the selected resource and is retryable; closing cancels a running refresh", async () => {
   const system = { ...conversation, kind: "system" as const };
   let fail = true;
   let pending = false;
@@ -1549,7 +1530,6 @@ test("a failed continuation keeps the selected resource and is retryable; closin
             { once: true },
           ),
         );
-      if (!query?.cursor) return { ...noThreads, nextCursor: "After1" };
       if (fail) throw new Error("Unavailable");
       return noThreads;
     },
@@ -1796,6 +1776,150 @@ test("system All reads continue empty pages with the same seq and selection", as
       [conversation.id, 1, "all", "Page01"],
       [conversation.id, 1, "all", "Page02"],
     ]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("thread hints invalidate the sidebar through its canonical read", async () => {
+  let reads = 0;
+  const { store, connection } = systemFixture({
+    conversation: async () => {
+      reads++;
+      return systemConversation;
+    },
+  });
+  try {
+    await connection.get("list").apply({ type: "threads", conversationId: conversation.id });
+    expect(reads).toBe(1);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("thread discovery renews the existing conversation subscription from the hint cursor", async () => {
+  const { store, connection } = systemFixture();
+  try {
+    const original = connection.get("conversation");
+    const revision = store.openConversation?.threadsRevision ?? 0;
+    await original.apply({ type: "threads", conversationId: conversation.id });
+    expect(original.closed).toBe(true);
+    expect(connection.get("conversation").cursor).toBe("cursor");
+    expect(store.openConversation?.threadsRevision).toBeGreaterThan(revision);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("All-thread read continuation failures reject; retry preserves the target and cancellation stops later pages", async () => {
+  let fail = true;
+  const cursors: (string | undefined)[] = [];
+  const { store } = systemFixture({
+    read: async (id, seq, _thread, cursor) => {
+      cursors.push(cursor);
+      if (cursor && fail) throw new Error("offline");
+      return {
+        conversationId: id,
+        lastReadSeq: seq,
+        unreadFromSeq: null,
+        joinedSeq: 0,
+        unread: 0,
+        asOfRev: 1,
+        threads: [],
+        summaryCursor: cursor ? null : "Page01",
+      };
+    },
+  });
+  try {
+    await expect(store.markRead(conversation.id, 1, "all")).rejects.toThrow("offline");
+    fail = false;
+    await store.markRead(conversation.id, 1, "all");
+    expect(cursors).toEqual([undefined, "Page01", undefined, "Page01"]);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("closing a selection aborts its All-thread read before another continuation", async () => {
+  let calls = 0;
+  let signal: AbortSignal | undefined;
+  const first = deferred<Awaited<ReturnType<ChatStoreApi["read"]>>>();
+  const { store } = systemFixture({
+    read: async (_id, _seq, _view, _cursor, requestSignal) => {
+      calls++;
+      signal = requestSignal;
+      return first.promise;
+    },
+  });
+  const pending = store.markRead(conversation.id, 1, "all");
+  store.closeConversation();
+  first.resolve({
+    conversationId: conversation.id,
+    lastReadSeq: 1,
+    unreadFromSeq: null,
+    joinedSeq: 0,
+    unread: 0,
+    asOfRev: 1,
+    threads: [],
+    summaryCursor: "Page01",
+  });
+  try {
+    await expect(pending).rejects.toThrow();
+    expect(signal?.aborted).toBe(true);
+    expect(calls).toBe(1);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("selection-only system receipts refresh the aggregate instead of replacing it with a selection count", async () => {
+  let reads = 0;
+  const { store } = systemFixture({
+    conversation: async () => {
+      reads++;
+      return { ...systemConversation, unread: 4, read: { lastReadSeq: 1, unreadFromSeq: null, joinedSeq: 0 } };
+    },
+    read: async (id) => ({
+      conversationId: id,
+      lastReadSeq: 1,
+      unreadFromSeq: null,
+      joinedSeq: 0,
+      unread: 0,
+      asOfRev: 1,
+      threads: [],
+      summaryCursor: "",
+    }),
+  });
+  try {
+    await store.markRead(conversation.id, 1, "Thread");
+    expect(reads).toBe(1);
+    expect(store.openConversation?.conversation?.unread).toBe(4);
+    expect(store.sidebar.find((row) => row.id === conversation.id)?.unread).toBe(4);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a repeated All-thread receipt cursor fails instead of looping", async () => {
+  let calls = 0;
+  const { store } = systemFixture({
+    read: async (id) => {
+      calls++;
+      return {
+        conversationId: id,
+        lastReadSeq: 1,
+        unreadFromSeq: null,
+        joinedSeq: 0,
+        unread: 0,
+        asOfRev: 1,
+        threads: [],
+        summaryCursor: "Page01",
+      };
+    },
+  });
+  try {
+    await expect(store.markRead(conversation.id, 1, "all")).rejects.toThrow("Repeated chat read cursor");
+    expect(calls).toBe(2);
   } finally {
     store.dispose();
   }

@@ -8,6 +8,7 @@ import type { ConversationSchema } from "../service/contracts";
 import { viewIcon } from "./ChatThreads";
 import { listTime } from "./chat-format";
 import SystemThreadDirectory from "./SystemThreadDirectory";
+import { systemMembers } from "./system-chats";
 import { activeThreads, archivedThreads, type Thread, type ThreadList, type ThreadView, threadHref } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -85,7 +86,11 @@ export default function ChatThreadsPage(props: {
         </span>
         <PageTitle
           trail={{ title: props.conversation.title, ancestors: [] }}
-          subtitle={t().members({ count: props.conversation.memberCount })}
+          subtitle={
+            props.conversation.kind === "system"
+              ? systemMembers(props.conversation.resource?.type, t())
+              : t().members({ count: props.conversation.memberCount })
+          }
         />
         <div class="chat-conversation__actions">
           <Show when={props.canCreate}>

@@ -8,6 +8,7 @@ import type { ConversationSchema } from "../service/contracts";
 import { viewIcon } from "./ChatThreads";
 import { listTime } from "./chat-format";
 import SystemThreadDirectory from "./SystemThreadDirectory";
+import { systemMembers } from "./system-chats";
 import { activeThreads, archivedThreads, type Thread, type ThreadList, type ThreadView, threadHref } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
@@ -88,7 +89,11 @@ export default function ChatThreadColumn(props: {
       <header class="chat-thread-column__head">
         <span class="chat-thread-column__title">
           <span class="chat-thread-column__chat">{props.conversation.title}</span>
-          <span class="chat-thread-column__members">{t().members({ count: props.conversation.memberCount })}</span>
+          <span class="chat-thread-column__members">
+            {props.conversation.kind === "system"
+              ? systemMembers(props.conversation.resource?.type, t())
+              : t().members({ count: props.conversation.memberCount })}
+          </span>
         </span>
         <Show when={props.canCreate}>
           <IconButton

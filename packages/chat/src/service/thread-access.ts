@@ -12,7 +12,7 @@ export const canReadThread = async (db: typeof sql, context: ChatContext, id: st
   return !!row && (row.resource_type === null || (await threadResource(context, row)) !== null);
 };
 export const visibleThreadPage = async <T extends ThreadReferenceRow>(context: ChatContext, rows: T[]) =>
-  (await readerBatch(rows, async (row) => ({ row, resource: await threadResource(context, row) }))).filter(
+  (await readerBatch(rows, async (row) => ({ row, resource: await threadResource(context, row) }), context.caller?.signal)).filter(
     ({ row, resource }) => row.resource_type === null || resource !== null,
   );
 /** One request spends at most one 100-candidate page on summary item readers.
@@ -62,6 +62,12 @@ export const projectResource = (row: ThreadReferenceRow, resource: ResourceDecis
         ref: { type: row.resource_type, id: row.resource_id },
         kind: resource.kind,
         status: resource.status,
+        deadline: resource.deadline,
+        deadlineAllDay: resource.deadlineAllDay,
+        assignees: resource.assignees,
+        startsAt: resource.startsAt,
+        endsAt: resource.endsAt,
+        allDay: resource.allDay,
         done: resource.done,
         href: resource.href,
       }

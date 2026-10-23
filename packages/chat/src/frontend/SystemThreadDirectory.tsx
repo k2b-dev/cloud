@@ -2,10 +2,12 @@ import { type LinkNavigateEvent, listenPopState, navigate } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, Button, FilterToggle, InlineGuidance, Skeleton, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { chatMessages } from "../messages";
 import type { Conversation } from "./chat-dialog";
 import { listTime } from "./chat-format";
 import { loadSystemThreads, type ThreadQuery } from "./system-chats";
+import ThreadMetadata from "./ThreadMetadata";
 import { byActivity, type ThreadList, type ThreadView, threadHref, threadIcon } from "./threads";
 
 /** The same server-filtered, paged directory in the overview and the wide thread column. */
@@ -24,10 +26,13 @@ export default function SystemThreadDirectory(props: {
   const [input, setInput] = createSignal("");
   const [filter, setFilter] = createSignal<ThreadQuery["filter"]>();
   const [mounted, setMounted] = createSignal(false);
-  const [page, setPage] = createSignal<ThreadList>();
+  const [directory, setDirectory] = createStore<{ page: ThreadList | undefined }>({ page: undefined });
+  const page = () => directory.page;
+  const setPage = (next: ThreadList | undefined) => setDirectory("page", reconcile(next, { key: "id" }));
   const [status, setStatus] = createSignal<"loading" | "ready" | "failed">("loading");
   const [appending, setAppending] = createSignal(false);
   let controller: AbortController | undefined;
+  let loadedPages = 0;
   const readAddress = () => {
     const params = new URL(location.href).searchParams;
     setInput((params.get("q") ?? "").slice(0, 100));
@@ -68,14 +73,28 @@ export default function SystemThreadDirectory(props: {
     setStatus("loading");
     setAppending(append);
     try {
-      const next = await loadSystemThreads(
-        props.conversation.id,
-        { q: input().trim() || undefined, filter: filter(), cursor: append ? (page()?.nextCursor ?? undefined) : undefined },
-        request.signal,
-      );
-      if (request.signal.aborted) return;
+      // A revision re-reads exactly the depth the reader loaded. Only "More" extends it.
+      const depth = append ? 1 : Math.max(1, loadedPages);
       const items = new Map((append ? (page()?.items ?? []) : []).map((thread) => [thread.id, thread]));
-      for (const thread of next.items) items.set(thread.id, thread);
+      let cursor = append ? (page()?.nextCursor ?? undefined) : undefined;
+      let next: ThreadList | undefined;
+      let pages = 0;
+      const seen = new Set<string>();
+      for (; pages < depth; pages++) {
+        request.signal.throwIfAborted();
+        next = await loadSystemThreads(props.conversation.id, { q: input().trim() || undefined, filter: filter(), cursor }, request.signal);
+        if (request.signal.aborted) return;
+        for (const thread of next.items) items.set(thread.id, thread);
+        cursor = next.nextCursor ?? undefined;
+        if (cursor === undefined) {
+          pages++;
+          break;
+        }
+        if (seen.has(cursor)) throw new Error("Repeated directory cursor");
+        seen.add(cursor);
+      }
+      if (!next) return;
+      loadedPages = append ? loadedPages + pages : pages;
       setPage({ ...next, items: byActivity([...items.values()]) });
       setStatus("ready");
     } catch {
@@ -88,7 +107,10 @@ export default function SystemThreadDirectory(props: {
       controller?.abort();
       // Old search results never remain actionable while a different query loads.
       const changed = !previous || previous[1] !== input() || previous[2] !== filter() || previous[3] !== props.conversation.id;
-      if (changed) setPage(undefined);
+      if (changed) {
+        setPage(undefined);
+        loadedPages = 0;
+      }
       setStatus("loading");
       const timer = setTimeout(() => void load(), changed ? 200 : 0);
       onCleanup(() => clearTimeout(timer));
@@ -158,7 +180,14 @@ export default function SystemThreadDirectory(props: {
               data={{ thread: thread.id }}
               description={
                 <span class="chat-system-directory__description">
-                  <span class="chat-list__preview">{thread.description ?? ""}</span>
+                  <Show when={thread.resource} fallback={<span class="chat-list__preview">{thread.description ?? ""}</span>}>
+                    {(resource) => (
+                      <span class="chat-list__preview">
+                        <span>{resource().status}</span>
+                        <ThreadMetadata resource={resource()} dateConfig={props.dateConfig} />
+                      </span>
+                    )}
+                  </Show>
                   <span class="chat-list__preview">
                     {thread.lastMessage
                       ? `${thread.lastMessage.author.id === props.viewerId ? t().you : thread.lastMessage.author.name.split(" ")[0]}: ${thread.lastMessage.preview}`

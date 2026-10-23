@@ -20,7 +20,7 @@ export function createSystemChatList() {
     try {
       const previous = page();
       const next = await loadSystemChats(
-        append ? { spacesCursor: previous?.spacesCursor ?? undefined, notebooksCursor: previous?.notebooksCursor ?? undefined } : {},
+        append ? { spacesCursor: previous?.spacesCursor ?? "", notebooksCursor: previous?.notebooksCursor ?? "" } : {},
         request.signal,
       );
       if (request.signal.aborted) return;

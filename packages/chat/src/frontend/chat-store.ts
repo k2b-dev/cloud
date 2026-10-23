@@ -36,8 +36,7 @@ import {
   ThreadSchema,
   UNREAD_CAP,
 } from "../service/contracts";
-import { completeSystemSummary } from "./system-chats";
-import { byActivity, chatHasThreads, inView, type ThreadList, type ThreadView } from "./threads";
+import { chatHasThreads, inView, type ThreadList, type ThreadView } from "./threads";
 
 type Conversation = z.infer<typeof ConversationSchema>;
 type Message = z.infer<typeof MessageSchema>;
@@ -71,7 +70,7 @@ export type ChatStoreApi = {
   conversation(id: string): Promise<Conversation | null>;
   messages(id: string, query?: { before?: number; after?: number; thread?: ThreadView }): Promise<MessagePage | null>;
   snapshot(id: string, message?: string, thread?: ThreadView): Promise<(OpenChatSnapshot & { focus: string | null }) | null>;
-  threads(id: string, query?: { cursor?: string }, signal?: AbortSignal): Promise<ThreadList | null>;
+  threads(id: string, query?: { cursor?: string; short?: "true"; selected?: string }, signal?: AbortSignal): Promise<ThreadList | null>;
   createThread(id: string, input: { name: string; description: string | null; createKey: string }): Promise<z.infer<typeof ThreadSchema>>;
   updateThread(
     id: string,
@@ -93,6 +92,7 @@ export type OpenChat = {
   view: ThreadView;
   threads: ThreadList | null;
   threadsStatus: "ready" | "loading" | "failed";
+  threadsRevision: number;
   status: "live" | "no-access" | "stopped";
   conversation: Conversation | null;
   messages: readonly Message[];
@@ -206,7 +206,7 @@ export const createChatStoreApi = (): ChatStoreApi => {
         await client.conversations[":conversation"].$get({ param: { conversation: id }, query: {} }),
         ConversationSchema,
       );
-      return row?.kind === "system" ? completeSystemSummary(row, new AbortController().signal) : row;
+      return row;
     },
     messages: async (id, query) =>
       parseResponse(
@@ -522,43 +522,28 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           chat.threadsAbort?.abort();
           const controller = new AbortController();
           chat.threadsAbort = controller;
-          const list = await (async () => {
-            const first = await api.threads(chat.view.id, {}, controller.signal);
-            if (!first || chat.view.conversation?.kind !== "system") return first;
-            let cursor = first.nextCursor;
-            const seen = new Set<string>();
-            const items = new Map(first.items.map((thread) => [thread.id, thread]));
-            while (cursor) {
-              if (!active(chat)) return undefined;
-              if (seen.has(cursor)) throw new Error("Repeated thread cursor");
-              seen.add(cursor);
-              const page = await api.threads(chat.view.id, { cursor }, controller.signal);
-              if (!page) return null;
-              for (const thread of page.items) items.set(thread.id, thread);
-              cursor = page.nextCursor;
-            }
-            return { ...first, items: byActivity([...items.values()]), nextCursor: null };
-          })().catch(() => undefined);
+          const system = chat.view.conversation?.kind === "system";
+          const list = await api
+            .threads(
+              chat.view.id,
+              system
+                ? {
+                    short: "true",
+                    ...(chat.view.view !== "all" && chat.view.view !== "general" ? { selected: chat.view.view } : {}),
+                  }
+                : {},
+              controller.signal,
+            )
+            .catch(() => undefined);
           if (!active(chat)) return;
           if (list === null) return noAccess(chat);
-          // The chat's thread count follows its list, so the first thread shows the thread controls at once.
+          // A short system list is a selection, never an aggregate of the whole directory.
           const conversation =
-            list && chat.view.conversation
-              ? {
-                  ...chat.view.conversation,
-                  threads: list.items.length,
-                  ...(chat.view.conversation.kind === "system"
-                    ? {
-                        summaryCursor: null,
-                        unread: Math.min(UNREAD_CAP, list.general.unread + list.items.reduce((sum, item) => sum + item.unread, 0)),
-                      }
-                    : {}),
-                }
-              : chat.view.conversation;
+            !system && list && chat.view.conversation ? { ...chat.view.conversation, threads: list.items.length } : chat.view.conversation;
           chat.view =
             list === undefined
               ? { ...chat.view, threadsStatus: "failed" }
-              : { ...chat.view, conversation, threads: list, threadsStatus: "ready" };
+              : { ...chat.view, conversation, threads: list, threadsStatus: "ready", threadsRevision: chat.view.threadsRevision + 1 };
           notify();
         } while (chat.threadsAgain);
       } finally {
@@ -568,47 +553,12 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     chat.threadsWork = work;
     return work;
   };
-  const open = (next: OpenChatSnapshot & { view: ThreadView }) => {
-    opening++;
-    if (disposed) return;
-    current?.threadsAbort?.abort();
-    current?.readsAbort.abort();
-    current?.subscription?.close();
-    const seqHead = Math.max(next.page.seqHead, ...next.page.items.map((message) => message.seq));
-    const chat: Current = {
-      view: {
-        id: next.conversation.id,
-        view: next.view,
-        threads: next.threads,
-        threadsStatus: "ready",
-        status: "live",
-        conversation: next.conversation,
-        membershipRev: 0,
-        watermark: next.page.rev,
-        seqHead,
-        hasOlder: next.page.from > 1,
-        hasNewer: next.page.to < seqHead,
-        messages: next.page.items.map((message) => MessageSchema.parse(message)),
-      },
-      from: next.page.from,
-      to: next.page.to,
-      window: 0,
-      older: null,
-      newer: null,
-      latest: null,
-      threadsWork: null,
-      threadsAgain: false,
-      readsAbort: new AbortController(),
-      metadataRev: next.conversation.rev,
-      messages: new Map(next.page.items.map((message) => [message.id, MessageSchema.parse(message)])),
-      subscription: null,
-    };
-    current = chat;
-    chat.subscription = connection.subscribe(
+  const subscribeConversation = (chat: Current, cursor: string): LiveSubscription => {
+    return connection.subscribe(
       "conversation",
       { conversation: chat.view.id },
       {
-        cursor: next.cursor,
+        cursor,
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: async (events) => {
           let system = false,
@@ -648,7 +598,16 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           }
           if (membership) chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
           // The messages show at once; the threads follow.
-          if (threadsChanged) void refreshThreads(chat);
+          if (threadsChanged) {
+            if (chat.view.conversation?.kind === "system") {
+              await refreshThreads(chat);
+              if (active(chat) && events.some(({ data }) => data.type === "threads")) {
+                if (chat.view.threadsStatus === "failed") throw new Error("Chat thread discovery failed");
+                chat.subscription?.close();
+                chat.subscription = subscribeConversation(chat, events.at(-1)!.cursor);
+              }
+            } else void refreshThreads(chat);
+          }
           if (system) await refreshMetadata(chat);
           if (active(chat)) chat.metadataRev = Math.max(chat.metadataRev, highestRev);
           publishMessages(chat);
@@ -662,6 +621,45 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         },
       },
     );
+  };
+  const open = (next: OpenChatSnapshot & { view: ThreadView }) => {
+    opening++;
+    if (disposed) return;
+    current?.threadsAbort?.abort();
+    current?.readsAbort.abort();
+    current?.subscription?.close();
+    const seqHead = Math.max(next.page.seqHead, ...next.page.items.map((message) => message.seq));
+    const chat: Current = {
+      view: {
+        id: next.conversation.id,
+        view: next.view,
+        threads: next.threads,
+        threadsStatus: "ready",
+        threadsRevision: 0,
+        status: "live",
+        conversation: next.conversation,
+        membershipRev: 0,
+        watermark: next.page.rev,
+        seqHead,
+        hasOlder: next.page.from > 1,
+        hasNewer: next.page.to < seqHead,
+        messages: next.page.items.map((message) => MessageSchema.parse(message)),
+      },
+      from: next.page.from,
+      to: next.page.to,
+      window: 0,
+      older: null,
+      newer: null,
+      latest: null,
+      threadsWork: null,
+      threadsAgain: false,
+      readsAbort: new AbortController(),
+      metadataRev: next.conversation.rev,
+      messages: new Map(next.page.items.map((message) => [message.id, MessageSchema.parse(message)])),
+      subscription: null,
+    };
+    current = chat;
+    chat.subscription = subscribeConversation(chat, next.cursor);
     if (!active(chat)) chat.subscription.close();
     notify();
   };
@@ -791,26 +789,31 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       });
     notify();
   };
-  subscriptions.push(
+  let listSubscription: LiveSubscription;
+  const subscribeList = (cursor: string) =>
     connection.subscribe(
       "list",
       {},
       {
-        cursor: snapshot.cursor,
+        cursor,
         parse: (data) => ChatLiveEventSchema.parse(data),
         apply: (events) =>
           sidebar(async () => {
             for (const { data } of events) {
               if (data.type === "summary") await applySummary(data);
-              else if (data.type === "membership" && rows.some((row) => row.id === data.conversationId))
+              else if ((data.type === "membership" || data.type === "threads") && rows.some((row) => row.id === data.conversationId))
                 await refetchRow(data.conversationId);
+            }
+            if (!disposed && events.some(({ data }) => data.type === "threads")) {
+              listSubscription.close();
+              listSubscription = subscribeList(events.at(-1)!.cursor);
             }
           }),
         resync: () => sidebar(reloadSidebar),
         unavailable: stopped,
       },
-    ),
-  );
+    );
+  listSubscription = subscribeList(snapshot.cursor);
   subscriptions.push(
     connection.subscribe(
       "me",
@@ -1042,6 +1045,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
           view,
           threads: null,
           threadsStatus: "ready",
+          threadsRevision: 0,
           status: "live",
           conversation: null,
           messages: [],
@@ -1111,6 +1115,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       current?.threadsAbort?.abort();
       current?.readsAbort.abort();
       current?.subscription?.close();
+      listSubscription.close();
       for (const subscription of subscriptions) subscription.close();
       listeners.clear();
     },

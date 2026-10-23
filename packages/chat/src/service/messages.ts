@@ -183,7 +183,14 @@ const snapshot = async (
     candidates.reverse();
     const rows = selector === undefined ? await visibleMessages(db, input, candidates) : candidates;
     const seqHead = Number(allowed.data.seq_head);
-    const list = await threads.list({ ...input, selectedThread: selector === "general" ? "general" : thread?.short_id }, db);
+    const list = await threads.list(
+      {
+        ...input,
+        query: allowed.data.kind === "system" && selector === undefined ? { short: "true" } : undefined,
+        selectedThread: selector === "general" ? "general" : thread?.short_id,
+      },
+      db,
+    );
     if (!list.ok) return list;
     return ok({
       conversation: conversation.data,

@@ -44,15 +44,23 @@ const list = async (input: ChatContext & { query?: unknown }) => {
   if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));
   const bound = boundConversation(input.actor, input.locale);
   if (!bound.ok || capPermission("read", input.actor) === "none") return ok({ items: [], spacesCursor: null, notebooksCursor: null });
-  const [spaces, notebooks] = await Promise.all([
+  const discovery = await Promise.all([
     readContainers(input, "spaces.space", parsed.data.spacesCursor),
     readContainers(input, "notebooks.notebook", parsed.data.notebooksCursor),
-  ]);
+  ])
+    .then(([spaces, notebooks]) => ({ spaces, notebooks }))
+    .catch(() => null);
+  if (discovery === null) return fail({ code: "PROVIDER_UNAVAILABLE", status: 500, message: messages(input).systemChatsFailed });
+  const { spaces, notebooks } = discovery;
   // Sequential container work keeps nested item-reader batches at <= 8 concurrent calls.
-  const entries = await readerBatch([...spaces.items, ...notebooks.items], async (entry) => ({
-    entry,
-    resource: await readResource(input, entry.ref),
-  }));
+  const entries = await readerBatch(
+    [...spaces.items, ...notebooks.items],
+    async (entry) => ({
+      entry,
+      resource: await readResource(input, entry.ref),
+    }),
+    input.caller?.signal,
+  );
   // Build a typed result without relying on stored conversation titles for authorization.
   const visible = [];
   const threadBudget = { remaining: SUMMARY_TRAVERSAL_BUDGET };

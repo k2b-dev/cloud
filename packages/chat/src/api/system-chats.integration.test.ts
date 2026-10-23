@@ -380,7 +380,7 @@ suite("system chats use caller-authorized readers", () => {
       id: first.id,
       name: "After",
       description: "Updated",
-      resource: { done: true, status: "done01" },
+      resource: { done: true, status: null },
     });
     expect(ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?filter=open`)).json()).items).toEqual([]);
     revoke(person, "spaces.item", item);
@@ -411,6 +411,16 @@ suite("system chats use caller-authorized readers", () => {
     expect(next.nextCursor).toBeNull();
     const secondReads = calls.filter((call) => call.capability === "spaces.item.read");
     expect(secondReads.length).toBe(101);
+    const short = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?short=true&selected=p00000`)).json());
+    expect(short.items.map((item) => item.id)).toEqual(["p00000"]);
+    expect(short.nextCursor).toBeNull();
+    const author = await f.person();
+    await sql`INSERT INTO chat.messages (short_id, conversation_id, thread_id, seq, rev, kind, author_type, author_id, author_name, body_md, client_id)
+      SELECT 'Unread0001', c.id, t.id, 1, 1, 'text', 'user', ${author.id}::uuid, 'Nora', 'Unread task', 'unread-task'
+      FROM chat.conversations c JOIN chat.threads t ON t.conversation_id = c.id WHERE c.short_id = ${chat.id} AND t.short_id = 'p00000'`;
+    await sql`UPDATE chat.conversations SET seq_head = 1, rev = 1 WHERE short_id = ${chat.id}`;
+    const unreadShort = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads?short=true`)).json());
+    expect(unreadShort.items.map((item) => item.id)).toEqual(["p00000"]);
   });
   test("General and a selected thread do not read unrelated items, including snapshots and shared history", async () => {
     const person = await f.person(),
@@ -579,5 +589,45 @@ suite("system chats use caller-authorized readers", () => {
       expect((await f.request(person.headers, `/${chat.shortId}${path}`)).status).toBe(404);
     expect(await (await f.request(person.headers, "")).text()).not.toContain(chat.shortId);
     expect((await chatLiveChannels.conversation.authorize(`c:${chat.shortId}`, [viewer(person)])).size).toBe(0);
+  });
+
+  test("discovery errors remain visible and an exhausted source is never restarted", async () => {
+    const person = await f.person();
+    down = true;
+    expect((await api(person, "/system-chats")).status).toBe(500);
+    down = false;
+    replies.set(`${credential(person)}:spaces.space.list`, { data: {} });
+    expect((await api(person, "/system-chats")).status).toBe(500);
+    calls.length = 0;
+    const result = await api(person, "/system-chats?spacesCursor=&notebooksCursor=second");
+    expect(result.status).toBe(200);
+    expect(calls.map((call) => call.capability)).toEqual(["notebooks.notebook.list"]);
+    expect(SystemChatPageSchema.parse(await result.json()).spacesCursor).toBeNull();
+  });
+
+  test("item thread metadata comes from public readers and never displays a column ID", async () => {
+    const person = await f.person(),
+      space = testShortId(),
+      item = testShortId();
+    const deadline = "2026-11-01T09:00:00.000Z";
+    grant(person, "spaces.space", space, { name: "Space", permission: "write", columns: [{ id: "Col001", name: "In progress" }] });
+    grant(person, "spaces.item", item, {
+      title: "Task",
+      kind: "task",
+      spaceId: space,
+      columnId: "Col001",
+      deadline,
+      deadlineAllDay: true,
+      assignees: [{ id: person.id, kind: "user", displayName: "Nora" }],
+    });
+    const chat = await open(person, space),
+      selected = await thread(person, chat.id, item);
+    const list = ThreadListSchema.parse(await (await f.request(person.headers, `/${chat.id}/threads`)).json());
+    expect(list.items[0]).toMatchObject({
+      id: selected.id,
+      resource: { status: "In progress", deadline, deadlineAllDay: true, assignees: ["Nora"] },
+    });
+    expect(JSON.stringify(list.items[0]?.resource)).not.toContain("Col001");
+    expect(JSON.stringify(list.items[0]?.resource)).not.toContain(person.id);
   });
 });

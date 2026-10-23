@@ -87,7 +87,7 @@ const seed = (permission: "admin" | "write" | "read" = "admin") => {
   const threads = names.map((name, index) => {
     const thread = harness.addThread(chat, {
       name,
-      description: `Morgen · Nora · ${index === 0 ? "Erledigt" : "Offen"}`,
+      description: "Item description",
       count: 1,
       unread: index === 4 ? 1 : 0,
       end: new Date(chatTestNow.getTime() - index * 60_000),
@@ -95,8 +95,12 @@ const seed = (permission: "admin" | "write" | "read" = "admin") => {
     harness.resourceThread(chat, thread, {
       ref: { type: "spaces.item", id: `Item0${index}` },
       kind: index === 1 ? "event" : "task",
-      status: index === 0 ? "Completed" : "Offen",
+      status: index === 0 ? "Erledigt" : "Offen",
       done: index === 0,
+      deadline: index === 1 ? null : "2026-10-24T00:00:00.000Z",
+      deadlineAllDay: true,
+      assignees: ["Nora"],
+      ...(index === 1 ? { startsAt: "2026-10-24T09:00:00.000Z", endsAt: "2026-10-24T10:00:00.000Z", allDay: false } : {}),
       href: `/app/spaces/items/Item0${index}`,
     });
     return thread;
@@ -210,7 +214,7 @@ for (const [name, options, mobile] of [
         expect(await page.getByRole("button", { name: "Personen hinzufügen", exact: true }).count()).toBe(0);
         if (mobile) expect(await page.locator(".chat-resource-head__icon").getByRole("link").isVisible()).toBe(true);
         await page.getByRole("link", { name: "Chat-Info", exact: true }).click();
-        await page.getByText("3 Mitglieder: alle mit Zugriff auf den Space. Zugriff änderst du dort.").waitFor();
+        await page.getByText("Mitglieder: alle mit Zugriff auf den Space. Zugriff änderst du dort.").waitFor();
         expect(await page.getByRole("button", { name: "Mitglieder suchen", exact: true }).count()).toBe(0);
         expect(await page.getByText("Chat verlassen", { exact: true }).count()).toBe(0);
         if (mobile) {
@@ -363,7 +367,8 @@ test("2000 px column shows All first, server controls, activity and reader descr
     await column.getByRole("searchbox", { name: "Threads suchen" }).waitFor();
     await column.getByRole("link", { name: /Einladung freigeben/ }).waitFor();
     expect(await column.locator("[data-thread]").first().textContent()).toContain("Alle Threads");
-    expect(await column.getByText("Morgen · Nora · Erledigt", { exact: true }).isVisible()).toBe(true);
+    expect(await column.getByText("Zugewiesen an: Nora", { exact: true }).count()).toBeGreaterThan(0);
+    expect(await column.locator('time[datetime^="2026-10-24"]').count()).toBeGreaterThan(0);
     expect(await column.getByRole("link", { name: "Allgemein", exact: true }).count()).toBe(0);
     for (const theme of ["light", "dark"]) {
       await page.evaluate((theme) => {
@@ -550,8 +555,68 @@ test("system item directory and info keep their links inside the universal panel
     expect(await info.getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/t/${threads[0]}?panel=info`);
     expect(await page.locator(".chat-conversation__back a").getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/threads`);
     await info.click();
-    await page.getByText("3 Mitglieder: alle mit Zugriff auf den Space. Zugriff änderst du dort.").waitFor();
+    await page.getByText("Mitglieder: alle mit Zugriff auf den Space. Zugriff änderst du dort.").waitFor();
     expect(errors).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
+test("discovery advances each provider independently after one source is exhausted", async () => {
+  const queries: Record<string, string>[] = [];
+  const { page } = await load(desktop, {}, async (page) => {
+    await page.route("**/api/chat/system-chats*", async (route) => {
+      const query = Object.fromEntries(new URL(route.request().url()).searchParams);
+      queries.push(query);
+      await route.fulfill({
+        json: {
+          items: [],
+          spacesCursor: query.spacesCursor === undefined ? "Space2" : null,
+          notebooksCursor: query.notebooksCursor === undefined ? "Book02" : query.notebooksCursor === "Book02" ? "Book03" : null,
+        },
+      });
+    });
+  });
+  try {
+    await page.getByRole("button", { name: /Spaces und Notebooks/ }).click();
+    const more = page.locator(".chat-system-chats").getByRole("button", { name: "Weitere Chats anzeigen" });
+    await more.click();
+    await until(() => queries.length === 2);
+    await settled(page);
+    await more.click();
+    await until(() => queries.length === 3);
+    await settled(page);
+    expect(queries[2]?.spacesCursor).toBe("");
+    expect(await more.count()).toBe(0);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
+test("live directory refresh preserves loaded pages and their existing row nodes", async () => {
+  const { chat, threads } = seed();
+  harness.systemPageSize(3);
+  const { page } = await load(desktop, { chat, threadsPage: true });
+  try {
+    const directory = page.locator(".chat-threads-page .chat-system-directory");
+    await directory.getByRole("link", { name: /Einladung freigeben/ }).waitFor();
+    await directory.getByRole("button", { name: "Weitere Threads anzeigen" }).click();
+    const older = directory.getByRole("link", { name: /Alte gelesene Aufgabe/ });
+    await older.waitFor();
+    await older.evaluate((node) => node.setAttribute("data-retained", "yes"));
+    const before = harness.systemRequests.length;
+    const refreshed = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === `/api/chat/conversations/${chat}/threads` && !url.searchParams.has("short") && !url.searchParams.has("cursor")
+      );
+    });
+    harness.receiveIn(chat, nora, "A directory update", { thread: threads[0] });
+    await until(() => harness.systemRequests.length > before);
+    await refreshed;
+    await page.waitForFunction(() => !document.querySelector('.chat-threads-page .chat-system-directory__results[aria-busy="true"]'));
+    expect(await older.count()).toBe(1);
+    expect(await older.getAttribute("data-retained")).toBe("yes");
   } finally {
     await page.context().close();
   }
