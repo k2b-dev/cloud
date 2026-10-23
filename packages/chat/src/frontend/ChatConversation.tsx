@@ -84,6 +84,12 @@ export type ChatConversationProps = {
   reply?: ChatComposerReply;
   /** "Reply" in a message's menu, with `r` and a swipe to the right; without it, messages offer no reply. */
   onReply?: (item: ChatFeedItem) => void;
+  /**
+   * A stored message's reactions for the reader, read inside the row so a change updates it in place; with `onReact`,
+   * the reader adds and removes their own.
+   */
+  reactions?: (messageId: string) => readonly { emoji: string; count: number; own: boolean }[];
+  onReact?: (item: ChatFeedItem, emoji: string, on: boolean) => void;
   /** The sentence under "Reply" and "Mark unread from here", which names the message's thread. */
   replyHint?: (item: ChatFeedItem) => string;
   unreadHint?: (item: ChatFeedItem) => string;
@@ -215,6 +221,18 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
       { author: previous.authorId, at: previous.at, system: previous.kind === "system" },
     );
   const remember = (emoji: string) => setRecent((current) => rememberEmoji(current, emoji));
+  // Another person's message gets its reaction line with its first reaction and keeps it, so removing one moves nothing.
+  const hadReactions = new Set<string>();
+  const reactionsOf = (item: ChatFeedItem) => {
+    if (!item.messageId || !props.reactions) return undefined;
+    const list = props.reactions(item.messageId);
+    if (list.length) hadReactions.add(item.key);
+    else if (!item.own && !hadReactions.has(item.key)) return undefined;
+    return list.map((reaction) => ({ key: reaction.emoji, emoji: reaction.emoji, count: reaction.count, own: reaction.own }));
+  };
+  const [reactionTarget, setReactionTarget] = createSignal<{ anchor: HTMLElement; item: ChatFeedItem }>();
+  const rowOf = (item: ChatFeedItem) =>
+    frame.querySelector<HTMLElement>(`.k2b-virtual-feed__item[data-key="${CSS.escape(item.key)}"]`) ?? undefined;
 
   return (
     <section
@@ -320,6 +338,14 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               card={item.refs?.length ? <ChatResourceCards refs={item.refs} cards={props.cards} /> : undefined}
               onRetry={item.retry}
               onDiscard={item.discard}
+              reactions={reactionsOf(item)}
+              onToggleReaction={
+                props.onReact && item.messageId
+                  ? (emoji) =>
+                      props.onReact?.(item, emoji, !props.reactions?.(item.messageId!).find((reaction) => reaction.emoji === emoji)?.own)
+                  : undefined
+              }
+              onAddReaction={props.onReact && item.messageId ? (anchor) => setReactionTarget({ anchor, item }) : undefined}
               actions={
                 item.messageId
                   ? [
@@ -333,6 +359,19 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
                               shortcut: "r",
                               gesture: "swipe-right" as const,
                               onSelect: () => props.onReply?.(item),
+                            },
+                          ]
+                        : []),
+                      ...(props.onReact
+                        ? [
+                            {
+                              id: "react",
+                              label: t().addReaction,
+                              icon: "ti ti-mood-plus",
+                              onSelect: () => {
+                                const anchor = rowOf(item);
+                                if (anchor) setReactionTarget({ anchor, item });
+                              },
                             },
                           ]
                         : []),
@@ -367,6 +406,19 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
           )
         }
       </VirtualFeed>
+      {/* Readers react too, so this picker does not belong to the composer. */}
+      <EmojiPicker.Popover
+        anchor={reactionTarget()?.anchor}
+        recent={recent()}
+        onPick={(emoji) => {
+          const target = reactionTarget();
+          setReactionTarget(undefined);
+          remember(emoji);
+          if (target && !props.reactions?.(target.item.messageId!).find((reaction) => reaction.emoji === emoji)?.own)
+            props.onReact?.(target.item, emoji, true);
+        }}
+        onClose={() => setReactionTarget(undefined)}
+      />
       <Show
         when={!props.notice}
         fallback={

@@ -12,7 +12,8 @@ export const chatMessages = i18n.define({
       unsubscribe: "Unsubscribe",
       unsubscribeDescription: "The channel disappears from your list.",
       unsubscribed: ({ name }: { name: string }) => `Unsubscribed from “${name}”`,
-      channelReadOnly: "Only the editors write here.",
+      channelReadOnly: "Only the editors write here. You can react.",
+      addReaction: "Add reaction",
       channelSearchEmpty: ({ query }: { query: string }) => `No results for “${query}”.`,
       channelListFailed: "Channels could not be loaded.",
 
@@ -316,7 +317,8 @@ export const chatMessages = i18n.define({
       unsubscribe: "Abbestellen",
       unsubscribeDescription: "Der Kanal verschwindet aus deiner Liste.",
       unsubscribed: ({ name }: { name: string }) => `„${name}“ abbestellt`,
-      channelReadOnly: "Nur die Redaktion schreibt hier.",
+      channelReadOnly: "Nur die Redaktion schreibt hier. Du kannst reagieren.",
+      addReaction: "Reaktion hinzufügen",
       channelSearchEmpty: ({ query }: { query: string }) => `Nichts gefunden für „${query}“.`,
       channelListFailed: "Die Kanäle konnten nicht geladen werden.",
 

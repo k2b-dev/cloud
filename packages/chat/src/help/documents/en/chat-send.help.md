@@ -65,3 +65,16 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 3. Choose a kind, such as **Links** or **Cloud elements**, or a thread to narrow the list.
 4. Choose an entry to jump to its message.
 :::
+
+## React to a message {icon="mood-plus"}
+
+:::steps
+1. Open the message's menu: choose **…** next to the message, or hold the message on a phone.
+2. Choose **Add reaction**, then choose an emoji.
+:::
+
+:::reference
+- Reactions show under the message with how many people chose them. Yours are highlighted.
+- Choose a reaction under a message to add yours or to take it back.
+- Everyone who can read a message can react to it, also readers of a channel who cannot write there.
+:::

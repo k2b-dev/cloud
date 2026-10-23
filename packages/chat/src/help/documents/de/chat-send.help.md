@@ -65,3 +65,16 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 3. Wähle eine Art, zum Beispiel **Links** oder **Cloud-Elemente**, oder einen Thread, um die Liste einzugrenzen.
 4. Wähle einen Eintrag, um zu seiner Nachricht zu springen.
 :::
+
+## Auf eine Nachricht reagieren {icon="mood-plus"}
+
+:::steps
+1. Öffne das Menü der Nachricht: Wähle **…** neben der Nachricht, oder halte die Nachricht auf dem Telefon gedrückt.
+2. Wähle **Reaktion hinzufügen** und dann ein Emoji.
+:::
+
+:::reference
+- Reaktionen stehen unter der Nachricht, mit der Zahl der Personen, die sie gewählt haben. Deine sind hervorgehoben.
+- Wähle eine Reaktion unter einer Nachricht, um deine hinzuzufügen oder zurückzunehmen.
+- Wer eine Nachricht lesen kann, kann auf sie reagieren, auch Leser eines Kanals, die dort nicht schreiben.
+:::

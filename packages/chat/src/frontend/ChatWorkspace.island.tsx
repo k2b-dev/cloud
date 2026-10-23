@@ -462,6 +462,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setMarker(before.marker);
     paused = before.paused;
   };
+  // Reactions change in place: rows read them by message, so a new count never rebuilds the message.
+  const reactionsById = createMemo(() => new Map(openChat()?.messages.map((message) => [message.id, message.reactions]) ?? []));
+  const react = (item: ChatFeedItem, emoji: string, on: boolean) => {
+    const current = openChat();
+    if (!store || !current || !item.messageId) return;
+    void store
+      .react(current.id, item.messageId, emoji, on)
+      .catch((error: unknown) => toast.error(error instanceof ChatRequestError ? error.message : t().requestFailed));
+  };
   const copy = (item: ChatFeedItem) =>
     void clipboard.copy(item.body).then(
       () => announce(t().copied),
@@ -1273,6 +1282,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       markerKey={marker()}
                       onVisibleChange={reportVisible}
                       onMarkUnreadFrom={(item) => void markUnread(current().id, item)}
+                      reactions={(id) => reactionsById().get(id) ?? []}
+                      onReact={react}
                       onCopy={copy}
                       // With the info open, Esc closes it first; the workspace owns that.
                       onEscape={() => panel() === null && markOpenRead()}
