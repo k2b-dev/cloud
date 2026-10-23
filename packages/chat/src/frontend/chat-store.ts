@@ -58,7 +58,13 @@ export type ChatStoreApi = {
   removeMember(id: string, accessId: string): Promise<z.infer<typeof MemberRemovalSchema>>;
   leave(id: string, successor?: string): Promise<z.infer<typeof LeaveResultSchema>>;
   people(search: string, cursor?: string, signal?: AbortSignal): Promise<z.infer<typeof PeoplePageSchema>>;
-  read(id: string, seq: number, thread?: ThreadView): Promise<z.infer<typeof ReadUpdateSchema>>;
+  read(
+    id: string,
+    seq: number,
+    thread?: ThreadView,
+    summaryCursor?: string,
+    signal?: AbortSignal,
+  ): Promise<z.infer<typeof ReadUpdateSchema>>;
   markUnread(id: string, message?: string): Promise<z.infer<typeof ReadUpdateSchema>>;
   readAll(confirmed: boolean, cursor?: string): Promise<z.infer<typeof ReadAllOutcomeSchema>>;
   conversations(cursor?: string): Promise<ConversationPage>;
@@ -176,12 +182,15 @@ export const createChatStoreApi = (): ChatStoreApi => {
     people: async (search, cursor, signal) =>
       requiredResponse(await client.people.$get({ query: { search, cursor } }, { init: { signal } }), PeoplePageSchema),
 
-    read: async (id, seq, thread) =>
+    read: async (id, seq, thread, summaryCursor, signal) =>
       requiredResponse(
-        await client.conversations[":conversation"].read.$post({
-          param: { conversation: id },
-          json: { seq, ...(thread ? { thread } : {}) },
-        }),
+        await client.conversations[":conversation"].read.$post(
+          {
+            param: { conversation: id },
+            json: { seq, ...(thread ? { thread } : {}), summaryCursor },
+          },
+          { init: { signal } },
+        ),
         ReadUpdateSchema,
       ),
     markUnread: async (id, message) =>
@@ -278,6 +287,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   let opening = 0;
   let liveStatus: "live" | "stopped" = "live";
   let disposed = false;
+  const lifetime = new AbortController();
   let sidebarWork = Promise.resolve();
   const subscriptions: LiveSubscription[] = [];
   type Current = {
@@ -293,6 +303,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     latest: Promise<void> | null;
     threadsWork: Promise<void> | null;
     threadsAgain: boolean;
+    readsAbort: AbortController;
     threadsAbort?: AbortController;
   };
   let current: Current | null = null;
@@ -302,8 +313,18 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
   const active = (chat: Current) => !disposed && current === chat && chat.view.status === "live";
   const noAccess = (chat: Current) => {
     if (!active(chat)) return;
-    chat.view = { ...chat.view, status: "no-access", conversation: null, messages: [], seqHead: 0, hasOlder: false, hasNewer: false };
+    chat.view = {
+      ...chat.view,
+      status: "no-access",
+      conversation: null,
+      threads: null,
+      messages: [],
+      seqHead: 0,
+      hasOlder: false,
+      hasNewer: false,
+    };
     chat.threadsAbort?.abort();
+    chat.readsAbort.abort();
     chat.messages.clear();
     chat.from = chat.to = null;
     chat.window++;
@@ -383,7 +404,10 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     if (!active(chat)) return;
     if (conversation === null) return noAccess(chat);
     // Retain arrivals during this read, unless its lower revision proves a restore.
-    const arrivals = page.rev >= watermark ? [...chat.messages.values()].filter((message) => message.rev > page.rev) : [];
+    const arrivals =
+      chat.view.conversation?.kind !== "system" && page.rev >= watermark
+        ? [...chat.messages.values()].filter((message) => message.rev > page.rev)
+        : [];
     const currentConversation = chat.view.conversation;
     const keepMetadata = page.rev >= watermark && currentConversation !== null && currentConversation.rev > conversation.rev;
     // A restored chat can move back in revisions, so the replacement wins over the guard.
@@ -439,6 +463,15 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     return work;
   };
   const resyncConversation = async (chat: Current) => {
+    // A filtered delta cannot describe removals from the authorized window.
+    if (chat.view.conversation?.kind === "system") {
+      await replaceMessages(chat);
+      if (active(chat)) {
+        chat.view = { ...chat.view, membershipRev: chat.view.membershipRev + 1 };
+        await refreshThreads(chat);
+      }
+      return;
+    }
     let count = 0;
     // Start at the watermark unless SSR details are still older than its messages.
     let after = Math.min(chat.view.watermark, chat.metadataRev);
@@ -539,6 +572,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     opening++;
     if (disposed) return;
     current?.threadsAbort?.abort();
+    current?.readsAbort.abort();
     current?.subscription?.close();
     const seqHead = Math.max(next.page.seqHead, ...next.page.items.map((message) => message.seq));
     const chat: Current = {
@@ -564,6 +598,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
       latest: null,
       threadsWork: null,
       threadsAgain: false,
+      readsAbort: new AbortController(),
       metadataRev: next.conversation.rev,
       messages: new Map(next.page.items.map((message) => [message.id, MessageSchema.parse(message)])),
       subscription: null,
@@ -898,9 +933,37 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     },
     refreshSidebar: () => sidebar(reloadSidebar),
     people: (search: string, signal?: AbortSignal) => api.people(search, undefined, signal),
-    // Only the FIFO personal live channel applies write results; HTTP responses never change local state.
-    markRead: (id: string, seq: number, thread?: ThreadView) => api.read(id, seq, thread),
-    markUnread: (id: string, message?: string) => api.markUnread(id, message),
+    // System receipts have no personal-channel event: their authorized HTTP response owns the update.
+    markRead: async (id: string, seq: number, thread?: ThreadView) => {
+      const chat = current?.view.id === id ? current : null;
+      const system = (chat?.view.conversation ?? rows.find((row) => row.id === id))?.kind === "system";
+      const signal = chat?.readsAbort.signal ?? lifetime.signal;
+      let cursor: string | undefined;
+      const seen = new Set<string>();
+      let result: z.infer<typeof ReadUpdateSchema>;
+      do {
+        signal.throwIfAborted();
+        result = await api.read(id, seq, thread, cursor, signal);
+        signal.throwIfAborted();
+        if (system) await applyRead(result);
+        cursor = system && thread === "all" ? (result.summaryCursor ?? undefined) : undefined;
+        if (cursor !== undefined) {
+          if (seen.has(cursor)) throw new Error("Repeated chat read cursor");
+          seen.add(cursor);
+        }
+      } while (cursor !== undefined);
+      if (system && (thread !== "all" || result.summaryCursor !== undefined)) await sidebar(() => refetchRow(id));
+      return result;
+    },
+    markUnread: async (id: string, message?: string) => {
+      const system = (current?.view.id === id ? current.view.conversation : rows.find((row) => row.id === id))?.kind === "system";
+      const result = await api.markUnread(id, message);
+      if (system && !disposed) {
+        await applyRead(result);
+        if (result.summaryCursor !== undefined) await sidebar(() => refetchRow(id));
+      }
+      return result;
+    },
     /** The ID of the chat's message at `seq`, read from the server, or null when it is gone. */
     messageAt: async (id: string, seq: number) =>
       (await api.messages(id, { before: seq + 1 }))?.items.find((message) => message.seq === seq)?.id ?? null,
@@ -971,6 +1034,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         return { status: "opened", focus: next.focus };
       }
       current?.threadsAbort?.abort();
+      current?.readsAbort.abort();
       current?.subscription?.close();
       const chat: Current = {
         view: {
@@ -998,6 +1062,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
         latest: null,
         threadsWork: null,
         threadsAgain: false,
+        readsAbort: new AbortController(),
       };
       current = chat;
       noAccess(chat);
@@ -1034,6 +1099,7 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     closeConversation: () => {
       opening++;
       current?.threadsAbort?.abort();
+      current?.readsAbort.abort();
       current?.subscription?.close();
       current = null;
       notify();
@@ -1041,7 +1107,9 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     dispose: () => {
       opening++;
       disposed = true;
+      lifetime.abort();
       current?.threadsAbort?.abort();
+      current?.readsAbort.abort();
       current?.subscription?.close();
       for (const subscription of subscriptions) subscription.close();
       listeners.clear();

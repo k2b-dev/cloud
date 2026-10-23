@@ -1730,3 +1730,73 @@ test("failed optimistic reactions keep other people's updates received while the
   expect(store.openConversation?.messages[0]?.reactions).toEqual([{ emoji: "👍", count: 2, own: false }]);
   store.dispose();
 });
+
+const systemConversation = { ...conversation, kind: "system" as const, resource: { type: "spaces.space", id: "Space1" }, unread: 5 };
+const systemFixture = (overrides: Partial<ChatStoreApi> = {}, view = "all") => {
+  const fixtureState = fixture({ conversation: async () => systemConversation, ...overrides });
+  fixtureState.store.open({ cursor: "cursor", conversation: systemConversation, threads: noThreads, page: page(1), view });
+  return fixtureState;
+};
+
+test("system resync replaces loaded messages with the current authorized window", async () => {
+  const { store, connection } = systemFixture({ messages: async () => ({ ...page(1), items: [] }) });
+  try {
+    expect(store.openConversation?.messages).toHaveLength(1);
+    await connection.get("conversation").resync();
+    expect(store.openConversation?.messages).toHaveLength(0);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("a selected item that becomes unavailable clears its messages and thread metadata", async () => {
+  const { store, connection } = systemFixture({ messages: async () => null }, "Thread");
+  try {
+    await connection.get("conversation").resync();
+    expect(store.openConversation).toMatchObject({ status: "no-access", messages: [], threads: null });
+  } finally {
+    store.dispose();
+  }
+});
+
+test("system read and unread HTTP results update boundaries without a personal event", async () => {
+  const { store } = systemFixture({ conversation: async () => ({ ...systemConversation, unread: 0 }) });
+  try {
+    await store.markRead(conversation.id, 1, "all");
+    expect(store.openConversation?.conversation?.read?.lastReadSeq).toBe(1);
+    expect(store.sidebar.find((row) => row.id === conversation.id)?.unread).toBe(0);
+    await store.markUnread(conversation.id);
+    expect(store.openConversation?.conversation?.read?.unreadFromSeq).toBe(1);
+  } finally {
+    store.dispose();
+  }
+});
+
+test("system All reads continue empty pages with the same seq and selection", async () => {
+  const seen: unknown[] = [];
+  const { store } = systemFixture({
+    read: async (id, seq, thread, cursor) => {
+      seen.push([id, seq, thread, cursor]);
+      return {
+        conversationId: id,
+        lastReadSeq: seq,
+        unreadFromSeq: null,
+        joinedSeq: 0,
+        unread: 0,
+        asOfRev: 1,
+        threads: [],
+        summaryCursor: cursor === "Page02" ? null : cursor === "Page01" ? "Page02" : "Page01",
+      };
+    },
+  });
+  try {
+    await store.markRead(conversation.id, 1, "all");
+    expect(seen).toEqual([
+      [conversation.id, 1, "all", undefined],
+      [conversation.id, 1, "all", "Page01"],
+      [conversation.id, 1, "all", "Page02"],
+    ]);
+  } finally {
+    store.dispose();
+  }
+});
