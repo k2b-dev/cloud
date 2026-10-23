@@ -35,6 +35,7 @@ import {
 import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
+import { closePanel, type getContext, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
@@ -49,13 +50,14 @@ import {
   dialogCore,
   IconButton,
   LocaleProvider,
+  NoticeCard,
   openSpotlightSearch,
   Placeholder,
   prompts,
   reconcileChatMentions,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
 import { revokeChatWebsite } from "../artifacts/approval-preferences";
@@ -81,6 +83,7 @@ import {
 import { AssistantChatSidebarPanel, type ChatSidebarJump, openAssistantChatSidebarSheet } from "./AssistantChatSidebar";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
+import AssistantPanelContext from "./AssistantPanelContext";
 import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
@@ -97,7 +100,6 @@ import {
   matchesAssistantInvalidation,
 } from "./assistant-live";
 import {
-  ASSISTANT_APPROVALS_HREF,
   assistantApprovalsOpenFromHref,
   assistantArtifactHref,
   assistantArtifactPathFromHref,
@@ -135,6 +137,7 @@ import {
   editComposerSession,
   newComposerSession,
   observeComposerRevision,
+  sameComposerSubmission,
   sendBesideComposer,
 } from "./composer-session";
 import { isPlainChat } from "./conversation-view";
@@ -163,6 +166,8 @@ type InitialDetail = {
 };
 
 type Props = {
+  embedded?: boolean;
+  initialPanelContext?: ReturnType<typeof getContext>;
   initialQuotas?: import("@k2b/cloud/shared").AiChatQuotaSnapshot | null;
   userId: string;
   cloudUrl: string;
@@ -201,6 +206,8 @@ type ProjectViewState = {
 };
 
 export default function AssistantWorkspace(props: Props) {
+  const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";
+  const approvalsHref = `${basePath}?approvals=1`;
   const locale = useLocale();
   const contextText = useAssistantText();
   const commandCopy = useAssistantCopy();
@@ -331,7 +338,7 @@ export default function AssistantWorkspace(props: Props) {
     setProjectView(null);
     setApprovalsRendered(false);
     setApprovalsOpen(true);
-    navigate(ASSISTANT_APPROVALS_HREF, { scroll: "manual", viewTransition: false });
+    navigate(approvalsHref, { scroll: "manual", viewTransition: false });
   };
   const activeProject = () => {
     const projectId = projectView()?.projectId;
@@ -410,8 +417,11 @@ export default function AssistantWorkspace(props: Props) {
   // A picker or file selection inserts into, or gives back the `/…` of, the draft it came from; saving a new chat
   // meanwhile would move that draft to another key and lose the choice.
   const [composerPicking, setComposerPicking] = createSignal(0);
+  // Command preparation keeps saves and leaving blocked; Chat.Composer owns its cancellable editing lock.
+  const [pendingCommandSaves, setPendingCommandSaves] = createSignal(0);
+  const composerBusy = () => composerPicking() > 0 || pendingCommandSaves() > 0;
   /** Holds saving until `until` settles or the returned release runs, whichever comes first. */
-  const holdComposerSave = (until: Promise<unknown>) => {
+  const holdComposerSave = (until?: Promise<unknown>) => {
     let held = true;
     setComposerPicking((count) => count + 1);
     const release = () => {
@@ -419,7 +429,7 @@ export default function AssistantWorkspace(props: Props) {
       held = false;
       setComposerPicking((count) => count - 1);
     };
-    void until.then(release, release);
+    void until?.then(release, release);
     return release;
   };
   const trackComposerPicking = <T,>(picking: Promise<T>): Promise<T> => {
@@ -523,20 +533,32 @@ export default function AssistantWorkspace(props: Props) {
     }
     return value;
   };
+  // Async attachments follow this same local session when creation assigns its conversation ID.
+  const followComposerSession = (key: string) => {
+    const local = session(key);
+    return () => {
+      if (sessions.get(key) === local) return key;
+      for (const [current, value] of sessions) if (value === local) return current;
+      throw new Error(t().chatActionFailed);
+    };
+  };
   const [composerMentions, setComposerMentions] = createSignal<Record<string, readonly ChatMention[]>>({});
   const mentionsFor = (key: string) => composerMentions()[key] ?? [];
   const setMentionsFor = (key: string, mentions: readonly ChatMention[]) => {
     editComposerSession(session(key));
+    touchSession();
     setComposerMentions((all) => ({ ...all, [key]: mentions }));
   };
   const setComposerDraft = (key: string, value: string) => {
     setMentionsFor(key, reconcileChatMentions(composerDraft(key), value, mentionsFor(key)));
     editComposerSession(session(key));
+    touchSession();
     setComposerDrafts((current) => ({ ...current, [key]: value }));
   };
   const composerAttachmentsFor = (key: string) => composerAttachments()[key] ?? [];
   const setComposerAttachmentsFor = (key: string, attachments: AiComposerAttachment[]) => {
     editComposerSession(session(key));
+    touchSession();
     setComposerAttachments((current) => ({ ...current, [key]: attachments }));
   };
 
@@ -569,6 +591,45 @@ export default function AssistantWorkspace(props: Props) {
       } else if (existing.conflict) touchSession();
     }
   });
+  const submissionSnapshots = new Map<string, AiComposerSendInput>();
+  const [acceptedSubmissions, setAcceptedSubmissions] = createSignal<string[]>([]);
+  const [submissionChecking, setSubmissionChecking] = createSignal(false);
+  const settleSubmission = (id: string, remote: AiConversation["draft"]) => {
+    const keys = [
+      id,
+      ...Object.entries(pendingProjectChats())
+        .filter(([, value]) => value.id === id)
+        .map(([project]) => projectComposerKey(project)),
+    ];
+    for (const key of keys) {
+      const submitted = submissionSnapshots.get(key);
+      if (!session(key).dirty || (submitted && sameComposerSubmission(composerInput(key), submitted))) hydrateComposer(key, remote);
+      else if (submitted) {
+        setServerDrafts((all) => ({ ...all, [key]: remote }));
+        session(key).conflict = true;
+        touchSession();
+      }
+      submissionSnapshots.delete(key);
+    }
+  };
+  createEffect(() => {
+    const conversation = chat.conversation();
+    if (!conversation || !acceptedSubmissions().includes(conversation.id)) return;
+    settleSubmission(conversation.id, conversation.draft);
+    setAcceptedSubmissions((ids) => ids.filter((id) => id !== conversation.id));
+  });
+  const checkSubmissions = async (retry = false) => {
+    if (submissionChecking()) return;
+    setSubmissionChecking(true);
+    try {
+      for (const id of Object.keys(chat.uncertainSubmissions())) {
+        if ((await (retry ? chat.retrySubmission(id) : chat.reconcileSubmission(id))) !== "accepted") continue;
+        setAcceptedSubmissions((ids) => [...ids, id]);
+      }
+    } finally {
+      setSubmissionChecking(false);
+    }
+  };
   const composerSaves = new Map<string, Promise<unknown>>();
   const serializeComposer = <T,>(key: string, action: () => Promise<T>): Promise<T> => {
     const next = (composerSaves.get(key) ?? Promise.resolve()).then(action, action);
@@ -591,7 +652,7 @@ export default function AssistantWorkspace(props: Props) {
     const overrideGeneration = override ? session(key).editGeneration : undefined;
     return serializeComposer(key, async () => {
       const local = session(key);
-      if (local.conflict) return null;
+      if (local.conflict || chat.uncertainSubmissions()[target] !== undefined) return null;
       const generation = overrideGeneration ?? local.editGeneration;
       local.saving = true;
       try {
@@ -628,13 +689,77 @@ export default function AssistantWorkspace(props: Props) {
     if (href === current) return;
     navigate(href, { replace, scroll: "manual", viewTransition: false });
   };
+  const creationRequests = new Map<string, { requestId: string; title: string; projectId?: string }>();
+  const [rejectedCreations, setRejectedCreations] = createSignal<ReadonlySet<string>>(new Set());
+  const [creationVersion, setCreationVersion] = createSignal(0);
+  const hasUnknownCreations = () => (creationVersion(), creationRequests.size > 0 && !newConversation.loading());
+  const [savingPanelDrafts, setSavingPanelDrafts] = createSignal(false);
+  const [panelStorageFailed, setPanelStorageFailed] = createSignal(false);
+  const [panelLeaveAttempted, setPanelLeaveAttempted] = createSignal(false);
+  const panelSelectionKey = `cloud.assistant.panel:${props.userId}`;
+  const rememberPanelConversation = (id: string) => {
+    if (!props.embedded) return;
+    try {
+      window.sessionStorage.setItem(panelSelectionKey, id);
+      setPanelStorageFailed(false);
+    } catch {
+      setPanelStorageFailed(true);
+    }
+  };
+  const migrateNewComposer = (conversation: AiConversation) => {
+    const from = "__new__";
+    const local = sessions.get(from);
+    if (!local?.dirty) return;
+    // The replay may contain another tab's newer draft. Keep the revision this local text was based on.
+    sessions.set(conversation.id, local);
+    setComposerDraft(conversation.id, composerDraft(from));
+    setComposerAttachmentsFor(conversation.id, composerAttachmentsFor(from));
+    setMentionsFor(conversation.id, mentionsFor(from));
+    setComposerDrafts((all) => ({ ...all, [from]: "" }));
+    setComposerAttachments((all) => ({ ...all, [from]: [] }));
+    setComposerMentions((all) => ({ ...all, [from]: [] }));
+    sessions.delete(from);
+  };
   const newConversation = mutation.create<
     AiConversation | null,
     { focus: boolean; projectId?: string; navigate?: boolean | (() => boolean) }
   >({
     mutation: async ({ focus, projectId, navigate: shouldNavigate = true }) => {
-      const conversation = await chat.createConversation({ title: t().newChat, ...(projectId ? { projectId } : {}) });
+      const key = projectId ? projectComposerKey(projectId) : "__new__";
+      let request = creationRequests.get(key);
+      if (!request) {
+        request = { requestId: crypto.randomUUID(), title: t().newChat, ...(projectId ? { projectId } : {}) };
+        creationRequests.set(key, request);
+        setCreationVersion((version) => version + 1);
+      }
+      setRejectedCreations((keys) => new Set([...keys].filter((item) => item !== key)));
+      const conversation = await chat.createConversation(request);
+      if (!conversation && [400, 401, 403, 404, 409, 413, 422].includes(chat.creationErrorStatus() ?? 0)) {
+        creationRequests.delete(key);
+        setRejectedCreations((keys) => new Set([...keys, key]));
+        setCreationVersion((version) => version + 1);
+      }
+      const existing = conversation && !projectId ? sessions.get(conversation.id) : undefined;
+      if (existing && (existing.dirty || existing.conflict || existing.saving)) {
+        // A replay can find a conversation already edited in this workspace. Never replace that session.
+        chat.setError(t().panelCreateDraftCollision);
+        return null;
+      }
+      if (conversation)
+        batch(() => {
+          creationRequests.delete(key);
+          setCreationVersion((version) => version + 1);
+          if (projectId) setPendingProjectChats((all) => ({ ...all, [projectId]: conversation }));
+          else migrateNewComposer(conversation);
+          const targetKey = projectId ? key : conversation.id;
+          const local = session(targetKey);
+          setServerDrafts((all) => ({ ...all, [targetKey]: conversation.draft }));
+          if (!local.dirty || observeComposerRevision(local, conversation.draft.revision) === "hydrate")
+            hydrateComposer(targetKey, conversation.draft);
+          else touchSession();
+        });
       if (conversation && chat.activeConversationId() === conversation.id) {
+        rememberPanelConversation(conversation.id);
         if (typeof shouldNavigate === "function" ? shouldNavigate() : shouldNavigate) {
           setProjectView(null);
           setApprovalsOpen(false);
@@ -646,13 +771,176 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
   const createConversation = async (focus: boolean, projectId?: string, shouldNavigate: boolean | (() => boolean) = true) => {
-    if (newConversation.loading()) return null;
+    if (newConversation.loading() || composerPicking() > 0) return null;
     await newConversation.mutate({ focus, projectId, navigate: shouldNavigate });
     return newConversation.data();
   };
+  type UnknownExit = { revisions: Record<string, number>; generations: Map<string, number>; creations: Map<string, string> };
+  let confirmedUnknownExit: UnknownExit | undefined;
+  const unknownExitSnapshot = (): UnknownExit => ({
+    revisions: { ...chat.uncertainSubmissions() },
+    generations: new Map([...new Set([...sessions.keys(), ...creationRequests.keys()])].map((key) => [key, session(key).editGeneration])),
+    creations: new Map([...creationRequests].map(([key, request]) => [key, request.requestId])),
+  });
+  const sessionConversation = (key: string) => (key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key);
+  const submissionUnknown = (key: string) => {
+    const id = sessionConversation(key);
+    return id !== undefined && chat.uncertainSubmissions()[id] !== undefined;
+  };
+  const emptyCreationCovered = (key: string, exit?: UnknownExit) => {
+    const request = creationRequests.get(key);
+    return Boolean(
+      request &&
+        exit &&
+        exit.creations.get(key) === request.requestId &&
+        exit.generations.get(key) === session(key).editGeneration &&
+        !composerDraft(key) &&
+        !composerAttachmentsFor(key).length &&
+        !mentionsFor(key).length,
+    );
+  };
+  const hasUnsavedPanelState = (exit?: UnknownExit) => {
+    sessionVersion();
+    creationVersion();
+    return (
+      submissionChecking() ||
+      savingPanelDrafts() ||
+      composerBusy() ||
+      composerSubmitting() ||
+      newConversation.loading() ||
+      [...creationRequests.keys()].some((key) => !emptyCreationCovered(key, exit)) ||
+      dictation.busy() ||
+      artifactWorkspace.hasDirty() ||
+      Object.entries(chat.uncertainSubmissions()).some(([id, revision]) => exit?.revisions[id] !== revision) ||
+      [...sessions].some(([key, local]) => {
+        const target = sessionConversation(key);
+        const explicitlyDiscarded =
+          target &&
+          exit &&
+          chat.uncertainSubmissions()[target] !== undefined &&
+          exit.revisions[target] === chat.uncertainSubmissions()[target] &&
+          exit.generations.get(key) === local.editGeneration;
+        return local.saving || ((local.dirty || local.conflict) && !explicitlyDiscarded && !emptyCreationCovered(key, exit));
+      })
+    );
+  };
   createEffect(() => {
-    if (activeProject() || composerSubmitting() || composerPicking()) return;
+    if (!hasUnsavedPanelState()) setPanelLeaveAttempted(false);
+  });
+  const hasUnknownSends = () => Object.keys(chat.uncertainSubmissions()).length > 0;
+  const unknownExitLabel = () => (hasUnknownSends() ? t().panelLeaveUnknown : t().panelLeaveUnknownCreate);
+  const leaveUnknownSubmission = async () => {
+    const exit = unknownExitSnapshot();
+    if ((!Object.keys(exit.revisions).length && !exit.creations.size) || hasUnsavedPanelState(exit)) return;
+    if (
+      !(await prompts.confirm(
+        [
+          ...(Object.keys(exit.revisions).length ? [t().panelLeaveUnknownConfirm] : []),
+          ...(exit.creations.size ? [t().panelLeaveUnknownCreateConfirm] : []),
+        ].join("\n\n"),
+        {
+          title: unknownExitLabel(),
+          confirmText: unknownExitLabel(),
+          variant: "danger",
+        },
+      ))
+    )
+      return;
+    // The confirmation covers exactly these revisions and local edits, never newer work.
+    if (hasUnsavedPanelState(exit)) return;
+    confirmedUnknownExit = exit;
+    closePanel();
+  };
+  const savePanelDrafts = async () => {
+    if (savingPanelDrafts() || composerBusy() || composerSubmitting() || dictation.busy()) return;
+    setSavingPanelDrafts(true);
+    try {
+      if (panelStorageFailed()) {
+        try {
+          const selected = window.sessionStorage.getItem(panelSelectionKey);
+          setPanelStorageFailed(false);
+          if (
+            !chat.activeConversationId() &&
+            !session("__new__").dirty &&
+            selected &&
+            /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/.test(selected)
+          ) {
+            await openAndFocusConversation(selected);
+          }
+        } catch {
+          setPanelStorageFailed(true);
+          return;
+        }
+      }
+      // Save known conversations first: a creation replay may resolve to one of these local drafts.
+      for (const [key, local] of [...sessions]) {
+        if (key === "__new__" || key.startsWith("project:") || !local.dirty || local.conflict) continue;
+        if (chat.uncertainSubmissions()[key] !== undefined) continue;
+        if (!(await saveComposer(key, key))) return;
+      }
+      for (const key of [...rejectedCreations()]) {
+        const projectId = key.startsWith("project:") ? key.slice(8) : undefined;
+        if (!(await createConversation(false, projectId, !projectId && composerSessionKey() === key))) return;
+      }
+      for (const request of [...creationRequests.values()]) {
+        if (!(await createConversation(false, request.projectId, false))) return;
+      }
+      for (const [original, local] of [...sessions]) {
+        if (!local.dirty || local.conflict) continue;
+        let key = original;
+        let target = key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key === "__new__" ? undefined : key;
+        if (!target) {
+          const projectId = key.startsWith("project:") ? key.slice(8) : undefined;
+          const created = await createConversation(false, projectId, !projectId);
+          if (!created) return;
+          target = created.id;
+          if (!projectId) key = target;
+        }
+        if (chat.uncertainSubmissions()[target] !== undefined) continue;
+        if (!(await saveComposer(key, target))) return;
+        rememberPanelConversation(target);
+      }
+      const target = chat.activeConversationId();
+      if (target) rememberPanelConversation(target);
+    } finally {
+      setSavingPanelDrafts(false);
+    }
+  };
+  onMount(() => {
+    if (!props.embedded) return;
+    onCleanup(
+      onPanelBeforeLeave(() => {
+        const exit = confirmedUnknownExit;
+        confirmedUnknownExit = undefined;
+        const safe = !hasUnsavedPanelState(exit) && !dialogCore.isOpen();
+        setPanelLeaveAttempted(!safe);
+        return safe;
+      }),
+    );
+    const selectors = new URLSearchParams(window.location.search);
+    if (!["conversation", "project", "artifact", "approvals"].some((key) => selectors.has(key))) {
+      try {
+        const selected = window.sessionStorage.getItem(panelSelectionKey);
+        if (selected && /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/.test(selected)) {
+          void openAndFocusConversation(selected).catch((error) =>
+            chat.setError(error instanceof Error ? error.message : t().openConversationFailed),
+          );
+        }
+      } catch {
+        setPanelStorageFailed(true);
+      }
+    }
+  });
+  createEffect(() => {
+    const id = chat.activeConversationId();
+    if (workspaceMounted() && id) rememberPanelConversation(id);
+  });
+  createEffect(() => {
+    if (activeProject() || composerSubmitting() || composerBusy()) return;
     const key = composerSessionKey();
+    creationVersion();
+    // An unknown creation is retried only by the person's explicit Save/Retry action.
+    if (creationRequests.has(key) || rejectedCreations().has(key)) return;
     const text = composerDraft(key);
     const files = composerAttachmentsFor(key);
     mentionsFor(key);
@@ -666,10 +954,6 @@ export default function AssistantWorkspace(props: Props) {
         const created = await createConversation(false);
         if (!created) return;
         conversationId = created.id;
-        setComposerDraft(conversationId, composerDraft(key));
-        setComposerAttachmentsFor(conversationId, composerAttachmentsFor(key));
-        setMentionsFor(conversationId, mentionsFor(key));
-        session(conversationId).baseRevision = created.draft.revision;
       }
       await saveComposer(conversationId, conversationId);
     }, 2_000);
@@ -722,7 +1006,7 @@ export default function AssistantWorkspace(props: Props) {
     void consumeCommandLink();
   });
   createEffect(() => {
-    if (newConversation.loading()) return;
+    if (newConversation.loading() || composerPicking() > 0) return;
     const project = activeProject() ?? projects().find((project) => project.id === activeConversation()?.projectId);
     onCleanup(
       registerContextAwareCommand({
@@ -738,7 +1022,13 @@ export default function AssistantWorkspace(props: Props) {
     );
   });
   const canSend = createMemo(
-    () => canUseComposer() && !newConversation.loading() && !chat.loadingConversation() && !chat.running() && !chat.activeTurn(),
+    () =>
+      canUseComposer() &&
+      !composerBusy() &&
+      !newConversation.loading() &&
+      !chat.loadingConversation() &&
+      !chat.running() &&
+      !chat.activeTurn(),
   );
   let navigationRequest = 0;
   const openAndFocusConversation = async (conversationId: string) => {
@@ -868,7 +1158,7 @@ export default function AssistantWorkspace(props: Props) {
       registerSearchNavigation(async ({ href, ref }) => {
         if (ref?.type !== "assistant.chat" && ref?.type !== "assistant.message") return false;
         const target = new URL(href, props.cloudUrl);
-        if (target.origin !== new URL(props.cloudUrl).origin || target.pathname !== "/app/assistant") return false;
+        if (target.origin !== new URL(props.cloudUrl).origin || target.pathname !== basePath) return false;
         const conversationId = assistantConversationIdFromHref(href);
         if (!conversationId) return false;
         const generation = navigationRequest + 1;
@@ -887,7 +1177,7 @@ export default function AssistantWorkspace(props: Props) {
     artifactWorkspace.restore();
     setWorkspaceMounted(true);
     const guardUnsaved = (event: BeforeUnloadEvent) => {
-      if (artifactWorkspace.hasDirty()) {
+      if (hasUnsavedPanelState()) {
         event.preventDefault();
         event.returnValue = "";
       }
@@ -914,7 +1204,7 @@ export default function AssistantWorkspace(props: Props) {
       }
       setApprovalsOpen(false);
       if (projectId) {
-        void openProject(projectId).catch(() => navigateTo("/app/assistant"));
+        void openProject(projectId).catch(() => navigateTo(basePath));
         return;
       }
       if (!conversationId) {
@@ -951,7 +1241,6 @@ export default function AssistantWorkspace(props: Props) {
       if (!chat.activeConversationId()) {
         const conversation = await createConversation(false);
         if (!conversation || chat.activeConversationId() !== conversation.id) return false;
-        session(conversation.id).baseRevision = conversation.draft.revision;
       }
       const target = chat.activeConversationId()!;
       const sent = await serializeComposer(target, async () => {
@@ -959,6 +1248,7 @@ export default function AssistantWorkspace(props: Props) {
         if (local.conflict) return false;
         local.saving = true;
         try {
+          submissionSnapshots.set(target, input);
           const result = await chat.send({
             ...input,
             conversationId: target,
@@ -1000,6 +1290,7 @@ export default function AssistantWorkspace(props: Props) {
           if (local.conflict) return false;
           local.saving = true;
           try {
+            submissionSnapshots.set(key, message);
             const sent = await chat.send({ ...message, conversationId: target, expectedDraftRevision: local.baseRevision });
             const draft = chat.conversation()?.draft;
             if (draft) local.baseRevision = draft.revision;
@@ -1012,12 +1303,15 @@ export default function AssistantWorkspace(props: Props) {
         });
       },
       rememberPending: (conversation) => setPendingProjectChats((current) => ({ ...current, [projectId]: conversation })),
-      clearPending: () =>
+      clearPending: () => {
+        const draft = chat.conversation()?.draft;
+        if (draft) hydrateComposer(projectComposerKey(projectId), draft);
         setPendingProjectChats((current) => {
           const next = { ...current };
           delete next[projectId];
           return next;
-        }),
+        });
+      },
       navigate: (conversationId) => navigateTo(assistantConversationHref(window.location.href, conversationId)),
     });
   };
@@ -1044,7 +1338,7 @@ export default function AssistantWorkspace(props: Props) {
       : [];
   const queueMessage = async (input: AiComposerSendInput) => {
     const conversationId = chat.activeConversationId();
-    if (!conversationId || composerSubmitting()) return false;
+    if (!conversationId || composerSubmitting() || composerBusy()) return false;
     setComposerSubmitting(true);
     try {
       return await serializeComposer(conversationId, async () => {
@@ -1052,6 +1346,7 @@ export default function AssistantWorkspace(props: Props) {
         if (local.conflict) return false;
         local.saving = true;
         try {
+          submissionSnapshots.set(conversationId, input);
           const accepted = await chat.queueMessage({
             ...input,
             conversationId,
@@ -1245,42 +1540,56 @@ export default function AssistantWorkspace(props: Props) {
   };
 
   const useStarter = async (starter: AssistantStarterAction) => {
-    const key = composerSessionKey();
-    const current = composerDraft(key);
-    setComposerDraft(key, current.trim() ? `${current}\n\n${starter.prompt}` : starter.prompt);
-    focusComposer();
-    if (starter.skill)
-      try {
-        const skill = (await assistantApi.listSkills()).find((skill) => skill.enabled && skill.name === starter.skill);
-        if (
-          !skill ||
-          composerSessionKey() !== key ||
-          composerAttachmentsFor(key).some(
-            (item) => item.kind === "resource" && item.ref.type === "core.ai.skill" && item.ref.id === skill.id,
+    const release = holdComposerSave();
+    try {
+      const key = composerSessionKey();
+      const target = followComposerSession(key);
+      const current = composerDraft(key);
+      setComposerDraft(key, current.trim() ? `${current}\n\n${starter.prompt}` : starter.prompt);
+      focusComposer();
+      if (starter.skill)
+        try {
+          const skill = (await assistantApi.listSkills()).find((skill) => skill.enabled && skill.name === starter.skill);
+          if (
+            !skill ||
+            composerSessionKey() !== target() ||
+            composerAttachmentsFor(target()).some(
+              (item) => item.kind === "resource" && item.ref.type === "core.ai.skill" && item.ref.id === skill.id,
+            )
           )
-        )
-          return;
-        await addResolvedComposerResource(key, { type: "core.ai.skill", id: skill.id });
-      } catch {
-        chat.setError(t().attachResourceFailed);
-      }
+            return;
+          await addResolvedComposerResource(target(), { type: "core.ai.skill", id: skill.id });
+        } catch {
+          chat.setError(t().attachResourceFailed);
+        }
+    } finally {
+      release();
+    }
   };
+
   /** The server counts every non-text part of a draft: attachments and references in the text alike. */
   const composerPartCount = (key: string) => composerAttachmentsFor(key).length + mentionsFor(key).length;
   const addComposerFiles = async (sessionKey: string, files: readonly File[]) => {
-    const current = composerAttachmentsFor(sessionKey);
-    const result = await readAiComposerFiles(files, {
-      acceptsImages: acceptsImages(),
-      currentCount: composerPartCount(sessionKey),
-      currentImageBytes: current.reduce((total, attachment) => total + (attachment.kind === "image" ? attachment.size : 0), 0),
-    });
-    const attachmentErrors = [...result.errors];
-    if (result.discarded > 0) {
-      attachmentErrors.push(t().discardedAttachments({ count: result.discarded }));
+    const target = followComposerSession(sessionKey);
+    const release = holdComposerSave();
+    try {
+      const current = composerAttachmentsFor(sessionKey);
+      const result = await readAiComposerFiles(files, {
+        acceptsImages: acceptsImages(),
+        currentCount: composerPartCount(sessionKey),
+        currentImageBytes: current.reduce((total, attachment) => total + (attachment.kind === "image" ? attachment.size : 0), 0),
+      });
+      const attachmentErrors = [...result.errors];
+      if (result.discarded > 0) {
+        attachmentErrors.push(t().discardedAttachments({ count: result.discarded }));
+      }
+      if (attachmentErrors.length > 0) chat.setError(attachmentErrors.join(" "));
+      if (result.attachments.length === 0) return;
+      const key = target();
+      setComposerAttachmentsFor(key, [...composerAttachmentsFor(key), ...result.attachments]);
+    } finally {
+      release();
     }
-    if (attachmentErrors.length > 0) chat.setError(attachmentErrors.join(" "));
-    if (result.attachments.length === 0) return;
-    setComposerAttachmentsFor(sessionKey, [...composerAttachmentsFor(sessionKey), ...result.attachments]);
   };
 
   /** From this device or from a Cloud app, within what the draft can still take; a full draft says so at once. */
@@ -1301,38 +1610,46 @@ export default function AssistantWorkspace(props: Props) {
     return false;
   };
 
-  const addResolvedComposerResource = async (sessionKey: string, ref: { type: string; id: string }) => {
-    if (!requireComposerAttachmentsAvailable(sessionKey)) return;
-    const current = composerAttachmentsFor(sessionKey);
-    if (current.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
-      chat.setError(t().resourceAlreadyAttached);
-      return;
+  const addResolvedComposerResource = async (sessionKey: string, ref: { type: string; id: string }, isCurrent = () => true) => {
+    const target = followComposerSession(sessionKey);
+    const release = holdComposerSave();
+    try {
+      if (!requireComposerAttachmentsAvailable(sessionKey)) return;
+      const current = composerAttachmentsFor(sessionKey);
+      if (current.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
+        chat.setError(t().resourceAlreadyAttached);
+        return;
+      }
+      if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+        chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
+        return;
+      }
+      const resource = await resolveAssistantCloudResource(ref);
+      if (!isCurrent()) return;
+      const key = target();
+      const latest = composerAttachmentsFor(key);
+      if (latest.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
+        chat.setError(t().resourceAlreadyAttached);
+        return;
+      }
+      if (composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+        chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
+        return;
+      }
+      setComposerAttachmentsFor(key, [
+        ...latest,
+        {
+          kind: "resource",
+          id: `resource:${resource.ref.type}:${resource.ref.id}`,
+          name: resource.title,
+          ref: resource.ref,
+          icon: resource.icon,
+          href: resource.href,
+        },
+      ]);
+    } finally {
+      release();
     }
-    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
-      return;
-    }
-    const resource = await resolveAssistantCloudResource(ref);
-    const latest = composerAttachmentsFor(sessionKey);
-    if (latest.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
-      chat.setError(t().resourceAlreadyAttached);
-      return;
-    }
-    if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
-      return;
-    }
-    setComposerAttachmentsFor(sessionKey, [
-      ...latest,
-      {
-        kind: "resource",
-        id: `resource:${resource.ref.type}:${resource.ref.id}`,
-        name: resource.title,
-        ref: resource.ref,
-        icon: resource.icon,
-        href: resource.href,
-      },
-    ]);
   };
 
   const editScheduledTask = async (task: AiChatTaskView, repair: boolean) => {
@@ -1365,28 +1682,35 @@ export default function AssistantWorkspace(props: Props) {
   };
 
   const showComposerTextAttachment = async (sessionKey: string, attachment: AiComposerAttachment) => {
-    let text: string;
-    if (attachment.kind === "file") {
-      text = await attachment.file.text();
-    } else if (attachment.kind === "stored-file") {
-      const conversationId = chat.activeConversationId();
-      if (!conversationId) throw new Error(t().openChatBeforeAttachment);
-      const query = new URLSearchParams({ path: attachment.path });
-      const response = await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files/content?${query}`);
-      if (!response.ok) throw new Error(t().loadTextAttachmentFailed);
-      text = await response.text();
-    } else {
-      return;
+    const target = followComposerSession(sessionKey);
+    const release = holdComposerSave();
+    try {
+      let text: string;
+      if (attachment.kind === "file") {
+        text = await attachment.file.text();
+      } else if (attachment.kind === "stored-file") {
+        const conversationId = chat.activeConversationId();
+        if (!conversationId) throw new Error(t().openChatBeforeAttachment);
+        const query = new URLSearchParams({ path: attachment.path });
+        const response = await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files/content?${query}`);
+        if (!response.ok) throw new Error(t().loadTextAttachmentFailed);
+        text = await response.text();
+      } else {
+        return;
+      }
+      const key = target();
+      const currentText = composerDraft(key);
+      const nextText = currentText ? `${currentText}\n\n${text}` : text;
+      if (nextText.length > AI_COMPOSER_TEXT_MAX_CHARS) throw new Error(t().textTooLong);
+      setComposerDraft(key, nextText);
+      setComposerAttachmentsFor(
+        key,
+        composerAttachmentsFor(key).filter((candidate) => candidate.id !== attachment.id),
+      );
+      focusComposer();
+    } finally {
+      release();
     }
-    const currentText = composerDraft(sessionKey);
-    const nextText = currentText ? `${currentText}\n\n${text}` : text;
-    if (nextText.length > AI_COMPOSER_TEXT_MAX_CHARS) throw new Error(t().textTooLong);
-    setComposerDraft(sessionKey, nextText);
-    setComposerAttachmentsFor(
-      sessionKey,
-      composerAttachmentsFor(sessionKey).filter((candidate) => candidate.id !== attachment.id),
-    );
-    focusComposer();
   };
 
   const pasteComposerContent = (sessionKey: string, event: ClipboardEvent) => {
@@ -1429,13 +1753,10 @@ export default function AssistantWorkspace(props: Props) {
       const created = await createConversation(false, projectId, !projectId);
       if (!created) return null;
       if (projectId) {
-        session(key).baseRevision = created.draft.revision;
         setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
         return { key, target: created.id };
       }
-      setComposerDraft(created.id, composerDraft(key));
-      setComposerAttachmentsFor(created.id, composerAttachmentsFor(key));
-      session(created.id).baseRevision = created.draft.revision;
+
       return { key: created.id, target: created.id };
     },
     apply: async (key, target, id) => {
@@ -1516,21 +1837,14 @@ export default function AssistantWorkspace(props: Props) {
           if (!created) throw new Error("Chat not created");
           target = created.id;
           if (projectId) {
-            session(key).baseRevision = created.draft.revision;
             setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
           } else {
-            const from = key;
             key = created.id;
-            if (signal.aborted) {
-              setComposerDraft(key, composerDraft(from));
-              setComposerAttachmentsFor(key, composerAttachmentsFor(from));
-              setMentionsFor(key, mentionsFor(from));
-            } else {
+            if (!signal.aborted) {
               setComposerDraft(key, draft.value);
               setComposerAttachmentsFor(key, attachments);
               setMentionsFor(key, draft.mentions);
             }
-            session(key).baseRevision = created.draft.revision;
           }
         }
         const opened = key;
@@ -1567,15 +1881,20 @@ export default function AssistantWorkspace(props: Props) {
       }
     };
     const appCommands = createMemo(() =>
-      cloudCommandMenu({
-        locale: locale(),
-        commands: catalog.commands(),
-        state: catalog.state(),
-        section: "apps",
-        before: (draft, signal, follow) => trackComposerPicking(beforeCommand(draft, signal, follow)),
-        returnTo: () => (commandTarget ? assistantConversationHref(window.location.href, commandTarget) : undefined),
-        signal: () => commandOpening?.controller.signal,
-      }),
+      props.embedded
+        ? { commands: [], pending: false }
+        : cloudCommandMenu({
+            locale: locale(),
+            commands: catalog.commands(),
+            state: catalog.state(),
+            section: "apps",
+            before: (draft, signal, follow) => {
+              setPendingCommandSaves((count) => count + 1);
+              return beforeCommand(draft, signal, follow).finally(() => setPendingCommandSaves((count) => count - 1));
+            },
+            returnTo: () => (commandTarget ? assistantConversationHref(window.location.href, commandTarget) : undefined),
+            signal: () => commandOpening?.controller.signal,
+          }),
     );
     const attachmentCount = createMemo(() => composerAttachmentsFor(sessionKey()).length);
     const mentionCount = createMemo(() => mentionsFor(sessionKey()).length);
@@ -1622,8 +1941,86 @@ export default function AssistantWorkspace(props: Props) {
             />
           )}
         </Show>
+        <Show
+          when={
+            props.embedded &&
+            ((panelLeaveAttempted() && hasUnsavedPanelState()) || panelStorageFailed() || hasUnknownSends() || hasUnknownCreations())
+          }
+        >
+          <NoticeCard tone="warning" title={t().panelUnsaved}>
+            <p>{t().panelSaveHint}</p>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={savingPanelDrafts() || composerBusy() || composerSubmitting()}
+              onClick={() => void savePanelDrafts()}
+            >
+              {t().panelSave}
+            </Button>
+          </NoticeCard>
+        </Show>
+        <Show when={rejectedCreations().size > 0}>
+          <NoticeCard tone="danger" title={t().panelCreateRejected} detail={t().panelCreateRejectedHint}>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={savingPanelDrafts() || composerBusy() || composerSubmitting()}
+              onClick={() => void savePanelDrafts()}
+            >
+              {t().panelRetryCreate}
+            </Button>
+          </NoticeCard>
+        </Show>
+        <Show when={hasUnknownSends() || hasUnknownCreations()}>
+          <NoticeCard tone="warning" title={hasUnknownSends() ? t().panelUnknownSend : t().panelUnknownCreate}>
+            <Show when={hasUnknownCreations()}>
+              <p>{t().panelUnknownCreateHint}</p>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={savingPanelDrafts() || composerSubmitting() || composerBusy()}
+                onClick={() => void savePanelDrafts()}
+              >
+                {t().panelRetryCreate}
+              </Button>
+            </Show>
+            <Show when={hasUnknownSends()}>
+              <p>{t().panelUnknownHint}</p>
+              <For each={Object.keys(chat.uncertainSubmissions())}>
+                {(id) => (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      if (await openAndFocusConversation(id)) commitConversationUrl(id);
+                    }}
+                  >
+                    {conversations().find((conversation) => conversation.id === id)?.title ?? t().newChat}
+                  </Button>
+                )}
+              </For>
+              <Button size="sm" variant="secondary" disabled={submissionChecking()} onClick={() => void checkSubmissions()}>
+                {t().panelCheckSend}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={submissionChecking()} onClick={() => void checkSubmissions(true)}>
+                {t().panelRetrySend}
+              </Button>
+            </Show>
+            <Show when={props.embedded}>
+              <p>{t().panelLeaveUnknownHint}</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={hasUnsavedPanelState(unknownExitSnapshot())}
+                onClick={() => void leaveUnknownSubmission()}
+              >
+                {unknownExitLabel()}
+              </Button>
+            </Show>
+          </NoticeCard>
+        </Show>
         <dictation.Status />
-        <Show when={(sessionVersion(), session(sessionKey()).conflict)}>
+        <Show when={(sessionVersion(), session(sessionKey()).conflict) && !submissionUnknown(sessionKey())}>
           <div role="status" class="space-y-2 rounded-lg border border-border p-3 text-sm">
             <p>{audioCopy().conflict}</p>
             <Show when={serverDrafts()[sessionKey()]}>
@@ -1804,7 +2201,6 @@ export default function AssistantWorkspace(props: Props) {
                     setComposerDraft(conversationId, text);
                     setComposerAttachmentsFor(conversationId, attachments);
                     setMentionsFor(conversationId, mentions);
-                    session(conversationId).baseRevision = created.draft.revision;
                   }
                   if (!(await saveComposer(conversationId, conversationId))) throw new Error(t().chatActionFailed);
                   if (chat.activeConversationId() !== conversationId) return;
@@ -1854,7 +2250,15 @@ export default function AssistantWorkspace(props: Props) {
               onRefresh={quotas.refresh}
             />
           }
-          disabled={!canUseComposer() || (newConversation.loading() && !commandCreating()) || chat.loadingConversation()}
+          disabled={
+            (props.embedded && !workspaceMounted()) ||
+            composerPicking() > 0 ||
+            !canUseComposer() ||
+            panelStorageFailed() ||
+            submissionUnknown(sessionKey()) ||
+            (newConversation.loading() && !commandCreating()) ||
+            chat.loadingConversation()
+          }
           state={
             projectComposer()
               ? newConversation.loading() && !commandCreating()
@@ -2012,7 +2416,7 @@ export default function AssistantWorkspace(props: Props) {
       delete next[archived.id];
       return next;
     });
-    if (archived.id === chat.activeConversationId()) navigateTo("/app/assistant");
+    if (archived.id === chat.activeConversationId()) navigateTo(basePath);
   };
 
   // While a turn runs, its work line says that the chat reconnects.
@@ -2082,6 +2486,10 @@ export default function AssistantWorkspace(props: Props) {
     <AssistantLiveProvider value={liveHub}>
       <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
         <AssistantSidebar
+          fullViewConversationId={activeProject() ? pendingProjectChats()[activeProject()!.id]?.id : undefined}
+          embedded={props.embedded}
+          panelReady={workspaceMounted()}
+          basePath={basePath}
           conversations={conversations}
           timeZone={props.timeZone}
           renderedAt={props.renderedAt}
@@ -2090,11 +2498,11 @@ export default function AssistantWorkspace(props: Props) {
           activeView={approvalsOpen() ? "approvals" : "chat"}
           projects={projects()}
           activeProjectId={activeProject()?.id ?? null}
-          creatingConversation={newConversation.loading}
+          creatingConversation={() => newConversation.loading() || composerPicking() > 0}
           onNewConversation={() => void createAndFocusConversation()}
           onCreateProject={async () => {
             const project = await openAssistantCreateProjectDialog();
-            if (project) navigateTo(assistantProjectHref("/app/assistant", project.id));
+            if (project) navigateTo(assistantProjectHref(basePath, project.id));
           }}
           onOpenProject={openProject}
           onOpenConversation={openAndFocusConversation}
@@ -2109,6 +2517,25 @@ export default function AssistantWorkspace(props: Props) {
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false} mobilePane={artifactWorkspace.mobile()}>
             <AppWorkspace.MainPane id="chat" label={artifactCopy().chat} scroll={false} class="assistant-chat-pane flex min-h-0 flex-col">
+              <Show when={props.embedded && !approvalsOpen()}>
+                <AssistantPanelContext
+                  initial={props.initialPanelContext ?? null}
+                  disabled={
+                    (props.embedded && !workspaceMounted()) ||
+                    !canUseComposer() ||
+                    panelStorageFailed() ||
+                    submissionUnknown(activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey()) ||
+                    composerSubmitting() ||
+                    newConversation.loading() ||
+                    chat.loadingConversation() ||
+                    chat.running()
+                  }
+                  attach={(ref, current) => {
+                    const key = activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey();
+                    return trackComposerPicking(addResolvedComposerResource(key, ref, current));
+                  }}
+                />
+              </Show>
               <Show
                 when={!approvalsOpen()}
                 fallback={<AssistantApprovalsView initial={approvalsRendered() ? props.approvals.page : undefined} />}
