@@ -1,5 +1,5 @@
 import { Button, Combobox, IconButton, InlineGuidance, LocaleProvider, prompts, Select, TextInput } from "@k2b/ui";
-import { createEffect, createResource, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { chatMessages } from "../messages";
 import { type DiscoveryEntrySchema, MEMBER_PAGE_SIZE } from "../service/contracts";
@@ -314,20 +314,25 @@ export function ChannelDialog(
           <Show when={entries().some((entry) => entry.principal.type === "authenticated")}>
             <p class="text-sm text-dimmed">{t().authenticatedExplanation}</p>
           </Show>
-          <Show when={!intent?.pending() && countLoading()}>
-            <InlineGuidance loading>{t().loadingChats}</InlineGuidance>
-          </Show>
-          <Show when={!intent?.pending() && previewError()}>
-            <DialogError message={t().requestFailed} />
-            <Button variant="text" onClick={() => void preview()}>
-              {t().retry}
-            </Button>
-          </Show>
-          <Show when={!recovering() && count() !== undefined}>
-            <p role="status" class="text-sm text-secondary">
-              {t().discoveryAudience({ count: count()! })}
-            </p>
-          </Show>
+          {/* Counting, its result, and a failure share one line of fixed height, so nothing below moves. */}
+          <div class="chat-channel-audience">
+            <Switch>
+              <Match when={!intent?.pending() && previewError()}>
+                <DialogError message={t().requestFailed} />
+                <Button variant="text" size="sm" onClick={() => void preview()}>
+                  {t().retry}
+                </Button>
+              </Match>
+              <Match when={!intent?.pending() && countLoading()}>
+                <InlineGuidance loading>{t().countingAudience}</InlineGuidance>
+              </Match>
+              <Match when={!recovering() && count() !== undefined}>
+                <p role="status" class="text-sm text-secondary">
+                  {t().discoveryAudience({ count: count()! })}
+                </p>
+              </Match>
+            </Switch>
+          </div>
         </Show>
       </form>
       <Show when={intent?.pending() && !busy()}>

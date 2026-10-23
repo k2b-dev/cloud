@@ -18,6 +18,7 @@ export const chatMessages = i18n.define({
       channelListFailed: "Channels could not be loaded.",
 
       loadingChats: "Loading chats…",
+      countingAudience: "Counting accounts…",
 
       leaveChannelDescription:
         "You leave the channel. If it is still discoverable for you, you can read its history and join again. Your messages stay in the channel.",
@@ -333,6 +334,7 @@ export const chatMessages = i18n.define({
       channelListFailed: "Die Kanäle konnten nicht geladen werden.",
 
       loadingChats: "Chats werden geladen…",
+      countingAudience: "Konten werden gezählt…",
 
       leaveChannelDescription:
         "Du verlässt den Kanal. Solange er für dich auffindbar ist, kannst du seinen Verlauf lesen und wieder beitreten. Deine Nachrichten bleiben im Kanal.",

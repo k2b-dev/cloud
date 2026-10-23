@@ -220,6 +220,34 @@ for (const mode of [
       await dialog.waitFor({ state: "hidden" });
       expect(harness.props({}).sidebar.items[0]?.purpose).toBe("New purpose");
     });
+    test("the audience line keeps the dialog still while it counts, shows the count, and fails", async () => {
+      await mount(page, mode.locale);
+      const dialog = await newChannel();
+      const create = dialog.getByRole("button", { name: t.newChannel, exact: true });
+      let hold: (() => void) | undefined;
+      let fail = false;
+      await page.route("**/api/chat/channels/preview*", async (route) => {
+        if (fail) return route.fulfill({ status: 503, json: { message: "Unavailable" } });
+        await new Promise<void>((resolve) => {
+          hold = resolve;
+        });
+        await route.continue();
+      });
+      await dialog.getByRole("button", { name: t.allAuthenticated, exact: true }).click();
+      await dialog.getByText(t.countingAudience).waitFor();
+      await settled(page);
+      const counting = await create.boundingBox();
+      hold?.();
+      await dialog.getByText(t.discoveryAudience({ count: 42 }), { exact: true }).waitFor();
+      await settled(page);
+      expect(await create.boundingBox()).toEqual(counting);
+      fail = true;
+      await dialog.getByRole("combobox", { name: `${t.joiningPermission}: ${t.allAuthenticated}`, exact: true }).click();
+      await page.getByRole("option", { name: t.permissionRead, exact: true }).click();
+      await dialog.getByRole("button", { name: t.retry, exact: true }).waitFor();
+      await settled(page);
+      expect(await create.boundingBox()).toEqual(counting);
+    });
     test("catalog membership is independent of sidebar pagination and returning refreshes the SSR snapshot", async () => {
       const id = harness.addChannel("Atlas", "Already subscribed", true);
       await page.goto(new URL("/app/chat/channels", harness.url).href);
