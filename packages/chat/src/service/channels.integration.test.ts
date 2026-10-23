@@ -19,7 +19,7 @@ suite("channel authorization, publication and audience bounds", () => {
   const accountIds: string[] = [];
   const credential = async (kind: "standalone" | "agent") => {
     const [account] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts (name, kind)
-      VALUES ('Channel regression', ${kind}) RETURNING id`;
+      VALUES (${`Channel regression ${crypto.randomUUID()}`}, ${kind}) RETURNING id`;
     if (!account) throw new Error("Missing fixture account");
     accountIds.push(account.id);
     return account.id;
@@ -255,7 +255,8 @@ suite("channel authorization, publication and audience bounds", () => {
           undefined,
           1,
         );
-        expect(result).toMatchObject({ ok: false, code: "AUDIENCE_UNAVAILABLE", status: 503, error: expect.any(String) });
+        // A copy: Bun's toMatchObject writes its asymmetric matchers into the object it checks.
+        expect({ ...result }).toMatchObject({ ok: false, code: "AUDIENCE_UNAVAILABLE", status: 503, error: expect.any(String) });
         expect(result).not.toHaveProperty("data");
         const response = await new Hono().get("/", (c) => respond(c, result)).request("/");
         expect(response.status).toBe(503);
