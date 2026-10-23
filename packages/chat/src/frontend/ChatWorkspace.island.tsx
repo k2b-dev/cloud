@@ -42,7 +42,7 @@ import { openChannelDialog } from "./ChannelDialogs";
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import { openChatDetailsDialog } from "./ChatDetailsDialog";
 import ChatInfoPanel from "./ChatInfoPanel";
-import ChatList from "./ChatList";
+import ChatList, { channelLine } from "./ChatList";
 import ChatSharedSection from "./ChatSharedSection";
 import ChatThreadColumn from "./ChatThreadColumn";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
@@ -1387,6 +1387,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   onSubscribe={subscribe}
                   onOpen={(id) => openChosen(id)}
                   onBack={backToList}
+                  listHref={basePath}
                 />
               </Match>
               <Match when={route().threads && openChat()?.id && threaded() ? conversation() : null}>
@@ -1511,6 +1512,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                         replyHint={replyHint}
                         unreadHint={unreadHint}
                         memberCount={current().memberCount}
+                        subtitle={current().channel ? channelLine(current(), t()) : undefined}
                         items={items()}
                         hasOlder={openChat()?.hasOlder ?? false}
                         hasNewer={openChat()?.hasNewer ?? false}

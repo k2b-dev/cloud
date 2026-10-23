@@ -5,6 +5,7 @@ import { createStore, reconcile } from "solid-js/store";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import type { ConversationPageSchema } from "../service/contracts";
+import { channelLine } from "./ChatList";
 import { createChannelApi } from "./channel-api";
 
 type Page = z.infer<typeof ConversationPageSchema>;
@@ -18,6 +19,8 @@ export default function DiscoverChannels(props: {
   onSubscribe: (id: string) => Promise<void>;
   onOpen: (id: string) => Promise<void>;
   onBack: (navigation: LinkNavigateEvent) => Promise<void>;
+  /** Where Back leads: the chat list of the full view or of the panel. */
+  listHref?: string;
 }): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
@@ -121,7 +124,13 @@ export default function DiscoverChannels(props: {
     <section class="chat-discover" aria-label={t().browseChannels}>
       <header class="chat-conversation__header">
         <span class="chat-conversation__back">
-          <IconButtonLink href="/app/chat" navigation="enhanced" onNavigate={props.onBack} label={t().backToChats} tooltip={false}>
+          <IconButtonLink
+            href={props.listHref ?? "/app/chat"}
+            navigation="enhanced"
+            onNavigate={props.onBack}
+            label={t().backToChats}
+            tooltip={false}
+          >
             <i class="ti ti-arrow-left" aria-hidden="true" />
           </IconButtonLink>
         </span>
@@ -131,69 +140,79 @@ export default function DiscoverChannels(props: {
         </div>
       </header>
       <ScrollArea class="chat-discover__body">
-        <TextInput type="search" label={t().searchChannels} icon="ti ti-search" maxLength={100} value={search} onValueChange={setSearch} />
-        <div aria-busy={busy()}>
-          <Show when={busy() && rows.length === 0}>
-            <div role="status" aria-label={t().loadingChats} class="flex flex-col gap-6 py-6">
-              <For each={[0, 1, 2]}>
-                {() => (
-                  <div class="flex items-center gap-3">
-                    <Skeleton class="h-10 w-10 rounded-full" />
-                    <Skeleton class="h-10 flex-1" />
-                    <Skeleton class="h-9 w-32" />
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
-          <Show when={error()}>
-            <InlineGuidance tone="danger" role="alert">
-              {t().channelListFailed}{" "}
-              <Button variant="text" onClick={() => void load(retryMore)}>
-                {t().retry}
-              </Button>
-            </InlineGuidance>
-          </Show>
-          <Show when={!busy() && !error() && rows.length === 0}>
-            <p class="py-6 text-sm text-secondary" role="status">
-              {props.query ? t().channelSearchEmpty({ query: props.query }) : t().noChannels}
-            </p>
-          </Show>
-          <ul aria-label={t().channels} class="flex flex-col py-3">
-            <For each={rows}>
-              {(row) => {
-                const member = () => row.member;
-                return (
-                  <li class="chat-discover__row">
-                    <span class="chat-discover__icon" aria-hidden="true">
-                      <i class={row.icon ?? "ti ti-hash"} />
-                    </span>
-                    <div class="min-w-0 flex-1">
-                      <p class="truncate font-medium">{row.title}</p>
-                      <p class="text-sm text-secondary">{row.purpose}</p>
+        <div class="chat-discover__content">
+          <TextInput
+            type="search"
+            aria-label={t().searchChannels}
+            placeholder={t().searchChannels}
+            icon="ti ti-search"
+            maxLength={100}
+            value={search}
+            onValueChange={setSearch}
+          />
+          <div aria-busy={busy()}>
+            <Show when={busy() && rows.length === 0}>
+              <div role="status" aria-label={t().loadingChats} class="flex flex-col gap-6 py-6">
+                <For each={[0, 1, 2]}>
+                  {() => (
+                    <div class="flex items-center gap-3">
+                      <Skeleton class="h-10 w-10 rounded-full" />
+                      <Skeleton class="h-10 flex-1" />
+                      <Skeleton class="h-9 w-32" />
                     </div>
-                    <Button
-                      class="chat-discover__subscribe"
-                      size="sm"
-                      variant={member() ? "secondary" : "primary"}
-                      loading={pending().includes(row.id)}
-                      onClick={() => (member() ? void props.onOpen(row.id) : void subscribe(row.id))}
-                    >
-                      <Show when={member()}>
-                        <i class="ti ti-check" aria-hidden="true" />
-                      </Show>
-                      {member() ? t().subscribed : t().subscribe}
-                    </Button>
-                  </li>
-                );
-              }}
-            </For>
-          </ul>
-          <Show when={cursor()}>
-            <Button variant="text" loading={busy()} onClick={() => void load(true)}>
-              {t().showMoreChannels}
-            </Button>
-          </Show>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <Show when={error()}>
+              <InlineGuidance tone="danger" role="alert">
+                {t().channelListFailed}{" "}
+                <Button variant="text" onClick={() => void load(retryMore)}>
+                  {t().retry}
+                </Button>
+              </InlineGuidance>
+            </Show>
+            <Show when={!busy() && !error() && rows.length === 0}>
+              <p class="py-6 text-sm text-secondary" role="status">
+                {props.query ? t().channelSearchEmpty({ query: props.query }) : t().noChannels}
+              </p>
+            </Show>
+            <ul aria-label={t().channels} class="flex flex-col py-3">
+              <For each={rows}>
+                {(row) => {
+                  const member = () => row.member;
+                  return (
+                    <li class="chat-discover__row">
+                      <span class="chat-discover__icon" aria-hidden="true">
+                        <i class={row.icon ?? "ti ti-speakerphone"} />
+                      </span>
+                      <div class="min-w-0 flex-1">
+                        <p class="truncate font-medium">{row.title}</p>
+                        <p class="text-sm text-secondary">{channelLine(row, t())}</p>
+                      </div>
+                      <Button
+                        class="chat-discover__subscribe"
+                        size="sm"
+                        variant={member() ? "secondary" : "primary"}
+                        loading={pending().includes(row.id)}
+                        onClick={() => (member() ? void props.onOpen(row.id) : void subscribe(row.id))}
+                      >
+                        <Show when={member()}>
+                          <i class="ti ti-check" aria-hidden="true" />
+                        </Show>
+                        {member() ? t().subscribed : t().subscribe}
+                      </Button>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+            <Show when={cursor()}>
+              <Button variant="text" loading={busy()} onClick={() => void load(true)}>
+                {t().showMoreChannels}
+              </Button>
+            </Show>
+          </div>
         </div>
       </ScrollArea>
     </section>
