@@ -409,6 +409,28 @@ describe("Chat threads on a phone", () => {
     }
   }, 30_000);
 
+  test("a thread created from Info on the thread page goes back to the thread page, not to Info", async () => {
+    const { chat } = seed();
+    const { page, errors } = await load(phone, { chat, threadsPage: true });
+    try {
+      await page.locator(".chat-threads-page").getByRole("link", { name: "Chat info", exact: true }).click();
+      await page.waitForURL(/panel=info/);
+      await page.locator("#k2b-workspace-detail-chat-info").getByRole("button", { name: "Actions for IT", exact: true }).click();
+      await page.getByRole("menuitem", { name: /^New thread/ }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByLabel("Name").fill("Printers");
+      await dialog.getByRole("button", { name: "Create", exact: true }).click();
+      await page.waitForURL(/\/t\/[^/?]+$/);
+      await page.getByRole("link", { name: "Back to the threads", exact: true }).click();
+      await page.waitForURL(`**/c/${chat}/threads`);
+      await page.locator(".chat-threads-page").getByText("Printers", { exact: true }).waitFor();
+      expect(new URL(page.url()).searchParams.get("panel")).toBeNull();
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
   test("a long press offers Reply, and the reply goes to the message's thread", async () => {
     const { chat, problems } = seed();
     const { page, errors } = await load(phone, { chat, thread: problems });
