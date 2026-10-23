@@ -1,4 +1,5 @@
 import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { appAccessAuthority } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { ResourceShortIdSchema } from "../../contracts";
@@ -28,6 +29,7 @@ export default ssr<AuthContext>(async (c) => {
     href: c.req.url,
     cookieHeader: c.req.header("Cookie"),
     authorizationHeader: c.req.header("Authorization"),
+    authority: appAccessAuthority(c),
     dateConfig,
   });
   // The existing assignee directory requires write permission; read-only users do not receive it.
@@ -36,7 +38,7 @@ export default ssr<AuthContext>(async (c) => {
   );
   const [state, mailIntegrationAvailable, sidebar, people] = await Promise.all([
     statePromise,
-    isMailInvitationIntegrationAvailable(),
+    isMailInvitationIntegrationAvailable(appAccessAuthority(c)),
     loadSpacesSidebar({ userId: user.id, cookieHeader: c.req.header("Cookie"), dateConfig }),
     peoplePromise,
   ]);

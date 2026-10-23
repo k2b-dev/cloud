@@ -276,7 +276,10 @@ else {
   test("a requested search replaces a page reached inside the panel and keeps the page it already shows", () => {
     const h = setup();
     const show = (frame: HTMLIFrameElement, path: string) =>
-      Object.defineProperty(frame, "contentWindow", { configurable: true, value: { location: { href: `${location.origin}${path}` } } });
+      Object.defineProperty(frame, "contentWindow", {
+        configurable: true,
+        value: Object.assign(new h.dom.window.EventTarget(), { location: { href: `${location.origin}${path}` } }),
+      });
     h.open("fixture", "q=bolts");
     const first = h.frame();
     show(first, "/app/fixture/panel/details?item=1");
@@ -495,7 +498,13 @@ else {
     setup(1440, false, true, undefined, false, undefined, { context, consent, restored, ...(answer !== undefined ? { answer } : {}) });
   // A loaded provider document: its own location and the ready mark its PanelRuntime writes.
   const showDocument = (frame: HTMLIFrameElement, window: object, provider = frame.dataset.cloudPanelFrame) => {
-    Object.defineProperty(frame, "contentWindow", { configurable: true, value: window });
+    const events = document.createElement("span");
+    const target = Object.assign(window, {
+      dispatchEvent: events.dispatchEvent.bind(events),
+      addEventListener: events.addEventListener.bind(events),
+      removeEventListener: events.removeEventListener.bind(events),
+    });
+    Object.defineProperty(frame, "contentWindow", { configurable: true, value: target });
     Object.defineProperty(frame, "contentDocument", {
       configurable: true,
       value: { documentElement: { dataset: { cloudPanelReady: provider } } },

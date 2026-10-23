@@ -633,7 +633,7 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
     publicResources.resolveExistingMailboxPublicIds(
       "folders",
       mailboxId,
-      references.flatMap((reference) => (reference.type === "folder_id" ? [reference.folderId] : [])),
+      references.flatMap((reference) => (reference.type !== "local_tag_id" ? [reference.folderId] : [])),
     ),
     publicResources.resolveExistingMailboxPublicIds(
       "tags",
@@ -642,9 +642,9 @@ export const resolveWorkspaceRequest = async (publicUrl: URL, mailboxId: string)
     ),
   ]);
   const expression = replaceMailSearchReferences(search.expression, (reference) => {
-    const id = reference.type === "folder_id" ? folders.get(reference.folderId) : tags.get(reference.tagId);
+    const id = reference.type !== "local_tag_id" ? folders.get(reference.folderId) : tags.get(reference.tagId);
     if (!id) return MAIL_SEARCH_MATCHES_NOTHING;
-    return reference.type === "folder_id" ? { ...reference, folderId: id } : { ...reference, tagId: id };
+    return reference.type !== "local_tag_id" ? { ...reference, folderId: id } : { ...reference, tagId: id };
   });
   return { requestUrl, search: { ...search, expression }, publicSearch: search };
 };

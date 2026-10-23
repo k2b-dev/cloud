@@ -28,7 +28,25 @@ export type ResolvedInvocationAuthority = {
   scopes: string[];
 };
 
-const provenance = (claims: CloudInvocationClaims): NonNullable<RequestActor["delegation"]> => ({
+export type InvocationPrincipalClaims = Pick<
+  CloudInvocationClaims,
+  | "sub"
+  | "principal_type"
+  | "session_kind"
+  | "scopes"
+  | "credential_id"
+  | "exp"
+  | "act"
+  | "credential_kind"
+  | "jti"
+  | "request_id"
+  | "mandate_id"
+  | "mandate_revision"
+  | "workload_type"
+  | "workload_id"
+>;
+
+const provenance = (claims: InvocationPrincipalClaims): NonNullable<RequestActor["delegation"]> => ({
   kind: "invocation",
   callingAppId: claims.act.sub.slice("app:".length),
   credentialKind: claims.credential_kind,
@@ -58,7 +76,7 @@ const mapServiceAccount = (row: ServiceAccountRow): ServiceAccount => ({
 });
 
 export const resolveInvocationAuthority = async (
-  claims: CloudInvocationClaims,
+  claims: InvocationPrincipalClaims,
   query: typeof sql = sql,
   groupsAdminOverride?: string[],
 ): Promise<ResolvedInvocationAuthority | null> => {

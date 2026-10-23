@@ -5,7 +5,7 @@ section: Operations
 order: 1142
 description: Every environment variable Cloud processes read, generated from the configuration registries.
 tags: [configuration, environment, reference]
-updated: 2026-10-19
+updated: 2026-10-22
 ---
 
 # Configuration reference
@@ -38,7 +38,6 @@ Declared in `packages/cloud/src/config/env.ts`.
 | `APP_SECRET` | string | secret | empty | no | Deployment-wide secret for at-rest settings encryption and signed cursors; generate once with `openssl rand -hex 32` and never change it after data has been written. |
 | `ADMIN_LOGIN_TOKEN` | string | secret | empty | no | Core only: temporary first-administrator or recovery login token; remove it after normal administrator sign-in works. |
 | `OUTGOING_MAIL_ALLOWED_TARGETS` | list | runtime | empty list | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for outgoing mail SMTP and bounce IMAP connections; unset allows only public targets, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup. |
-| `GEO_ALLOWED_TARGETS` | list | runtime | `geo` | no | Comma-separated host names, IP addresses and CIDR ranges on internal networks allowed for Geo requests; unset allows public targets and `geo`, an explicit value replaces this default, and invalid entries including `/0` stop the owning process at startup. |
 | `CLOUD_IDENTITY_KEY_ENCRYPTION_KEY` | string | secret | unset | no | Core only: 64-hex KEK for platform identity signing keys stored in Postgres; generate once with `openssl rand -hex 32` and never distribute it to other apps. |
 | `CLOUD_IDENTITY_NEXT_KEY` | string | secret | unset | no | Core only: pre-distributed next KEK before promoting it to current; cannot be combined with `CLOUD_IDENTITY_PREVIOUS_KEY`. |
 | `CLOUD_IDENTITY_PREVIOUS_KEY` | string | secret | unset | no | Core only: old KEK set during an explicit rolling rewrap of stored identity signing keys, then removed. |

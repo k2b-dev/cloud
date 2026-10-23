@@ -195,7 +195,7 @@ export const aiChatTaskRoutes = new Hono<AuthContext>()
                 ? task.schedule.runAt
                 : ((await nextChatTaskRuns()).get(task.id) ?? null),
         },
-        permissions: await taskGrantPresentation(task.grants, getLocale(c)),
+        permissions: await taskGrantPresentation(task.grants, getLocale(c), auth.getAuthority(c)),
         occurrences: (occurrences ?? []).map((entry) => toAiChatTaskOccurrenceView(entry, task.shortId)),
       }),
     );

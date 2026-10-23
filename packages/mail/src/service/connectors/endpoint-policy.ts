@@ -1,6 +1,7 @@
 import { isIP } from "node:net";
 import { domainToASCII } from "node:url";
 import { NetworkTargetBlockedError, type PublicNetworkAddress, resolvePublicNetworkAddresses } from "@k2b/cloud/services/network-security";
+import { withNetworkDeadline } from "@k2b/cloud/services/network-transport";
 import { isUnsafeNetworkHostname } from "@k2b/cloud/shared";
 import type { MailEndpoint } from "../../contracts";
 
@@ -41,24 +42,15 @@ const normalizeHost = (rawHost: string): string => {
   return ascii;
 };
 
-const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timeout = setTimeout(() => reject(new EndpointPolicyError("Endpoint DNS lookup timed out", "ENDPOINT_DNS_TIMEOUT")), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-};
-
-export const resolvePublicEndpoint = async (endpoint: MailEndpoint, timeoutMs = 5_000): Promise<ResolvedEndpoint> => {
+export const resolvePublicEndpoint = async (endpoint: MailEndpoint, timeoutMs = 5_000, signal?: AbortSignal): Promise<ResolvedEndpoint> => {
   const host = normalizeHost(endpoint.host);
   try {
-    const resolved = await withTimeout(resolvePublicNetworkAddresses(host), timeoutMs);
+    const resolved = await withNetworkDeadline(
+      timeoutMs,
+      signal,
+      new EndpointPolicyError("Endpoint DNS lookup timed out", "ENDPOINT_DNS_TIMEOUT"),
+      () => resolvePublicNetworkAddresses(host),
+    );
     const addresses = [...new Map(resolved.map((entry) => [entry.address, entry])).values()];
     return { ...endpoint, host, addresses };
   } catch (error) {

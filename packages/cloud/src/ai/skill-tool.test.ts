@@ -39,7 +39,7 @@ describe("load_skill", () => {
     const ctx = { turnId: "turn-1" } as never;
     await expect(tool.run({ id: "Sk2345" }, ctx)).rejects.toThrow("unavailable");
     expect(read).not.toHaveBeenCalled();
-    expect(load).toHaveBeenCalledWith("turn-1", { id: "Sk2345" }, subject);
+    expect(load).toHaveBeenCalledWith("turn-1", { id: "Sk2345" }, subject, null);
   });
   test("pins the selected revision and returns its standard file mount", async () => {
     const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
@@ -72,7 +72,7 @@ describe("load_skill", () => {
       mount: "/skills/weekly-status",
       files: ["/skills/weekly-status/SKILL.md", "/skills/weekly-status/references/style.md"],
     });
-    expect(aiSkills.loadForTurn).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222", "weekly-status", subject);
+    expect(aiSkills.loadForTurn).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222", "weekly-status", subject, null);
   });
 
   test("does not expose a skill after its permission check fails", async () => {
@@ -105,7 +105,7 @@ describe("load_skill", () => {
     if (tool.location !== "server") throw new Error("Expected server tool");
     await tool.run({ name: "cloud-grids" }, { turnId: "turn-1" } as never);
     await expect(tool.run({ name: "cloud-grids" }, { turnId: "turn-2" } as never)).rejects.toThrow("unavailable or access was revoked");
-    expect(load).toHaveBeenNthCalledWith(2, "turn-2", "cloud-grids", subject);
+    expect(load).toHaveBeenNthCalledWith(2, "turn-2", "cloud-grids", subject, null);
   });
 });
 
@@ -139,7 +139,7 @@ describe("search_skills", () => {
       skills: [{ name: "invoice-20", description: "Invoice workflow." }],
       more: false,
     });
-    expect(search).toHaveBeenCalledWith(subject, "invoice", 30, { modelInvocableOnly: true });
+    expect(search).toHaveBeenCalledWith(subject, "invoice", 30, { modelInvocableOnly: true, authority: null });
   });
 
   test("rechecks access and returns only enabled matching Skills", async () => {
@@ -157,7 +157,7 @@ describe("search_skills", () => {
         signal: new AbortController().signal,
       } as never),
     ).toEqual({ skills: [{ name: "cloud-mail", description: "Email and inbox workflows." }], more: false });
-    expect(aiSkills.search).toHaveBeenCalledWith(subject, "email", 10, { modelInvocableOnly: true });
+    expect(aiSkills.search).toHaveBeenCalledWith(subject, "email", 10, { modelInvocableOnly: true, authority: null });
   });
 });
 

@@ -14,7 +14,7 @@ Weather tracks saved locations and shows current conditions, hourly forecasts, d
 - **Saved location:** A city saved to your account with its name, state, latitude, and longitude.
 - **Forecast:** A location page shows current weather, hourly values, a daily forecast, and rain radar.
 - **Display link:** Display opens a public monitor view that refreshes automatically.
-- **Admin settings:** Administrators control fallback widget coordinates, cache duration, and the geocoding endpoint.
+- **Admin settings:** Administrators control fallback widget coordinates, cache duration. Core’s Places and maps settings control city search and its budget.
 :::
 
 ## Use Weather {icon="route"}
