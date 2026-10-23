@@ -1,3 +1,5 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { User } from "@k2b/cloud/contracts";
@@ -220,62 +222,85 @@ export const overviewWorkspaceFixture: PulseWorkspaceProps = {
   initialOverview: { data: baseOverviewFixture, error: null },
 };
 
-/** Render the real server component in an isolated Bun process, leaving browser tests' module conditions alone. */
-export const renderWorkspaceSnapshot = async (props: PulseWorkspaceProps, locale: string, withLayout = false) => {
-  const script = `
-    import { mkdtempSync, rmSync } from "node:fs";
-    import { tmpdir } from "node:os";
-    import { join } from "node:path";
-    import { createConfig } from "@k2b/ssr";
-    import { LocaleProvider } from "@k2b/ui";
-    import { createComponent } from "solid-js";
-    import { renderToString } from "solid-js/web";
-    const root = mkdtempSync(join(tmpdir(), "pulse-snapshot-"));
-    try {
-      const snapshot = createConfig({
-        dev: true,
-        rootDir: root,
-        // The browser harness owns assets and mounting; only the actual page body
-        // crosses this seam, not the platform document template or its loaders.
-        template: ({ body }) => "<!doctype html><html><head></head><body>" + body + "</body></html>",
-      });
-      Bun.plugin(snapshot.plugin());
-      const { default: Workspace } = await import(${JSON.stringify(new URL("./PulseWorkspace.island.tsx", import.meta.url).pathname)});
-      const { props, locale, withLayout, person } = JSON.parse(await Bun.stdin.text());
-      if (withLayout) {
-        const { spyOn, setSystemTime } = await import("bun:test");
-        const { Hono } = await import("hono");
-        const { createSSRHandler } = await import("@k2b/ssr/hono");
-        const config = await import("./src/config");
-        // Keep the actual page handler, Layout and island. Only the app-owned SSR
-        // entry is substituted: the public adapter renders without platform service
-        // preloads. This fixture is not a test of authentication or shell services.
-        const ssr = Object.assign(createSSRHandler(snapshot.html), config.ssr);
-        const pageData = await import("./src/frontend/[baseId]/page-data");
-        const spies = [
-          spyOn(config, "ssr").mockImplementation(ssr),
-          spyOn(pageData, "loadPulseWorkspacePageData").mockResolvedValue({ kind: "ok", baseName: "Laden", workspaceProps: props }),
-        ];
+// Compile the real page once during fixture setup. Per-render child processes then
+// execute the bundle instead of repeatedly loading Babel and compiling the whole
+// workspace graph inside their 15-second request deadline.
+let snapshotBundle: Promise<string> | undefined;
+const prepareWorkspaceSnapshot = () =>
+  (snapshotBundle ??= (async () => {
+    const directory = mkdtempSync(resolve(tmpdir(), "pulse-snapshot-"));
+    process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
+    const { createConfig } = await import("@k2b/ssr");
+    const snapshot = createConfig({ dev: true, rootDir: directory });
+    const entry = resolve(import.meta.dir, "PulseWorkspace.snapshot-server.ts");
+    const adapter = resolve(import.meta.dir, "PulseWorkspace.snapshot-adapter.ts");
+    const data = resolve(import.meta.dir, "PulseWorkspace.snapshot-data.ts");
+    const page = resolve(import.meta.dir, "[baseId]/page.tsx");
+    const built = await Bun.build({
+      entrypoints: [entry],
+      target: "bun",
+      conditions: ["node"],
+      files: {
+        [adapter]: `
+        import { createConfig } from "@k2b/ssr";
+        import { createSSRHandler } from "@k2b/ssr/hono";
+        import { ssr as actual } from "../config";
+        const snapshot = createConfig({ dev: true, rootDir: ${JSON.stringify(directory)},
+          template: ({ body }) => "<!doctype html><html><head></head><body>" + body + "</body></html>" });
+        export const ssr = Object.assign(createSSRHandler(snapshot.html), actual);
+      `,
+        [data]: `export const loadPulseWorkspacePageData = async (c) => ({ kind: "ok", baseName: "Laden", workspaceProps: c.get("pulseFixtureProps") });`,
+        [entry]: `
+        import { setSystemTime } from "bun:test";
+        import { Hono } from "hono";
+        import { LocaleProvider } from "@k2b/ui";
+        import { createComponent } from "solid-js";
+        import { renderToString } from "solid-js/web";
+        import { app } from "../config";
+        import Workspace from "./PulseWorkspace.island";
+        import basePage from "./[baseId]/page";
+        const { props, locale, withLayout, person } = JSON.parse(await Bun.stdin.text());
         setSystemTime(new Date(props.initialNow));
-        try {
-          const { default: basePage } = await import("./src/frontend/[baseId]/page");
+        if (withLayout) {
           const server = new Hono().use(async (c, next) => {
-            c.set("runtime", { apps: [config.app.meta] });
+            c.set("runtime", { apps: [app.meta] });
             c.set("user", person);
+            c.set("pulseFixtureProps", props);
             await next();
           }).get("/app/pulse/:baseId", ...basePage);
           const response = await server.request("/app/pulse/" + props.initialBaseId, { headers: { "Accept-Language": locale } });
           if (response.status !== 200) throw new Error("Pulse page snapshot status " + response.status);
           process.stdout.write(await response.text());
-        } finally { for (const spy of spies) spy.mockRestore(); }
-      } else {
-      process.stdout.write(renderToString(() => createComponent(LocaleProvider, {
-        locale, get children() { return createComponent(Workspace, props); }
-      })));
-      }
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  `;
-  const child = Bun.spawn([process.execPath, "--no-env-file", "-e", script], {
+        } else {
+          process.stdout.write(renderToString(() => createComponent(LocaleProvider, {
+            locale, get children() { return createComponent(Workspace, props); }
+          })));
+        }
+      `,
+      },
+      plugins: [
+        {
+          name: "pulse-snapshot-seams",
+          setup(build) {
+            // Same fixture seams as the runtime spies: real page, Layout, island and
+            // declaration; substitute only page data and platform SSR preloads.
+            build.onResolve({ filter: /^(?:\.\.\/\.\.\/config|\.\/page-data)$/ }, (args) =>
+              args.importer === page ? { path: args.path === "./page-data" ? data : adapter } : undefined,
+            );
+          },
+        },
+        snapshot.plugin(),
+      ],
+    });
+    if (!built.success) throw new AggregateError(built.logs, "Pulse server snapshot build failed");
+    const path = resolve(directory, "server.mjs");
+    await Bun.write(path, built.outputs[0]!);
+    return path;
+  })());
+
+/** Run the compiled real server page in isolation from the browser's module conditions. */
+export const renderWorkspaceSnapshot = async (props: PulseWorkspaceProps, locale: string, withLayout = false) => {
+  const child = Bun.spawn([process.execPath, "--no-env-file", await prepareWorkspaceSnapshot()], {
     cwd: resolve(import.meta.dir, "../.."),
     timeout: 15_000,
     stdin: new Response(JSON.stringify({ props, locale, withLayout, person })),
@@ -297,6 +322,7 @@ export const workspaceDocumentContent = (document: string) =>
     .transform(document);
 
 export const buildWorkspaceHarness = async () => {
+  await prepareWorkspaceSnapshot();
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
