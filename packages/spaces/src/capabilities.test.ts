@@ -2609,14 +2609,14 @@ test("time-block create review allows an assigned agent under its own identity a
     ...task,
     assignees: [{ id: serviceAccountId, kind: "service_account", displayName: "Planning agent", avatarHash: null }],
   });
-  const agent: CapabilityExecutionContext = {
+  const agent = {
     ...serviceAccountContext,
     actor: {
       ...serviceAccountContext.actor,
       scopes: ["read", "write"],
       serviceAccount: { ...serviceAccountContext.actor.serviceAccount, kind: "agent", appId: null, resourceType: null, resourceId: null },
     },
-  };
+  } satisfies CapabilityExecutionContext;
   const input = { itemId, taskTitle: task.title, id: timeBlock.id, startsAt: timeBlock.startsAt, endsAt: timeBlock.endsAt };
   const action = spacesCapabilities.actions["time-block.create"];
   const review = await action.review(input, agent);

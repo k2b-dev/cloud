@@ -462,6 +462,8 @@ suite("Task time blocks through real SSR islands and Spaces API", () => {
         if (surfacesBefore) expect(await unrelatedSurfaces(f)).toEqual(surfacesBefore);
         expect(await page.locator(".spaces-time-block-dialog").count()).toBe(0);
         await page.getByRole("button", { name: "Rückgängig", exact: true }).waitFor();
+        // The toast can precede the refreshed calendar snapshot; verify the saved block is rendered too.
+        await page.locator(`[data-calendar-event-id="${saved.id}"]`).waitFor({ state: "visible" });
         await shot(page, "10-calendar-drop-undo");
         await page.getByRole("button", { name: "Rückgängig", exact: true }).click();
         await waitFor(async () => (await blocks(f)).length === 0);

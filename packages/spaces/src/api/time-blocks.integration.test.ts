@@ -488,10 +488,10 @@ suite("Shared task time blocks", () => {
     });
     await createTimeBlockNotificationOutbox(app.notifications).dispatch(row!);
     expect(await sql`SELECT id FROM spaces.time_block_notifications WHERE id = ${row!.id}`).toHaveLength(0);
-    expect(
-      await sql`SELECT recipient_user_id, recipient_service_account_id FROM notifications.events
-      WHERE definition_id = 'spaces.timeBlocksReassigned' AND recipient_service_account_id = ${bound.id}`,
-    ).toEqual([expect.objectContaining({ recipient_user_id: null, recipient_service_account_id: bound.id })]);
+    const notices = await sql<{ recipient_user_id: string | null; recipient_service_account_id: string | null }[]>`
+      SELECT recipient_user_id, recipient_service_account_id FROM notifications.events
+      WHERE definition_id = 'spaces.timeBlocksReassigned' AND recipient_service_account_id = ${bound.id}`;
+    expect(Array.from(notices)).toEqual([{ recipient_user_id: null, recipient_service_account_id: bound.id }]);
     expect((await bound.request(`/blocks/${own.id}`, "DELETE")).status).toBe(200);
   });
 
