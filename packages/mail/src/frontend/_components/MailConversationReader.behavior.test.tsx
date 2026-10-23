@@ -129,7 +129,7 @@ const readerProps: ComponentProps<typeof MailConversationReaderComponent> = {
   listCollapsed: false,
   detailsOpen: false,
   toolbarActions: ["reply"],
-  onRestoreList: () => undefined,
+  onToggleList: () => undefined,
   onToggleDetails: () => undefined,
   onToolbarActionsChange: () => undefined,
   actionPending: false,

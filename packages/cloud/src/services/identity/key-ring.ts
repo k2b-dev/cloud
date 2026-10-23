@@ -378,7 +378,7 @@ export const prepareIdentitySigner = async (purpose: SigningKeyPurpose): Promise
  */
 export const withActiveIdentitySigner = async <T>(
   purpose: SigningKeyPurpose,
-  callback: (signer: PreparedIdentitySigner & { issuer: string }, db: typeof sql) => Promise<T>,
+  callback: (signer: PreparedIdentitySigner & { issuer: string; readonly groupsAdmin?: readonly string[] }, db: typeof sql) => Promise<T>,
   options: { pool?: typeof sql; signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<T> => {
   const timeoutMs = options.timeoutMs ?? 30_000;
@@ -404,7 +404,9 @@ export const withActiveIdentitySigner = async <T>(
     // holding a caller's transaction: every issuance needs just one connection.
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const signer = await wait("signer refresh", () => prepareIdentitySigner(purpose));
-      const { issuer } = await wait("identity settings", getIdentityRuntimeConfig);
+      const { issuer, groupsAdmin } = await wait("identity settings", getIdentityRuntimeConfig);
+      // Keep this issuance independent of cache expiry while it waits for a connection or key lock.
+      const preparedGroupsAdmin = Object.freeze([...groupsAdmin]);
       const run = async (db: typeof sql): Promise<{ active: false } | { active: true; result: T }> => {
         // A caller released at its deadline must not sign once a connection frees up.
         check();
@@ -422,7 +424,7 @@ export const withActiveIdentitySigner = async <T>(
         check();
         if (!active) return { active: false };
         step = "signing";
-        const result = await callback({ ...signer, issuer }, db);
+        const result = await callback({ ...signer, issuer, groupsAdmin: preparedGroupsAdmin }, db);
         // Roll back what the callback wrote instead of committing a result the caller never gets.
         check();
         return { active: true, result };

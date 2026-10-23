@@ -1,5 +1,6 @@
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
+import { appAccessAuthority } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { AppOverview, ButtonLink, LinkCard, ScrollArea } from "@k2b/ui";
 import { For, Show } from "solid-js";
@@ -11,7 +12,7 @@ import { capabilityUiMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = capabilityUiMessages.resolve([getLocale(c)]);
-  const catalog = await loadCapabilityApps(new URL(c.req.url), getLocale(c));
+  const catalog = await loadCapabilityApps(new URL(c.req.url), getLocale(c), appAccessAuthority(c));
   c.get("page").title = t.capabilities;
 
   return () => (

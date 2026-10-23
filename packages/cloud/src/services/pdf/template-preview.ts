@@ -47,7 +47,7 @@ export type RenderTemplatePdfPreviewOptions = RenderHtmlToPdfOptions & {
   config?: GotenbergConfig;
 };
 
-const pdfErrorStatus = (error: GotenbergRenderError): number => (error.code === "not_configured" ? 400 : 502);
+const pdfErrorStatus = (error: GotenbergRenderError): number => (error.code === "busy" ? 503 : error.code === "not_configured" ? 400 : 502);
 
 const renderPart = (
   template: string | null | undefined,

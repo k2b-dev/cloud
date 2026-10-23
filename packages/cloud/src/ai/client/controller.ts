@@ -138,6 +138,15 @@ export type CreateAiChatControllerOptions = {
 
 const isAccessor = <T>(value: T | Accessor<T>): value is Accessor<T> => typeof value === "function";
 
+class AiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 const readError = async (response: Response, fallback: string): Promise<string> => {
   const body = await response.json().catch(() => null);
   return body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : fallback;
@@ -190,6 +199,17 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const initialProjection = options.initialDetail ? detailToProjection(options.initialDetail) : emptyProjection();
   const [state, setState] = createStore<AiChatProjection>(initialProjection);
   const completedDuringSend = new Map<string, string>();
+  let disposed = false;
+  const submissionBodies = new Map<string, string>();
+  // Only a confirmed draft-save response can give this submission its identity.
+  const [creationErrorStatus, setCreationErrorStatus] = createSignal<number | null>(null);
+  const [uncertainSubmissions, setUncertainSubmissions] = createSignal<Record<string, number>>({});
+  const clearUncertainSubmission = (conversationId: string) =>
+    setUncertainSubmissions((current) => {
+      const next = { ...current };
+      delete next[conversationId];
+      return next;
+    });
   const [pendingSends, setPendingSends] = createSignal<Record<string, AiStoredMessage | undefined>>({});
   const clearPendingSend = (conversationId: string) =>
     setPendingSends((current) => {
@@ -251,7 +271,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   const request = async <T>(path: string, init: RequestInit, fallback: string): Promise<T> => {
     const response = await fetch(url(path), { ...init, headers: { "Content-Type": "application/json", ...init.headers } });
-    if (!response.ok) throw new Error(await readError(response, fallback));
+    if (!response.ok) throw new AiRequestError(await readError(response, fallback), response.status);
     return (await response.json()) as T;
   };
 
@@ -688,6 +708,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   const createConversation = async (
     input: {
+      requestId?: string;
       title?: string;
       projectId?: string;
       draft?: { content: AiDraftContentPart[] };
@@ -696,6 +717,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   ) => {
     const generation = ++conversationOpenGeneration;
     clearErrors();
+    setCreationErrorStatus(null);
     try {
       const conversation = await request<AiConversation>(
         `/conversations`,
@@ -714,6 +736,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       return conversation;
     } catch (createError) {
       if (generation === conversationOpenGeneration) {
+        setCreationErrorStatus(createError instanceof AiRequestError ? createError.status : null);
         setGlobalError(createError instanceof Error ? createError.message : "Failed to create conversation");
       }
       return null;
@@ -766,7 +789,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     input: ComposerDraftInput,
     conversationId: string | null,
   ): Promise<{ conversationId: string; content: AiDraftContentPart[]; revision: number } | null> => {
-    if (!conversationId) return null;
+    if (!conversationId || uncertainSubmissions()[conversationId] !== undefined) return null;
     const conversation = isActiveConversation(conversationId) ? state.conversation : cache.get(conversationId)?.conversation;
     if (!conversation) return null;
 
@@ -833,7 +856,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     return queueDraftOperation(async () => persistComposerDraft(input, await targetConversation));
   };
 
-  const queuedAttempts = new Map<string, { key: string; files?: File[]; id: string; saved: { revision: number } }>();
+  const queuedAttempts = new Map<string, { key: string; files?: File[]; id: string }>();
   const queueMessage = (input: ComposerDraftInput & { modelProfileId?: string }): Promise<boolean> => {
     if (!input.conversationId || !isComposerDraftSendable(input)) return Promise.resolve(false);
     const conversationId = input.conversationId;
@@ -845,38 +868,46 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       storedFiles: input.storedFiles,
       model: input.modelProfileId,
     });
+    const previous = queuedAttempts.get(conversationId);
+    if (uncertainSubmissions()[conversationId] !== undefined) {
+      const same =
+        previous?.key === key &&
+        (previous.files ?? []).length === (input.files ?? []).length &&
+        (previous.files ?? []).every((file, index) => file === input.files?.[index]);
+      return same ? retrySubmission(conversationId).then((result) => result === "accepted") : Promise.resolve(false);
+    }
     return queueDraftOperation(async () => {
+      if (uncertainSubmissions()[conversationId] !== undefined) return false;
+      let submittedRevision: number | undefined;
       try {
-        const previous = queuedAttempts.get(conversationId);
-        const same =
-          previous?.key === key &&
-          (previous.files ?? []).length === (input.files ?? []).length &&
-          (previous.files ?? []).every((file, index) => file === input.files?.[index]);
-        const saved = same ? previous.saved : await persistComposerDraft(input, conversationId);
+        const saved = await persistComposerDraft(input, conversationId);
         if (!saved) return false;
-        const queueId = same ? previous.id : crypto.randomUUID();
-        queuedAttempts.set(conversationId, { key, files: input.files, id: queueId, saved });
-        await request(
-          `/conversations/${conversationId}/turns`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              draftRevision: saved.revision,
-              queueId,
-              modelProfileId: input.modelProfileId,
-              clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
-            }),
-          },
-          "Failed to queue message",
-        );
+        const queueId = crypto.randomUUID();
+        const body = JSON.stringify({
+          draftRevision: saved.revision,
+          queueId,
+          modelProfileId: input.modelProfileId,
+          clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
+        });
+        queuedAttempts.set(conversationId, { key, files: input.files, id: queueId });
+        submissionBodies.set(conversationId, body);
+        submittedRevision = saved.revision;
+        await request(`/conversations/${conversationId}/turns`, { method: "POST", body }, "Failed to queue message");
         if (isActiveConversation(conversationId)) {
           if ((state.conversation?.draft.revision ?? 0) <= saved.revision)
             setState("conversation", "draft", { content: [], revision: saved.revision + 1, updatedAt: new Date().toISOString() });
         } else invalidateInactiveCache(conversationId);
         queuedAttempts.delete(conversationId);
+        submissionBodies.delete(conversationId);
         if (isActiveConversation(conversationId)) setGlobalError(null);
         return true;
       } catch (error) {
+        if (submittedRevision !== undefined && !(error instanceof AiRequestError && error.status >= 400 && error.status < 500)) {
+          setUncertainSubmissions((current) => ({ ...current, [conversationId]: submittedRevision! }));
+        } else {
+          queuedAttempts.delete(conversationId);
+          submissionBodies.delete(conversationId);
+        }
         setConversationError(conversationId, error instanceof Error ? error.message : "Failed to queue message");
         return false;
       }
@@ -888,7 +919,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const targetConversation = input.conversationId ? Promise.resolve(input.conversationId) : ensureConversation();
     return queueDraftOperation(async () => {
       const conversationId = await targetConversation;
-      if (!conversationId || (isActiveConversation(conversationId) && running())) return false;
+      if (!conversationId || uncertainSubmissions()[conversationId] !== undefined || (isActiveConversation(conversationId) && running()))
+        return false;
       if (isActiveConversation(conversationId)) clearErrors();
       const baseProjection = isActiveConversation(conversationId)
         ? { conversation: state.conversation, messages: [...state.messages], activeTurn: state.activeTurn }
@@ -928,6 +960,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         setRunStatusRaw("streaming");
       }
 
+      let submittedRevision: number | undefined;
       try {
         const savedDraft = await persistComposerDraft(input, conversationId);
         if (!savedDraft) {
@@ -956,18 +989,22 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
             },
           },
         }));
+        submittedRevision = savedDraft.revision;
+        const submissionBody = JSON.stringify({
+          draftRevision: savedDraft.revision,
+          clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
+          modelProfileId: input.modelProfileId,
+        });
+        submissionBodies.set(conversationId, submissionBody);
         const result = await request<SubmitTurnResult>(
           `/conversations/${conversationId}/turns`,
           {
             method: "POST",
-            body: JSON.stringify({
-              draftRevision: savedDraft.revision,
-              clientToolIds: options.clientToolIds?.filter((id) => options.frontendTools?.[id]),
-              modelProfileId: input.modelProfileId,
-            }),
+            body: submissionBody,
           },
           "AI request failed",
         );
+        submissionBodies.delete(conversationId);
         const alreadyFinished = completedDuringSend.get(conversationId) === result.turn.id;
         completedDuringSend.delete(conversationId);
         if (alreadyFinished) clearPendingSend(conversationId);
@@ -1006,7 +1043,13 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         return true;
       } catch (sendError) {
         completedDuringSend.delete(conversationId);
-        clearPendingSend(conversationId);
+        // A 4xx on this first submission rejects it. Transport/5xx failures may have committed.
+        if (
+          submittedRevision !== undefined &&
+          !(sendError instanceof AiRequestError && sendError.status >= 400 && sendError.status < 500)
+        ) {
+          setUncertainSubmissions((current) => ({ ...current, [conversationId]: submittedRevision! }));
+        } else clearPendingSend(conversationId);
         if (invalidateInactiveCache(conversationId)) return false;
         setState("messages", (prev) => prev.filter((message) => message.id !== optimistic.id));
         cache.set(conversationId, { conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn });
@@ -1016,6 +1059,73 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       }
     });
   };
+
+  // Keep the local draft locked until its post-submission revision is available.
+  // A positive lookup alone must not hydrate the composer from a stale cached draft.
+  const finishAcceptedSubmission = async (conversationId: string): Promise<"accepted" | "unknown"> => {
+    const revision = uncertainSubmissions()[conversationId];
+    if (revision === undefined || disposed) return "unknown";
+    if (isActiveConversation(conversationId)) {
+      if (!(await refreshActiveConversation())) return "unknown";
+      if (isActiveConversation(conversationId) && (state.conversation?.draft.revision ?? -1) <= revision) return "unknown";
+    } else cache.delete(conversationId);
+    if (disposed) return "unknown";
+    submissionBodies.delete(conversationId);
+    queuedAttempts.delete(conversationId);
+    clearUncertainSubmission(conversationId);
+    clearPendingSend(conversationId);
+    if (isActiveConversation(conversationId)) setGlobalError(null);
+    return "accepted";
+  };
+
+  /** Read only: a missing message in a history window never proves non-acceptance. */
+  const reconcileSubmission = async (conversationId: string): Promise<"accepted" | "unknown" | "none"> => {
+    const revision = uncertainSubmissions()[conversationId];
+    if (revision === undefined) return "none";
+    try {
+      const queue = queuedAttempts.get(conversationId);
+      let accepted: boolean;
+      if (queue) {
+        const pending = await request<Array<{ id: string }>>(
+          `/conversations/${conversationId}/queue`,
+          {},
+          "Failed to check message status",
+        );
+        // Drained/cancelled entries disappear from this view. Absence never proves rejection;
+        // an explicit frozen retry still uses the server's durable queue receipt.
+        accepted = pending.some((message) => message.id === queue.id);
+      } else {
+        const result = await request<{ submission: { messageId: string; turnId: string | null } | null }>(
+          `/conversations/${conversationId}/submission/${revision}`,
+          {},
+          "Failed to check message status",
+        );
+        accepted = Boolean(result.submission);
+      }
+      if (!accepted || disposed || uncertainSubmissions()[conversationId] !== revision) return "unknown";
+      return await finishAcceptedSubmission(conversationId);
+    } catch (error) {
+      setConversationError(conversationId, error instanceof Error ? error.message : "Failed to check message status");
+      return "unknown";
+    }
+  };
+
+  /** Explicit retry of the same frozen submission. Never saves or chooses another revision. */
+  const retrySubmission = (conversationId: string) =>
+    queueDraftOperation(async (): Promise<"accepted" | "unknown" | "none"> => {
+      const resolved = await reconcileSubmission(conversationId);
+      if (resolved !== "unknown" || disposed) return resolved;
+      const body = submissionBodies.get(conversationId);
+      if (!body) return "unknown";
+      try {
+        await request<SubmitTurnResult>(`/conversations/${conversationId}/turns`, { method: "POST", body }, "AI request failed");
+        if (disposed) return "unknown";
+        return await finishAcceptedSubmission(conversationId);
+      } catch {
+        // Even a conflict cannot turn the earlier lost response into a known rejection.
+        return reconcileSubmission(conversationId);
+      }
+    });
 
   const submitSteer = async (input: { text: string; clientRequestId: string; blockId: string }) => {
     const conversationId = activeConversationId();
@@ -1426,7 +1536,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     runFrontendTools();
   }
 
-  onCleanup(() => closeStream());
+  onCleanup(() => {
+    disposed = true;
+    closeStream();
+  });
 
   const hasMoreHistory = () => {
     const conversationId = activeConversationId();
@@ -1457,6 +1570,11 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     openConversation,
     refreshActiveConversation,
     createConversation,
+    /** HTTP status for the reported creation failure; null also covers an unknown network outcome. */
+    creationErrorStatus,
+    uncertainSubmissions,
+    reconcileSubmission,
+    retrySubmission,
     saveDraft,
     queueMessage,
     send,

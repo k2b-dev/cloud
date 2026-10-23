@@ -4,6 +4,13 @@ export const linuxMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      setting_unreadable:
+        "The stored Linux configuration cannot be read. Keep your draft, select replacement deliberately, and save again, or ask the operator to restore access.",
+      unreadableTitle: "Stored settings cannot be read",
+      unreadableDetail:
+        "The displayed values are fallbacks. Other applications may still read the stored values. Select only the settings you intend to replace, or ask the operator to restore access.",
+      replaceStored: "Replace stored value",
+
       identity_conflict: "Conflicting or invalid Linux IDs/names — review the identity data",
       title: "Linux access",
       subtitle: "Manage local Linux identities. FreeIPA remains independently managed.",
@@ -88,6 +95,13 @@ export const linuxMessages = i18n.define({
       range_confirmation_required: "Confirm that this range is reserved for Cloud.",
     },
     de: {
+      setting_unreadable:
+        "Die gespeicherte Linux-Konfiguration ist nicht lesbar. Behalte deinen Entwurf, wähle das Ersetzen bewusst aus und speichere erneut oder bitte den Betreiber, den Zugriff wiederherzustellen.",
+      unreadableTitle: "Gespeicherte Einstellungen sind nicht lesbar",
+      unreadableDetail:
+        "Die angezeigten Werte sind Ersatzwerte. Andere Anwendungen können die gespeicherten Werte möglicherweise noch lesen. Wähle nur Einstellungen aus, die du ersetzen möchtest, oder bitte den Betreiber, den Zugriff wiederherzustellen.",
+      replaceStored: "Gespeicherten Wert ersetzen",
+
       identity_conflict: "Widersprüchliche oder ungültige Linux-IDs/Namen — Identitätsdaten prüfen",
       title: "Linux-Zugang",
       subtitle: "Lokale Linux-Identitäten verwalten. FreeIPA bleibt unabhängig verwaltet.",

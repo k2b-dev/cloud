@@ -68,6 +68,12 @@ const expectLiteralText = (rendered: ReturnType<typeof renderComposeContent>, va
 };
 
 describe("Markdown tables", () => {
+  test("keeps rows and columns readable in a plain-format template", () => {
+    const result = renderComposeTemplateSource("| Item | Quantity |\n| --- | --- |\n| Chair | 2 |\n| Desk | 1 |", context, "plain");
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.data).toMatch(/Item +Quantity\nChair +2\nDesk +1$/);
+  });
+
   test("inlines break-word cells and anywhere links and code only inside cells", () => {
     const rendered = renderComposeContent({ body: tableMarkdown, format: "markdown", customCss: "", context, renderLiquid: false });
     if (!rendered.ok || !rendered.data.html) throw new Error("The table message did not render");

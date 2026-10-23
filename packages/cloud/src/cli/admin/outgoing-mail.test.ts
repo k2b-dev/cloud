@@ -106,6 +106,15 @@ test("retention show and set forward exact API paths, both day counts and JSON o
     output: [retention],
   });
 });
+test("retention replacement flags grant intent only for the selected unreadable keys", async () => {
+  for (const [flag, key] of [
+    ["replace-unreadable-content", "outgoing_mail.content_retention_days"],
+    ["replace-unreadable-records", "outgoing_mail.record_retention_days"],
+  ]) {
+    const result = await invoke(["retention", "set"], { "content-days": "30", "record-days": "90", yes: true, [flag!]: true });
+    expect(result.requests[0]?.body).toEqual({ contentDays: 30, recordDays: 90, replaceUnreadable: [key] });
+  }
+});
 test("retention set requires both positive integer flags, valid ordering and --yes before a request", async () => {
   const invalid: CloudCliFlags[] = [
     {},

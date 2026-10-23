@@ -11,6 +11,7 @@
  *                             always dropped, also on SIGINT/SIGTERM.
  *   CLOUD_TEST_NATS_SERVERS   local NATS JetStream
  *   CLOUD_TEST_GOTENBERG_URL  local Gotenberg
+ *   CLOUD_TEST_VALKEY_URL     Valkey for shared renderer admission
  *   PDFTOTEXT                 optional path to Poppler pdftotext (phases `pdf` and
  *                             `database-and-standard` require it)
  *
@@ -56,7 +57,7 @@ if (argv.includes("--bootstrap")) {
 } else {
   const allPhases = await verificationPhases(root);
   const { connectTestNats, createDisposableDatabase, requireInfra, testInfra } = await import("../../../scripts/fixtures/test-infra");
-  await requireInfra("database", "nats", "gotenberg");
+  await requireInfra("database", "nats", "gotenberg", "valkey");
   const adminUrl = localVerificationUrl("PostgreSQL", testInfra.database);
   const syncUrl = localVerificationUrl("NATS", testInfra.nats);
   const pdfUrl = localVerificationUrl("Gotenberg", testInfra.gotenberg);

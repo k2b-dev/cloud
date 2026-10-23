@@ -18,10 +18,12 @@ import {
   AppWorkspace,
   type AppWorkspaceWidthShare,
   announce,
+  IconButton,
   openSpotlightSearch,
   Placeholder,
   prompts,
   type ToastHandle,
+  Tooltip,
   toast,
   useLocale,
 } from "@k2b/ui";
@@ -39,6 +41,7 @@ import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
 import type { MailboxListView, MailboxPageData, MailConversationDetailData, MailListItem } from "../service/workspace";
 import { readApiError } from "./_components/api-response";
+import MailBulkActionBar from "./_components/MailBulkActionBar";
 import { chooseBulkTags, chooseConversationTags } from "./_components/MailBulkTagDialog";
 import { createMailboxMenu, MailboxMenuButton } from "./_components/MailboxMenu";
 import MailConversationList from "./_components/MailConversationList";
@@ -48,7 +51,8 @@ import MailDraftsView from "./_components/MailDraftsView";
 import MailScheduledView from "./_components/MailScheduledView";
 import { observeMailUserPreferences, readMailUserPreferences, writeMailUserPreferences } from "./_components/MailSettingsStore";
 import MailSidebar, { type MailSidebarMailbox, type MailSidebarOpenMailbox } from "./_components/MailSidebar";
-import { MailboxHeadFilters, MailboxViewTabs, MailListModeMenu } from "./_components/MailWorkspaceHead";
+import { MailboxHeadFilters, MailboxTagFilter, MailboxViewTabs } from "./_components/MailWorkspaceHead";
+import { MailSearchInput, MailSearchOptions, MailSearchTrigger } from "./_components/MailWorkspaceSearch";
 import { createMailActionOutcomes, type MailActionCommand, type MailActionFailureReport } from "./_components/mail-action-outcomes";
 import { createMailActionQueue } from "./_components/mail-action-queue";
 import {
@@ -66,6 +70,7 @@ import { runMailBulkAssignment } from "./_components/mail-bulk-assignment";
 import { mailDraftSeedHref } from "./_components/mail-compose-route";
 import { mailComposeDraftSeedInput } from "./_components/mail-compose-seed";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
+import { mailConversationListMessages } from "./_components/mail-conversation-list-messages";
 import {
   emptyMailConversationSelection,
   findMailFocusAfterRemoval,
@@ -124,6 +129,7 @@ import {
   type MailWorkspaceRefreshResult,
   requireMailWorkspaceRefresh,
 } from "./_components/mail-workspace-refresh";
+import { createMailboxSearch } from "./_components/mailbox-search";
 import { mailWorkspaceMessages } from "./mail-workspace-messages";
 import { mailPageMessages } from "./pages-messages";
 import { assertCursorProgress } from "./pagination";
@@ -714,7 +720,45 @@ function MailboxWorkspace(
   });
 
   // A later head or link navigation wins over pending search text.
-  let searchControls: { cancelPending: () => void } | undefined;
+  const listText = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
+  const [searchDiscovered, setSearchDiscovered] = createSignal(Boolean(props.initialPreferences.searchDiscovered));
+  const [searchHintDismissed, setSearchHintDismissed] = createSignal(Boolean(props.initialPreferences.searchHintDismissed));
+  const searchControls = createMailboxSearch({
+    mailboxId,
+    get requestUrl() {
+      return requestPath();
+    },
+    get query() {
+      return data.query;
+    },
+    get search() {
+      return data.search;
+    },
+    get savedViews() {
+      return data.savedViews;
+    },
+    get activeSavedViewId() {
+      return data.savedViewId;
+    },
+    get folders() {
+      return data.folders;
+    },
+    get localTags() {
+      return data.localTags;
+    },
+    get canWrite() {
+      return canWrite();
+    },
+    get enabled() {
+      return !data.scheduledMode && !data.draftsMode && !selectionMode();
+    },
+    onOpenHref: (href, replace) => openWorkspaceHref(href, replace),
+    onNavigationStart: props.onNavigationStart,
+    onUse: () => {
+      setSearchDiscovered(true);
+      persistPreferences({ searchDiscovered: true });
+    },
+  });
   const navigationStart = (href: string) => {
     // An explicit link to the current view is still newer than a mailbox switch; background reads bypass this helper.
     if (resolveMailWorkspaceUrl(href, mailboxId, window.location.origin)) props.onNavigationStart();
@@ -1489,17 +1533,50 @@ function MailboxWorkspace(
     );
   };
 
-  const clearConversationSelection = () => {
+  const clearConversationSelection = (restoreRowFocus = true) => {
     const anchor = conversationSelection().anchorId;
     setConversationSelection(emptyMailConversationSelection());
     setSelectionMode(false);
-    if (anchor) focusConversation(anchor, "row");
+    if (restoreRowFocus && anchor) focusConversation(anchor, "row");
   };
 
+  const exitHeadSelection = () => {
+    clearConversationSelection(false);
+    searchControls.releaseHeight();
+    queueMicrotask(() => {
+      if (!disposed) document.querySelector<HTMLElement>(".mail-workspace [data-mail-selection-trigger]")?.focus({ preventScroll: true });
+    });
+  };
+
+  onMount(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || !selectionMode() || event.isComposing) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(
+          '[role="dialog"],[role="menu"],[role="listbox"],input:not([type="checkbox"]),textarea,[contenteditable]:not([contenteditable="false"])',
+        )
+      )
+        return;
+      event.preventDefault();
+      exitHeadSelection();
+    };
+    document.addEventListener("keydown", keydown);
+    onCleanup(() => document.removeEventListener("keydown", keydown));
+  });
+  createEffect(() => {
+    if (!selectionMode() && !searchControls.opened()) searchControls.releaseHeight();
+  });
   const toggleConversationSelectionMode = () => {
     if (!canWrite()) return;
     if (selectionMode()) clearConversationSelection();
-    else setSelectionMode(true);
+    else {
+      setSelectionMode(true);
+      queueMicrotask(() => {
+        if (!disposed && selectionMode())
+          document.querySelector<HTMLElement>(".mail-workspace [data-mail-selection-exit]")?.focus({ preventScroll: true });
+      });
+    }
   };
 
   const actionTargetForItem = (item: MailListItem, actionId: MailActionId): MailBulkTarget | null =>
@@ -2534,6 +2611,8 @@ function MailboxWorkspace(
       listCollapsed: listCollapsed(),
       detailsOpen: detailsOpen(),
       toolbarActions: toolbarActions(),
+      searchDiscovered: searchDiscovered(),
+      searchHintDismissed: searchHintDismissed(),
       listMode: data.listMode,
     }),
     handle: {
@@ -2558,7 +2637,39 @@ function MailboxWorkspace(
       <AppWorkspace.Head
         mobilePane="conversations"
         views={
-          currentTab() !== null ? (
+          canWrite() && selectionMode() ? (
+            <div data-mail-head-selection class="mail-head-selection">
+              <MailBulkActionBar
+                selectedCount={selectedConversationIds().size}
+                selectedInJunk={
+                  selectedConversationIds().size > 0 &&
+                  listView()
+                    .items.filter((item) => item.conversationId && selectedConversationIds().has(item.conversationId))
+                    .every(
+                      (item) =>
+                        spamActionForConversation({
+                          viewFolderId: data.folderId,
+                          activeFolderIds: item.activeFolderIds,
+                          folders: data.folders,
+                        }) === "not_spam",
+                    )
+                }
+                busy={routeLoading()}
+                onClear={exitHeadSelection}
+                onAddTags={assignedOnly() ? undefined : addTagsToSelection}
+                onAssign={canAssign() ? assignSelection : undefined}
+                onAction={runAction}
+              />
+            </div>
+          ) : searchControls.opened() && !data.draftsMode && !data.scheduledMode ? (
+            <MailSearchInput search={searchControls} mailboxName={data.mailbox.name} />
+          ) : data.draftsMode || data.scheduledMode ? (
+            <span class="mail-queue-count text-xs text-muted" data-mail-queue-count>
+              {data.draftsMode
+                ? conversationText().draftCount({ count: data.draftsPage?.total ?? 0 })
+                : conversationText().waitingForDelivery({ count: data.scheduledPage?.total ?? data.scheduledCount })}
+            </span>
+          ) : currentTab() !== null ? (
             <MailboxViewTabs
               items={viewTabs()}
               current={currentTab()!}
@@ -2567,15 +2678,29 @@ function MailboxWorkspace(
                 void openWorkspaceHref(href);
               }}
             />
-          ) : undefined
+          ) : (
+            <span
+              data-mail-head-title
+              class={listNamedBy() === "sidebar" ? "mail-list-heading truncate text-sm font-semibold" : "truncate text-sm font-semibold"}
+            >
+              {data.listTitle}
+            </span>
+          )
         }
         filters={
-          data.scheduledMode || data.draftsMode ? undefined : (
+          selectionMode() || data.scheduledMode || data.draftsMode ? undefined : searchControls.opened() ? (
+            <MailSearchOptions search={searchControls} count={listView().items.length} />
+          ) : (
             <MailboxHeadFilters
               requestUrl={requestPath()}
               search={data.search}
+              folderId={data.folderId}
               folders={data.folders}
               localTags={data.localTags}
+              onEditSearch={(state, source) => {
+                searchControls?.cancelPending();
+                searchControls?.edit(state, source);
+              }}
               onOpenHref={(href) => {
                 searchControls?.cancelPending();
                 void openWorkspaceHref(href);
@@ -2583,7 +2708,7 @@ function MailboxWorkspace(
             />
           )
         }
-        filtered={searchFiltered()}
+        filtered={!searchControls.opened() && !selectionMode() && searchFiltered()}
         resetHref={searchFiltered() ? buildMailSearchClearHref(mailRouteUrl(requestPath())) : undefined}
         onReset={() => {
           searchControls?.cancelPending();
@@ -2592,9 +2717,80 @@ function MailboxWorkspace(
         actions={
           <>
             <Show when={!data.scheduledMode && !data.draftsMode}>
-              <MailListModeMenu listMode={data.listMode} onListModeChange={updateListMode} />
+              <Show when={!searchControls.opened() && !selectionMode()}>
+                <MailSearchTrigger search={searchControls} unseen={!searchDiscovered()} />
+                <MailboxTagFilter
+                  requestUrl={requestPath()}
+                  search={data.search}
+                  folderId={data.folderId}
+                  folders={data.folders}
+                  localTags={data.localTags}
+                  onOpenHref={(href) => {
+                    searchControls.cancelPending();
+                    void openWorkspaceHref(href);
+                  }}
+                />
+              </Show>
+              <Show when={canWrite() && data.listMode === "conversations" && !selectionMode()}>
+                <Tooltip.Anchor content={listText().selectConversations}>
+                  <IconButton
+                    type="button"
+                    label={listText().selectConversations}
+                    data-mail-selection-trigger
+                    onClick={(event) => {
+                      searchControls.cancelPending();
+                      searchControls.lockHeight(event.currentTarget);
+                      toggleConversationSelectionMode();
+                    }}
+                  >
+                    <i class="ti ti-checkbox" aria-hidden="true" />
+                  </IconButton>
+                </Tooltip.Anchor>
+              </Show>
+              <Show when={liveUnavailable()}>
+                <span class="mail-head-live text-xs text-muted" title={listText().updatesPaused}>
+                  <i class="ti ti-cloud-off" aria-hidden="true" />
+                  <span>{listText().updatesPaused}</span>
+                </span>
+              </Show>
             </Show>
-            <MailboxMenuButton menu={mailboxMenu} label={sidebarText().mailboxMenu({ name: data.mailbox.name })} />
+            <MailboxMenuButton
+              menu={mailboxMenu}
+              label={sidebarText().mailboxMenu({ name: data.mailbox.name })}
+              leading={
+                data.draftsMode || data.scheduledMode
+                  ? []
+                  : [
+                      {
+                        sectionLabel: listText().chooseListView,
+                        items: [
+                          {
+                            id: "list-conversations",
+                            label: listText().conversationView,
+                            icon: data.listMode === "conversations" ? "ti ti-check" : "ti ti-messages",
+                            action: () => updateListMode("conversations"),
+                          },
+                          {
+                            id: "list-messages",
+                            label: listText().messageView,
+                            icon: data.listMode === "messages" ? "ti ti-check" : "ti ti-mail",
+                            action: () => updateListMode("messages"),
+                          },
+                          ...(hasSelection() && listOpen()
+                            ? [
+                                {
+                                  id: "hide-list",
+                                  label: listText().hideList,
+                                  icon: "ti ti-layout-sidebar-left-collapse",
+                                  action: () => setCollapsed(true),
+                                },
+                              ]
+                            : []),
+                        ],
+                      },
+                    ]
+              }
+            />
           </>
         }
         primary={
@@ -2696,9 +2892,14 @@ function MailboxWorkspace(
                     }
                     onOpenHref={openWorkspaceHref}
                     onNavigationStart={props.onNavigationStart}
-                    onSearchControls={(controls) => {
-                      searchControls = controls;
-                    }}
+                    searchDiscoveryHint={
+                      !searchDiscovered() && !searchHintDismissed()
+                        ? () => {
+                            setSearchHintDismissed(true);
+                            persistPreferences({ searchHintDismissed: true });
+                          }
+                        : undefined
+                    }
                     onLoadMore={loadMoreConversations}
                     onRefresh={reconcileWorkspace}
                   />
@@ -2734,7 +2935,7 @@ function MailboxWorkspace(
                   listCollapsed={listCollapsed()}
                   detailsOpen={detailsOpen()}
                   toolbarActions={toolbarActions()}
-                  onRestoreList={() => setCollapsed(false)}
+                  onToggleList={() => setCollapsed(!listCollapsed())}
                   onToggleDetails={() => canShowDetails() && setDetailsVisible(!detailsOpen())}
                   onToolbarActionsChange={updateToolbarActions}
                   actionPending={structureMutationLoading()}
