@@ -672,7 +672,7 @@
 .chat-channel-audience {
   display: flex;
   /* Two lines: a failure with Try again may wrap on a phone. */
-  min-height: 2.75rem;
+  min-height: 3rem;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;

@@ -223,32 +223,43 @@ for (const mode of [
       await dialog.waitFor({ state: "hidden" });
       expect(harness.props({}).sidebar.items[0]?.purpose).toBe("New purpose");
     });
-    test("the audience line keeps the dialog still while it counts, shows the count, and fails", async () => {
+    test("the audience line keeps the dialog still while it counts, fails, and shows the count", async () => {
       await mount(page, mode.locale);
       const dialog = await newChannel();
       const create = dialog.getByRole("button", { name: t.newChannel, exact: true });
+      // settled: focus moves between the dialog's fields and fades their colours meanwhile; the spinner runs on, so only
+      // finite transitions are awaited before reading geometry.
+      const transitionsDone = () =>
+        page.evaluate(() =>
+          Promise.all(
+            document
+              .getAnimations()
+              .filter((animation) => Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Number.POSITIVE_INFINITY))
+              .map((animation) => animation.finished.catch(() => undefined)),
+          ),
+        );
       let hold: (() => void) | undefined;
-      let fail = false;
+      let first = true;
       await page.route("**/api/chat/channels/preview*", async (route) => {
-        if (fail) return route.fulfill({ status: 503, json: { message: "Unavailable" } });
+        if (!first) return route.continue();
+        first = false;
         await new Promise<void>((resolve) => {
           hold = resolve;
         });
-        await route.continue();
+        await route.fulfill({ status: 503, json: { message: "Unavailable" } });
       });
       await dialog.getByRole("button", { name: t.allAuthenticated, exact: true }).click();
       await dialog.getByText(t.countingAudience).waitFor();
-      await settled(page);
+      await transitionsDone();
       const counting = await create.boundingBox();
+      // Counting fails, then Try again counts: the line keeps its height through all three.
       hold?.();
-      await dialog.getByText(t.discoveryAudience({ count: 42 }), { exact: true }).waitFor();
-      await settled(page);
-      expect(await create.boundingBox()).toEqual(counting);
-      fail = true;
-      await dialog.getByRole("combobox", { name: `${t.joiningPermission}: ${t.allAuthenticated}`, exact: true }).click();
-      await page.getByRole("option", { name: t.permissionRead, exact: true }).click();
       await dialog.getByRole("button", { name: t.retry, exact: true }).waitFor();
-      await settled(page);
+      await transitionsDone();
+      expect(await create.boundingBox()).toEqual(counting);
+      await dialog.getByRole("button", { name: t.retry, exact: true }).click();
+      await dialog.getByText(t.discoveryAudience({ count: 42 }), { exact: true }).waitFor();
+      await transitionsDone();
       expect(await create.boundingBox()).toEqual(counting);
     });
     test("catalog membership is independent of sidebar pagination and returning refreshes the SSR snapshot", async () => {
