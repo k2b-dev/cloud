@@ -65,7 +65,7 @@ export function AiMapToolBlock(props: { block: ToolBlock }) {
           fallback={
             <a
               class="ai-map__jump"
-              href={`/app/assistant?conversation=${encodeURIComponent(result().map.conversationId)}${result().map.anchorSeq ? `&message=${result().map.anchorSeq}` : ""}#${mapAnchor(result().map.id)}`}
+              href={`?conversation=${encodeURIComponent(result().map.conversationId)}${result().map.anchorSeq ? `&message=${result().map.anchorSeq}` : ""}#${mapAnchor(result().map.id)}`}
               onClick={async (event) => {
                 const href = event.currentTarget.href;
                 const target = document.getElementById(mapAnchor(result().map.id));
@@ -81,9 +81,13 @@ export function AiMapToolBlock(props: { block: ToolBlock }) {
                         await fetch(`/api/ai/conversations/${encodeURIComponent(result().map.conversationId)}/maps/${result().map.id}`)
                       ).json(),
                     ).map;
-                    const destination = current.anchorSeq
-                      ? `/app/assistant?conversation=${encodeURIComponent(current.conversationId)}&message=${current.anchorSeq}#${mapAnchor(current.id)}`
-                      : href;
+                    // The host can be full Assistant or its panel. Keep the link's SSR/browser path
+                    // when loading an older map instead of navigating the panel to the full app.
+                    const targetUrl = new URL(href);
+                    targetUrl.searchParams.set("conversation", current.conversationId);
+                    if (current.anchorSeq) targetUrl.searchParams.set("message", String(current.anchorSeq));
+                    targetUrl.hash = mapAnchor(current.id);
+                    const destination = targetUrl.href;
                     const handled = await requestSearchNavigation({
                       href: destination,
                       ref: { type: "assistant.chat", id: current.conversationId },

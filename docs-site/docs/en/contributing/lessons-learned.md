@@ -1049,3 +1049,7 @@ with "Suspected:"; the fix pull request replaces it with the confirmed cause.
 When the guard does not exist yet, write "Pending in #n" with the issue that
 tracks it, or "None, because …". A pull request that adds a guard for a class
 updates that class's row in the table.
+
+### Keep map history links inside the active Assistant host
+
+A shared map result can render in full Assistant or its panel. Hardcoding the full app path in a follow-up link escapes the panel when the original map is outside loaded history. Preserve the host-relative link when fetching the current history anchor. Browser cases cover full and panel paths at desktop and phone widths.

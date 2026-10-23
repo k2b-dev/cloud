@@ -93,6 +93,52 @@ describe.each([1440, 390])("saved map follow-up at %i", (width) => {
     }
   });
 });
+describe.each(["/app/assistant", "/app/assistant/panel"])("older map navigation from %s", (path) => {
+  test.each([1440, 390])("keeps the host route when loading history at %i", async (width) => {
+    const scenario = `places-jump-${path.endsWith("panel") ? "panel" : "full"}-${width}`;
+    const { page, context } = await open(scenario, width);
+    const errors = pageErrors(page);
+    try {
+      await page.evaluate(() =>
+        window.mapFollowup({ type: "search", search: { title: "Cafés", categories: ["cafe"], placeId: "museum-0" } }),
+      );
+      const jump = page.getByRole("link", { name: /Zur Karte/ });
+      await jump.waitFor();
+      fixture.get(scenario).map.anchorSeq = 77;
+      await page.evaluate(
+        ({ path, scenario }) => {
+          history.replaceState(null, "", `${path}?scenario=${scenario}`);
+          document.querySelector(".ai-map")?.remove(); // Original turn is outside the loaded history window.
+          const output = document.createElement("output");
+          output.id = "map-navigation";
+          document.body.append(output);
+          window.addEventListener(
+            "cloud.search.navigate",
+            (event) => {
+              output.textContent = event.detail.target.href;
+              event.detail.handled = Promise.resolve(true);
+            },
+            { once: true },
+          );
+        },
+        { path, scenario },
+      );
+      const initialHref = new URL((await jump.getAttribute("href"))!, page.url());
+      expect(initialHref.pathname).toBe(path);
+      await jump.click();
+      await page.waitForFunction(() => Boolean(document.getElementById("map-navigation")?.textContent));
+      const target = new URL((await page.locator("#map-navigation").textContent())!);
+      expect(target.pathname).toBe(path);
+      expect(target.searchParams.get("conversation")).toBe(scenario);
+      expect(target.searchParams.get("message")).toBe("77");
+      expect(target.hash).toBe(`#assistant-map-${fixture.get(scenario).map.id}`);
+      expect(new URL(page.url()).pathname).toBe(path);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+});
 test.each([1440, 390])("named place search submits the provider name, fits all results and restores after reload at %i", async (width) => {
   const scenario = `route-name-${width}`;
   const { page, context } = await open(scenario, width);
