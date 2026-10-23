@@ -6,7 +6,7 @@ import { visiblePwaParts } from "./app-navigation";
 import type { LayoutContext } from "./layout-context";
 import PwaRuntime from "./PwaRuntime.island";
 import { pwaMessages } from "./pwa-messages";
-import { getRuntimeContext } from "./runtime";
+import { getDisplayRuntimeContext } from "./runtime";
 import TimezoneCookie from "./TimezoneCookie.island";
 
 /** Parts with their own tab; Start lists every part and doubles as "More". */
@@ -42,7 +42,7 @@ export default function PwaLayout(props: PwaLayoutProps) {
   c.header("Referrer-Policy", "no-referrer");
   c.header("Content-Security-Policy", "frame-ancestors 'none'");
 
-  const parts = visiblePwaParts(getRuntimeContext(c).apps, user, locale);
+  const parts = visiblePwaParts(getDisplayRuntimeContext(c).apps, user, locale);
   const path = new URL(c.req.raw.url).pathname;
   const tabs = parts.slice(0, TAB_PARTS);
   const currentTab = tabs.find((part) => path === part.pwa.href || path.startsWith(`${part.pwa.href}/`));

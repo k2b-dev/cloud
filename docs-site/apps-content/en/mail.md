@@ -463,6 +463,10 @@ New messages, replies, and forwards start with the sender's default; a personal
 default takes precedence over the mailbox default. Choose another signature or
 **No signature**. Switching the sender switches to that sender's default.
 
+Tables in formatted messages also have readable columns and rows in the
+plain-text alternative. Links keep their destinations. Plain-format signatures
+and snippets preserve their table structure too.
+
 Signatures stay separate from the editable text. Preview and the sent message
 show the signature after your text. When you write above a quoted reply or a
 forwarded message, the signature goes between your text and that message. The
@@ -566,6 +570,24 @@ cld mail admin contact-directory candidates --app crm
 cld mail admin contact-directory set --app crm --suggest customer.suggest --resolve customer.match --no-read --no-books --no-create --yes
 cld mail admin contact-directory reset --yes
 ```
+
+If Mail cannot read a saved directory setting, the dialog lists that setting
+under **Stored settings cannot be read**. Select **Replace stored value** only
+for values you want to replace. Unselected unreadable settings stay in storage;
+failed saves keep the dialog, draft, and replacement choices open.
+
+A directory update locks the mapping, reads its current values, validates the
+combined provider and functions, and commits all supplied settings together.
+Concurrent partial updates cannot combine functions from different providers.
+If a value becomes
+unreadable while the dialog is open, its replacement checkbox appears after
+the rejected save; the draft and existing selections remain available.
+
+`show --json` includes `unreadable` by setting name. `set` preserves omitted
+functions when the app stays the same. Replacing a supplied unreadable value
+requires `--replace-unreadable`; `reset` needs that flag as well when defaults
+would replace unreadable values. API updates may omit unchanged fields and
+accept `replaceUnreadable` as an array of the supplied setting names.
 
 | Setting | Default | Required |
 | --- | --- | --- |
