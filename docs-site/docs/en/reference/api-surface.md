@@ -496,6 +496,10 @@ render. Browser code uses `getContext()` and `onContextChange()` from
 from `@k2b/cloud/contracts`. See [Panels](/en/docs/platform/panels#page-context)
 for consent, ordering, and the rule that refs never grant access.
 
+`clientIp` and `clientIpBucket` from `@k2b/cloud/server` resolve forwarded
+addresses and normalize shared network budgets. See
+[Limit requests](/en/docs/server/middleware#limit-requests).
+
 Application entry declarations use `appAccess` from `@k2b/cloud`; see
 [App access](/en/docs/identity/app-access). The batch resolver and registry
 filtering helpers are platform-owned.
