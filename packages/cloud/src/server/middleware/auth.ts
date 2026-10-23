@@ -399,7 +399,7 @@ const requireOAuthScope = (...requiredScopes: string[]) =>
     return c.json({ code: "FORBIDDEN", message: `OAuth scope ${requiredScopes.join(" or ")} is required` }, 403);
   });
 
-const getAuthority = (c: Context<AuthContext>): RequestAuthority => {
+const getAuthority = <E extends AuthContext>(c: Context<E>): RequestAuthority => {
   const actor = c.get("actor");
   const accessSubject = c.get("accessSubject");
   const credentialKind = c.get("credentialKind");

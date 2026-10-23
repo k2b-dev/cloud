@@ -2,10 +2,12 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { readBoundedJson } from "../_internal/bounded-json";
 import { getApp, listApps } from "../_internal/registry";
 import { type AuthContext, auth, rejectReservedWorkloadCredential } from "../server";
+import { AppAccessDeniedError, appAccessDeniedBody } from "../server/middleware/app-access";
 import { noTransform } from "../server/middleware/no-transform";
 import { invocationAuthorityFromRequest } from "../services/identity/invocation-authority";
 import { syncInvocationOperation } from "../services/identity/invocation-operations";
-import { normalizeInvocationRequestId, signInvocationToken } from "../services/identity/invocation-token";
+import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
+import { issueInvocationToken as signInvocationToken } from "../services/identity/issue-invocation";
 import { withActiveIdentitySigner } from "../services/identity/key-ring";
 
 type Dependencies = {
@@ -53,17 +55,20 @@ export const createSyncOpsProxyRoutes = (dependencies: Dependencies = {}) =>
       try {
         const signed = await (dependencies.withActiveSigner ?? withActiveIdentitySigner)(
           "invocation",
-          (signer) =>
-            (dependencies.signInvocation ?? signInvocationToken)({
-              targetAppId: app.id,
-              callingAppId: "core",
-              operation,
-              schemaHash: null,
-              authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
-              requestId,
-              signer,
-              issuer: signer.issuer,
-            }),
+          (signer, db) =>
+            (dependencies.signInvocation ?? signInvocationToken)(
+              {
+                targetAppId: app.id,
+                callingAppId: "core",
+                operation,
+                schemaHash: null,
+                authority: invocationAuthorityFromRequest(auth.getAuthority(c)),
+                requestId,
+                signer,
+                issuer: signer.issuer,
+              },
+              { db, groupsAdmin: signer.groupsAdmin },
+            ),
           { signal, timeoutMs: 5_000 },
         );
         const headers = new Headers({ authorization: `Bearer ${signed.token}`, accept: "application/json" });
@@ -75,7 +80,8 @@ export const createSyncOpsProxyRoutes = (dependencies: Dependencies = {}) =>
         const result = await readBoundedJson(response, 4 * 1024 * 1024);
         if (!result.ok) return c.json({ message: "Invalid Sync operations response" }, 502);
         return Response.json(result.data, { status: response.status, headers: { "cache-control": "no-store" } });
-      } catch {
+      } catch (error) {
+        if (error instanceof AppAccessDeniedError) return c.json(appAccessDeniedBody(error.app), 403);
         return c.json({ message: "Sync operations unavailable" }, 502);
       }
     });

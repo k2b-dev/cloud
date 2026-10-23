@@ -1,4 +1,5 @@
 // biome-ignore-all assist/source/organizeImports: Preserve grouped service barrel exports.
+export { appAccessAuthority, canUseApp, usableAppIds } from "./app-access";
 export { ipa } from "./ipa";
 export { accounts } from "./accounts";
 export { accountsAppService } from "./accounts";
