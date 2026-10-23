@@ -1,6 +1,7 @@
 import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPanel, AppPresentationCatalog, AppSearchLink } from "./app";
 import type { AppAccessRule } from "./app-access";
 import type { CapabilityManifest, CapabilityPresentationCatalog } from "./capabilities";
+import type { AppInstallable } from "./installable";
 import type { PlatformPermission } from "./outgoing-mail";
 import type { Role } from "./shared";
 import type { DashboardWidgetPresentation, DashboardWidgetSize, WidgetSettingsDeclaration } from "./widgets";
@@ -105,6 +106,7 @@ export type AppRegistryEntry = {
   searchLinks?: readonly AppSearchLink[];
   /** The app's part of the mobile app (preview); `href` is `/pwa/<id>`. Older readers ignore it. */
   pwa?: AppRegistryPwaPart;
+  installable?: AppInstallable;
   /** Optional panel declaration; older readers ignore it. */
   panel?: AppPanel;
   widgets?: AppRegistryWidget[];

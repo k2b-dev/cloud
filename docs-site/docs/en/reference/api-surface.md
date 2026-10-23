@@ -29,6 +29,8 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
+| `@k2b/cloud/app-pwa` | Supported, server-only | [Paired devices and customer visits](/en/docs/identity/app-pwa-sessions), typed operations, and their closed router |
+| `@k2b/cloud/app-pwa/browser` | Supported, browser | Strict App-PWA QR parsing and fragment clearing |
 | `@k2b/ui` | Supported, SolidJS | Portable SolidJS components and interactions |
 | `@k2b/stdlib/solid` | Supported, SolidJS | Owner-local queries, mutations, and browser interaction primitives |
 | `@k2b/cloud/ssr` | Supported, server-only | Authenticated, anonymous, minimal, panel, and admin layouts; runtime context; request path; URL filters; `hintOpen` and `markHintSeen` for [one-time hints](/en/docs/frontend/ssr-pages-and-routing#one-time-hints-for-moved-paths) |
@@ -379,6 +381,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 
 | Surface | Status | Use | Guide |
 | --- | --- | --- | --- |
+| `installable` option and `AppInstallable` from `@k2b/cloud` | Supported | Give one application its own standalone installation | [App-PWA](/en/docs/frontend/app-pwa) |
 | `pwa` option of `defineApp()` from `@k2b/cloud` | Preview | Add the application's pages to the mobile app | [Define an application](/en/docs/build/define-app#add-pages-to-the-mobile-app) |
 | `/pwa/<app-id>` part routes | Preview | Paths that `defineApp()` derives for a part; every other `/pwa` path is reserved | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#paths) |
 | `PwaLayout` and `PwaLayoutProps` from `@k2b/cloud/ssr` | Preview, server-only | Frame every page of a part | [Pages in the mobile app](/en/docs/frontend/mobile-app-pages#pwalayout) |

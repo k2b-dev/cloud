@@ -37,9 +37,9 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
         builtVersion = registryVersion;
         return {};
       },
-      listApps: async () => {
+      readAppRegistrySnapshot: async () => {
         listCalls++;
-        return [];
+        return { apps: [], issues: [] };
       },
       startProcessSync: async () => ({ stop: async () => void writes.push("sync stopped") }),
       watchAppRegistry: ({ signal }: { signal: AbortSignal }) =>
