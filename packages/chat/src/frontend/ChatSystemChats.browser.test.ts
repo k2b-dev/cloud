@@ -548,7 +548,7 @@ test("system item directory and info keep their links inside the universal panel
     await page.waitForURL(`**/app/chat/panel/c/${chat}/t/${threads[0]}`);
     const info = page.getByRole("link", { name: "Chat-Info", exact: true });
     expect(await info.getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/t/${threads[0]}?panel=info`);
-    expect(await page.locator(".chat-conversation__back").getByRole("link").getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/threads`);
+    expect(await page.locator(".chat-conversation__back a").getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/threads`);
     await info.click();
     await page.getByText("3 Mitglieder: alle mit Zugriff auf den Space. Zugriff änderst du dort.").waitFor();
     expect(errors).toEqual([]);

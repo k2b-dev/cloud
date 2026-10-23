@@ -196,7 +196,10 @@ for (const mode of [
         .click();
       await page.getByRole("menuitem").filter({ hasText: t.unsubscribeDescription }).click();
       await page.waitForURL("**/app/chat/channels");
-      await page.getByText(t.unsubscribed({ name: "Handbook" }), { exact: true }).waitFor();
+      await page
+        .locator(".k2b-toast")
+        .getByText(t.unsubscribed({ name: "Handbook" }), { exact: true })
+        .waitFor();
       expect(harness.props({}).sidebar.items.some((row) => row.id === id)).toBe(false);
       await page.getByRole("button", { name: t.subscribeAgain, exact: true }).click();
       await catalog().getByRole("button", { name: t.subscribed, exact: true }).waitFor();

@@ -211,7 +211,9 @@ suite("Chat live delivery on two replicas", () => {
     await ready(reader, ["chat", "list"]);
     await ready(nonmember, ["list"]);
     await until(() => nonmember.frames("chat").length > 0);
-    expect(nonmember.frames("chat")[0]!.frame).toEqual({ t: "revoked", id: "chat", code: "not_found" });
+    // Conversation subscriptions are collections so item-thread keys can appear later.
+    // An unreadable conversation starts as an empty collection.
+    expect(nonmember.frames("chat")[0]!.frame).toMatchObject({ t: "ready", id: "chat" });
     const refs = [{ type: "spaces.task", id: "task-shared-live" }];
     const message = await send(ben, chat.shortId, "readers only", refs);
     await until(
@@ -243,6 +245,7 @@ suite("Chat live delivery on two replicas", () => {
     await ready(b, ["chat"]);
     const members = MemberPageSchema.parse(await (await f.request(ben.headers, `/${chat.shortId}/members`)).json());
     const accessId = members.items.find((member) => member.principal.type === "user" && member.principal.userId === ana.id)!.accessId;
+    const beforeRemoval = a.frames("chat").length;
     const response = await fetch(`${pods[1]!.url}api/chat/conversations/${chat.shortId}/members/${accessId}`, {
       method: "DELETE",
       signal: AbortSignal.timeout(5_000),
@@ -251,10 +254,20 @@ suite("Chat live delivery on two replicas", () => {
     expect(response.status).toBe(200);
     const answered = Date.now();
     const sent = await send(ben, chat.shortId, "after removal");
-    await until(() => a.frames("chat").some(({ frame }) => frame.t === "revoked"), 1_000);
-    const revoked = a.frames("chat").find(({ frame }) => frame.t === "revoked")!;
-    expect(revoked.frame).toEqual({ t: "revoked", id: "chat", code: "access_denied" });
-    expect(revoked.at - answered).toBeLessThanOrEqual(1_000);
+    await until(
+      () =>
+        a
+          .frames("chat")
+          .slice(beforeRemoval)
+          .some(({ frame }) => frame.t === "resync"),
+      1_000,
+    );
+    const resync = a
+      .frames("chat")
+      .slice(beforeRemoval)
+      .find(({ frame }) => frame.t === "resync")!;
+    expect(resync.frame).toMatchObject({ t: "resync", id: "chat" });
+    expect(resync.at - answered).toBeLessThanOrEqual(1_000);
     await until(() => a.events("me").some((event) => event.type === "membership" && event.conversationId === chat.shortId));
     await until(
       () =>
@@ -302,15 +315,15 @@ suite("Chat live delivery on two replicas", () => {
       expired = await send(ben, chat.shortId, `directory message ${sends++}`);
       await Bun.sleep(100);
     } while (Date.parse(expired.createdAt) <= removedAt + LIVE_LIMITS.cacheMs);
-    await until(() => a.frames("chat").some(({ frame }) => frame.t === "revoked"));
-    const revoked = a.frames("chat").find(({ frame }) => frame.t === "revoked")!;
-    expect(revoked.frame.code).toBe("access_denied");
+    await until(() => a.frames("chat").some(({ frame, at }) => frame.t === "resync" && at >= removedAt));
+    const resync = a.frames("chat").find(({ frame, at }) => frame.t === "resync" && at >= removedAt)!;
+    expect(resync.frame).toMatchObject({ t: "resync", id: "chat" });
     expect(
       a.events("chat").filter((event) => event.type === "message" && Date.parse(event.message.createdAt) > removedAt + LIVE_LIMITS.cacheMs),
     ).toEqual([]);
     expect(a.events("chat").filter((event) => event.type === "message" && event.message.id === expired.id)).toEqual([]);
     await until(() => b.events("chat").filter((event) => event.type === "message").length === sends + 1);
-    expect(a.frames("chat").at(-1)?.frame).toEqual(revoked.frame);
+    expect(a.frames("chat").at(-1)?.frame).toEqual(resync.frame);
     a.socket.close();
     b.socket.close();
   }, 15_000);
