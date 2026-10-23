@@ -666,7 +666,12 @@ The model cannot retry it or start further paid map work in that turn. A later
 user turn may request another map. Core reserves the whole chain using straight-line
 distance times 2; there is no selectable kilometre allowance. This estimate is
 not a guaranteed ceiling on the provider invoice. Budget refusals show required,
-available and missing credits when the service supplies them.
+available and missing credits when the service supplies them. If unresolved
+addresses make the reservation too large, **Change stop** offers address
+suggestions. Selecting one keeps its coordinates even if the next calculation
+still needs a smaller reservation. Resolve the remaining stops the same way;
+editing a selected address clears its old coordinates. Suggestions consume the
+same Core budget, so recovery requires credits to remain available.
 
 Map reads, exports, and changes check the conversation's current owner. Writes
 also check the saved revision before provider work. A conflict offers the current

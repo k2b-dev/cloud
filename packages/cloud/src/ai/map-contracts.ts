@@ -153,7 +153,9 @@ export const AiMapCommandSchema = z.discriminatedUnion("type", [
 export const AiMapBrowserCommandSchema = z.union([
   AiMapCommandSchema,
   z.object({ type: z.literal("location"), destinationId: z.string(), point: GeoPointSchema }).strict(),
-  z.object({ type: z.literal("repair"), stopId: z.string(), address: z.string().trim().min(1).max(300) }).strict(),
+  z
+    .object({ type: z.literal("repair"), stopId: z.string(), address: z.string().trim().min(1).max(300), point: GeoPointSchema.optional() })
+    .strict(),
 ]);
 export type AiMapCommand = z.infer<typeof AiMapBrowserCommandSchema>;
 export const AiMapToolInputSchema = z

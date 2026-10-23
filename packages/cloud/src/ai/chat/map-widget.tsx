@@ -3,8 +3,9 @@ import { Button, ButtonLink, Checkbox, NumberInput, Select, TextInput, useLocale
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { requestSearchNavigation } from "../../browser/search-bridge";
-import type { GeoCategorySchema } from "../../contracts/geo";
+import type { GeoCategorySchema, GeoPoint } from "../../contracts/geo";
 import type { GeoRouteOptions } from "../../contracts/geo-route";
+import { AddressAutocomplete } from "../../geo/AddressAutocomplete";
 import { CloudMap } from "../../geo/CloudMap";
 import { geoNavigationHref, geoNavigationPlatform } from "../../geo/navigation";
 import { type AiMap, type AiMapCommand, AiMapReferenceSchema, AiMapSchema, AiMapToolResultSchema, aiMapWebsite } from "../map-contracts";
@@ -150,6 +151,7 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
   const [travelMode, setTravelMode] = createSignal<"car" | "bike" | "walk">("car");
   const [avoid, setAvoid] = createSignal<NonNullable<GeoRouteOptions["avoid"]>>([]);
   const [repairStop, setRepairStop] = createSignal("");
+  const [repairPoint, setRepairPoint] = createSignal<GeoPoint>();
   const [scope, setScope] = createSignal("all");
   const [navigationPlatform, setNavigationPlatform] = createSignal<ReturnType<typeof geoNavigationPlatform>>("desktop");
   const candidateIndex = () => {
@@ -415,8 +417,14 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
       { id: "preview", polyline6: preview.result.route.polyline6, tone: preview.changes.type === "insert" ? "preview" : "accent" },
     ];
   });
+  const canReduceReservation = () =>
+    Boolean(map().plan && !map().route && map().issue?.requiredCredits && (map().issue?.availableCredits ?? 0) > 0) &&
+    !map().availability.cloud.exhausted &&
+    !map().availability.person.exhausted;
   const blocked = () =>
-    !map().availability.configured || map().issue?.code === "GEO_NOT_CONFIGURED" || map().issue?.code === "GEO_BUDGET_EXHAUSTED";
+    !map().availability.configured ||
+    map().issue?.code === "GEO_NOT_CONFIGURED" ||
+    (map().issue?.code === "GEO_BUDGET_EXHAUSTED" && !canReduceReservation());
   const locate = () => {
     if (!navigator.geolocation) {
       setLocationError(t().locationFailed);
@@ -526,6 +534,7 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
           onClick={() => {
             setRepairStop(map().ambiguousStopId ?? map().plan!.stops.at(-1)!.id);
             setStart("");
+            setRepairPoint(undefined);
             setMode("repair");
           }}
         >
@@ -965,7 +974,11 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
                 <Select
                   label={t().changeStop}
                   value={repairStop()}
-                  onValueChange={(v) => setRepairStop(v ?? "")}
+                  onValueChange={(v) => {
+                    setRepairStop(v ?? "");
+                    setStart("");
+                    setRepairPoint(undefined);
+                  }}
                   options={
                     map().plan?.stops.map((s, i) => ({
                       value: s.id,
@@ -973,12 +986,33 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
                     })) ?? []
                   }
                 />
-                <TextInput label={t().start} value={start()} onValueChange={setStart} />
+                <AddressAutocomplete
+                  label={t().start}
+                  value={start()}
+                  availability={map().availability}
+                  disabled={busy()}
+                  onValueChange={(value) => {
+                    setStart(value);
+                    setRepairPoint(undefined);
+                  }}
+                  onOwnEntry={() => setRepairPoint(undefined)}
+                  onPick={(address) => {
+                    setStart(address.formatted.slice(0, 300));
+                    setRepairPoint(address.point);
+                  }}
+                />
                 <div class="ai-map__actions">
                   <Button
                     size="sm"
                     disabled={busy() || !repairStop() || !start().trim()}
-                    onClick={() => void run({ type: "repair", stopId: repairStop(), address: start() })}
+                    onClick={() =>
+                      void run({
+                        type: "repair",
+                        stopId: repairStop(),
+                        address: start(),
+                        ...(repairPoint() ? { point: repairPoint() } : {}),
+                      })
+                    }
                   >
                     {t().calculate}
                   </Button>
@@ -1028,6 +1062,7 @@ export function AssistantMap(props: { initial: AiMap; loading?: boolean }) {
                         onClick={() => {
                           setRepairStop(map().ambiguousStopId ?? map().plan!.stops[0]!.id);
                           setStart("");
+                          setRepairPoint(undefined);
                           setMode("repair");
                         }}
                       >

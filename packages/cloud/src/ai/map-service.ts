@@ -158,7 +158,9 @@ export async function applyAiMap(stored: AiMapStored, input: AiMapCommand, ctx: 
     } else if (command.type === "repair") {
       if (!map.plan || map.route || !map.plan.stops.some((s) => s.id === command.stopId)) throw new Error("MAP_STOP_NOT_FOUND");
       map.plan.stops = map.plan.stops.map((s) =>
-        s.id === command.stopId ? { id: s.id, label: command.address, address: { text: command.address } } : s,
+        s.id === command.stopId
+          ? { id: s.id, label: command.address, ...(command.point ? { point: command.point } : { address: { text: command.address } }) }
+          : s,
       );
       map.route = data(await geo.calculateRoute({ plan: map.plan }, ctx.caller)).route;
       delete map.candidates;

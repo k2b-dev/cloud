@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import { z } from "zod";
 import type { GeoPlaceSearchInput } from "../contracts/geo";
+import { geoRouteReferenceCost } from "../services/geo/route-costs";
+import { estimateRouteDistance } from "../services/geo/route-estimate";
 import { mapAddress, mapFixture, mapGeoFixture, mapSuccess, mapTime } from "./map.test-fixture";
 import { AiMapActionSchema, AiMapCommandSchema, type AiMapToolResult, aiMapToolResult } from "./map-contracts";
 import { type AiMapContext, applyAiMap } from "./map-service";
@@ -133,6 +135,34 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
   const contextFor = (name: string): AiMapContext => ({
     geo: {
       ...geo.geo,
+      calculateRoute: async (input, caller) => {
+        if (name.includes("reservation")) {
+          const unknown = input.plan.stops.filter((stop) => !stop.point).length;
+          const distance = estimateRouteDistance(
+            input.plan.stops.map((stop) => (stop.point ? { id: stop.id, point: stop.point } : undefined)),
+          );
+          const credits =
+            unknown +
+            geoRouteReferenceCost({ pairs: input.plan.stops.length - 1, avoids: 0, optimize: false, distanceMeters: distance }) / 1000;
+          if (credits > 10)
+            return {
+              ok: false,
+              error: {
+                code: "GEO_BUDGET_EXHAUSTED",
+                status: 429,
+                message: "reservation",
+                details: {
+                  scope: "person",
+                  resetsAt: get(name).map.availability.person.resetsAt,
+                  requiredCredits: credits,
+                  availableCredits: 10,
+                  shortfallCredits: credits - 10,
+                },
+              },
+            };
+        }
+        return geo.geo.calculateRoute(input, caller);
+      },
       searchPlaces: async (input, caller) => {
         placeSearches.push(structuredClone(input));
         const result = await geo.geo.searchPlaces(input, caller);
@@ -248,6 +278,10 @@ export async function startMapBrowserFixture(options: { view?: "map" | "save" } 
           });
         }
         return Response.json({ map: before.map, canAdmin: name.includes("admin") });
+      }
+      if (path === "/api/capabilities/v1/queries/core/address.autocomplete") {
+        calls.push("autocomplete");
+        return Response.json({ data: { suggestions: [mapAddress(), mapAddress(1), mapAddress(2)], provenance: mapAddress().provenance } });
       }
       if (path === "/api/capabilities/v1/queries/notebooks/notebook.list")
         return Response.json({ data: [{ id: "Book01", name: "Fiktive Reiseplanung" }] });

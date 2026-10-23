@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
+import { mapAddress } from "../map.test-fixture";
 import { startMapBrowserFixture } from "../map-browser.test-fixture";
 import type { AiMapCommand } from "../map-contracts";
 
@@ -483,4 +484,65 @@ test("ambiguous address recovery after an overrun explains further costs before 
   } finally {
     await context.close();
   }
+});
+
+describe.each([1440, 390])("route reservation address recovery at %i", (width) => {
+  const name = `route-reservation-${width}`;
+  let opened: Awaited<ReturnType<typeof open>>;
+  beforeAll(async () => {
+    const stored = fixture.get(name);
+    delete stored.map.route;
+    stored.map.plan = {
+      stops: [
+        { id: "a", address: { text: "Ulm" } },
+        { id: "b", address: { text: "Blaubeuren" } },
+        { id: "c", address: { text: "Stuttgart" } },
+      ],
+    };
+    stored.map.issue = { code: "GEO_LIMIT_EXCEEDED", requiredCredits: 325, availableCredits: 300, shortfallCredits: 25 };
+    opened = await open(name, width);
+  });
+  afterAll(async () => {
+    await opened?.context.close();
+  });
+  const pick = async (mark: string) => {
+    const { page } = opened;
+    await page.getByRole("button", { name: "Stopp ändern", exact: true }).click();
+    await page.getByRole("combobox", { name: "Stopp ändern", exact: true }).click();
+    await page.getByRole("option", { name: new RegExp(`^${mark} ·`) }).click();
+    const field = page.getByRole("combobox", { name: "Startort", exact: true });
+    await field.fill("Beispielgasse");
+    await page.getByRole("option", { name: /1 Beispielgasse/ }).click();
+    expect(await field.inputValue()).toBe(mapAddress().formatted);
+    return field;
+  };
+  test("editing a chosen suggestion clears its coordinates before retry", async () => {
+    const { page } = opened;
+    const field = await pick("C");
+    await field.fill("Andere Adresse");
+    await field.press("Escape");
+    const response = page.waitForResponse((r) => r.url().endsWith("/action") && r.request().method() === "POST");
+    await page.getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
+    await response;
+    expect(fixture.commands.at(-1)).toEqual({ type: "repair", stopId: "c", address: "Andere Adresse" });
+    await page.getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
+  });
+  test.each(["C", "B", "A"])("selected %s coordinates survive refusal, reload and final calculation", async (mark) => {
+    const { page } = opened;
+    await pick(mark);
+    const response = page.waitForResponse((r) => r.url().endsWith("/action") && r.request().method() === "POST");
+    await page.getByRole("button", { name: "Vorschau berechnen", exact: true }).click();
+    await response;
+    const saved = fixture.get(name).map;
+    expect(saved.plan?.stops.find((stop) => stop.id === mark.toLowerCase())?.point).toEqual(mapAddress().point);
+    if (mark !== "A") {
+      expect(saved.issue?.code).toBe("GEO_BUDGET_EXHAUSTED");
+      await page.reload();
+      await page.getByRole("button", { name: "Stopp ändern", exact: true }).waitFor();
+    } else {
+      expect(saved.issue).toBeUndefined();
+      expect(saved.route).toBeDefined();
+      await page.getByRole("button", { name: "Optionen", exact: true }).waitFor();
+    }
+  });
 });

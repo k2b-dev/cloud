@@ -406,3 +406,54 @@ test.each([false, true])("map named search reaches public Geo and survives lastS
   for (const name of [" ", "x".repeat(301)])
     expect(AiMapToolInputSchema.safeParse({ command: { type: "search", search: { ...search, name } } }).success).toBe(false);
 });
+
+test("selected stop coordinates survive reservation refusal and allow route recovery", async () => {
+  const f = context();
+  const calculate = f.geo.calculateRoute;
+  f.geo.calculateRoute = async (input, caller) => {
+    if (input.plan.stops.some((stop) => !stop.point))
+      return {
+        ok: false,
+        error: {
+          code: "GEO_BUDGET_EXHAUSTED",
+          status: 429,
+          message: "reservation",
+          details: {
+            scope: "person",
+            resetsAt: mapAvailability.person.resetsAt,
+            requiredCredits: 325,
+            availableCredits: 10,
+            shortfallCredits: 315,
+          },
+        },
+      };
+    return calculate(input, caller);
+  };
+  let stored = await createAiMap(
+    {
+      conversationId: "aBc123",
+      command: {
+        type: "route",
+        title: "Trip",
+        stops: [
+          { id: "a", address: "Ulm" },
+          { id: "b", address: "Blaubeuren" },
+          { id: "c", address: "Stuttgart" },
+        ],
+      },
+    },
+    f.ctx,
+  );
+  expect(stored.map.issue?.requiredCredits).toBe(325);
+  for (const [index, stopId] of ["a", "b", "c"].entries()) {
+    const address = mapAddress(index);
+    stored = await applyAiMap(stored, { type: "repair", stopId, address: address.formatted, point: address.point }, f.ctx);
+    expect(stored.map.plan?.stops[index]).toEqual({ id: stopId, label: address.formatted, point: address.point });
+    if (index < 2) expect(stored.map.issue?.code).toBe("GEO_BUDGET_EXHAUSTED");
+  }
+  expect(stored.map.route).toBeDefined();
+  expect(stored.map.issue).toBeUndefined();
+  expect(
+    AiMapToolInputSchema.safeParse({ command: { type: "repair", stopId: "a", address: "Ulm", point: mapAddress().point } }).success,
+  ).toBe(false);
+});
