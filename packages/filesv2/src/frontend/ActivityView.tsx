@@ -89,6 +89,18 @@ export function HistoryAvatar(props: { actor: ActorView; size: "xs" | "sm" }) {
   );
 }
 
+function MetaDot() {
+  return (
+    <span class="filesv2-history-row__dot" aria-hidden="true">
+      ·
+    </span>
+  );
+}
+
+/**
+ * Quiet facts joined by dots. The line flows as text: a dot touches its neighbours without a break opportunity, so a
+ * wrap happens inside a fact and never leaves a dot at the start or end of a line.
+ */
 export function MetaLine(props: { parts: readonly MetaPart[] }) {
   return (
     <p class="filesv2-history-row__meta">
@@ -96,19 +108,23 @@ export function MetaLine(props: { parts: readonly MetaPart[] }) {
         {(part, index) => (
           <>
             <Show when={index() > 0 && props.parts[index() - 1]?.kind !== "status"}>
-              <span class="filesv2-history-row__dot" aria-hidden="true">
-                ·
-              </span>
+              <MetaDot />
             </Show>
             <Switch>
               <Match when={part.kind === "status" && part}>
                 {(status) => (
-                  <StatusBadge
-                    class="filesv2-history-row__status"
-                    tone={status().tone === "running" ? "running" : status().tone}
-                    icon={status().icon}
-                    label={status().label}
-                  />
+                  // A badge is a box and lets the line break beside it; it keeps its following dot.
+                  <span class="filesv2-history-row__lead">
+                    <StatusBadge
+                      class="filesv2-history-row__status"
+                      tone={status().tone === "running" ? "running" : status().tone}
+                      icon={status().icon}
+                      label={status().label}
+                    />
+                    <Show when={index() < props.parts.length - 1}>
+                      <MetaDot />
+                    </Show>
+                  </span>
                 )}
               </Match>
               <Match when={part.kind === "time" && part}>{(time) => <time datetime={time().iso}>{time().text}</time>}</Match>
@@ -196,6 +212,8 @@ export type HistoryRowProps = {
   sentence?: readonly Part[];
   meta?: readonly MetaPart[];
   action?: RowAction | null;
+  /** Shows a list row's action without hover, for a row whose action is the reason it is shown. */
+  keep?: boolean;
   others?: number;
   onChanged?: () => void;
 };
@@ -204,6 +222,29 @@ export type HistoryRowProps = {
 export function HistoryRow(props: HistoryRowProps) {
   const h = useHistoryMessages();
   const locale = useLocale();
+  const versions = query.create({
+    source: () => props.row.lead,
+    enabled: () =>
+      !!props.actions?.loadVersion &&
+      !props.actions.version &&
+      props.row.lead.state === "done" &&
+      (props.row.lead.action === "file.overwrite" || props.row.lead.action === "file.edit"),
+    load: async (entry, { abortSignal }) => ({ entry, value: await props.actions!.loadVersion!(entry, abortSignal) }),
+  });
+  const version = () => (versions.data()?.entry === props.row.lead ? versions.data()?.value : null);
+  const actions = createMemo<HistoryActions | undefined>(() =>
+    props.actions?.version
+      ? props.actions
+      : {
+          ...props.actions,
+          version: () => version() ?? null,
+          onRestoreVersion: async () => {
+            const restore = version()?.restore;
+            if (!restore) throw new Error(h().actionFailed);
+            await restore();
+          },
+        },
+  );
   const actor = createMemo(() => actorOf(props.row.lead, h(), props.env));
   const parts = createMemo(
     () => props.sentence ?? sentence(props.row, h(), props.env, { context: props.context, directory: props.directory }),
@@ -214,12 +255,12 @@ export function HistoryRow(props: HistoryRowProps) {
       metaParts(props.row, h(), locale(), props.env, {
         context: props.context,
         dated: props.dated,
-        actions: props.actions,
+        actions: actions(),
         others: props.others,
       }),
   );
   const action = createMemo(() => {
-    const chosen = props.action !== undefined ? props.action : rowAction(props.row, h(), props.actions ?? {});
+    const chosen = props.action !== undefined ? props.action : rowAction(props.row, h(), actions() ?? {});
     const trashed = chosen?.restoresTrash;
     const restore = props.actions?.onRestoreTrash;
     return trashed && restore ? { ...chosen, run: () => restoreFromTrash(trashed, restore, h()) } : chosen;
@@ -262,6 +303,19 @@ export function HistoryRow(props: HistoryRowProps) {
             </Button>
           </Show>
         </Show>
+        <Show when={versions.loading()}>
+          <span class="sr-only" role="status">
+            {h().loading}
+          </span>
+        </Show>
+        <Show when={versions.error()}>
+          <p class="filesv2-history-row__error" role="alert">
+            {versions.error() instanceof Error ? versions.error()!.message : h().historyFailed}
+            <Button size="xs" variant="text" class="filesv2-history-link" onClick={() => void versions.refresh()}>
+              {h().retry}
+            </Button>
+          </p>
+        </Show>
         <Show when={runner.error()}>
           {(message) => (
             <p class="filesv2-history-row__error" role="alert">
@@ -270,7 +324,7 @@ export function HistoryRow(props: HistoryRowProps) {
           )}
         </Show>
       </div>
-      <div class="filesv2-history-row__action" data-keep={runner.pending() || runner.error() ? "" : undefined}>
+      <div class="filesv2-history-row__action" data-keep={props.keep || runner.pending() || runner.error() ? "" : undefined}>
         <Show when={action()}>
           {(current) => (
             <Button size="sm" variant="secondary" loading={runner.pending()} onClick={() => void runner.run(current())}>
@@ -539,7 +593,7 @@ export default function ActivityView(props: ActivityViewProps) {
             ]}
           />
           <Show when={filtered()}>
-            <Button size="sm" variant="text" onClick={resetFilters}>
+            <Button size="sm" variant="text" class="filesv2-history-link" onClick={resetFilters}>
               {h().reset}
             </Button>
           </Show>
@@ -598,6 +652,7 @@ export default function ActivityView(props: ActivityViewProps) {
             <Switch>
               <Match when={!loadedOnce() && pages.error()}>
                 <Placeholder
+                  class="filesv2-history-placeholder"
                   state="error"
                   icon="ti ti-alert-triangle"
                   title={h().errorTitle}
@@ -631,6 +686,7 @@ export default function ActivityView(props: ActivityViewProps) {
               </Match>
               <Match when={rows().length === 0}>
                 <Placeholder
+                  class="filesv2-history-placeholder"
                   state={filtered() ? "no-results" : "empty"}
                   icon="ti ti-history"
                   title={filtered() ? h().emptyTitle : h().noActivityTitle}

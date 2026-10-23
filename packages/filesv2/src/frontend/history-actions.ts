@@ -29,6 +29,8 @@ export type HistoryEnvironment = {
  * Existing actions the parent already owns. A missing callback means the person has no such authority here, and the
  * matching button is not shown. Every callback re-checks identity, rights and target on the server.
  */
+export type ActivityVersion = { current: number | null; restorable: number | null; restore?: () => Promise<void> };
+
 export type HistoryActions = {
   onOpen?: (target: HistoryTarget) => void;
   onRecheck?: (entry: ActivityEntry) => Promise<void>;
@@ -48,6 +50,8 @@ export type HistoryActions = {
   /** Version numbers the parent can map from its version list; `restorable` is the version a row may bring back. */
   version?: (entry: ActivityEntry) => { current: number | null; restorable: number | null } | null;
   onRestoreVersion?: (entry: ActivityEntry) => Promise<void>;
+  /** Supplementary current version evidence for activity rows; reads remain permission-aware and cancellable. */
+  loadVersion?: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityVersion | null>;
 };
 
 export type Part = { kind: "text"; text: string } | { kind: "name"; text: string } | { kind: "place"; segments: readonly string[] };

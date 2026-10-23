@@ -194,7 +194,7 @@ function ShareFacts(props: {
           <p class="filesv2-item-history__line" role="alert">
             <i class="ti ti-alert-triangle" aria-hidden="true" />
             {h().accessFailed}
-            <Button size="xs" variant="text" onClick={() => void facts.refresh()}>
+            <Button size="xs" variant="text" class="filesv2-history-link" onClick={() => void facts.refresh()}>
               {h().retry}
             </Button>
           </p>
@@ -231,11 +231,6 @@ function ShareFacts(props: {
                   </dd>
                 </div>
               </dl>
-              <p class="filesv2-share-facts__sentence">
-                {data().pageNetworks === null
-                  ? h().pageViewsSentence.replace("{pages}", String(data().pages))
-                  : h().pageNetworksSentence.replace("{pages}", String(data().pages)).replace("{networks}", String(data().pageNetworks))}
-              </p>
               <p class="filesv2-share-facts__note">{h().periodNote.replace("{days}", String(days()))}</p>
               <Show when={data().networks.incomplete}>
                 <p class="filesv2-share-facts__note">{h().networksIncomplete}</p>
@@ -259,12 +254,12 @@ function ShareFacts(props: {
                   </For>
                 </ul>
                 <Show when={!expanded() && unseen() > 0}>
-                  <Button size="xs" variant="text" aria-expanded="false" onClick={() => setExpanded(true)}>
+                  <Button size="xs" variant="text" class="filesv2-history-link" aria-expanded="false" onClick={() => setExpanded(true)}>
                     {h().moreNetworks.replace("{count}", String(unseen()))}
                   </Button>
                 </Show>
                 <Show when={expanded() && (next() || moreFailed())}>
-                  <Button size="xs" variant="text" loading={moreLoading()} onClick={() => void loadMore()}>
+                  <Button size="xs" variant="text" class="filesv2-history-link" loading={moreLoading()} onClick={() => void loadMore()}>
                     {moreFailed() ? h().retry : h().loadMoreNetworks}
                   </Button>
                 </Show>

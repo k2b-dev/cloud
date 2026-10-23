@@ -12,7 +12,7 @@ import type {
 } from "../src/activity-contracts";
 import type { ShareView } from "../src/contracts";
 import type { ActivityFilters, ActivityRequest } from "../src/frontend/ActivityView";
-import type { HistoryActions, RestoreOutcome } from "../src/frontend/history-actions";
+import type { ActivityVersion, HistoryActions, RestoreOutcome } from "../src/frontend/history-actions";
 import type { ShareAccessRequest } from "../src/frontend/ShareHistory";
 import type { ActivityRecovery } from "../src/service/activity-actions";
 import { chain, current, entry, env, gone, hidden, page } from "./history-fixtures";
@@ -54,6 +54,56 @@ describe("Files history components", () => {
     };
     return dom;
   };
+
+  test("activity version evidence retries, restores the exact saved content, and disappears for a new row", async () => {
+    const { HistoryRow } = await import("../src/frontend/ActivityView");
+    const original = entry({ action: "file.overwrite", after: current("vertrieb/Proof.pdf", { directory: false }) });
+    const [value, setValue] = createSignal(original);
+    const requests: { signal: AbortSignal; reply: ReturnType<typeof deferred<ActivityVersion | null>> }[] = [];
+    let restores = 0;
+    let changes = 0;
+    const dom = await mount(() => (
+      <HistoryRow
+        row={{ key: value().id, kind: "single", lead: value(), entries: [value()] }}
+        env={env}
+        context="activity"
+        dated
+        variant="list"
+        actions={{
+          loadVersion: (_entry, signal) => {
+            const reply = deferred<ActivityVersion | null>();
+            requests.push({ signal, reply });
+            return reply.promise;
+          },
+        }}
+        onChanged={() => changes++}
+      />
+    ));
+    await flush();
+    expect(requests).toHaveLength(1);
+    requests[0]!.reply.reject(new Error("Version list unavailable"));
+    await flush();
+    expect(dom.root.textContent).toContain("Version list unavailable");
+    buttonNamed(dom.root, "Erneut versuchen")!.click();
+    await flush();
+    requests[1]!.reply.resolve({
+      current: 3,
+      restorable: 2,
+      restore: async () => {
+        restores++;
+      },
+    });
+    await flush();
+    expect(dom.root.textContent).toContain("Version 3");
+    buttonNamed(dom.root, "Version 2 wiederherstellen")!.click();
+    await flush();
+    expect(restores).toBe(1);
+    expect(changes).toBe(1);
+    setValue(entry({ action: "item.move", after: current("vertrieb/Elsewhere") }));
+    await flush();
+    expect(dom.root.textContent).not.toContain("Version 3");
+    expect(dom.root.textContent).not.toContain("Version 2 wiederherstellen");
+  });
 
   test("activity shows the SSR page without a request, expands a batch to its visible members, and recovers a failed older page", async () => {
     const { default: ActivityView } = await import("../src/frontend/ActivityView");

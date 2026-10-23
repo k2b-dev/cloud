@@ -11,9 +11,9 @@ import {
   historyDirectory,
   historyFile,
   historyInspectorSource,
-  historyMove,
   historyNow,
   historyPage,
+  historySearch,
   historyVersions,
 } from "./History.browser-fixtures";
 
@@ -127,7 +127,7 @@ async function open(
           contentType: "application/json",
           body: JSON.stringify({ message: "Temporarily unavailable", code: "unavailable" }),
         });
-      return json(url.searchParams.has("q") ? historyPage([historyMove]) : historyActivity);
+      return json(url.searchParams.has("q") ? historySearch : historyActivity);
     }
     if (holdContacts && (url.pathname.endsWith("/chain") || url.pathname.endsWith("/recovery")))
       await new Promise<void>((resolve) => contacts.push(resolve));
@@ -238,6 +238,12 @@ for (const touch of [false, true])
       await versions.waitFor({ state: "visible" });
       await count.waitFor({ state: "hidden" });
       expect(await versions.getByText("Initial draft · Mia Weber", { exact: true }).isVisible()).toBe(true);
+      // The current version has no menu, yet its date ends on the same edge as the dates of older versions.
+      const dateEdges = await versions
+        .locator("time")
+        .evaluateAll((times) => times.map((time) => Math.round(time.getBoundingClientRect().right)));
+      expect(dateEdges).toHaveLength(2);
+      expect(Math.abs(dateEdges[0]! - dateEdges[1]!)).toBeLessThanOrEqual(1);
       expect(await versions.getAttribute("data-open")).toBeNull();
       expect(await host.evaluate((element) => element.getBoundingClientRect().width)).toBe(900);
       expect(await modified.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(30);
@@ -325,3 +331,73 @@ for (const width of [1440, 390])
       await context.close();
     }
   }, 30_000);
+
+for (const width of [1440, 390])
+  test(`other search hits keep their restore action visible and phone buttons are 42px at ${width}px`, async () => {
+    const { context, tab, errors } = await open(width, "light", "Angebote 2025");
+    try {
+      const restore = tab.locator(".filesv2-history-section").getByRole("button", { name: "Wiederherstellen", exact: true });
+      await restore.waitFor();
+      await tab.mouse.move(0, 0);
+      // Without hover or focus: the row's action is the reason the row is shown.
+      expect(await restore.evaluate((button) => getComputedStyle(button.closest(".filesv2-history-row__action")!).opacity)).toBe("1");
+      if (width === 390) {
+        await tab.getByRole("button", { name: "Dorthin springen", exact: true }).waitFor();
+        const heights = await tab
+          .locator(".filesv2-history-hit__buttons .k2b-button")
+          .evaluateAll((buttons) => buttons.map((button) => Math.round(button.getBoundingClientRect().height)));
+        expect(heights.length).toBeGreaterThanOrEqual(1);
+        for (const height of heights) expect(height).toBe(42);
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+test("phone activity keeps the menu beside the search and never leaves a dot at a line edge", async () => {
+  const { context, tab, errors } = await open(390, "light");
+  try {
+    await tab.locator(".filesv2-history-row").first().waitFor();
+    const head = await tab.evaluate(() => {
+      const rect = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      const search = rect(".filesv2-history-search");
+      const menu = rect(".filesv2-history-head__actions");
+      const filters = rect(".filesv2-history-head__filters");
+      return {
+        menuBesideSearch: Math.abs(menu.top + menu.height / 2 - (search.top + search.height / 2)) <= 2 && menu.left >= search.right,
+        filtersBelow: filters.top >= search.bottom,
+      };
+    });
+    expect(head).toEqual({ menuBesideSearch: true, filtersBelow: true });
+    // A status badge is followed by a dot like every other fact.
+    expect(await tab.locator(".filesv2-history-row__lead .filesv2-history-row__dot").count()).toBeGreaterThanOrEqual(1);
+    const lines = await tab.evaluate(() => {
+      // A narrow text column forces the facts to wrap.
+      for (const text of document.querySelectorAll<HTMLElement>(".filesv2-history-row__text")) text.style.width = "110px";
+      const facts =
+        "time, a, .k2b-status-badge, .filesv2-history-row__meta > span:not(.filesv2-history-row__dot, .filesv2-history-row__lead)";
+      const sameLine = (a: DOMRect, b: DOMRect) => a.bottom > b.top + 1 && a.top < b.bottom - 1;
+      const misplaced: string[] = [];
+      let wrapped = 0;
+      for (const meta of document.querySelectorAll<HTMLElement>(".filesv2-history-row__meta")) {
+        if (meta.getBoundingClientRect().height > 30) wrapped++;
+        const all = [...meta.querySelectorAll<HTMLElement>(facts)];
+        for (const dot of meta.querySelectorAll<HTMLElement>(".filesv2-history-row__dot")) {
+          const before = all.filter((fact) => fact.compareDocumentPosition(dot) & Node.DOCUMENT_POSITION_FOLLOWING).at(-1);
+          const after = all.find((fact) => dot.compareDocumentPosition(fact) & Node.DOCUMENT_POSITION_FOLLOWING);
+          const own = dot.getBoundingClientRect();
+          const end = before ? [...before.getClientRects()].at(-1) : undefined;
+          const start = after?.getClientRects()[0];
+          if (!end || !start || !sameLine(end, own) || !sameLine(start, own)) misplaced.push(meta.textContent ?? "");
+        }
+      }
+      return { wrapped, misplaced };
+    });
+    expect(lines.wrapped).toBeGreaterThanOrEqual(1);
+    expect(lines.misplaced).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+}, 30_000);

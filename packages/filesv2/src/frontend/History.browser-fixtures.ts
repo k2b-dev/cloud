@@ -63,6 +63,28 @@ export const historyMove: ActivityEntry = {
   },
   after: side("groups/vertrieb/Archiv/2025/Angebote 2025"),
 };
+/** A second hit of the same search: a file in the trash, restorable from its row. */
+export const historyTrash: ActivityEntry = {
+  ...historyMove,
+  id: "10000000-0000-4000-8000-000000000009",
+  action: "item.trash",
+  time: "2026-10-14T08:42:00.000Z",
+  before: {
+    visibility: "full",
+    source: "snapshot",
+    name: "Angebote_2025_Übersicht.xlsx",
+    path: "groups/vertrieb/Kunden/Angebote_2025_Übersicht.xlsx",
+    root: "cloud",
+    baseId: "10000000-0000-4000-8000-000000000001",
+    publicBaseId: historyBase.id,
+    relativePath: "Kunden/Angebote_2025_Übersicht.xlsx",
+    itemId: "10000000-0000-4000-8000-000000000010",
+    directory: false,
+    size: 38_000,
+    revision: null,
+  },
+  after: { visibility: "hidden" },
+};
 export const historyChain: ActivityChain = {
   sourceId: historyMove.id,
   hops: [
@@ -89,6 +111,7 @@ export const historyPage = (items: ActivityEntry[]): ActivityPage => ({
   scanLimitReached: false,
   searchLimitReached: false,
 });
+export const historySearch = historyPage([historyMove, historyTrash]);
 export const historyActivity = historyPage([
   {
     ...historyMove,
@@ -141,6 +164,6 @@ export function historySnapshot(source: string): WorkspaceSnapshot {
     directory: null,
     errorCode: null,
     now: historyNow,
-    activity: { filters: query ? { q: query } : {}, page: query ? historyPage([historyMove]) : historyActivity },
+    activity: { filters: query ? { q: query } : {}, page: query ? historySearch : historyActivity },
   };
 }

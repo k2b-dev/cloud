@@ -25,8 +25,6 @@ export const historyCatalog = i18n.define({
       recoveryChecking: "Checking what you can do here …",
       recoveryFailed: "Files could not check what you can do here.",
       networksIncomplete: "Not every network of this period is known.",
-      pageNetworksSentence: "The page was viewed {pages} times from {networks} networks.",
-      pageViewsSentence: "The page was viewed {pages} times.",
       periodHour: "{date}, {from} to {to}",
       periodDay: "{date}, whole day",
       accessPagesNetworks: ({ pages, networks }: { pages: number; networks: number }) =>
@@ -326,8 +324,6 @@ export const historyCatalog = i18n.define({
       recoveryChecking: "Dateien prüft, was du hier tun kannst …",
       recoveryFailed: "Dateien konnte nicht prüfen, was du hier tun kannst.",
       networksIncomplete: "Nicht jedes Netz dieses Zeitraums ist bekannt.",
-      pageNetworksSentence: "Die Seite wurde {pages}-mal aus {networks} Netzen aufgerufen.",
-      pageViewsSentence: "Die Seite wurde {pages}-mal aufgerufen.",
       periodHour: "{date}, {from} bis {to}",
       periodDay: "{date}, ganzer Tag",
       accessPagesNetworks: ({ pages, networks }: { pages: number; networks: number }) =>

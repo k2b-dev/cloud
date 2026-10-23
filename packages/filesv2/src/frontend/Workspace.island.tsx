@@ -9,6 +9,7 @@ import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry, type MarkedEntry } from "../contracts";
 import ActivityView, { type ActivityFilters } from "./ActivityView";
+import { createActivityVersionLoader } from "./activity-versions";
 import Browser from "./Browser";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
@@ -250,6 +251,7 @@ export default function Workspace(props: {
    * identity and journals. A refusal (403, 409) surfaces beside the action; nothing here trusts a stored entry.
    */
   const activityActions: HistoryActions = {
+    loadVersion: createActivityVersionLoader(() => h().historyFailed),
     onContact: async ({ userId }) => {
       try {
         if (!(await openCommand("chat.conversation.compose", { userId }))) toast.error(h().actionFailed);
