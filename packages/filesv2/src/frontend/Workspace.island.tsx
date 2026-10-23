@@ -744,6 +744,7 @@ export default function Workspace(props: {
       <UploadSurface queue={uploads} />
       <Show when={currentView() !== "edit"} fallback={editorView()}>
         <AppWorkspace
+          class={currentView() === "activity" ? "filesv2-workspace--activity" : undefined}
           mobileSurface="flush"
           layoutState={() => ({ version: 2, sidebarWidth: 248, detailWidths: { "filesv2-inspector": 400 } })}
         >

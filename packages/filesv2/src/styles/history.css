@@ -709,3 +709,15 @@
   .filesv2-history-head__filters .k2b-filter-chip > i:not(.k2b-filter-chip__chevron) { display: none; }
   .k2b-ui .filesv2-history-head__filters .k2b-filter-chip { padding-inline: 7px; gap: 4px; }
 }
+
+/* The selected sidebar names Activity on desktop. Phones keep the host's title visible above its filters. */
+@container k2b-app-area (max-width: 47.9375rem) {
+  .k2b-ui .filesv2-workspace--activity > .k2b-app-workspace__head[data-trail="title"] {
+    display: flex;
+    min-height: 3.75rem;
+    padding-inline: 1rem;
+  }
+  .k2b-ui .filesv2-workspace--activity > .k2b-app-workspace__head .k2b-page-title__title {
+    font-size: 1.5rem;
+  }
+}

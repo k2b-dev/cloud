@@ -386,6 +386,12 @@ test("phone activity keeps the menu beside the search and never leaves a dot at 
       };
     });
     expect(head).toEqual({ menuBesideSearch: true, filtersBelow: true });
+    const title = tab.locator(".filesv2-workspace--activity > .k2b-app-workspace__head .k2b-page-title");
+    expect(await title.isVisible()).toBe(true);
+    expect(await title.innerText()).toContain("Aktivität");
+    expect(await title.evaluate((element) => element.getBoundingClientRect().bottom)).toBeLessThanOrEqual(
+      await tab.locator(".filesv2-history-search").evaluate((element) => element.getBoundingClientRect().top),
+    );
     // A status badge is followed by a dot like every other fact.
     expect(await tab.locator(".filesv2-history-row__lead .filesv2-history-row__dot").count()).toBeGreaterThanOrEqual(1);
     const lines = await tab.evaluate(() => {
