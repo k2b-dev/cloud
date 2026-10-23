@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { appHostCss } from "../../ui/test/app-host-fixture";
 import { launchBrowser } from "../../ui/test/browser";
@@ -48,62 +48,73 @@ afterAll(async () => {
 
 for (const width of [390, 768, 1440])
   for (const dark of [false, true]) {
-    for (const scenario of ["grant", "revoke"] as const)
-      test(`group machine managers ${width} ${dark ? "dark" : "light"}: ${scenario}`, async () => {
-        const tab = await browser.newPage({ viewport: { width, height: 900 } });
-        const errors: string[] = [];
-        tab.on("pageerror", (e) => errors.push(e.message));
-        let added = false,
-          revoked = false,
-          failRevoke = true;
-        const writes: unknown[] = [];
-        try {
-          await tab.clock.install({ time: new Date("2026-10-23T12:00:00Z") });
-          await tab.route("https://cloud.example.test/api/**", async (route) => {
-            const req = route.request(),
-              url = new URL(req.url());
-            if (url.pathname.endsWith("/entities")) {
-              expect(url.searchParams.get("service_account_kinds")).toBe("standalone,agent");
-              return route.fulfill({
-                json: {
-                  items: [
-                    {
-                      kind: "service_account",
-                      serviceAccount: {
-                        id: "22222222-2222-4222-8222-222222222222",
-                        name: "Release integration",
-                        kind: "standalone",
-                        status: "active",
-                        appId: null,
-                        resourceType: null,
-                        resourceId: null,
-                      },
+    describe(`group machine managers ${width} ${dark ? "dark" : "light"}`, () => {
+      let tab: Awaited<ReturnType<typeof browser.newPage>>;
+      let errors: string[];
+      let added: boolean;
+      let revoked: boolean;
+      let failRevoke: boolean;
+      let writes: unknown[];
+      beforeEach(async () => {
+        tab = await browser.newPage({ viewport: { width, height: 900 } });
+        errors = [];
+        added = false;
+        revoked = false;
+        failRevoke = true;
+        writes = [];
+        tab.on("pageerror", (error) => errors.push(error.message));
+        await tab.clock.install({ time: new Date("2026-10-23T12:00:00Z") });
+        await tab.route("https://cloud.example.test/api/**", async (route) => {
+          const req = route.request(),
+            url = new URL(req.url());
+          if (url.pathname.endsWith("/entities")) {
+            expect(url.searchParams.get("service_account_kinds")).toBe("standalone,agent");
+            return route.fulfill({
+              json: {
+                items: [
+                  {
+                    kind: "service_account",
+                    serviceAccount: {
+                      id: "22222222-2222-4222-8222-222222222222",
+                      name: "Release integration",
+                      kind: "standalone",
+                      status: "active",
+                      appId: null,
+                      resourceType: null,
+                      resourceId: null,
                     },
-                  ],
-                },
-              });
-            }
-            if (url.pathname.endsWith("/action-notice")) return route.fulfill({ json: { markdown: null, failed: false } });
-            writes.push({ method: req.method(), body: req.postDataJSON() });
-            if (req.method() === "POST") added = true;
-            else if (failRevoke) return route.fulfill({ status: 409, json: { message: "Refresh the group and try again" } });
-            else revoked = true;
-            return route.fulfill({ json: { message: "Updated" } });
-          });
-          await tab.route("https://cloud.example.test/group-fixture.js", (route) =>
-            route.fulfill({ contentType: "text/javascript; charset=utf-8", body: bundle }),
-          );
-          await tab.route("https://cloud.example.test/app/accounts/groups/team", (route) =>
-            route.fulfill({
-              contentType: "text/html; charset=utf-8",
-              body: `<!doctype html><html lang="en" class="${dark ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-theme="${dark ? "dark" : "light"}" data-added="${added}" data-revoked="${revoked}"><main id="root" class="p-4"></main><script src="/group-fixture.js"></script></body></html>`,
-            }),
-          );
-          await tab.goto("https://cloud.example.test/app/accounts/groups/team");
-          expect(errors).toEqual([]);
-          await tab.getByText("Nightly helper", { exact: true }).waitFor();
-          expect(await tab.getByText("Manage members", { exact: true }).count()).toBe(1);
-          expect(await tab.getByText("No app ID", { exact: true }).count()).toBe(0);
+                  },
+                ],
+              },
+            });
+          }
+          if (url.pathname.endsWith("/action-notice")) return route.fulfill({ json: { markdown: null, failed: false } });
+          writes.push({ method: req.method(), body: req.postDataJSON() });
+          if (req.method() === "POST") added = true;
+          else if (failRevoke) return route.fulfill({ status: 409, json: { message: "Refresh the group and try again" } });
+          else revoked = true;
+          return route.fulfill({ json: { message: "Updated" } });
+        });
+        await tab.route("https://cloud.example.test/group-fixture.js", (route) =>
+          route.fulfill({ contentType: "text/javascript; charset=utf-8", body: bundle }),
+        );
+        await tab.route("https://cloud.example.test/app/accounts/groups/team", (route) =>
+          route.fulfill({
+            contentType: "text/html; charset=utf-8",
+            body: `<!doctype html><html lang="en" class="${dark ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body class="k2b-ui" data-theme="${dark ? "dark" : "light"}" data-added="${added}" data-revoked="${revoked}"><main id="root" class="p-4"></main><script src="/group-fixture.js"></script></body></html>`,
+          }),
+        );
+        await tab.goto("https://cloud.example.test/app/accounts/groups/team");
+        expect(errors).toEqual([]);
+        await tab.getByText("Nightly helper", { exact: true }).waitFor();
+        expect(await tab.getByText("Manage members", { exact: true }).count()).toBe(1);
+        expect(await tab.getByText("No app ID", { exact: true }).count()).toBe(0);
+      });
+      afterEach(async () => {
+        await tab?.close();
+      });
+      for (const scenario of ["grant", "revoke"] as const)
+        test(scenario, async () => {
           if (scenario === "grant") {
             await tab.getByRole("button", { name: "Add", exact: true }).click();
             await tab.getByRole("dialog").getByPlaceholder("Search members…").fill("Release");
@@ -126,8 +137,6 @@ for (const width of [390, 768, 1440])
           }
           expect(await tab.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
           expect(errors).toEqual([]);
-        } finally {
-          await tab.close();
-        }
-      });
+        });
+    });
   }
