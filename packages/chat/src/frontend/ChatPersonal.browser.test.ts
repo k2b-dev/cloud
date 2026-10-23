@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { chatMessages } from "../messages";
 import { nora, startChatHarness, tobias, viewer } from "./ChatWorkspace.browser-fixture";
 
@@ -31,8 +31,7 @@ const start = async (phone: boolean, locale: string, path = "/app/chat") => {
   });
   const page = await context.newPage();
   page.setDefaultTimeout(5_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await context.addInitScript(
     ({ locale }) => {
       window.addEventListener("load", async () => {
