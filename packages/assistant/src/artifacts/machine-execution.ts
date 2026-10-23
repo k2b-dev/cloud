@@ -256,11 +256,19 @@ export function createMachineHostRoutes(context: {
     .post("/api/assistant/artifacts/runtime/machine/storage", async (c) => {
       const body = StorageRequest.parse(await c.req.json());
       if (body.scope === "user") throw new ArtifactError("ACCESS_DENIED");
-      const result = await artifacts.storage(id, body, identity);
+      const result = await artifacts.storage(id, body, identity, false, undefined, undefined, AbortSignal.any([signal, c.req.raw.signal]));
       return c.json(result);
     })
     .get("/api/assistant/artifacts/runtime/machine/storage/file", async (c) => {
-      const result = await artifacts.storage(id, { area: "files", operation: "read", key: c.req.query("key") }, identity);
+      const result = await artifacts.storage(
+        id,
+        { area: "files", operation: "read", key: c.req.query("key") },
+        identity,
+        false,
+        undefined,
+        undefined,
+        AbortSignal.any([signal, c.req.raw.signal]),
+      );
       if (!("item" in result) || !result.item?.data) throw new ArtifactError("NOT_FOUND");
       return new Response(new Uint8Array(result.item.data), {
         headers: { "content-type": result.item.mediaType || "application/octet-stream" },
@@ -268,7 +276,7 @@ export function createMachineHostRoutes(context: {
     })
     .put("/api/assistant/artifacts/runtime/machine/storage/file", async (c) => {
       const key = z.string().min(1).max(240).parse(c.req.query("key"));
-      const maximum = await artifacts.storageFileLimit(id, key, identity);
+      const maximum = await artifacts.storageFileLimit(id, key, identity, false, AbortSignal.any([signal, c.req.raw.signal]));
       return bodyLimit({ maxSize: maximum })(c, async () => {
         const result = await artifacts.storage(
           id,
@@ -276,6 +284,8 @@ export function createMachineHostRoutes(context: {
           identity,
           false,
           new Uint8Array(await c.req.arrayBuffer()),
+          undefined,
+          AbortSignal.any([signal, c.req.raw.signal]),
         );
         c.res = c.json(result);
       });

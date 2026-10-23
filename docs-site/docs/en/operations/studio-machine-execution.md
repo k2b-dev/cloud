@@ -25,6 +25,14 @@ operation deadline. Database, shared storage and HTTP use their existing
 configuration and budgets. Machine execution does not create or configure an
 app database; an app manager prepares it first.
 
+Shared file storage counts payload bytes and each file's stored key/media-type
+metadata record against `assistant.storage_total_mib`. This applies to all Studio
+storage callers, including existing files after upgrade. No migration or new
+setting is required. Payload sizes shown in listings stay unchanged. Existing
+files remain readable; replacements that do not increase usage and deletions
+remain available when usage exceeds a lowered total budget. See
+[Studio file budgets](/en/docs/ai/files-projects-and-personalization#store-studio-app-files).
+
 Audit events named `studio.machine.*` identify the machine account,
 credential reference, app, published version, operation, request correlation
 and outcome. They contain no source, input bodies, secret values or output

@@ -141,11 +141,22 @@ export const createMachineRoutes = () =>
     })
     .post("/:id/storage", v("json", StorageJsonRequest), async (c) => {
       await machineIdentity(identity(c), id(c));
-      return respond(c, ok(await artifacts.storage(id(c), c.req.valid("json"), identity(c))));
+      return respond(
+        c,
+        ok(await artifacts.storage(id(c), c.req.valid("json"), identity(c), false, undefined, undefined, c.req.raw.signal)),
+      );
     })
     .get("/:id/storage/file", v("query", StorageFileQuery), async (c) => {
       await machineIdentity(identity(c), id(c));
-      const result = await artifacts.storage(id(c), { area: "files", operation: "read", key: c.req.valid("query").key }, identity(c));
+      const result = await artifacts.storage(
+        id(c),
+        { area: "files", operation: "read", key: c.req.valid("query").key },
+        identity(c),
+        false,
+        undefined,
+        undefined,
+        c.req.raw.signal,
+      );
       if (!("item" in result) || !result.item?.data) throw new ArtifactError("NOT_FOUND");
       return new Response(new Uint8Array(result.item.data), {
         headers: {
@@ -157,7 +168,7 @@ export const createMachineRoutes = () =>
     })
     .put("/:id/storage/file", v("query", StorageFileQuery), async (c) => {
       await machineIdentity(identity(c), id(c), "write");
-      const maximum = await artifacts.storageFileLimit(id(c), c.req.valid("query").key, identity(c));
+      const maximum = await artifacts.storageFileLimit(id(c), c.req.valid("query").key, identity(c), false, c.req.raw.signal);
       return bodyLimit({ maxSize: maximum })(c, async () => {
         c.res = await respond(
           c,
@@ -173,6 +184,8 @@ export const createMachineRoutes = () =>
               identity(c),
               false,
               new Uint8Array(await c.req.arrayBuffer()),
+              undefined,
+              c.req.raw.signal,
             ),
           ),
         );

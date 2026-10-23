@@ -9,7 +9,7 @@ import { app as assistantApp } from "../config";
 import { artifactDatabase } from "./database";
 import { createMachineRoutes } from "./machine-api";
 import { MachineRights } from "./machine-contracts";
-import { activeMachineHosts, executeMachine } from "./machine-execution";
+import { activeMachineHosts, createMachineHostRoutes, executeMachine } from "./machine-execution";
 import { machineAccess, machineHttp } from "./machine-service";
 import { type ArtifactIdentity, artifacts } from "./service";
 
@@ -307,6 +307,166 @@ export function machineIntegrationCases(owner: ArtifactIdentity) {
     },
     120000,
   );
+
+  for (const surface of ["direct", "runtime"] as const) {
+    for (const reason of ["AbortError", "TimeoutError"] as const) {
+      test.each(["agent", "standalone"] as const)(
+        `%s ${surface}: queued JSON/binary writes and deletes roll back on ${reason} with live grants`,
+        async (kind) => {
+          const created = await serviceAccounts.createStandalone({ name: "Storage barrier fixture", kind });
+          if (!created.ok) throw new Error("Account fixture failed");
+          const account = created.data;
+          const issued = await serviceAccountCredentials.createApiToken({
+            serviceAccountId: account.id,
+            name: "Storage barrier",
+            scopes: ["write"],
+          });
+          if (!issued.ok) throw new Error("Credential fixture failed");
+          const authenticated = await serviceAccountCredentials.authenticateApiToken(issued.data.token);
+          if (!authenticated) throw new Error("Authentication failed");
+          const identity: ArtifactIdentity = {
+            actor: {
+              kind: "service_account",
+              serviceAccount: authenticated.serviceAccount,
+              delegatedUser: null,
+              credentialId: authenticated.credential.id,
+              scopes: authenticated.credential.scopes,
+            },
+            accessSubject: { type: "service_account", serviceAccountId: account.id },
+            machineExecution: { version: 1 },
+          };
+          const app = await artifacts.create({ title: "Storage barrier", source }, owner);
+          try {
+            await artifacts.publish(app.id, app.revision, owner, "Barrier publication");
+            const grant = await artifacts.grant(app.id, { type: "service_account", serviceAccountId: account.id }, "read", owner);
+            await machineAccess.save(
+              app.id,
+              grant!.id,
+              { rights: MachineRights.parse({ execute: true, storage: "write" }), expectedRevision: null },
+              owner,
+            );
+            await artifacts.storage(app.id, { area: "kv", operation: "write", key: "json", content: "1" }, owner);
+            await artifacts.storage(app.id, { area: "files", operation: "write", key: "binary" }, owner, false, new Uint8Array([1]));
+            const snapshot = () => sql`SELECT area,key,content,data,bytes,version,updated_at FROM assistant.artifact_storage
+              WHERE artifact_id=(SELECT id FROM assistant.artifacts WHERE short_id=${app.id}) ORDER BY area,key`;
+            const original = artifacts.storage.bind(artifacts);
+            for (const area of ["kv", "files"] as const) {
+              for (const operation of ["write", "delete"] as const) {
+                const before = await snapshot();
+                const state = await artifacts.storageState(app.id, owner);
+                const cancel = new AbortController();
+                const acquired = Promise.withResolvers<number>();
+                const queued = Promise.withResolvers<void>();
+                const release = Promise.withResolvers<void>();
+                let lock: Promise<unknown> | undefined;
+                const storage = spyOn(artifacts, "storage").mockImplementation(async (...args) => {
+                  // Enter after route authorization and binary body-limit lookup.
+                  // The actual owning service must wait, with all grants still live.
+                  lock = sql.begin(async (db) => {
+                    const [backend] = await db<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+                    await db`SELECT id FROM assistant.artifacts WHERE short_id=${app.id} FOR UPDATE`;
+                    acquired.resolve(backend!.pid);
+                    await release.promise;
+                  });
+                  void lock.catch((error) => {
+                    acquired.reject(error);
+                    queued.reject(error);
+                  });
+                  const pid = await acquired.promise;
+                  const mutation = original(...args);
+                  void mutation.catch(() => {});
+                  try {
+                    // Observe a real resource-lock wait; no timing-only barrier.
+                    const until = performance.now() + 3000;
+                    for (;;) {
+                      const [blocked] = await sql<{ waiting: boolean }[]>`SELECT EXISTS(
+                        SELECT 1 FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))
+                      ) AS waiting`;
+                      if (blocked!.waiting) break;
+                      if (performance.now() >= until) throw new Error("Storage did not reach the lock barrier");
+                      await Bun.sleep(5);
+                    }
+                    queued.resolve();
+                  } catch (error) {
+                    queued.reject(error);
+                    release.resolve();
+                  }
+                  return mutation;
+                });
+                let effect: Promise<Response> | undefined;
+                try {
+                  const key = area === "kv" ? "json" : "binary";
+                  const binary = area === "files" && operation === "write";
+                  const path = `storage${binary ? `/file?key=${key}` : ""}`;
+                  const init = {
+                    method: binary ? "PUT" : "POST",
+                    headers: {
+                      authorization: `Bearer ${issued.data.token}`,
+                      "content-type": binary ? "application/octet-stream" : "application/json",
+                    },
+                    body: binary
+                      ? new Uint8Array([2])
+                      : JSON.stringify({ area, operation, key, ...(operation === "write" ? { content: "2" } : {}) }),
+                    signal: surface === "direct" ? cancel.signal : new AbortController().signal,
+                  };
+                  effect = Promise.resolve(
+                    surface === "direct"
+                      ? router.request(`/${app.id}/${path}`, init)
+                      : createMachineHostRoutes({
+                          id: app.id,
+                          input: { ...request(), artifactId: app.id },
+                          identity,
+                          locale: "en",
+                          timeZone: "UTC",
+                          signal: cancel.signal,
+                        }).request(`/api/assistant/artifacts/runtime/machine/${path}`, init),
+                  );
+                  await Promise.race([
+                    queued.promise,
+                    effect.then(() => {
+                      throw new Error("Effect finished before the lock barrier");
+                    }),
+                  ]);
+                  // Both cancellation kinds use the standard AbortSignal reason,
+                  // delivered deterministically after observing the lock wait.
+                  cancel.abort(new DOMException("Storage fixture cancelled", reason));
+                  release.resolve();
+                  const response = await effect;
+                  expect(response.ok).toBe(false);
+                  expect(await response.json()).toMatchObject({ code: "EXECUTION_FAILED" });
+                } finally {
+                  release.resolve();
+                  try {
+                    if (effect) await effect;
+                    await lock;
+                  } finally {
+                    storage.mockRestore();
+                  }
+                }
+                expect(await snapshot()).toEqual(before);
+                expect((await artifacts.storageState(app.id, owner)).storageRevision).toBe(state.storageRevision);
+                // No revocation caused the rejection: a fresh write still succeeds.
+                expect(
+                  (
+                    await call(issued.data.token, app.id, "storage", {
+                      area: "kv",
+                      operation: "write",
+                      key: "live-grant",
+                      content: "1",
+                    })
+                  ).status,
+                ).toBe(200);
+              }
+            }
+          } finally {
+            await artifacts.remove(app.id, owner);
+            await sql`DELETE FROM auth.service_account_credentials WHERE service_account_id=${account.id}::uuid`;
+            await sql`DELETE FROM auth.service_accounts WHERE id=${account.id}::uuid`;
+          }
+        },
+      );
+    }
+  }
 
   test.each(["agent", "standalone"] as const)(
     "%s token: queued effects and active execution stop after rights revocation or disable",

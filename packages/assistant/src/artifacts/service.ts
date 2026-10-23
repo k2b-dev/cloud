@@ -620,9 +620,11 @@ export const artifacts = {
       return { cleared: true };
     });
   },
-  async storageFileLimit(id: string, key: string, identity: ArtifactIdentity, management = false) {
+  async storageFileLimit(id: string, key: string, identity: ArtifactIdentity, management = false, signal?: AbortSignal) {
+    signal?.throwIfAborted();
     const previous = await sql.begin(async (db) => {
       const resource = await requireArtifact(db, id, identity, management ? "admin" : "read");
+      signal?.throwIfAborted();
       await machineDataRight(db, resource.row.id, resource.row.short_id, identity, "storage", true);
       const [file] = await db<{ bytes: number }[]>`SELECT bytes FROM assistant.artifact_storage
         WHERE artifact_id=${resource.row.id}::uuid AND area='files' AND user_id IS NULL AND key=${key}`;
@@ -642,7 +644,9 @@ export const artifacts = {
     management = false,
     fileData?: Uint8Array,
     expected?: { storageRevision?: number; version?: number | null },
+    signal?: AbortSignal,
   ) {
+    signal?.throwIfAborted();
     const request = StorageRequest.parse(input);
     const storageUser = request.scope === "user" ? user(identity).id : null;
     if (request.operation !== "list" && !request.key) throw new ArtifactError("INVALID_INPUT");
@@ -673,6 +677,7 @@ export const artifacts = {
       // App use includes its runtime data effects. Code administration remains
       // separate. Lock the resource so quota checks and writes serialize.
       const { row } = await requireArtifact(db, id, identity, management && request.scope === "shared" ? "admin" : "read");
+      signal?.throwIfAborted();
       await machineDataRight(
         db,
         row.id,
@@ -681,6 +686,7 @@ export const artifacts = {
         "storage",
         request.operation === "write" || request.operation === "delete",
       );
+      signal?.throwIfAborted();
       id = row.id;
       if (expected?.storageRevision !== undefined && Number(row.storage_revision) !== expected.storageRevision)
         throw new ArtifactError("CONFLICT");
@@ -698,14 +704,23 @@ export const artifacts = {
         return { items: items.map((item) => ({ ...item, bytes: Number(item.bytes), version: Number(item.version) })) };
       }
       if (request.operation === "delete") {
+        signal?.throwIfAborted();
         await db`UPDATE assistant.artifacts SET storage_revision=storage_revision+1 WHERE id=${id}::uuid`;
+        signal?.throwIfAborted();
         await db`DELETE FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid AND area=${request.area} AND key=${request.key!}`;
+        signal?.throwIfAborted();
         return { deleted: true };
       }
       if (request.operation === "write") {
-        const [usage] = await db<{ bytes: number; items: number; previous: number }[]>`SELECT
-          coalesce(sum(bytes),0)::bigint AS bytes,count(*)::int AS items,
-          coalesce(max(bytes) FILTER (WHERE key=${request.key!}),0)::bigint AS previous
+        // File quota includes the actual PostgreSQL key/media-type metadata
+        // record. Keep payload bytes separate for listings and per-file limits.
+        // Deriving this for existing rows also accounts for pre-upgrade files.
+        const charge = request.area === "files" ? db`bytes + pg_column_size(ROW(key,media_type))` : db`bytes`;
+        const [usage] = await db<{ bytes: number; items: number; previous: number; previousBytes: number; metadataBytes: number }[]>`SELECT
+          coalesce(sum(${charge}),0)::bigint AS bytes,count(*)::int AS items,
+          coalesce(max(${charge}) FILTER (WHERE key=${request.key!}),0)::bigint AS previous,
+          coalesce(max(bytes) FILTER (WHERE key=${request.key!}),0)::bigint AS "previousBytes",
+          pg_column_size(ROW(${request.key!}::text,${request.mediaType}::text)) AS "metadataBytes"
           FROM assistant.artifact_storage WHERE artifact_id=${id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid AND area=${request.area}`;
         const [existing] = await db`SELECT 1 FROM assistant.artifact_storage
           WHERE artifact_id=${id}::uuid AND user_id IS NOT DISTINCT FROM ${storageUser}::uuid AND area=${request.area} AND key=${request.key!}`;
@@ -713,8 +728,10 @@ export const artifacts = {
           !checkStorageBudget({
             area: request.area,
             bytes,
+            metadataBytes: Number(usage!.metadataBytes),
             total: Number(usage!.bytes),
             previous: Number(usage!.previous),
+            previousBytes: Number(usage!.previousBytes),
             items: Number(usage!.items),
             exists: Boolean(existing),
             limits,
@@ -722,10 +739,13 @@ export const artifacts = {
         )
           throw new ArtifactError("STORAGE_FULL");
         const version = Number(row.storage_revision) + 1;
+        signal?.throwIfAborted();
         await db`UPDATE assistant.artifacts SET storage_revision=${version} WHERE id=${id}::uuid`;
+        signal?.throwIfAborted();
         await db`INSERT INTO assistant.artifact_storage(artifact_id,area,key,user_id,content,data,media_type,bytes,version)
           VALUES(${id}::uuid,${request.area},${request.key!},${storageUser}::uuid,${request.content ?? ""},${fileData ?? null},${request.mediaType},${bytes},${version})
           ON CONFLICT(artifact_id,area,key,user_id) DO UPDATE SET content=excluded.content,data=excluded.data,media_type=excluded.media_type,bytes=excluded.bytes,version=excluded.version,updated_at=now()`;
+        signal?.throwIfAborted();
         return { written: true, version };
       }
       const [item] = await db<
