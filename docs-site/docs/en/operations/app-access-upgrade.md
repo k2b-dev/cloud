@@ -38,6 +38,7 @@ is absent from the administrator's launcher.
 
 ## Configure and repair access lists
 
+All built-in applications retain fixed access rules in the first rollout.
 **Administration → Apps** shows each application's rule; **Repair access** is
 available only for applications that declare `appAccess.grants()`.
 Operators cannot turn a fixed rule into a list from this screen.
@@ -76,3 +77,19 @@ remove the last effective manager outside a list edit.
 The gateway continues to route requests; the application process enforces the
 entry rule. See [App access](/en/docs/identity/app-access) for declarations and
 transition behavior.
+
+## Built-in application rules
+
+Gateway (`gateway-ops`), Hosts (`ipa-hosts`), OAuth, and Proxy Auth declare administrator-only use.
+The other built-in applications declare signed-in use and keep their existing
+route and resource permissions. No built-in application switches to an access
+list in this rollout.
+
+Declared public routes retain their existing authentication, including share
+tokens, Cloud Login, phone device keys, and Pulse ingest credentials. An
+exception for one of these routes does not grant app discovery or access to
+other routes.
+
+API Docs and Tools no longer appear in navigation for signed-out visitors.
+Their public direct URLs remain available. Signed-in discovery still depends
+on the caller's app access and the application's navigation placement.
