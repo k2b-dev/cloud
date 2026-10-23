@@ -24,7 +24,8 @@ export const app = defineApp({
       path: "/api/quotes/widget/quote",
       title: "Quote of the hour",
       description: "A short thought that changes every hour.",
-      sizes: ["small", "medium"],
+      // A quote of a few lines does not fit the small frame on a phone.
+      sizes: ["medium"],
       defaultSize: "medium",
     },
   ],

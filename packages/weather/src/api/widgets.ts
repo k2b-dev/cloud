@@ -1,4 +1,4 @@
-import type { WidgetBlock, WidgetListItem, WidgetResponse } from "@k2b/cloud/contracts";
+import type { DashboardWidgetSize, WidgetBlock, WidgetListItem, WidgetResponse } from "@k2b/cloud/contracts";
 import { type AuthContext, auth, getLocale, getUserBackedActor, getWidgetRequest } from "@k2b/cloud/server";
 import { logger, weatherService } from "@k2b/cloud/services";
 import { type Context, Hono } from "hono";
@@ -59,7 +59,8 @@ export const weatherWidgetUnavailableBody = (locale: string, message?: string): 
   };
 };
 
-export const weatherWidgetEmptyBody = (locale: string): WidgetResponse => {
+/** A small widget has room for the empty state's title only; the header leads to Weather, where a place is added. */
+export const weatherWidgetEmptyBody = (locale: string, size: DashboardWidgetSize): WidgetResponse => {
   const { t } = weatherMessages.resolve([locale]);
   return {
     title: t.appName,
@@ -71,7 +72,7 @@ export const weatherWidgetEmptyBody = (locale: string): WidgetResponse => {
         icon: "ti ti-map-pin-plus",
         tone: "blue",
         title: t.widgetNoLocations,
-        subtitle: t.widgetNoLocationsHint,
+        subtitle: size === "small" ? undefined : t.widgetNoLocationsHint,
       },
     ],
   };
@@ -95,11 +96,11 @@ export const currentWeatherWidgetHandler = async (c: Context<AuthContext>) => {
     return c.json(weatherWidgetUnavailableBody(locale));
   }
 
+  const { size } = getWidgetRequest(c);
   if (locations.length === 0) {
-    return c.json(weatherWidgetEmptyBody(locale));
+    return c.json(weatherWidgetEmptyBody(locale, size));
   }
 
-  const { size } = getWidgetRequest(c);
   const limit = LOCATION_LIMIT[size];
   const capped = locations.slice(0, limit);
   const more = locations.length > limit ? t.widgetCount({ shown: limit, total: locations.length }) : undefined;
@@ -137,7 +138,8 @@ export const currentWeatherWidgetHandler = async (c: Context<AuthContext>) => {
             kind: "hero",
             icon: "ti ti-cloud-off",
             title: t.widgetForecastUnavailable,
-            subtitle: t.widgetProviderFailed({ name: entry.loc.name }),
+            // A small frame names the place only.
+            subtitle: size === "small" ? entry.loc.name : t.widgetProviderFailed({ name: entry.loc.name }),
           },
         ],
       };

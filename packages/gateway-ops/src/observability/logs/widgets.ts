@@ -39,14 +39,13 @@ export const loggingErrorsWidgetHandler = async (c: Context<AuthContext>) => {
       accent: summary.errors24h > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : { tone: "emerald", icon: "ti ti-check" },
     },
   ];
-  // The small frame holds the number; medium adds the other counts.
+  // The small frame holds the number; medium adds two counts, as many as fit one line beside it on a phone.
   if (getWidgetRequest(c).size !== "small") {
     blocks.push({
       kind: "pills",
       pills: [
         { label: t.warnings, value: formatNumber(summary.warnings24h, { locale }), tone: summary.warnings24h > 0 ? "amber" : "zinc" },
         { label: t.entries, value: formatNumber(summary.total24h, { locale }) },
-        { label: t.sources, value: formatNumber(summary.sources, { locale }), tone: "blue" },
       ],
     });
   }
